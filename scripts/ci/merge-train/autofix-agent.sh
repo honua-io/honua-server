@@ -45,11 +45,17 @@ fi
 export CLAUDE_CODE_USE_BEDROCK=1
 export AWS_REGION="${AWS_REGION:-us-west-2}"
 export ANTHROPIC_MODEL="${TRAIN_AUTOFIX_MODEL:-us.anthropic.claude-sonnet-4-5-20250929-v1:0}"
+# Bedrock mode also needs a small/fast model routed to Bedrock (background tasks);
+# without it the CLI tries a default it can't reach and the run fails.
+export ANTHROPIC_SMALL_FAST_MODEL="${TRAIN_AUTOFIX_SMALL_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
 
-# Run headless. --print streams the agent's response; --permission-mode
-# acceptEdits lets it edit + commit without interactive approval. The request
-# file is the full fix-forward prompt (failing tests + error output + batch diff
-# + the "commit as Mike McDougall, no bot attribution, touch only what's needed"
+# Run headless. --print + the prompt as a positional ARG with stdin CLOSED
+# (</dev/null) — passing the prompt on stdin, or leaving stdin open, makes
+# --print hang forever. --dangerously-skip-permissions so the Bash it uses to
+# run tests + commit isn't blocked on an interactive approval (the batch branch
+# is isolated and CI re-validates before any land). The prompt is the full
+# fix-forward request (failing tests + error output + batch diff + the
+# "commit as Mike McDougall, no bot attribution, touch only what's needed"
 # instructions). We cap wall time so a hung agent can't stall the batch.
 PROMPT="$(cat "${REQUEST_FILE}")"
 TIMEOUT="${TRAIN_AUTOFIX_TIMEOUT:-900}"
@@ -57,9 +63,9 @@ TIMEOUT="${TRAIN_AUTOFIX_TIMEOUT:-900}"
 ( cd "${REPO_ROOT}" && \
   timeout "${TIMEOUT}" claude \
     --print \
-    --permission-mode acceptEdits \
+    --dangerously-skip-permissions \
     --allowed-tools "Edit,Write,Read,Bash" \
-    "${PROMPT}" ) \
+    "${PROMPT}" < /dev/null ) \
   || echo "::warning::autofix-agent: claude headless run exited non-zero or timed out; train will check for a partial commit." >&2
 
 # Intentionally exit 0: success/failure is judged by whether a NEW commit landed
