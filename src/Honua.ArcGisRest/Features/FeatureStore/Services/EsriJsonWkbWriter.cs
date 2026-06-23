@@ -524,7 +524,7 @@ internal static class EsriJsonWkbWriter
     /// so an oversized untrusted coordinate count fails loudly instead of silently
     /// overflowing Int32 into a wrong-sized (or negative) allocation.
     /// </summary>
-    private static int CheckedBufferSize(int headerBytes, int count, int elementSize)
+    internal static int CheckedBufferSize(int headerBytes, int count, int elementSize)
     {
         var total = headerBytes + ((long)count * elementSize);
         if (count < 0 || total > MaxWkbBufferBytes)
@@ -544,7 +544,7 @@ internal static class EsriJsonWkbWriter
     /// is accumulated in a long so summing many near-cap parts cannot overflow
     /// Int32 into a wrong-sized (or negative) allocation.
     /// </summary>
-    private static int CheckedTotalSize(long total)
+    internal static int CheckedTotalSize(long total)
     {
         if (total < 0 || total > MaxWkbBufferBytes)
         {
