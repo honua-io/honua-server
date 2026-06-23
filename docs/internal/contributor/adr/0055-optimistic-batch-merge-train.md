@@ -93,7 +93,70 @@ Triggers `schedule` (*/15), `workflow_run:{workflows:[CI]}`, and
 contents/pull-requests/actions/issues write. Uses `secrets.HONUA_MERGE_TOKEN`
 if present, else `GITHUB_TOKEN` (a `GITHUB_TOKEN` push does NOT retrigger
 downstream workflows, so live batch-branch CI needs the PAT). No `matrix.*`
-appears in any job-level `if:`.
+appears in any job-level `if:`. After the train runs, `if: always()` steps
+guarantee the Step Summary is never empty and upload `merge-train-metrics.json`
+as the `merge-train-metrics` artifact.
+
+### Instrumentation / observability (first-class)
+
+Lack of visibility was half the prior CI nightmare, so the train makes every
+decision obvious at a glance. This is ADDITIVE — it reads only what the decision
+steps already produced and changes no decision logic; dry-run stays read-only.
+
+- **Structured, grouped run log.** Every step emits a greppable, leveled line via
+  one formatter: `[train][<step>][<LEVEL>] <msg>` where `<LEVEL>` is
+  `INFO`/`WARN`/`DECISION` (the founder greps `DECISION`). Each pipeline step
+  wraps its output in GitHub Actions `::group::`/`::endgroup::` (only when
+  `$GITHUB_ACTIONS`) so the workflow log is collapsible per step; off-Actions it
+  prints a plain banner so a local dry-run reads cleanly. Landings and
+  escalations also emit `::notice::`/`::warning::` so they surface in the run's
+  annotations.
+- **Step Summary dashboard (headline).** Each run appends a Markdown report to
+  `$GITHUB_STEP_SUMMARY` (mirrored to stdout for local dry-runs): run mode
+  (DRY-RUN vs LIVE), trunk SHA, batch branch, a **candidates table** (PR# |
+  author | CI-Gate | decision: included / skipped+reason / escalated), the
+  **batch** (branch + included/skipped PRs), the **smart-CI shard set**
+  (targeted shards + `run_all` reason), a **run-actions** counter table
+  (forward-fixes / flake reruns / attribution drops / escalated / landed), and
+  **per-phase timings**. `_dashboard` is rendered on EVERY exit path — including
+  "nothing selected" — so a run is never a silent Summary tab.
+- **Machine-readable metrics.** `merge-train-metrics.json`
+  (`schema: honua.merge-train.metrics/v1`) is written to `$TRAIN_METRICS_OUT`
+  and uploaded as the `merge-train-metrics` workflow artifact (`if: always()`).
+  The run timestamp is injected by the workflow (`TRAIN_RUN_TIMESTAMP`), not
+  generated mid-script, so the Summary, metrics, and aggregate agree on one
+  instant. Schema:
+
+  ```json
+  {
+    "schema": "honua.merge-train.metrics/v1",
+    "run_timestamp": "<ISO-8601>",
+    "mode": "DRY-RUN|LIVE",
+    "outcome": "nothing-ready|dry-run|landed|trunk-moved-reassemble|escalated-batch|all-dropped|land-error",
+    "trunk_sha": "<sha|''>",
+    "last_landed_sha": "<sha|null>",
+    "counts": {
+      "candidates": 0, "selected": 0,
+      "skipped_by_reason": { "select_ineligible": 0, "assemble_conflict": 0 },
+      "included": 0, "landed": 0, "escalated": 0,
+      "flake_reruns": 0, "forward_fixes": 0, "attribution_drops": 0
+    },
+    "smart_ci": { "shard_count": 0, "run_all": false },
+    "phase_durations_seconds": { "select": 0, "assemble": 0, "smart-ci": 0, "ci-gate": 0, "land": 0 }
+  }
+  ```
+
+- **Persistent over-time dashboard.** Aggregate metrics accumulate across LIVE
+  runs in a second fenced block (` ```json aggregate `,
+  `schema: honua.merge-train.aggregate/v1`) inside the SAME **Merge Train State**
+  issue, with a human-readable Markdown dashboard rendered above it — total
+  batches, PRs landed, runs, median time-to-land, flake-rerun rate (reruns per
+  batch), escalation count, current trunk SHA, last-landed SHA, and the live
+  flake-signature list. The state issue was chosen over a committed
+  `docs/ci/merge-train-status.md` because it needs no commit/push per run (lower
+  friction, and the train stays FF-CAS-clean about what it pushes to trunk). In
+  dry-run the aggregate dashboard renders to the Step Summary but is NOT
+  persisted to the issue.
 
 ### No bot attribution (runtime requirement)
 

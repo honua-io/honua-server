@@ -50,9 +50,92 @@ TRAIN_SHARDS_CONFIG="${TRAIN_SHARDS_CONFIG:-${TRAIN_REPO_ROOT}/.github/ci-shards
 TRAIN_TARGETED_SCRIPT="${TRAIN_TARGETED_SCRIPT:-${TRAIN_REPO_ROOT}/scripts/ci/honua-server-targeted-tests.sh}"
 
 # --- logging ------------------------------------------------------------------
-train_log()  { printf '[train] %s\n' "$*" >&2; }
-train_warn() { printf '[train][warn] %s\n' "$*" >&2; }
-train_err()  { printf '[train][error] %s\n' "$*" >&2; }
+# Visibility was half the prior CI nightmare, so every step emits a clear,
+# greppable, leveled line. The base helpers stay backward-compatible; the
+# component-aware helpers below add a [step] segment and a level so the run log
+# reads `[train][select][INFO] ...`, `[train][assemble][DECISION] ...`, etc.
+#
+# TRAIN_STEP is the active pipeline step (set by train_step_begin). Levels:
+#   INFO     — routine progress.
+#   WARN     — recoverable anomaly (skips, caps, re-assembles).
+#   DECISION — a choice the train made (included/skipped/escalated/landed).
+: "${TRAIN_STEP:=train}"
+
+train_log()  { _train_emit INFO "$*"; }
+train_warn() { _train_emit WARN "$*"; }
+train_err()  { _train_emit ERROR "$*"; }
+# train_decision: a first-class DECISION line — the thing the founder grep's for.
+train_decision() { _train_emit DECISION "$*"; }
+
+# _train_emit <level> <msg...>: the single formatter for every log line.
+# Format: [train][<step>][<level>] <msg> (the [<step>] segment is omitted when no
+# step group is active so generic lines read [train][INFO] ...). All go to stderr
+# so stdout stays the scripts' machine channel (batch branch name, JSON, etc.).
+_train_emit() {
+  local level="$1"; shift
+  if [[ -n "${TRAIN_STEP:-}" && "${TRAIN_STEP}" != "train" ]]; then
+    printf '[train][%s][%s] %s\n' "${TRAIN_STEP}" "${level}" "$*" >&2
+  else
+    printf '[train][%s] %s\n' "${level}" "$*" >&2
+  fi
+}
+
+# --- GitHub Actions grouping + annotations (no-op off-Actions) ----------------
+# Each pipeline step's output is wrapped in ::group::/::endgroup:: so the
+# workflow log is collapsible per step. Off Actions ($GITHUB_ACTIONS unset) these
+# print a plain banner to stderr so a local dry-run still reads cleanly.
+train_group() {
+  TRAIN_STEP="$1"
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    printf '::group::[train] %s — %s\n' "$1" "${2:-}" >&2
+  else
+    printf '\n----- [train] %s — %s -----\n' "$1" "${2:-}" >&2
+  fi
+}
+train_endgroup() {
+  [[ -n "${GITHUB_ACTIONS:-}" ]] && printf '::endgroup::\n' >&2 || true
+  TRAIN_STEP="train"
+}
+
+# train_notice / train_annotate_warn: surface landings + escalations in the run's
+# annotations (the Actions summary banner). No-op (but still logged) off Actions.
+train_notice() {
+  [[ -n "${GITHUB_ACTIONS:-}" ]] && printf '::notice::%s\n' "$*" >&2 || true
+  train_decision "$*"
+}
+train_annotate_warn() {
+  [[ -n "${GITHUB_ACTIONS:-}" ]] && printf '::warning::%s\n' "$*" >&2 || true
+  train_warn "$*"
+}
+
+# --- step timing --------------------------------------------------------------
+# train_step_begin <name> records a monotonic start; train_step_end <name> emits
+# the elapsed seconds and appends "<name>=<secs>" to TRAIN_TIMINGS_FILE (if set)
+# for the metrics JSON. Uses SECONDS-derived epoch math (portable, no bc).
+train_now() { date -u +%s; }
+declare -A _TRAIN_STEP_START 2>/dev/null || true
+train_step_begin() { _TRAIN_STEP_START["$1"]="$(train_now)"; }
+train_step_end() {
+  local name="$1" start now dur
+  start="${_TRAIN_STEP_START[$name]:-}"
+  [[ -z "${start}" ]] && return 0
+  now="$(train_now)"; dur=$(( now - start ))
+  train_log "phase '${name}' took ${dur}s"
+  [[ -n "${TRAIN_TIMINGS_FILE:-}" ]] && printf '%s=%s\n' "${name}" "${dur}" >>"${TRAIN_TIMINGS_FILE}"
+  printf '%s' "${dur}"
+}
+
+# --- Step Summary dashboard ---------------------------------------------------
+# train_summary <markdown-line...>: append a line to $GITHUB_STEP_SUMMARY (the
+# Actions Summary tab) AND mirror it to stdout so a local dry-run prints the same
+# dashboard. TRAIN_SUMMARY_FILE overrides the sink (tests / local capture).
+train_summary() {
+  local sink="${TRAIN_SUMMARY_FILE:-${GITHUB_STEP_SUMMARY:-}}"
+  if [[ -n "${sink}" ]]; then
+    printf '%s\n' "$*" >>"${sink}"
+  fi
+  printf '%s\n' "$*"
+}
 
 # train_side_effect: the single chokepoint for every state-mutating action.
 # In live mode (TRAIN_APPLY=1) it executes the command; otherwise it logs the
@@ -115,4 +198,95 @@ train_shard_paths() {
   local shard_name="$1" config="${2:-${TRAIN_SHARDS_CONFIG}}"
   jq -r --arg n "${shard_name}" \
     '.shards[] | select(.name == $n) | .paths[]' "${config}"
+}
+
+# --- machine-readable metrics (per-run counters) ------------------------------
+# A flat key=value counter store backed by TRAIN_METRICS_KV (a temp file). The
+# orchestrator bumps counters as decisions are made, then train_metrics_render
+# emits a single merge-train-metrics.json uploaded as a workflow artifact.
+#
+# Counter keys (documented in ADR-0055 "Instrumentation"):
+#   candidates selected included landed escalated
+#   skipped_conflict flake_reruns forward_fixes attribution_drops
+#   smartci_shard_count
+# Plus the run outcome (string) and per-phase durations (from TRAIN_TIMINGS_FILE).
+train_metric_set() {  # key value
+  [[ -z "${TRAIN_METRICS_KV:-}" ]] && return 0
+  printf '%s=%s\n' "$1" "$2" >>"${TRAIN_METRICS_KV}"
+}
+# train_metric_get <key> [default]: last-write-wins read of a counter.
+train_metric_get() {
+  local key="$1" def="${2:-0}" val
+  [[ -z "${TRAIN_METRICS_KV:-}" || ! -s "${TRAIN_METRICS_KV:-/dev/null}" ]] && { printf '%s' "${def}"; return 0; }
+  val="$(grep -E "^${key}=" "${TRAIN_METRICS_KV}" | tail -1 | cut -d= -f2-)"
+  printf '%s' "${val:-${def}}"
+}
+train_metric_inc() {  # key [by]
+  local key="$1" by="${2:-1}" cur
+  cur="$(train_metric_get "${key}" 0)"
+  train_metric_set "${key}" "$(( cur + by ))"
+}
+
+# train_timings_json: turn the "<phase>=<secs>" lines into a JSON object.
+train_timings_json() {
+  local f="${TRAIN_TIMINGS_FILE:-}"
+  if [[ -z "${f}" || ! -s "${f}" ]]; then echo '{}'; return 0; fi
+  # Last write wins per phase so a re-run phase (re-assemble) reports its latest.
+  awk -F= 'NF>=2 {t[$1]=$2} END {for (k in t) print k"="t[k]}' "${f}" \
+    | jq -R 'split("=") | {(.[0]): (.[1]|tonumber)}' | jq -s 'add // {}'
+}
+
+# train_metrics_render <run_timestamp> <mode> <trunk_sha> <last_landed_sha> <outcome> [shard_descriptor]
+#   Emit the full merge-train-metrics.json document on stdout.
+train_metrics_render() {
+  local ts="$1" mode="$2" trunk_sha="$3" last_landed="$4" outcome="$5" shard_desc="${6:-}"
+  local shard_count run_all
+  shard_count="$(train_metric_get smartci_shard_count 0)"
+  run_all="false"
+  if [[ -n "${shard_desc}" ]] && jq -e . >/dev/null 2>&1 <<<"${shard_desc}"; then
+    run_all="$(jq -r '.run_all // false' <<<"${shard_desc}")"
+  fi
+  [[ "${run_all}" != "true" && "${run_all}" != "false" ]] && run_all="false"
+  local last_json="null"; [[ -n "${last_landed}" && "${last_landed}" != "null" ]] && last_json="\"${last_landed}\""
+
+  jq -n \
+    --arg ts "${ts}" \
+    --arg mode "${mode}" \
+    --arg trunk "${trunk_sha}" \
+    --argjson last "${last_json}" \
+    --arg outcome "${outcome}" \
+    --argjson candidates "$(train_metric_get candidates 0)" \
+    --argjson selected "$(train_metric_get selected 0)" \
+    --argjson included "$(train_metric_get included 0)" \
+    --argjson landed "$(train_metric_get landed 0)" \
+    --argjson escalated "$(train_metric_get escalated 0)" \
+    --argjson skipped_conflict "$(train_metric_get skipped_conflict 0)" \
+    --argjson skipped_select "$(train_metric_get skipped_select 0)" \
+    --argjson flake_reruns "$(train_metric_get flake_reruns 0)" \
+    --argjson forward_fixes "$(train_metric_get forward_fixes 0)" \
+    --argjson attribution_drops "$(train_metric_get attribution_drops 0)" \
+    --argjson shard_count "${shard_count:-0}" \
+    --argjson run_all "${run_all:-false}" \
+    --argjson durations "$(train_timings_json)" \
+    '{
+      schema: "honua.merge-train.metrics/v1",
+      run_timestamp: $ts,
+      mode: $mode,
+      outcome: $outcome,
+      trunk_sha: $trunk,
+      last_landed_sha: $last,
+      counts: {
+        candidates: $candidates,
+        selected: $selected,
+        skipped_by_reason: { select_ineligible: $skipped_select, assemble_conflict: $skipped_conflict },
+        included: $included,
+        landed: $landed,
+        escalated: $escalated,
+        flake_reruns: $flake_reruns,
+        forward_fixes: $forward_fixes,
+        attribution_drops: $attribution_drops
+      },
+      smart_ci: { shard_count: $shard_count, run_all: $run_all },
+      phase_durations_seconds: $durations
+    }'
 }

@@ -56,7 +56,7 @@ train_select() {
     pr_list="${TRAIN_PR_LIST_JSON}"
   else
     pr_list="$(gh pr list --base "${TRAIN_BASE_BRANCH}" --state open \
-      --json number,headRefOid,isDraft,mergeable,mergeStateStatus,labels,createdAt,files \
+      --json number,headRefOid,isDraft,mergeable,mergeStateStatus,labels,createdAt,files,author \
       --limit 100)"
   fi
 
@@ -106,7 +106,8 @@ train_select() {
            --arg oid "$(jq -r '.headRefOid' <<<"${line}")" \
            --arg created "$(jq -r '.createdAt' <<<"${line}")" \
            --arg gate "${gate}" \
-      '{number:$n, headRefOid:$oid, createdAt:$created, gate:$gate}'
+           --arg author "$(jq -r '.author.login // .author.name // "?"' <<<"${line}")" \
+      '{number:$n, headRefOid:$oid, createdAt:$created, gate:$gate, author:$author}'
 
     count=$((count + 1))
     if [[ "${count}" -ge "${MAX_BATCH}" ]]; then

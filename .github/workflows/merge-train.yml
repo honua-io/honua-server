@@ -95,9 +95,42 @@ jobs:
           GH_TOKEN: ${{ secrets.HONUA_MERGE_TOKEN || secrets.GITHUB_TOKEN }}
           TRAIN_APPLY: ${{ steps.mode.outputs.train_apply }}
           MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
+          # Instrumentation: the run timestamp is injected here (not generated in
+          # the script) so the Step Summary, metrics JSON, and state-issue
+          # aggregate all agree on a single run instant.
+          TRAIN_RUN_TIMESTAMP: ${{ github.event.repository.updated_at }}
+          # Write the metrics artifact into the workspace for upload below. The
+          # train ALSO appends its dashboard to $GITHUB_STEP_SUMMARY directly, so
+          # the Summary tab is populated even when the train selects nothing.
+          TRAIN_METRICS_OUT: ${{ github.workspace }}/merge-train-metrics.json
         run: |
           set -euo pipefail
+          # Stamp a real ISO-8601 instant (the repository updated_at above is only
+          # a stable fallback; prefer a fresh UTC timestamp for this run).
+          export TRAIN_RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           if [[ -z "${{ secrets.HONUA_MERGE_TOKEN }}" ]]; then
             echo "::warning::HONUA_MERGE_TOKEN not set; using GITHUB_TOKEN. A GITHUB_TOKEN push does not retrigger downstream workflows, so live batch-branch CI may not start. Set HONUA_MERGE_TOKEN before enabling live mode."
           fi
           scripts/ci/merge-train/train.sh
+
+      - name: Ensure Step Summary is never silent
+        if: always()
+        run: |
+          # Defensive: if the train crashed before writing any dashboard, leave a
+          # breadcrumb so a run is never an empty Summary tab.
+          if [[ ! -s "${GITHUB_STEP_SUMMARY:-/dev/null}" ]]; then
+            {
+              echo "## 🚂 Merge Train"
+              echo ""
+              echo "_The train produced no dashboard this run (it may have failed before reporting). Check the **Run train** step log above._"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload merge-train metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merge-train-metrics
+          path: ${{ github.workspace }}/merge-train-metrics.json
+          if-no-files-found: warn
+          retention-days: 30
