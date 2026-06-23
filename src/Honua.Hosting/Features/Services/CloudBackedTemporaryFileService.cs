@@ -314,7 +314,11 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         var maxResults = _options.MaxTotalStorageBytes > 0
             ? int.MaxValue
             : Math.Max(_options.MaxFileCount > 0 ? _options.MaxFileCount + 1 : 0, 1000);
-        var files = await _cloudFileStorage.ListFilesAsync(TemporaryFolder, maxResults, cancellationToken).ConfigureAwait(false);
+        // Capacity accounting reads each file's expiry (a custom-metadata field), so request the
+        // full per-object metadata rather than the cheap size-only listing.
+        var files = await _cloudFileStorage
+            .ListFilesAsync(TemporaryFolder, maxResults, includeMetadata: true, cancellationToken)
+            .ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
         var activeFiles = files.Where(file => !file.ExpiresAt.HasValue || file.ExpiresAt.Value > now).ToArray();
         var provider = _cloudFileStorage.Provider;

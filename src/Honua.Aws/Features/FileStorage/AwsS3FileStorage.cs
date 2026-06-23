@@ -326,6 +326,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
     public override async Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
+        bool includeMetadata = true,
         CancellationToken cancellationToken = default)
     {
         var prefix = CloudStoragePath.BuildPrefix(folder, _options.KeyPrefix);
@@ -347,20 +348,34 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
             var response = await _client.ListObjectsV2Async(request, cancellationToken);
 
-            // Fetch per-object metadata (HeadObject) concurrently with a bounded
-            // degree of parallelism to avoid N sequential round trips per page.
+            // ListObjectsV2 already carries the key, size, and last-modified for every object, so a
+            // size/last-modified-only listing needs no per-object HEAD. Only fetch per-object
+            // metadata (HeadObject) when the caller explicitly asks for the custom user metadata
+            // (original file name, expiry, custom keys) that the flat listing cannot return — and
+            // even then bound the parallelism so a page is N concurrent HEADs rather than N
+            // sequential round trips.
             var pageBatch = new CloudFile?[response.S3Objects.Count];
-            await Parallel.ForEachAsync(
-                response.S3Objects.Select((item, index) => (item, index)),
-                new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
-                async (entry, ct) =>
-                {
-                    var metadata = await GetMetadataAsync(entry.item.Key, ct).ConfigureAwait(false);
-                    if (metadata != null)
+            if (includeMetadata)
+            {
+                await Parallel.ForEachAsync(
+                    response.S3Objects.Select((item, index) => (item, index)),
+                    new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
+                    async (entry, ct) =>
                     {
-                        pageBatch[entry.index] = metadata;
-                    }
-                });
+                        var metadata = await GetMetadataAsync(entry.item.Key, ct).ConfigureAwait(false);
+                        if (metadata != null)
+                        {
+                            pageBatch[entry.index] = metadata;
+                        }
+                    });
+            }
+            else
+            {
+                for (var index = 0; index < response.S3Objects.Count; index++)
+                {
+                    pageBatch[index] = ToCloudFile(response.S3Objects[index]);
+                }
+            }
 
             foreach (var cloudFile in pageBatch)
             {
@@ -381,6 +396,27 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         while (!string.IsNullOrWhiteSpace(continuationToken));
 
         return results;
+    }
+
+    private static CloudFile ToCloudFile(S3Object item)
+    {
+        // Built from the flat ListObjectsV2 entry alone (no HEAD). S3's list API does not return
+        // content type or user metadata, so FileName falls back to the key and ContentType to the
+        // generic octet-stream; callers that need the original file name, expiry, or custom
+        // metadata must request includeMetadata: true (or call GetMetadataAsync per file).
+        var lastModified = item.LastModified?.ToUniversalTime() ?? DateTime.UtcNow;
+        return new CloudFile
+        {
+            FileId = item.Key,
+            FileName = CloudStoragePath.GetFileNameFromKey(item.Key),
+            StoragePath = item.Key,
+            ContentType = "application/octet-stream",
+            SizeBytes = item.Size ?? 0,
+            UploadedAt = new DateTimeOffset(lastModified),
+            ExpiresAt = null,
+            ContentHash = null,
+            Provider = CloudStorageProvider.AwsS3
+        };
     }
 
     public override async Task<string?> GetPresignedUrlAsync(
@@ -429,6 +465,15 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             ContentType = contentType,
             Expires = DateTime.UtcNow.Add(expiresIn ?? _signedUrlLifetime)
         };
+
+        if (_options.EnableServerSideEncryption)
+        {
+            // Bake the SSE requirement into the signed URL so a direct upload through it must send
+            // the x-amz-server-side-encryption header, matching the server-side PutObjectAsync path.
+            // Without this, direct uploads via the presigned URL would land unencrypted even when
+            // server-side encryption is configured.
+            request.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
+        }
 
         var url = _client.GetPreSignedURL(request);
         return Task.FromResult<(string Url, string FileId)?>((url, objectKey));

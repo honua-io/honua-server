@@ -124,11 +124,21 @@ public interface ICloudFileStorage
     /// </summary>
     /// <param name="folder">Optional folder path to list (null for root)</param>
     /// <param name="maxResults">Maximum number of results to return</param>
+    /// <param name="includeMetadata">
+    /// When <c>true</c> (the default), each returned <see cref="CloudFile"/> carries its full custom
+    /// metadata (including the original file name and expiry derived from user metadata). When
+    /// <c>false</c>, providers may populate only the fields a flat listing exposes natively (key,
+    /// size, last-modified) and skip any per-object metadata round trips. Pass <c>false</c> when the
+    /// caller only needs size/last-modified to avoid N additional requests on providers whose list
+    /// API does not return user metadata (for example Amazon S3, which would otherwise issue one
+    /// HEAD per object).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of files in the specified folder</returns>
     Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
+        bool includeMetadata = true,
         CancellationToken cancellationToken = default);
 
     // URL operations
