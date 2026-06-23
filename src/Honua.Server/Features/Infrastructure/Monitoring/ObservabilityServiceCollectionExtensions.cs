@@ -71,6 +71,20 @@ internal static class ObservabilityServiceCollectionExtensions
         var ttl = new OutputCacheTtlOptions();
         configuration.GetSection(OutputCacheTtlOptions.SectionName).Bind(ttl);
 
+        // Test isolation (#1851): the integration suite drives one process-wide, schema-routed
+        // server (and several isolated per-fixture hosts) where every test selects its data
+        // partition via the X-Honua-Test-Schema header rather than a tenant identifier. The
+        // output cache keys on tenant (always "<none>" in tests), format, and route values —
+        // NOT the schema header — so cacheable metadata responses such as the GeoServices
+        // service directory (GET /rest/services) bleed across tests and across license-tier
+        // fixtures: the first response cached for a given (tenant, f) is replayed to peers
+        // running under a different schema/edition. When test schema headers are enabled we
+        // therefore fold the header into the base cache key so the per-test isolation boundary
+        // also scopes the output cache. The flag is never set in production, so production
+        // cache keys are unchanged.
+        var varyOutputCacheByTestSchema =
+            configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
+
         services.AddOutputCache(options =>
         {
             // Add dynamic tags and restrict caching to anonymous requests only.
@@ -79,6 +93,11 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.AddPolicy<RouteTagOutputCachePolicy>();
                 policy.AddPolicy<AnonymousOnlyOutputCachePolicy>();
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
+
+                if (varyOutputCacheByTestSchema)
+                {
+                    policy.VaryByValue(static context => ResolveTestSchemaOutputCacheKey(context));
+                }
             });
 
             // Service metadata caching policy
@@ -559,6 +578,13 @@ internal static class ObservabilityServiceCollectionExtensions
 
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
+
+    // Test isolation (#1851): fold the per-test schema header into the output cache key so the
+    // schema-routed integration server cannot replay one test's (or license-tier fixture's)
+    // cached metadata to a peer running under a different schema. Only wired in when
+    // HONUA_TEST_SCHEMA_HEADERS is enabled (test host only); never active in production.
+    private static KeyValuePair<string, string> ResolveTestSchemaOutputCacheKey(HttpContext context)
+        => new("test-schema", context.Request.Headers["X-Honua-Test-Schema"].ToString());
 
     // Configure response compression for GeoJSON and JSON responses
     private static void ConfigureResponseCompression(IServiceCollection services)

@@ -61,7 +61,8 @@ def test_imageserver_python_client_metadata(
 
     assert response.status_code == 200, response.text
     data = response.json()
-    assert data["currentVersion"] == 10.81
+    # currentVersion is an Esri/ArcGIS REST field; our own SDK tests must not
+    # depend on it (the endpoint still emits it for ArcGIS-client compat).
     assert "Image" in data["capabilities"]
     assert data["bandCount"] > 0
 

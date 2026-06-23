@@ -9,7 +9,7 @@
 #   {
 #     "active_batch": {
 #       "branch": "...", "trunk_base": "<sha>", "included": [<pr>...],
-#       "phase": "select|assemble|smart-ci|forward-fix|attribute|land|done",
+#       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-flake|autofix|attribute|land|done",
 #       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>
 #     },
 #     "config": { "max_batch": <n>, "flake_signatures": "<regex>" },

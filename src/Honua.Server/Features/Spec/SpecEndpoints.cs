@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Server.Features.Spec.Models;
 using Honua.ServiceDefaults;
@@ -41,20 +42,17 @@ internal static class SpecEndpoints
 
         var group = endpoints.MapGroup("/v1/spec")
             .WithTags("Spec")
-            // Spec is a Terraform-style developer-experience surface that is
-            // currently anonymous by design: the public entry points
-            // (validate/plan/apply/cancel/artifact) intentionally expose the
-            // workflow to unauthenticated callers in early access. Note that
-            // there is NO compensating per-node authorization inside the apply
-            // engine today — the compute executor is still a stub (#790) and
-            // SpecApplyOrchestrator performs no caller authorization — so this
-            // surface must be tightened before real process-family execution
-            // lands behind it. Explicit AllowAnonymous documents that decision
-            // for authorization-policy tooling and the audit guard
-            // (Honua.Architecture.Tests.EndpointAuthorizationGuardTests).
-            // TODO(#1144): tighten to RequireAdminAuthorization once the SDK
-            // and test harness route through an authenticated transport.
-            .AllowAnonymous();
+            // Spec is a Terraform-style developer-experience surface
+            // (validate/plan/apply/cancel/artifact). SpecApplyOrchestrator does
+            // NOT receive the caller principal and performs no per-node
+            // authorization, so the apply engine cannot self-guard: an
+            // unauthenticated caller could otherwise drive the (expensive)
+            // apply DAG, seed the artifact cache, and read cached artifacts by
+            // hash. The surface is therefore gated at the edge to admins until
+            // per-node authorization is threaded through the orchestrator
+            // (#1144). This replaces the previous AllowAnonymous early-access
+            // posture (#1984).
+            .RequireAdminAuthorization();
 
         group.MapPost("/validate", HandleValidateAsync)
             .WithDisplayName("Spec Validate")

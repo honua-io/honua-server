@@ -155,6 +155,105 @@ public sealed class PostgresFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Creates an isolated, uniquely-named PostgreSQL database with the standard
+    /// Honua spatial extensions enabled, and returns a connection string scoped to it.
+    /// </summary>
+    /// <remarks>
+    /// Schema-based isolation (<see cref="CreateIsolatedSchemaAsync"/>) only isolates
+    /// objects that resolve through <c>search_path</c>. Test setup that writes to a
+    /// hard-coded schema (for example DbUp migrations and seeds targeting the literal
+    /// <c>honua</c>/<c>honua_data</c> schemas) is NOT protected by per-test schemas and
+    /// will collide with parallel collections sharing the same database. Such tests must
+    /// use a dedicated database so their fixed-name schemas, catalog DDL locks, and data
+    /// are fully private.
+    /// </remarks>
+    /// <param name="testClassName">Name of the test class (for database naming).</param>
+    /// <returns>A connection string scoped to the freshly created database.</returns>
+    public async Task<string> CreateIsolatedDatabaseAsync(string testClassName)
+    {
+        var counter = _schemaCounters.AddOrUpdate($"db::{testClassName}", 1, (_, c) => c + 1);
+        var databaseName = $"test_{SanitizeSchemaName(testClassName)}_{counter}_{Guid.NewGuid():N}".ToLowerInvariant();
+
+        // CREATE DATABASE cannot run inside a transaction/pooled session that holds other
+        // state, so use a dedicated connection on the bootstrap data source.
+        await using (var conn = await DataSource.OpenConnectionAsync().ConfigureAwait(false))
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"CREATE DATABASE \"{databaseName}\";";
+            await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+
+        var databaseConnectionString = new NpgsqlConnectionStringBuilder(ConnectionString)
+        {
+            Database = databaseName,
+        }.ToString();
+
+        // Enable the same extensions the shared container provisions, so migrations that
+        // depend on PostGIS/pgcrypto behave identically in the isolated database.
+        await ExecuteWithInitializationRetryAsync(async () =>
+        {
+            await using var conn = new NpgsqlConnection(databaseConnectionString);
+            await conn.OpenAsync().ConfigureAwait(false);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
+            await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }).ConfigureAwait(false);
+
+        return databaseConnectionString;
+    }
+
+    /// <summary>
+    /// Drops an isolated database created by <see cref="CreateIsolatedDatabaseAsync"/>.
+    /// </summary>
+    /// <param name="databaseName">The name of the database to drop.</param>
+    public async Task DropDatabaseAsync(string databaseName)
+    {
+        Exception? lastTransient = null;
+
+        for (var attempt = 1; attempt <= DropSchemaMaxAttempts; attempt++)
+        {
+            try
+            {
+                await using var conn = await DataSource.OpenConnectionAsync().ConfigureAwait(false);
+
+                // Terminate any lingering backends so DROP DATABASE is not blocked by
+                // connections still settling in the pool.
+                await using (var terminateCmd = conn.CreateCommand())
+                {
+                    terminateCmd.CommandText = """
+                        SELECT pg_terminate_backend(pid)
+                        FROM pg_stat_activity
+                        WHERE datname = @datname AND pid <> pg_backend_pid();
+                        """;
+                    _ = terminateCmd.Parameters.AddWithValue("datname", databaseName);
+                    terminateCmd.CommandTimeout = DropSchemaCommandTimeoutSeconds;
+                    await terminateCmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                }
+
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"DROP DATABASE IF EXISTS \"{databaseName}\";";
+                cmd.CommandTimeout = DropSchemaCommandTimeoutSeconds;
+                await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (IsTransientDropSchemaFailure(ex))
+            {
+                lastTransient = ex;
+                if (attempt == DropSchemaMaxAttempts)
+                {
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt)).ConfigureAwait(false);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Failed to drop database '{databaseName}' after {DropSchemaMaxAttempts} attempts.",
+            lastTransient);
+    }
+
+    /// <summary>
     /// Drops an isolated schema created for a test.
     /// </summary>
     /// <remarks>

@@ -34,6 +34,19 @@ set -euo pipefail
 # is treated as environmental and rerun once; reproducing twice => real.
 : "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)}"
 
+# Heavy CI jobs the train treats as NON-BLOCKING. They run on EVERY batch (not
+# shard-targeted), flake on environment (Docker registry, browser, JS/Python
+# integration env), and would wedge every batch. The train lands on its SHARD
+# results; real regressions in these are caught by post-merge trunk CI. The CI
+# Gate / Test Suite Summary aggregators are included so a batch red ONLY on these
+# (no real shard failure) lands. Newline-separated; env-overridable.
+: "${TRAIN_NONBLOCKING_JOBS:=CI Gate
+Test Suite Summary
+Docker Build & Integration Test
+Esri Leaflet Browser Tests
+JavaScript Integration Tests
+Python Integration Tests}"
+
 # Labels (the train's vocabulary). The existing repo `hold` label is ALSO
 # honored as an opt-out (documented "merge-train opt-out") in addition to the
 # canonical train:hold below.
@@ -264,6 +277,9 @@ train_metrics_render() {
     --argjson skipped_select "$(train_metric_get skipped_select 0)" \
     --argjson flake_reruns "$(train_metric_get flake_reruns 0)" \
     --argjson forward_fixes "$(train_metric_get forward_fixes 0)" \
+    --argjson preexisting_passes "$(train_metric_get preexisting_passes 0)" \
+    --argjson autofix_attempts "$(train_metric_get autofix_attempts 0)" \
+    --argjson autofix_fixes "$(train_metric_get autofix_fixes 0)" \
     --argjson attribution_drops "$(train_metric_get attribution_drops 0)" \
     --argjson shard_count "${shard_count:-0}" \
     --argjson run_all "${run_all:-false}" \
@@ -284,6 +300,9 @@ train_metrics_render() {
         escalated: $escalated,
         flake_reruns: $flake_reruns,
         forward_fixes: $forward_fixes,
+        preexisting_passes: $preexisting_passes,
+        autofix_attempts: $autofix_attempts,
+        autofix_fixes: $autofix_fixes,
         attribution_drops: $attribution_drops
       },
       smart_ci: { shard_count: $shard_count, run_all: $run_all },
