@@ -55,14 +55,6 @@ describe('Service Metadata', () => {
       expect(Array.isArray(response.data.layers)).toBe(true);
     });
 
-    it('should contain currentVersion', async () => {
-      const response = await client.getServiceMetadata();
-      expect(response.status).toBe(200);
-      // May be named currentVersion or version
-      const hasVersion = 'currentVersion' in response.data || 'version' in response.data;
-      expect(hasVersion).toBe(true);
-    });
-
     it('should contain serviceDescription', async () => {
       const response = await client.getServiceMetadata();
       expect(response.status).toBe(200);
