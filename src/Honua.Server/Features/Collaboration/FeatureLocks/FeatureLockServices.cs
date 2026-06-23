@@ -12,6 +12,7 @@ internal static class FeatureLockServices
     public static IServiceCollection AddFeatureLockCollaboration(this IServiceCollection services)
     {
         services.TryAddSingleton<IFeatureLockService, InMemoryFeatureLockService>();
+        services.TryAddSingleton<IFeatureEditGuard, FeatureEditGuard>();
         services.TryAddSingleton<IFeatureLockAuthorizer, FailClosedFeatureLockAuthorizer>();
         return services;
     }

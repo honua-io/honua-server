@@ -99,7 +99,48 @@ public sealed record FeatureLockHeldError(
 }
 
 /// <summary>
-/// Represents the response returned when a feature edit conflicts with an active lock.
+/// Describes a mismatch between the feature version a client edited against and
+/// the version currently stored on the server (optimistic-concurrency failure).
+/// </summary>
+/// <param name="Code">A stable machine-readable error code.</param>
+/// <param name="Message">A human-readable error message.</param>
+/// <param name="Feature">The feature whose version is stale.</param>
+/// <param name="ExpectedVersion">The version token supplied by the client.</param>
+/// <param name="CurrentVersion">The version token currently stored on the server.</param>
+public sealed record FeatureVersionConflictError(
+    string Code,
+    string Message,
+    FeatureRef Feature,
+    string? ExpectedVersion,
+    string CurrentVersion)
+{
+    /// <summary>
+    /// The stable code emitted for optimistic-concurrency (stale-version) conflicts.
+    /// </summary>
+    public const string ConflictCode = "feature-version-conflict";
+
+    /// <summary>
+    /// Creates a <see cref="FeatureVersionConflictError"/> for a stale edit.
+    /// </summary>
+    /// <param name="feature">The feature whose version is stale.</param>
+    /// <param name="expectedVersion">The version token supplied by the client.</param>
+    /// <param name="currentVersion">The version token currently stored on the server.</param>
+    /// <returns>A populated <see cref="FeatureVersionConflictError"/>.</returns>
+    public static FeatureVersionConflictError Create(
+        FeatureRef feature,
+        string? expectedVersion,
+        string currentVersion)
+        => new(
+            ConflictCode,
+            "The feature changed on the server after it was loaded by the client.",
+            feature,
+            expectedVersion,
+            currentVersion);
+}
+
+/// <summary>
+/// Represents the response returned when a feature edit conflicts with an active
+/// lock or with the version currently stored on the server.
 /// </summary>
 /// <param name="Code">A stable machine-readable conflict code.</param>
 /// <param name="Reason">The underlying reason for the conflict.</param>
@@ -107,6 +148,7 @@ public sealed record FeatureLockHeldError(
 /// <param name="Operation">The edit operation that was attempted.</param>
 /// <param name="Feature">The feature that could not be edited.</param>
 /// <param name="Lock">The lock error that triggered the conflict, if any.</param>
+/// <param name="Version">The version error that triggered the conflict, if any.</param>
 /// <param name="OccurredAt">The instant the conflict occurred.</param>
 public sealed record FeatureEditConflictResponse(
     string Code,
@@ -115,8 +157,14 @@ public sealed record FeatureEditConflictResponse(
     string Operation,
     FeatureRef Feature,
     FeatureLockHeldError? Lock,
+    FeatureVersionConflictError? Version,
     DateTimeOffset OccurredAt)
 {
+    /// <summary>
+    /// The stable top-level conflict code shared by all feature-edit conflicts.
+    /// </summary>
+    public const string ConflictCode = "edit-conflict";
+
     /// <summary>
     /// Creates a conflict response from a held-lock error.
     /// </summary>
@@ -129,12 +177,34 @@ public sealed record FeatureEditConflictResponse(
         FeatureLockHeldError lockError,
         DateTimeOffset occurredAt)
         => new(
-            "edit-conflict",
+            ConflictCode,
             lockError.Code,
             "The edit cannot be applied because the target feature is locked.",
             operation,
             lockError.Feature,
             lockError,
+            Version: null,
+            occurredAt);
+
+    /// <summary>
+    /// Creates a conflict response from a stale-version (optimistic concurrency) error.
+    /// </summary>
+    /// <param name="operation">The edit operation that was attempted.</param>
+    /// <param name="versionError">The version error that caused the conflict.</param>
+    /// <param name="occurredAt">The instant the conflict occurred.</param>
+    /// <returns>A populated <see cref="FeatureEditConflictResponse"/>.</returns>
+    public static FeatureEditConflictResponse FromVersionConflict(
+        string operation,
+        FeatureVersionConflictError versionError,
+        DateTimeOffset occurredAt)
+        => new(
+            ConflictCode,
+            versionError.Code,
+            "The edit cannot be applied because the feature changed on the server.",
+            operation,
+            versionError.Feature,
+            Lock: null,
+            versionError,
             occurredAt);
 }
 
