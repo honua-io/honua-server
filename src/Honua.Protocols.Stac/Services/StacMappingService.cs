@@ -97,6 +97,15 @@ internal sealed class StacMappingService
             type: MediaTypes.Json,
             title: "OGC API Features collection"));
 
+        // Queryables — the Filter Extension requires each collection to advertise its
+        // per-collection queryables document via the OGC queryables rel. The href must
+        // match the queryables document's $id exactly.
+        links.Add(Link.Create(
+            href: $"{stacBase}/collections/{collectionId}/queryables",
+            rel: RelationTypes.Queryables,
+            type: MediaTypes.SchemaJson,
+            title: "Queryables"));
+
         var extent = await BuildStacExtentV2Async(
             resource,
             layerIndex,

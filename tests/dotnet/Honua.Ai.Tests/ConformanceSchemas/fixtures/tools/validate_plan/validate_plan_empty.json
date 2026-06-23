@@ -1,0 +1,11 @@
+{
+  "id": "validate_plan.empty_reports_violations",
+  "schemaRef": "tools/validate_plan.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "plan": {}
+  },
+  "expected": "plan_validation",
+  "canonicalRefs": ["AnalysisPlan", "PlanValidationResult"],
+  "notes": "validate_plan accepts a partial/empty plan so the validator can report EMPTY_PLAN_ID / EMPTY_STEPS as structured violations rather than rejecting at ingest. The empty plan is a VALID input."
+}

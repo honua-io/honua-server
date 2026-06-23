@@ -130,14 +130,15 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         // V2 cutover: capabilities reads the layer display name off MetadataV2Resource.
         // Update the V2 graph so the cite:Autos dimension branch fires.
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;";
-            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
-            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
-            await command.ExecuteNonQueryAsync();
-        }
+        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
+            command =>
+            {
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
+            },
+            _fixture.CurrentSchema);
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1");
@@ -201,22 +202,20 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
                     North = 20037508.342789244,
                 },
             });
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                UPDATE honua.services
-                SET service_extent = ST_MakeEnvelope(
-                    -20037508.342789244,
-                    -20037508.342789244,
-                    20037508.342789244,
-                    20037508.342789244,
-                    3857)
-                WHERE service_name = @serviceName;
-                """;
-            command.Parameters.AddWithValue("serviceName", WebAppFixture.TestServiceId);
-            await command.ExecuteNonQueryAsync();
-        }
+        // #2020: route the global honua.services UPDATE through the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            """
+            UPDATE honua.services
+            SET service_extent = ST_MakeEnvelope(
+                -20037508.342789244,
+                -20037508.342789244,
+                20037508.342789244,
+                20037508.342789244,
+                3857)
+            WHERE service_name = @serviceName;
+            """,
+            command => command.Parameters.AddWithValue("serviceName", WebAppFixture.TestServiceId),
+            _fixture.CurrentSchema);
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");

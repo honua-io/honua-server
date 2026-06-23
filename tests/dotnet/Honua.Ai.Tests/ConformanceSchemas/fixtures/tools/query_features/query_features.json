@@ -1,0 +1,17 @@
+{
+  "id": "query_features.where_and_bbox",
+  "schemaRef": "tools/query_features.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "serviceId": "county_parcels",
+    "layerId": 0,
+    "where": "zoning = 'R1'",
+    "bbox": [-97.95, 30.15, -97.55, 30.55],
+    "bboxSrid": 4326,
+    "outFields": ["parcel_id", "zoning", "acreage"],
+    "limit": 250,
+    "outSrid": 4326
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}

@@ -390,33 +390,38 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         var schemaName = _fixture.CurrentSchema
             ?? throw new InvalidOperationException("Fixture schema is not initialized.");
 
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schemaName);
-
-        await using (var delete = connection.CreateCommand())
+        // #2020: serialize the global honua.raster_data DELETE + INSERT under the schema-mutation
+        // advisory lock (multi-statement, parameterized).
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
-            delete.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-            await delete.ExecuteNonQueryAsync();
-        }
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(schemaName);
 
-        await using var insert = connection.CreateCommand();
-        insert.CommandText = $"""
-            INSERT INTO honua.raster_data (layer_id, name, description, raster, acquisition_date, created_at)
-            SELECT @layerId,
-                   'unsupported-dem',
-                   'Unsupported raster for terrain validation tests',
-                   {rasterSql},
-                   @acquisitionDate,
-                   @createdAt;
-            """;
-        insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-        insert.Parameters.AddWithValue("upperLeftX", -WebMercatorExtent);
-        insert.Parameters.AddWithValue("upperLeftY", WebMercatorExtent);
-        insert.Parameters.AddWithValue("scaleX", 2 * WebMercatorExtent);
-        insert.Parameters.AddWithValue("scaleY", -2 * WebMercatorExtent);
-        insert.Parameters.AddWithValue("acquisitionDate", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
-        insert.Parameters.AddWithValue("createdAt", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
-        await insert.ExecuteNonQueryAsync();
+            await using (var delete = connection.CreateCommand())
+            {
+                delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
+                delete.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+                await delete.ExecuteNonQueryAsync();
+            }
+
+            await using var insert = connection.CreateCommand();
+            insert.CommandText = $"""
+                INSERT INTO honua.raster_data (layer_id, name, description, raster, acquisition_date, created_at)
+                SELECT @layerId,
+                       'unsupported-dem',
+                       'Unsupported raster for terrain validation tests',
+                       {rasterSql},
+                       @acquisitionDate,
+                       @createdAt;
+                """;
+            insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            insert.Parameters.AddWithValue("upperLeftX", -WebMercatorExtent);
+            insert.Parameters.AddWithValue("upperLeftY", WebMercatorExtent);
+            insert.Parameters.AddWithValue("scaleX", 2 * WebMercatorExtent);
+            insert.Parameters.AddWithValue("scaleY", -2 * WebMercatorExtent);
+            insert.Parameters.AddWithValue("acquisitionDate", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
+            insert.Parameters.AddWithValue("createdAt", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
+            await insert.ExecuteNonQueryAsync();
+        });
     }
 
     private static async Task<SKBitmap> DecodeBitmapAsync(HttpResponseMessage response)

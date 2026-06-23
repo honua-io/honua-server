@@ -45,7 +45,29 @@ jq -e '
   and (([.shards[].name] | length) == ([.shards[].name] | unique | length))
   and (([.shards[].artifact_suffix] | length) == ([.shards[].artifact_suffix] | unique | length))
   and (([.shards[].log_name] | length) == ([.shards[].log_name] | unique | length))
+  and (
+    # targeted_override_prefixes (optional) must be well-formed: each entry has a
+    # non-empty prefix, a reason, and a non-empty shard list whose names ALL
+    # reference real shards (a typo would silently route to no shard).
+    (.targeted_override_prefixes // []) | (
+      type == "array"
+      and ([
+        .[]
+        | (.prefix | type == "string" and length > 0)
+          and (.reason | type == "string" and length > 0)
+          and (.shards | type == "array" and length > 0)
+      ] | all)
+    )
+  )
 ' .github/ci-shards.json >/dev/null
+
+echo "Validating targeted_override_prefixes reference real shards..."
+jq -e '
+  ([.shards[].name]) as $names
+  | (.targeted_override_prefixes // [])
+  | all(.shards[] | . as $s | $names | index($s) != null)
+' .github/ci-shards.json >/dev/null \
+  || { echo "::error::a targeted_override_prefixes entry references an unknown shard name" >&2; exit 1; }
 
 echo "Checking shell script syntax..."
 bash -n scripts/ci/*.sh
@@ -278,6 +300,222 @@ assert_descriptor \
 assert_descriptor \
   "hosting-rendering-run-all" \
   "src/Honua.Hosting/Features/Rendering/RasterMapRenderingPipeline.cs" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
+
+# ---------------------------------------------------------------------------
+# targeted_override_prefixes guard (ADR-0037 targeting follow-up): endpoint-
+# registration PLUMBING and shared Honua.Hosting FEATURE-AREA dirs route to a
+# representative SMOKE / auth subset instead of run_all. The always-on
+# architecture/governance guards (EndpointRegistry/OperationRegistry drift +
+# coverage, proof-ledger; Honua.Architecture.Tests on the build job) run on
+# every PR regardless and catch a registration mistake, so a smoke subset here
+# is safe. These lock in the narrowed triggers against regression.
+# ---------------------------------------------------------------------------
+
+# EndpointRegistry.cs alone: registration plumbing -> smoke subset, NOT run_all,
+# and NOT a silent skip. Includes the API/governance shard.
+assert_descriptor \
+  "endpoint-registry-plumbing-smoke" \
+  "src/Honua.Server/EndpointRegistry.cs" \
+  "targeted" \
+  "false" \
+  "STAC and API Governance"
+assert_excludes_shard \
+  "endpoint-registry-excludes-wfs-endpoints" \
+  "src/Honua.Server/EndpointRegistry.cs" \
+  "WFS Endpoints"
+
+# Program.cs (route registration) -> same smoke subset, NOT run_all.
+assert_descriptor \
+  "program-registration-smoke" \
+  "src/Honua.Server/Program.cs" \
+  "targeted" \
+  "false" \
+  "FeatureServer Endpoints"
+
+# Startup/JsonContextRegistration.cs sits under the infrastructure_paths prefix
+# src/Honua.Server/Startup/ but the override must WIN so a JSON-context tweak
+# routes to the smoke subset instead of forcing run_all.
+assert_descriptor \
+  "jsoncontext-registration-smoke" \
+  "src/Honua.Server/Startup/JsonContextRegistration.cs" \
+  "targeted" \
+  "false" \
+  "OData Core"
+
+# An endpoint-ADDING feature PR touches the registration plumbing AND a feature
+# dir under a shard's paths: it runs the smoke subset PLUS that feature's owning
+# shard (here GeoServices ImageServer), and is targeted, not run_all.
+assert_descriptor \
+  "endpoint-adding-feature-includes-feature-shard" \
+  "$(printf '%s\n%s\n%s' \
+      'src/Honua.Server/EndpointRegistry.cs' \
+      'src/Honua.Server/Program.cs' \
+      'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs')" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_descriptor \
+  "endpoint-adding-feature-includes-smoke" \
+  "$(printf '%s\n%s' \
+      'src/Honua.Server/EndpointRegistry.cs' \
+      'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs')" \
+  "targeted" \
+  "false" \
+  "MCP"
+
+# A Honua.Hosting/Features/Authentication/ change -> auth/security shards, NOT
+# run_all and NOT a silent skip.
+assert_descriptor \
+  "hosting-authentication-auth-shards" \
+  "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
+  "targeted" \
+  "false" \
+  "Infra and Security"
+assert_excludes_shard \
+  "hosting-authentication-excludes-featureserver" \
+  "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
+  "FeatureServer Endpoints"
+
+# A Honua.Hosting/Features/Security/ change -> same auth/security shards.
+assert_descriptor \
+  "hosting-security-auth-shards" \
+  "src/Honua.Hosting/Features/Security/SecretReferenceResolver.cs" \
+  "targeted" \
+  "false" \
+  "Infra and Security"
+
+# Conservatism guards: the override must NOT widen run_all coverage. A NON-override
+# Startup file (DI/host bootstrap core) must STILL run_all, and a generic unmapped
+# Honua.Server source file must STILL run_all.
+assert_descriptor \
+  "startup-bootstrap-core-still-run-all" \
+  "src/Honua.Server/Startup/InfrastructureCompositionRoot.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+assert_descriptor \
+  "non-override-hosting-feature-still-run-all" \
+  "src/Honua.Hosting/Features/Caching/HostResponseCache.cs" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
+
+# A registration override mixed with a genuinely cross-cutting Core change still
+# escalates to run_all (the Core file is not override-claimed): override must not
+# mask a real infrastructure change.
+assert_descriptor \
+  "override-plus-core-still-run-all" \
+  "$(printf '%s\n%s' \
+      'src/Honua.Server/Startup/JsonContextRegistration.cs' \
+      'src/Honua.Core/Queries/FeatureQuery.cs')" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+
+# ---------------------------------------------------------------------------
+# #1897 src-dir->shard mapping (follow-up to #2035): mapping each feature's
+# SOURCE tree to the shard(s) whose filter runs its tests stops the
+# unmapped_source_change run_all from firing on normal feature PRs. These lock
+# in the four MEASURED regressions (#1939/#1944/#1961/#1963) — each must now be
+# targeted AND must include the shard that runs its OWN feature's tests.
+# ---------------------------------------------------------------------------
+
+# #1939 raster: src/Honua.Core/Features/Raster/ is the shared raster pipeline
+# adapted by ImageServer + OGC API Coverages + Wcs(WFS). A raster change targets
+# those raster-rendering shards (incl. GeoServices ImageServer which runs the
+# ImageServer raster-sampling tests), NOT run_all.
+assert_descriptor \
+  "raster-core-targeted" \
+  "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_excludes_shard \
+  "raster-core-excludes-featureserver" \
+  "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
+  "FeatureServer Endpoints"
+
+# #1944 collaboration: src/Honua.Server/Features/Collaboration/ (and the Core
+# slice) is owned by the Server Features Misc catch-all (Features.Collaboration.*
+# tests). A collaboration change targets that shard, NOT run_all.
+assert_descriptor \
+  "collaboration-targeted" \
+  "$(printf '%s\n%s' \
+      'src/Honua.Core/Features/Collaboration/FeatureLocks/FeatureEditGuard.cs' \
+      'src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs')" \
+  "targeted" \
+  "false" \
+  "Server Features Misc"
+
+# #1961 output-formats: the shared format/geometry host services in
+# src/Honua.Hosting/Features/Services/ (GeoParquet writer, GeometryService,
+# SpatialReference/Raster helpers) are mapped to every query/format consumer
+# shard (FeatureServer/OData/OGC Features/WFS families, Infra & Security which
+# runs GeometryService/RasterParsingHelpers tests, Server Features Misc which
+# runs Export/FeatureStore, and Core). A change there is targeted across that
+# consumer set, NOT run_all — and includes the FeatureServer query shard that
+# the #1961 FeatureServerQueryHandler change exercises.
+assert_descriptor \
+  "hosting-output-format-services-targeted" \
+  "$(printf '%s\n%s' \
+      'src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs' \
+      'src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerQueryHandler.cs')" \
+  "targeted" \
+  "false" \
+  "FeatureServer Query"
+# Its own OData query path is included too.
+assert_descriptor \
+  "hosting-output-format-services-includes-odata" \
+  "src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs" \
+  "targeted" \
+  "false" \
+  "OData Core"
+
+# #1963 oauth: the GeoServices Sharing source (src/Honua.Protocols.GeoServices/
+# Sharing/) is owned by the Server Features Misc catch-all (Features.Sharing.*),
+# the Admin OAuth endpoints by the Admin & Console shard (Features.Admin.*), and
+# the Hosting/Features/Authentication override routes to the auth/security
+# shards. The combined PR is targeted, NOT run_all, and runs its own tests'
+# shards (Server Features Admin and Console for OAuthClientEndpointsTests).
+assert_descriptor \
+  "oauth-sharing-source-targeted" \
+  "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Misc"
+assert_descriptor \
+  "oauth-admin-endpoints-targeted" \
+  "src/Honua.Server/Features/Admin/OAuthClientEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin and Console"
+
+# A Server/Features/Infrastructure FEATURE subdir (ControlPlane/Errors/Helpers)
+# maps to Infra and Security (Features.Infrastructure.* tests), NOT run_all —
+# while the shared host-wiring subdirs (Hosting/Middleware/Services/Monitoring)
+# still escalate via infrastructure_paths (asserted below).
+assert_descriptor \
+  "infra-feature-controlplane-targeted" \
+  "src/Honua.Server/Features/Infrastructure/ControlPlane/DeployWorkflowService.cs" \
+  "targeted" \
+  "false" \
+  "Infra and Security"
+assert_descriptor \
+  "infra-hosting-wiring-still-run-all" \
+  "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+
+# Cross-cutting Core feature trees NOT mapped to a shard still run_all (the
+# unmapped-source net): e.g. src/Honua.Core/Features/Geometry/ has no owning
+# shard and must not be silently narrowed.
+assert_descriptor \
+  "core-geometry-feature-still-run-all" \
+  "src/Honua.Core/Features/Geometry/GeometryOperations.cs" \
   "unmapped_source_change" \
   "true" \
   "Core"

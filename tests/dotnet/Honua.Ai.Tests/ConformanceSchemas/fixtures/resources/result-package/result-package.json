@@ -1,0 +1,32 @@
+{
+  "id": "result-package.completed",
+  "schemaRef": "resources/result-package.schema.json",
+  "validates": "inputs",
+  "uri": "honua://results/result_3f21",
+  "inputs": {
+    "resultPackageId": "result_3f21",
+    "status": "Completed",
+    "summary": {
+      "title": "Flood exposure of critical facilities",
+      "description": "23 of 412 critical facilities fall within the FEMA 100-year floodplain."
+    },
+    "assumptions": ["Used FEMA 2024 100-year floodplain layer."],
+    "artifacts": [
+      {
+        "artifactId": "artifact_exposed_facilities",
+        "kind": "FeatureLayer",
+        "label": "Exposed facilities",
+        "uri": "honua://workspaces/ws_91/layers/exposed_facilities",
+        "contentType": "application/geo+json",
+        "metadata": { "count": "23" }
+      }
+    ],
+    "provenance": {
+      "processDefinitions": ["intersect"],
+      "executedAt": "2026-06-21T14:02:11Z",
+      "generatedArtifactIds": ["artifact_exposed_facilities"]
+    }
+  },
+  "expected": "resource_projection",
+  "canonicalRefs": ["AnalysisResultPackage", "ArtifactRef", "ProvenanceRecord"]
+}

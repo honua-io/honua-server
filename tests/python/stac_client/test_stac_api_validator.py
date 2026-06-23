@@ -34,17 +34,21 @@ VALIDATOR_GEOMETRY = {
 
 # core / features / item-search are validated end-to-end (re-enabled in honua-server#1925
 # once Items always satisfy the STAC datetime invariant, which previously broke pystac
-# hydration under Features and Item Search). The Item Search Filter Extension class is
-# intentionally not requested here: enabling "filter" alongside "item-search" activates the
-# CQL2-over-/search filter-ext suite, whose remaining gaps (queryables `rel` link on the
-# search root and CQL2 comparisons against undeclared queryables) are tracked separately and
-# are out of scope for the datetime fix. The OGC API Features filter class remains covered by
-# its own conformance run elsewhere.
+# hydration under Features and Item Search). The Item Search Filter Extension class ("filter")
+# is now requested as well (honua-server#1932): the landing page and each collection advertise
+# the OGC queryables rel link
+# (http://www.opengis.net/def/rel/ogc/1.0/queryables) whose href matches the queryables
+# document's $id, and the queryables documents pin JSON Schema draft 2019-09 as the validator
+# requires. A CQL2 filter referencing an undeclared queryable returns a structured 400, which
+# is the spec-permitted behavior given the queryables documents declare
+# "additionalProperties": false. The OGC API Features filter class remains covered by its own
+# conformance run elsewhere.
 VALIDATOR_CONFORMANCE_CLASSES = [
     "core",
     "collections",
     "features",
     "item-search",
+    "filter",
 ]
 VALIDATOR_TIMEOUT_SECONDS = 90
 VALIDATOR_TIMEOUT_EXIT_CODE = 124
