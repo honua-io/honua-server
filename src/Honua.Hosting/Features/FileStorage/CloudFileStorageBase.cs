@@ -186,6 +186,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     public abstract Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
+        bool includeMetadata = true,
         CancellationToken cancellationToken = default);
 
     public abstract Task<string?> GetPresignedUrlAsync(
