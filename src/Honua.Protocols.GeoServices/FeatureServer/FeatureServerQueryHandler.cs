@@ -30,6 +30,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Parsing;
+using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
@@ -1204,6 +1205,22 @@ internal sealed partial class FeatureServerQueryHandler(
             }
 
             return StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter);
+        }
+        catch (ParquetRuntimeUnavailableException ex)
+        {
+            // f=parquet requested on a runtime image that cannot load the native
+            // ParquetSharp Arrow encoder (glibc-only; absent on Alpine/musl). Return a
+            // clean 501 capability response instead of letting the native-load failure
+            // surface as an unhandled 500 (honua-server#1942).
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+
+            if (context.Response.HasStarted)
+            {
+                return _streamingResult;
+            }
+
+            return StandardErrorHelpers.CreateNotImplemented(context, ParquetRuntimeUnavailableException.CapabilityMessage);
         }
         catch (Exception ex)
         {

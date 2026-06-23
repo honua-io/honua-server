@@ -47,8 +47,10 @@ public sealed class ProcessCatalogTests
         // analytics.buffer-aggregate-managed, analytics.density-managed) added by
         // #1260 + 2 native-profile GDAL worker processes (gdal.gdalwarp,
         // gdal.ogr2ogr) reconciled from feat/gdal-heavy-worker + 1 durable
-        // import pipeline (import.dataset) added by #1630.
-        all.Should().HaveCount(58);
+        // import pipeline (import.dataset) added by #1630 + 1 native-profile
+        // point-cloud translate (pcloud.translate, LAZ/COPC decompress +
+        // projected-CRS reproject) added by #1854.
+        all.Should().HaveCount(59);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 

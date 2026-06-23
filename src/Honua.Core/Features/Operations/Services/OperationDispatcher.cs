@@ -86,10 +86,14 @@ public sealed class OperationDispatcher : IOperationInvoker
 
     private OperationHandle BuildDecisionHandle(string operationId, PolicyDecision decision)
     {
+        // Map each non-Allow decision onto its own structured handle status. Deny and
+        // DryRunFirst are distinct terminal outcomes (no side effect occurred), separate
+        // from RequireApproval which routes to the approval lane.
         var status = decision.Kind switch
         {
             PolicyDecisionKind.RequireApproval => OperationHandleStatus.RequiresApproval,
-            PolicyDecisionKind.DryRunFirst => OperationHandleStatus.RequiresApproval,
+            PolicyDecisionKind.DryRunFirst => OperationHandleStatus.DryRunRequired,
+            PolicyDecisionKind.Deny => OperationHandleStatus.Denied,
             _ => OperationHandleStatus.Failed
         };
 
@@ -98,7 +102,11 @@ public sealed class OperationDispatcher : IOperationInvoker
             OperationId = operationId,
             HandleId = NewHandleId(),
             Status = status,
-            ApprovalLane = decision.ApprovalLane,
+
+            // Only RequireApproval routes to an approval lane; Deny/DryRunFirst carry none.
+            ApprovalLane = decision.Kind == PolicyDecisionKind.RequireApproval
+                ? decision.ApprovalLane
+                : null,
             Reason = decision.Reason ?? decision.Kind.ToString()
         };
     }

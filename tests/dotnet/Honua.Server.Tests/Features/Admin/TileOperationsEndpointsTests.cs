@@ -126,6 +126,23 @@ public sealed class TileOperationsEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Accepted, HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/tile-operations/evict")]
+    public async Task Evict_WhenEvictionDisabled_ReturnsOkAndReportsDisabled()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/evict", new { });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // The default test profile has no Redis tile-key index and eviction off, so the sweep is a
+        // no-op that reports it is disabled with zero work done.
+        GetPropertyCaseInsensitive(json.RootElement, "enabled").GetBoolean().Should().BeFalse();
+        GetPropertyCaseInsensitive(json.RootElement, "scanned").GetInt32().Should().Be(0);
+        GetPropertyCaseInsensitive(json.RootElement, "evicted").GetInt32().Should().Be(0);
+        GetPropertyCaseInsensitive(json.RootElement, "message").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
     private async Task<string> StartInvalidateJobAsync()
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new

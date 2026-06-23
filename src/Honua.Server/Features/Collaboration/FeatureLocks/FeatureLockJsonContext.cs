@@ -15,13 +15,17 @@ namespace Honua.Server.Features.Collaboration.FeatureLocks;
     [
         typeof(JsonStringEnumConverter<FeatureLockClaimStatus>),
         typeof(JsonStringEnumConverter<FeatureLockRenewStatus>),
-        typeof(JsonStringEnumConverter<FeatureLockReleaseStatus>)
+        typeof(JsonStringEnumConverter<FeatureLockReleaseStatus>),
+        typeof(JsonStringEnumConverter<FeatureEditDecisionStatus>)
     ])]
 [JsonSerializable(typeof(FeatureLockMutationRequest))]
 [JsonSerializable(typeof(FeatureRef))]
 [JsonSerializable(typeof(LockHolder))]
 [JsonSerializable(typeof(FeatureLockLease))]
 [JsonSerializable(typeof(FeatureLockHeldError))]
+[JsonSerializable(typeof(FeatureVersionConflictError))]
+[JsonSerializable(typeof(FeatureEditConflictResponse))]
+[JsonSerializable(typeof(FeatureEditDecision))]
 [JsonSerializable(typeof(FeatureLockClaimResponse))]
 [JsonSerializable(typeof(FeatureLockRenewResponse))]
 [JsonSerializable(typeof(FeatureLockReleaseResponse))]

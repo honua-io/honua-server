@@ -114,15 +114,37 @@ public static partial class GeoParquetFeatureWriter
 
         using var recordBatch = new RecordBatch(schema, arrays, features.Length);
 
-        using var stream = new MemoryStream();
-        var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
-        using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
-        {
-            writer.WriteRecordBatch(recordBatch);
-            writer.Close();
-        }
+        return (WriteArrowParquet(schema, recordBatch), ContentType);
+    }
 
-        return (stream.ToArray(), ContentType);
+    // Single chokepoint for the native ParquetSharp Arrow encoder. The ParquetSharp NuGet
+    // package ships a glibc-only native binary (ParquetSharpNative) that cannot load on the
+    // Alpine/musl runtime image, so the first construction of ArrowWriterPropertiesBuilder /
+    // FileWriter raises DllNotFoundException (possibly wrapped in TypeInitializationException).
+    // Translate that into a typed ParquetRuntimeUnavailableException so protocol adapters can
+    // return a clean 501 capability response instead of an unhandled 500 (honua-server#1942).
+    private static byte[] WriteArrowParquet(Schema schema, RecordBatch? recordBatch)
+    {
+        try
+        {
+            using var stream = new MemoryStream();
+            var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
+            using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
+            {
+                if (recordBatch is not null)
+                {
+                    writer.WriteRecordBatch(recordBatch);
+                }
+
+                writer.Close();
+            }
+
+            return stream.ToArray();
+        }
+        catch (Exception ex) when (ParquetRuntimeUnavailableException.IsNativeLoadFailure(ex))
+        {
+            throw new ParquetRuntimeUnavailableException(ex);
+        }
     }
 
     /// <summary>
@@ -175,14 +197,7 @@ public static partial class GeoParquetFeatureWriter
     {
         var (schema, _, _) = BuildSchema(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, returnZ, isEmpty: true);
 
-        using var stream = new MemoryStream();
-        var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
-        using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
-        {
-            writer.Close();
-        }
-
-        return (stream.ToArray(), ContentType);
+        return (WriteArrowParquet(schema, recordBatch: null), ContentType);
     }
 
     /// <summary>

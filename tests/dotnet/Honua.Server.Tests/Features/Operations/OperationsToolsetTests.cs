@@ -121,7 +121,7 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
-    public async Task SubmitAsync_With_Deny_Policy_ShortCircuits_Executor_And_Returns_Deny_Handle()
+    public async Task SubmitAsync_With_Deny_Policy_ShortCircuits_Executor_And_Returns_Denied_Handle()
     {
         var publishing = Substitute.For<ILayerPublishingService>();
         var executor = BuildExecutor(publishing);
@@ -132,10 +132,97 @@ public sealed class OperationsToolsetTests
         // The guardrail seam: the executor's publish path is NEVER reached.
         await publishing.DidNotReceive().PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Status.Should().Be(OperationHandleStatus.Denied);
         handle.Result.Should().BeNull();
         handle.MetadataRevision.Should().BeNull();
+        handle.ApprovalLane.Should().BeNull();
         handle.Reason.Should().Contain("blocked by policy");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_With_RequireApproval_Policy_ShortCircuits_Executor_And_Routes_To_Approval_Lane()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var executor = BuildExecutor(publishing);
+        var dispatcher = BuildDispatcher(
+            executor,
+            new StubPolicyDecisionPoint(new PolicyDecision
+            {
+                Kind = PolicyDecisionKind.RequireApproval,
+                Reason = "operator approval required",
+                ApprovalLane = "studio-publish-requests"
+            }));
+
+        var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext(), CancellationToken.None);
+
+        // Guardrail seam: RequireApproval never reaches the executor.
+        await publishing.DidNotReceive().PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.ApprovalLane.Should().Be("studio-publish-requests");
+        handle.Result.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_With_DryRunFirst_Policy_ShortCircuits_Executor_And_Returns_DryRunRequired_Handle()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var executor = BuildExecutor(publishing);
+        var dispatcher = BuildDispatcher(
+            executor,
+            new StubPolicyDecisionPoint(new PolicyDecision
+            {
+                Kind = PolicyDecisionKind.DryRunFirst,
+                Reason = "preview required before commit"
+            }));
+
+        var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext(), CancellationToken.None);
+
+        // Guardrail seam: DryRunFirst never reaches the executor — no side effect.
+        await publishing.DidNotReceive().PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+        handle.Status.Should().Be(OperationHandleStatus.DryRunRequired);
+        handle.ApprovalLane.Should().BeNull();
+        handle.Result.Should().BeNull();
+        handle.Reason.Should().Contain("preview required");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_Flows_Descriptor_Policy_Metadata_Tier_And_Roles_Into_Decision_Input()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var executor = BuildExecutor(publishing);
+
+        // Return a non-Allow decision so the dispatcher short-circuits the executor after the
+        // decision point has captured its inputs — the assertions below are on what reached the
+        // decision point, not on execution.
+        var capturing = new CapturingPolicyDecisionPoint(new PolicyDecision
+        {
+            Kind = PolicyDecisionKind.Deny,
+            Reason = "captured"
+        });
+        var dispatcher = BuildDispatcher(executor, capturing);
+
+        var context = new OperationPolicyContext
+        {
+            PrincipalId = "alice",
+            Tier = "enterprise",
+            Roles = ["operator", "publisher"]
+        };
+
+        await dispatcher.SubmitAsync(BuildRequest(), context, CancellationToken.None);
+
+        // The descriptor's policy metadata reached the decision point...
+        capturing.Descriptor.Should().NotBeNull();
+        capturing.Descriptor!.OperationId.Should().Be("service.publish");
+        capturing.Descriptor.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.ServiceScope);
+        capturing.Descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.CreatesMetadata);
+        capturing.Descriptor.Policy.Determinism.Should().Be(OperationDeterminism.Deterministic);
+
+        // ...alongside the caller's tier and role(s) for a tier/role-aware engine.
+        capturing.Context.Should().NotBeNull();
+        capturing.Context!.Tier.Should().Be("enterprise");
+        capturing.Context.Roles.Should().BeEquivalentTo("operator", "publisher");
     }
 
     private static ServicePublishExecutor BuildExecutor(
@@ -193,5 +280,42 @@ public sealed class OperationsToolsetTests
                 Kind = PolicyDecisionKind.Deny,
                 Reason = "blocked by policy (test stub)"
             });
+    }
+
+    /// <summary>
+    /// Stub decision point that returns a caller-supplied fixed decision, used to prove each
+    /// non-Allow outcome (RequireApproval / DryRunFirst) maps to its handle status.
+    /// </summary>
+    private sealed class StubPolicyDecisionPoint(PolicyDecision decision) : IOperationPolicyDecisionPoint
+    {
+        public Task<PolicyDecision> EvaluateAsync(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(decision);
+    }
+
+    /// <summary>
+    /// Stub decision point that captures the descriptor + context it was evaluated with, used
+    /// to prove the descriptor's policy metadata and the caller's tier/role(s) flow into the
+    /// decision input.
+    /// </summary>
+    private sealed class CapturingPolicyDecisionPoint(PolicyDecision decision) : IOperationPolicyDecisionPoint
+    {
+        public IOperationDescriptor? Descriptor { get; private set; }
+
+        public OperationPolicyContext? Context { get; private set; }
+
+        public Task<PolicyDecision> EvaluateAsync(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Descriptor = descriptor;
+            Context = context;
+            return Task.FromResult(decision);
+        }
     }
 }
