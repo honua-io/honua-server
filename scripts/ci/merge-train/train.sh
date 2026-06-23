@@ -160,16 +160,34 @@ main() {
     train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_LANDING}"
   done
 
-  # --- smart-ci + forward-fix + flake + attribute loop -----------------------
+  # --- direct-merge fast-path vs batch CI ------------------------------------
+  # Every PR select returned is already GREEN on its own (CI Gate SUCCESS) or
+  # FLAKE. If EVERY included PR is SUCCESS, a batch CI can prove nothing the PRs'
+  # own green CI didn't already — re-running the full suite on the combination is
+  # pure waste. Merge them directly (optimistic model: accept the rare
+  # combination-break + forward-fix on trunk). Batch CI runs ONLY when an
+  # included PR is FLAKE (its own CI is red-but-flaky) and needs verification.
+  local all_green=1 _pr_g _g_state
+  for _pr_g in $(tr ',' ' ' <<<"${included}"); do
+    _g_state="$(jq -r --argjson n "${_pr_g}" 'map(select(.number==$n))[0].gate // "UNKNOWN"' <<<"${selected}")"
+    [[ "${_g_state}" != "SUCCESS" ]] && all_green=0
+  done
+
+  # --- smart-ci (skipped on the all-green fast-path) -------------------------
   train_group smart-ci "compute shard subset for the batch's cumulative diff"
   train_step_begin smart-ci
-  local shard_descriptor
-  shard_descriptor="$(train_smart_ci_shards "${batch}")"
-  train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
-  train_decision "smart-CI shard subset: ${shard_descriptor}"
-
-  local gate fwdfix=0 flake_reruns=0
-  gate="$(train_smart_ci_run "${batch}")"
+  local shard_descriptor gate fwdfix=0 flake_reruns=0
+  if [[ "${all_green}" == "1" ]]; then
+    shard_descriptor='{"reason":"direct-merge-all-green","run_all":false,"shards":[]}'
+    train_metric_set direct_merge 1
+    train_decision "all included PRs green on their own (CI Gate SUCCESS) — skipping batch CI; direct optimistic merge"
+    gate="SUCCESS"
+  else
+    shard_descriptor="$(train_smart_ci_shards "${batch}")"
+    train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
+    train_decision "smart-CI shard subset: ${shard_descriptor}"
+    gate="$(train_smart_ci_run "${batch}")"
+  fi
   train_step_end smart-ci >/dev/null
   train_endgroup
 
