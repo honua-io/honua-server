@@ -808,6 +808,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.WorkflowPackages.WorkflowPackagesJsonContext.Default,
         Honua.Server.Features.Operations.OperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
+        Honua.Server.Features.Admin.Models.OAuthClientJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.NetworkDatasetAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
@@ -1336,6 +1337,7 @@ app.MapOperationsEndpoints();
 Honua.Server.Features.Console.Publications.ContentPublicationEndpoints.MapContentPublicationEndpoints(app);
 Honua.Server.Features.Console.Publications.PublishedRouteEndpoints.MapPublishedRouteEndpoints(app);
 app.MapAdminApiKeyEndpoints();
+app.MapOAuthClientEndpoints();
 app.MapPackageReviewEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)
