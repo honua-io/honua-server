@@ -228,4 +228,53 @@ public class ZarrMetadataExtractorTests
 
         (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*filters*not supported*");
     }
+
+    [Fact]
+    public async Task ReadMetadataAsync_EvenlySpacedVerticalAxis_IsDiscovered()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedWithVerticalAxis(
+            root: "stores/vertical", levels: 4, rows: 4, cols: 4, explicitCoordinates: false);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var extractor = new ZarrMetadataExtractor();
+
+        var metadata = await extractor.ReadMetadataAsync(reader, "bucket", "stores/vertical");
+
+        metadata.Axes.Should().HaveCount(1);
+        var axis = metadata.Axes[0];
+        axis.Name.Should().Be("elevation");
+        axis.Count.Should().Be(4);
+        axis.Coordinates.Should().BeNull();
+        axis.Start.Should().Be(0);
+        axis.End.Should().Be(1000);
+        axis.Unit.Should().Be("m");
+        axis.Positive.Should().Be("up");
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_ExplicitVerticalAxis_CarriesCoordinates()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedWithVerticalAxis(
+            root: "stores/vertical-explicit", levels: 4, rows: 4, cols: 4, explicitCoordinates: true);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var extractor = new ZarrMetadataExtractor();
+
+        var metadata = await extractor.ReadMetadataAsync(reader, "bucket", "stores/vertical-explicit");
+
+        metadata.Axes.Should().HaveCount(1);
+        metadata.Axes[0].Coordinates.Should().Equal(0d, 10d, 100d, 1000d);
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_NoAxesManifest_YieldsEmptyAxes()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedZlib(
+            root: "stores/noaxes", rows: 8, cols: 8, chunkRows: 4, chunkCols: 4,
+            sample: (r, c) => r + c, srid: 4326, xMin: -180, yMin: -90, xMax: 180, yMax: 90);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var extractor = new ZarrMetadataExtractor();
+
+        var metadata = await extractor.ReadMetadataAsync(reader, "bucket", "stores/noaxes");
+
+        metadata.Axes.Should().BeEmpty();
+    }
 }

@@ -24,12 +24,21 @@ jobs:
       github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      # Check out the DEFAULT branch's classifier — the single shared source of the
+      # leaf/aggregator + FLAKY/SOLID regex sets (scripts/ci/ci-failure-classifier.js),
+      # consumed by both this workflow and ci-failure-triage.yml (#2021) so they can
+      # never drift. Never the PR's copy — a PR must not rewrite its own flake rules.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
       - uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.MERGE_TRAIN_TOKEN }}
           script: |
             const owner = context.repo.owner, repo = context.repo.repo;
             const run = context.payload.workflow_run;
+            const { classifyFailures } = require('./scripts/ci/ci-failure-classifier.js');
 
             const { data: jobsResp } = await github.rest.actions.listJobsForWorkflowRun({
               owner, repo, run_id: run.id, per_page: 100, filter: 'latest',
@@ -38,48 +47,15 @@ jobs:
               .filter(j => j.conclusion === 'failure')
               .map(j => j.name);
 
-            if (failed.length === 0) {
-              core.info('No failed jobs found (already rerun or transient list) — skipping.');
+            // Shared classifier: excludes aggregator roll-ups (CI Gate / Test Suite
+            // Summary), treats SOLID leaf gates (Build/Format/Analyze/AOT/...) as real,
+            // and only the known-flaky shards as rerun-eligible. Identical intent to
+            // the previous inline logic — now sourced from one module.
+            const { verdict, reason, flakyFailed } = classifyFailures(failed);
+            if (verdict !== 'flake-only') {
+              core.info(`No auto-rerun (${verdict}): ${reason}`);
               return;
             }
 
-            // Aggregator roll-ups, NOT independent signals: these fail whenever ANY
-            // downstream job fails, so they carry no information about real-vs-flake.
-            // They must be excluded before classification — otherwise a pure shard
-            // flake that trips `CI Gate` (which it always does) would look like a
-            // deterministic-gate failure and never get its retry. Classify only the
-            // LEAF jobs.
-            const AGGREGATORS = [/CI Gate/i, /Test Suite Summary/i];
-            const leafFailed = failed.filter(n => !AGGREGATORS.some(r => r.test(n)));
-
-            if (leafFailed.length === 0) {
-              core.info(`Only aggregator roll-ups failed (${failed.join(', ')}); no leaf job to rerun — skipping.`);
-              return;
-            }
-
-            // Deterministic gates — a failure in a LEAF gate is real, never auto-rerun.
-            // (CI Gate / Test Suite Summary are aggregators, handled above — not here.)
-            const SOLID = [
-              /Build & Format/i, /\bFormat\b/i, /Analyze/i, /CodeQL/i,
-              /PR Template/i, /Router/i, /Mergeability/i,
-              /AOT/i, /Package Compatibility/i, /Type Check/i,
-            ];
-            // Known-flaky integration/infra shards — transient, eligible for one retry.
-            const FLAKY = [
-              /Server Tests/i, /OGC API/i, /Postgres Compatibility/i,
-              /Docker Build/i, /Integration Tests/i, /Browser/i, /MCP/i,
-            ];
-
-            const anySolid = leafFailed.some(n => SOLID.some(r => r.test(n)));
-            if (anySolid) {
-              core.info(`Deterministic leaf gate failed (${leafFailed.join(', ')}) — not a flake, no rerun.`);
-              return;
-            }
-            const allFlaky = leafFailed.every(n => FLAKY.some(r => r.test(n)));
-            if (!allFlaky) {
-              core.info(`Leaf failures not all in the known-flaky set (${leafFailed.join(', ')}) — no auto-rerun.`);
-              return;
-            }
-
-            core.info(`Re-running failed flaky jobs once: ${failed.join(', ')}`);
+            core.info(`Re-running failed flaky jobs once: ${flakyFailed.join(', ')}`);
             await github.rest.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: run.id });

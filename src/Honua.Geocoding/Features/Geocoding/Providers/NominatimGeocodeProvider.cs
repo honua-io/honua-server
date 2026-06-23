@@ -36,15 +36,10 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
 
-        // Configure HTTP client
-        _httpClient.Timeout = TimeSpan.FromSeconds(configuration.TimeoutSeconds);
-        _httpClient.DefaultRequestHeaders.UserAgent.Clear();
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(configuration.UserAgent);
-
-        if (!string.IsNullOrWhiteSpace(configuration.Email))
-        {
-            _httpClient.DefaultRequestHeaders.Add("X-Contact-Email", configuration.Email);
-        }
+        // The injected HttpClient may be a shared/pooled typed client. Mutating its Timeout or
+        // DefaultRequestHeaders here would throw once a request has started and would bleed
+        // configuration across scopes, so per-request User-Agent/contact headers and timeout are
+        // applied on each outbound request instead (see SendAsync).
     }
 
     /// <inheritdoc />
@@ -96,7 +91,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildSearchUrl(request);
-            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await SendGetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -154,7 +149,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = BuildReverseUrl(request);
-            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await SendGetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -229,7 +224,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         try
         {
             var url = $"{_configuration.BaseUrl.TrimEnd('/')}/status.php?format=json";
-            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await SendGetAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -248,6 +243,30 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
                 ErrorCode = GeocodeErrorCodes.NetworkTimeout
             };
         }
+    }
+
+    /// <summary>
+    /// Issues a GET against the injected (potentially shared) HttpClient, applying the configured
+    /// User-Agent, optional contact email header, and request timeout per request rather than
+    /// mutating the shared client. The caller owns disposal of the returned response.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendGetAsync(string url, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.Clear();
+        request.Headers.UserAgent.ParseAdd(_configuration.UserAgent);
+
+        if (!string.IsNullOrWhiteSpace(_configuration.Email))
+        {
+            request.Headers.Add("X-Contact-Email", _configuration.Email);
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(_configuration.TimeoutSeconds));
+
+        return await _httpClient
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
+            .ConfigureAwait(false);
     }
 
     private async Task EnsureSafeBaseUrlAsync(CancellationToken cancellationToken)
