@@ -78,6 +78,7 @@ export TRAIN_REPO_ROOT="${WORK}"
 
 # shellcheck source=../lib.sh
 . "${TRAIN_DIR}/lib.sh"
+. "${TRAIN_DIR}/bedrock-invoke.sh"
 . "${TRAIN_DIR}/assemble.sh"
 . "${TRAIN_DIR}/smart-ci.sh"
 . "${TRAIN_DIR}/forward-fix.sh"
@@ -295,6 +296,113 @@ assert_eq "select: COMPLETED+SUCCESS => SUCCESS" "$(train_select_ci_gate_state '
 assert_eq "select: COMPLETED+FAILURE => FAIL" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"COMPLETED","conclusion":"FAILURE"}]')" "FAIL"
 assert_eq "select: QUEUED => PENDING" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"QUEUED","conclusion":""}]')" "PENDING"
 assert_eq "select: absent => MISSING" "$(train_select_ci_gate_state '[]')" "MISSING"
+
+echo
+echo "== Phase 2: gated Bedrock LLM judgments (mock; no real Bedrock) =="
+# A fake bedrock_ask, wired via TRAIN_BEDROCK_ASK_CMD. It records that it was
+# called (so we can assert the gates NEVER touch it when TRAIN_LLM=0) and returns
+# whatever canned answer the test stuffs into FAKE_BEDROCK_ANSWER. Setting the
+# answer to the error sentinel simulates a Bedrock outage/timeout.
+BEDROCK_CALLS="${SCRATCH}/bedrock_calls"; : >"${BEDROCK_CALLS}"
+__fake_bedrock() {  # __fake_bedrock <system> <user>
+  echo "called" >>"${BEDROCK_CALLS}"
+  printf '%s\n' "${FAKE_BEDROCK_ANSWER:-}"
+}
+export -f __fake_bedrock
+export TRAIN_BEDROCK_ASK_CMD=__fake_bedrock
+reset_calls() { : >"${BEDROCK_CALLS}"; }
+calls() { wc -l <"${BEDROCK_CALLS}" | tr -d ' '; }
+
+# Two PR file sets with HEAVY overlap (B's files all appear in A) => ambiguous.
+FILES_A=$'src/Honua.Core/Query/Filter.cs\nsrc/Honua.Core/Query/Paging.cs\nsrc/Honua.Core/Query/Crs.cs'
+FILES_B=$'src/Honua.Core/Query/Filter.cs\nsrc/Honua.Core/Query/Paging.cs'  # 100% of B in A
+# A non-overlapping pair (deterministic-only, never ambiguous).
+FILES_C=$'docs/readme.md'
+
+# Pure overlap ratio is testable on its own.
+assert_eq "p2 overlap: B fully in A => 100" "$(train_pr_overlap_ratio "${FILES_A}" "${FILES_B}")" "100"
+assert_eq "p2 overlap: disjoint => 0" "$(train_pr_overlap_ratio "${FILES_A}" "${FILES_C}")" "0"
+
+echo "-- (a) TRAIN_LLM=0: gates NEVER call Bedrock; behavior == Phase-1 deterministic --"
+export TRAIN_LLM=0
+reset_calls
+# select.overlap: deterministic fallback is PROCEED (rc1), even on heavy overlap.
+train_select_should_wait 10 "${FILES_A}" 11 "${FILES_B}" && bad "p2 select(llm0): heavy overlap must still PROCEED" || ok "p2 select(llm0): PROCEED (Phase-1 ordering)"
+assert_eq "p2 select(llm0): no bedrock call" "$(calls)" "0"
+# classify-flake unknown: deterministic fallback is REAL (rc1).
+reset_calls
+export TRAIN_RUN_LOG_TEXT="Assert.Equal() Failure: expected 3 actual 4"
+train_classify_flake_unknown 999 && bad "p2 flake(llm0): unknown must be REAL" || ok "p2 flake(llm0): unknown => REAL (conservative)"
+assert_eq "p2 flake(llm0): no bedrock call" "$(calls)" "0"
+# forward-fix heal: deterministic fallback is ESCALATE (rc1).
+reset_calls
+train_forward_fix_heal_safe "server-tests (OpenAPI drift)" "openapi.json out of date" && bad "p2 heal(llm0): must ESCALATE" || ok "p2 heal(llm0): ESCALATE (never auto-patch)"
+assert_eq "p2 heal(llm0): no bedrock call" "$(calls)" "0"
+unset TRAIN_RUN_LOG_TEXT
+
+echo "-- (b) TRAIN_LLM=1: each gate fires ONLY in its ambiguous condition, routes on yes/no --"
+export TRAIN_LLM=1
+# select.overlap: BELOW threshold (disjoint) must NOT call the LLM at all.
+reset_calls
+FAKE_BEDROCK_ANSWER="YES" train_select_should_wait 10 "${FILES_A}" 11 "${FILES_C}" && bad "p2 select(llm1,low-overlap): disjoint must PROCEED" || ok "p2 select(llm1): disjoint => PROCEED without LLM"
+assert_eq "p2 select(llm1): low-overlap skips bedrock" "$(calls)" "0"
+# select.overlap: heavy overlap + LLM says YES => WAIT (rc0).
+reset_calls
+FAKE_BEDROCK_ANSWER="YES, B depends on A" train_select_should_wait 10 "${FILES_A}" 11 "${FILES_B}" && ok "p2 select(llm1): heavy overlap + YES => WAIT" || bad "p2 select(llm1): YES should WAIT"
+assert_eq "p2 select(llm1,yes): bedrock consulted once" "$(calls)" "1"
+# select.overlap: heavy overlap + LLM says NO => PROCEED (rc1).
+reset_calls
+FAKE_BEDROCK_ANSWER="NO, independent" train_select_should_wait 10 "${FILES_A}" 11 "${FILES_B}" && bad "p2 select(llm1): NO should PROCEED" || ok "p2 select(llm1): heavy overlap + NO => PROCEED"
+assert_eq "p2 select(llm1,no): bedrock consulted once" "$(calls)" "1"
+
+# classify-flake unknown: a KNOWN signature must NOT reach the LLM (still flake).
+reset_calls
+export TRAIN_RUN_LOG_TEXT="40P01 deadlock detected"
+train_run_logs_match_flake 999 && ok "p2 flake(llm1): known signature handled deterministically" || bad "p2 flake(llm1): 40P01 should match"
+assert_eq "p2 flake(llm1): known signature skips bedrock" "$(calls)" "0"
+# Unknown signature + LLM says TRANSIENT => rc0 (rerunnable), learns regex.
+reset_calls
+export TRAIN_RUN_LOG_TEXT="ECONNRESET talking to package registry mid-restore"
+LEARN="${SCRATCH}/learned_regex"; : >"${LEARN}"
+export TRAIN_FLAKE_REGEX_LEARN_FILE="${LEARN}" TRAIN_APPLY=1
+FAKE_BEDROCK_ANSWER=$'TRANSIENT\nECONNRESET.*package registry' train_classify_flake_unknown 999 && ok "p2 flake(llm1): unknown + TRANSIENT => rerunnable" || bad "p2 flake(llm1): TRANSIENT should be rc0"
+assert_eq "p2 flake(llm1,transient): bedrock consulted once" "$(calls)" "1"
+grep -Fq 'ECONNRESET.*package registry' "${LEARN}" && ok "p2 flake(llm1): learned regex appended (apply mode)" || bad "p2 flake(llm1): learned regex not recorded"
+# Unknown signature + LLM says REAL => rc1.
+reset_calls
+FAKE_BEDROCK_ANSWER="REAL" train_classify_flake_unknown 999 && bad "p2 flake(llm1): REAL should be rc1" || ok "p2 flake(llm1): unknown + REAL => real failure"
+assert_eq "p2 flake(llm1,real): bedrock consulted once" "$(calls)" "1"
+unset TRAIN_RUN_LOG_TEXT TRAIN_FLAKE_REGEX_LEARN_FILE; export TRAIN_APPLY=0
+
+# forward-fix heal: LLM says HEAL with an allowlisted generator => rc0 + name.
+reset_calls
+FAKE_BEDROCK_ANSWER=$'HEAL\nupdate-openapi-snapshot'
+gen="$(train_forward_fix_heal_safe "server-tests (OpenAPI drift)" "openapi.json out of date")" && \
+  assert_eq "p2 heal(llm1): HEAL => allowlisted generator" "${gen}" "update-openapi-snapshot" || bad "p2 heal(llm1): HEAL should return generator"
+assert_eq "p2 heal(llm1,heal): bedrock consulted once" "$(calls)" "1"
+# forward-fix heal: LLM says HEAL but a NON-allowlisted generator => ESCALATE (safety).
+reset_calls
+FAKE_BEDROCK_ANSWER=$'HEAL\nrm -rf /' train_forward_fix_heal_safe "server-tests (drift)" "x" && bad "p2 heal(llm1): non-allowlisted must ESCALATE" || ok "p2 heal(llm1): HEAL + bad generator => ESCALATE (safety)"
+# forward-fix heal: LLM says ESCALATE => rc1 (the expected usual answer).
+reset_calls
+FAKE_BEDROCK_ANSWER="ESCALATE" train_forward_fix_heal_safe "server-tests (drift)" "x" && bad "p2 heal(llm1): ESCALATE should be rc1" || ok "p2 heal(llm1): ESCALATE => human fix"
+
+echo "-- (c) Bedrock error => deterministic fallback; train never blocks --"
+# select.overlap: heavy overlap but Bedrock errors => PROCEED (Phase-1 ordering).
+reset_calls
+FAKE_BEDROCK_ANSWER="${BEDROCK_ERROR_SENTINEL}" train_select_should_wait 10 "${FILES_A}" 11 "${FILES_B}" && bad "p2 select(err): must fall back to PROCEED" || ok "p2 select(err): bedrock error => PROCEED (no block)"
+# classify-flake unknown: Bedrock errors => REAL (conservative fallback).
+reset_calls
+export TRAIN_RUN_LOG_TEXT="some novel failure"
+FAKE_BEDROCK_ANSWER="${BEDROCK_ERROR_SENTINEL}" train_classify_flake_unknown 999 && bad "p2 flake(err): must fall back to REAL" || ok "p2 flake(err): bedrock error => REAL"
+unset TRAIN_RUN_LOG_TEXT
+# forward-fix heal: Bedrock errors => ESCALATE.
+reset_calls
+FAKE_BEDROCK_ANSWER="${BEDROCK_ERROR_SENTINEL}" train_forward_fix_heal_safe "server-tests (drift)" "x" && bad "p2 heal(err): must fall back to ESCALATE" || ok "p2 heal(err): bedrock error => ESCALATE"
+# Sanity: bedrock_ask itself returns the sentinel (never crashes) when disabled.
+TRAIN_LLM=0 ans_disabled="$(bedrock_ask sys usr)"; assert_eq "p2 bedrock_ask: disabled => sentinel" "${ans_disabled}" "${BEDROCK_ERROR_SENTINEL}"
+
+unset TRAIN_BEDROCK_ASK_CMD FAKE_BEDROCK_ANSWER TRAIN_LLM
 
 echo
 printf 'RESULT: %d passed, %d failed\n' "${PASS}" "${FAIL}"
