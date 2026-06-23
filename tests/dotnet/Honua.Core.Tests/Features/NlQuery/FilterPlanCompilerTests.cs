@@ -600,6 +600,18 @@ public sealed class FilterPlanCompilerTests
         geom.Srid.Should().Be(4326, "untagged GeoJSON defaults to WGS 84 regardless of layer SRID");
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Deserialize_WithNullClauses_CoalescesToEmptyArrayInsteadOfNull()
+    {
+        // STJ overwrites the [] default with null for a literal "clauses": null, so
+        // plan.Clauses.Length would NRE out of the provider's parse path (#1986).
+        var plan = Deserialize("""{ "combinator": "and", "clauses": null }""");
+
+        plan.Clauses.Should().NotBeNull();
+        plan.Clauses.Length.Should().Be(0);
+    }
+
     private static FilterPlan Deserialize(string json)
     {
         return JsonSerializer.Deserialize<FilterPlan>(json)

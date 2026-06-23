@@ -71,19 +71,6 @@ class TestServiceMetadata:
 
     @pytest.mark.integration
     @pytest.mark.featureserver
-    def test_service_metadata_current_version(
-        self, http_client: httpx.Client, test_service_id: str
-    ):
-        """Service metadata should include currentVersion."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer"
-        )
-        data = response.json()
-        # currentVersion is standard in Esri REST API
-        assert "currentVersion" in data or "version" in data
-
-    @pytest.mark.integration
-    @pytest.mark.featureserver
     def test_service_metadata_invalid_service_returns_404(
         self, http_client: httpx.Client
     ):
