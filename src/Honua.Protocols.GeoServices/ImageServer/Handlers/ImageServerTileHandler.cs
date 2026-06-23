@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Tiles;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Protocols.GeoServices;
 using Honua.Infrastructure.Models;
@@ -126,6 +127,7 @@ internal sealed class ImageServerTileHandler
             {
                 var storage = context.RequestServices.GetService<ICloudFileStorage>();
                 var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
+                var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
                 var tileCacheKey = BuildImageServerTileCacheKey(
                     storageOptions,
                     snapshot.Etag,
@@ -139,7 +141,7 @@ internal sealed class ImageServerTileHandler
                     row,
                     col);
 
-                if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken).ConfigureAwait(false) is { } cachedTile)
+                if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
                 {
                     ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
                     scope.SetSuccess(1);
@@ -188,7 +190,8 @@ internal sealed class ImageServerTileHandler
                             .Add("y", row.ToString(CultureInfo.InvariantCulture))
                             .Add("format", rasterFormat.ToString())
                             .Add("metadataEtag", snapshot.Etag),
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken,
+                        tileCacheKeyIndex).ConfigureAwait(false);
                     return Results.File(result.Data, result.ContentType);
                 }
             }
