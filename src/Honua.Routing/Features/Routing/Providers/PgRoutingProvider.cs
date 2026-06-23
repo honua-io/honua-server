@@ -36,6 +36,13 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     private readonly INetworkDatasetResolver _datasetResolver;
     private readonly string _networkDatasetId;
 
+    // Declared physical unit of the topology's cost/reverse_cost weights. All
+    // time conversions (route time outputs, isochrone @break_cost, and the
+    // closest-facility / OD-cost-matrix cutoffs) go through
+    // RoutingCostUnitConverter against this unit so the cost-unit contract is
+    // applied in exactly one place.
+    private readonly RoutingCostUnit _costUnit;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="PgRoutingProvider"/> class
     /// bound to the built-in default network dataset (the existing
@@ -51,7 +58,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             sessionFactory,
             logger,
             new DefaultNetworkDatasetResolver(),
-            NetworkDataset.DefaultId)
+            NetworkDataset.DefaultId,
+            RoutingCostUnit.Minutes)
     {
     }
 
@@ -73,7 +81,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             sessionFactory,
             logger,
             datasetResolver,
-            (options ?? throw new ArgumentNullException(nameof(options))).Value.NetworkDatasetId)
+            (options ?? throw new ArgumentNullException(nameof(options))).Value.NetworkDatasetId,
+            options.Value.CostUnit)
     {
     }
 
@@ -81,7 +90,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         IDatabaseSessionFactory sessionFactory,
         ILogger<PgRoutingProvider> logger,
         INetworkDatasetResolver datasetResolver,
-        string networkDatasetId)
+        string networkDatasetId,
+        RoutingCostUnit costUnit)
     {
         _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -89,6 +99,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         _networkDatasetId = string.IsNullOrWhiteSpace(networkDatasetId)
             ? NetworkDataset.DefaultId
             : networkDatasetId;
+        _costUnit = costUnit;
     }
 
     /// <summary>
@@ -244,14 +255,17 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var (geometryGeoJson, lengthMeters) = await MergeEdgeGeometryAsync(
                 session, dataset, steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
 
-            // The pgRouting cost weight is treated as travel-time minutes for the MVP;
-            // the geodesic length is computed from the geometry in meters.
+            // The raw pgRouting cost weight is converted to travel-time minutes
+            // through the declared cost-unit contract (see RoutingCostUnitConverter /
+            // RoutingConfiguration.CostUnit); the geodesic length is computed from the
+            // geometry in meters.
+            var totalTimeMinutes = RoutingCostUnitConverter.CostToMinutes(totalCost, _costUnit);
             var directions = new List<RouteDirectionStep>
             {
-                new("Route", lengthMeters, totalCost, "straight"),
+                new("Route", lengthMeters, totalTimeMinutes, "straight"),
             };
 
-            var result = new RouteSolveResult(geometryGeoJson, lengthMeters, totalCost, directions);
+            var result = new RouteSolveResult(geometryGeoJson, lengthMeters, totalTimeMinutes, directions);
             activity?.SetTag("honua.routing.solved", result.Solved);
             activity?.SetTag("honua.routing.length_m", lengthMeters);
             return result;
@@ -329,8 +343,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
+                    // Breaks arrive in minutes (Esri defaultBreaks); convert to the
+                    // raw cost unit before passing as the pgr_drivingDistance cutoff.
+                    // The emitted polygon keeps the request-minute break values.
+                    var breakCost = RoutingCostUnitConverter.MinutesToCost(toBreak, _costUnit);
                     var geometry = await SolveServiceAreaRingAsync(
-                        session, dataset, vertexId.Value, toBreak, edgesSql, request.OutSrid, cancellationToken)
+                        session, dataset, vertexId.Value, breakCost, edgesSql, request.OutSrid, cancellationToken)
                         .ConfigureAwait(false);
 
                     // Skip degenerate rings: pgRouting may reach fewer than three
@@ -428,13 +446,20 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 var costs = await OneToManyCostAsync(
                     session, edgesSql, incidentVertex.Value, destVids, cancellationToken).ConfigureAwait(false);
 
+                // The cutoff arrives in minutes; convert it to the raw cost unit so it
+                // compares against the pgRouting aggregate costs (the same cost-unit
+                // contract used for the emitted route time below).
+                var cutoffCost = request.Cutoff is { } cutoffMinutes
+                    ? RoutingCostUnitConverter.MinutesToCost(cutoffMinutes, _costUnit)
+                    : (double?)null;
+
                 // Rank facilities by cost. Each facility maps to its snapped vertex;
                 // multiple facilities may share a vertex, so resolve cost per facility.
                 var ranked = facilityVertices
                     .Select((f, idx) => (FacilityId: idx, f.VertexId))
                     .Where(x => x.VertexId is not null && costs.TryGetValue(x.VertexId!.Value, out _))
                     .Select(x => (x.FacilityId, Cost: costs[x.VertexId!.Value]))
-                    .Where(x => request.Cutoff is not { } cutoff || x.Cost <= cutoff)
+                    .Where(x => cutoffCost is not { } cutoff || x.Cost <= cutoff)
                     .OrderBy(x => x.Cost)
                     .Take(targetCount)
                     .ToList();
@@ -456,14 +481,17 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                             session, dataset, legValue.Steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
                     }
 
+                    // Convert the raw cost impedance to travel-time minutes for the
+                    // route time and its single summary direction step.
+                    var costMinutes = RoutingCostUnitConverter.CostToMinutes(cost, _costUnit);
                     routes.Add(new ClosestFacilityRoute(
                         incidentId,
                         facilityId,
                         rank,
                         geometry,
                         length,
-                        cost,
-                        [new RouteDirectionStep($"Incident {incidentId} - Facility {facilityId}", length, cost, "straight")]));
+                        costMinutes,
+                        [new RouteDirectionStep($"Incident {incidentId} - Facility {facilityId}", length, costMinutes, "straight")]));
                     rank++;
                 }
             }
@@ -536,6 +564,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 var costs = await OneToManyCostAsync(
                     session, edgesSql, originVid.Value, destVids, cancellationToken).ConfigureAwait(false);
 
+                // The cutoff arrives in minutes; convert it to the raw cost unit so it
+                // compares against the pgRouting aggregate costs.
+                var cutoffCost = request.Cutoff is { } cutoffMinutes
+                    ? RoutingCostUnitConverter.MinutesToCost(cutoffMinutes, _costUnit)
+                    : (double?)null;
+
                 var perOrigin = new List<(int DestinationId, double Cost)>();
                 for (var destId = 0; destId < destVertices.Count; destId++)
                 {
@@ -545,7 +579,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                         continue;
                     }
 
-                    if (request.Cutoff is { } cutoff && cost > cutoff)
+                    if (cutoffCost is { } cutoff && cost > cutoff)
                     {
                         continue;
                     }
@@ -562,7 +596,9 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 var rank = 1;
                 foreach (var (destinationId, cost) in ranked)
                 {
-                    lines.Add(new OdLine(originId, destinationId, rank, cost, 0));
+                    // Emit the impedance in travel-time minutes (OdLine.TotalCostMinutes).
+                    var costMinutes = RoutingCostUnitConverter.CostToMinutes(cost, _costUnit);
+                    lines.Add(new OdLine(originId, destinationId, rank, costMinutes, 0));
                     rank++;
                 }
             }
@@ -647,7 +683,10 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     var demandVid = demandVertices[d].VertexId;
                     if (demandVid is not null && costs.TryGetValue(demandVid.Value, out var cost))
                     {
-                        matrix[f][d] = cost;
+                        // The solver works in travel-time minutes: it compares against
+                        // the request's minute ImpedanceCutoff and emits ImpedanceMinutes,
+                        // so the raw cost is converted to minutes here.
+                        matrix[f][d] = RoutingCostUnitConverter.CostToMinutes(cost, _costUnit);
                     }
                 }
             }
