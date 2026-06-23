@@ -11,13 +11,31 @@
 # TRAIN_RUN_LOG_TEXT supplies log text directly (offline fixtures).
 train_run_logs_match_flake() {
   local run_id="$1"
-  local text
+  # Fixture/test injection short-circuit.
   if [[ -n "${TRAIN_RUN_LOG_TEXT:-}" ]]; then
-    text="${TRAIN_RUN_LOG_TEXT}"
-  else
-    text="$(gh run view "${run_id}" --log-failed 2>/dev/null || echo "")"
+    train_log_is_flake "${TRAIN_RUN_LOG_TEXT}"
+    return $?
   fi
-  train_log_is_flake "${text}"
+  # IMPORTANT: `gh run view <id> --log-failed` returns EMPTY (0 bytes) on a large
+  # run_all batch CI (too many failed jobs / too much output for the API), so the
+  # flake scan silently saw nothing and every flaky batch was mis-classified as a
+  # real failure and escalated. Scan each FAILED job's OWN log instead (those are
+  # bounded and reliably contain the Postgres/server error lines), and
+  # short-circuit on the first signature match.
+  local jids jid
+  jids="$(gh run view "${run_id}" --json jobs \
+    --jq '[.jobs[] | select(.conclusion=="failure")] | .[].databaseId' 2>/dev/null || echo "")"
+  if [[ -z "${jids}" ]]; then
+    # No per-job ids available: fall back to the whole-run failed log.
+    train_log_is_flake "$(gh run view "${run_id}" --log-failed 2>/dev/null || echo "")"
+    return $?
+  fi
+  for jid in ${jids}; do
+    if train_log_is_flake "$(gh run view --job "${jid}" --log 2>/dev/null || echo "")"; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # train_classify_flake <run-id> <rerun-count>: if the failure looks like a flake
