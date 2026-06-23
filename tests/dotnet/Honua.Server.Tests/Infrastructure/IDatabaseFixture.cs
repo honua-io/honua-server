@@ -37,6 +37,25 @@ public interface IDatabaseFixture : IAsyncLifetime
     Task ExecuteAsync(string sql, string? schemaName = null);
 
     /// <summary>
+    /// Creates a test-owned schema under the shared seed advisory lock (honua-server#1568 residual).
+    /// Use this instead of a bare <c>ExecuteAsync("CREATE SCHEMA ...")</c> so per-test namespace DDL
+    /// serializes with locked teardown/seed paths rather than racing a concurrent collection's
+    /// <c>DROP SCHEMA ... CASCADE</c> on the shared catalog and deadlocking (40P01).
+    /// </summary>
+    /// <param name="schemaName">Schema to create.</param>
+    Task CreateSchemaUnderLockAsync(string schemaName);
+
+    /// <summary>
+    /// Executes a schema/catalog-mutating DDL statement (e.g. <c>DROP TABLE public.*</c>) under the
+    /// shared seed advisory lock (honua-server#1568 residual). Use for cleanup DDL touching the
+    /// process-shared <c>public</c>/<c>honua</c> namespaces so it serializes with the locked
+    /// schema-mutation surface rather than racing the catalog.
+    /// </summary>
+    /// <param name="sql">DDL to apply.</param>
+    /// <param name="schemaName">Optional schema to set on <c>search_path</c> first.</param>
+    Task ExecuteDdlUnderLockAsync(string sql, string? schemaName = null);
+
+    /// <summary>
     /// Applies a raw seed/setup script that mutates the literal, process-global <c>honua</c>
     /// schema while holding the shared seed advisory lock (honua-server#1568, signature 2).
     /// Use this instead of <see cref="ExecuteAsync"/> for DDL/inserts against the global

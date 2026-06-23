@@ -134,13 +134,15 @@ public sealed class PostgresFixture : IAsyncLifetime
         var counter = _schemaCounters.AddOrUpdate(testClassName, 1, (_, c) => c + 1);
         var schemaName = $"test_{SanitizeSchemaName(testClassName)}_{counter}_{Guid.NewGuid():N}".ToLowerInvariant();
 
-        await using var conn = await DataSource.OpenConnectionAsync();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"""
-            CREATE SCHEMA {schemaName};
-            SET search_path TO {schemaName}, public;
-            """;
-        await cmd.ExecuteNonQueryAsync();
+        // honua-server#1568 residual (#2028 follow-up): CREATE SCHEMA writes pg_namespace and
+        // churns the shared pg_catalog (pg_class/pg_depend) exactly like the already-serialized
+        // DROP SCHEMA ... CASCADE teardown. #2020/#2028 routed schema *drop* and the post-create
+        // migration/seed through the advisory lock but left schema *creation* a non-participant,
+        // so a per-test CREATE SCHEMA in one collection raced a locked DROP SCHEMA CASCADE in
+        // another and the two acquired catalog locks in interleaved order — the residual 40P01
+        // deadlock. Serialize creation on the same lock so all schema-namespace DDL orders
+        // behind in-flight schema mutation instead of deadlocking it.
+        await CreateSchemaUnderLockAsync(schemaName).ConfigureAwait(false);
 
         var seedPath = applySeed ? Environment.GetEnvironmentVariable(SeedPathEnv) : null;
         if (!string.IsNullOrWhiteSpace(seedPath))
@@ -199,6 +201,60 @@ public sealed class PostgresFixture : IAsyncLifetime
         throw new InvalidOperationException(
             $"Failed to drop schema '{schemaName}' after {DropSchemaMaxAttempts} attempts.",
             lastTransient);
+    }
+
+    /// <summary>
+    /// Creates a fresh schema under the shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/>
+    /// advisory lock, with the same <c>40P01</c>/<c>40001</c> retry as the rest of the schema-mutation
+    /// surface. Use this instead of a raw <c>CREATE SCHEMA</c> for any test-owned schema so namespace
+    /// DDL serializes with the locked teardown/seed paths rather than racing the shared catalog.
+    /// </summary>
+    /// <remarks>
+    /// honua-server#1568 residual: a bare <c>CREATE SCHEMA</c> (per-test isolation or a test's own
+    /// <c>ExecuteAsync("CREATE SCHEMA ...")</c>) takes catalog locks on <c>pg_namespace</c>/<c>pg_class</c>
+    /// that interleave with another collection's locked <c>DROP SCHEMA ... CASCADE</c> and deadlock.
+    /// Routing creation through the same advisory lock as the drop removes that residual cycle.
+    /// </remarks>
+    /// <param name="schemaName">The schema to create (must be a valid identifier).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task CreateSchemaUnderLockAsync(string schemaName, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schemaName);
+
+        return RunUnderSchemaMutationLockAsync(
+            async () =>
+            {
+                await using var conn = await DataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"CREATE SCHEMA {schemaName};";
+                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            },
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes a schema/catalog-mutating raw DDL statement (e.g. <c>DROP TABLE public.*</c>) under the
+    /// shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock with
+    /// <c>40P01</c>/<c>40001</c> retry. Use for test cleanup DDL that touches the process-shared
+    /// <c>public</c>/<c>honua</c> namespaces so it serializes with the locked schema-mutation surface
+    /// instead of racing a concurrent collection's <c>DROP SCHEMA ... CASCADE</c> on the catalog.
+    /// </summary>
+    /// <param name="sql">The DDL to apply.</param>
+    /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the DDL.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task ExecuteDdlUnderLockAsync(string sql, string? schemaName = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
+
+        return RunUnderSchemaMutationLockAsync(
+            async () =>
+            {
+                await using var conn = await GetConnectionAsync(schemaName).ConfigureAwait(false);
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = sql;
+                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            },
+            cancellationToken);
     }
 
     /// <summary>
