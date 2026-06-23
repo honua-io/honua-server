@@ -99,6 +99,43 @@ test script and the workflow matrix do not drift.
 changed source path to one or more shards via `.github/ci-shards.json`, and
 emits a JSON descriptor consumed by the `server-tests` matrix:
 
+- **Registration-plumbing & shared-feature-area overrides
+  (`targeted_override_prefixes`).** Evaluated first (after the empty-diff guard,
+  before `infrastructure_paths`). A changed file under one of these prefixes is
+  *claimed* by an explicit shard subset instead of escalating to `run_all`: it is
+  removed from the `infrastructure_paths` short-circuit and the
+  `unmapped_source_run_all_prefixes` net, and the entry's shards are unioned into
+  the targeted result. This narrows two over-broad `run_all` triggers that almost
+  every feature PR tripped:
+  - **Endpoint-registration plumbing** —
+    `src/Honua.Server/EndpointRegistry.cs`, `src/Honua.Server/Program.cs`, and
+    `src/Honua.Server/Startup/JsonContextRegistration.cs` — routes to a
+    representative **smoke subset** (FeatureServer Endpoints, OGC API Features,
+    OGC Classic Maps, OData Core, MCP, STAC and API Governance, Admin &
+    Infrastructure), not all 45 shards. An endpoint-*adding* PR that also touches
+    a feature dir under a shard's `paths` runs the smoke subset **plus** that
+    feature's owning shard(s).
+  - **Shared auth/security feature areas** —
+    `src/Honua.Hosting/Features/Authentication/` and
+    `src/Honua.Hosting/Features/Security/` — route to the auth/security shards
+    (Infra and Security, Admin & Infrastructure, OData Core), not all 45.
+
+  Safety rests on the **always-on architecture/governance guards**: the `build`
+  job runs `Honua.Architecture.Tests` on every PR, which includes the
+  `EndpointRegistry`/`OperationRegistry` drift + coverage tests and the
+  proof-ledger tests. A registration mistake (an endpoint added to `Program.cs`
+  but missing from `EndpointRegistry`, an operation with no test, an
+  uncovered public surface) fails there **regardless of which server-test shards
+  run** — `run_all` was never what caught those. Keep these prefixes SPECIFIC:
+  they must point at individual plumbing files or narrowly-bounded feature dirs,
+  never at `Honua.Core` abstractions, DI/host bootstrap
+  (`Startup/InfrastructureCompositionRoot.cs`, `Honua.Hosting.csproj`), the rest
+  of `src/Honua.Hosting/Features/` (Rendering/Caching/… stay `run_all` via the
+  unmapped net), `Directory.Build.props`/`Directory.Packages.props`,
+  `.github/workflows/**`, `ci-shards.json`, the router scripts, or `*.sln` —
+  those stay `run_all`. `scripts/ci/validate-ci-router.sh` asserts every override
+  shard name is a real shard and locks in the narrowed routing against
+  regression.
 - If the diff touches **shared infrastructure**
   (`infrastructure_paths` in `ci-shards.json` —
   `tests/dotnet/Honua.TestKit/` (the `PostgresFixture`/`SeedRunner` harness),

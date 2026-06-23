@@ -30,15 +30,18 @@ internal sealed class ImageServerSamplesHandler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
+    private readonly ZarrPointSampler _zarrPointSampler;
     private readonly ILogger<ImageServerSamplesHandler> _logger;
 
     public ImageServerSamplesHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
+        ZarrPointSampler zarrPointSampler,
         ILogger<ImageServerSamplesHandler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
+        _zarrPointSampler = zarrPointSampler ?? throw new ArgumentNullException(nameof(zarrPointSampler));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -86,12 +89,11 @@ internal sealed class ImageServerSamplesHandler
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
             }
 
-            // multidimensionalDefinition selects a per-slice (time/StdZ coordinate) view of a
-            // registered multidimensional cube. We parse and validate its shape here, but
-            // resolving a slice to an actual pixel read is deferred (#1869): an ImageServer layer
-            // exposes multidimensional descriptor metadata only and has no readable per-slice
-            // backing store wired into the getSamples path, so an honest 501 is returned for any
-            // supplied definition rather than silently sampling the collapsed raster.
+            // multidimensionalDefinition selects a per-slice (time/StdZ/elevation coordinate) view
+            // of a registered multidimensional cube. The requested dimension coordinate is resolved
+            // to a Zarr slice index and the pinned cell is read through the shared Zarr subset
+            // pipeline (#1869). Layers without a servable Zarr store stay metadata-only and return
+            // an honest 501 rather than silently sampling the dimension-collapsed raster.
             if (!ImageServerMultidimensionalDefinition.TryParse(
                     GetString(values, "multidimensionalDefinition"), out var dimensionConstraints, out var multidimError))
             {
@@ -101,10 +103,9 @@ internal sealed class ImageServerSamplesHandler
 
             if (dimensionConstraints.Count > 0)
             {
-                const string multidimMessage =
-                    "getSamples multidimensionalDefinition (per-slice sampling of a multidimensional cube) is not implemented on this service.";
-                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, multidimMessage);
-                return StandardErrorHelpers.CreateNotImplemented(context, multidimMessage);
+                return await GetMultidimensionalSamplesAsync(
+                        context, layerId, samplePoints, dimensionConstraints, GetString(values, "sr"), cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
@@ -186,6 +187,81 @@ internal sealed class ImageServerSamplesHandler
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while sampling pixel values.");
         }
     }
+
+    /// <summary>
+    /// Samples each requested point on the slice pinned by a
+    /// <c>multidimensionalDefinition</c> against the layer's servable Zarr store
+    /// (#1869). Returns a 501 when the layer has no readable multidimensional
+    /// backing store, and a 400 when the requested slice cannot be resolved.
+    /// </summary>
+    private async Task<IResult> GetMultidimensionalSamplesAsync(
+        HttpContext context,
+        int layerId,
+        IReadOnlyList<ImageServerGeometryHelpers.SamplePoint> samplePoints,
+        IReadOnlyList<ImageServerDimensionConstraint> constraints,
+        string? srRaw,
+        CancellationToken cancellationToken)
+    {
+        var registration = await _zarrPointSampler.FindServableRegistrationAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (registration is null)
+        {
+            const string message =
+                "getSamples multidimensionalDefinition (per-slice sampling of a multidimensional cube) requires a registered Zarr coverage for this layer; none is available.";
+            ImageServerLog.InvalidIdentifyParameters(_logger, layerId, message);
+            return StandardErrorHelpers.CreateNotImplemented(context, message);
+        }
+
+        var requestSrid = ImageServerGeometryHelpers.TryParseSrid(srRaw);
+        var maxSampleCount = DefaultMaxSampleCount;
+        var samples = new List<SampleEntry>(Math.Min(samplePoints.Count, maxSampleCount));
+        var processedPoints = 0;
+
+        foreach (var point in samplePoints)
+        {
+            if (processedPoints++ >= maxSampleCount)
+            {
+                break;
+            }
+
+            var srid = point.Srid ?? requestSrid;
+            var (ok, value, error) = await _zarrPointSampler
+                .TrySampleAsync(registration, point.X, point.Y, constraints, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!ok)
+            {
+                // A point outside the grid yields no sample (consistent with the 2D path);
+                // a genuine resolution error (unknown axis, out-of-range coordinate) is a 400.
+                if (IsPointOutsideError(error))
+                {
+                    continue;
+                }
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, error ?? "multidimensionalDefinition could not be resolved");
+                return StandardErrorHelpers.CreateBadRequest(context, error ?? "multidimensionalDefinition could not be resolved.");
+            }
+
+            samples.Add(new SampleEntry
+            {
+                RasterId = null,
+                Location = new SampleLocation
+                {
+                    X = point.X,
+                    Y = point.Y,
+                    SpatialReference = srid is null ? null : new SpatialReference { Wkid = srid.Value, LatestWkid = srid.Value },
+                },
+                Value = ZarrPointSampler.FormatValue(value),
+                Resolution = null,
+                Attributes = new Dictionary<string, object?> { ["Value"] = value },
+            });
+        }
+
+        ImageServerLog.IdentifyCompleted(_logger, layerId, samples.Count > 0, samples.Count);
+        var response = new GetSamplesResponse { Samples = samples.ToArray() };
+        return Results.Json(response, ImageServerJsonContext.Default.GetSamplesResponse);
+    }
+
+    private static bool IsPointOutsideError(string? error)
+        => error is not null && error.Contains("outside the coverage extent", StringComparison.Ordinal);
 
     private static int ResolveSampleCount(string? raw)
     {

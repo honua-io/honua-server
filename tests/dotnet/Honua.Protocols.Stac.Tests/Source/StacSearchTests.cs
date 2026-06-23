@@ -246,6 +246,32 @@ public sealed class StacSearchTests : IAsyncLifetime
         problem.GetProperty("detail").GetString().Should().Contain("Unsupported explicit geometry CRS 'EPSG:999999'");
     }
 
+    /// <summary>
+    /// STAC Item Search Filter Extension (honua-server#1932): a CQL2 filter referencing a property
+    /// that is not in the declared queryables set returns a structured 400. This is the
+    /// spec-permitted behavior because the queryables documents declare "additionalProperties":
+    /// false, so undeclared properties are not valid queryables and the request is rejected with a
+    /// problem+json error body rather than silently ignored.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithUndeclaredQueryable_ReturnsBadRequest()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        // A property that is not part of the collection's declared queryables.
+        var filter = "undeclared_property = 1";
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&filter={Uri.EscapeDataString(filter)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+        problem.TryGetProperty("detail", out var detail).Should().BeTrue();
+        detail.GetString().Should().Contain("undeclared_property");
+    }
+
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
