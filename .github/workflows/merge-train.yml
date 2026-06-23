@@ -76,6 +76,12 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # The FF land pushes directly to trunk, so the git push must be
+          # authenticated as the merge-train PAT (a repo admin that the trunk
+          # ruleset bypass covers). The default GITHUB_TOKEN pushes as
+          # github-actions[bot], which has no ruleset bypass, so the push is
+          # rejected with GH013 "changes must be made through a pull request".
+          token: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Configure git identity
         # REQUIRED: the train creates real commits (assemble merge commits,
