@@ -214,7 +214,7 @@ internal sealed class ZarrCoverageService
             return StandardErrorHelpers.CreateBadRequest(context, variableError!);
         }
 
-        if (!TryParseSubsets(context.Request.Query["subset"], out var subsets, out var subsetError))
+        if (!TryParseSubsets(context.Request.Query["subset"], metadata, out var subsets, out var subsetError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, subsetError!);
         }
@@ -493,6 +493,7 @@ internal sealed class ZarrCoverageService
 
     private static bool TryParseSubsets(
         StringValues raw,
+        ZarrStoreMetadata metadata,
         out List<ZarrCoverageDimensionSubset> subsets,
         out string? error)
     {
@@ -508,6 +509,19 @@ internal sealed class ZarrCoverageService
 
             foreach (var segment in SplitTopLevel(value))
             {
+                // A subset targeting a declared additional coordinate axis
+                // (vertical/elevation/named) is resolved from coordinate values to a
+                // grid-index slice through the shared coordinate-axis indexer (#1872).
+                if (TryMatchCoordinateAxis(metadata, segment, out var axis))
+                {
+                    if (!TryResolveCoordinateSubset(axis!, segment, out var resolved, out error))
+                    {
+                        return false;
+                    }
+                    subsets.Add(resolved!);
+                    continue;
+                }
+
                 if (!TryParseSubsetSegment(segment, out var subset, out error))
                 {
                     return false;
@@ -518,6 +532,124 @@ internal sealed class ZarrCoverageService
 
         return true;
     }
+
+    /// <summary>
+    /// Returns true when <paramref name="segment"/> targets a declared additional
+    /// coordinate axis (not a spatial or temporal axis), yielding the matched axis.
+    /// </summary>
+    private static bool TryMatchCoordinateAxis(ZarrStoreMetadata metadata, string segment, out ZarrAxis? axis)
+    {
+        axis = null;
+        if (metadata.Axes.Length == 0)
+        {
+            return false;
+        }
+
+        var trimmed = segment.Trim();
+        var open = trimmed.IndexOf('(', StringComparison.Ordinal);
+        if (open <= 0)
+        {
+            return false;
+        }
+
+        var dimension = trimmed[..open].Trim();
+        foreach (var candidate in metadata.Axes)
+        {
+            if (string.Equals(candidate.Name, dimension, StringComparison.OrdinalIgnoreCase))
+            {
+                axis = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Resolves a coordinate-valued subset (<c>axis(value)</c> or
+    /// <c>axis(low:high)</c>) on a declared additional axis to an inclusive
+    /// grid-index slice via <see cref="CfCoordinateAxisIndexer"/>.
+    /// </summary>
+    private static bool TryResolveCoordinateSubset(
+        ZarrAxis axis,
+        string segment,
+        out ZarrCoverageDimensionSubset? subset,
+        out string? error)
+    {
+        subset = null;
+        error = null;
+        var trimmed = segment.Trim();
+
+        var open = trimmed.IndexOf('(', StringComparison.Ordinal);
+        if (open <= 0 || !trimmed.EndsWith(')'))
+        {
+            error = $"Invalid subset expression '{trimmed}'. Use subset={axis.Name}(value) or subset={axis.Name}(low:high).";
+            return false;
+        }
+
+        var spec = trimmed[(open + 1)..^1].Trim();
+        if (spec.Length == 0)
+        {
+            error = $"Invalid subset expression '{trimmed}'. Use subset={axis.Name}(value) or subset={axis.Name}(low:high).";
+            return false;
+        }
+
+        double? low;
+        double? high;
+        var separator = spec.IndexOf(':', StringComparison.Ordinal);
+        if (separator < 0)
+        {
+            if (!TryParseCoordinate(spec, out var instant))
+            {
+                error = CreateCoordinateError(trimmed, axis.Name);
+                return false;
+            }
+            low = instant;
+            high = instant;
+        }
+        else
+        {
+            var lowText = spec[..separator].Trim();
+            var highText = spec[(separator + 1)..].Trim();
+
+            // Open-ended bounds: `axis(*:high)` / `axis(low:*)` per OGC subsetting.
+            low = ParseOpenBound(lowText, out var lowOk);
+            high = ParseOpenBound(highText, out var highOk);
+            if (!lowOk || !highOk)
+            {
+                error = CreateCoordinateError(trimmed, axis.Name);
+                return false;
+            }
+        }
+
+        if (!CfCoordinateAxisIndexer.TryResolveIndexRange(axis, low, high, out var lowIndex, out var highIndex, out var indexError))
+        {
+            error = indexError ?? $"The requested subset on axis '{axis.Name}' could not be resolved.";
+            return false;
+        }
+
+        // OGC subset bounds are closed intervals; the planner expects an exclusive stop.
+        subset = new ZarrCoverageDimensionSubset(axis.Name, lowIndex, highIndex + 1);
+        return true;
+    }
+
+    private static double? ParseOpenBound(string text, out bool ok)
+    {
+        if (text == "*" || text.Length == 0)
+        {
+            ok = true;
+            return null;
+        }
+        ok = TryParseCoordinate(text, out var value);
+        return ok ? value : null;
+    }
+
+    private static bool TryParseCoordinate(string value, out double coordinate)
+        => double.TryParse(value, NumberStyles.Float | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out coordinate)
+           && !double.IsNaN(coordinate) && !double.IsInfinity(coordinate);
+
+    private static string CreateCoordinateError(string segment, string axisName)
+        => $"Subset bounds in '{segment}' must be coordinate values for axis '{axisName}' (e.g. {axisName}(850) or {axisName}(500:1000)).";
 
     private static List<string> SplitTopLevel(string value)
     {

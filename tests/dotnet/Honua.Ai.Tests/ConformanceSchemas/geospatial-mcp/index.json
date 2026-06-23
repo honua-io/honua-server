@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "geospatial-mcp JSON Schema index",
+  "description": "Machine-readable map from standard MCP tool names and resource family URIs to their JSON Schema (draft 2020-12) files. 'standardName' is the bare taxonomy.md tool name; 'referenceToolName' is the name the reference implementation (Honua /mcp) advertises. 'implementationStatus' records whether the reference implementation ships the tool today (implemented) or whether it is a standard family not yet implemented as a discrete tool (known-gap).",
+  "date": "2026-06-21",
+  "dialect": "https://json-schema.org/draft/2020-12/schema",
+  "tools": [
+    {
+      "standardName": "plan_analysis",
+      "referenceToolName": "honua_plan_analysis",
+      "family": "Intent and planning",
+      "schema": "tools/plan_analysis.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "ground_candidates",
+      "referenceToolName": "honua_ground_candidates",
+      "family": "Intent and planning",
+      "schema": "tools/ground_candidates.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "clarify_intent",
+      "referenceToolName": "honua_clarify_intent",
+      "family": "Intent and planning",
+      "schema": "tools/clarify_intent.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "validate_plan",
+      "referenceToolName": "honua_validate_plan",
+      "family": "Intent and planning",
+      "schema": "tools/validate_plan.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Reference also advertises honua_dry_run_plan with the same partial-plan input schema."
+    },
+    {
+      "standardName": "execute_plan",
+      "referenceToolName": "honua_execute_plan",
+      "family": "Execution",
+      "schema": "tools/execute_plan.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "create_map_package",
+      "referenceToolName": null,
+      "family": "Map composition",
+      "schema": "tools/create_map_package.schema.json",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "standardName": "refine_map_package",
+      "referenceToolName": null,
+      "family": "Map composition",
+      "schema": "tools/refine_map_package.schema.json",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "standardName": "apply_style_preset",
+      "referenceToolName": null,
+      "family": "Map composition",
+      "schema": "tools/apply_style_preset.schema.json",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "standardName": "compose_mixed_protocol_map",
+      "referenceToolName": null,
+      "family": "Map composition",
+      "schema": "tools/compose_mixed_protocol_map.schema.json",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "standardName": "preview_map_package",
+      "referenceToolName": null,
+      "family": "Map composition",
+      "schema": "tools/preview_map_package.schema.json",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "standardName": "create_app_package",
+      "referenceToolName": null,
+      "family": "App composition",
+      "schema": "tools/create_app_package.schema.json",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "standardName": "preview_app_package",
+      "referenceToolName": null,
+      "family": "App composition",
+      "schema": "tools/preview_app_package.schema.json",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "standardName": "publish_result",
+      "referenceToolName": null,
+      "family": "Publishing",
+      "schema": "tools/publish_result.schema.json",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "standardName": "list_layers",
+      "referenceToolName": "honua_list_layers",
+      "family": "Discovery and query (reference shape)",
+      "schema": "tools/list_layers.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Reference-implementation discovery tool over the open-core data-access surface; the bare taxonomy models discovery as a CapabilityCatalog read."
+    },
+    {
+      "standardName": "query_features",
+      "referenceToolName": "honua_query_features",
+      "family": "Discovery and query (reference shape)",
+      "schema": "tools/query_features.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "render_map",
+      "referenceToolName": "honua_render_map",
+      "family": "Discovery and query (reference shape)",
+      "schema": "tools/render_map.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "geocode_address",
+      "referenceToolName": "honua_geocode_address",
+      "family": "Analysis and geoprocessing (reference shape)",
+      "schema": "tools/geocode_address.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "solve_route",
+      "referenceToolName": "honua_solve_route",
+      "family": "Analysis and geoprocessing (reference shape)",
+      "schema": "tools/solve_route.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "cancel_job",
+      "referenceToolName": "honua_cancel_job",
+      "family": "Execution (reference shape)",
+      "schema": "tools/cancel_job.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "propose_operation",
+      "referenceToolName": "honua_propose_operation",
+      "family": "Control-plane proposal (reference shape)",
+      "schema": "tools/propose_operation.schema.json",
+      "implementationStatus": "implemented"
+    }
+  ],
+  "resources": [
+    {
+      "family": "Result package",
+      "uriForm": "honua://results/{result_package_id}",
+      "schema": "resources/result-package.schema.json",
+      "shapeFidelity": "concrete"
+    },
+    {
+      "family": "Result artifact",
+      "uriForm": "honua://results/{result_package_id}/artifacts/{artifact_id}",
+      "schema": "resources/artifact.schema.json",
+      "shapeFidelity": "concrete"
+    },
+    {
+      "family": "Result provenance",
+      "uriForm": "honua://results/{result_package_id}/provenance",
+      "schema": "resources/provenance.schema.json",
+      "shapeFidelity": "concrete"
+    },
+    {
+      "family": "Workspace",
+      "uriForm": "honua://workspaces/{workspace_id}",
+      "schema": "resources/workspace.schema.json",
+      "shapeFidelity": "concrete-reference"
+    },
+    {
+      "family": "Workspace artifact",
+      "uriForm": "honua://workspaces/{workspace_id}/artifacts/{artifact_id}",
+      "schema": "resources/artifact.schema.json",
+      "shapeFidelity": "concrete"
+    },
+    {
+      "family": "Map package",
+      "uriForm": "honua://maps/{map_package_id}",
+      "schema": "resources/map-package.schema.json",
+      "shapeFidelity": "responsibility-level"
+    },
+    {
+      "family": "App package",
+      "uriForm": "honua://apps/{app_package_id}",
+      "schema": "resources/app-package.schema.json",
+      "shapeFidelity": "responsibility-level"
+    },
+    {
+      "family": "Style",
+      "uriForm": "honua://styles/{style_id}",
+      "schema": "resources/style.schema.json",
+      "shapeFidelity": "responsibility-level"
+    },
+    {
+      "family": "Theme",
+      "uriForm": "honua://themes/{theme_id}",
+      "schema": "resources/theme.schema.json",
+      "shapeFidelity": "responsibility-level"
+    },
+    {
+      "family": "Map template",
+      "uriForm": "honua://templates/maps/{map_template_id}",
+      "schema": "resources/map-template.schema.json",
+      "shapeFidelity": "responsibility-level"
+    },
+    {
+      "family": "Published service",
+      "uriForm": "honua://services/{published_service_id}",
+      "schema": "resources/published-service.schema.json",
+      "shapeFidelity": "responsibility-level"
+    },
+    {
+      "family": "Deployment",
+      "uriForm": "honua://deployments/{deployment_id}",
+      "schema": "resources/deployment.schema.json",
+      "shapeFidelity": "responsibility-level"
+    }
+  ],
+  "common": [
+    {
+      "name": "GeoprocessingError",
+      "schema": "common/geoprocessing-error.schema.json",
+      "role": "Canonical error envelope reused by all tool/resource failure paths."
+    }
+  ]
+}

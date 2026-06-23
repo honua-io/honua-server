@@ -75,6 +75,63 @@ internal static class McpToolSchemas
         }
         """;
 
+    private const string PublishServiceArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["connectionId", "schema", "table", "layerName"],
+          "properties": {
+            "connectionId": {
+              "type": "string",
+              "description": "Secure-connection identifier whose table is published. Required: the canonical service.publish operation resolves the target database connection from it."
+            },
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Source schema containing the table to publish."
+            },
+            "table": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Source table to publish as a layer."
+            },
+            "layerName": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Display name for the published layer."
+            },
+            "serviceName": {
+              "type": "string",
+              "description": "Target service name. Defaults to the canonical default service when omitted."
+            },
+            "description": {
+              "type": "string",
+              "description": "Optional layer description."
+            },
+            "geometryColumn": {
+              "type": "string",
+              "description": "Geometry column to publish when the table has more than one."
+            },
+            "geometryType": {
+              "type": "string",
+              "description": "Geometry type override (for example Point, Polygon) when it cannot be inferred."
+            },
+            "srid": {
+              "type": "integer",
+              "description": "Spatial reference identifier for the published layer."
+            },
+            "primaryKey": {
+              "type": "string",
+              "description": "Primary key column when the table has no detectable key."
+            },
+            "fields": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Subset of attribute columns to publish. All columns are published when omitted."
+            }
+          }
+        }
+        """;
+
     private const string PlanAnalysisArgumentSchemaJson = """
         {
           "type": "object",
@@ -177,6 +234,16 @@ internal static class McpToolSchemas
     /// Schema for <see cref="Models.McpProposeOperationArgument"/>.
     /// </summary>
     public static readonly JsonElement ProposeOperationArgumentSchema = Parse(ProposeOperationArgumentSchemaJson);
+
+    /// <summary>
+    /// Schema for <see cref="Models.McpPublishServiceArgument"/>. <c>connectionId</c>,
+    /// <c>schema</c>, <c>table</c>, and <c>layerName</c> are marked required to
+    /// match the <c>service.publish</c> executor, which throws on a missing
+    /// connection id or required publish parameter at submit time — so a
+    /// schema-driven client should never send a payload the operation always
+    /// refuses.
+    /// </summary>
+    public static readonly JsonElement PublishServiceArgumentSchema = Parse(PublishServiceArgumentSchemaJson);
 
     /// <summary>
     /// Schema used by stub tools that accept no arguments.
