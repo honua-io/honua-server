@@ -35,7 +35,8 @@ describe('GPServer Smoke', () => {
     };
 
     expect(data.capabilities).toBe('');
-    expect(data.currentVersion).toBe(10.81);
+    // currentVersion is an Esri/ArcGIS field; our SDK tests must not depend on
+    // it (the endpoint still emits it for ArcGIS-client compat).
     expect(data.executionType).toBe('esriExecutionTypeAsynchronous');
     expect(data.resultMapServerName).toBe('');
     expect(Array.isArray(data.tasks)).toBe(true);
