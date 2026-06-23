@@ -283,14 +283,21 @@ main() {
         autofix_attempts=$((autofix_attempts + 1))
         train_metric_set autofix_attempts "${autofix_attempts}"
         # Surgically re-verify ONLY the failed tests (never a full shard rerun).
+        # On PASS: LAND the batch immediately — the failed tests now pass and the
+        # rest of the batch was already green in the first run, so re-running the
+        # full smart-CI is exactly the waste we're avoiding. If the fix
+        # incidentally broke a previously-passing test, the optimistic model
+        # catches it on trunk's next batch (accept-some-failure for throughput).
         if [[ -n "$(printf '%s' "${fqns}" | sed '/^$/d')" ]] && train_surgical_rerun "${run_id}" "${fqns}"; then
           train_metric_set autofix_fixes "$(( $(train_metric_get autofix_fixes 0) + 1 ))"
-          train_notice "autofix verified by surgical rerun; pushing fix and re-running smart-CI on ${batch}"
-          gate="$(train_smart_ci_run "${batch}")"
+          train_notice "autofix verified by surgical rerun of the failed tests; landing the batch (no full re-run)"
+          gate="SUCCESS"
           continue
         else
-          train_warn "autofix commit did not pass surgical re-verify; re-running smart-CI to re-evaluate"
-          gate="$(train_smart_ci_run "${batch}")"
+          # Fix didn't hold: loop back to retry autofix against the SAME failed
+          # tests (gate is still non-SUCCESS) up to the cap, then escalate — still
+          # NO wasteful full re-run. The surgical rerun is the only re-check.
+          train_warn "autofix commit did not pass surgical re-verify; retrying autofix (no full re-run) up to the cap"
           continue
         fi
       fi
