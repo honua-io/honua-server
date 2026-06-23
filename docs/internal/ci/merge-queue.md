@@ -5,37 +5,34 @@ This documents the CI-throughput work: the **merge queue** (automates the manual
 findings. CI workflow changes can only be fully validated by an actual GitHub run —
 follow the validation steps before relying on them.
 
-## 1. Merge queue
+## 1. Merge queue — SUPERSEDED by the LEAN gate
 
-`ci.yml` now triggers on `merge_group` (in addition to `pull_request`). A
-`merge_group` event is a non-`pull_request` event, so the existing job logic
-already routes it down the **full** integration lane (`changes` /
-`targeted-shards` else-branches → `run_all`; the PR-only jobs
-`pr-template-check` / `pr-readiness` short-circuit to success). Net design:
+> **SUPERSEDED (2026-06).** The "full lane on `merge_group`" design below is the
+> design that caused the 2026-06-18 runner-starvation spiral and forced the queue
+> off (ruleset 17808547 → disabled). It is kept for history. The current target
+> architecture is the **lean `merge_group` gate** — see
+> [`../contributor/lean-merge-queue-runbook.md`](../contributor/lean-merge-queue-runbook.md).
+> In short: `merge_group` now runs ONLY the `Merge Queue Gate` job (build +
+> format + fast/architecture unit smoke), NOT the full matrix; the queue's
+> required check is **`Merge Queue Gate`**, NOT `CI Gate`; recommended
+> `max_entries_to_build = 2` and `check_response_timeout = 15`.
 
-| Lane | Trigger | Scope | Who waits on it |
+`ci.yml` triggers on `merge_group` (in addition to `pull_request`). **Historic
+(broken) design:** a `merge_group` event is a non-`pull_request` event, so the
+job logic routed it down the **full** integration lane (`changes` /
+`targeted-shards` else-branches → `run_all`). That re-ran the whole ~45-job
+matrix on every batch → ~225 concurrent jobs at batch-5 → starvation →
+front-PR eject → group reform → zombie runs → spiral. **Do not re-enable the
+queue with this design.**
+
+| Lane | Trigger | Scope (current/lean) | Who waits on it |
 |------|---------|-------|-----------------|
 | **PR** | `pull_request` | Selective (affected shards) — fast | the author, per push |
-| **Merge queue** | `merge_group` | Full CI on the **batched** commit | nobody blocks; auto-merges on green |
+| **Merge queue** | `merge_group` | **Lean** gate only (build+format+fast smoke) | nobody blocks; auto-merges on green |
 
-This is the fix for "I have to ask for PRs to be bundled": GitHub batches approved
-PRs, runs CI **once** on the combined result, and fast-forwards `trunk` only if green.
-
-### Enable it (one-time, repo settings — not in code)
-1. **Settings → Branches → Branch protection rule for `trunk`** → enable
-   **"Require merge queue"**.
-2. Set the **required status check** to **`CI Gate`** (the aggregating job in `ci.yml`).
-   Remove individual job names from "required checks" — `CI Gate` already aggregates them.
-3. Merge-queue settings: merge method = your convention (squash); start with
-   **max batch = 5**, **min = 1**, **wait = 5 min**; "only merge if combined check passes".
-4. (Optional) `gh` after enabling: `gh pr merge <n> --auto --squash` queues a PR.
-
-### Validate before trusting it
-- Open a throwaway PR, approve it, click **"Merge when ready"**.
-- Watch the `CI` run triggered by the **`merge_group`** event (not the PR event).
-  Confirm `CI Gate` reports success and the PR fast-forwards trunk.
-- If the `merge_group` run errors in `pr-template-check`/`pr-readiness`, those
-  jobs' PR-only steps weren't skipped — re-check their `if:` guards.
+GitHub batches approved PRs, runs the lean gate **once** on the combined result,
+and fast-forwards `trunk` only if green. Re-enable steps, sizing, strict-off and
+train-fallback recommendations live in the lean runbook linked above.
 
 ## 2. Test-suite speed (per-class fixtures)
 
@@ -195,7 +192,7 @@ window Jun 6–18, n=321 `CI` runs). Numbers are billable Linux-runner minutes.
 | **A full `CI` run = ~449 billable min across ~50 jobs.** | Measured mean over 19 full runs (range 420–550). Dominated by `.NET Foundation Tests` (~22m) + `Postgres Compatibility` (~17–19m) + the 30-shard `Server Tests` matrix. | — |
 | **~48% of PRs still run the FULL matrix.** | 146 of 304 PR `CI` runs were ≥40 jobs (full `run_all`, 30 shards); the other ~50% ran the scoped ~mid lane (~75 min). Affected-scoping works (docs PRs hit ~0 min, verified on #1736) but most *source* PRs escalate. | Root cause: `unmapped_source_run_all_prefixes` + `infrastructure_paths` in `ci-shards.json` include the most-edited dirs (`src/Honua.Core/`, `src/Honua.Postgres/`, `src/Honua.Server/`, `Core/Models`, `Core/Queries`, `Postgres/Migrations`). Any source change those don't map to a shard's explicit `paths` → `run_all`. Tightening this is the single biggest minute lever; **needs sign-off** (under-testing risk). |
 | **Per-shard fixed build overhead.** | On small shards the `dotnet restore`+`Build server test binaries` step is ~3 min for ~0–4 min of actual testing (Performance 87% overhead, MCP 61%, STAC 40%). 30 shards each rebuild from source (`enable-build-cache` defaults to `false`). | Consolidate the ~8–10 sub-6-min shards into ~3–4; or enable the cross-job binary cache for shards. Wall-clock is set by `Core`/`FeatureServer Endpoints` (long pole), so consolidating tiny shards costs ~0 wall-clock. **Coordinate with in-flight shard work (#1724 follow-ups).** |
-| **Merge-queue lane duplicates full CI per queued PR (~428 min each).** | A `merge_group` event is non-`pull_request` → routes down the full lane unconditionally. The PR already ran (selective or full) on `pull_request`; the queue re-runs full. Currently low volume (6 `merge_group` vs 124 direct trunk pushes in-window), so this is latent, not yet dominant — but each queued PR pays full CI twice. | If queue volume grows, scope the `merge_group` lane to the union of its batched PRs' affected shards instead of `run_all`. |
+| **Merge-queue lane duplicates full CI per queued PR (~428 min each).** | A `merge_group` event was non-`pull_request` → routed down the full lane unconditionally. The PR already ran (selective or full) on `pull_request`; the queue re-ran full. **FIXED (2026-06): the `merge_group` lane is now the LEAN `Merge Queue Gate` (build+format+fast/arch smoke, ~1 runner job), not the full matrix** — see `../contributor/lean-merge-queue-runbook.md`. This also removes the runner-starvation spiral that disabled the queue. | Done. Sizing/re-enable in the lean runbook. |
 | **`ALLGREEN` grouping + 60-min check timeout amplifies queue stalls.** | Ruleset: `max_entries_to_build=5`, `grouping_strategy=ALLGREEN`, `check_response_timeout_minutes=60`. One failing PR in a batch invalidates the whole group → full CI re-runs on the smaller group. A hung shard can hold the group for up to 60 min. | Keep batching; consider lowering `check_response_timeout` once shard timeouts are tightened, and ensure no shard's `timeout_minutes` exceeds it. |
 | **Gate fragility: template-check failure skipped ALL validation and published a RED CI Gate.** | Verified on docs PR #1736: `pr-template-check` failed → `pr-readiness`/`changes`/every build+test job SKIPPED → `CI Gate` FAILED with 0 min of real validation. Documented in CLAUDE.md as the #1 agent-PR failure (#1736/#1737 needed manual re-trigger). | **Fixed in this PR** (§ below): decouple `pr-readiness`/build graph from `pr-template-check` so real validation runs; template-check stays a first-class job feeding CI Gate (a template failure still fails the gate, but now alongside real results). |
 

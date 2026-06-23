@@ -21,8 +21,30 @@ internal static class MaterialAmbiguityEvaluator
         CandidateRanking candidates,
         IReadOnlyList<ProcessParameterSpec> requiredParameterGaps,
         GroundingOptions options)
+        => Evaluate(request, classification, candidates, requiredParameterGaps, options, out _);
+
+    /// <summary>
+    /// Evaluates material ambiguity and, as a side output, reports the bindings
+    /// the service auto-resolved instead of clarifying. A binding is
+    /// auto-resolved when exactly one candidate of a kind clears the
+    /// high-confidence floor and dominates any runner-up by more than the
+    /// material spread; in that case no <c>AmbiguousDataset</c>/
+    /// <c>AmbiguousProcess</c> finding is emitted for that kind. Two or more
+    /// viable candidates within the spread still surface the clarification, and
+    /// zero candidates keep the existing missing-input path. The resolved
+    /// bindings are auditable (id + score + runner-up margin) so the silent
+    /// auto-bind stays explainable (honua-server#1949).
+    /// </summary>
+    public static IReadOnlyList<MaterialAmbiguityFinding> Evaluate(
+        GroundingRequest request,
+        WorkflowFamilyClassification classification,
+        CandidateRanking candidates,
+        IReadOnlyList<ProcessParameterSpec> requiredParameterGaps,
+        GroundingOptions options,
+        out IReadOnlyList<ResolvedBinding> resolvedBindings)
     {
         var findings = new List<MaterialAmbiguityFinding>(capacity: 3);
+        var bindings = new List<ResolvedBinding>(capacity: 2);
 
         // 1. LowConfidence comes first — if the workflow family itself is
         // unclear, the caller must resolve that before anything else.
@@ -58,29 +80,43 @@ internal static class MaterialAmbiguityEvaluator
         }
 
         // 3. AmbiguousDataset / AmbiguousProcess — multiple high-confidence
-        // candidates within the material spread.
-        if (IsAmbiguous(candidates.Datasets, options, out var datasetOptions))
+        // candidates within the material spread. A single dominant
+        // candidate (the only one above the floor, or one that beats the
+        // runner-up by more than the material spread) is auto-resolved into a
+        // binding instead — the caller should not have to round-trip a
+        // clarification for an obvious single-candidate match.
+        switch (ClassifyResolution(candidates.Datasets, options, "dataset.selection", CandidateKind.Dataset, out var datasetOptions, out var datasetBinding))
         {
-            findings.Add(new MaterialAmbiguityFinding
-            {
-                ReasonCode = ClarificationReasonCode.AmbiguousDataset,
-                QuestionId = "dataset.selection",
-                QuestionKind = ClarificationQuestionKind.SingleSelect,
-                Prompt = "Which dataset do you want to use?",
-                Options = datasetOptions
-            });
+            case ResolutionOutcome.Ambiguous:
+                findings.Add(new MaterialAmbiguityFinding
+                {
+                    ReasonCode = ClarificationReasonCode.AmbiguousDataset,
+                    QuestionId = "dataset.selection",
+                    QuestionKind = ClarificationQuestionKind.SingleSelect,
+                    Prompt = "Which dataset do you want to use?",
+                    Options = datasetOptions
+                });
+                break;
+            case ResolutionOutcome.AutoResolved:
+                bindings.Add(datasetBinding!);
+                break;
         }
 
-        if (IsAmbiguous(candidates.Processes, options, out var processOptions))
+        switch (ClassifyResolution(candidates.Processes, options, "process.selection", CandidateKind.Process, out var processOptions, out var processBinding))
         {
-            findings.Add(new MaterialAmbiguityFinding
-            {
-                ReasonCode = ClarificationReasonCode.AmbiguousProcess,
-                QuestionId = "process.selection",
-                QuestionKind = ClarificationQuestionKind.SingleSelect,
-                Prompt = "Which operation do you want to run?",
-                Options = processOptions
-            });
+            case ResolutionOutcome.Ambiguous:
+                findings.Add(new MaterialAmbiguityFinding
+                {
+                    ReasonCode = ClarificationReasonCode.AmbiguousProcess,
+                    QuestionId = "process.selection",
+                    QuestionKind = ClarificationQuestionKind.SingleSelect,
+                    Prompt = "Which operation do you want to run?",
+                    Options = processOptions
+                });
+                break;
+            case ResolutionOutcome.AutoResolved:
+                bindings.Add(processBinding!);
+                break;
         }
 
         // 4. DestructiveAction — top process candidate is flagged destructive.
@@ -166,6 +202,7 @@ internal static class MaterialAmbiguityEvaluator
             });
         }
 
+        resolvedBindings = bindings;
         return findings;
     }
 
@@ -200,24 +237,69 @@ internal static class MaterialAmbiguityEvaluator
             && candidates.Datasets[0].DatasetSubtype != DatasetSubtype.Service;
     }
 
-    private static bool IsAmbiguous(
+    /// <summary>
+    /// Outcome of classifying a single kind's candidate list.
+    /// </summary>
+    private enum ResolutionOutcome
+    {
+        /// <summary>No candidate cleared the high-confidence floor.</summary>
+        None,
+
+        /// <summary>
+        /// Exactly one candidate is materially dominant — auto-bind it.
+        /// </summary>
+        AutoResolved,
+
+        /// <summary>
+        /// Two or more candidates are viable within the material spread — ask.
+        /// </summary>
+        Ambiguous
+    }
+
+    /// <summary>
+    /// Classifies a kind's ranked candidates into auto-resolve / ambiguous /
+    /// none. The candidates are pre-sorted by descending score
+    /// (<see cref="DeterministicGroundingEngine"/>), so the lead is the top hit.
+    ///
+    /// <list type="bullet">
+    /// <item>Lead below the high-confidence floor → <see cref="ResolutionOutcome.None"/>
+    /// (the existing missing-/low-confidence paths own this case).</item>
+    /// <item>Two or more candidates clear the floor within
+    /// <see cref="GroundingOptions.MaterialSpread"/> of the lead →
+    /// <see cref="ResolutionOutcome.Ambiguous"/>: genuinely competing
+    /// interpretations, keep clarifying.</item>
+    /// <item>Otherwise the lead is the sole dominant high-confidence candidate
+    /// (either the only one above the floor, or it beats the runner-up by more
+    /// than the material spread) → <see cref="ResolutionOutcome.AutoResolved"/>.</item>
+    /// </list>
+    ///
+    /// Reusing <see cref="GroundingOptions.MaterialSpread"/> as the dominance
+    /// margin keeps a single, conservatively-tuned knob: any runner-up close
+    /// enough to make the pair ambiguous is also close enough to block the
+    /// auto-bind, so the two paths can never both fire and a near-tie always
+    /// errs toward asking rather than a wrong silent bind.
+    /// </summary>
+    private static ResolutionOutcome ClassifyResolution(
         IReadOnlyList<GroundingCandidate> candidates,
         GroundingOptions options,
-        out IReadOnlyList<ClarificationOption> options_out)
+        string questionId,
+        CandidateKind kind,
+        out IReadOnlyList<ClarificationOption> options_out,
+        out ResolvedBinding? binding)
     {
-        if (candidates.Count < 2 || candidates[0].Score < options.HighConfidenceFloor)
+        options_out = [];
+        binding = null;
+
+        if (candidates.Count == 0 || candidates[0].Score < options.HighConfidenceFloor)
         {
-            options_out = [];
-            return false;
+            return ResolutionOutcome.None;
         }
 
-        var leadScore = candidates[0].Score;
-        var options_list = new List<ClarificationOption>(capacity: candidates.Count);
-        options_list.Add(new ClarificationOption
+        var lead = candidates[0];
+        var options_list = new List<ClarificationOption>(capacity: candidates.Count)
         {
-            Id = candidates[0].Id,
-            Label = candidates[0].DisplayName ?? candidates[0].Id
-        });
+            new() { Id = lead.Id, Label = lead.DisplayName ?? lead.Id }
+        };
 
         for (var i = 1; i < candidates.Count; i++)
         {
@@ -226,7 +308,7 @@ internal static class MaterialAmbiguityEvaluator
                 break;
             }
 
-            if (leadScore - candidates[i].Score > options.MaterialSpread)
+            if (lead.Score - candidates[i].Score > options.MaterialSpread)
             {
                 break;
             }
@@ -238,13 +320,27 @@ internal static class MaterialAmbiguityEvaluator
             });
         }
 
-        if (options_list.Count < 2)
+        if (options_list.Count >= 2)
         {
-            options_out = [];
-            return false;
+            options_out = options_list;
+            return ResolutionOutcome.Ambiguous;
         }
 
-        options_out = options_list;
-        return true;
+        // Single dominant candidate: record the runner-up margin so the
+        // auto-resolution stays auditable (1.0 when there was no runner-up).
+        var runnerUpMargin = candidates.Count > 1
+            ? lead.Score - candidates[1].Score
+            : 1.0;
+
+        binding = new ResolvedBinding
+        {
+            QuestionId = questionId,
+            Kind = kind,
+            CandidateId = lead.Id,
+            DisplayName = lead.DisplayName,
+            Score = lead.Score,
+            RunnerUpMargin = Math.Round(runnerUpMargin, 3)
+        };
+        return ResolutionOutcome.AutoResolved;
     }
 }

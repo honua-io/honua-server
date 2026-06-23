@@ -133,6 +133,32 @@ public sealed class StacCatalogTests : IClassFixture<WebAppFixture>
             link.GetProperty("href").GetString()!.EndsWith("/stac/conformance", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// STAC Item Search Filter Extension (honua-server#1932): the landing page MUST advertise the
+    /// catalog queryables document via the OGC queryables rel link
+    /// (http://www.opengis.net/def/rel/ogc/1.0/queryables) so clients and stac-api-validator can
+    /// discover the filterable property set. The href must point at /stac/queryables.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.StacCatalog)]
+    [Endpoint("GET /stac")]
+    public async Task GetCatalog_AdvertisesQueryablesRelLink()
+    {
+        var response = await _fixture.Client.GetAsync("/stac");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .Should()
+            .Contain(link =>
+                link.GetProperty("rel").GetString() == "http://www.opengis.net/def/rel/ogc/1.0/queryables" &&
+                link.GetProperty("href").GetString()!.EndsWith("/stac/queryables", StringComparison.Ordinal));
+    }
+
     [IntegrationTest]
     [Operation(Operations.StacCatalog)]
     [Endpoint("GET /stac/conformance")]

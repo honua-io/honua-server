@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/provenance.schema.json",
+  "title": "Provenance resource payload",
+  "description": "Read-only projection of a ProvenanceRecord, addressable as honua://results/{result_package_id}/provenance. See resources.md §honua://results/{result_package_id}/provenance.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "sources": {
+      "type": "array",
+      "description": "Dataset sources with version and description.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "datasetId": { "type": "string" },
+          "version": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "processDefinitions": {
+      "type": "array",
+      "description": "Process identifiers used.",
+      "items": { "type": "string" }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "clarificationsAsked": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "clarificationsAnswered": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "executedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Execution timestamp."
+    },
+    "generatedArtifactIds": {
+      "type": "array",
+      "description": "Artifacts produced by this execution.",
+      "items": { "type": "string" }
+    }
+  }
+}

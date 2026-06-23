@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/preview_map_package.schema.json",
+  "title": "preview_map_package inputSchema",
+  "description": "Argument shape for preview_map_package (Analyze, Build App; returns a preview ArtifactRef). Produces a read-only preview artifact for an existing map package. Responsibility-level. See taxonomy.md §Map composition.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["mapPackageId"],
+  "properties": {
+    "mapPackageId": {
+      "type": "string",
+      "description": "Identifier (map_…) of the MapPackage to preview."
+    },
+    "width": { "type": "integer", "minimum": 1 },
+    "height": { "type": "integer", "minimum": 1 }
+  }
+}
