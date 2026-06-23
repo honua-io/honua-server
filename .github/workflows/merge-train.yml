@@ -103,38 +103,38 @@ jobs:
           HAVE_BEDROCK_KEYS: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID != '' && secrets.BEDROCK_AWS_SECRET_ACCESS_KEY != '' }}
         run: |
           set -euo pipefail
-          # Only an explicit workflow_dispatch with train_apply=true acts.
-          # Scheduled and workflow_run invocations are ALWAYS dry-run.
+          # AUTONOMOUS: scheduled + workflow_run (CI-completion) invocations LAND
+          # batches — apply + LLM + autofix (when the Bedrock access-key secrets
+          # exist). A human can still force a dry-run with workflow_dispatch +
+          # train_apply=false. Safety is intact: FF-only CAS, escalation labels,
+          # pre-existing + aux-nonblocking filters, autofix cap.
           apply=0
-          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_APPLY}" == "true" ]]; then
+          if [[ "${EVENT_NAME}" == "schedule" || "${EVENT_NAME}" == "workflow_run" ]]; then
+            apply=1
+          elif [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_APPLY}" == "true" ]]; then
             apply=1
           fi
           echo "train_apply=${apply}" >> "$GITHUB_OUTPUT"
           mb="${DISPATCH_MAX_BATCH:-3}"; [[ -z "${mb}" ]] && mb=3
           echo "max_batch=${mb}" >> "$GITHUB_OUTPUT"
-          # TRAIN_LLM defaults to 0 for ALL triggers. It can only turn on via an
-          # explicit workflow_dispatch with use_llm=true AND configured Bedrock
-          # access-key secrets. Scheduled / workflow_run are always deterministic.
+          # TRAIN_LLM: on whenever we're applying live AND Bedrock keys exist
+          # (autonomous schedule/workflow_run, or an explicit dispatch).
           llm=0
-          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_USE_LLM}" == "true" ]]; then
-            if [[ "${HAVE_BEDROCK_KEYS}" == "true" ]]; then
+          if [[ "${apply}" == "1" && "${HAVE_BEDROCK_KEYS}" == "true" ]]; then
+            if [[ "${EVENT_NAME}" != "workflow_dispatch" || "${DISPATCH_USE_LLM}" == "true" ]]; then
               llm=1
-            else
-              echo "::warning::use_llm=true but secrets.BEDROCK_AWS_ACCESS_KEY_ID / BEDROCK_AWS_SECRET_ACCESS_KEY are unset; running deterministic (TRAIN_LLM=0). Configure the dedicated Bedrock access-key secrets to enable the LLM layer."
             fi
           fi
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_USE_LLM}" == "true" && "${HAVE_BEDROCK_KEYS}" != "true" ]]; then
+            echo "::warning::use_llm=true but BEDROCK_AWS_* secrets unset; running deterministic (TRAIN_LLM=0)."
+          fi
           echo "train_llm=${llm}" >> "$GITHUB_OUTPUT"
-          # TRAIN_AUTOFIX defaults to 0 for ALL triggers (like TRAIN_LLM). It can
-          # only turn on via an explicit workflow_dispatch with use_autofix=true,
-          # train_apply=true (autofix is a LIVE landing path), AND configured
-          # Bedrock access-key secrets. Scheduled / workflow_run are never autofix.
+          # TRAIN_AUTOFIX: roll-forward AI fix-agent — requires LIVE (apply=1) +
+          # Bedrock keys. On for autonomous runs; on for explicit dispatch with
+          # use_autofix=true. A rare backstop (most batches land via the filters).
           autofix=0
-          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_USE_AUTOFIX}" == "true" ]]; then
-            if [[ "${apply}" != "1" ]]; then
-              echo "::warning::use_autofix=true ignored: autofix only runs in LIVE mode (train_apply=true). Running without autofix."
-            elif [[ "${HAVE_BEDROCK_KEYS}" != "true" ]]; then
-              echo "::warning::use_autofix=true but secrets.BEDROCK_AWS_ACCESS_KEY_ID / BEDROCK_AWS_SECRET_ACCESS_KEY are unset; running without the AI fix-agent (TRAIN_AUTOFIX=0)."
-            else
+          if [[ "${apply}" == "1" && "${HAVE_BEDROCK_KEYS}" == "true" ]]; then
+            if [[ "${EVENT_NAME}" != "workflow_dispatch" || "${DISPATCH_USE_AUTOFIX}" == "true" ]]; then
               autofix=1
             fi
           fi
