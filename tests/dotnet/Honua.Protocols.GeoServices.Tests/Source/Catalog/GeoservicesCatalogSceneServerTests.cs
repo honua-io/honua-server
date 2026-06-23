@@ -135,6 +135,7 @@ public sealed class GeoservicesCatalogSceneServerTests
         // honua.scene_datasets is schema-qualified to the literal global honua schema, so
         // the search_path the fixture sets is irrelevant here — any connection on the shared
         // data source clears the one table every scene-catalog test contends on.
-        return fixture.Postgres.ExecuteAsync("TRUNCATE TABLE honua.scene_datasets;");
+        // #2020: route the global honua.scene_datasets TRUNCATE through the schema-mutation advisory lock.
+        return fixture.Postgres.ApplyGlobalSeedSqlAsync("TRUNCATE TABLE honua.scene_datasets;");
     }
 }

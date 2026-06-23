@@ -39,7 +39,7 @@ jobs:
         working-directory: clients/qgis
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Python
         uses: ./.github/actions/setup-python-ci

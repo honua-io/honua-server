@@ -45,17 +45,27 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
         foreach (var provider in providers)
         {
+            // A provider that cannot perform the operation is skipped before it counts against
+            // the failover budget, so capability-incompatible providers never exhaust the
+            // MaxFailoverAttempts allowance for a working provider later in the list.
+            if (!provider.Capabilities.SupportsForwardGeocode)
+            {
+                GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "forward geocoding");
+                continue;
+            }
+
+            // Stop once the configured number of real attempts is reached. Capability skips above
+            // are free and never consume this budget.
+            if (!HasFailoverBudget(attemptedProviders.Count))
+            {
+                break;
+            }
+
             attemptedProviders.Add(provider.Name);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                if (!provider.Capabilities.SupportsForwardGeocode)
-                {
-                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "forward geocoding");
-                    continue;
-                }
-
                 var results = await provider.ForwardGeocodeAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
@@ -95,7 +105,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        var errorMessage = BuildFailureMessage(lastException, "forward geocoding");
+        var errorMessage = BuildFailureMessage(lastException, "forward geocoding", attemptedProviders);
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
         GeocodeCoordinatorLog.AllAttemptsFailed(
@@ -129,17 +139,26 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
         foreach (var provider in providers)
         {
+            // Capability-incompatible providers are skipped before counting against the failover
+            // budget so they cannot exhaust MaxFailoverAttempts ahead of a capable provider.
+            if (!provider.Capabilities.SupportsReverseGeocode)
+            {
+                GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "reverse geocoding");
+                continue;
+            }
+
+            // Stop once the configured number of real attempts is reached. Capability skips above
+            // are free and never consume this budget.
+            if (!HasFailoverBudget(attemptedProviders.Count))
+            {
+                break;
+            }
+
             attemptedProviders.Add(provider.Name);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                if (!provider.Capabilities.SupportsReverseGeocode)
-                {
-                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "reverse geocoding");
-                    continue;
-                }
-
                 var result = await provider.ReverseGeocodeAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
@@ -179,7 +198,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        var errorMessage = BuildFailureMessage(lastException, "reverse geocoding");
+        var errorMessage = BuildFailureMessage(lastException, "reverse geocoding", attemptedProviders);
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
         GeocodeCoordinatorLog.AllAttemptsFailed(
@@ -209,17 +228,26 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
         foreach (var provider in providers)
         {
+            // Capability-incompatible providers are skipped before counting against the failover
+            // budget so they cannot exhaust MaxFailoverAttempts ahead of a capable provider.
+            if (!provider.Capabilities.SupportsSuggest)
+            {
+                GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "suggest");
+                continue;
+            }
+
+            // Stop once the configured number of real attempts is reached. Capability skips above
+            // are free and never consume this budget.
+            if (!HasFailoverBudget(attemptedProviders.Count))
+            {
+                break;
+            }
+
             attemptedProviders.Add(provider.Name);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                if (!provider.Capabilities.SupportsSuggest)
-                {
-                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "suggest");
-                    continue;
-                }
-
                 var results = await provider.SuggestAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
@@ -256,7 +284,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        var errorMessage = BuildFailureMessage(lastException, "suggestions");
+        var errorMessage = BuildFailureMessage(lastException, "suggestions", attemptedProviders);
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
         GeocodeCoordinatorLog.AllAttemptsFailed(
@@ -282,17 +310,26 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
         foreach (var provider in providers)
         {
+            // Capability-incompatible providers are skipped before counting against the failover
+            // budget so they cannot exhaust MaxFailoverAttempts ahead of a capable provider.
+            if (!provider.Capabilities.SupportsBatch)
+            {
+                GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "batch geocoding");
+                continue;
+            }
+
+            // Stop once the configured number of real attempts is reached. Capability skips above
+            // are free and never consume this budget.
+            if (!HasFailoverBudget(attemptedProviders.Count))
+            {
+                break;
+            }
+
             attemptedProviders.Add(provider.Name);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                if (!provider.Capabilities.SupportsBatch)
-                {
-                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "batch geocoding");
-                    continue;
-                }
-
                 var results = await provider.BatchGeocodeAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
@@ -329,7 +366,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        var errorMessage = BuildFailureMessage(lastException, "batch geocoding");
+        var errorMessage = BuildFailureMessage(lastException, "batch geocoding", attemptedProviders);
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
         GeocodeCoordinatorLog.AllAttemptsFailed(
@@ -342,18 +379,31 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
 
+    // Returns true while there is remaining failover budget to initiate another real attempt.
+    // Capability-skipped providers do not count toward attemptedProviders, so they never consume
+    // this budget; only providers that actually attempt the operation do.
+    private bool HasFailoverBudget(int attemptedCount)
+    {
+        if (attemptedCount == 0)
+        {
+            return true;
+        }
+
+        return _configuration.EnableFailover && attemptedCount < Math.Max(1, _configuration.MaxFailoverAttempts);
+    }
+
     private List<IGeocodeProvider> GetProvidersToTry(string? preferredProviderName)
     {
         var providers = new List<IGeocodeProvider>();
 
-        // The total number of providers attempted is capped at MaxFailoverAttempts. The preferred
-        // provider is always tried first; the default provider and any additional failover providers
-        // are only added while there is remaining budget, so the overall attempt count never exceeds
-        // the configured cap (MaxFailoverAttempts is validated to be greater than zero, so the
-        // preferred provider always fits).
-        var maxProviders = Math.Max(1, _configuration.MaxFailoverAttempts);
+        // This returns the full ordered candidate set; it is intentionally NOT truncated to
+        // MaxFailoverAttempts. The MaxFailoverAttempts cap bounds the number of providers that
+        // actually *attempt* the operation, which the calling loop enforces (see
+        // HasFailoverBudget). Truncating here would let providers that the loop skips because
+        // they lack the requested capability crowd a capable provider out of the candidate list
+        // entirely, defeating failover.
 
-        // Add preferred provider first if specified and available
+        // Add preferred provider first if specified and available.
         if (!string.IsNullOrWhiteSpace(preferredProviderName))
         {
             var preferredProvider = _providerRegistry.GetProvider(preferredProviderName);
@@ -367,11 +417,8 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        // Add default provider if not already added and there is remaining budget. This addition
-        // counts against MaxFailoverAttempts so a distinct preferred + default pair cannot push the
-        // total beyond the cap.
-        if (providers.Count < maxProviders &&
-            (providers.Count == 0 || !providers.Any(p => p.Name.Equals(_configuration.DefaultProvider, StringComparison.OrdinalIgnoreCase))))
+        // Add default provider next if not already added.
+        if (providers.Count == 0 || !providers.Any(p => p.Name.Equals(_configuration.DefaultProvider, StringComparison.OrdinalIgnoreCase)))
         {
             var defaultProvider = _providerRegistry.GetProvider(_configuration.DefaultProvider);
             if (defaultProvider != null)
@@ -380,13 +427,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        // Add other providers for failover if enabled
-        if (_configuration.EnableFailover && providers.Count < maxProviders)
+        // Add the remaining registered providers as failover candidates when enabled.
+        if (_configuration.EnableFailover)
         {
             var allProviders = _providerRegistry.GetAllProviders();
             var additionalProviders = allProviders
-                .Where(p => !providers.Any(existing => existing.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase)))
-                .Take(maxProviders - providers.Count);
+                .Where(p => !providers.Any(existing => existing.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase)));
 
             providers.AddRange(additionalProviders);
         }
@@ -394,11 +440,18 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         return providers;
     }
 
-    private static string BuildFailureMessage(Exception? exception, string operation)
+    private static string BuildFailureMessage(
+        Exception? exception,
+        string operation,
+        List<string> attemptedProviders)
     {
         if (exception is null)
         {
-            return $"No providers available for {operation}.";
+            // No provider actually attempted the operation. Either none were registered/available,
+            // or every candidate provider was skipped because it does not support this capability.
+            return attemptedProviders.Count == 0
+                ? $"No provider supports {operation}."
+                : $"No providers available for {operation}.";
         }
 
         return exception switch
