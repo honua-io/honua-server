@@ -219,9 +219,16 @@ train_select() {
       gate="$(train_select_ci_gate_state "${rollup}")"
     fi
 
+    # OPTIMISTIC BATCH-AND-FIX: do NOT require a green per-PR CI to batch a PR.
+    # The ONE batch CI is the authoritative gate; real failures are fixed forward
+    # (autofix) or the culprit is attributed + dropped (train:escalated), so a
+    # genuinely-broken PR self-excludes after one try. This is what buys "less
+    # CI" — one batch run judges N PRs instead of gating on N green per-PR runs.
+    # The gate value is retained only as an informational signal and for the
+    # all-green direct-merge fast-path in train.sh.
     case "${gate}" in
       SUCCESS|FLAKE) : ;;
-      *) train_log "skip #${number}: CI Gate=${gate}"; continue ;;
+      *) train_log "include #${number} despite CI Gate=${gate}: batch CI + autofix is the judge" ;;
     esac
 
     jq -nc --argjson n "${number}" \
