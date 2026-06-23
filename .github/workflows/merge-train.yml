@@ -1,0 +1,103 @@
+name: Merge Train
+
+# Optimistic batch merge train (Phase 1). DRY-RUN BY DEFAULT.
+#
+# This workflow assembles a batch of ready PRs, smart-CIs the batch, and (only
+# when explicitly told to act) lands it onto trunk. The default for every
+# automatic trigger is TRAIN_APPLY=0 — it computes and reports decisions but
+# performs NO pushes/merges/comments/issue writes. A human flips it live by
+# dispatching with train_apply=true.
+#
+# SAFETY: merging the PR that ADDS this workflow cannot make the train act,
+# because scheduled and workflow_run invocations hard-code TRAIN_APPLY=0 and the
+# workflow_dispatch input defaults to false.
+
+on:
+  # Cadence: dry-run report every 15 minutes (never acts).
+  schedule:
+    - cron: '*/15 * * * *'
+  # React to CI completions so a freshly-green PR is considered promptly.
+  # (Still dry-run unless a human dispatches with train_apply=true.)
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  # Manual control. This is the ONLY path that can act, and only when the
+  # operator explicitly sets train_apply=true.
+  workflow_dispatch:
+    inputs:
+      train_apply:
+        description: 'Actually land the batch (push/merge/comment). Leave false for a dry-run report.'
+        type: boolean
+        required: false
+        default: false
+      max_batch:
+        description: 'Max PRs per batch.'
+        type: string
+        required: false
+        default: '3'
+
+# Serialize train runs: a batch in flight must finish before the next starts.
+# cancel-in-progress:false so we never abandon a half-landed batch mid-flight.
+concurrency:
+  group: merge-train
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # push the batch branch / fast-forward trunk
+  pull-requests: write   # merge PRs, edit labels, comment
+  actions: write         # dispatch and rerun CI runs
+  issues: write          # maintain the Merge Train State issue
+
+jobs:
+  train:
+    name: Run Merge Train
+    runs-on: ubuntu-latest
+    # NOTE: do NOT put matrix.* in this job-level if: — there is no matrix on
+    # this job, and a matrix.* reference in a job-level if: previously caused a
+    # 0-job startup failure. This job runs on every listed trigger.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up gh + jq
+        run: |
+          jq --version
+          gh --version
+
+      - name: Resolve TRAIN_APPLY (dry-run unless explicitly dispatched live)
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_APPLY: ${{ github.event.inputs.train_apply }}
+          DISPATCH_MAX_BATCH: ${{ github.event.inputs.max_batch }}
+        run: |
+          set -euo pipefail
+          # Only an explicit workflow_dispatch with train_apply=true acts.
+          # Scheduled and workflow_run invocations are ALWAYS dry-run.
+          apply=0
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_APPLY}" == "true" ]]; then
+            apply=1
+          fi
+          echo "train_apply=${apply}" >> "$GITHUB_OUTPUT"
+          mb="${DISPATCH_MAX_BATCH:-3}"; [[ -z "${mb}" ]] && mb=3
+          echo "max_batch=${mb}" >> "$GITHUB_OUTPUT"
+          echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${mb}"
+
+      - name: Run train
+        env:
+          # HONUA_MERGE_TOKEN is preferred: a PAT can re-trigger downstream
+          # workflows (a push by GITHUB_TOKEN does NOT retrigger other
+          # workflows, so CI on the batch branch would not start). Fall back to
+          # GITHUB_TOKEN when the PAT is absent — acceptable for dry-run, but
+          # live landing wants the PAT so the batch-branch CI actually fires.
+          GH_TOKEN: ${{ secrets.HONUA_MERGE_TOKEN || secrets.GITHUB_TOKEN }}
+          TRAIN_APPLY: ${{ steps.mode.outputs.train_apply }}
+          MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ secrets.HONUA_MERGE_TOKEN }}" ]]; then
+            echo "::warning::HONUA_MERGE_TOKEN not set; using GITHUB_TOKEN. A GITHUB_TOKEN push does not retrigger downstream workflows, so live batch-branch CI may not start. Set HONUA_MERGE_TOKEN before enabling live mode."
+          fi
+          scripts/ci/merge-train/train.sh
