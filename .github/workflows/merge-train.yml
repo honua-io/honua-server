@@ -1,0 +1,248 @@
+name: Merge Train
+
+# Optimistic batch merge train (Phase 1). DRY-RUN BY DEFAULT.
+#
+# This workflow assembles a batch of ready PRs, smart-CIs the batch, and (only
+# when explicitly told to act) lands it onto trunk. The default for every
+# automatic trigger is TRAIN_APPLY=0 — it computes and reports decisions but
+# performs NO pushes/merges/comments/issue writes. A human flips it live by
+# dispatching with train_apply=true.
+#
+# SAFETY: merging the PR that ADDS this workflow cannot make the train act,
+# because scheduled and workflow_run invocations hard-code TRAIN_APPLY=0 and the
+# workflow_dispatch input defaults to false.
+
+on:
+  # Cadence: dry-run report every 15 minutes (never acts).
+  schedule:
+    - cron: '*/15 * * * *'
+  # React to CI completions so a freshly-green PR is considered promptly.
+  # (Still dry-run unless a human dispatches with train_apply=true.)
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  # Manual control. This is the ONLY path that can act, and only when the
+  # operator explicitly sets train_apply=true.
+  workflow_dispatch:
+    inputs:
+      train_apply:
+        description: 'Actually land the batch (push/merge/comment). Leave false for a dry-run report.'
+        type: boolean
+        required: false
+        default: false
+      max_batch:
+        description: 'Max PRs per batch.'
+        type: string
+        required: false
+        default: '3'
+      use_llm:
+        description: 'Enable the OPTIONAL gated Bedrock LLM judgment layer (TRAIN_LLM=1). Off by default; every gate has a deterministic fallback. Requires secrets.BEDROCK_AWS_ACCESS_KEY_ID / secrets.BEDROCK_AWS_SECRET_ACCESS_KEY.'
+        type: boolean
+        required: false
+        default: false
+      use_autofix:
+        description: 'Enable the OPTIONAL roll-forward AI fix-agent (TRAIN_AUTOFIX=1). Off by default. When on, a batch-introduced REAL failure (after the pre-existing filter, not a flake) is patched FORWARD by Claude via Bedrock, surgically re-verified, then landed — instead of escalating. Capped at 2 attempts; still-failing => escalate. Requires the BEDROCK_AWS_* secrets.'
+        type: boolean
+        required: false
+        default: false
+      autofix_model:
+        description: 'Bedrock model id for the AI fix-agent (code edits). Default a Sonnet-class model; override per your account entitlement.'
+        type: string
+        required: false
+        default: ''
+
+# Serialize train runs: a batch in flight must finish before the next starts.
+# cancel-in-progress:false so we never abandon a half-landed batch mid-flight.
+concurrency:
+  group: merge-train
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # push the batch branch / fast-forward trunk
+  pull-requests: write   # merge PRs, edit labels, comment
+  actions: write         # dispatch and rerun CI runs
+  issues: write          # maintain the Merge Train State issue
+  id-token: write        # OIDC for AWS Bedrock (claude-code-action), when autofix on
+
+jobs:
+  train:
+    name: Run Merge Train
+    runs-on: ubuntu-latest
+    # NOTE: do NOT put matrix.* in this job-level if: — there is no matrix on
+    # this job, and a matrix.* reference in a job-level if: previously caused a
+    # 0-job startup failure. This job runs on every listed trigger.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # The FF land pushes directly to trunk, so the git push must be
+          # authenticated as the merge-train PAT (a repo admin that the trunk
+          # ruleset bypass covers). The default GITHUB_TOKEN pushes as
+          # github-actions[bot], which has no ruleset bypass, so the push is
+          # rejected with GH013 "changes must be made through a pull request".
+          token: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        # REQUIRED: the train creates real commits (assemble merge commits,
+        # forward-fix commits). Without an identity `git merge --no-ff -m ...`
+        # fails with "empty ident name", which assemble.sh would otherwise
+        # mis-report as a conflict and skip every PR. Author = repo owner.
+        run: |
+          git config --global user.name "Mike McDougall"
+          git config --global user.email "mike@honua.io"
+
+      - name: Set up gh + jq
+        run: |
+          jq --version
+          gh --version
+
+      - name: Resolve TRAIN_APPLY (dry-run unless explicitly dispatched live)
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_APPLY: ${{ github.event.inputs.train_apply }}
+          DISPATCH_MAX_BATCH: ${{ github.event.inputs.max_batch }}
+          DISPATCH_USE_LLM: ${{ github.event.inputs.use_llm }}
+          DISPATCH_USE_AUTOFIX: ${{ github.event.inputs.use_autofix }}
+          DISPATCH_AUTOFIX_MODEL: ${{ github.event.inputs.autofix_model }}
+          HAVE_BEDROCK_KEYS: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID != '' && secrets.BEDROCK_AWS_SECRET_ACCESS_KEY != '' }}
+        run: |
+          set -euo pipefail
+          # AUTONOMOUS: scheduled + workflow_run (CI-completion) invocations LAND
+          # batches — apply + LLM + autofix (when the Bedrock access-key secrets
+          # exist). A human can still force a dry-run with workflow_dispatch +
+          # train_apply=false. Safety is intact: FF-only CAS, escalation labels,
+          # pre-existing + aux-nonblocking filters, autofix cap.
+          apply=0
+          if [[ "${EVENT_NAME}" == "schedule" || "${EVENT_NAME}" == "workflow_run" ]]; then
+            apply=1
+          elif [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_APPLY}" == "true" ]]; then
+            apply=1
+          fi
+          echo "train_apply=${apply}" >> "$GITHUB_OUTPUT"
+          mb="${DISPATCH_MAX_BATCH:-3}"; [[ -z "${mb}" ]] && mb=3
+          echo "max_batch=${mb}" >> "$GITHUB_OUTPUT"
+          # TRAIN_LLM: on whenever we're applying live AND Bedrock keys exist
+          # (autonomous schedule/workflow_run, or an explicit dispatch).
+          llm=0
+          if [[ "${apply}" == "1" && "${HAVE_BEDROCK_KEYS}" == "true" ]]; then
+            if [[ "${EVENT_NAME}" != "workflow_dispatch" || "${DISPATCH_USE_LLM}" == "true" ]]; then
+              llm=1
+            fi
+          fi
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_USE_LLM}" == "true" && "${HAVE_BEDROCK_KEYS}" != "true" ]]; then
+            echo "::warning::use_llm=true but BEDROCK_AWS_* secrets unset; running deterministic (TRAIN_LLM=0)."
+          fi
+          echo "train_llm=${llm}" >> "$GITHUB_OUTPUT"
+          # TRAIN_AUTOFIX: roll-forward AI fix-agent — requires LIVE (apply=1) +
+          # Bedrock keys. On for autonomous runs; on for explicit dispatch with
+          # use_autofix=true. A rare backstop (most batches land via the filters).
+          autofix=0
+          if [[ "${apply}" == "1" && "${HAVE_BEDROCK_KEYS}" == "true" ]]; then
+            if [[ "${EVENT_NAME}" != "workflow_dispatch" || "${DISPATCH_USE_AUTOFIX}" == "true" ]]; then
+              autofix=1
+            fi
+          fi
+          echo "train_autofix=${autofix}" >> "$GITHUB_OUTPUT"
+          echo "autofix_model=${DISPATCH_AUTOFIX_MODEL}" >> "$GITHUB_OUTPUT"
+          echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${mb} TRAIN_LLM=${llm} TRAIN_AUTOFIX=${autofix}"
+
+      # --- Roll-forward AI fix-agent setup (autofix only) --------------------
+      # These steps run ONLY when autofix is enabled (TRAIN_AUTOFIX=1), which is
+      # itself only possible on an explicit live workflow_dispatch with the
+      # Bedrock secrets present. They wire Claude-via-Bedrock so train.sh's
+      # in-loop fix step (TRAIN_AUTOFIX_STEP_CMD -> autofix-agent.sh) can patch a
+      # failing batch forward. The claude-code-action engine (its CLI) is the
+      # same one anthropics/claude-code-action wraps; we install it here and
+      # route it to Bedrock per docs/cloud-providers.md.
+      - name: Configure AWS credentials for Bedrock (autofix)
+        if: steps.mode.outputs.train_autofix == '1'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.HONUA_BEDROCK_REGION || 'us-west-2' }}
+
+      - name: Install Claude Code CLI (autofix fix-agent engine, Bedrock)
+        if: steps.mode.outputs.train_autofix == '1'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run train
+        env:
+          # MERGE_TRAIN_TOKEN is preferred: a PAT can re-trigger downstream
+          # workflows (a push by GITHUB_TOKEN does NOT retrigger other
+          # workflows, so CI on the batch branch would not start). Fall back to
+          # GITHUB_TOKEN when the PAT is absent — acceptable for dry-run, but
+          # live landing wants the PAT so the batch-branch CI actually fires.
+          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
+          TRAIN_APPLY: ${{ steps.mode.outputs.train_apply }}
+          MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
+          # Instrumentation: the run timestamp is injected here (not generated in
+          # the script) so the Step Summary, metrics JSON, and state-issue
+          # aggregate all agree on a single run instant.
+          TRAIN_RUN_TIMESTAMP: ${{ github.event.repository.updated_at }}
+          # Write the metrics artifact into the workspace for upload below. The
+          # train ALSO appends its dashboard to $GITHUB_STEP_SUMMARY directly, so
+          # the Summary tab is populated even when the train selects nothing.
+          TRAIN_METRICS_OUT: ${{ github.workspace }}/merge-train-metrics.json
+          # OPTIONAL gated LLM layer. TRAIN_LLM=0 here on every default path; the
+          # gates are inert and make zero Bedrock calls unless this is 1.
+          TRAIN_LLM: ${{ steps.mode.outputs.train_llm }}
+          # Bedrock auth via the dedicated least-privilege IAM user
+          # (honua-merge-train-bedrock) access-key secrets. These are only
+          # consumed by bedrock-invoke.sh when TRAIN_LLM=1; on every default
+          # (deterministic) path no AWS call is made and the keys go unused.
+          # bedrock-invoke.sh reads the standard AWS_* env, so exporting the
+          # secrets here is all that is needed.
+          AWS_ACCESS_KEY_ID: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.HONUA_BEDROCK_REGION || 'us-west-2' }}
+          BEDROCK_MODEL_ID: ${{ vars.HONUA_BEDROCK_MODEL_ID || 'us.anthropic.claude-haiku-4-5-20251001-v1:0' }}
+          # OPTIONAL roll-forward AI fix-agent. TRAIN_AUTOFIX=0 on every default
+          # path; the autofix gate is inert and the train escalates fixable
+          # failures exactly like Phase 1. When 1 (explicit live dispatch +
+          # Bedrock secrets), a batch-introduced REAL failure is patched forward
+          # by the fix-agent (autofix-agent.sh, wired below), surgically
+          # re-verified, and landed; still-failing after the cap => escalate.
+          TRAIN_AUTOFIX: ${{ steps.mode.outputs.train_autofix }}
+          # The fix model (code edits) — a Sonnet-class default unless overridden.
+          TRAIN_AUTOFIX_MODEL: ${{ steps.mode.outputs.autofix_model != '' && steps.mode.outputs.autofix_model || (vars.HONUA_BEDROCK_AUTOFIX_MODEL_ID || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0') }}
+          # CLAUDE_CODE_USE_BEDROCK routes the fix-agent CLI to Bedrock (matching
+          # anthropics/claude-code-action's use_bedrock:true). Only consumed when
+          # TRAIN_AUTOFIX=1; ignored otherwise.
+          CLAUDE_CODE_USE_BEDROCK: 1
+          # The in-loop fix step: train.sh invokes this wrapper as
+          # "<cmd> <batch> <request-file>". Only reached when TRAIN_AUTOFIX=1.
+          TRAIN_AUTOFIX_STEP_CMD: ${{ github.workspace }}/scripts/ci/merge-train/autofix-agent.sh
+        run: |
+          set -euo pipefail
+          # Stamp a real ISO-8601 instant (the repository updated_at above is only
+          # a stable fallback; prefer a fresh UTC timestamp for this run).
+          export TRAIN_RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [[ -z "${{ secrets.MERGE_TRAIN_TOKEN }}" ]]; then
+            echo "::warning::MERGE_TRAIN_TOKEN not set; using GITHUB_TOKEN. A GITHUB_TOKEN push does not retrigger downstream workflows, so live batch-branch CI may not start. Set MERGE_TRAIN_TOKEN before enabling live mode."
+          fi
+          scripts/ci/merge-train/train.sh
+
+      - name: Ensure Step Summary is never silent
+        if: always()
+        run: |
+          # Defensive: if the train crashed before writing any dashboard, leave a
+          # breadcrumb so a run is never an empty Summary tab.
+          if [[ ! -s "${GITHUB_STEP_SUMMARY:-/dev/null}" ]]; then
+            {
+              echo "## 🚂 Merge Train"
+              echo ""
+              echo "_The train produced no dashboard this run (it may have failed before reporting). Check the **Run train** step log above._"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload merge-train metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merge-train-metrics
+          path: ${{ github.workspace }}/merge-train-metrics.json
+          if-no-files-found: warn
+          retention-days: 30

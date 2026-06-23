@@ -121,7 +121,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("FlatGeobuf output is not supported for source-backed PostGIS layers yet.");
+        => QueryFlatGeobufAsyncCore(query, cancellationToken);
 
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
         int layerId,
@@ -1104,11 +1104,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
     }
 
-    private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
+    private async Task<NpgsqlConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)
     {
         var connectionString = await ResolveBoundConnectionStringAsync().ConfigureAwait(false);
         if (connectionString == null)
         {
+            // Return the provider's lease intact: for a gated/secure provider the lease's
+            // wrapper (e.g. SemaphoreReleasingConnection) releases the QueryConcurrencyGate
+            // slot on disposal. Down-casting to NpgsqlConnection here would drop that wrapper
+            // and permanently leak the gate slot on every read (#1978).
             return await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -1123,7 +1127,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             throw;
         }
 
-        return connection;
+        // The bound-string connection owns itself: disposing the lease disposes the connection.
+        return new NpgsqlConnectionLease(connection, connection);
     }
 
     private async Task<string?> ResolveBoundConnectionStringAsync()
