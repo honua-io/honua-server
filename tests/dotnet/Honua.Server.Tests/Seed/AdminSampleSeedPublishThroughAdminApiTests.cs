@@ -189,9 +189,13 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
             return;
         }
 
-        await using var connection = await _fixture.Postgres.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+        // #2020: serialize the global honua.* cleanup deletes under the schema-mutation advisory
+        // lock (parameterized multi-statement command spanning a TEMP staging table).
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
             DROP TABLE IF EXISTS admin_sample_publish_cleanup_layers;
 
             CREATE TEMP TABLE admin_sample_publish_cleanup_layers (
@@ -221,9 +225,10 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
 
             DROP TABLE admin_sample_publish_cleanup_layers;
             """;
-        command.Parameters.AddWithValue("serviceName", _serviceName);
+            command.Parameters.AddWithValue("serviceName", _serviceName);
 
-        await command.ExecuteNonQueryAsync();
+            await command.ExecuteNonQueryAsync();
+        });
     }
 
     private static string ResolveRepoFile(params string[] path)

@@ -37,7 +37,12 @@ public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
         using var json = JsonDocument.Parse(content);
 
         json.RootElement.GetProperty("type").GetString().Should().Be("object");
-        json.RootElement.TryGetProperty("$schema", out _).Should().BeTrue();
+        // stac-api-validator (Filter Ext) only accepts JSON Schema draft 2019-09 or draft-07.
+        json.RootElement.GetProperty("$schema").GetString()
+            .Should().Be("https://json-schema.org/draft/2019-09/schema");
+        // stac-api-validator (Filter Ext) requires $id to equal the queryables URL.
+        json.RootElement.GetProperty("$id").GetString()
+            .Should().EndWith("/stac/queryables");
         json.RootElement.TryGetProperty("properties", out var properties).Should().BeTrue();
         properties.ValueKind.Should().Be(JsonValueKind.Object);
         properties.EnumerateObject().Should().NotBeEmpty();
@@ -59,9 +64,34 @@ public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
         using var json = JsonDocument.Parse(content);
 
         json.RootElement.GetProperty("type").GetString().Should().Be("object");
-        json.RootElement.TryGetProperty("$schema", out _).Should().BeTrue();
+        json.RootElement.GetProperty("$schema").GetString()
+            .Should().Be("https://json-schema.org/draft/2019-09/schema");
+        json.RootElement.GetProperty("$id").GetString()
+            .Should().EndWith($"/stac/collections/{collectionId}/queryables");
         json.RootElement.TryGetProperty("properties", out var properties).Should().BeTrue();
         properties.ValueKind.Should().Be(JsonValueKind.Object);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_AdvertisesQueryablesRelLink()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .Should()
+            .Contain(link =>
+                link.GetProperty("rel").GetString() == "http://www.opengis.net/def/rel/ogc/1.0/queryables" &&
+                link.GetProperty("href").GetString()!.EndsWith(
+                    $"/stac/collections/{collectionId}/queryables", StringComparison.Ordinal));
     }
 
     [IntegrationTest]

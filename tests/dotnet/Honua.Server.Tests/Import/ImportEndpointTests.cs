@@ -1085,28 +1085,31 @@ public class ImportEndpointTests : IAsyncLifetime
 
     private async Task CleanupSchemaBoundaryImportAsync(int? layerId, string serviceName, string tableName)
     {
-        await using var connection = await _fixture.Postgres.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            DELETE FROM features WHERE layer_id = @layerId;
-            DELETE FROM honua.layer_fields WHERE layer_id = @layerId;
-            DELETE FROM honua.service_layers WHERE layer_id = @layerId;
-            DELETE FROM honua.layers WHERE layer_id = @layerId;
-            DELETE FROM honua.services WHERE service_name = @serviceName;
-            DROP TABLE IF EXISTS honua_data."PLACEHOLDER" CASCADE;
-            """.Replace("\"PLACEHOLDER\"", QuoteIdentifier(tableName), StringComparison.Ordinal);
-        command.Parameters.AddWithValue("layerId", (object?)layerId ?? DBNull.Value);
-        command.Parameters.AddWithValue("serviceName", serviceName);
-        await command.ExecuteNonQueryAsync();
+        // #2020: serialize the global honua.*/honua_data cleanup deletes + DROP TABLE under the
+        // schema-mutation advisory lock (parameterized multi-statement command).
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DELETE FROM features WHERE layer_id = @layerId;
+                DELETE FROM honua.layer_fields WHERE layer_id = @layerId;
+                DELETE FROM honua.service_layers WHERE layer_id = @layerId;
+                DELETE FROM honua.layers WHERE layer_id = @layerId;
+                DELETE FROM honua.services WHERE service_name = @serviceName;
+                DROP TABLE IF EXISTS honua_data."PLACEHOLDER" CASCADE;
+                """.Replace("\"PLACEHOLDER\"", QuoteIdentifier(tableName), StringComparison.Ordinal);
+            command.Parameters.AddWithValue("layerId", (object?)layerId ?? DBNull.Value);
+            command.Parameters.AddWithValue("serviceName", serviceName);
+            await command.ExecuteNonQueryAsync();
+        });
     }
 
     private async Task DropSchemaIfExistsAsync(string schemaName)
     {
-        await using var connection = await _fixture.Postgres.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "DROP SCHEMA IF EXISTS PLACEHOLDER CASCADE;"
-            .Replace("PLACEHOLDER", QuoteIdentifier(schemaName), StringComparison.Ordinal);
-        await command.ExecuteNonQueryAsync();
+        // #2020: route the raw DROP SCHEMA ... CASCADE through the locked, retrying helper
+        // (DropSchemaAsync already emits DROP SCHEMA IF EXISTS {schema} CASCADE under the lock).
+        await _fixture.Postgres.DropSchemaAsync(schemaName);
     }
 
     private static string QuoteIdentifier(string identifier)

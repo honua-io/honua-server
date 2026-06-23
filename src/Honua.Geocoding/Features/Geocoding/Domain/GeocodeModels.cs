@@ -84,8 +84,16 @@ public sealed record BatchGeocodeRequest(
     string? CountryCodes = null)
 {
     /// <summary>
-    /// Maximum number of results per query
+    /// Maximum number of candidate results requested per query.
     /// </summary>
+    /// <remarks>
+    /// The default batch path requests up to this many candidates per input record and returns
+    /// them in request order, stamping each candidate with the originating input's
+    /// <see cref="GeocodeCandidate.ResultIdAttribute"/> (matching the Esri <c>geocodeAddresses</c>
+    /// contract where every location reports a <c>ResultID</c>). When this value exceeds one,
+    /// several candidates may share the same <c>ResultID</c>. An input that yields no candidates
+    /// still occupies exactly one explicit "no match" slot, so alignment is always preserved.
+    /// </remarks>
     public int MaxResultsPerQuery { get; init; } = 1;
 }
 
