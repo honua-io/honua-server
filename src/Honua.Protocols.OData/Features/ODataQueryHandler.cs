@@ -842,6 +842,17 @@ internal sealed partial class ODataQueryHandler(
             ODataUtilityService.SetODataHeaders(context);
             return Results.Bytes(payload, contentType);
         }
+        catch (ParquetRuntimeUnavailableException)
+        {
+            // $format=parquet requested on a runtime image that cannot load the native
+            // ParquetSharp Arrow encoder (glibc-only; absent on Alpine/musl). Return a
+            // clean 501 capability response instead of an unhandled 500 (honua-server#1942).
+            return ODataUtilityService.CreateODataError(
+                context,
+                "NotImplemented",
+                ParquetRuntimeUnavailableException.CapabilityMessage,
+                StatusCodes.Status501NotImplemented);
+        }
         catch (InvalidOperationException ex)
         {
             // The shared writer rejects unsupported cloud-native geometry exports

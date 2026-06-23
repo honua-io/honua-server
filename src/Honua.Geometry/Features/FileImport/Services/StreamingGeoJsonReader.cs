@@ -144,6 +144,19 @@ internal sealed class StreamingGeoJsonReader
                 }
 
                 var remaining = data.Length - consumed;
+                if (_limits.MaxSingleFeatureBytes > 0 && remaining > _limits.MaxSingleFeatureBytes)
+                {
+                    // A single un-closed feature (or pre-feature leftover) has grown past the
+                    // per-feature memory budget. Fail fast instead of buffering the whole file
+                    // in RAM, which a few crafted concurrent uploads could otherwise use to OOM
+                    // the host (#1993).
+                    throw new InvalidDataException(
+                        $"A single GeoJSON feature (or unparsed leftover) exceeds the maximum " +
+                        $"in-memory size of {_limits.MaxSingleFeatureBytes:N0} bytes. The feature " +
+                        "object is too large to stream; split the input or raise " +
+                        "ImportLimits.MaxSingleFeatureBytes.");
+                }
+
                 if (remaining > 0)
                 {
                     if (leftoverBuffer == null || leftoverBuffer.Length < remaining)
@@ -400,6 +413,19 @@ internal sealed class StreamingGeoJsonReader
             else
             {
                 BufferFeatureBytes(data.Length);
+            }
+
+            // A single feature object that spans many chunks accumulates here across
+            // ProcessJsonChunk calls. Cap its in-memory size so one pathologically large
+            // (or never-closing) feature cannot buffer the whole file in RAM (#1993).
+            if (_limits.MaxSingleFeatureBytes > 0 &&
+                featureBuffer != null &&
+                featureBuffer.WrittenCount > _limits.MaxSingleFeatureBytes)
+            {
+                throw new InvalidDataException(
+                    $"A single GeoJSON feature exceeds the maximum in-memory size of " +
+                    $"{_limits.MaxSingleFeatureBytes:N0} bytes. The feature object is too large " +
+                    "to stream; split the input or raise ImportLimits.MaxSingleFeatureBytes.");
             }
         }
 

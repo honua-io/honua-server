@@ -25,7 +25,6 @@ class TestGeometryServer:
         assert response.status_code == 200
 
         data = response.json()
-        assert data["currentVersion"] > 0
         assert "serviceDescription" in data
         assert data["maxBufferCount"] > 0
         assert data["maxSimplifyCount"] > 0

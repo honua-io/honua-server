@@ -303,6 +303,9 @@ internal static partial class ProcessPlanValidator
             case "conversion.raster-reproject":
                 ValidateRasterReprojectSemantics(step, violations);
                 break;
+            case "pcloud.translate":
+                ValidatePointCloudTranslateSemantics(step, violations);
+                break;
             case "analytics.cluster":
                 ValidateClusterSemantics(step, analyticsLimits, violations);
                 ApplySharedAnalyticsFilterSemantics(step, violations);
@@ -865,6 +868,55 @@ internal static partial class ProcessPlanValidator
         List<GeoprocessingValidationFailure> violations)
     {
         ValidatePositiveLong(step, "rasterId", violations);
+    }
+
+    // pcloud.translate decompresses LAZ/COPC and, when a projected source CRS is
+    // supplied, reprojects to EPSG:4979 (#1854). 'source' is a declared-required
+    // base64 input enforced by the base type-validator. 'sourceSrs' is optional;
+    // when present it must match the conservative CRS-token allow-shape the native
+    // PdalPointCloudConvertJobExecutor enforces (a bare positive EPSG integer or
+    // an AUTHORITY:CODE token), so a plan accepted here is also accepted by the
+    // worker rather than failing at the CLI boundary.
+    private static void ValidatePointCloudTranslateSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("sourceSrs", out var sourceSrs)
+            && !string.IsNullOrWhiteSpace(sourceSrs)
+            && !IsValidCrsToken(sourceSrs))
+        {
+            AddRangeViolationIfNew(step, "sourceSrs",
+                $"expected an EPSG code (e.g. '32610' or 'EPSG:32610') or an AUTHORITY:CODE token, got '{sourceSrs}'",
+                violations);
+        }
+    }
+
+    // Conservative CRS-token allow-shape mirroring
+    // PdalPointCloudConvertJobExecutor.IsValidSrsToken: a bare positive integer
+    // (EPSG code) or an AUTHORITY:CODE token with alphanumeric, bounded segments.
+    // Blocks shell-influencing values and arbitrary PROJ strings at submit time.
+    private static bool IsValidCrsToken(string value)
+    {
+        var token = value.Trim();
+        if (int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epsg) && epsg > 0)
+        {
+            return true;
+        }
+
+        var parts = token.Split(':', 2);
+        if (parts.Length != 2)
+        {
+            return false;
+        }
+
+        var authority = parts[0];
+        var code = parts[1];
+        if (authority.Length is 0 or > 16 || !authority.All(char.IsLetterOrDigit))
+        {
+            return false;
+        }
+
+        return code.Length is > 0 and <= 16 && code.All(char.IsLetterOrDigit);
     }
 
     // Layer-scoped counterpart of geometry.simplify: tolerance must be strictly

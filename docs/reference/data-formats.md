@@ -53,12 +53,16 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 | `json`, `pjson` | `application/json` | Esri JSON feature sets (default). |
 | `geojson` | `application/geo+json` | GeoJSON FeatureCollection. |
 | `pbf` | `application/x-protobuf` | Esri FeatureCollection protocol buffers. |
-| `fgb` | FlatGeobuf | Encoded export; PostGIS-backed layers only. |
-| `geobuf` | `application/geobuf` | Encoded export; PostGIS-backed layers only. |
-| `parquet` | `application/vnd.apache.parquet` | GeoParquet 1.1.0, WKB geometry + CRS metadata; output reprojected to EPSG:4326 unless `returnGeometry=false`. |
-| `arrow` | `application/vnd.apache.arrow.stream` | Arrow IPC stream with `geoarrow.wkb` extension type and GeoParquet-style `geo` schema metadata. |
+| `fgb` | FlatGeobuf | Encoded export; PostGIS-backed layers, including source-backed (provider-routed) layers. |
+| `geobuf` | `application/geobuf` | Encoded export; PostGIS-backed layers, including source-backed (provider-routed) layers. |
+| `parquet` | `application/vnd.apache.parquet` | GeoParquet 1.1.0, WKB geometry + CRS metadata; output reprojected to EPSG:4326 unless `returnGeometry=false`. Requires a glibc-based runtime image (see [runtime requirement](#geoparquet-runtime-requirement)). |
+| `arrow` | `application/vnd.apache.arrow.stream` | Arrow IPC stream with `geoarrow.wkb` extension type and GeoParquet-style `geo` schema metadata. Pure-managed encoder (Apache.Arrow); no native runtime dependency. |
 
-`fgb`, `geobuf`, `parquet`, and `arrow` are advertised in `supportedQueryFormats` only when the backing feature store can emit encoded output (PostGIS); other providers return HTTP 400 for them. Content negotiation via `Accept` headers maps to the same formats. Binary formats carry no `exceededTransferLimit` flag — page with `resultOffset`/`resultRecordCount` for complete exports.
+`fgb`, `geobuf`, `parquet`, and `arrow` are advertised in `supportedQueryFormats` only when the backing feature store can emit encoded output (PostGIS); other providers return HTTP 400 for them. `fgb`/`geobuf` work on both natively-stored and source-backed (provider-routed) PostGIS layers — the storage-mapped reader builds `ST_AsFlatGeobuf`/`ST_AsGeobuf` over the mapped table. Content negotiation via `Accept` headers maps to the same formats. Binary formats carry no `exceededTransferLimit` flag — page with `resultOffset`/`resultRecordCount` for complete exports.
+
+#### GeoParquet runtime requirement
+
+`f=parquet` (and OData `$format=parquet`) is encoded by the native ParquetSharp Arrow library (`ParquetSharpNative`), which ships only a glibc (`linux-x64`) binary. On a glibc-based runtime image (the Debian/Ubuntu `mcr.microsoft.com/dotnet/aspnet:10.0` image, RID `linux-x64`) GeoParquet output works normally. On the Alpine/musl image (`...:10.0-alpine`, RID `linux-musl-x64`) the native library cannot load; rather than returning an unhandled HTTP 500, the server detects the native-load failure and returns a clean **HTTP 501 Not Implemented** capability response (`GeoParquet (f=parquet) output is unavailable on this runtime image...`). `f=arrow` is unaffected because GeoArrow is encoded with the pure-managed Apache.Arrow IPC writer. To serve GeoParquet, deploy a glibc-based runtime image.
 
 ### OGC API Features (`/ogc/features/collections/{id}/items`, `f=` parameter or `Accept`)
 
@@ -81,7 +85,7 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 
 ### OData v4 (`/odata`)
 
-JSON (`application/json`) responses only; geometry is emitted as GeoJSON-shaped values inside the JSON payload. See the [OData reference](protocols/odata.md).
+JSON (`application/json`) responses by default; geometry is emitted as GeoJSON-shaped values inside the JSON payload. `$format=parquet` exports GeoParquet via the shared writer (same [glibc runtime requirement](#geoparquet-runtime-requirement) — returns HTTP 501 on a musl image). See the [OData reference](protocols/odata.md).
 
 ### Admin layer export (`GET /api/v1/admin/services/{service}/layers/{layerId}/export?format=...`)
 

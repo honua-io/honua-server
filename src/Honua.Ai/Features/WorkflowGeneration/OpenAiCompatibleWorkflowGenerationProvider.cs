@@ -146,7 +146,21 @@ internal sealed class OpenAiCompatibleWorkflowGenerationProvider : IWorkflowGene
             var chatResponse = JsonSerializer.Deserialize(
                 responseJson, WorkflowGenerationJsonContext.Default.OpenAiChatCompletionResponse);
 
-            var content = chatResponse?.Choices is { Length: > 0 } ? chatResponse.Choices[0].Message?.Content : null;
+            // Guard a null first element ("choices":[null] from some proxies) — { Length: > 0 }
+            // checks the array length, not whether the element is null (#1986).
+            var choice = chatResponse?.Choices is { Length: > 0 } choices ? choices[0] : null;
+
+            // Surface max_tokens truncation explicitly: a "length" finish_reason means the JSON
+            // body is truncated, so the deserialize below would fail with the opaque generic
+            // "Failed to deserialize" message instead of an actionable one (#1979).
+            if (string.Equals(choice?.FinishReason, "length", StringComparison.Ordinal))
+            {
+                const string Reason = "Provider response was truncated (finish_reason=length / max_tokens reached); try a higher MaxTokens.";
+                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, Reason);
+                return WorkflowGenerationProposal.Error(Reason, _providerId, model);
+            }
+
+            var content = choice?.Message?.Content;
             if (string.IsNullOrWhiteSpace(content))
             {
                 const string Reason = "Provider returned an empty response.";

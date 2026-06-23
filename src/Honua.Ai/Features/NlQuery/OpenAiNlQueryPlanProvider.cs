@@ -187,7 +187,23 @@ internal sealed class OpenAiNlQueryPlanProvider : INlQueryPlanProvider
             var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var chatResponse = JsonSerializer.Deserialize(responseJson, NlQueryJsonContext.Default.OpenAiChatCompletionResponse);
 
-            if (chatResponse?.Choices is not { Length: > 0 } || chatResponse.Choices[0].Message?.Content is not { } content)
+            // Guard a null first element ("choices":[null] from some proxies) — { Length: > 0 }
+            // checks the array length, not whether the element is null (#1986).
+            var choice = chatResponse?.Choices is { Length: > 0 } choices ? choices[0] : null;
+
+            // Surface max_tokens truncation explicitly: a "length" finish_reason means the JSON
+            // body is truncated, so the deserialize below would otherwise fail with the opaque
+            // generic "could not be parsed" message instead of an actionable one (#1979).
+            if (string.Equals(choice?.FinishReason, "length", StringComparison.Ordinal))
+            {
+                NlQueryLog.PlanFailed(_logger, request.CollectionId ?? "unknown",
+                    "Response truncated (finish_reason=length).");
+                activity?.SetTag("nl.success", false);
+                return NlQueryPlanResult.Failure(
+                    "Provider response was truncated (max_tokens reached); try a higher MaxTokens.");
+            }
+
+            if (choice?.Message?.Content is not { } content)
             {
                 NlQueryLog.PlanFailed(_logger, request.CollectionId ?? "unknown", "Empty response from provider.");
                 activity?.SetTag("nl.success", false);
