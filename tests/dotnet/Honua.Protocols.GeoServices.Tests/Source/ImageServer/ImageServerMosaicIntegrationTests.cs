@@ -222,14 +222,19 @@ public sealed class ImageServerMosaicIntegrationTests
             // Tamper with the persisted snapshot. The next request must serve the tampered
             // value verbatim, proving service metadata is read from persisted statistics and
             // never recomputed from the raster pixels per request.
-            await using (var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema))
-            await using (var command = connection.CreateCommand())
+            // #2020: honua.raster_layer_statistics is a literal, process-global catalog table
+            // (not search_path isolated), so route this UPDATE through the shared seed advisory
+            // lock to keep parallel [Collection("Database")] tests off the 40P01 deadlock path.
+            var tampered = 0;
+            await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
             {
+                await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+                await using var command = connection.CreateCommand();
                 command.CommandText = "UPDATE honua.raster_layer_statistics SET max_value = 12345 WHERE layer_id = @layerId;";
                 command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-                var tampered = await command.ExecuteNonQueryAsync();
-                tampered.Should().BeGreaterThan(0, "the first request must have persisted the mosaic statistics");
-            }
+                tampered = await command.ExecuteNonQueryAsync();
+            });
+            tampered.Should().BeGreaterThan(0, "the first request must have persisted the mosaic statistics");
 
             var second = await fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestLayerId}/ImageServer?f=json");
             second.StatusCode.Should().Be(HttpStatusCode.OK);

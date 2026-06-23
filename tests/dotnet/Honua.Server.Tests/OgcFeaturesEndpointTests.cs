@@ -188,25 +188,25 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
     public async Task GetCollections_UsesServiceAccessPolicyWhenLayerPolicyIsMissing()
     {
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync(schema))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                UPDATE honua.layers
-                SET metadata = NULL
-                WHERE layer_id = @layerId;
+        // #2020: route the literal honua.layers/honua.services UPDATE through the shared
+        // schema-mutation advisory lock so it serializes with parallel-collection seeders
+        // instead of racing the catalog and deadlocking (40P01).
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            """
+            UPDATE honua.layers
+            SET metadata = NULL
+            WHERE layer_id = @layerId;
 
-                UPDATE honua.services
-                SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
-                WHERE service_name IN (
-                    SELECT service_name
-                    FROM honua.service_layers
-                    WHERE layer_id = @layerId
-                );
-                """;
-            command.Parameters.AddWithValue("@layerId", WebAppFixture.TestLayerId);
-            await command.ExecuteNonQueryAsync();
-        }
+            UPDATE honua.services
+            SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+            WHERE service_name IN (
+                SELECT service_name
+                FROM honua.service_layers
+                WHERE layer_id = @layerId
+            );
+            """,
+            command => command.Parameters.AddWithValue("@layerId", WebAppFixture.TestLayerId),
+            schema);
 
         var response = await _fixture.Client.GetAsync("/ogc/features/collections");
 

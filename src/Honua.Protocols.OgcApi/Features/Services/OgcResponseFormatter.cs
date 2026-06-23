@@ -956,10 +956,18 @@ internal static class OgcResponseFormatter
 
         if (string.IsNullOrWhiteSpace(geometry.CoordinatesJson))
         {
-            return JsonSerializer.Serialize(new Dictionary<string, string>
+            // Written through Utf8JsonWriter rather than a reflection-based
+            // JsonSerializer.Serialize overload: the published image disables
+            // reflection-based serialization (honua-server#1647).
+            using var typeOnlyStream = new MemoryStream();
+            using (var typeOnlyWriter = new Utf8JsonWriter(typeOnlyStream))
             {
-                ["type"] = geometry.Type
-            });
+                typeOnlyWriter.WriteStartObject();
+                typeOnlyWriter.WriteString("type", geometry.Type);
+                typeOnlyWriter.WriteEndObject();
+            }
+
+            return Encoding.UTF8.GetString(typeOnlyStream.ToArray());
         }
 
         try

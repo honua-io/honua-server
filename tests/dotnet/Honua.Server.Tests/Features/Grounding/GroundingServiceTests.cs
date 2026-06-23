@@ -1195,6 +1195,75 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_SingleDominantDataset_AutoResolvesBindingWithoutClarification()
+    {
+        // #1949: a cold LLM caller asking for an obvious single-candidate
+        // match must NOT receive a clarification — the dominant catalog
+        // candidate is auto-bound and recorded as an inspectable assumption.
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreServices(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ServiceCandidate>>())
+            .Returns([Candidate("parcels", 0.91, CandidateKind.Dataset)]);
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest { Goal = "summarize the parcels" }, Principal);
+
+        result.Clarification.Should().BeNull("a single dominant candidate is auto-resolved, not clarified");
+        result.DraftIntent.Provenance.Assumptions.Should().Contain(a =>
+            a.StartsWith("binding.dataset.selection=parcels", StringComparison.Ordinal)
+            && a.Contains("auto-resolved"));
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_TwoCloseDatasets_StillEmitsClarificationAndNoBindingAssumption()
+    {
+        // Two viable candidates within the material spread remain genuinely
+        // ambiguous: the service must keep asking and must not silently bind.
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreServices(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ServiceCandidate>>())
+            .Returns(
+            [
+                Candidate("parcels-a", 0.92, CandidateKind.Dataset),
+                Candidate("parcels-b", 0.90, CandidateKind.Dataset)
+            ]);
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest { Goal = "summarize the parcels" }, Principal);
+
+        result.Clarification.Should().NotBeNull();
+        result.Clarification!.ReasonCodes.Should().Contain(ClarificationReasonCode.AmbiguousDataset);
+        result.Clarification.Questions.Should().Contain(q => q.QuestionId == "dataset.selection");
+        result.DraftIntent.Provenance.Assumptions.Should().NotContain(a =>
+            a.StartsWith("binding.dataset.selection", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_NoDatasetClearsFloor_KeepsMissingEntityPathWithNoBinding()
+    {
+        // Zero viable candidates above the floor: no auto-binding assumption and
+        // no AmbiguousDataset clarification (the missing-entity path is owned by
+        // explicit-input / publish-source handling, unchanged here).
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreServices(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ServiceCandidate>>())
+            .Returns([Candidate("weak", 0.55, CandidateKind.Dataset)]);
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest { Goal = "summarize the parcels" }, Principal);
+
+        result.DraftIntent.Provenance.Assumptions.Should().NotContain(a =>
+            a.StartsWith("binding.dataset.selection", StringComparison.Ordinal));
+        if (result.Clarification is not null)
+        {
+            result.Clarification.ReasonCodes.Should().NotContain(ClarificationReasonCode.AmbiguousDataset);
+        }
+    }
+
+    [UnitTest]
     public async Task GroundAsync_NoMaterialAmbiguity_ReturnsNullClarification()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);

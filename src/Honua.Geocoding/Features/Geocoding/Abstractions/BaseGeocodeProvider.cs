@@ -111,20 +111,21 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
     /// </summary>
     /// <remarks>
     /// The default implementation fans the batch out to <see cref="ForwardGeocodeAsync"/>,
-    /// returning exactly one candidate slot for every input address in request order. Inputs
-    /// that are blank or that the forward geocoder cannot match still occupy a slot, emitted as
-    /// an explicit "no match" candidate (see <see cref="GeocodeCandidate.CreateNoMatch"/>), so
-    /// the returned list stays 1:1 with <see cref="BatchGeocodeRequest.Queries"/> and positional
-    /// alignment is preserved end-to-end. Each emitted candidate also carries a stable
-    /// <see cref="GeocodeCandidate.ResultIdAttribute"/> entry equal to its zero-based input index,
-    /// matching the Esri <c>geocodeAddresses</c> contract where every location reports a
-    /// <c>ResultID</c> that correlates it back to the submitted record. Providers with a native
-    /// batch endpoint should override this for efficiency, but must preserve the same 1:1 ordering
-    /// and <c>ResultID</c> guarantees.
+    /// requesting up to <see cref="BatchGeocodeRequest.MaxResultsPerQuery"/> candidates per input
+    /// address and emitting every returned candidate in request order. An input that the forward
+    /// geocoder cannot match (or that is blank) still occupies exactly one explicit "no match"
+    /// candidate (see <see cref="GeocodeCandidate.CreateNoMatch"/>), so the returned list never
+    /// drops below one slot per input and ordering is preserved end-to-end. Every emitted candidate
+    /// carries a stable <see cref="GeocodeCandidate.ResultIdAttribute"/> entry equal to its
+    /// zero-based input index, matching the Esri <c>geocodeAddresses</c> contract where every
+    /// location reports a <c>ResultID</c> that correlates it back to the submitted record; when
+    /// <see cref="BatchGeocodeRequest.MaxResultsPerQuery"/> exceeds one, multiple candidates may
+    /// share the same <c>ResultID</c>. Providers with a native batch endpoint should override this
+    /// for efficiency, but must preserve the same ordering and <c>ResultID</c> guarantees.
     /// </remarks>
     /// <param name="request">Batch geocoding request</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of geocoding candidates, one per input address in request order</returns>
+    /// <returns>List of geocoding candidates in request order, at least one slot per input address</returns>
     protected virtual async Task<IReadOnlyList<GeocodeCandidate>> BatchGeocodeCoreAsync(
         BatchGeocodeRequest request,
         CancellationToken cancellationToken = default)
@@ -145,6 +146,11 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
                 continue;
             }
 
+            // Request up to MaxResultsPerQuery candidates for this input and stamp every emitted
+            // candidate with the input's zero-based index (ResultID) so callers can correlate each
+            // result back to its submitted record even when an input yields several candidates. An
+            // input that yields zero candidates still occupies exactly one explicit "no match" slot,
+            // so the result list never drops below one entry per input and stays in request order.
             var forwardRequest = new ForwardGeocodeRequest(
                 Query: query,
                 MaxResults: Math.Max(1, request.MaxResultsPerQuery),
@@ -152,9 +158,16 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
                 CountryCodes: request.CountryCodes);
 
             var candidates = await ForwardGeocodeAsync(forwardRequest, cancellationToken).ConfigureAwait(false);
-            results.Add(candidates.Count > 0
-                ? candidates[0].WithResultId(index)
-                : GeocodeCandidate.CreateNoMatch(index, request.SpatialReferenceWkid));
+            if (candidates.Count == 0)
+            {
+                results.Add(GeocodeCandidate.CreateNoMatch(index, request.SpatialReferenceWkid));
+                continue;
+            }
+
+            foreach (var candidate in candidates)
+            {
+                results.Add(candidate.WithResultId(index));
+            }
         }
 
         return results;

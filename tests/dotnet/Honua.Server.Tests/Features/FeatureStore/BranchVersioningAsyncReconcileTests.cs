@@ -59,7 +59,9 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
             Assembly.GetAssembly(typeof(Program))!);
         result.Successful.Should().BeTrue(result.Error?.ToString());
 
-        await _fixture.ExecuteAsync($"""
+        // #2020: route the literal honua.layers INSERT through the shared schema-mutation advisory
+        // lock so it serializes with parallel-collection seeders instead of racing the catalog (40P01).
+        await _fixture.ApplyGlobalSeedSqlAsync($"""
             INSERT INTO honua.layers (layer_id, layer_name, table_schema, table_name, geometry_type, srid)
             VALUES ({PointsLayerId}, 'BV Async Points', '{_schema}', 'features', 'Point', 4326)
             ON CONFLICT (layer_id) DO UPDATE SET srid = EXCLUDED.srid;
@@ -68,7 +70,8 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _fixture.ExecuteAsync($"DROP SCHEMA {_schema} CASCADE");
+        // #2020: serialize the CASCADE drop on the shared advisory lock (catalog churn).
+        await _fixture.DropSchemaAsync(_schema);
     }
 
     [Fact]
