@@ -1019,6 +1019,37 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             OutputArtifactKinds = [ArtifactKind.FeatureLayer],
             RuntimeProfile = RuntimeProfiles.Native
         },
+
+        // -----------------------------------------------------------------------
+        // Point-cloud conversion (1)
+        // LAZ/COPC decompression + optional projected-CRS reprojection executed
+        // out-of-process by the heavyweight GDAL/PDAL worker via the `pdal
+        // translate` CLI (#1854). Declared RuntimeProfile = native so the submit
+        // path stamps ExecutionJobSpec.RuntimeProfile = "native" and the claim
+        // fence routes the job to the worker (PdalPointCloudConvertJobExecutor
+        // handles exactly this id) and away from the lean dispatcher, which has no
+        // executor for it. The native counterpart to the pure-managed LAS reader
+        // (LasPointCloudReader, #1840): the worker decompresses the cloud-optimized
+        // / arithmetic-coded chunks the managed reader cannot decode and, when a
+        // projected source CRS is supplied, reprojects to geographic EPSG:4979,
+        // returning uncompressed LAS the managed scene tiler then turns into 3D
+        // Tiles. The lean image validates these plans (parameter shape + the
+        // sourceSrs token guard) but never executes them.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "pcloud.translate",
+            Title = "Point Cloud Translate (LAZ/COPC → LAS)",
+            Description = "Decompresses a LAZ or Cloud-Optimized Point Cloud (COPC) source and, when a projected source CRS is supplied, reprojects its horizontal datum to geographic EPSG:4979, emitting an UNCOMPRESSED LAS artifact. Executed out-of-process by the heavyweight GDAL/PDAL worker via the `pdal translate` CLI (built on laz-perf for LAZ/COPC decoding and PROJ for reprojection). The native counterpart to the pure-managed LasPointCloudReader, which accepts uncompressed LAS only: this process produces the uncompressed LAS the managed scene tiler turns into 3D Tiles. Reads a base64-encoded LAZ/COPC source from 'source' and an optional source CRS token from 'sourceSrs'; publishes the decompressed LAS as a data-URI artifact. Routed to the native worker profile — NOT executable in the GDAL-free serving image.",
+            Category = "conversion",
+            Parameters =
+            [
+                Param("source", "Source Point Cloud", "Source point cloud as base64-encoded LAZ or COPC bytes.", ProcessParameterValueType.Text, required: true),
+                Param("sourceSrs", "Source CRS", "Optional source spatial reference token (an EPSG code like '32610'/'EPSG:32610' or an AUTHORITY:CODE token). When supplied and not already geographic, the worker reprojects the cloud to geographic EPSG:4979 before emitting LAS; a geographic source is decompressed verbatim. Omit it for a cloud already in geographic coordinates.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
     ];
 
     // Shared GeoServices-style filter inputs that every analytics handler honors via
