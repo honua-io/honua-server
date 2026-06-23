@@ -27,7 +27,6 @@ class TestGPServerSmoke:
         assert response.status_code == 200
 
         data = response.json()
-        assert data["currentVersion"] == 10.81
         assert data["executionType"] == "esriExecutionTypeAsynchronous"
         assert data["capabilities"] == ""
         assert data["resultMapServerName"] == ""

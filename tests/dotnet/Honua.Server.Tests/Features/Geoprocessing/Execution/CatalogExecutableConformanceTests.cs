@@ -136,6 +136,11 @@ public sealed class CatalogExecutableConformanceTests
         "raster.zonal-statistics",
         "conversion.raster-format",
         "conversion.raster-reproject",
+        // Point-cloud conversion (#1854): LAZ/COPC decompression + optional
+        // reprojection executed out-of-process by the heavyweight GDAL/PDAL worker
+        // (PdalPointCloudConvertJobExecutor) via `pdal translate`. Declares
+        // RuntimeProfile = native and has NO executor in the lean dispatcher.
+        "pcloud.translate",
         // Native GDAL worker processes (executable in the out-of-process worker,
         // NOT in the lean dispatcher handler map).
         "gdal.gdalwarp",

@@ -68,6 +68,14 @@ public sealed record OperationPolicyContext
     /// Community is pass-through; Pro/Enterprise enforce the policy engine (Phase 4).
     /// </summary>
     public string? Tier { get; init; }
+
+    /// <summary>
+    /// Role(s) granted to the invoking principal (for example <c>operator</c>, <c>publisher</c>,
+    /// <c>viewer</c>). The tier/role-aware policy engine (Phase 4) decides per descriptor
+    /// blast-radius/side-effect using both <see cref="Tier"/> and these roles; the no-op
+    /// default ignores them. Empty for an unauthenticated or role-less caller.
+    /// </summary>
+    public IReadOnlyList<string> Roles { get; init; } = [];
 }
 
 /// <summary>

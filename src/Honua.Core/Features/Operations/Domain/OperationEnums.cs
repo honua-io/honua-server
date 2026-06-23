@@ -160,6 +160,20 @@ public enum OperationHandleStatus
     RequiresApproval,
 
     /// <summary>
+    /// The operation must be dry-run/previewed before a committed execution is permitted; the
+    /// policy decision point returned <see cref="PolicyDecisionKind.DryRunFirst"/>. No side
+    /// effect occurred — the caller should re-submit with a dry run, then commit.
+    /// </summary>
+    DryRunRequired,
+
+    /// <summary>
+    /// The operation was denied by the policy decision point and never reached the executor.
+    /// This is a terminal, structured guardrail outcome distinct from
+    /// <see cref="Failed"/> (an execution-time failure) — a Deny means no side effect occurred.
+    /// </summary>
+    Denied,
+
+    /// <summary>
     /// The operation failed.
     /// </summary>
     Failed
