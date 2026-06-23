@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/publish_result.schema.json",
+  "title": "publish_result inputSchema",
+  "description": "Argument shape for publish_result (Analyze, Publish Data, Build App). Promotes a result/package to a canonical promotion-surface target: PublishedService for Publish Data, Deployment for Analyze and Build App (resources.md §Promotion-Surface Resources). Publish/PolicyBoundary clarifications fire before handoff (planning.md). Responsibility-level: concrete promotion field set finalizes upstream (honua-server#730/#732).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["sourceId"],
+  "properties": {
+    "sourceId": {
+      "type": "string",
+      "description": "Identifier of the package or result being promoted (result_…, map_…, app_…)."
+    },
+    "targetKind": {
+      "type": "string",
+      "description": "Promotion-surface target family. Published_service for Publish Data; deployment for Analyze and Build App.",
+      "enum": ["published_service", "deployment"]
+    },
+    "visibility": {
+      "type": "string",
+      "description": "Promotion visibility scope.",
+      "enum": ["workspace_shared", "public"]
+    },
+    "routePrefix": {
+      "type": "string",
+      "description": "Optional route prefix for a deployment target."
+    }
+  }
+}

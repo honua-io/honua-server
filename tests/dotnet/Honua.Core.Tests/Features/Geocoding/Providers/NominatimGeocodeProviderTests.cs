@@ -226,6 +226,82 @@ public sealed class NominatimGeocodeProviderTests
         Assert.All(results, candidate => Assert.Equal("10 Downing St, London", candidate.Address));
     }
 
+    [Fact]
+    public void Constructor_DoesNotMutateInjectedHttpClient_AllowsSharingAcrossProviders()
+    {
+        // A shared/pooled typed client whose headers are already set (simulating a prior request)
+        // must not be mutated by the constructor; constructing a second provider over the same
+        // client must not throw (DefaultRequestHeaders becomes read-only once a request starts).
+        using var sharedClient = new HttpClient(new StubHttpMessageHandler())
+        {
+            BaseAddress = new Uri("https://example.com/", UriKind.Absolute)
+        };
+        sharedClient.DefaultRequestHeaders.UserAgent.ParseAdd("Existing/1.0");
+
+        var configuration = new NominatimProviderConfiguration
+        {
+            BaseUrl = "https://example.com",
+            UserAgent = "Honua.Tests/1.0",
+            Email = "ops@example.com"
+        };
+
+        var first = new NominatimGeocodeProvider(configuration, sharedClient);
+        var second = new NominatimGeocodeProvider(configuration, sharedClient);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        // The injected client's headers are untouched by construction.
+        Assert.Equal("Existing/1.0", sharedClient.DefaultRequestHeaders.UserAgent.ToString());
+    }
+
+    [Fact]
+    public async Task ForwardGeocodeAsync_AppliesUserAgentAndContactHeaderPerRequest()
+    {
+        var handler = new HeaderCapturingHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://example.com/", UriKind.Absolute)
+        };
+
+        var provider = new NominatimGeocodeProvider(
+            new NominatimProviderConfiguration
+            {
+                BaseUrl = "https://example.com",
+                UserAgent = "Honua.Tests/1.0",
+                Email = "ops@example.com"
+            },
+            httpClient);
+
+        await provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("10 Downing St", 5, 4326, null),
+            CancellationToken.None);
+
+        Assert.Equal("Honua.Tests/1.0", handler.CapturedUserAgent);
+        Assert.Equal("ops@example.com", handler.CapturedContactEmail);
+    }
+
+    private sealed class HeaderCapturingHandler : HttpMessageHandler
+    {
+        public string? CapturedUserAgent { get; private set; }
+
+        public string? CapturedContactEmail { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CapturedUserAgent = request.Headers.UserAgent.ToString();
+            CapturedContactEmail = request.Headers.TryGetValues("X-Contact-Email", out var values)
+                ? values.FirstOrDefault()
+                : null;
+
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("[]", Encoding.UTF8, "application/json")
+            };
+
+            return Task.FromResult(response);
+        }
+    }
+
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
         public int SendCount { get; private set; }

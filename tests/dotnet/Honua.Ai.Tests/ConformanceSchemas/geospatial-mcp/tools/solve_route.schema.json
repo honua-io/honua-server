@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/solve_route.schema.json",
+  "title": "solve_route inputSchema",
+  "description": "Argument shape for the analysis/geoprocessing routing tool (advertised name honua_solve_route). Solves an ordered route through a sequence of stops. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["stops"],
+  "properties": {
+    "stops": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 25,
+      "description": "Ordered stops to route through, in visit order.",
+      "items": {
+        "type": "object",
+        "required": ["lon", "lat"],
+        "properties": {
+          "lon": { "type": "number", "description": "Longitude (X) ordinate." },
+          "lat": { "type": "number", "description": "Latitude (Y) ordinate." }
+        }
+      }
+    },
+    "travelProfile": {
+      "type": "string",
+      "default": "driving",
+      "description": "Travel profile / cost-model selector (e.g. \"driving\", \"walking\")."
+    },
+    "outSrid": {
+      "type": "integer",
+      "default": 4326,
+      "description": "Output spatial reference (SRID/WKID) for the returned route geometry."
+    },
+    "inSrid": {
+      "type": "integer",
+      "description": "Spatial reference of the input stop ordinates; defaults to outSrid."
+    }
+  }
+}

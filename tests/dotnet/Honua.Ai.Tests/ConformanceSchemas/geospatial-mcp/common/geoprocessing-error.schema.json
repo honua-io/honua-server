@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/common/geoprocessing-error.schema.json",
+  "title": "GeoprocessingError",
+  "description": "Canonical error envelope reused verbatim by every MCP tool and resource failure path. See spec/resources.md §Error Model. No parallel MCP-local error taxonomy is permitted.",
+  "type": "object",
+  "required": ["kind", "message"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "description": "GeoprocessingErrorKind value.",
+      "enum": [
+        "ValidationFailed",
+        "AuthorizationDenied",
+        "UnknownDataset",
+        "UnknownProcess",
+        "ExecutionFailed",
+        "Timeout",
+        "Cancelled",
+        "OutputBindingFailed"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable summary."
+    },
+    "stepId": {
+      "type": "string",
+      "description": "Plan step identifier when applicable."
+    },
+    "violations": {
+      "type": "array",
+      "description": "Structured validation failures.",
+      "items": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "fieldPath": { "type": "string" }
+        }
+      }
+    }
+  }
+}

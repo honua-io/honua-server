@@ -155,6 +155,17 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// <summary>
     /// Drops an isolated schema created for a test.
     /// </summary>
+    /// <remarks>
+    /// honua-server#1568 follow-up (#2020): <c>DROP SCHEMA ... CASCADE</c> takes
+    /// <c>ACCESS EXCLUSIVE</c> locks on every dependent object and churns the global
+    /// <c>pg_catalog</c> (<c>pg_class</c>/<c>pg_namespace</c>/<c>pg_depend</c>). When this
+    /// universal teardown runs concurrently with another collection's locked seed/migration
+    /// (which also mutate the catalog while holding the schema-mutation advisory lock), the
+    /// two acquire catalog locks in interleaved order and deadlock (<c>40P01</c>). #1968
+    /// serialized the DDL <em>setup</em> paths but left teardown a non-participant, so it
+    /// kept racing the catalog. Serialize the drop on the same advisory lock so it orders
+    /// behind in-flight schema mutation instead of deadlocking it.
+    /// </remarks>
     public async Task DropSchemaAsync(string schemaName)
     {
         Exception? lastTransient = null;
@@ -163,11 +174,14 @@ public sealed class PostgresFixture : IAsyncLifetime
         {
             try
             {
-                await using var conn = await DataSource.OpenConnectionAsync().ConfigureAwait(false);
-                await using var cmd = conn.CreateCommand();
-                cmd.CommandText = $"DROP SCHEMA IF EXISTS {schemaName} CASCADE;";
-                cmd.CommandTimeout = DropSchemaCommandTimeoutSeconds;
-                await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                await RunUnderSchemaMutationLockAsync(async () =>
+                {
+                    await using var conn = await DataSource.OpenConnectionAsync().ConfigureAwait(false);
+                    await using var cmd = conn.CreateCommand();
+                    cmd.CommandText = $"DROP SCHEMA IF EXISTS {schemaName} CASCADE;";
+                    cmd.CommandTimeout = DropSchemaCommandTimeoutSeconds;
+                    await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                }).ConfigureAwait(false);
                 return;
             }
             catch (Exception ex) when (IsTransientDropSchemaFailure(ex))
@@ -277,6 +291,32 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the SQL.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public Task ApplyGlobalSeedSqlAsync(string sql, string? schemaName = null, CancellationToken cancellationToken = default)
+        => ApplyGlobalSeedSqlAsync(sql, configureCommand: null, schemaName, cancellationToken);
+
+    /// <summary>
+    /// Parameterized overload of <see cref="ApplyGlobalSeedSqlAsync(string, string?, CancellationToken)"/>.
+    /// Applies a global-<c>honua</c>-schema-mutating statement under the shared
+    /// <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock (with
+    /// <c>40P01</c>/<c>40001</c> retry), letting the caller bind <see cref="NpgsqlParameter"/>s
+    /// via <paramref name="configureCommand"/>.
+    /// </summary>
+    /// <remarks>
+    /// honua-server#1568 follow-up (#2020): in-test <c>UPDATE/INSERT/DELETE</c> helpers and
+    /// <c>finally</c>/<c>DisposeAsync</c> cleanups that mutate literal <c>honua.*</c> tables
+    /// frequently need parameters, so they were written against raw
+    /// <c>GetConnectionAsync()+CreateCommand()</c> and bypassed the advisory lock entirely —
+    /// the exact non-participant pattern that keeps deadlocking the catalog under parallel
+    /// collections. This overload gives those paths a locked, parameterizable route.
+    /// </remarks>
+    /// <param name="sql">The raw seed/setup SQL to apply.</param>
+    /// <param name="configureCommand">Optional callback to bind parameters / tune the command.</param>
+    /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the SQL.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task ApplyGlobalSeedSqlAsync(
+        string sql,
+        Action<NpgsqlCommand>? configureCommand,
+        string? schemaName = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sql);
 
@@ -286,9 +326,64 @@ public sealed class PostgresFixture : IAsyncLifetime
                 await using var connection = await GetConnectionAsync(schemaName).ConfigureAwait(false);
                 await using var command = connection.CreateCommand();
                 command.CommandText = sql;
+                configureCommand?.Invoke(command);
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             },
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs the full embedded DbUp migration set against <paramref name="schemaName"/> while holding
+    /// the shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock, retrying on a
+    /// transient <c>40P01</c>/<c>40001</c>.
+    /// </summary>
+    /// <remarks>
+    /// honua-server#1568 follow-up: <c>001_CreateHonuaSchema.sql</c> runs <c>CREATE SCHEMA IF NOT
+    /// EXISTS honua; CREATE TABLE honua.services/layers ...</c> against the literal, process-global
+    /// <c>honua</c> schema, which the per-test <c>search_path</c> isolation does NOT scope. Tests that
+    /// run the embedded migration set directly via <c>DeployChanges...PerformUpgrade()</c> must take
+    /// this same advisory lock; otherwise they are non-participants that race every locked seeder's
+    /// <c>ACCESS EXCLUSIVE</c> catalog/table locks on the same global <c>honua.*</c> objects and
+    /// deadlock the parallel <c>[Collection("Database")]</c> run. The original #1568 fix routed
+    /// <c>DatabaseMigrationTests</c> and the raw <c>.sql</c> seeds through the lock but left the
+    /// <c>BranchVersioning*</c> upgrades unguarded — this helper closes that gap.
+    /// </remarks>
+    /// <param name="schemaName">Isolated schema to deploy into (also the journal/search-path schema).</param>
+    /// <param name="connectionString">Base connection string; its <c>SearchPath</c> is set to the schema.</param>
+    /// <param name="migrationsAssembly">Assembly whose embedded <c>.sql</c> scripts are deployed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The DbUp upgrade result.</returns>
+    public async Task<DbUp.Engine.DatabaseUpgradeResult> RunEmbeddedMigrationsUnderLockAsync(
+        string schemaName,
+        string connectionString,
+        System.Reflection.Assembly migrationsAssembly,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schemaName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentNullException.ThrowIfNull(migrationsAssembly);
+
+        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = $"{schemaName},public",
+        };
+
+        DbUp.Engine.DatabaseUpgradeResult result = null!;
+        await RunUnderSchemaMutationLockAsync(
+            () =>
+            {
+                var upgrader = DbUp.DeployChanges.To
+                    .PostgresqlDatabase(connectionStringBuilder.ToString(), schemaName)
+                    .JournalToPostgresqlTable(schemaName, "schema_versions")
+                    .WithScriptsEmbeddedInAssembly(migrationsAssembly)
+                    .WithTransaction()
+                    .Build();
+                result = upgrader.PerformUpgrade();
+                return Task.CompletedTask;
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        return result;
     }
 
     private static async Task ExecuteAdvisoryLockCommandAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
