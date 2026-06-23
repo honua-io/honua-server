@@ -6,7 +6,6 @@ using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
-using Npgsql;
 
 namespace Honua.Postgres.Tests.Features.Infrastructure.Crs;
 
@@ -67,8 +66,11 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
             "PRIMEM[\"Greenwich\",0],CS[ellipsoidal,2],AXIS[\"Longitude\",east],AXIS[\"Latitude\",north]," +
             "UNIT[\"degree\",0.0174532925199433]]";
 
-        await using var connection = await _fixture.GetConnectionAsync();
-        await using var command = new NpgsqlCommand("""
+        // #2020: spatial_ref_sys is a database-global PostGIS table; route the upsert/delete
+        // through the shared schema-mutation advisory lock so this parallelized collection
+        // serializes its global writes instead of racing the catalog and deadlocking (40P01).
+        await _fixture.ApplyGlobalSeedSqlAsync(
+            """
             INSERT INTO spatial_ref_sys (srid, auth_name, auth_srid, srtext, proj4text)
             VALUES (@srid, 'EPSG', @srid, @srtext, '+proj=longlat +datum=WGS84 +no_defs')
             ON CONFLICT (srid) DO UPDATE
@@ -76,20 +78,19 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
                 auth_srid = EXCLUDED.auth_srid,
                 srtext = EXCLUDED.srtext,
                 proj4text = EXCLUDED.proj4text
-            """, connection);
-        command.Parameters.AddWithValue("srid", TestSrid);
-        command.Parameters.AddWithValue("srtext", srtext);
-        await command.ExecuteNonQueryAsync();
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("srid", TestSrid);
+                command.Parameters.AddWithValue("srtext", srtext);
+            });
     }
 
     private async Task RemoveTestCrsAsync()
     {
-        await using var connection = await _fixture.GetConnectionAsync();
-        await using var command = new NpgsqlCommand(
+        await _fixture.ApplyGlobalSeedSqlAsync(
             "DELETE FROM spatial_ref_sys WHERE srid = @srid",
-            connection);
-        command.Parameters.AddWithValue("srid", TestSrid);
-        await command.ExecuteNonQueryAsync();
+            command => command.Parameters.AddWithValue("srid", TestSrid));
     }
 
     private async Task InsertGeocentricTestCrsAsync()
@@ -98,8 +99,8 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
             "GEODCRS[\"Test Geocentric CRS\",DATUM[\"World Geodetic System 1984\",ELLIPSOID[\"WGS 84\",6378137,298.257223563]]," +
             "CS[Cartesian,3],AXIS[\"X\",geocentricX],AXIS[\"Y\",geocentricY],AXIS[\"Z\",geocentricZ],UNIT[\"metre\",1]]";
 
-        await using var connection = await _fixture.GetConnectionAsync();
-        await using var command = new NpgsqlCommand("""
+        await _fixture.ApplyGlobalSeedSqlAsync(
+            """
             INSERT INTO spatial_ref_sys (srid, auth_name, auth_srid, srtext, proj4text)
             VALUES (@srid, 'EPSG', @srid, @srtext, '+proj=geocent +datum=WGS84 +no_defs')
             ON CONFLICT (srid) DO UPDATE
@@ -107,19 +108,18 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
                 auth_srid = EXCLUDED.auth_srid,
                 srtext = EXCLUDED.srtext,
                 proj4text = EXCLUDED.proj4text
-            """, connection);
-        command.Parameters.AddWithValue("srid", GeocentricTestSrid);
-        command.Parameters.AddWithValue("srtext", srtext);
-        await command.ExecuteNonQueryAsync();
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("srid", GeocentricTestSrid);
+                command.Parameters.AddWithValue("srtext", srtext);
+            });
     }
 
     private async Task RemoveGeocentricTestCrsAsync()
     {
-        await using var connection = await _fixture.GetConnectionAsync();
-        await using var command = new NpgsqlCommand(
+        await _fixture.ApplyGlobalSeedSqlAsync(
             "DELETE FROM spatial_ref_sys WHERE srid = @srid",
-            connection);
-        command.Parameters.AddWithValue("srid", GeocentricTestSrid);
-        await command.ExecuteNonQueryAsync();
+            command => command.Parameters.AddWithValue("srid", GeocentricTestSrid));
     }
 }

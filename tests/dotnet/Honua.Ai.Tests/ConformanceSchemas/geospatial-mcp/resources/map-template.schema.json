@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/map-template.schema.json",
+  "title": "Map template resource payload",
+  "description": "Responsibility-level projection of a MapTemplate at honua://templates/maps/{map_template_id}. The identifier is registry-defined (e.g. analysis_default); concrete field spellings are upstream-owned. Responsibilities: cartographic composition class, named SourceBinding slots, default style/theme composition, layout/view presets. See resources.md §honua://templates/maps/{map_template_id}.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["mapTemplateId"],
+  "properties": {
+    "mapTemplateId": {
+      "type": "string",
+      "description": "Registry-defined map-template identifier (e.g. analysis_default)."
+    }
+  }
+}

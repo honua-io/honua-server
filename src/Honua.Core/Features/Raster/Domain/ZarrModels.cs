@@ -88,6 +88,32 @@ public sealed record ZarrArrayMetadata(
 }
 
 /// <summary>
+/// A non-spatial, non-temporal coordinate axis declared on a Zarr store
+/// (e.g. a vertical/elevation/pressure-level axis). The axis maps real-world
+/// coordinate values to integer indices along the matching array dimension.
+/// Exactly one of <paramref name="Coordinates"/> (explicit, possibly irregular
+/// sample values) or the evenly-spaced descriptor
+/// (<paramref name="Start"/>/<paramref name="End"/>) describes the spacing;
+/// when <paramref name="Coordinates"/> is null the axis is treated as evenly
+/// spaced over <c>[Start, End]</c> with <paramref name="Count"/> samples.
+/// </summary>
+/// <param name="Name">Dimension name as it appears in array <c>DimensionNames</c>.</param>
+/// <param name="Count">Number of samples along the axis.</param>
+/// <param name="Coordinates">Explicit per-sample coordinate values (length == <paramref name="Count"/>), or null for an evenly-spaced axis.</param>
+/// <param name="Start">First sample coordinate for an evenly-spaced axis.</param>
+/// <param name="End">Last sample coordinate for an evenly-spaced axis.</param>
+/// <param name="Unit">Optional coordinate unit (e.g. <c>m</c>, <c>hPa</c>), informational.</param>
+/// <param name="Positive">Optional CF <c>positive</c> orientation hint (<c>up</c> / <c>down</c>), informational.</param>
+public sealed record ZarrAxis(
+    string Name,
+    long Count,
+    double[]? Coordinates,
+    double Start,
+    double End,
+    string? Unit = null,
+    string? Positive = null);
+
+/// <summary>
 /// Parsed Zarr store metadata covering one or more arrays.
 /// </summary>
 /// <param name="ZarrFormat">Detected Zarr format version.</param>
@@ -100,6 +126,8 @@ public sealed record ZarrArrayMetadata(
 /// <param name="TemporalDimension">Declared time dimension name, or null.</param>
 /// <param name="Temporal">Temporal extent of the time axis, or null when the
 /// store declares no resolvable time axis.</param>
+/// <param name="Axes">Additional non-spatial, non-temporal coordinate axes
+/// (vertical/elevation/named) the store declares; empty when none.</param>
 public sealed record ZarrStoreMetadata(
     ZarrFormatVersion ZarrFormat,
     int Srid,
@@ -109,7 +137,14 @@ public sealed record ZarrStoreMetadata(
     string? SpatialXDimension,
     string? SpatialYDimension,
     string? TemporalDimension,
-    TemporalExtent? Temporal = null);
+    TemporalExtent? Temporal = null,
+    ZarrAxis[]? Axes = null)
+{
+    /// <summary>
+    /// Additional coordinate axes declared on the store; never null.
+    /// </summary>
+    public ZarrAxis[] Axes { get; init; } = Axes ?? [];
+}
 
 /// <summary>
 /// Persisted catalog entry for a registered Zarr store.

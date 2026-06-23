@@ -301,6 +301,73 @@ internal static class ZarrFixtureBuilder
         }
     }
 
+    /// <summary>
+    /// Builds a grouped store with a 3D (elevation, y, x) variable plus an
+    /// <c>axes</c> manifest declaring the additional vertical axis. When
+    /// <paramref name="explicitCoordinates"/> is true the axis is described by an
+    /// explicit coordinate array; otherwise by an evenly-spaced start/end pair.
+    /// Chunk payloads are written so a slice read can be exercised.
+    /// </summary>
+    public static Dictionary<string, byte[]> BuildGroupedWithVerticalAxis(
+        string root,
+        int levels,
+        int rows,
+        int cols,
+        bool explicitCoordinates,
+        Func<int, int, int, float>? sample = null)
+    {
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        objects[root + "/.zgroup"] = Encoding.UTF8.GetBytes("{\"zarr_format\":2}");
+
+        var axisJson = explicitCoordinates
+            ? "{\"name\":\"elevation\",\"unit\":\"m\",\"positive\":\"up\",\"coordinates\":[0,10,100,1000]}"
+            : "{\"name\":\"elevation\",\"unit\":\"m\",\"positive\":\"up\",\"start\":0,\"end\":1000}";
+
+        var attrs = new StringBuilder();
+        attrs.Append('{')
+            .Append("\"variables\":[\"temperature\"],")
+            .Append("\"primary_variable\":\"temperature\",")
+            .Append("\"crs_wkid\":4326,")
+            .Append("\"extent\":[-180,-90,180,90],")
+            .Append("\"x_dimension\":\"x\",")
+            .Append("\"y_dimension\":\"y\",")
+            .Append("\"axes\":[").Append(axisJson).Append(']')
+            .Append('}');
+        objects[root + "/.zattrs"] = Encoding.UTF8.GetBytes(attrs.ToString());
+
+        var arrayRoot = root + "/temperature";
+        var zarray = "{"
+            + "\"chunks\":[" + levels + "," + rows + "," + cols + "],"
+            + "\"compressor\":null,"
+            + "\"dtype\":\"<f4\","
+            + "\"fill_value\":0,"
+            + "\"filters\":null,"
+            + "\"order\":\"C\","
+            + "\"shape\":[" + levels + "," + rows + "," + cols + "],"
+            + "\"zarr_format\":2}";
+        objects[arrayRoot + "/.zarray"] = Encoding.UTF8.GetBytes(zarray);
+        objects[arrayRoot + "/.zattrs"] = Encoding.UTF8.GetBytes("{\"_ARRAY_DIMENSIONS\":[\"elevation\",\"y\",\"x\"]}");
+
+        if (sample is not null)
+        {
+            var raw = new byte[levels * rows * cols * sizeof(float)];
+            for (var l = 0; l < levels; l++)
+            {
+                for (var r = 0; r < rows; r++)
+                {
+                    for (var c = 0; c < cols; c++)
+                    {
+                        var offset = ((l * rows + r) * cols + c) * sizeof(float);
+                        Buffer.BlockCopy(BitConverter.GetBytes(sample(l, r, c)), 0, raw, offset, sizeof(float));
+                    }
+                }
+            }
+            objects[arrayRoot + "/0.0.0"] = raw;
+        }
+
+        return objects;
+    }
+
     public static Dictionary<string, byte[]> BuildInvalidJson(string root)
     {
         var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
