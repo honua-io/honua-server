@@ -49,16 +49,29 @@ train_assemble() {
     pre_sha="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${head}")"
 
     # Attempt the no-fast-forward merge. On conflict, abort transactionally.
-    if git -C "${TRAIN_REPO_ROOT}" merge --no-ff --no-edit \
-         -m "train: merge #${pr}" "${head}" >/dev/null 2>&1; then
+    local merge_err
+    if merge_err="$(git -C "${TRAIN_REPO_ROOT}" merge --no-ff --no-edit \
+         -m "train: merge #${pr}" "${head}" 2>&1)"; then
       printf '%s\t%s\n' "${pr}" "${pre_sha}" >>"${TRAIN_INCLUDED_FILE}"
       train_log "assembled #${pr} (head ${pre_sha:0:7})"
     else
+      # Distinguish a REAL content conflict (unmerged paths) from an
+      # environment/setup failure (e.g. missing git identity, dirty tree).
+      # Only the former is a legitimate detect-and-skip; the latter must be
+      # surfaced loudly — silently calling it a "conflict" would skip every PR
+      # and the train would never land anything.
+      local unmerged
+      unmerged="$(git -C "${TRAIN_REPO_ROOT}" ls-files -u 2>/dev/null | wc -l | tr -d ' ')"
       git -C "${TRAIN_REPO_ROOT}" merge --abort >/dev/null 2>&1 || true
-      # Defensive: ensure no residue (a non-merge conflict path).
       git -C "${TRAIN_REPO_ROOT}" reset -q --hard HEAD
-      printf '%s\t%s\n' "${pr}" "SKIPPED_CONFLICT" >>"${TRAIN_SKIPPED_FILE}"
-      train_warn "SKIPPED_CONFLICT #${pr} (conflict vs batch; aborted clean)"
+      if [ "${unmerged:-0}" -gt 0 ]; then
+        printf '%s\t%s\n' "${pr}" "SKIPPED_CONFLICT" >>"${TRAIN_SKIPPED_FILE}"
+        train_warn "SKIPPED_CONFLICT #${pr} (conflict vs batch; aborted clean)"
+      else
+        # Not a conflict — a merge/setup error. Fail loud, do NOT mask as conflict.
+        train_warn "MERGE ERROR (not a conflict) #${pr}: ${merge_err##*$'\n'}"
+        return 3
+      fi
     fi
   done
 
