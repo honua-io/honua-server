@@ -121,7 +121,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("FlatGeobuf output is not supported for source-backed PostGIS layers yet.");
+        => QueryFlatGeobufAsyncCore(query, cancellationToken);
 
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
         int layerId,
