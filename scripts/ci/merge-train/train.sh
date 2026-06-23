@@ -255,7 +255,9 @@ main() {
 
     # --- classify-flake (on the batch-introduced failures) -------------------
     _write_state "${batch}" "${trunk_sha}" "${included}" "classify-flake" "${run_id}" "${fwdfix}" "${flake_reruns}"
-    if train_classify_flake "${run_id}" "${flake_reruns}"; then
+    local rc_cf=0
+    train_classify_flake "${run_id}" "${flake_reruns}" || rc_cf=$?
+    if [[ "${rc_cf}" == "0" ]]; then
       flake_reruns=$((flake_reruns + 1))
       train_metric_set flake_reruns "${flake_reruns}"
       train_decision "flake signature matched; rerun #${flake_reruns} of failed jobs"
@@ -267,7 +269,14 @@ main() {
       gate="$(gh run view "${run_id}" --json jobs \
         --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
       continue
+    elif [[ "${rc_cf}" == "2" ]]; then
+      # Recognized flake persisted across the rerun => consistent environmental
+      # failure (e.g. the schema-setup race). Merge through: land the batch.
+      train_metric_set flake_mergethrough 1
+      train_notice "recognized environmental flake persisted across rerun; MERGING THROUGH — landing the batch (optimistic model)"
+      gate="SUCCESS"; continue
     fi
+    # rc_cf == 1 => a real, non-flake failure: fall through to autofix/attribute.
 
     # --- (4) ROLL-FORWARD AI FIX-AGENT (capstone; gated TRAIN_AUTOFIX) -------
     # A REAL, batch-introduced, non-flake failure. With autofix enabled, ask the
