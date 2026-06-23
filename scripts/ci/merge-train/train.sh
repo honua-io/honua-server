@@ -20,6 +20,10 @@ set -euo pipefail
 TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 . "${TRAIN_DIR}/lib.sh"
+# Phase 2 (OPTIONAL, off by default): gated Bedrock LLM judgment helpers. Sourced
+# before the gated steps so bedrock_* exists; inert unless TRAIN_LLM=1.
+# shellcheck source=bedrock-invoke.sh
+. "${TRAIN_DIR}/bedrock-invoke.sh"
 # shellcheck source=select.sh
 . "${TRAIN_DIR}/select.sh"
 # shellcheck source=assemble.sh

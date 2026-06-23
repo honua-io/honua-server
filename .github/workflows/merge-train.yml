@@ -35,6 +35,11 @@ on:
         type: string
         required: false
         default: '3'
+      use_llm:
+        description: 'Enable the OPTIONAL gated Bedrock LLM judgment layer (TRAIN_LLM=1). Off by default; every gate has a deterministic fallback. Requires secrets.BEDROCK_AWS_ACCESS_KEY_ID / secrets.BEDROCK_AWS_SECRET_ACCESS_KEY.'
+        type: boolean
+        required: false
+        default: false
 
 # Serialize train runs: a batch in flight must finish before the next starts.
 # cancel-in-progress:false so we never abandon a half-landed batch mid-flight.
@@ -72,6 +77,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_APPLY: ${{ github.event.inputs.train_apply }}
           DISPATCH_MAX_BATCH: ${{ github.event.inputs.max_batch }}
+          DISPATCH_USE_LLM: ${{ github.event.inputs.use_llm }}
+          HAVE_BEDROCK_KEYS: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID != '' && secrets.BEDROCK_AWS_SECRET_ACCESS_KEY != '' }}
         run: |
           set -euo pipefail
           # Only an explicit workflow_dispatch with train_apply=true acts.
@@ -83,16 +90,28 @@ jobs:
           echo "train_apply=${apply}" >> "$GITHUB_OUTPUT"
           mb="${DISPATCH_MAX_BATCH:-3}"; [[ -z "${mb}" ]] && mb=3
           echo "max_batch=${mb}" >> "$GITHUB_OUTPUT"
-          echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${mb}"
+          # TRAIN_LLM defaults to 0 for ALL triggers. It can only turn on via an
+          # explicit workflow_dispatch with use_llm=true AND configured Bedrock
+          # access-key secrets. Scheduled / workflow_run are always deterministic.
+          llm=0
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_USE_LLM}" == "true" ]]; then
+            if [[ "${HAVE_BEDROCK_KEYS}" == "true" ]]; then
+              llm=1
+            else
+              echo "::warning::use_llm=true but secrets.BEDROCK_AWS_ACCESS_KEY_ID / BEDROCK_AWS_SECRET_ACCESS_KEY are unset; running deterministic (TRAIN_LLM=0). Configure the dedicated Bedrock access-key secrets to enable the LLM layer."
+            fi
+          fi
+          echo "train_llm=${llm}" >> "$GITHUB_OUTPUT"
+          echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${mb} TRAIN_LLM=${llm}"
 
       - name: Run train
         env:
-          # HONUA_MERGE_TOKEN is preferred: a PAT can re-trigger downstream
+          # MERGE_TRAIN_TOKEN is preferred: a PAT can re-trigger downstream
           # workflows (a push by GITHUB_TOKEN does NOT retrigger other
           # workflows, so CI on the batch branch would not start). Fall back to
           # GITHUB_TOKEN when the PAT is absent — acceptable for dry-run, but
           # live landing wants the PAT so the batch-branch CI actually fires.
-          GH_TOKEN: ${{ secrets.HONUA_MERGE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
           TRAIN_APPLY: ${{ steps.mode.outputs.train_apply }}
           MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
           # Instrumentation: the run timestamp is injected here (not generated in
@@ -103,13 +122,26 @@ jobs:
           # train ALSO appends its dashboard to $GITHUB_STEP_SUMMARY directly, so
           # the Summary tab is populated even when the train selects nothing.
           TRAIN_METRICS_OUT: ${{ github.workspace }}/merge-train-metrics.json
+          # OPTIONAL gated LLM layer. TRAIN_LLM=0 here on every default path; the
+          # gates are inert and make zero Bedrock calls unless this is 1.
+          TRAIN_LLM: ${{ steps.mode.outputs.train_llm }}
+          # Bedrock auth via the dedicated least-privilege IAM user
+          # (honua-merge-train-bedrock) access-key secrets. These are only
+          # consumed by bedrock-invoke.sh when TRAIN_LLM=1; on every default
+          # (deterministic) path no AWS call is made and the keys go unused.
+          # bedrock-invoke.sh reads the standard AWS_* env, so exporting the
+          # secrets here is all that is needed.
+          AWS_ACCESS_KEY_ID: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.HONUA_BEDROCK_REGION || 'us-west-2' }}
+          BEDROCK_MODEL_ID: ${{ vars.HONUA_BEDROCK_MODEL_ID || 'us.anthropic.claude-haiku-4-5-20251001-v1:0' }}
         run: |
           set -euo pipefail
           # Stamp a real ISO-8601 instant (the repository updated_at above is only
           # a stable fallback; prefer a fresh UTC timestamp for this run).
           export TRAIN_RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          if [[ -z "${{ secrets.HONUA_MERGE_TOKEN }}" ]]; then
-            echo "::warning::HONUA_MERGE_TOKEN not set; using GITHUB_TOKEN. A GITHUB_TOKEN push does not retrigger downstream workflows, so live batch-branch CI may not start. Set HONUA_MERGE_TOKEN before enabling live mode."
+          if [[ -z "${{ secrets.MERGE_TRAIN_TOKEN }}" ]]; then
+            echo "::warning::MERGE_TRAIN_TOKEN not set; using GITHUB_TOKEN. A GITHUB_TOKEN push does not retrigger downstream workflows, so live batch-branch CI may not start. Set MERGE_TRAIN_TOKEN before enabling live mode."
           fi
           scripts/ci/merge-train/train.sh
 
