@@ -485,6 +485,56 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     }
 
     /// <summary>
+    /// Sets the edit capabilities advertised by every publication on the service(s) named
+    /// <paramref name="serviceName"/> in the Metadata v2 graph. The FormPackage validator
+    /// (and other capability gates) read <see cref="MetadataV2Publication.Capabilities"/>
+    /// from the graph — not the legacy <c>honua.services</c> table — so this is how a test
+    /// makes a service advertise Create/Update/Delete for edit-path coverage.
+    /// </summary>
+    internal static void EnableServiceEditingCapabilities(
+        WebAppFixture fixture,
+        string serviceName,
+        IReadOnlyList<string> capabilities)
+    {
+        var provider = RequireProvider(fixture);
+
+        var snapshot = ReadCurrent(fixture, provider);
+        var serviceIds = snapshot.Graph.Services
+            .Where(service => string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
+            .Select(service => service.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        if (serviceIds.Count == 0)
+        {
+            throw MissingServiceMutation(serviceName, nameof(EnableServiceEditingCapabilities));
+        }
+
+        var mutated = false;
+        var publications = snapshot.Graph.Publications
+            .Select(publication =>
+            {
+                if (!serviceIds.Contains(publication.ServiceId))
+                {
+                    return publication;
+                }
+
+                mutated = true;
+                return publication with { Capabilities = capabilities };
+            })
+            .ToArray();
+
+        if (!mutated)
+        {
+            throw MissingServiceMutation(serviceName, nameof(EnableServiceEditingCapabilities));
+        }
+
+        WriteGraph(fixture, provider, snapshot.Graph with
+        {
+            Publications = publications,
+            Revision = snapshot.Graph.Revision + 1,
+        });
+    }
+
+    /// <summary>
     /// Flips Active↔Retired on the publications + resources bound to the supplied layer
     /// index. The operational state stays Ready in both directions so visibility tests
     /// observe the lifecycle change in isolation.

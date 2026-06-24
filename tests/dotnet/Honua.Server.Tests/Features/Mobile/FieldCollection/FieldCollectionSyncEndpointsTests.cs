@@ -935,6 +935,11 @@ public sealed class FieldCollectionSyncAuthorizationTests : IAsyncLifetime
     public FieldCollectionSyncAuthorizationTests()
     {
         _fixture = new WebAppFixture()
+            // PushChange exercises the fieldops.offline-sync change-exchange surface,
+            // which is gated behind a Pro entitlement; without it the authorized push
+            // returns 402 instead of 200. The unauthenticated (401) cases short-circuit
+            // before the entitlement gate, so they are unaffected.
+            .WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {

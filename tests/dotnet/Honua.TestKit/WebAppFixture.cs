@@ -323,6 +323,18 @@ public sealed class WebAppFixture : IAsyncLifetime
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.SetLayerEnabled(this, layerIndex, enabled);
 
     /// <summary>
+    /// Advertises the supplied edit capabilities (e.g. Create/Update/Delete) on every
+    /// Metadata v2 publication of the named service so capability gates that read the v2
+    /// graph (such as the FormPackage validator) treat the service as editable. Delegates
+    /// to <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
+    /// </summary>
+    public void EnableV2ServiceEditingCapabilities(string serviceName, IReadOnlyList<string> capabilities)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.EnableServiceEditingCapabilities(
+            this,
+            serviceName,
+            capabilities);
+
+    /// <summary>
     /// Adds the Metadata v2 mirror for <c>tests/seed/admin-sample-feature-server.yaml</c>.
     /// Delegates to <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>

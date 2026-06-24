@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -351,8 +352,12 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections/test")]
     public async Task TestDraftConnection_UsesRequestedSslMode_WhenBuildingConnectionString()
     {
-        // Arrange
-        var capturingBuilder = new CapturingConnectionStringBuilder();
+        // Arrange. The draft-connection-test path is provider-aware: it resolves an
+        // IConnectionDriver for the request's provider (default "postgis") and builds
+        // the connection string through that driver, only falling back to the
+        // IDatabaseConnectionStringBuilder when no driver is registered. Capture the
+        // SslMode through the live driver seam so the test follows the actual code path.
+        var capturingDriver = new CapturingConnectionDriver();
         var localFixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
@@ -363,8 +368,9 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             })
             .ConfigureServices(services =>
             {
-                services.RemoveAll<IDatabaseConnectionStringBuilder>();
-                services.AddSingleton<IDatabaseConnectionStringBuilder>(capturingBuilder);
+                services.RemoveAll<IConnectionDriverRegistry>();
+                services.AddSingleton<IConnectionDriverRegistry>(
+                    new ConnectionDriverRegistry([capturingDriver]));
 
                 services.RemoveAll<IConnectionHealthTester>();
                 services.AddSingleton<IConnectionHealthTester>(new AlwaysHealthyConnectionTester());
@@ -395,7 +401,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            capturingBuilder.LastSslMode.Should().Be(SslMode.VerifyFull);
+            capturingDriver.LastSslMode.Should().Be(SslMode.VerifyFull);
         }
         finally
         {
@@ -697,36 +703,22 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.False(apiResponse.Success);
     }
 
-    private sealed class CapturingConnectionStringBuilder : IDatabaseConnectionStringBuilder
+    private sealed class CapturingConnectionDriver : IConnectionDriver
     {
         public SslMode LastSslMode { get; private set; } = SslMode.Require;
 
-        public string BuildConnectionString(
-            string host,
-            int port,
-            string databaseName,
-            string username,
-            string password,
-            SslMode sslMode)
+        public string Provider => DataProviderNames.Postgis;
+
+        public string BuildConnectionString(ConnectionTarget target)
         {
-            LastSslMode = sslMode;
+            LastSslMode = target.SslMode;
             return "Host=localhost;Port=5432;Database=test;Username=test;Password=test;SslMode=Require";
         }
 
-        public Task<string> BuildConnectionStringAsync(DataConnection connection)
-        {
-            LastSslMode = connection.SslMode;
-            return Task.FromResult(BuildConnectionString(
-                connection.Host,
-                connection.Port,
-                connection.DatabaseName,
-                connection.Username,
-                password: string.Empty,
-                connection.SslMode));
-        }
-
-        public bool ValidateConnectionString(string connectionString)
-            => !string.IsNullOrWhiteSpace(connectionString);
+        public Task<ConnectionHealthStatus> TestConnectionAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(ConnectionHealthStatus.Healthy);
     }
 
     private sealed class AlwaysHealthyConnectionTester : IConnectionHealthTester

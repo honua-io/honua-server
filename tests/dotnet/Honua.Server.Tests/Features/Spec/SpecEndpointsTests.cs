@@ -864,7 +864,21 @@ public sealed class SpecEndpointsTests
         // Community posture: agent-initiated apply runs with no enforced
         // guardrails, so the request proceeds past the ladder. With a valid
         // grammar/process-family it streams SSE rather than returning 402.
-        using var factory = WithEdition(HonuaEdition.Community);
+        //
+        // The guardrail ladder is orthogonal to the spec-apply *execution*
+        // entitlement (ai.spec-apply, Pro), which gates apply independently of the
+        // guardrail posture. Grant that single entitlement on top of the Community
+        // edition so this test isolates the guardrail-ladder behaviour under test
+        // from the execution gate (whose closed-gate 402 is covered by
+        // Apply_ProEditionWithoutEntitlement_Returns402).
+        using var factory = WithLicense(new TestLicenseEntitlementService(
+            HonuaEdition.Community,
+            LicenseValidationState.Valid,
+            entitlements:
+            [
+                .. LicenseTestSupport.ActiveEntitlementsFor(HonuaEdition.Community),
+                FeatureCatalog.AiSpecApplyKey,
+            ]));
         using var client = factory.CreateClient();
 
         var document = BuildDocument(ComputeNode("a"));

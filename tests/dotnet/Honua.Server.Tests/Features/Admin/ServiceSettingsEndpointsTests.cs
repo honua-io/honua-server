@@ -264,6 +264,11 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     {
         // Companion to the timeInfo round-trip: an empty-field timeInfo clears the
         // temporal slot (returns it as null) and must not NRE on the clear path.
+        //
+        // Layer 0 is seeded temporal (startTimeField=timestamp, endTimeField=event_date).
+        // The update is a partial patch: clearing only startTimeField would retain the
+        // seeded endTimeField and leave the slot non-null, so clear every temporal field
+        // to drive the slot to null and exercise the clear-to-null path.
         var setBody = """
             {
               "timeInfo": {
@@ -278,7 +283,9 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         var clearBody = """
             {
               "timeInfo": {
-                "startTimeField": ""
+                "startTimeField": "",
+                "endTimeField": "",
+                "trackIdField": ""
               }
             }
             """;
