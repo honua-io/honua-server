@@ -104,6 +104,16 @@ internal static class BedrockStructuredGenerationClient
                 return BedrockStructuredResult.Failed("Bedrock declined the request (content filtered).");
             }
 
+            // Surface max_tokens truncation explicitly. The Converse adapter maps StopReason.Max_tokens
+            // to ChatFinishReason.Length; the forced tool-call JSON is then cut off mid-payload and the
+            // caller's deserialize fails with an opaque generic parse error instead of an actionable
+            // message (mirrors the workflow/OpenAI/Anthropic providers from #1979).
+            if (response.FinishReason == ChatFinishReason.Length)
+            {
+                return BedrockStructuredResult.Failed(
+                    "Bedrock response was truncated (max_tokens reached); try a higher MaxTokens.");
+            }
+
             var call = response.Messages
                 .SelectMany(m => m.Contents)
                 .OfType<FunctionCallContent>()
