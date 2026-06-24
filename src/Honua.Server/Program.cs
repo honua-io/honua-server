@@ -737,7 +737,11 @@ builder.Services.AddHonuaTenantContext(builder.Configuration, _ => { });
 // Configure CORS policies
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddInputValidation(builder.Configuration);
-// Rate limiting disabled per project requirements
+// App-level rate limiting services (issue #355). Off by default — operators opt in via
+// RateLimiting:Enabled. Registers options validation, the policy store backing the admin
+// surface, and the partitioned middleware. Edge enforcement (ADR-0004) remains the
+// baseline; this is the opt-in identity-aware (tenant/user/API-key) enterprise slice.
+builder.Services.AddRateLimiting(builder.Configuration);
 
 // Configure API versioning for admin endpoints
 builder.Services.AddApiVersioning(options =>
@@ -1217,7 +1221,11 @@ app.UseHonuaTenantContext();
 // execution so 401/403/5xx responses are still observed (#1144).
 app.UseHonuaAuditLog();
 
-// Rate limiting disabled per project requirements
+// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
+// so buckets partition by tenant + authenticated user/API-key identity (falling back to
+// source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
+// posture is still edge enforcement (ADR-0004).
+app.UseRateLimiting();
 
 // Add limits enforcement middleware (after auth, before request logging)
 app.UseLimitsEnforcement();
@@ -1304,6 +1312,11 @@ app.MapAdminInfoEndpoints();
 app.MapCacheAdminEndpoints();
 app.MapGeocodingAdminEndpoints();
 app.MapFeatureOverviewEndpoints();
+
+// Rate limit policy administration (issue #355): CRUD + status for tenant/user/API-key
+// quota policies. Admin-authorized; the policies are consumed by the rate limiting
+// middleware registered above.
+app.MapRateLimitEndpoints();
 
 // Configure compliance admin endpoints (SOC 2 / FedRAMP readiness, key rotation, report export) (#352)
 app.MapComplianceAdminEndpoints();
