@@ -43,7 +43,7 @@ later (a fixture with documented provenance) without restructuring.
 | NAD83(HARN) (4152) | WGS84 (4326) | NAD_1983_HARN_To_WGS_1984_1 | — | 1580 | 1e-9 deg | EPSG 1580 is a null transformation (`+proj=noop`). Seeded under #1501; validated against the runtime in both directions. No distinct Esri WKID — ArcGIS applies no geographic transformation by default for this pair. |
 | NAD83(NSRS2007) (4759) | WGS84 (4326) | NAD_1983_NSRS2007_To_WGS_1984_1 | — | 15931 | 1e-9 deg | EPSG 15931 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
 | NAD83(2011) (6318) | WGS84 (4326) | NAD_1983_2011_To_WGS_1984_1 | — | 9774 | 1e-9 deg | EPSG 9774 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
-| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 0.3 km* | Grid-based (NADCON); requires `us_noaa_conus.tif`. *See the PROJ pipeline-application constraint below — a `+proj=pipeline` string cannot be forced through PostGIS' text overload, so the seeded NADCON pipeline does not apply; the explicit-failure (null) contract holds, and the 2-argument default path already resolves PROJ's NADCON-equivalent shift. |
+| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg† | Grid-based (NADCON); requires `us_noaa_conus.tif`. *See the PROJ pipeline-application constraint below — a `+proj=pipeline` string cannot be forced through PostGIS' text overload, so the seeded NADCON pipeline does not apply via the 3-arg form; the 2-argument default path resolves the NADCON shift, and its accuracy depends on whether the canonical grid is provisioned. †Tolerance pins the value measured on the `docker/proj-grids` image (canonical `us_noaa_conus.tif` baked in): NAD27 (-100, 40) → NAD83 ≈ (-100.0004056, 40.0000058), a ~36 m CONUS shift; the base image's minimal `libproj-data` subset gives a lower-accuracy fallback differing at the ~1e-4 deg level. |
 
 Tolerances are conservative upper bounds for the *selection* test: they prove Honua
 applies the correct pipeline, not that PROJ and EPSG agree to sub-millimeter. Tighten
@@ -86,32 +86,50 @@ default selection for these CONUS pairs (no regression versus prior behavior), a
 client-requested WKID for a non-seeded pair returns an explicit "unsupported" error rather
 than a silent substitute.
 
-## PROJ grid-data requirement (follow-up)
+## PROJ grid-data provisioning (#1501)
 
-Grid-based pipelines (NADCON/NTv2/GEOID) depend on PROJ grid files that may not ship in
-the PostGIS image's default PROJ data path. The catalog records each pipeline's
-`requiredGrids`; when a required grid is absent the runtime must **fail explicitly**
-rather than degrade to a Helmert approximation.
+Grid-based pipelines (NADCON/NTv2/GEOID) depend on PROJ grid files that do **not** ship in
+the base `postgis/postgis:*` PROJ data path. The catalog records each pipeline's
+`requiredGrids` with the canonical PROJ 9.x grid filename (resolved via `projinfo -o PROJ`).
 
-Runtime observations on the test image (`postgis/postgis:18-3.6`, PROJ 9.6.0,
-`NETWORK_ENABLED=OFF`):
+Runtime observations on the base test image (`postgis/postgis:18-3.6`, PROJ 9.6.0,
+`PROJ_NETWORK=OFF`):
 
-- The seeded NADCON pipeline string is a `+proj=pipeline +step +proj=hgridshift ...`
-  expression, which — per the PROJ pipeline-application constraint above — **cannot be
-  forced through PostGIS' `ST_Transform` text overload**, so the explicit-grid path always
-  fails to apply on this runtime regardless of whether the grid is present. The
-  explicit-failure (null) contract therefore holds.
+- The base image ships only the minimal Debian `libproj-data` subset — the legacy NTv1
+  `nad27`/`nad83` ASCII tables and a handful of `.gsb` grids. The canonical modern `.tif`
+  grids the EPSG/PROJ pipelines reference (`us_noaa_conus.tif`, the `us_noaa_nadcon5_*`
+  realization chain, `ca_nrc_ntv2_0.tif`, `us_noaa_g2018u0.tif` for GEOID18) are **absent**.
 - The **2-argument default** `ST_Transform(geom, 4267, 4269)` *does* resolve a NAD27→NAD83
-  datum shift on this image (PROJ selects its best-available NADCON-equivalent operation
-  from the data bundled with PROJ 9.6), so import/query reprojection of NAD27 data is not
-  silently identity.
+  datum shift on the base image, but via a **lower-accuracy** bundled fallback operation —
+  it differs from the canonical-grid result at the ~1e-4 deg level. So NAD27 import/query
+  reprojection is not silently identity, but it is not full-accuracy NADCON either.
+- The seeded NADCON `+proj=pipeline +step +proj=hgridshift ...` string still **cannot be
+  forced through PostGIS' `ST_Transform` text overload** (see the constraint above), so the
+  3-argument explicit-grid form does not apply on this runtime; the grid is exercised
+  through the **2-argument default** path PROJ selects from the available grid data.
 
-This PR does **not** modify the production Docker image. Provisioning explicit PROJ grid
-data (e.g. `us_noaa_conus.tif` for high-accuracy NADCON, NTv2 `.gsb` files, and GEOID
-grids for vertical work) into the image — and a pipeline-application mechanism to actually
-force them — is a documented follow-up. Until then, grid-backed *selections* that hit a
-missing grid surface a PostGIS error mapped to the shared problem helper, and the
-2-argument default path provides PROJ's best-available operation.
+### The `docker/proj-grids` image
+
+[`docker/proj-grids`](../../../docker/proj-grids/README.md) provisions the canonical PROJ
+grids into the PostGIS image's PROJ data directory (`/usr/share/proj`). It extends
+`postgis/postgis:18-3.6` and bakes in exactly the grids listed in
+[`docker/proj-grids/grids.txt`](../../../docker/proj-grids/grids.txt) (kept in sync with the
+catalog's `requiredGrids`), fetched from the PROJ CDN at build time. With the grids present,
+PROJ's 2-argument default resolves the **high-accuracy** NADCON operation, so the shared
+`DatumTransformSql` chokepoint (query + import reprojection) produces the canonical grid
+shift instead of the fallback. Measured: NAD27 (-100, 40) → NAD83 ≈ (-100.0004056, 40.0000058).
+
+This image is **isolated and opt-in**: nothing in the default build / Fast-tier test / CITE
+path builds or pulls it, and the base PostGIS tag used elsewhere is unchanged. Wiring it (or
+its baked grids) into the integration/CITE compositions — which would bump those image tags —
+is a deliberate follow-up. The gated `DatumGridProvisioningTests` (env `HONUA_PROJ_GRID_TEST`,
+pointed at this image via `HONUA_TEST_DB_URL`) prove the grid-gated transform resolves
+in-tolerance when the grids are present; `DatumTransformationParityTests` continue to assert
+the default-path / explicit-failure contract on the grid-less fixture.
+
+A pipeline-application mechanism that could force a *specific non-default* grid/Helmert
+operation through PostGIS (rather than relying on PROJ's default operation selection) remains
+the separate follow-up described under the PROJ pipeline-application constraint above.
 
 ## Import / reprojection path
 

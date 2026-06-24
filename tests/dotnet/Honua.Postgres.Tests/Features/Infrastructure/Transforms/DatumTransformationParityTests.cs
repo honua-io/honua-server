@@ -106,11 +106,12 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
     [IntegrationTest]
     public async Task TransformPoint_NadconGridPipeline_WithoutGrid_FailsExplicitly()
     {
-        // The NAD27->NAD83 NADCON pipeline (WKID 1241) requires us_noaa_conus.tif. When the
-        // grid is absent from the PROJ data path, PostGIS rejects the pipeline and the service
-        // returns null (the documented explicit-failure contract) rather than silently
-        // degrading to a Helmert approximation. If the grid is present, the transform succeeds
-        // and lands near the input (NAD27<->NAD83 shift is small in CONUS, < ~200 m).
+        // The NAD27->NAD83 NADCON pipeline (WKID 1241) requires us_noaa_conus.tif. The seeded
+        // +proj=pipeline string cannot be forced through PostGIS' 3-argument ST_Transform text
+        // overload, so when a pipeline selection is passed the service either returns null (the
+        // documented explicit-failure contract) or PROJ resolves the pair via its default path.
+        // When the canonical grid is provisioned (docker/proj-grids image, #1501) the result is
+        // a high-accuracy NADCON shift; see DatumGridProvisioningTests for the gated assertion.
         _catalog.TryGetByWkid(1241, 4267, 4269, out var selection).Should().BeTrue();
         selection!.RequiredGrids.Should().Contain("us_noaa_conus.tif");
 
