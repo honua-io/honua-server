@@ -311,6 +311,81 @@ public sealed class FeatureStreamPublisherTests : IDisposable
         Assert.True(msg.Envelope.GeometryChanged);
     }
 
+    [UnitTest]
+    public async Task PublishAsync_WhenSinksEnabled_FansEventToSink()
+    {
+        // Event-bus sink fan-out (#357): a committed edit reaches every registered
+        // sink with the same persisted envelope after durable append and streaming.
+        var sink = new SignalingSink();
+        var broadcaster = new FeatureChangeEventSinkBroadcaster(
+            [sink],
+            Options.Create(new FeatureChangeEventSinkOptions { Enabled = true }),
+            NullLogger<FeatureChangeEventSinkBroadcaster>.Instance);
+        var publisher = new FeatureStreamPublisher(
+            _store,
+            _sessionManager,
+            NullLogger<FeatureStreamPublisher>.Instance,
+            retryQueue: null,
+            sinkBroadcaster: broadcaster);
+
+        await publisher.PublishAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "svc-sink",
+            LayerId = 0,
+            ObjectId = 11,
+            Operation = "create",
+            Protocol = "rest",
+            RequestId = "req-sink-1"
+        });
+
+        var received = await sink.Signal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("svc-sink", received.ServiceId);
+    }
+
+    [UnitTest]
+    public async Task PublishAsync_WithNoOpSinkOnly_DoesNotThrow()
+    {
+        // Default deployment: only the no-op sink is registered. Publishing must
+        // behave exactly as the storage+streaming path with no observable effect.
+        var broadcaster = new FeatureChangeEventSinkBroadcaster(
+            [new NoOpFeatureChangeEventSink()],
+            Options.Create(new FeatureChangeEventSinkOptions { Enabled = true }),
+            NullLogger<FeatureChangeEventSinkBroadcaster>.Instance);
+        var publisher = new FeatureStreamPublisher(
+            _store,
+            _sessionManager,
+            NullLogger<FeatureStreamPublisher>.Instance,
+            retryQueue: null,
+            sinkBroadcaster: broadcaster);
+
+        await publisher.PublishAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "svc-noop",
+            LayerId = 0,
+            ObjectId = 12,
+            Operation = "update",
+            Protocol = "rest",
+            RequestId = "req-noop-1"
+        });
+
+        var stored = await _store.QueryAsync(null, null, null, 10);
+        Assert.Single(stored);
+    }
+
+    private sealed class SignalingSink : IFeatureChangeEventSink
+    {
+        public TaskCompletionSource<FeatureChangeEvent> Signal { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public string Name => "signaling";
+
+        public Task PublishAsync(FeatureChangeEvent featureEvent, CancellationToken cancellationToken = default)
+        {
+            Signal.TrySetResult(featureEvent);
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class ThrowingFeatureChangeEventStore : IFeatureChangeEventStore
     {
         public Task<FeatureChangeEvent> AppendAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)

@@ -76,6 +76,7 @@ public sealed class ConfigurationDocumentationService
             BuildFeatureStreamingSection(),
             BuildFeatureChangeEventsSection(),
             BuildFeatureChangeWebhookSection(),
+            BuildFeatureChangeEventSinksSection(),
             BuildManifestApprovalSection(),
             BuildManifestApprovalWebhookSection(),
             BuildGitOpsWatchSection(),
@@ -607,6 +608,20 @@ public sealed class ConfigurationDocumentationService
                     "Default approval timeout in minutes", 1440),
                 BuildProperty("ManifestApproval:ExpiryScanIntervalSeconds", "ManifestApproval__ExpiryScanIntervalSeconds", "integer",
                     "Background scan interval for expiring pending approvals", 60)
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildFeatureChangeEventSinksSection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "FeatureChangeEvents.Sinks",
+            Description = "Broker-agnostic event-bus sinks for committed feature-change events",
+            Properties =
+            [
+                BuildProperty("FeatureChangeEvents:Sinks:Enabled", "FeatureChangeEvents__Sinks__Enabled", "boolean",
+                    "Enable fan-out of committed feature-change events to registered event-bus sinks", false)
             ]
         };
     }
