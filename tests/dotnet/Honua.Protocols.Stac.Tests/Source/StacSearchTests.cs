@@ -649,6 +649,107 @@ public sealed class StacSearchTests : IAsyncLifetime
         names.Should().Equal($"zzz sort {runId}", $"aaa sort {runId}");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("POST /stac/search")]
+    public async Task SearchPost_WhenMorePagesExist_EmitsConformantPostNextLink()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var runId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var firstId = $"page-a-{runId}";
+        var secondId = $"page-b-{runId}";
+        var firstFeatureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"aaa page {runId}");
+        var secondFeatureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"zzz page {runId}");
+        await SetFeatureAttributeAsync(firstFeatureId, "stac_id", firstId);
+        await SetFeatureAttributeAsync(secondFeatureId, "stac_id", secondId);
+
+        var page1Body = JsonSerializer.Serialize(new
+        {
+            collections = new[] { collectionId },
+            ids = new[] { firstId, secondId },
+            sortby = new[] { new { field = "name", direction = "asc" } },
+            limit = 1
+        });
+
+        var page1Response = await _fixture.Client.PostAsync(
+            "/stac/search",
+            new StringContent(page1Body, Encoding.UTF8, "application/json"));
+
+        var page1Content = await page1Response.Content.ReadAsStringAsync();
+        page1Response.StatusCode.Should().Be(HttpStatusCode.OK, page1Content);
+
+        var page1Json = JsonDocument.Parse(page1Content);
+        page1Json.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(2);
+        page1Json.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(1);
+
+        var page1Ids = page1Json.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("id").GetString())
+            .ToArray();
+        page1Ids.Should().HaveCount(1);
+
+        // The POST next link must be a spec-conformant POST link with a merge body.
+        var nextLink = page1Json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "next");
+        nextLink.GetProperty("method").GetString().Should().Be("POST");
+        nextLink.GetProperty("merge").GetBoolean().Should().BeTrue();
+        nextLink.GetProperty("href").GetString().Should().EndWith("/stac/search");
+        var token = nextLink.GetProperty("body").GetProperty("token").GetString();
+        token.Should().NotBeNullOrWhiteSpace();
+
+        // Follow the next link by merging its body token into the original request body.
+        var page2Body = JsonSerializer.Serialize(new
+        {
+            collections = new[] { collectionId },
+            ids = new[] { firstId, secondId },
+            sortby = new[] { new { field = "name", direction = "asc" } },
+            limit = 1,
+            token
+        });
+
+        var page2Response = await _fixture.Client.PostAsync(
+            "/stac/search",
+            new StringContent(page2Body, Encoding.UTF8, "application/json"));
+
+        var page2Content = await page2Response.Content.ReadAsStringAsync();
+        page2Response.StatusCode.Should().Be(HttpStatusCode.OK, page2Content);
+
+        var page2Json = JsonDocument.Parse(page2Content);
+        var page2Ids = page2Json.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("id").GetString())
+            .ToArray();
+        page2Ids.Should().HaveCount(1);
+
+        // Page 2 must be a genuinely different item, not a repeat of page 1.
+        page2Ids[0].Should().NotBe(page1Ids[0]);
+        new[] { page1Ids[0], page2Ids[0] }.Should().BeEquivalentTo(new[] { firstId, secondId });
+
+        // The second (final) page must not advertise a further next link.
+        page2Json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .Should().NotContain(link => link.GetProperty("rel").GetString() == "next");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("POST /stac/search")]
+    public async Task SearchPost_WithInvalidPaginationToken_ReturnsBadRequest()
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            collections = new[] { WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture) },
+            token = "not-a-valid-token"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/stac/search",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private static double[][] BuildSquareRing((double X, double Y) point, double halfSize = 1d)
         =>
         [

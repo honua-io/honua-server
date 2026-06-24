@@ -340,6 +340,15 @@ public sealed record StacSearchRequest
     /// </summary>
     [JsonPropertyName("filter-lang")]
     public string? FilterLang { get; init; }
+
+    /// <summary>
+    /// Opaque pagination continuation token (STAC API pagination). Carried in
+    /// the body of the POST <c>next</c> link so a POST item-search client can
+    /// fetch subsequent pages. Encodes the offset of the next page; see
+    /// <c>SearchEndpoints</c> for the token format.
+    /// </summary>
+    [JsonPropertyName("token")]
+    public string? Token { get; init; }
 }
 
 /// <summary>
