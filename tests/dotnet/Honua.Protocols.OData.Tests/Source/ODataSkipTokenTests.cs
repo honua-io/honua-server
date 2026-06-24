@@ -111,6 +111,20 @@ public sealed class ODataSkipTokenTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})")]
+    public async Task Query_LegacyIntegerSkipTokenWithFilter_ReturnsBadRequest()
+    {
+        // A bare-integer skiptoken carries no query fingerprint, so accepting it alongside a
+        // $filter would let a token minted for one query be reused as a raw offset against a
+        // different one. Require the opaque fingerprinted token when a filter is present (#1989).
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$filter=ObjectId gt 0&$skiptoken=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})")]
     public async Task Query_LegacyIntegerSkipToken_StillWorks()
     {
         // Legacy integer skip tokens should continue to work for backward compatibility

@@ -80,7 +80,13 @@ internal static class GeoServicesGeometryParser
         }
 
         var normalizedType = geometryType?.Trim().ToLowerInvariant();
-        if (normalizedType == "esrigeometryenvelope" || coordinateCount == 4)
+
+        // An envelope needs all four ordinates. The previous condition fired the envelope
+        // branch whenever the type was esriGeometryEnvelope *regardless of how many
+        // coordinates parsed*, so a short list (e.g. "1,2") read xmax/ymax from the
+        // zero-initialized stackalloc tail and silently queried a different window instead
+        // of returning 400 (#1990). Require exactly four coordinates for the envelope.
+        if (coordinateCount == 4 && (normalizedType is null or "esrigeometryenvelope"))
         {
             geometry = new GeoServicesGeometry
             {
@@ -92,7 +98,7 @@ internal static class GeoServicesGeometryParser
             return true;
         }
 
-        if (normalizedType == "esrigeometrypoint" || coordinateCount == 2)
+        if (coordinateCount == 2 && (normalizedType is null or "esrigeometrypoint"))
         {
             geometry = new GeoServicesGeometry
             {
@@ -100,6 +106,12 @@ internal static class GeoServicesGeometryParser
                 Y = coordinates[1]
             };
             return true;
+        }
+
+        if (normalizedType == "esrigeometryenvelope")
+        {
+            error = "esriGeometryEnvelope requires exactly four coordinates: xmin,ymin,xmax,ymax.";
+            return false;
         }
 
         error = "Geometry coordinate list must contain 2 values (point) or 4 values (envelope).";

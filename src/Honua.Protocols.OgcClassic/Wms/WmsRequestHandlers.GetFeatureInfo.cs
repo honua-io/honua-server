@@ -144,6 +144,25 @@ internal static partial class WmsRequestHandlers
                 .Where(item => item.Filter is not null)
                 .ToDictionary(item => item.StorageLayerId, item => item.Filter);
 
+        // Apply the TIME dimension to identify, mirroring GetMap. Previously GetFeatureInfo
+        // ignored TIME entirely, so on a time-enabled layer GetMap showed the selected instant
+        // but identify returned features across all times (and an invalid TIME was silently
+        // accepted instead of InvalidDimensionValue) (#1991). Parsed against queryLayers so
+        // each queried layer gets its own temporal filter slot.
+        var temporalResult = TryParseWmsLayerTemporalFilters(context, query, queryLayers);
+        if (temporalResult.Error != null)
+        {
+            return temporalResult.Error;
+        }
+
+        var temporalFiltersByStorageLayerId = temporalResult.Filters is null
+            ? null
+            : queryLayers
+                .Select((layer, index) => (layer.StorageLayerId, Filter: temporalResult.Filters[index]))
+                .Where(item => item.Filter is not null)
+                .GroupBy(item => item.StorageLayerId)
+                .ToDictionary(group => group.Key, group => group.First().Filter);
+
         var featureCount = DefaultFeatureInfoCount;
         var featureCountRaw = GetQueryValue(query, "FEATURE_COUNT");
         if (!string.IsNullOrWhiteSpace(featureCountRaw))
@@ -208,6 +227,10 @@ internal static partial class WmsRequestHandlers
                 SpatialFilter = spatialFilter,
                 SqlFilter = filtersByStorageLayerId != null && filtersByStorageLayerId.TryGetValue(layer.StorageLayerId, out var sqlFilter)
                     ? sqlFilter
+                    : null,
+                TemporalFilter = temporalFiltersByStorageLayerId != null
+                    && temporalFiltersByStorageLayerId.TryGetValue(layer.StorageLayerId, out var temporalFilter)
+                    ? temporalFilter
                     : null,
                 SpatialReferenceSrid = serviceSrid,
                 OutputSrid = requestSrid,
