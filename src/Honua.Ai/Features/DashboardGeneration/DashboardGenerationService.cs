@@ -4,6 +4,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Honua.Ai.Providers.AzureOpenAi;
 using Honua.Ai.Providers.Bedrock;
 using Honua.Ai.WorkflowGeneration;
 using Honua.Ai.WorkflowGeneration.Models;
@@ -28,6 +29,7 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
     private readonly WorkflowGenerationConfiguration _configuration;
     private readonly WorkflowGenerationApiKeyResolver _apiKeyResolver;
     private readonly IBedrockChatClientFactory _bedrockChatClientFactory;
+    private readonly AzureOpenAiAuthResolver _azureAuthResolver;
     private readonly ILogger<DashboardGenerationService> _logger;
 
     public DashboardGenerationService(
@@ -35,12 +37,15 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
         IOptions<WorkflowGenerationConfiguration> options,
         WorkflowGenerationApiKeyResolver apiKeyResolver,
         IBedrockChatClientFactory bedrockChatClientFactory,
-        ILogger<DashboardGenerationService> logger)
+        ILogger<DashboardGenerationService> logger,
+        AzureOpenAiAuthResolver? azureAuthResolver = null)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = options.Value;
         _apiKeyResolver = apiKeyResolver;
         _bedrockChatClientFactory = bedrockChatClientFactory;
+        _azureAuthResolver = azureAuthResolver
+            ?? new AzureOpenAiAuthResolver(apiKeyResolver, new DefaultAzureOpenAiTokenProvider());
         _logger = logger;
     }
 
@@ -60,13 +65,20 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
         // Bedrock targets the regional runtime endpoint via the AWS credential chain, so it needs no
         // endpoint URL — only a model id. OpenAI-compatible/Anthropic providers require an endpoint.
         var isBedrock = string.Equals(providerId, WorkflowGenerationConfiguration.BedrockProviderId, StringComparison.OrdinalIgnoreCase);
+        var isAzureOpenAi = string.Equals(providerId, WorkflowGenerationConfiguration.AzureOpenAiProviderId, StringComparison.OrdinalIgnoreCase);
         var endpointMissing = !isBedrock && string.IsNullOrWhiteSpace(options?.Endpoint);
-        if (options is null || endpointMissing || string.IsNullOrWhiteSpace(options.Model))
+        // Azure OpenAI routes by deployment name, so a configured deployment satisfies the
+        // model requirement even when no raw model id is set.
+        var modelMissing = string.IsNullOrWhiteSpace(options?.Model)
+            && !(isAzureOpenAi && !string.IsNullOrWhiteSpace(options?.Deployment));
+        if (options is null || endpointMissing || modelMissing)
         {
             return Unsupported($"Dashboard generation provider '{providerId}' is not configured on this server.");
         }
 
-        var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model! : request.Model!;
+        var model = string.IsNullOrWhiteSpace(request.Model)
+            ? (string.IsNullOrWhiteSpace(options.Model) ? options.Deployment : options.Model)
+            : request.Model!;
 
         var providerRequest = new DashboardGenerationProviderRequest
         {
@@ -151,6 +163,13 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
         if (string.Equals(providerId, WorkflowGenerationConfiguration.BedrockProviderId, StringComparison.OrdinalIgnoreCase))
         {
             return await CallBedrockAsync(request, options, providerId, model, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Azure OpenAI is OpenAI-compatible but deployment-routed (Azure URL + api-key/Entra auth);
+        // route it through the shared Azure structured-generation client.
+        if (string.Equals(providerId, WorkflowGenerationConfiguration.AzureOpenAiProviderId, StringComparison.OrdinalIgnoreCase))
+        {
+            return await CallAzureOpenAiAsync(request, options, providerId, model, cancellationToken).ConfigureAwait(false);
         }
 
         try
@@ -274,6 +293,57 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
         {
             GenerationProviderLog.ProviderRequestFailed(_logger, providerId, ex);
             return ErrorProposal("Bedrock request failed.");
+        }
+    }
+
+    private async Task<DashboardGenerationModelProposal> CallAzureOpenAiAsync(
+        DashboardGenerationProviderRequest request,
+        WorkflowGenerationProviderOptions options,
+        string providerId,
+        string model,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var credential = await _azureAuthResolver.ResolveAsync(providerId, options, cancellationToken).ConfigureAwait(false);
+
+            var client = _httpClientFactory.CreateClient("workflow-generation");
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+
+            var result = await AzureOpenAiStructuredGenerationClient.GenerateAsync(
+                client,
+                options,
+                model,
+                credential.ApiKey,
+                credential.AccessToken,
+                DashboardGenerationPrompt.BuildSystem(request),
+                DashboardGenerationPrompt.BuildUser(request),
+                "dashboard_proposal",
+                DashboardGenerationSchema.Build(),
+                cancellationToken).ConfigureAwait(false);
+
+            if (!result.Succeeded)
+            {
+                GenerationProviderLog.ProviderRequestFailed(_logger, providerId, new InvalidOperationException(result.Error));
+                return ErrorProposal(result.Error ?? "Azure OpenAI request failed.");
+            }
+
+            var proposal = JsonSerializer.Deserialize(result.Json!, DashboardGenerationJsonContext.Default.DashboardGenerationModelProposal);
+            return proposal ?? ErrorProposal("Failed to deserialize the dashboard proposal from the Azure OpenAI response.");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (JsonException ex)
+        {
+            GenerationProviderLog.ProviderResponseParseFailed(_logger, providerId, ex);
+            return ErrorProposal("Azure OpenAI response could not be parsed.");
+        }
+        catch (HttpRequestException ex)
+        {
+            GenerationProviderLog.ProviderRequestFailed(_logger, providerId, ex);
+            return ErrorProposal("Azure OpenAI request failed.");
         }
     }
 

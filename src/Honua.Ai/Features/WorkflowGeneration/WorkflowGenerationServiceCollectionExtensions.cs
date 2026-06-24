@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Ai.Providers.AzureOpenAi;
 using Honua.Ai.Providers.Bedrock;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.WorkflowPackages.Generation;
@@ -66,6 +67,12 @@ internal static class WorkflowGenerationServiceCollectionExtensions
         // dashboard/report/workflow generators run on cloud AI without a local Ollama/Qwen model.
         services.TryAddSingleton<IBedrockChatClientFactory, BedrockChatClientFactory>();
 
+        // Azure OpenAI / AI Foundry: the shared OpenAI-compatible backend the studio generation
+        // flows use when the selected provider id is "azureopenai" (deployment-routed Azure URL,
+        // Entra Managed Identity preferred over an api-key). Mirrors the Bedrock factory wiring.
+        services.TryAddSingleton<IAzureOpenAiTokenProvider, DefaultAzureOpenAiTokenProvider>();
+        services.TryAddSingleton<AzureOpenAiAuthResolver>();
+
         services.AddSingleton<IWorkflowGenerationProvider>(sp =>
             ActivatorUtilities.CreateInstance<OpenAiCompatibleWorkflowGenerationProvider>(
                 sp, WorkflowGenerationConfiguration.LocalProviderId));
@@ -78,6 +85,9 @@ internal static class WorkflowGenerationServiceCollectionExtensions
         services.AddSingleton<IWorkflowGenerationProvider>(sp =>
             ActivatorUtilities.CreateInstance<BedrockWorkflowGenerationProvider>(
                 sp, WorkflowGenerationConfiguration.BedrockProviderId));
+        services.AddSingleton<IWorkflowGenerationProvider>(sp =>
+            ActivatorUtilities.CreateInstance<AzureOpenAiWorkflowGenerationProvider>(
+                sp, WorkflowGenerationConfiguration.AzureOpenAiProviderId));
 
         services.TryAddSingleton<IWorkflowGenerationService, WorkflowGenerationService>();
         return services;

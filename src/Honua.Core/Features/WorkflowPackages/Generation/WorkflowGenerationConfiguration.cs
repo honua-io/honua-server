@@ -31,6 +31,15 @@ public sealed class WorkflowGenerationConfiguration
     /// <summary>Default AWS region for the Bedrock provider when none is configured.</summary>
     public const string DefaultBedrockRegion = "us-west-2";
 
+    /// <summary>Stable id for the Azure OpenAI / Azure AI Foundry provider.</summary>
+    public const string AzureOpenAiProviderId = "azureopenai";
+
+    /// <summary>
+    /// Default Azure OpenAI REST API version used when a provider block does not set one.
+    /// A GA version that supports the strict <c>json_schema</c> structured-output response format.
+    /// </summary>
+    public const string DefaultAzureOpenAiApiVersion = "2024-10-21";
+
     /// <summary>Stable id for the deterministic fixture-replay provider.</summary>
     public const string DeterministicProviderId = "deterministic";
 
@@ -99,6 +108,21 @@ public sealed class WorkflowGenerationProviderOptions
 
     /// <summary>Maximum tokens for the model response.</summary>
     public int MaxTokens { get; set; } = 4096;
+
+    /// <summary>
+    /// Azure OpenAI deployment name. Azure routes requests by deployment name rather than the
+    /// raw model id, so the <c>azureopenai</c> provider uses this to build the
+    /// <c>/openai/deployments/{deployment}/chat/completions</c> URL. Ignored by the other
+    /// providers. When empty the provider falls back to <see cref="Model"/>.
+    /// </summary>
+    public string Deployment { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Azure OpenAI REST <c>api-version</c> query parameter (for example <c>2024-10-21</c>).
+    /// Ignored by the other providers. When empty the provider falls back to
+    /// <see cref="WorkflowGenerationConfiguration.DefaultAzureOpenAiApiVersion"/>.
+    /// </summary>
+    public string ApiVersion { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -126,12 +150,13 @@ public sealed class WorkflowGenerationConfigurationValidator : ConfigurationVali
             || string.Equals(provider, WorkflowGenerationConfiguration.OpenAiProviderId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(provider, WorkflowGenerationConfiguration.AnthropicProviderId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(provider, WorkflowGenerationConfiguration.BedrockProviderId, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(provider, WorkflowGenerationConfiguration.AzureOpenAiProviderId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(provider, WorkflowGenerationConfiguration.DeterministicProviderId, StringComparison.OrdinalIgnoreCase);
 
         if (!isKnown)
         {
             errors.Add($"WorkflowGeneration:DefaultProvider '{provider}' is not a supported provider id. "
-                + "Supported values: 'local', 'openai', 'anthropic', 'bedrock', 'deterministic'.");
+                + "Supported values: 'local', 'openai', 'anthropic', 'bedrock', 'azureopenai', 'deterministic'.");
             return;
         }
 
@@ -154,6 +179,31 @@ public sealed class WorkflowGenerationConfigurationValidator : ConfigurationVali
         if (string.Equals(provider, WorkflowGenerationConfiguration.BedrockProviderId, StringComparison.OrdinalIgnoreCase))
         {
             ValidateRequiredString(providerOptions.Model, $"WorkflowGeneration:Providers:{provider}:Model", errors);
+            ValidateRange(providerOptions.TimeoutSeconds, 5, 300, $"WorkflowGeneration:Providers:{provider}:TimeoutSeconds", errors);
+            ValidateRange(providerOptions.MaxTokens, 256, 32_768, $"WorkflowGeneration:Providers:{provider}:MaxTokens", errors);
+            return;
+        }
+
+        // Azure OpenAI / AI Foundry targets the resource endpoint
+        // (https://{resource}.openai.azure.com) and routes by deployment name. Auth is via
+        // Entra Managed Identity (preferred) or an api-key, so the api-key is optional here —
+        // only the endpoint, deployment (or model), api-version, and limits are validated.
+        if (string.Equals(provider, WorkflowGenerationConfiguration.AzureOpenAiProviderId, StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(providerOptions.Endpoint))
+            {
+                errors.Add($"WorkflowGeneration:Providers:{provider}:Endpoint cannot be empty");
+            }
+            else
+            {
+                ValidateUrl(providerOptions.Endpoint, $"WorkflowGeneration:Providers:{provider}:Endpoint", errors, requireHttps: true);
+            }
+
+            if (string.IsNullOrWhiteSpace(providerOptions.Deployment) && string.IsNullOrWhiteSpace(providerOptions.Model))
+            {
+                errors.Add($"WorkflowGeneration:Providers:{provider}:Deployment (or :Model) must be set — Azure OpenAI routes by deployment name.");
+            }
+
             ValidateRange(providerOptions.TimeoutSeconds, 5, 300, $"WorkflowGeneration:Providers:{provider}:TimeoutSeconds", errors);
             ValidateRange(providerOptions.MaxTokens, 256, 32_768, $"WorkflowGeneration:Providers:{provider}:MaxTokens", errors);
             return;
