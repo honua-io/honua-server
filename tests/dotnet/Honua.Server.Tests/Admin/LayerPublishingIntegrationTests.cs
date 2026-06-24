@@ -600,7 +600,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         try
         {
-            await _fixture.Postgres.ExecuteAsync(FormattableString.Invariant($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync(FormattableString.Invariant($"""
                 CREATE TABLE public.{projectedTable} (
                     id integer PRIMARY KEY,
                     name text NOT NULL,
@@ -679,7 +679,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{projectedTable};");
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{projectedTable};");
         }
     }
 
@@ -694,7 +694,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         try
         {
-            await _fixture.Postgres.ExecuteAsync($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
                 CREATE TABLE public.{emptyTable} (
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -811,7 +811,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Postgres.ExecuteAsync($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
                 DROP TABLE IF EXISTS public.{emptyTable};
                 DROP TABLE IF EXISTS public.{disabledTable};
                 """);
@@ -904,7 +904,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         try
         {
-            await _fixture.Postgres.ExecuteAsync($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
                 CREATE TABLE public.{textPrimaryKeyTable} (
                     code text PRIMARY KEY,
                     name text NOT NULL,
@@ -948,7 +948,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{textPrimaryKeyTable};");
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{textPrimaryKeyTable};");
         }
     }
 
@@ -961,7 +961,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         try
         {
-            await _fixture.Postgres.ExecuteAsync($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
                 CREATE TABLE public.{invalidGeometryTable} (
                     id integer PRIMARY KEY,
                     name text NOT NULL,
@@ -994,7 +994,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{invalidGeometryTable};");
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{invalidGeometryTable};");
         }
     }
 
@@ -1007,7 +1007,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         try
         {
-            await _fixture.Postgres.ExecuteAsync($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
                 CREATE TABLE public.{invalidGeometryTable} (
                     id integer PRIMARY KEY,
                     name text NOT NULL,
@@ -1043,7 +1043,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{invalidGeometryTable};");
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{invalidGeometryTable};");
         }
     }
 
@@ -1056,7 +1056,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         try
         {
-            await _fixture.Postgres.ExecuteAsync($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
                 CREATE TABLE public.{noGeometryTable} (
                     id integer PRIMARY KEY,
                     name text NOT NULL
@@ -1086,7 +1086,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{noGeometryTable};");
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{noGeometryTable};");
         }
     }
 
@@ -1099,7 +1099,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         try
         {
-            await _fixture.Postgres.ExecuteAsync($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
                 CREATE TABLE public.{mercatorTable} (
                     id integer PRIMARY KEY,
                     name text NOT NULL,
@@ -1134,7 +1134,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{mercatorTable};");
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{mercatorTable};");
         }
     }
 
@@ -1147,7 +1147,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         try
         {
-            await _fixture.Postgres.ExecuteAsync($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
                 CREATE TABLE public.{mixedTable} (
                     id integer PRIMARY KEY,
                     name text NOT NULL,
@@ -1178,7 +1178,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{mixedTable};");
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{mixedTable};");
         }
     }
 
@@ -1191,7 +1191,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         try
         {
-            await _fixture.Postgres.ExecuteAsync($"""
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
                 CREATE TABLE public.{emptyTable} (
                     id integer PRIMARY KEY,
                     name text NOT NULL,
@@ -1217,7 +1217,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{emptyTable};");
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{emptyTable};");
         }
     }
 
@@ -1561,7 +1561,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             VALUES ('Test Feature', 100, ST_SetSRID(ST_Point(1, 1), 4326));
             """;
 
-        await _fixture.Postgres.ExecuteAsync(sql);
+        await _fixture.Postgres.ExecuteDdlUnderLockAsync(sql);
     }
 
     private async Task InsertPostGisFeatureAsync(string name, int population, double x, double y)
@@ -1666,7 +1666,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
 
         var sql = $"DROP TABLE IF EXISTS public.{_tableName};";
-        await _fixture.Postgres.ExecuteAsync(sql);
+        await _fixture.Postgres.ExecuteDdlUnderLockAsync(sql);
     }
 
     private async Task<Guid> CreateTransientSecureConnectionAsync(string connectionString, string name)
