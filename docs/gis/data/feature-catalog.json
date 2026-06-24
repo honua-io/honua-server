@@ -4671,6 +4671,7 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.Features_ReturnsCollection",
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.Features_ReturnsODataVersionHeader",
         "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.Query_FollowSkipTokenNextLink_ReturnsNextPage",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.Query_LegacyIntegerSkipTokenWithFilter_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.Query_LegacyIntegerSkipToken_StillWorks",
         "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.Query_SkipTokenIterateAllPages_ReturnsAllFeatures",
         "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.Query_WithInvalidSkipToken_ReturnsBadRequest",
