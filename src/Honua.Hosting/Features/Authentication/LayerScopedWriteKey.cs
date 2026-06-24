@@ -66,6 +66,63 @@ internal static class LayerScopedWriteKey
     public const string Role = "layer-write-key";
 
     /// <summary>
+    /// Role assigned to a genuinely-scoped API key whose grants confer neither full
+    /// admin authority nor a layer-scoped <c>write:</c> grant (issue #1985). The role
+    /// is deliberately not <c>admin</c> so the key is denied any endpoint guarded by
+    /// the admin authorization policy; its scoped grants remain available as
+    /// <c>permission</c> claims for endpoint-level enforcement.
+    /// </summary>
+    public const string ScopedKeyRole = "scoped-api-key";
+
+    /// <summary>
+    /// Determines whether the supplied permission grants confer full administrative
+    /// authority — i.e. the key is unscoped and must satisfy every admin endpoint
+    /// (legacy behavior). This is the case when no permissions are supplied (the
+    /// password-based bootstrap admin and the development bypass authenticate with
+    /// <see langword="null"/> permissions, and the key store normalizes an empty
+    /// grant set to <c>admin:*</c>) or when at least one grant is a full-admin grant
+    /// (<c>admin</c>, <c>*</c>, or any <c>admin:</c>-prefixed grant such as
+    /// <c>admin:*</c>).
+    /// </summary>
+    /// <remarks>
+    /// A key whose grants are genuinely scoped — neither a full-admin grant nor a
+    /// layer-scoped <c>write:</c> grant — confers no admin authority. Such a key is
+    /// authenticated as a non-admin principal (issue #1985) so it no longer silently
+    /// passes the admin authorization policy; its grants are surfaced as
+    /// <c>permission</c> claims for endpoint-level enforcement.
+    /// </remarks>
+    /// <param name="permissions">The key's permission grants.</param>
+    /// <returns><see langword="true"/> when the key confers full admin authority.</returns>
+    public static bool ConfersFullAdmin(IReadOnlyList<string>? permissions)
+    {
+        if (permissions is null || permissions.Count == 0)
+        {
+            // Unscoped: bootstrap admin / dev bypass (null) and empty grant sets
+            // (normalized to admin:* by the key store) retain full admin authority.
+            return true;
+        }
+
+        var hasMeaningfulGrant = false;
+        foreach (var permission in permissions)
+        {
+            var trimmed = permission?.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                continue;
+            }
+
+            hasMeaningfulGrant = true;
+            if (IsAdminGrant(trimmed))
+            {
+                return true;
+            }
+        }
+
+        // A grant set consisting solely of blank entries is treated as unscoped.
+        return !hasMeaningfulGrant;
+    }
+
+    /// <summary>
     /// Determines whether the supplied permission grants describe a layer-scoped
     /// write key: at least one <c>write:</c> grant and no full-admin grant.
     /// </summary>

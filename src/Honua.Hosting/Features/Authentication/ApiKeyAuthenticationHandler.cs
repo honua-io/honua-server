@@ -339,20 +339,49 @@ internal sealed class ApiKeyAuthenticationHandler(
         // ServiceDataEditorAuthorization pipeline against the scope claims below.
         var isScopedWriteKey = LayerScopedWriteKey.IsScopedWriteKey(permissions);
 
-        var claims = isScopedWriteKey
-            ? new List<Claim>
-            {
+        // A key is granted the blanket "admin" role only when its grants confer full
+        // administrative authority (issue #1985). The password-based bootstrap admin
+        // and the development bypass authenticate with null permissions and so remain
+        // full admins; an unscoped key (or one carrying admin / * / admin:* grants)
+        // likewise passes every admin endpoint. A key whose grants are genuinely
+        // scoped — neither a full-admin grant nor a write: grant — is authenticated as
+        // a NON-admin principal so it no longer silently passes RequireRole("admin").
+        // Its grants are surfaced as "permission" claims below for endpoint-level
+        // enforcement.
+        var confersFullAdmin = LayerScopedWriteKey.ConfersFullAdmin(permissions);
+
+        List<Claim> claims;
+        if (isScopedWriteKey)
+        {
+            claims =
+            [
                 new Claim(ClaimTypes.Name, apiKeyName ?? "layer-write-key"),
                 new Claim(ClaimTypes.Role, LayerScopedWriteKey.Role),
                 new Claim("auth_type", LayerScopedWriteKey.AuthType),
                 new Claim(LayerScopedWriteKey.ScopeClaimType, LayerScopedWriteKey.AuthType),
-            }
-            : new List<Claim>
-            {
+            ];
+        }
+        else if (confersFullAdmin)
+        {
+            claims =
+            [
                 new Claim(ClaimTypes.Name, "admin"),
                 new Claim(ClaimTypes.Role, "admin"),
                 new Claim("auth_type", authenticationType),
-            };
+            ];
+        }
+        else
+        {
+            // Genuinely scoped, non-admin, non-write key: authenticated but NOT an
+            // admin. It carries only its scoped "permission" claims (added below) and
+            // is denied any endpoint guarded by the admin role.
+            claims =
+            [
+                new Claim(ClaimTypes.Name, apiKeyName ?? "scoped-api-key"),
+                new Claim(ClaimTypes.Role, LayerScopedWriteKey.ScopedKeyRole),
+                new Claim("auth_type", authenticationType),
+            ];
+        }
 
         if (apiKeyId.HasValue)
         {
