@@ -42,6 +42,7 @@ internal static partial class MapServerEndpoints
         ExportRenderLayer[] Layers,
         RenderLayerDescriptor[] RenderLayers,
         ExportTileCoordinate[] Tiles,
+        long TotalTileCount,
         double[] Bounds,
         int MinZoom,
         int MaxZoom,
@@ -57,10 +58,13 @@ internal static partial class MapServerEndpoints
             return error;
         }
 
-        var estimatedSizeBytes = checked(plan!.Tiles.LongLength * ExportTilesTileSizeBytesEstimate);
+        // Report the TRUE tile count (not the maxTiles-bounded build size) so the estimate stays
+        // meaningful even when the request exceeds the transfer limit; the bounded build only ever
+        // exists to keep the allocation from OOM-ing the host (#2065).
+        var estimatedSizeBytes = checked(plan!.TotalTileCount * ExportTilesTileSizeBytesEstimate);
         var response = new ExportTilesEstimateResponse
         {
-            TileCount = plan.Tiles.LongLength,
+            TileCount = plan.TotalTileCount,
             Size = estimatedSizeBytes,
             SizeUnit = "bytes",
             EstimatedSizeBytes = estimatedSizeBytes,
@@ -444,6 +448,7 @@ internal static partial class MapServerEndpoints
             renderLayers,
             descriptors,
             selectedTiles,
+            totalTileCount,
             bounds,
             minZoom,
             maxZoom,
