@@ -42,10 +42,14 @@ public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
                 style_identifier   TEXT NOT NULL DEFAULT 'default',
                 min_zoom           INTEGER NOT NULL,
                 max_zoom           INTEGER NOT NULL,
+                data_type          TEXT NOT NULL DEFAULT 'raster',
+                tileset_title      TEXT,
                 created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 UNIQUE (layer_identifier, tile_matrix_set, style_identifier, tile_format, source_service_url)
             );
+            ALTER TABLE honua.tile_caches ADD COLUMN IF NOT EXISTS data_type TEXT NOT NULL DEFAULT 'raster';
+            ALTER TABLE honua.tile_caches ADD COLUMN IF NOT EXISTS tileset_title TEXT;
             CREATE TABLE IF NOT EXISTS honua.tile_cache_entries (
                 tile_cache_id  TEXT NOT NULL REFERENCES honua.tile_caches (tile_cache_id) ON DELETE CASCADE,
                 zoom_level     INTEGER NOT NULL,
