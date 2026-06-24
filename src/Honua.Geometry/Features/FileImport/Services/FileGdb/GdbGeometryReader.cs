@@ -134,20 +134,23 @@ internal sealed class GdbGeometryReader
         var x = (double)xRaw / _geomDef.XYScale + _geomDef.XOrigin;
         var y = (double)yRaw / _geomDef.XYScale + _geomDef.YOrigin;
 
+        double? z = null;
         if (hasZ && offset < blob.Length)
         {
             var zRaw = GdbVarInt.ReadVarUInt(blob, ref offset);
-            var z = (double)zRaw / _geomDef.ZScale + _geomDef.ZOrigin;
-            return _factory.CreatePoint(new CoordinateZ(x, y, z));
+            z = (double)zRaw / _geomDef.ZScale + _geomDef.ZOrigin;
         }
 
-        // Skip M values if present (we don't use them in the output).
+        // Carry the M (measure) ordinate so XYM/XYZM points round-trip instead of
+        // being silently flattened (#1981). Point M values are unsigned varints.
+        double? m = null;
         if (hasM && offset < blob.Length)
         {
-            GdbVarInt.ReadVarUInt(blob, ref offset);
+            var mRaw = GdbVarInt.ReadVarUInt(blob, ref offset);
+            m = (double)mRaw / _geomDef.MScale + _geomDef.MOrigin;
         }
 
-        return _factory.CreatePoint(new Coordinate(x, y));
+        return _factory.CreatePoint(BuildCoordinate(x, y, z, m));
     }
 
     private NtsGeometry? ReadMultiVertexGeometry(
@@ -233,20 +236,18 @@ internal sealed class GdbGeometryReader
             zValues = ReadZCoordinates(blob, ref offset, numPoints);
         }
 
-        // Skip M coordinates if present.
+        // Read M (measure) coordinates if present. Previously these were skipped,
+        // silently dropping measures from XYM/XYZM polylines and polygons (#1981).
+        double[]? mValues = null;
         if (hasM)
         {
-            SkipCoordinateValues(blob, ref offset, numPoints);
+            mValues = ReadMCoordinates(blob, ref offset, numPoints);
         }
 
-        // Apply Z values to coordinates.
-        if (zValues != null)
-        {
-            for (var i = 0; i < numPoints && i < zValues.Length; i++)
-            {
-                coordinates[i] = new CoordinateZ(coordinates[i].X, coordinates[i].Y, zValues[i]);
-            }
-        }
+        // Apply Z/M values to coordinates, choosing the coordinate type so the
+        // resulting geometry's coordinate sequence carries the extra ordinates
+        // and the WKB writer can emit them.
+        ApplyZm(coordinates, zValues, mValues);
 
         // Build geometry from parts.
         if (isPolygon)
@@ -317,13 +318,77 @@ internal sealed class GdbGeometryReader
         return zValues;
     }
 
-    private static void SkipCoordinateValues(ReadOnlySpan<byte> blob, ref int offset, int count)
+    private double[]? ReadMCoordinates(ReadOnlySpan<byte> blob, ref int offset, int numPoints)
     {
-        for (var i = 0; i < count && offset < blob.Length; i++)
+        if (numPoints <= 0 || offset >= blob.Length)
         {
-            // M values use the same zigzag-encoded signed varints as coordinates.
-            GdbVarInt.ReadVarInt(blob, ref offset);
+            return null;
         }
+
+        // M values use the same zigzag-encoded signed varints as coordinates:
+        // first absolute, subsequent delta-encoded, then descaled with the M
+        // origin/scale from the geometry definition.
+        var mValues = new double[numPoints];
+        long mAcc = 0;
+
+        for (var i = 0; i < numPoints; i++)
+        {
+            if (offset >= blob.Length)
+            {
+                break;
+            }
+
+            var dm = GdbVarInt.ReadVarInt(blob, ref offset);
+            mAcc += dm;
+            mValues[i] = (double)mAcc / _geomDef.MScale + _geomDef.MOrigin;
+        }
+
+        return mValues;
+    }
+
+    /// <summary>
+    /// Promotes plain XY coordinates to XYZ/XYM/XYZM in place, picking the NTS
+    /// coordinate type so the resulting geometry's coordinate sequence advertises
+    /// the extra ordinates and the WKB writer can emit them (#1981).
+    /// </summary>
+    private static void ApplyZm(Coordinate[] coordinates, double[]? zValues, double[]? mValues)
+    {
+        if (zValues == null && mValues == null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < coordinates.Length; i++)
+        {
+            var z = zValues != null && i < zValues.Length ? zValues[i] : (double?)null;
+            var m = mValues != null && i < mValues.Length ? mValues[i] : (double?)null;
+            coordinates[i] = BuildCoordinate(coordinates[i].X, coordinates[i].Y, z, m);
+        }
+    }
+
+    /// <summary>
+    /// Builds the narrowest NTS coordinate type that carries the supplied
+    /// ordinates: <see cref="CoordinateZM"/> for XYZM, <see cref="CoordinateM"/>
+    /// for XYM, <see cref="CoordinateZ"/> for XYZ, otherwise plain XY.
+    /// </summary>
+    private static Coordinate BuildCoordinate(double x, double y, double? z, double? m)
+    {
+        if (z.HasValue && m.HasValue)
+        {
+            return new CoordinateZM(x, y, z.Value, m.Value);
+        }
+
+        if (m.HasValue)
+        {
+            return new CoordinateM(x, y, m.Value);
+        }
+
+        if (z.HasValue)
+        {
+            return new CoordinateZ(x, y, z.Value);
+        }
+
+        return new Coordinate(x, y);
     }
 
     private MultiPoint? ReadMultiPoint(
@@ -362,23 +427,13 @@ internal sealed class GdbGeometryReader
         }
 
         // Read Z if present.
-        if (hasZ)
-        {
-            var zValues = ReadZCoordinates(blob, ref offset, numPoints);
-            if (zValues != null)
-            {
-                for (var i = 0; i < numPoints && i < zValues.Length; i++)
-                {
-                    coords[i] = new CoordinateZ(coords[i].X, coords[i].Y, zValues[i]);
-                }
-            }
-        }
+        double[]? zValues = hasZ ? ReadZCoordinates(blob, ref offset, numPoints) : null;
 
-        // Skip M.
-        if (hasM)
-        {
-            SkipCoordinateValues(blob, ref offset, numPoints);
-        }
+        // Read M (measure) if present instead of skipping it, so XYM/XYZM
+        // multipoints round-trip their measures (#1981).
+        double[]? mValues = hasM ? ReadMCoordinates(blob, ref offset, numPoints) : null;
+
+        ApplyZm(coords, zValues, mValues);
 
         var points = new Point[numPoints];
         for (var i = 0; i < numPoints; i++)
