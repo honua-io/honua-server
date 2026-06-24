@@ -49,7 +49,17 @@ train_forward_fix() {
     # Test override: a fake formatter that touches files deterministically.
     "${TRAIN_FORMAT_CMD}" "${batch}"
   else
-    ( cd "${TRAIN_REPO_ROOT}" && with-build-lock dotnet format Honua.sln )
+    # `dotnet format` needs the solution RESTORED to load+reformat projects, and
+    # restore is flaky (that's why CI uses scripts/ci/dotnet-restore-retry.sh).
+    # The old cold `dotnet format` had no retry-restore, so a transient restore
+    # failure produced NO changes — which the train mis-read as "not format-
+    # fixable" and ESCALATED instead of healing the format and landing forward.
+    # Also: `with-build-lock` is a LOCAL multi-agent dev tool that may be absent
+    # on the CI runner (where this actually runs), so use it only if present.
+    local _wbl=""; command -v with-build-lock >/dev/null 2>&1 && _wbl="with-build-lock"
+    ( cd "${TRAIN_REPO_ROOT}" \
+        && ${_wbl} scripts/ci/dotnet-restore-retry.sh Honua.sln \
+        && ${_wbl} dotnet format Honua.sln --no-restore )
   fi
 
   if git -C "${TRAIN_REPO_ROOT}" diff --quiet; then
