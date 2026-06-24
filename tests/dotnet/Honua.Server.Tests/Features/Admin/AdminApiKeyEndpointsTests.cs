@@ -155,6 +155,76 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    public async Task ReadOnlyScopedKey_CanReadAdminSurface()
+    {
+        // #1985: a key scoped to admin:read must still be able to perform safe
+        // (GET) admin reads — scoped enforcement narrows, it does not lock out.
+        var created = await CreateApiKeyAsync("scoped-read-key", permissions: ["admin:read"]);
+        using var readKeyClient = CreateApiKeyClient(created.Key);
+
+        var response = await readKeyClient.GetAsync("/api/v1/admin/api-keys");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    public async Task ReadOnlyScopedKey_CannotPerformMutatingAdminOperations()
+    {
+        // #1985 regression: before scoped enforcement an admin:read key was stamped
+        // Role=admin and silently passed every admin endpoint, including mutating
+        // ones. It must now be Forbidden (403) from creating, rotating, or revoking.
+        var created = await CreateApiKeyAsync("scoped-read-key-mutation", permissions: ["admin:read"]);
+        var victim = await CreateApiKeyAsync("scoped-read-key-victim", permissions: ["admin:read"]);
+        using var readKeyClient = CreateApiKeyClient(created.Key);
+
+        var createRequest = new CreateAdminApiKeyRequest
+        {
+            Name = "should-not-be-created",
+            Permissions = ["admin:*"],
+        };
+        var createResponse = await readKeyClient.PostAsJsonAsync("/api/v1/admin/api-keys", createRequest, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Forbidden, createResponse.StatusCode);
+
+        var rotateResponse = await readKeyClient.PostAsync(
+            $"/api/v1/admin/api-keys/{created.ApiKey.Id}/rotate", content: null);
+        Assert.Equal(HttpStatusCode.Forbidden, rotateResponse.StatusCode);
+
+        var revokeResponse = await readKeyClient.PostAsync(
+            $"/api/v1/admin/api-keys/{victim.ApiKey.Id}/revoke", content: null);
+        Assert.Equal(HttpStatusCode.Forbidden, revokeResponse.StatusCode);
+
+        // The privilege-escalation attempt must not have mutated anything: the
+        // victim key still authenticates.
+        using var victimClient = CreateApiKeyClient(victim.Key);
+        var victimStillWorks = await victimClient.GetAsync("/api/v1/admin/api-keys");
+        Assert.Equal(HttpStatusCode.OK, victimStillWorks.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task FullAdminScopedKey_RetainsFullAdminAuthority()
+    {
+        // #1985: the default-minted key carries admin:* and must keep full admin
+        // (read AND write) so existing keys are never locked out by enforcement.
+        var created = await CreateApiKeyAsync("scoped-full-admin-key", permissions: ["admin:*"]);
+        using var fullKeyClient = CreateApiKeyClient(created.Key);
+
+        var listResponse = await fullKeyClient.GetAsync("/api/v1/admin/api-keys");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+
+        var createRequest = new CreateAdminApiKeyRequest
+        {
+            Name = "created-by-full-admin",
+            Permissions = ["admin:read"],
+        };
+        var createResponse = await fullKeyClient.PostAsJsonAsync("/api/v1/admin/api-keys", createRequest, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/api-keys")]
     public async Task CreateApiKey_WithNullPermissions_ReturnsBadRequest()
     {
