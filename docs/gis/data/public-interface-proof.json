@@ -530,6 +530,52 @@
       ]
     },
     {
+      "surfaceId": "field-workflows",
+      "displayName": "Back-office field workflows (review/QA and export packages)",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/field-workflows/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/field-workflows/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage with FieldReviewEndpointsTests (#1159 list/get/assign/decide/comment) and FieldExportEndpointsTests (#1160 GeoJSON/CSV export generation, filtered record sets, audited export history, invalid-format rejection) integration tests.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/FieldWorkflows/FieldReviewEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/FieldWorkflows/FieldExportEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1160",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated FieldReviewJsonContext and FieldExportJsonContext keep the review and export wire shapes AOT-safe; the back-office field workflows API doc documents review state transitions, the export filter, export package contents, and the privacy posture (no raw values/geometry duplicated).",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Core/Features/FieldWorkflows/Review/FieldReviewJsonContext.cs",
+            "src/Honua.Core/Features/FieldWorkflows/Export/FieldExportJsonContext.cs",
+            "src/Honua.Core/Features/FieldWorkflows/Export/FieldExportContracts.cs",
+            "docs/internal/developer/back-office-field-workflows-api.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1160",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "content-publication-registry",
       "displayName": "Content publication registry and published artifact routes",
       "surfaceKind": "http-route-family",

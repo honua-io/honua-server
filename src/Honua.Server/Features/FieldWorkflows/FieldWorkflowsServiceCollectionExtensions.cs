@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.FieldWorkflows.Export;
 using Honua.Server.Features.FieldWorkflows.Review;
 
 namespace Honua.Server.Features.FieldWorkflows;
@@ -16,6 +17,7 @@ internal static class FieldWorkflowsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<FieldReviewService>();
+        services.AddScoped<FieldExportService>();
 
         return services;
     }
