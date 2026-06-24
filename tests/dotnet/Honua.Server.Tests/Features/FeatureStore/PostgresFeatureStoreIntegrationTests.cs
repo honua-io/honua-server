@@ -48,7 +48,10 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _fixture.ExecuteAsync($"CREATE SCHEMA {_testSchema}");
+        // honua-server#1568 residual: serialize the raw CREATE SCHEMA on the shared schema-mutation
+        // advisory lock so this per-test namespace DDL does not race a concurrent collection's locked
+        // DROP SCHEMA ... CASCADE on the shared catalog and deadlock (40P01).
+        await _fixture.CreateSchemaUnderLockAsync(_testSchema);
         await EnsureLayerCatalogAsync();
 
         var createSql = $@"
