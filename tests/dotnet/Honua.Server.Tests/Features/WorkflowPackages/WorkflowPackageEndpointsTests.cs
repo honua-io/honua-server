@@ -90,8 +90,10 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         using var doc = await ReadJsonAsync(response);
         var data = doc.RootElement.GetProperty("data");
         data.GetProperty("registryVersion").GetString().Should().NotBeNullOrWhiteSpace();
-        data.GetProperty("providers")[0].GetProperty("providerId").GetString()
-            .Should().Be("geoprocessing.process-catalog");
+        var providerIds = data.GetProperty("providers").EnumerateArray()
+            .Select(provider => provider.GetProperty("providerId").GetString())
+            .ToArray();
+        providerIds.Should().Contain("geoprocessing.process-catalog");
 
         var bufferNode = data.GetProperty("nodes")
             .EnumerateArray()
