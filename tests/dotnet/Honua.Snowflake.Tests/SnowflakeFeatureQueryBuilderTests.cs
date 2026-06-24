@@ -201,11 +201,27 @@ public class SnowflakeFeatureQueryBuilderTests
         Assert.Contains("ST_INTERSECTS(\"SHAPE\"", result.Sql, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildSelectQuery_DisjointFilter_MapsToStDisjoint()
+    {
+        var mapping = BuildMapping();
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create([0x01], SpatialRelationship.Disjoint, srid: 4326)
+        };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("ST_DISJOINT(\"SHAPE\"", result.Sql, StringComparison.Ordinal);
+    }
+
     [Theory]
+    // Esri esriSpatialRelWithin/Contains: filter geometry is within/contains the feature. The
+    // filter geometry must be the FIRST operand (ST_WITHIN(filter, feature)); leading with the
+    // feature column inverts the relationship and returns the wrong (empty) set (#2068).
     [InlineData(SpatialRelationship.Within, "ST_WITHIN")]
     [InlineData(SpatialRelationship.Contains, "ST_CONTAINS")]
-    [InlineData(SpatialRelationship.Disjoint, "ST_DISJOINT")]
-    public void BuildSelectQuery_RelationshipFilters_MapToStFunctions(SpatialRelationship relationship, string expectedFunction)
+    public void BuildSelectQuery_WithinContainsFilters_LeadWithFilterGeometry(SpatialRelationship relationship, string expectedFunction)
     {
         var mapping = BuildMapping();
         var query = new FeatureQuery
@@ -215,7 +231,7 @@ public class SnowflakeFeatureQueryBuilderTests
 
         var result = SnowflakeFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains(expectedFunction + "(\"SHAPE\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(expectedFunction + "(TO_GEOGRAPHY(?, TRUE), \"SHAPE\")", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
