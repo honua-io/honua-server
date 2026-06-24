@@ -99,10 +99,47 @@ internal static class StartupConfigurationHelpers
         }
 
         using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
+
+        // Resolve the bootstrap snapshot with the SAME license-content secret resolver that
+        // AddHonuaLicensing wires for the per-request service. Without it a Secrets-Manager-only
+        // Pro license (Licensing:LicenseContentSecretRef) resolves as Community at bootstrap, so
+        // this gate sees no caching.redis entitlement and the IConnectionMultiplexer never gets
+        // wired for the process lifetime even when the SM license carries it (honua-server#1755).
+        var secretResolver = CreateBootstrapLicenseSecretResolver(loggerFactory);
         var snapshot = await FileBackedLicenseService
-            .LoadBootstrapSnapshotAsync(configuration, loggerFactory, honorDevGrant: !environment.IsProduction())
+            .LoadBootstrapSnapshotAsync(
+                configuration,
+                loggerFactory,
+                honorDevGrant: !environment.IsProduction(),
+                secretResolver: secretResolver)
             .ConfigureAwait(false);
         return snapshot.HasEntitlement("caching.redis");
+    }
+
+    /// <summary>
+    /// Constructs the provider-specific <see cref="ILicenseContentSecretResolver"/> for the
+    /// bootstrap entitlement probe, mirroring the resolver <c>AddHonuaLicensing</c> registers in
+    /// DI. The AWSSDK surface stays confined to <c>Honua.Aws</c> behind the same
+    /// <c>HONUA_EXCLUDE_AWS</c> guard the runtime wiring uses; when the cloud SDK is excluded the
+    /// probe falls back to file / inline / Community resolution exactly as before. Constructing the
+    /// resolver here is cheap — it only touches the network when a secret reference is configured
+    /// and resolved (its AWS client is created lazily).
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1859:Use concrete types when possible for improved performance",
+        Justification = "The return type must stay the cloud-neutral abstraction: in the " +
+            "HONUA_EXCLUDE_AWS build profile the concrete resolver type does not exist, so the " +
+            "method returns null typed as the interface.")]
+    private static ILicenseContentSecretResolver? CreateBootstrapLicenseSecretResolver(ILoggerFactory loggerFactory)
+    {
+#if HONUA_EXCLUDE_AWS
+        _ = loggerFactory;
+        return null;
+#else
+        return new Honua.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver(
+            loggerFactory.CreateLogger<Honua.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver>());
+#endif
     }
 
     /// <summary>

@@ -106,10 +106,27 @@ internal sealed class FileBackedLicenseService :
     /// Callers must pass <c>honorDevGrant: false</c> in Production so the override never relaxes a
     /// startup gate without a signed license (the host-level guard fails the process closed there).
     /// </summary>
+    /// <param name="configuration">The host configuration carrying the <c>Licensing</c> section.</param>
+    /// <param name="loggerFactory">Factory for the transient bootstrap logger.</param>
+    /// <param name="honorDevGrant">
+    /// When <see langword="true"/>, a valid <c>Licensing:DevGrantEdition</c> short-circuits the
+    /// snapshot to that edition. Must be <see langword="false"/> in Production.
+    /// </param>
+    /// <param name="secretResolver">
+    /// The same <see cref="ILicenseContentSecretResolver"/> that <c>AddHonuaLicensing</c> registers
+    /// for the per-request license service. Supplying it here lets the bootstrap snapshot honor
+    /// <c>Licensing:LicenseContentSecretRef</c> (e.g. a Secrets-Manager-only Pro license); without
+    /// it a secret-ref license degrades to Community at bootstrap and a startup gate such as the
+    /// Redis-cache probe stays off for the process lifetime (honua-server#1755). It is optional so
+    /// hosts without a secret resolver (or built with the cloud SDK excluded) still resolve file /
+    /// inline / Community licenses correctly.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token for the snapshot load.</param>
     internal static async Task<LicenseSnapshot> LoadBootstrapSnapshotAsync(
         IConfiguration configuration,
         ILoggerFactory loggerFactory,
         bool honorDevGrant = false,
+        ILicenseContentSecretResolver? secretResolver = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -127,7 +144,8 @@ internal sealed class FileBackedLicenseService :
         var service = new FileBackedLicenseService(
             Options.Create(options),
             new BouncyCastleEd25519Verifier(),
-            loggerFactory.CreateLogger<FileBackedLicenseService>());
+            loggerFactory.CreateLogger<FileBackedLicenseService>(),
+            secretResolver);
         await service.StartAsync(cancellationToken).ConfigureAwait(false);
         return service.GetSnapshot();
     }

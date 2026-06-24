@@ -5,6 +5,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
+using Microsoft.Extensions.Configuration;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -395,6 +396,95 @@ public sealed class FileBackedLicenseServiceTests
         resolver.ResolveCallCount.Should().Be(0);
         logger.Entries.Should().Contain(entry => entry.EventId == 10011 && entry.Level == LogLevel.Warning);
     }
+
+    [UnitTest]
+    public async Task LoadBootstrapSnapshotAsync_LicenseContentSecretRef_WithResolver_ActivatesProEntitlements()
+    {
+        // honua-server#1755: the bootstrap entitlement probe must honor a Secrets-Manager-only Pro
+        // license (Licensing:LicenseContentSecretRef) just like the per-request service does, so a
+        // startup gate such as the Redis-cache probe sees its caching.redis entitlement.
+        const string secretRef = "aws:secretsmanager:honua/license-pro";
+        var license = LicenseTestSupport.CreateSignedLicense(
+            HonuaEdition.Pro,
+            expiresAt: DateTimeOffset.UtcNow.AddDays(365),
+            entitlements: ["caching.redis", "analytics.clustering"]);
+        var envelopeJson = Encoding.UTF8.GetString(license.LicenseData);
+        var resolver = new FakeLicenseSecretResolver(envelopeJson);
+
+        var configuration = BuildLicenseConfiguration(new Dictionary<string, string?>
+        {
+            ["Licensing:LicenseContentSecretRef"] = secretRef,
+            ["Licensing:TrustedKeys:" + LicenseTestSupport.KeyId] = license.PublicKeySetting
+        });
+
+        using var loggerFactory = LoggerFactory.Create(static builder => { });
+        var snapshot = await FileBackedLicenseService.LoadBootstrapSnapshotAsync(
+            configuration,
+            loggerFactory,
+            honorDevGrant: false,
+            secretResolver: resolver);
+
+        snapshot.Edition.Should().Be(HonuaEdition.Pro);
+        snapshot.IsValid.Should().BeTrue();
+        snapshot.HasEntitlement("caching.redis").Should().BeTrue(
+            "the SM-resolved Pro license carries caching.redis, so the bootstrap Redis-cache gate must see it");
+        snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
+        resolver.ResolveCallCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task LoadBootstrapSnapshotAsync_LicenseContentSecretRef_NoResolver_FallsBackToCommunity()
+    {
+        // Reproduces the pre-fix bug shape: with no resolver supplied, an SM-only Pro license
+        // cannot be fetched at bootstrap and the snapshot degrades to Community (no caching.redis).
+        var configuration = BuildLicenseConfiguration(new Dictionary<string, string?>
+        {
+            ["Licensing:LicenseContentSecretRef"] = "aws:secretsmanager:honua/license-pro"
+        });
+
+        using var loggerFactory = LoggerFactory.Create(static builder => { });
+        var snapshot = await FileBackedLicenseService.LoadBootstrapSnapshotAsync(
+            configuration,
+            loggerFactory,
+            honorDevGrant: false,
+            secretResolver: null);
+
+        snapshot.Edition.Should().Be(HonuaEdition.Community);
+        snapshot.HasEntitlement("caching.redis").Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task LoadBootstrapSnapshotAsync_InlineCommunityLicense_StillResolvesCorrectly()
+    {
+        // A file/inline Community license must continue to resolve correctly when a resolver is
+        // present — the resolver only fires for a secret reference (none configured here).
+        var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Community);
+        var resolver = new FakeLicenseSecretResolver("should-not-be-read");
+
+        var configuration = BuildLicenseConfiguration(new Dictionary<string, string?>
+        {
+            ["Licensing:LicenseContent"] = Encoding.UTF8.GetString(license.LicenseData),
+            ["Licensing:TrustedKeys:" + LicenseTestSupport.KeyId] = license.PublicKeySetting
+        });
+
+        using var loggerFactory = LoggerFactory.Create(static builder => { });
+        var snapshot = await FileBackedLicenseService.LoadBootstrapSnapshotAsync(
+            configuration,
+            loggerFactory,
+            honorDevGrant: false,
+            secretResolver: resolver);
+
+        snapshot.Edition.Should().Be(HonuaEdition.Community);
+        snapshot.IsValid.Should().BeTrue();
+        snapshot.HasEntitlement("caching.redis").Should().BeFalse(
+            "caching.redis is a Pro entitlement and must stay inactive for a Community license");
+        resolver.ResolveCallCount.Should().Be(0);
+    }
+
+    private static IConfiguration BuildLicenseConfiguration(Dictionary<string, string?> settings)
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(settings)
+            .Build();
 
     [UnitTest]
     public async Task UploadLicenseAsync_OversizedStream_StopsReadingAfterSizeLimit()
