@@ -256,10 +256,15 @@ internal static partial class RedshiftFeatureQueryBuilder
                 $"ST_Intersects({geomCol}, {filterExpr})",
             SpatialRelationship.EnvelopeIntersects =>
                 $"ST_Intersects(ST_Envelope({geomCol}), ST_Envelope({filterExpr}))",
+            // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
+            // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
+            // filter geometry to match the canonical PostGIS reference (#2068). Reversing the
+            // operands inverts the relationship (ST_Within(A,B) == ST_Contains(B,A)) and returns
+            // the wrong (typically empty) result set.
             SpatialRelationship.Within =>
-                $"ST_Within({geomCol}, {filterExpr})",
+                $"ST_Within({filterExpr}, {geomCol})",
             SpatialRelationship.Contains =>
-                $"ST_Contains({geomCol}, {filterExpr})",
+                $"ST_Contains({filterExpr}, {geomCol})",
             SpatialRelationship.Disjoint =>
                 $"ST_Disjoint({geomCol}, {filterExpr})",
             _ => throw new NotSupportedException(

@@ -55,23 +55,16 @@ internal sealed partial class FeatureQueryBuilder
             _ => string.Empty
         };
 
+    // Any server-side page (Limit or Offset) needs a stable tiebreaker order so the same
+    // rows are not skipped or duplicated across pages. A first page with a LIKE filter is no
+    // exception: when Limit is set but no ORDER BY is appended the database returns an arbitrary
+    // heap/plan order, while the next page (which injects ORDER BY objectid because it has an
+    // Offset) is drawn from a different ordering, silently skipping and duplicating rows across
+    // the page boundary (#2070). Mirrors the sibling MySQL provider, which has no LIKE carve-out.
     private static bool RequiresStablePageOrder(FeatureQuery query)
         => query.Offset.HasValue ||
            query.SpatialFilter.HasValue ||
-           (query.Limit.HasValue && !IsUnorderedFirstPageLikeFilter(query));
-
-    private static bool IsUnorderedFirstPageLikeFilter(FeatureQuery query)
-    {
-        if (!query.Limit.HasValue ||
-            query.Offset.HasValue ||
-            query.SpatialFilter.HasValue ||
-            query.OrderBy.HasValue)
-        {
-            return false;
-        }
-
-        return query.SqlFilter?.Sql.Contains(" LIKE ", StringComparison.OrdinalIgnoreCase) == true;
-    }
+           query.Limit.HasValue;
 
     private static bool HasObjectIdOrdering(FeatureQuery query)
     {

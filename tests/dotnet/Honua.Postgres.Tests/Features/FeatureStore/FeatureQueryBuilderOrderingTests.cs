@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
 using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy;
@@ -95,5 +96,25 @@ public sealed class FeatureQueryBuilderOrderingTests
         result.Sql.Should().Contain("ASC NULLS FIRST");
         result.Sql.Should().Contain("DESC");
         result.Sql.Should().NotContain("DESC NULLS");
+    }
+
+    [Fact]
+    public void BuildQuery_FirstPageLikeFilter_InjectsStableObjectIdOrder()
+    {
+        // A first page (Limit, no Offset, no OrderBy) with a LIKE filter must still receive a
+        // stable tiebreaker ORDER BY objectid. Without it, page 1 returns an arbitrary
+        // heap/plan order while page 2 (which carries an Offset and therefore injects
+        // ORDER BY objectid) is drawn from a different ordering, silently skipping and
+        // duplicating rows across the page boundary (#2070).
+        var queryBuilder = CreateBuilder();
+        var query = new FeatureQuery
+        {
+            Limit = 10,
+            SqlFilter = new SqlFragment("attributes->>'name' LIKE @p0", new object?[] { "A%" })
+        };
+
+        var result = queryBuilder.BuildSelectRawGeoJsonQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("ORDER BY objectid ASC");
     }
 }
