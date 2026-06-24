@@ -252,10 +252,16 @@ internal static partial class OracleFeatureQueryBuilder
                 $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=ANYINTERACT') = 'TRUE'",
             SpatialRelationship.EnvelopeIntersects =>
                 $"SDO_RELATE(SDO_GEOM.SDO_MBR({geomCol}), {filterExpr}, 'mask=ANYINTERACT') = 'TRUE'",
+            // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
+            // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
+            // filter geometry to match the canonical PostGIS reference (#2068). SDO_RELATE masks
+            // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
+            // the filter geometry must be the first operand. Reversing inverts the relationship and
+            // returns the wrong (typically empty) result set.
             SpatialRelationship.Within =>
-                $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=INSIDE+COVEREDBY') = 'TRUE'",
+                $"SDO_RELATE({filterExpr}, {geomCol}, 'mask=INSIDE+COVEREDBY') = 'TRUE'",
             SpatialRelationship.Contains =>
-                $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=CONTAINS+COVERS') = 'TRUE'",
+                $"SDO_RELATE({filterExpr}, {geomCol}, 'mask=CONTAINS+COVERS') = 'TRUE'",
             SpatialRelationship.Disjoint =>
                 $"NOT (SDO_RELATE({geomCol}, {filterExpr}, 'mask=ANYINTERACT') = 'TRUE')",
             _ => throw new NotSupportedException(

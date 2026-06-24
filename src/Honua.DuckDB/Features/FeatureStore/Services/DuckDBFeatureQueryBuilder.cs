@@ -873,10 +873,15 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         {
             SpatialRelationship.Intersects =>
                 $"ST_Intersects({geomCol}, {filterGeomParam})",
+            // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
+            // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
+            // filter geometry to match the canonical PostGIS reference (#2068). Reversing the
+            // operands inverts the relationship (ST_Within(A,B) == ST_Contains(B,A)) and returns
+            // the wrong (typically empty) result set.
             SpatialRelationship.Within =>
-                $"ST_Within({geomCol}, {filterGeomParam})",
+                $"ST_Within({filterGeomParam}, {geomCol})",
             SpatialRelationship.Contains =>
-                $"ST_Contains({geomCol}, {filterGeomParam})",
+                $"ST_Contains({filterGeomParam}, {geomCol})",
             SpatialRelationship.EnvelopeIntersects =>
                 $"ST_Intersects(ST_Envelope({geomCol}), ST_Envelope({filterGeomParam}))",
             SpatialRelationship.Crosses =>
