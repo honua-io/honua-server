@@ -193,7 +193,11 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
         // lock (parameterized multi-statement command spanning a TEMP staging table).
         await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            // honua-server#1568 residual: scope search_path to this test's isolated schema so the
+            // unqualified `features` cleanup resolves to the schema that actually owns it. With the
+            // default (public) search_path this raced concurrent collections' DROP SCHEMA/public
+            // churn and failed with `relation "features" does not exist` under load.
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(_schema);
             await using var command = connection.CreateCommand();
             command.CommandText = """
             DROP TABLE IF EXISTS admin_sample_publish_cleanup_layers;
