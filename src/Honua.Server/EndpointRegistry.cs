@@ -228,6 +228,24 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/rls-policies/{id}"),
         new("DELETE", "/api/v1/admin/rls-policies/{id}"),
 
+        // SCIM 2.0 provisioning endpoints (#510)
+        new("GET", "/scim/v2/Users"),
+        new("POST", "/scim/v2/Users"),
+        new("GET", "/scim/v2/Users/{id}"),
+        new("PUT", "/scim/v2/Users/{id}"),
+        new("PATCH", "/scim/v2/Users/{id}"),
+        new("DELETE", "/scim/v2/Users/{id}"),
+        new("GET", "/scim/v2/Groups"),
+        new("POST", "/scim/v2/Groups"),
+        new("GET", "/scim/v2/Groups/{id}"),
+        new("PUT", "/scim/v2/Groups/{id}"),
+        new("PATCH", "/scim/v2/Groups/{id}"),
+        new("DELETE", "/scim/v2/Groups/{id}"),
+
+        // SAML 2.0 Service Provider endpoints (#508)
+        new("GET", "/saml/metadata"),
+        new("POST", "/saml/acs"),
+
         // v1 console metadata v2 content + RBAC baseline (#1162)
         new("GET", "/api/v1/console/session"),
         new("GET", "/api/v1/console/content"),
