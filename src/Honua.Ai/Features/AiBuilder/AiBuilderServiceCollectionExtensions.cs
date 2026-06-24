@@ -7,6 +7,7 @@ using Honua.Core.Features.WorkflowPackages.Generation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.AiBuilder;
 
@@ -55,6 +56,17 @@ internal static class AiBuilderServiceCollectionExtensions
 
         services.AddAiBuilderFixtures();
 
+        // Bind the dedicated PlanAnalysis seam so the live planner can resolve its
+        // provider override (PlanAnalysis:Provider) at request time. The fixture
+        // path ignores it; binding is cheap and keeps a single registration site.
+        // The validator only checks the provider override (against the same
+        // allow-list as WorkflowGeneration) and is a no-op when no override is set.
+        services.AddOptions<PlanAnalysisConfiguration>()
+            .Bind(configuration.GetSection(PlanAnalysisConfiguration.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<PlanAnalysisConfiguration>, PlanAnalysisConfigurationValidator>());
+
         if (ShouldUseLivePlanner(configuration))
         {
             services.TryAddSingleton<IPlanAnalysisService, LivePlanAnalysisService>();
@@ -81,26 +93,68 @@ internal static class AiBuilderServiceCollectionExtensions
     }
 
     /// <summary>
-    /// True when an AI workflow-generation provider is configured such that the
-    /// live plan lane should run instead of fixture replay: the feature is
-    /// enabled and the default provider id is a live provider (anything other
-    /// than the deterministic fixture provider).
+    /// True when the live (provider-backed) plan lane should run instead of the
+    /// deterministic fixture replay.
     /// </summary>
+    /// <remarks>
+    /// The dedicated <c>PlanAnalysis</c> seam (#1955) takes precedence over the
+    /// Studio <c>WorkflowGeneration</c> gate so the MCP planner can be flipped
+    /// independently:
+    /// <list type="bullet">
+    ///   <item>If <c>PlanAnalysis:Enabled</c> is explicitly set, it decides the
+    ///   gate (true → live, false → fixtures) — the operator opts the MCP plan
+    ///   lane in or out without touching the Studio generation feature.</item>
+    ///   <item>Otherwise the planner inherits the <c>WorkflowGeneration</c> gate
+    ///   (the original behaviour).</item>
+    /// </list>
+    /// In both cases the <em>effective provider</em> must be a live provider —
+    /// <c>PlanAnalysis:Provider</c> when set, else
+    /// <c>WorkflowGeneration:DefaultProvider</c> — and not the deterministic
+    /// fixture-replay provider, otherwise the deterministic path is selected.
+    /// </remarks>
     internal static bool ShouldUseLivePlanner(IConfiguration configuration)
     {
-        var section = configuration.GetSection(WorkflowGenerationConfiguration.SectionName);
-        if (!section.GetValue<bool>("Enabled"))
+        var planSection = configuration.GetSection(PlanAnalysisConfiguration.SectionName);
+        var workflowSection = configuration.GetSection(WorkflowGenerationConfiguration.SectionName);
+
+        // PlanAnalysis:Enabled is authoritative when present; otherwise inherit
+        // the WorkflowGeneration gate.
+        var planEnabled = planSection.GetValue<bool?>("Enabled");
+        var gateEnabled = planEnabled ?? workflowSection.GetValue<bool>("Enabled");
+        if (!gateEnabled)
         {
             return false;
         }
 
-        var defaultProvider = (section.GetValue<string>("DefaultProvider")
-            ?? WorkflowGenerationConfiguration.LocalProviderId).Trim();
+        // PlanAnalysis:Provider overrides the WorkflowGeneration default provider
+        // for the plan lane. A blank override falls back to the WorkflowGeneration
+        // default so existing single-key deployments keep working.
+        var effectiveProvider = ResolveEffectiveProvider(planSection, workflowSection);
 
-        return defaultProvider.Length > 0
+        return effectiveProvider.Length > 0
             && !string.Equals(
-                defaultProvider,
+                effectiveProvider,
                 WorkflowGenerationConfiguration.DeterministicProviderId,
                 StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Resolves the provider id the live planner will use: the
+    /// <c>PlanAnalysis:Provider</c> override when non-blank, otherwise
+    /// <c>WorkflowGeneration:DefaultProvider</c> (itself defaulting to the local
+    /// provider id when unset).
+    /// </summary>
+    internal static string ResolveEffectiveProvider(
+        IConfigurationSection planSection,
+        IConfigurationSection workflowSection)
+    {
+        var planProvider = (planSection.GetValue<string>("Provider") ?? string.Empty).Trim();
+        if (planProvider.Length > 0)
+        {
+            return planProvider;
+        }
+
+        return (workflowSection.GetValue<string>("DefaultProvider")
+            ?? WorkflowGenerationConfiguration.LocalProviderId).Trim();
     }
 }
