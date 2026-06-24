@@ -102,6 +102,46 @@ public readonly struct FilterTranslationContext
     }
 
     /// <summary>
+    /// Builds a <see cref="FilterTranslationContext"/> from an explicit column set.
+    /// </summary>
+    /// <remarks>
+    /// Config-driven secondary providers (for example the read-only Databricks provider)
+    /// resolve their schema from per-layer configuration rather than the Metadata v2
+    /// graph, so they cannot supply a <see cref="MetadataV2Resource"/>. This overload lets
+    /// them reuse the shared <see cref="SqlFilterExpressionVisitorBase"/> translation path
+    /// by describing the layer's columns directly. Field types are unknown in this case and
+    /// default to <see cref="MetadataV2FieldType.String"/>, which is sufficient for
+    /// identifier resolution and parameterized literal binding.
+    /// </remarks>
+    /// <param name="fields">Ordered context fields describing the layer's columns.</param>
+    /// <param name="primaryKeyName">Primary-key column name, or null when absent.</param>
+    /// <param name="geometryColumnName">Geometry column name, or null for non-spatial layers.</param>
+    /// <param name="wkid">Spatial reference identifier of the layer geometry.</param>
+    /// <param name="geometryType">Canonical geometry type of the layer.</param>
+    /// <param name="resourceName">Display name used in diagnostic messages.</param>
+    /// <param name="isGeographic">True when the layer SRS is geographic.</param>
+    public static FilterTranslationContext FromColumns(
+        IReadOnlyList<ContextField> fields,
+        string? primaryKeyName,
+        string? geometryColumnName,
+        int wkid,
+        GeometryType geometryType,
+        string resourceName,
+        bool isGeographic = false)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        ArgumentNullException.ThrowIfNull(resourceName);
+        return new FilterTranslationContext(
+            fields,
+            primaryKeyName,
+            geometryColumnName,
+            wkid,
+            isGeographic,
+            geometryType,
+            resourceName);
+    }
+
+    /// <summary>
     /// Normalizes a schema field type for the translators: collapses the spatial
     /// <see cref="MetadataV2FieldType.Geography"/> alias to <see cref="MetadataV2FieldType.Geometry"/>
     /// and maps <see cref="MetadataV2FieldType.Unknown"/> to <see cref="MetadataV2FieldType.String"/>.

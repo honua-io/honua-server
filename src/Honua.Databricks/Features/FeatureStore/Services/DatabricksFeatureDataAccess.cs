@@ -38,6 +38,14 @@ internal interface IDatabricksFeatureDataAccess
 
     /// <summary>Executes an object-id statement and returns the primary-key values.</summary>
     Task<ImmutableArray<long>> ExecuteObjectIdsAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Executes an aggregate statistics statement and projects each result row into a
+    /// column-name-keyed dictionary (one row per group, or a single row when ungrouped).
+    /// </summary>
+    Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
+        DatabricksSqlStatement statement,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -125,6 +133,31 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
             {
                 builder.Add(ReadId(row[0]));
             }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
+        DatabricksSqlStatement statement,
+        CancellationToken cancellationToken)
+    {
+        var resultSet = await _client.ExecuteAsync(statement, cancellationToken).ConfigureAwait(false);
+        if (resultSet.Rows.Count == 0)
+        {
+            return ImmutableArray<IReadOnlyDictionary<string, object?>>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>(resultSet.Rows.Count);
+        foreach (var row in resultSet.Rows)
+        {
+            var dict = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.Ordinal);
+            for (var i = 0; i < resultSet.Columns.Count && i < row.Length; i++)
+            {
+                dict[resultSet.Columns[i]] = ProjectValue(row[i]);
+            }
+
+            builder.Add(dict.ToImmutable());
         }
 
         return builder.ToImmutable();
