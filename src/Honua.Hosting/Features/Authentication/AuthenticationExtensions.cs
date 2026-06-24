@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Infrastructure.Authentication;
@@ -55,6 +56,15 @@ public static class AuthenticationExtensions
     {
         services.AddScoped<ApiKeyAuthenticationDependencies>();
 
+        // Required by AdminPermissionAuthorizationHandler to read the request method
+        // when authorization is evaluated outside the endpoint resource (#1985).
+        services.AddHttpContextAccessor();
+
+        // Enforces scoped admin API-key permissions on the general request path
+        // (#1985). Registered as a singleton authorization handler so it participates
+        // in every policy that adds AdminPermissionRequirement below.
+        services.AddSingleton<IAuthorizationHandler, AdminPermissionAuthorizationHandler>();
+
         // Add authentication with API key scheme
         _ = services.AddAuthentication(defaultScheme: ApiKeyScheme)
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
@@ -64,49 +74,29 @@ public static class AuthenticationExtensions
         // Add authorization policies
         _ = services.AddAuthorization(options =>
         {
-            options.AddPolicy(AdminPolicy, policy =>
-            {
-                _ = policy.RequireAuthenticatedUser();
-                _ = policy.RequireRole("admin");
-                policy.AuthenticationSchemes.Add(ApiKeyScheme);
-                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
-            });
-
-            options.AddPolicy(AdminPolicyAlias, policy =>
-            {
-                _ = policy.RequireAuthenticatedUser();
-                _ = policy.RequireRole("admin");
-                policy.AuthenticationSchemes.Add(ApiKeyScheme);
-                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
-            });
-
-            options.AddPolicy(TemporalHistoryReadPolicy, policy =>
-            {
-                _ = policy.RequireAuthenticatedUser();
-                _ = policy.RequireRole("admin");
-                policy.AuthenticationSchemes.Add(ApiKeyScheme);
-                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
-            });
-
-            options.AddPolicy(TemporalDiffReadPolicy, policy =>
-            {
-                _ = policy.RequireAuthenticatedUser();
-                _ = policy.RequireRole("admin");
-                policy.AuthenticationSchemes.Add(ApiKeyScheme);
-                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
-            });
-
-            options.AddPolicy(TemporalRollbackExecutePolicy, policy =>
-            {
-                _ = policy.RequireAuthenticatedUser();
-                _ = policy.RequireRole("admin");
-                policy.AuthenticationSchemes.Add(ApiKeyScheme);
-                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
-            });
-
+            options.AddPolicy(AdminPolicy, ConfigureAdminPolicy);
+            options.AddPolicy(AdminPolicyAlias, ConfigureAdminPolicy);
+            options.AddPolicy(TemporalHistoryReadPolicy, ConfigureAdminPolicy);
+            options.AddPolicy(TemporalDiffReadPolicy, ConfigureAdminPolicy);
+            options.AddPolicy(TemporalRollbackExecutePolicy, ConfigureAdminPolicy);
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Configures an admin-family authorization policy: an authenticated principal
+    /// in the <c>admin</c> role whose scoped permission grants authorize the request
+    /// (#1985). The role check preserves the legacy gate; the permission requirement
+    /// adds scoped-key enforcement so a read-only admin key cannot mutate.
+    /// </summary>
+    private static void ConfigureAdminPolicy(AuthorizationPolicyBuilder policy)
+    {
+        _ = policy.RequireAuthenticatedUser();
+        _ = policy.RequireRole("admin");
+        _ = policy.AddRequirements(new AdminPermissionRequirement());
+        policy.AuthenticationSchemes.Add(ApiKeyScheme);
+        policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
     }
 
     /// <summary>
