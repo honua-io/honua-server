@@ -8,11 +8,13 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Core.Features.WorkflowPackages.Generation;
 using Honua.Core.Features.WorkflowPackages.Generation.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Generation.Domain;
+using Honua.Server.Features.WorkflowPackages;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Xunit;
 
 namespace Honua.Server.Tests.Features.WorkflowGeneration;
 
@@ -35,6 +37,17 @@ public sealed class WorkflowGenerationServiceTests
     private const string UnsupportedPrompt =
         "Pull the assessor CSV and then send a carrier pigeon to the county office.";
 
+    // Authoring/publishing prompts that previously had no grounded node type and were refused
+    // (honua-server#1759). Each now maps to an authoring:* node and must yield an accepted graph.
+    public static IEnumerable<object[]> AuthoringPrompts()
+    {
+        yield return ["Publish maui-parcels as a FeatureServer and OGC API Features service.", "authoring:publish.multiprotocol"];
+        yield return ["Style the parcels layer as a choropleth by assessed value.", "authoring:style.choropleth"];
+        yield return ["Build a web map of parcels, zoning, and flood with a legend.", "authoring:map.web-map"];
+        yield return ["Create a dashboard with a map and a chart of permits by district.", "authoring:dashboard.build"];
+        yield return ["Create a STAC catalog over the Maui drone imagery.", "authoring:stac.catalog"];
+    }
+
     [UnitTest]
     public async Task GenerateAsync_DeterministicProvider_ReturnsGraphThatPassesTheValidationGate()
     {
@@ -49,6 +62,34 @@ public sealed class WorkflowGenerationServiceTests
         result.Validation!.IsValid.Should().BeTrue();
         result.Provider.Should().Be(WorkflowGenerationConfiguration.DeterministicProviderId);
         result.RegistryVersion.Should().Be("test-registry-1");
+    }
+
+    // honua-server#1759: each core authoring/publishing prompt (publish/style/map/dashboard/STAC)
+    // must now ground in a real authoring:* node, generate a graph, and pass the validation hard
+    // gate — i.e. be *accepted*, not refused as "unsupported". The registry snapshot is built from
+    // the production AuthoringWorkflowNodeProvider so this proves the actual grounding surface (and
+    // its required-parameter contract) accepts the fixture proposals.
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", Tiers.Fast)]
+    [MemberData(nameof(AuthoringPrompts))]
+    public async Task GenerateAsync_AuthoringPrompt_ReturnsAcceptedGraphForRefusedCapability(
+        string prompt,
+        string expectedNodeTypeId)
+    {
+        var service = CreateService(enabled: true);
+
+        var result = await service.GenerateAsync(new WorkflowGenerationRequest { Prompt = prompt });
+
+        result.Status.Should().Be(
+            WorkflowGenerationStatus.Generated,
+            "the authoring capability '{0}' is now grounded and must not be refused",
+            expectedNodeTypeId);
+        result.Graph.Should().NotBeNull();
+        result.Graph!.Nodes.Should().ContainSingle(node => node.NodeTypeId == expectedNodeTypeId);
+        result.Validation.Should().NotBeNull();
+        result.Validation!.IsValid.Should().BeTrue("the proposed authoring graph must pass the server validation hard gate");
+        result.UnmappedRequests.Should().BeNullOrEmpty("an accepted authoring proposal has no unmapped requests");
     }
 
     [UnitTest]
@@ -112,7 +153,7 @@ public sealed class WorkflowGenerationServiceTests
     private static WorkflowGenerationService CreateService(bool enabled)
     {
         var registry = Substitute.For<IWorkflowNodeRegistry>();
-        registry.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(Snapshot());
+        registry.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(_ => Snapshot());
 
         var providers = new IWorkflowGenerationProvider[]
         {
@@ -134,20 +175,31 @@ public sealed class WorkflowGenerationServiceTests
             NullLogger<WorkflowGenerationService>.Instance);
     }
 
-    // A snapshot carrying exactly the node types the generated fixture uses, with no required parameters,
-    // so the fixture graph passes the validation gate (known types, acyclic control chain, unique ids).
-    private static WorkflowNodeRegistrySnapshot Snapshot() => new()
+    // A snapshot carrying the node types the deterministic fixtures use: the geoprocessing nodes the
+    // "generated" ETL fixture references, plus the real authoring/publishing palette grounded by the
+    // production AuthoringWorkflowNodeProvider (honua-server#1759). Real authoring nodes — not stubs —
+    // so the validation gate exercises their actual executable flag and required-parameter contract.
+    private static WorkflowNodeRegistrySnapshot Snapshot()
     {
-        RegistryVersion = "test-registry-1",
-        GeneratedAt = DateTimeOffset.UnixEpoch,
-        Providers = [],
-        Nodes =
-        [
+        var nodes = new List<WorkflowNodeDefinition>
+        {
             Node("process:data-management.copy-features"),
             Node("process:data-management.calculate-field"),
             Node("process:geometry.area")
-        ]
-    };
+        };
+
+        // The provider has no dependencies and lists its nodes synchronously; the task is already completed.
+        var authoringNodes = new AuthoringWorkflowNodeProvider().ListNodesAsync().GetAwaiter().GetResult();
+        nodes.AddRange(authoringNodes);
+
+        return new WorkflowNodeRegistrySnapshot
+        {
+            RegistryVersion = "test-registry-1",
+            GeneratedAt = DateTimeOffset.UnixEpoch,
+            Providers = [],
+            Nodes = nodes
+        };
+    }
 
     private static WorkflowNodeDefinition Node(string nodeTypeId) => new()
     {

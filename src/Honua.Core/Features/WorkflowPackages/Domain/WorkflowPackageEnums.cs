@@ -21,7 +21,15 @@ public enum WorkflowNodeRuntimeKind
     /// <summary>
     /// Workflow-only utility node such as control flow or failure handling.
     /// </summary>
-    WorkflowUtility
+    WorkflowUtility,
+
+    /// <summary>
+    /// Authoring/publishing node that produces a server-side artifact such as a published
+    /// service, a layer style, a web map, a dashboard, or a STAC catalog. These nodes ground
+    /// the AI workflow author's cartography/publishing palette; they compile to authoring
+    /// operations rather than the geoprocessing job substrate.
+    /// </summary>
+    Authoring
 }
 
 /// <summary>
