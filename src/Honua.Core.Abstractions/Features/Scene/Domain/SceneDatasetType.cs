@@ -16,5 +16,18 @@ public enum SceneDatasetType
     /// <summary>
     /// Cesium-compatible terrain quantized-mesh dataset.
     /// </summary>
-    Terrain = 1
+    Terrain = 1,
+
+    /// <summary>
+    /// Building Scene Layer source (BIM / CityGML produced by
+    /// <c>BuildingSceneLayerBuilder</c>). Served to I3S clients as a
+    /// <c>Building</c> scene layer.
+    /// </summary>
+    Building = 2,
+
+    /// <summary>
+    /// Point-cloud source (LAS/LAZ/COPC streamed through the PNTS pipeline).
+    /// Served to I3S clients as a <c>PointCloud</c> scene layer.
+    /// </summary>
+    PointCloud = 3
 }
