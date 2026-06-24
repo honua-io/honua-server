@@ -257,8 +257,13 @@ jobs:
       # (train:escalated → excluded below), so when nothing is selectable we do NOT
       # re-dispatch and fall back to the schedule. Only applying runs chain (a dry-run
       # report must never spawn live runs).
+      # success() (not always()): a run that FAILED (e.g. a hard error the retries
+      # couldn't absorb) must NOT chain — otherwise a fast-failing run loops every
+      # ~2min and hammers the API. A failed run breaks the chain; the */15 schedule
+      # re-primes it. A normal run (landed / merged-through / escalated) exits 0 and
+      # chains as intended.
       - name: Self-chain next run while PRs remain
-        if: always() && steps.mode.outputs.train_apply == '1'
+        if: success() && steps.mode.outputs.train_apply == '1'
         env:
           # MUST be the PAT: a `gh workflow run` authenticated with GITHUB_TOKEN does
           # NOT trigger a new workflow run (GitHub's recursion guard), so the chain

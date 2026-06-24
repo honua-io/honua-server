@@ -164,7 +164,36 @@ train_summary() {
 train_side_effect() {
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
     train_log "APPLY: $*"
-    "$@"
+    # GitHub SECONDARY rate limits surface mid-burst as 401 "Bad credentials",
+    # 403/429, or "secondary rate limit"/"submitted too quickly" EVEN WITH a valid
+    # token and primary quota remaining (observed: 10-PR label burst 401'd on the
+    # 5th write after 4 succeeded). Those are transient, so back off and retry
+    # rather than failing the whole run. stderr is captured for inspection; stdout
+    # flows through untouched so callers that capture command output still work.
+    local attempt=1 max="${TRAIN_SIDE_EFFECT_RETRIES:-4}" delay="${TRAIN_SIDE_EFFECT_BACKOFF:-5}" rc errf
+    errf="$(mktemp 2>/dev/null || echo /tmp/train_se_err.$$)"
+    while :; do
+      # Run directly (NOT inside `if`) so $? is the COMMAND's exit code, not the
+      # if-statement's (which is 0 when the condition is false → would mask failures).
+      "$@" 2>"${errf}"
+      rc=$?
+      if [[ "${rc}" -eq 0 ]]; then
+        cat "${errf}" >&2 2>/dev/null || true
+        rm -f "${errf}"
+        return 0
+      fi
+      if [[ "${attempt}" -lt "${max}" ]] && grep -qiE \
+        "Bad credentials|secondary rate limit|rate limit|submitted too quickly|retry your request|abuse detection|status code: 40[39]|status code: 429|HTTP 40[39]|HTTP 429" \
+        "${errf}" 2>/dev/null; then
+        train_log "transient GitHub API failure (attempt ${attempt}/${max}, rc=${rc}); backing off ${delay}s and retrying"
+        sleep "${delay}"
+        attempt=$(( attempt + 1 )); delay=$(( delay * 3 )); : > "${errf}"
+        continue
+      fi
+      cat "${errf}" >&2 2>/dev/null || true
+      rm -f "${errf}"
+      return "${rc}"
+    done
   else
     train_log "DRY-RUN (skipped): $*"
     return 0
