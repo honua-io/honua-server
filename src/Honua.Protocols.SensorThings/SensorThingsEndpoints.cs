@@ -57,6 +57,13 @@ internal static class SensorThingsEndpoints
             .Produces<StaEntitySet<StaObservation>>(200, "application/json")
             .Produces(404);
 
+        // Phase 2 ingest (REST/bulk observation creation + datastream creation) and
+        // Phase 3 real-time streaming (SSE/WebSocket) are mapped from their partial-class
+        // files so each route stays a literal MapPost/MapGet the source-scan governance can
+        // anchor to an EndpointRegistry entry.
+        endpoints.MapSensorThingsIngestEndpoints();
+        Streaming.ObservationStreamEndpoints.MapSensorThingsStreamEndpoints(endpoints);
+
         return endpoints;
     }
 

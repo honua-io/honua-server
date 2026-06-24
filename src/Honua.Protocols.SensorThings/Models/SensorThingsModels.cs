@@ -193,6 +193,106 @@ public sealed record StaDatastream
     public StaObservedProperty? ObservedProperty { get; init; }
 }
 
+/// <summary>
+/// Request body for STA Observation ingest (Phase 2). Posted either to
+/// <c>/sta/v1.1/Observations</c> (with <see cref="Datastream"/> carrying the target
+/// id) or to <c>/sta/v1.1/Datastreams({id})/Observations</c> (datastream taken from
+/// the route).
+/// </summary>
+public sealed record StaObservationCreate
+{
+    /// <summary>When the phenomenon occurred (ISO-8601). Defaults to now when omitted.</summary>
+    [JsonPropertyName("phenomenonTime")]
+    public string? PhenomenonTime { get; init; }
+
+    /// <summary>When the result was generated (ISO-8601), if distinct.</summary>
+    [JsonPropertyName("resultTime")]
+    public string? ResultTime { get; init; }
+
+    /// <summary>The numeric measurement result.</summary>
+    [JsonPropertyName("result")]
+    public required double Result { get; init; }
+
+    /// <summary>The owning Datastream reference (carries the target <c>@iot.id</c>).</summary>
+    [JsonPropertyName("Datastream")]
+    public StaEntityReference? Datastream { get; init; }
+}
+
+/// <summary>A SensorThings deep-insert / link reference carrying a target entity id.</summary>
+public sealed record StaEntityReference
+{
+    /// <summary>The referenced entity identifier (<c>@iot.id</c>).</summary>
+    [JsonPropertyName("@iot.id")]
+    public long IotId { get; init; }
+
+    /// <summary>Optional name used when the referenced entity is created inline.</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    /// <summary>Optional description used when the referenced entity is created inline.</summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+}
+
+/// <summary>
+/// Bulk ingest envelope: a <c>value</c> array of observations posted in one request to
+/// <c>/sta/v1.1/Observations</c>. Honua extension to the single-create body for efficient
+/// IoT ingest (<c>sensor.ingest</c> operation).
+/// </summary>
+public sealed record StaObservationBulkCreate
+{
+    /// <summary>The observations to ingest.</summary>
+    [JsonPropertyName("value")]
+    public required IReadOnlyList<StaObservationCreate> Value { get; init; }
+}
+
+/// <summary>Result of a bulk ingest: the count persisted and the assigned identifiers.</summary>
+public sealed record StaObservationBulkResult
+{
+    /// <summary>Number of observations persisted.</summary>
+    [JsonPropertyName("@iot.count")]
+    public required long Count { get; init; }
+
+    /// <summary>Assigned identifiers, in input order.</summary>
+    [JsonPropertyName("value")]
+    public required IReadOnlyList<long> Value { get; init; }
+}
+
+/// <summary>
+/// Request body for STA Datastream creation (Phase 2 <c>datastream.create</c>). Inline
+/// Thing / Sensor / ObservedProperty references are created when their ids do not exist.
+/// </summary>
+public sealed record StaDatastreamCreate
+{
+    /// <summary>Datastream name.</summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    /// <summary>Datastream description.</summary>
+    [JsonPropertyName("description")]
+    public required string Description { get; init; }
+
+    /// <summary>The O&amp;M observation type URI.</summary>
+    [JsonPropertyName("observationType")]
+    public string? ObservationType { get; init; }
+
+    /// <summary>Unit of measurement for the datastream's results.</summary>
+    [JsonPropertyName("unitOfMeasurement")]
+    public required StaUnitOfMeasurement UnitOfMeasurement { get; init; }
+
+    /// <summary>The related Thing.</summary>
+    [JsonPropertyName("Thing")]
+    public required StaEntityReference Thing { get; init; }
+
+    /// <summary>The related Sensor.</summary>
+    [JsonPropertyName("Sensor")]
+    public required StaEntityReference Sensor { get; init; }
+
+    /// <summary>The related ObservedProperty.</summary>
+    [JsonPropertyName("ObservedProperty")]
+    public required StaEntityReference ObservedProperty { get; init; }
+}
+
 /// <summary>STA v1.1 <c>Observation</c> entity DTO.</summary>
 public sealed record StaObservation
 {
