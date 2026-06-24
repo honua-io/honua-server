@@ -348,6 +348,47 @@ public sealed class I3sStore
     /// <summary>Store version string.</summary>
     [JsonPropertyName("version")]
     public string? Version { get; set; }
+
+    /// <summary>
+    /// Normal reference frame for vertex normals (I3S 1.7
+    /// <c>store.normalReferenceFrame</c>): <c>east-north-up</c> for geographic
+    /// node stores.
+    /// </summary>
+    [JsonPropertyName("normalReferenceFrame")]
+    public string? NormalReferenceFrame { get; set; }
+
+    /// <summary>
+    /// Node-page pagination descriptor (I3S 1.7 <c>store.nodePages</c>): the
+    /// fixed number of nodes carried per page plus the LOD selection metric. Its
+    /// presence tells a conformant client to traverse the layer through
+    /// <c>nodepages/{n}</c> rather than a legacy node tree.
+    /// </summary>
+    [JsonPropertyName("nodePages")]
+    public I3sNodePageDefinition? NodePages { get; set; }
+
+    /// <summary>
+    /// Default geometry schema the node geometry buffers conform to (I3S 1.7
+    /// <c>store.defaultGeometrySchema</c>).
+    /// </summary>
+    [JsonPropertyName("defaultGeometrySchema")]
+    public I3sGeometryDefinition? DefaultGeometrySchema { get; set; }
+}
+
+/// <summary>
+/// I3S node-page pagination descriptor (OGC 19-008 <c>store.nodePages</c>).
+/// </summary>
+public sealed class I3sNodePageDefinition
+{
+    /// <summary>Fixed number of node entries carried per node page.</summary>
+    [JsonPropertyName("nodesPerPage")]
+    public int NodesPerPage { get; set; }
+
+    /// <summary>
+    /// LOD selection metric the node <c>lodThreshold</c> values are expressed
+    /// in (e.g. <c>maxScreenThresholdSQ</c>).
+    /// </summary>
+    [JsonPropertyName("lodSelectionMetricType")]
+    public string? LodSelectionMetricType { get; set; }
 }
 
 /// <summary>
