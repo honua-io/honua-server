@@ -201,6 +201,39 @@ public class SqlServerFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_WithinFilter_LeadsWithFilterGeometry()
+    {
+        // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
+        // geometry must be the calling instance: filter.STWithin(feature). Leading with the
+        // feature column inverts the relationship and returns the wrong (empty) set (#2068).
+        var mapping = BuildMapping();
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create([0x01], SpatialRelationship.Within, srid: 4326)
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("geometry::STGeomFromWKB(@p0, 4326).STWithin([shape]) = 1", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
+    {
+        // Esri esriSpatialRelContains = filter geometry contains feature geometry, so the filter
+        // geometry must be the calling instance: filter.STContains(feature) (#2068).
+        var mapping = BuildMapping();
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create([0x01], SpatialRelationship.Contains, srid: 4326)
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("geometry::STGeomFromWKB(@p0, 4326).STContains([shape]) = 1", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_GeographyEnvelopeIntersects_Throws()
     {
         var mapping = BuildMapping(SqlServerGeometryColumnType.Geography);

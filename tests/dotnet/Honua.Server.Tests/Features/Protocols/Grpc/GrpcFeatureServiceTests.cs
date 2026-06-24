@@ -77,6 +77,14 @@ public sealed class GrpcFeatureServiceTests
         _resourceValidator
             .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(_testTriple));
+
+        // Default: every edit/delete target is visible to the caller through the RLS-enforced
+        // reader, so ApplyEdits' pre-read guard (#2071) passes. Tests that exercise an
+        // RLS-hidden row override GetAsync to return null for that objectid.
+        _featureReader
+            .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult<Feature?>(
+                Feature.Create(callInfo.ArgAt<long>(1), geometry: null)));
     }
 
     [UnitTest]
@@ -136,6 +144,111 @@ public sealed class GrpcFeatureServiceTests
         batch.Creates.Length.Should().Be(1);
         batch.Updates.Length.Should().Be(1);
         batch.Deletes.SequenceEqual(new long[] { 12 }).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_WhenDeleteTargetHiddenByRls_ThrowsNotFoundAndDoesNotWrite()
+    {
+        // RLS / permanent filters are enforced only on the read path; the edit SQL filters by
+        // (layer_id, objectid) with no row-level predicate. A row RLS hides from the caller
+        // resolves to null through the RLS-enforced reader, so the delete must fail closed and
+        // never reach the writer — otherwise a low-privilege caller could delete a hidden row by
+        // supplying its objectid (#2071).
+        _featureReader
+            .GetAsync(0, 999, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Feature?>(null));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Deletes.Add(999);
+
+        var act = async () => await _sut.ApplyEdits(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.NotFound);
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_WhenUpdateTargetHiddenByRls_ThrowsNotFoundAndDoesNotWrite()
+    {
+        // Same RLS bypass via the update path (#2071): an update keyed by an RLS-hidden objectid
+        // must fail closed.
+        _featureReader
+            .GetAsync(0, 999, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Feature?>(null));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Updates.Add(new Proto.Feature
+        {
+            Id = 999,
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "hidden row" } }
+        });
+
+        var act = async () => await _sut.ApplyEdits(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.NotFound);
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_AddsOnly_DoesNotPreReadAndWrites()
+    {
+        // Adds carry no objectid and are not subject to the visibility pre-read; an add-only
+        // batch must still reach the writer even when GetAsync would return null (#2071).
+        _featureReader
+            .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Feature?>(null));
+
+        var applyResult = FeatureEditResult.Success(
+            createdCount: 1,
+            updatedCount: 0,
+            deletedCount: 0,
+            createResults: ImmutableArray.Create(EditOperationResult.Success(101)),
+            updateResults: ImmutableArray<EditOperationResult>.Empty,
+            deleteResults: ImmutableArray<EditOperationResult>.Empty);
+
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(applyResult));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "new feature" } }
+        });
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext());
+
+        response.AddResults.Should().ContainSingle();
+        _featureReader.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureReader.GetAsync));
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .Contain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
     }
 
     [UnitTest]
