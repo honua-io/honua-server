@@ -22,6 +22,8 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
 {
     private const string DatasetTypeHostedTiles = "hosted_tiles";
     private const string DatasetTypeTerrain = "terrain";
+    private const string DatasetTypeBuilding = "building";
+    private const string DatasetTypePointCloud = "point_cloud";
     private const string StatusActive = "active";
     private const string StatusInactive = "inactive";
     private const string StatusValidationFailed = "validation_failed";
@@ -514,6 +516,8 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
     {
         SceneDatasetType.HostedTiles => DatasetTypeHostedTiles,
         SceneDatasetType.Terrain => DatasetTypeTerrain,
+        SceneDatasetType.Building => DatasetTypeBuilding,
+        SceneDatasetType.PointCloud => DatasetTypePointCloud,
         _ => DatasetTypeHostedTiles
     };
 
@@ -521,6 +525,8 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
     {
         DatasetTypeHostedTiles => SceneDatasetType.HostedTiles,
         DatasetTypeTerrain => SceneDatasetType.Terrain,
+        DatasetTypeBuilding => SceneDatasetType.Building,
+        DatasetTypePointCloud => SceneDatasetType.PointCloud,
         _ => throw new InvalidOperationException(
             string.Format(CultureInfo.InvariantCulture,
                 "Unknown scene dataset type '{0}' in registry.", value))

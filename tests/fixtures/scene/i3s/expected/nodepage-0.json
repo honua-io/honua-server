@@ -1,0 +1,41 @@
+{
+  "nodes": [
+    {
+      "lodThreshold": 0.0,
+      "children": [1, 2],
+      "obb": {
+        "center": [-122.6, 40.05, 20.0],
+        "halfSize": [9.9, 6.4, 20.0],
+        "quaternion": [0.0, 0.0, 0.0, 1.0]
+      }
+    },
+    {
+      "lodThreshold": 5.0,
+      "parentIndex": 0,
+      "obb": {
+        "center": [-122.6, 40.05, 10.0],
+        "halfSize": [4.9, 6.4, 10.0],
+        "quaternion": [0.0, 0.0, 0.0, 1.0]
+      },
+      "mesh": {
+        "geometry": { "definition": 0, "resource": 1 },
+        "attribute": { "definition": 0, "resource": 1 },
+        "material": { "definition": 0, "resource": 1 }
+      }
+    },
+    {
+      "lodThreshold": 5.0,
+      "parentIndex": 0,
+      "obb": {
+        "center": [-122.6, 40.05, 10.0],
+        "halfSize": [4.9, 6.4, 10.0],
+        "quaternion": [0.0, 0.0, 0.0, 1.0]
+      },
+      "mesh": {
+        "geometry": { "definition": 0, "resource": 2 },
+        "attribute": { "definition": 0, "resource": 2 },
+        "material": { "definition": 0, "resource": 2 }
+      }
+    }
+  ]
+}
