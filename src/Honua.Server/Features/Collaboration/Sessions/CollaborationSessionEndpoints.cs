@@ -26,6 +26,16 @@ internal static class CollaborationSessionEndpoints
             .Produces<ApiResponse<CollaborationJoinResponse>>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        // Authenticated WebSocket presence/cursor/selection/follow stream (#971/#1290). The join
+        // is authorized through the same fail-closed authorizer before the upgrade, so an
+        // unauthorized client receives a typed 401/403 rather than an opaque socket close.
+        group.MapGet("/stream", CollaborationSessionStreamEndpoint.HandleStream)
+            .WithDisplayName("Stream Saved Map Collaboration Session")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
     }
 
     private static async Task<IResult> HandleJoin(

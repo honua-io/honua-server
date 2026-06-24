@@ -851,6 +851,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Protocols.Elevation.VisibilityJsonContext.Default,
         Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
         Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
+        Honua.Server.Features.Collaboration.Operations.SavedMapOperationJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
         Honua.Server.Features.Admin.ObservabilityJsonContext.Default,
         Honua.Server.Features.Admin.InvestigationJsonContext.Default,
