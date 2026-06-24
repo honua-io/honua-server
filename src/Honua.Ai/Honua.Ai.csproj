@@ -61,6 +61,12 @@
          IChatClient so the dashboard/report/workflow generators can run on cloud AI
          (no local Ollama/Qwen). Mirrors the honua-devops agent's Bedrock provider. -->
     <PackageReference Include="AWSSDK.BedrockRuntime" />
+    <!-- Azure OpenAI / AI Foundry provider for the studio generation flows. Azure OpenAI is
+         OpenAI-API-compatible, so only the deployment-routed URL and auth differ; Azure.Identity
+         supplies Entra Managed-Identity tokens (the preferred Azure auth) for the
+         AzureOpenAiStructuredGenerationClient. Confined to Honua.Ai exactly like the Bedrock SDK
+         above, so Honua.Core / Honua.Hosting / Honua.Server stay SDK-free (CloudSdkIsolationTests). -->
+    <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
   </ItemGroup>
