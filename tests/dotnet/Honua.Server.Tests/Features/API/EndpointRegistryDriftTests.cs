@@ -465,11 +465,17 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
     {
         var pattern = method.ToUpperInvariant() switch
         {
-            "GET" => @"(?:\.Get(?:FromJson)?|Get\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Get\s*,",
-            "POST" => @"(?:\.Post(?:AsJson)?|Post\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Post\s*,",
-            "PUT" => @"(?:\.Put(?:AsJson)?|Put\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Put\s*,",
-            "PATCH" => @"(?:\.Patch(?:AsJson)?|Patch\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Patch\s*,",
-            "DELETE" => @"(?:\.Delete|Delete\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Delete\s*,",
+            // The optional (?:<[^()]*>)? segment lets the verb match generic
+            // typed-deserialization helpers such as GetFromJsonAsync<T>(...) where a
+            // generic type-argument list sits between the method name and the call's
+            // opening parenthesis. Without it, an endpoint exercised only via
+            // GetFromJsonAsync<T> (e.g. GET /api/v1/admin/oauth-scopes) is reported as
+            // uncovered even though it has a backing HTTP request.
+            "GET" => @"(?:\.Get(?:FromJson)?|Get\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Get\s*,",
+            "POST" => @"(?:\.Post(?:AsJson)?|Post\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Post\s*,",
+            "PUT" => @"(?:\.Put(?:AsJson)?|Put\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Put\s*,",
+            "PATCH" => @"(?:\.Patch(?:AsJson)?|Patch\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Patch\s*,",
+            "DELETE" => @"(?:\.Delete|Delete\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Delete\s*,",
             "HEAD" => @"new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Head\s*,",
             _ => null
         };
