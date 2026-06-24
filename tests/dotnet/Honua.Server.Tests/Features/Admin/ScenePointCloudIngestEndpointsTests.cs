@@ -4,8 +4,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Scene.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Tests.Features.Infrastructure.Scene;
 using Honua.TestKit;
@@ -117,11 +119,125 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/scenes/ingest/pointcloud")]
-    public async Task Ingest_LazCompressed_Returns400()
+    public async Task Ingest_LazCompressed_WithoutWorker_Returns400()
     {
+        // The default fixture has no live point-cloud worker, so the auto-dispatch
+        // (#1854) submits the pcloud.translate plan, the runtime cannot run it, and
+        // the decompression failure surfaces as a 400 problem-detail — the
+        // compressed buffer is still never tiled by the managed reader.
         using var upload = BuildUpload(
             PointCloudSceneFixtures.MarkCompressed(PointCloudSceneFixtures.ColoredGridGeographic()),
             ("sceneId", "pcloud-laz-rejected"));
+
+        var response = await _client.PostAsync(IngestUrl, upload);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/ingest/pointcloud")]
+    public async Task Ingest_LazCompressed_WithDecompressor_Returns201AndServesTileset()
+    {
+        // With a decompressor registered (#1854), a LAZ upload is routed through
+        // the worker, which returns uncompressed geographic LAS; the managed tiler
+        // then tiles it inline exactly as for a natively-uploaded LAS. A fake
+        // factory stands in for the out-of-tree PDAL worker so the dispatch path
+        // is exercised end-to-end without a live PDAL install.
+        var outputRoot = Path.Combine(Path.GetTempPath(), $"honua-pcloud-laz-{Guid.NewGuid():N}");
+        var fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .WithTestLicense(HonuaEdition.Enterprise)
+            .ReplaceService<IPointCloudDecompressorFactory>(
+                new FakePointCloudDecompressorFactory(PointCloudSceneFixtures.ColoredGridGeographic()))
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("SceneGeneration:OutputRoot", outputRoot);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            using var upload = BuildUpload(
+                PointCloudSceneFixtures.MarkCompressed(PointCloudSceneFixtures.ColoredGridGeographic()),
+                ("sceneId", "pcloud-laz-ingested"),
+                ("editionGate", "enterprise"));
+
+            var response = await client.PostAsync(IngestUrl, upload);
+
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<PointCloudIngestResponse>();
+            Assert.NotNull(body);
+            Assert.Equal("pcloud-laz-ingested", body!.SceneId);
+            Assert.Equal(256, body.PointCount);
+
+            var tileset = await client.GetAsync("/scenes/pcloud-laz-ingested/tileset.json");
+            Assert.Equal(HttpStatusCode.OK, tileset.StatusCode);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            if (Directory.Exists(outputRoot))
+            {
+                Directory.Delete(outputRoot, recursive: true);
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/ingest/pointcloud")]
+    public async Task Ingest_ProjectedSourceEpsg_WithDecompressor_ReprojectsAndServesTileset()
+    {
+        // A projected sourceEpsg on an (uncompressed) LAS upload also routes through
+        // the worker for reprojection to geographic EPSG:4979 before tiling.
+        var outputRoot = Path.Combine(Path.GetTempPath(), $"honua-pcloud-proj-{Guid.NewGuid():N}");
+        var fakeFactory = new FakePointCloudDecompressorFactory(PointCloudSceneFixtures.ColoredGridGeographic());
+        var fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .WithTestLicense(HonuaEdition.Enterprise)
+            .ReplaceService<IPointCloudDecompressorFactory>(fakeFactory)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("SceneGeneration:OutputRoot", outputRoot);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            using var upload = BuildUpload(
+                PointCloudSceneFixtures.ColoredGridGeographic(),
+                ("sceneId", "pcloud-proj-ingested"),
+                ("sourceEpsg", "EPSG:32610"),
+                ("editionGate", "enterprise"));
+
+            var response = await client.PostAsync(IngestUrl, upload);
+
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            Assert.Equal("EPSG:32610", fakeFactory.LastSourceSrs);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            if (Directory.Exists(outputRoot))
+            {
+                Directory.Delete(outputRoot, recursive: true);
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/ingest/pointcloud")]
+    public async Task Ingest_InvalidSourceEpsg_Returns400()
+    {
+        using var upload = BuildUpload(
+            PointCloudSceneFixtures.ColoredGridGeographic(),
+            ("sceneId", "pcloud-bad-epsg"),
+            ("sourceEpsg", "EPSG:32610; rm -rf /"));
 
         var response = await _client.PostAsync(IngestUrl, upload);
 
@@ -214,6 +330,30 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
         finally
         {
             await proFixture.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Test double for <see cref="IPointCloudDecompressorFactory"/> standing in for
+    /// the out-of-tree PDAL worker: returns a fixed uncompressed-geographic LAS so
+    /// the ingest auto-dispatch path (#1854) can be exercised end-to-end through
+    /// the HTTP surface without a live worker, and records the requested source CRS.
+    /// </summary>
+    private sealed class FakePointCloudDecompressorFactory(byte[] decompressedLas) : IPointCloudDecompressorFactory
+    {
+        private readonly byte[] _decompressedLas = decompressedLas;
+
+        public string? LastSourceSrs { get; private set; }
+
+        public IPointCloudDecompressor Create(ClaimsPrincipal principal) => new FakeDecompressor(this);
+
+        private sealed class FakeDecompressor(FakePointCloudDecompressorFactory owner) : IPointCloudDecompressor
+        {
+            public Task<byte[]> DecompressAsync(byte[] source, string? sourceSrs, CancellationToken cancellationToken)
+            {
+                owner.LastSourceSrs = sourceSrs;
+                return Task.FromResult(owner._decompressedLas);
+            }
         }
     }
 }

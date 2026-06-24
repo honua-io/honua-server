@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.PointCloud;
 using Honua.Infrastructure.Authentication;
@@ -30,9 +31,12 @@ namespace Honua.Server.Features.Admin;
 /// policy; the Enterprise entitlement is enforced inside the handler so an
 /// authenticated non-Enterprise operator receives a 402 with an upgrade message
 /// rather than a silent 404. The heavy LAS → 3D Tiles conversion is pure-managed
-/// (no native PDAL/py3dtiles dependency), so the tileset is materialised inline;
-/// compressed LAZ and Cloud-Optimized Point Cloud (COPC) inputs are rejected with
-/// a 400 problem-detail and are a documented follow-up.
+/// (no native PDAL/py3dtiles dependency), so the tileset is materialised inline.
+/// Compressed LAZ/COPC uploads — and uncompressed LAS in a projected source CRS —
+/// are auto-dispatched to the out-of-tree <c>pcloud.translate</c> worker (#1854),
+/// which returns uncompressed geographic (EPSG:4979) LAS that the managed tiler
+/// then ingests inline; when no decompressor is registered such input is rejected
+/// with a 400 problem-detail as before.
 /// </remarks>
 internal static partial class ScenePointCloudIngestEndpoints
 {
@@ -121,6 +125,10 @@ internal static partial class ScenePointCloudIngestEndpoints
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, crsError!);
         }
+        if (!TryParseSourceEpsg(form, out var sourceEpsg, out var epsgError))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, epsgError!);
+        }
 
         byte[] document;
         await using (var stream = file.OpenReadStream())
@@ -128,6 +136,41 @@ internal static partial class ScenePointCloudIngestEndpoints
             using var buffer = new MemoryStream(file.Length > 0 ? (int)file.Length : 0);
             await stream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
             document = buffer.ToArray();
+        }
+
+        // Auto-dispatch (#1854): a compressed (LAZ/COPC) buffer or a projected
+        // source CRS cannot be tiled by the pure-managed reader, so route it
+        // through the out-of-tree pcloud.translate worker to obtain uncompressed,
+        // geographic (EPSG:4979) LAS, then tile that inline. When no decompressor
+        // is registered the compressed/projected input falls through to the
+        // managed reader, which rejects it with the documented 400 as before.
+        var isCompressed = PointCloudCompressionDetector.IsCompressed(document);
+        var needsWorker = isCompressed || sourceEpsg is not null;
+        if (needsWorker)
+        {
+            var factory = context.RequestServices.GetService<IPointCloudDecompressorFactory>();
+            if (factory is not null)
+            {
+                try
+                {
+                    var decompressor = factory.Create(context.User);
+                    ScenePointCloudIngestLog.DecompressionDispatched(logger, isCompressed, sourceEpsg ?? "<none>");
+                    document = await decompressor
+                        .DecompressAsync(document, sourceEpsg, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    // The worker returns geographic lon/lat/ellipsoidal-height LAS
+                    // (EPSG:4979), so the managed tiler uses the longitude-first
+                    // pass-through regardless of the source's axis-order hint.
+                    sourceCrs = PointCloudSourceCrs.GeographicLonLat;
+                }
+                catch (PointCloudDecompressionException dex)
+                {
+                    ScenePointCloudIngestLog.IngestRejected(logger, "PCLOUD_DECOMPRESS", dex.Message);
+                    return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
+                        $"Point-cloud decompression failed: {dex.Message}");
+                }
+            }
         }
 
         var request = new PointCloudSceneIngestRequest(
@@ -236,6 +279,64 @@ internal static partial class ScenePointCloudIngestEndpoints
         }
     }
 
+    /// <summary>
+    /// Geographic WGS-84/NAD83 CRS tokens the managed tiler already accepts as a
+    /// pass-through; declaring one of these as the source needs no reprojection.
+    /// Mirrors the worker's <c>IsGeographicSrs</c> guard.
+    /// </summary>
+    private static readonly HashSet<string> GeographicSrsTokens =
+        new(StringComparer.OrdinalIgnoreCase) { "EPSG:4326", "EPSG:4979", "OGC:CRS84", "EPSG:4269" };
+
+    /// <summary>
+    /// Parses the optional <c>sourceEpsg</c> form field — the source point cloud's
+    /// CRS (#1854). A projected/unknown CRS is normalised to an <c>EPSG:&lt;code&gt;</c>
+    /// (or validated <c>AUTHORITY:CODE</c>) token and returned so the ingest path
+    /// reprojects to geographic EPSG:4979 via the worker. A geographic source (or
+    /// an omitted field) returns a <see langword="null"/> token (no reprojection).
+    /// The accepted shape mirrors the worker's conservative CRS-token guard so a
+    /// shell-influencing value is rejected at the HTTP boundary.
+    /// </summary>
+    private static bool TryParseSourceEpsg(IFormCollection form, out string? value, out string? error)
+    {
+        value = null;
+        error = null;
+        var raw = form["sourceEpsg"];
+        if (raw.Count == 0 || string.IsNullOrWhiteSpace(raw[0]))
+        {
+            return true;
+        }
+
+        var token = raw[0]!.Trim();
+
+        // Bare positive integer EPSG code -> EPSG:<code>.
+        if (int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epsg))
+        {
+            if (epsg <= 0)
+            {
+                error = "sourceEpsg must be a positive EPSG code.";
+                return false;
+            }
+            token = string.Create(CultureInfo.InvariantCulture, $"EPSG:{epsg}");
+        }
+        else
+        {
+            var parts = token.Split(':', 2);
+            if (parts.Length != 2
+                || parts[0].Length is 0 or > 16 || !parts[0].All(char.IsLetterOrDigit)
+                || parts[1].Length is 0 or > 16 || !parts[1].All(char.IsLetterOrDigit))
+            {
+                error = "sourceEpsg must be a positive EPSG code or an 'AUTHORITY:CODE' token (e.g. 'EPSG:32610').";
+                return false;
+            }
+            token = string.Concat(parts[0].ToUpperInvariant(), ":", parts[1].ToUpperInvariant());
+        }
+
+        // A geographic source needs no reprojection: leave the token null so the
+        // dispatch only engages for projected sources (or compressed buffers).
+        value = GeographicSrsTokens.Contains(token) ? null : token;
+        return true;
+    }
+
     private static bool TryParseOptionalInt(
         IFormCollection form, string key, out int? value, out string? error)
     {
@@ -320,5 +421,9 @@ internal static partial class ScenePointCloudIngestEndpoints
         [LoggerMessage(EventId = 8483, Level = LogLevel.Warning,
             Message = "Point-cloud ingest scene cache invalidation failed for scene {SceneId}; subsequent reads may serve stale content until cache expires.")]
         public static partial void CacheInvalidationFailed(ILogger logger, string sceneId, Exception exception);
+
+        [LoggerMessage(EventId = 8484, Level = LogLevel.Information,
+            Message = "Point-cloud ingest dispatched out-of-tree decompression: compressed={Compressed}, sourceEpsg={SourceEpsg}")]
+        public static partial void DecompressionDispatched(ILogger logger, bool compressed, string sourceEpsg);
     }
 }
