@@ -56,4 +56,13 @@ internal static partial class McpLog
 
     [LoggerMessage(8165, LogLevel.Warning, "MCP dispatch failed unexpectedly: Method={Method}")]
     public static partial void DispatchFailed(ILogger logger, string method, Exception exception);
+
+    [LoggerMessage(8166, LogLevel.Debug, "MCP session issued: SessionId={SessionId}")]
+    public static partial void SessionIssued(ILogger logger, string sessionId);
+
+    [LoggerMessage(8167, LogLevel.Information, "MCP session rejected: Reason={Reason}")]
+    public static partial void SessionRejected(ILogger logger, string reason);
+
+    [LoggerMessage(8168, LogLevel.Debug, "MCP session terminated: SessionId={SessionId}, Found={Found}")]
+    public static partial void SessionTerminated(ILogger logger, string sessionId, bool found);
 }

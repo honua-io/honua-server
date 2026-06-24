@@ -139,6 +139,11 @@ internal static class McpServiceCollectionExtensions
 
         services.TryAddSingleton<McpOperatorSurface>();
 
+        // Streamable-HTTP session registry (honua-server#1954). A process-wide
+        // singleton so a session id issued on initialize is recognized on every
+        // subsequent POST/GET/DELETE handled by the same host.
+        services.TryAddSingleton<McpSessionManager>();
+
         return services;
     }
 
