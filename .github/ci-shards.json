@@ -1009,8 +1009,8 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",
-      "_comment": "Owns the AI test assembly (Honua.Ai.Tests): MCP protocol, AI builder, the Ai.Tests Reporting classes, and the AI Providers namespace. NOTE (#1899): Honua.Server.Tests.Features.Providers.* (e.g. the Bedrock live tests) matched no shard filter and never ran; the Providers clause was added so they run here (the Bedrock live test is gated on HONUA_AI_LIVE_BEDROCK and no-ops/passes when the env var is unset, so it is safe in CI).",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Server.Tests.Features.Providers",
+      "_comment": "Owns the AI test assembly (Honua.Ai.Tests): MCP protocol, AI builder, the Ai.Tests Reporting classes, the AI Providers namespace, and the natural-language WorkflowGeneration tests. NOTE (#1899): Honua.Server.Tests.Features.Providers.* (e.g. the Bedrock live tests) matched no shard filter and never ran; the Providers clause was added so they run here (the Bedrock live test is gated on HONUA_AI_LIVE_BEDROCK and no-ops/passes when the env var is unset, so it is safe in CI). The WorkflowGeneration clause was added (same #1899 class) because WorkflowGenerationServiceTests lives in this assembly (tests/dotnet/Honua.Ai.Tests/Source/WorkflowGenerationServiceTests.cs) and only a shard whose csproj == Honua.Ai.Tests can claim it.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Server.Tests.Features.Providers|FullyQualifiedName~Honua.Server.Tests.Features.WorkflowGeneration",
       "paths": [
         "src/Honua.Ai/",
         "tests/dotnet/Honua.Ai.Tests/Source/",
