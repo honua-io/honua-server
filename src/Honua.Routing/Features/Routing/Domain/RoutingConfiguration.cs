@@ -96,4 +96,23 @@ public sealed class RoutingConfiguration
     /// behaviour is unchanged.
     /// </summary>
     public string NetworkDatasetId { get; set; } = "default";
+
+    /// <summary>
+    /// Declares what the active topology's <c>cost</c>/<c>reverse_cost</c> edge
+    /// weights physically represent, so the provider can convert the raw pgRouting
+    /// graph cost into the travel-time minutes the request/response surface speaks in
+    /// (service-area breaks, closest-facility/OD cutoffs, and <c>TotalTravelTime</c>).
+    /// </summary>
+    /// <remarks>
+    /// The osm2pgrouting-compatible <c>ways.cost</c> column is a generic graph weight
+    /// with no declared unit in this codebase's topology (migration
+    /// 043_CreatePgRoutingTopology.sql documents it as "mapped to both length-meters
+    /// and travel-time by the routing provider for the MVP"), so the unit cannot be
+    /// inferred from the data and must be declared here. Defaults to
+    /// <see cref="RoutingCostUnit.Minutes"/> (1 cost unit = 1 minute), preserving the
+    /// historical MVP behaviour; set it to <see cref="RoutingCostUnit.Seconds"/> for a
+    /// topology built with the osm2pgrouting <c>cost_s</c> (seconds) convention, so
+    /// drive-time outputs and isochrone cutoffs are unit-correct.
+    /// </remarks>
+    public RoutingCostUnit CostUnit { get; set; } = RoutingCostUnit.Minutes;
 }
