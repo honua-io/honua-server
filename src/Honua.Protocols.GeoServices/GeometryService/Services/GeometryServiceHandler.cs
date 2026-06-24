@@ -32,6 +32,14 @@ internal sealed class GeometryServiceHandler(
     private const int MaxGeometryJsonLengthUpperBound = 10_000_000;
     private const int MaxRelationPairsPerRequest = 100_000;
     private const double MeanEarthRadiusMeters = 6_371_000d;
+
+    // Densify generates ceil(segmentLength / maxSegmentLength) interpolated vertices per
+    // segment into an in-memory CoordinateList. A tiny maxSegmentLength over a large extent
+    // (e.g. a 2,000,000-unit polyline at maxSegmentLength=0.001 → 2e9 coordinates) would OOM
+    // the host before any response is written (#2064). Cap the total interpolated output so
+    // the unauthenticated /densify endpoint cannot be turned into an OOM DoS. ~16M vertices
+    // is far beyond any legitimate densify request yet bounded to a few hundred MB worst case.
+    private const double MaxDensifiedVerticesPerGeometry = 16_000_000d;
     private const string InvalidGeometryInputMessage = "Invalid geometry input.";
     private const string InvalidSpatialReferenceMessage =
         "must be a valid spatial reference WKID, EPSG code, CRS URI, WKT string, or spatial reference object.";
@@ -2558,6 +2566,18 @@ internal sealed class GeometryServiceHandler(
         foreach (var geomJson in parameters.GeometryJsonStrings)
         {
             var geometry = ReadGeometry(geomJson);
+            // Bound the interpolated output BEFORE densifying. NTS adds roughly
+            // (totalLength / maxSegmentLength) coordinates; reject when that would exceed the
+            // per-geometry vertex cap so a tiny maxSegmentLength over a large extent cannot OOM
+            // the host (#2064). maxSegmentLength is already validated > 0 / finite upstream.
+            var estimatedVertices = geometry.Length / parameters.MaxSegmentLength;
+            if (double.IsNaN(estimatedVertices)
+                || estimatedVertices > MaxDensifiedVerticesPerGeometry)
+            {
+                throw new ArgumentException(
+                    "densify would generate too many vertices; maxSegmentLength is too small for the geometry extent.");
+            }
+
             var result = NetTopologySuite.Densify.Densifier.Densify(geometry, parameters.MaxSegmentLength);
             densified.Add(writer.Write(result));
         }

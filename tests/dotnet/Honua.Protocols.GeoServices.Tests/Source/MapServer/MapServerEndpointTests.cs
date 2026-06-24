@@ -381,6 +381,28 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
+    public async Task MapServer_EstimateExportTilesSize_WholeWorldHighZoom_DoesNotMaterializeFullGrid()
+    {
+        // #2065: a whole-world high-zoom estimate (~6.9e10 tiles at z18) previously built the full
+        // coordinate grid before applying maxTiles, allocating hundreds of GB -> OOM. The count must
+        // be computed first and the build bounded by maxTiles, so this returns promptly with the true
+        // count, ExceededTransferLimit=true, and no out-of-memory.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize?f=json&minZoom=0&maxZoom=18&exportExtent=-180,-85,180,85&maxTiles=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var estimate = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesEstimateResponse);
+
+        estimate.Should().NotBeNull();
+        // The reported count is the true (very large) total, but the build was bounded to maxTiles.
+        estimate!.TileCount.Should().BeGreaterThan(1_000_000_000L);
+        estimate.ExceededTransferLimit.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/exportTiles")]
     public async Task MapServer_ExportTiles_WritesZipArchiveToCloudStorage()
