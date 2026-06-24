@@ -61,7 +61,9 @@ internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
                 tile_format,
                 style_identifier,
                 min_zoom,
-                max_zoom)
+                max_zoom,
+                data_type,
+                tileset_title)
             VALUES (
                 @tile_cache_id,
                 @layer_identifier,
@@ -70,11 +72,15 @@ internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
                 @tile_format,
                 @style_identifier,
                 @min_zoom,
-                @max_zoom)
+                @max_zoom,
+                COALESCE(@data_type, 'raster'),
+                @tileset_title)
             ON CONFLICT (tile_cache_id) DO UPDATE
-                SET min_zoom   = LEAST(honua.tile_caches.min_zoom, EXCLUDED.min_zoom),
-                    max_zoom   = GREATEST(honua.tile_caches.max_zoom, EXCLUDED.max_zoom),
-                    updated_at = NOW();
+                SET min_zoom      = LEAST(honua.tile_caches.min_zoom, EXCLUDED.min_zoom),
+                    max_zoom      = GREATEST(honua.tile_caches.max_zoom, EXCLUDED.max_zoom),
+                    data_type     = COALESCE(EXCLUDED.data_type, honua.tile_caches.data_type),
+                    tileset_title = COALESCE(EXCLUDED.tileset_title, honua.tile_caches.tileset_title),
+                    updated_at    = NOW();
             """;
         cmd.Parameters.AddWithValue("tile_cache_id", cacheId);
         cmd.Parameters.AddWithValue("layer_identifier", descriptor.LayerIdentifier);
@@ -84,6 +90,8 @@ internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
         cmd.Parameters.AddWithValue("style_identifier", descriptor.StyleIdentifier);
         cmd.Parameters.AddWithValue("min_zoom", descriptor.MinZoom);
         cmd.Parameters.AddWithValue("max_zoom", descriptor.MaxZoom);
+        cmd.Parameters.AddWithValue("data_type", (object?)descriptor.DataType ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("tileset_title", (object?)descriptor.Title ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         Log.CacheEnsured(_logger, cacheId, descriptor.LayerIdentifier, descriptor.TileMatrixSetIdentifier);

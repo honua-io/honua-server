@@ -43,6 +43,7 @@ internal static class JsonContextRegistration
                 Honua.Migration.OgcCoverageImportJsonContext.Default,
                 Honua.Migration.OgcWcsImportJsonContext.Default,
                 Honua.Migration.OgcTileCacheExportJsonContext.Default,
+                Honua.Import.TileCachePackage.TileCachePackageJsonContext.Default,
                 Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
                 Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
                 Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,
