@@ -791,11 +791,222 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
     }
 
-    private async Task<HttpResponseMessage> PostRpcAsync(string body)
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task Initialize_Success_IssuesMcpSessionIdHeader()
     {
-        using var content = new StringContent(body, Encoding.UTF8);
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+                "protocolVersion":"2025-03-26",
+                "capabilities":{},
+                "clientInfo":{"name":"honua-tests","version":"1.0.0"}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Streamable-HTTP transport: a successful initialize establishes a
+        // session and returns its id on the Mcp-Session-Id response header.
+        response.Headers.TryGetValues("Mcp-Session-Id", out var values).Should().BeTrue();
+        var sessionId = values!.Single();
+        sessionId.Should().NotBeNullOrWhiteSpace();
+        // Session ids must contain only visible ASCII per the spec; hex satisfies it.
+        sessionId.Should().MatchRegex("^[0-9a-f]+$");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task Initialize_Failure_DoesNotIssueSessionHeader()
+    {
+        // A rejected initialize (missing params) must not establish a session.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":1,"method":"initialize"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task Request_WithIssuedSessionId_IsAccepted()
+    {
+        var sessionId = await InitializeAndGetSessionIdAsync();
+
+        var response = await PostRpcAsync(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task Request_WithUnknownSessionId_Returns404()
+    {
+        // The Streamable-HTTP transport requires HTTP 404 when a client presents
+        // an Mcp-Session-Id the server never issued (or that has expired), so the
+        // client knows to re-run initialize.
+        var response = await PostRpcAsync(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId: "deadbeefdeadbeefdeadbeefdeadbeef");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("DELETE /mcp")]
+    public async Task Delete_TerminatesSession_AndSubsequentUseReturns404()
+    {
+        var sessionId = await InitializeAndGetSessionIdAsync();
+
+        using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, "/mcp");
+        deleteRequest.Headers.Add("Mcp-Session-Id", sessionId);
+        var deleteResponse = await _client.SendAsync(deleteRequest);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // After termination the same id must be rejected with 404.
+        var afterDelete = await PostRpcAsync(
+            """{"jsonrpc":"2.0","id":3,"method":"tools/list"}""",
+            sessionId);
+        afterDelete.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("DELETE /mcp")]
+    public async Task Delete_UnknownSession_Returns404()
+    {
+        using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, "/mcp");
+        deleteRequest.Headers.Add("Mcp-Session-Id", "00000000000000000000000000000000");
+        var response = await _client.SendAsync(deleteRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task Request_WithEventStreamAccept_ReturnsSseMessageFrame()
+    {
+        // Streamable-HTTP: when the client accepts text/event-stream the server
+        // may answer a POST with a single SSE `message` event carrying the
+        // JSON-RPC response, rather than a plain application/json body.
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = JsonContent("""{"jsonrpc":"2.0","id":"sse-1","method":"tools/list"}""")
+        };
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("event: message");
+        body.Should().Contain("data: ");
+
+        // The data line must carry a parseable JSON-RPC response with the echoed id.
+        var dataLine = body
+            .Split('\n')
+            .Single(line => line.StartsWith("data: ", StringComparison.Ordinal))["data: ".Length..];
+        using var document = JsonDocument.Parse(dataLine);
+        document.RootElement.GetProperty("id").GetString().Should().Be("sse-1");
+        document.RootElement.GetProperty("result").GetProperty("tools").ValueKind
+            .Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /mcp")]
+    public async Task Get_WithValidSession_OpensEventStream()
+    {
+        var sessionId = await InitializeAndGetSessionIdAsync();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");
+        request.Headers.Add("Mcp-Session-Id", sessionId);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        // The SSE channel stays open for server-initiated messages; read only the
+        // response head (status + headers) so the test does not block on the body.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var response = await _client.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /mcp")]
+    public async Task Get_WithoutValidSession_Returns404()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        var response = await _client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /mcp")]
+    public async Task Get_WithoutEventStreamAccept_Returns405()
+    {
+        var sessionId = await InitializeAndGetSessionIdAsync();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");
+        request.Headers.Add("Mcp-Session-Id", sessionId);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(JsonMediaType));
+
+        var response = await _client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+    }
+
+    private async Task<string> InitializeAndGetSessionIdAsync()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+                "protocolVersion":"2025-03-26",
+                "capabilities":{},
+                "clientInfo":{"name":"honua-tests","version":"1.0.0"}
+            }}
+            """);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Mcp-Session-Id", out var values).Should().BeTrue();
+        return values!.Single();
+    }
+
+    private static StringContent JsonContent(string body)
+    {
+        var content = new StringContent(body, Encoding.UTF8);
         content.Headers.ContentType = new MediaTypeHeaderValue(JsonMediaType);
-        return await _client.PostAsync("/mcp", content);
+        return content;
+    }
+
+    private async Task<HttpResponseMessage> PostRpcAsync(string body, string? sessionId = null)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = JsonContent(body)
+        };
+        if (sessionId is not null)
+        {
+            request.Headers.Add("Mcp-Session-Id", sessionId);
+        }
+
+        return await _client.SendAsync(request);
     }
 
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)

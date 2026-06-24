@@ -1,18 +1,28 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
-/// Maps the single JSON-RPC endpoint that hosts the MCP operator surface.
-/// Accepts both individual requests and JSON-RPC 2.0 batches, and enforces
-/// the MCP request-id rules (string or integer only). Note that
-/// <c>initialize</c> is single-request-only per MCP 2025-03-26 lifecycle —
-/// any batch containing an <c>initialize</c> element is rejected wholesale
-/// because the server cannot negotiate a protocol version mid-batch.
+/// Maps the JSON-RPC endpoint that hosts the MCP operator surface using the
+/// Streamable-HTTP transport (MCP 2025-03-26). Accepts both individual requests
+/// and JSON-RPC 2.0 batches on <c>POST /mcp</c>, enforces the MCP request-id
+/// rules (string or integer only), and manages <c>Mcp-Session-Id</c> sessions:
+/// a session id is issued on <c>initialize</c> and validated (HTTP 404 on an
+/// unknown id) on every subsequent request. The transport negotiates the
+/// response content type from the client's <c>Accept</c> header — emitting a
+/// single Server-Sent-Events <c>message</c> frame when the client accepts
+/// <c>text/event-stream</c>, and plain JSON otherwise. <c>GET /mcp</c> opens an
+/// SSE stream the server can push notifications over, and <c>DELETE /mcp</c>
+/// terminates a session.
+/// Note that <c>initialize</c> is single-request-only per MCP 2025-03-26
+/// lifecycle — any batch containing an <c>initialize</c> element is rejected
+/// wholesale because the server cannot negotiate a protocol version mid-batch.
 /// </summary>
 internal static class McpEndpointExtensions
 {
@@ -22,6 +32,7 @@ internal static class McpEndpointExtensions
     public const string RoutePath = "/mcp";
 
     private const string JsonMimeType = "application/json";
+    private const string EventStreamMimeType = "text/event-stream";
 
     /// <summary>
     /// HTTP status code returned for accepted JSON-RPC notifications. The MCP
@@ -44,26 +55,45 @@ internal static class McpEndpointExtensions
     internal static readonly JsonElement JsonNullId = CreateJsonNullElement();
 
     /// <summary>
-    /// Maps <c>POST /mcp</c> for JSON-RPC dispatch.
+    /// Maps <c>POST /mcp</c> for JSON-RPC dispatch, <c>GET /mcp</c> for the
+    /// server-to-client SSE stream, and <c>DELETE /mcp</c> for session
+    /// termination.
     /// </summary>
     public static IEndpointRouteBuilder MapMcpOperatorSurface(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapPost(RoutePath,
-                static (HttpContext context, CancellationToken ct) => HandleAsync(context, ct))
+                static (HttpContext context, CancellationToken ct) => HandlePostAsync(context, ct))
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpOperatorSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
-            .WithDescription("Accepts JSON-RPC 2.0 requests. Single-request-only: initialize (MCP lifecycle forbids batching). Single or batched: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, and resources/read.")
+            .WithDescription("Accepts JSON-RPC 2.0 requests over the Streamable-HTTP transport. Issues an Mcp-Session-Id on initialize and validates it on subsequent requests. Responds with application/json or, when the client accepts text/event-stream, a single SSE message frame. Single-request-only: initialize (MCP lifecycle forbids batching). Single or batched: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, and resources/read.")
+            .WithTags("Mcp");
+
+        endpoints.MapGet(RoutePath,
+                static (HttpContext context, CancellationToken ct) => HandleGetAsync(context, ct))
+            .WithDisplayName("MCP Operator Surface (SSE stream)")
+            .WithName("McpOperatorSurfaceStream")
+            .WithSummary("Opens the MCP server-to-client Server-Sent-Events stream.")
+            .WithDescription("Streamable-HTTP transport GET endpoint. Opens a text/event-stream the server uses to push notifications (e.g. progress, listChanged). Requires a valid Mcp-Session-Id.")
+            .WithTags("Mcp");
+
+        endpoints.MapDelete(RoutePath,
+                static (HttpContext context, CancellationToken ct) => HandleDeleteAsync(context, ct))
+            .WithDisplayName("MCP Operator Surface (session termination)")
+            .WithName("McpOperatorSurfaceTerminate")
+            .WithSummary("Terminates an MCP session.")
+            .WithDescription("Streamable-HTTP transport DELETE endpoint. Removes the session identified by the Mcp-Session-Id header.")
             .WithTags("Mcp");
 
         return endpoints;
     }
 
-    private static async Task HandleAsync(HttpContext context, CancellationToken cancellationToken)
+    private static async Task HandlePostAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var surface = context.RequestServices.GetRequiredService<McpOperatorSurface>();
+        var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpOperatorSurface>>();
 
         JsonDocument? document;
@@ -88,6 +118,23 @@ internal static class McpEndpointExtensions
         using (document)
         {
             var root = document.RootElement;
+            var isInitialize = IsInitialize(root);
+
+            // Streamable-HTTP session enforcement: when the client presents an
+            // Mcp-Session-Id it MUST be one this server issued, otherwise the
+            // spec requires HTTP 404 so the client knows to re-initialize. The
+            // initialize request itself never carries a (validated) session id —
+            // it is how a session is established — so it bypasses validation.
+            if (!isInitialize
+                && context.Request.Headers.TryGetValue(McpSessionManager.SessionHeaderName, out var presented)
+                && !string.IsNullOrEmpty(presented.ToString())
+                && !sessions.IsValid(presented.ToString()))
+            {
+                McpLog.SessionRejected(logger, "unknown-or-expired");
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
             if (root.ValueKind == JsonValueKind.Array)
             {
                 await HandleBatchAsync(context, surface, root, cancellationToken).ConfigureAwait(false);
@@ -113,8 +160,89 @@ internal static class McpEndpointExtensions
                 return;
             }
 
+            // A successful initialize establishes a session. Issue the id on the
+            // Mcp-Session-Id response header so the client echoes it on every
+            // subsequent request.
+            if (isInitialize && response.Error is null)
+            {
+                var sessionId = sessions.CreateSession();
+                context.Response.Headers[McpSessionManager.SessionHeaderName] = sessionId;
+                McpLog.SessionIssued(logger, sessionId);
+            }
+
             await WriteSingleAsync(context, response, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Handles <c>GET /mcp</c>: opens the server-to-client SSE stream defined by
+    /// the Streamable-HTTP transport. A valid <c>Mcp-Session-Id</c> is required;
+    /// the client must also accept <c>text/event-stream</c>. The stream stays
+    /// open (emitting no events in this increment — server-initiated progress and
+    /// listChanged notifications are a follow-up) until the client disconnects.
+    /// </summary>
+    private static async Task HandleGetAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<McpOperatorSurface>>();
+
+        if (!AcceptsEventStream(context))
+        {
+            // The transport reserves GET for the SSE channel; a client that does
+            // not accept text/event-stream cannot use it.
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var sessionId = context.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
+        if (string.IsNullOrEmpty(sessionId) || !sessions.IsValid(sessionId))
+        {
+            McpLog.SessionRejected(logger, "stream-requires-valid-session");
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        StartEventStream(context);
+        // Flush the response head so the client (and proxies) see the open SSE
+        // stream immediately, before any server-initiated frame is available.
+        await context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+        // Hold the stream open for server-initiated messages. No frames are
+        // pushed yet (progress/listChanged land in a follow-up); the stream
+        // closes when the client cancels or disconnects.
+        try
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected — normal stream teardown.
+        }
+    }
+
+    /// <summary>
+    /// Handles <c>DELETE /mcp</c>: terminates the session named by the
+    /// <c>Mcp-Session-Id</c> header. Returns 204 when a session was removed and
+    /// 404 when the id is unknown, per the Streamable-HTTP transport.
+    /// </summary>
+    private static Task HandleDeleteAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<McpOperatorSurface>>();
+
+        var sessionId = context.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return Task.CompletedTask;
+        }
+
+        var found = sessions.Terminate(sessionId);
+        McpLog.SessionTerminated(logger, sessionId, found);
+        context.Response.StatusCode = found
+            ? StatusCodes.Status204NoContent
+            : StatusCodes.Status404NotFound;
+        return Task.CompletedTask;
     }
 
     private static async Task HandleBatchAsync(
@@ -177,15 +305,7 @@ internal static class McpEndpointExtensions
             return;
         }
 
-        context.Response.StatusCode = StatusCodes.Status200OK;
-        context.Response.ContentType = JsonMimeType;
-        await JsonSerializer
-            .SerializeAsync(
-                context.Response.Body,
-                responses,
-                McpJsonContext.Default.ListMcpJsonRpcResponse,
-                cancellationToken)
-            .ConfigureAwait(false);
+        await WriteBatchAsync(context, responses, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -250,10 +370,108 @@ internal static class McpEndpointExtensions
         CancellationToken cancellationToken)
     {
         context.Response.StatusCode = StatusCodes.Status200OK;
+
+        if (AcceptsEventStream(context))
+        {
+            // Streamable-HTTP: when the client accepts text/event-stream the
+            // server MAY answer a POST with an SSE stream. We emit the single
+            // JSON-RPC response as one `message` event and close the stream.
+            var payload = JsonSerializer.Serialize(response, McpJsonContext.Default.McpJsonRpcResponse);
+            StartEventStream(context);
+            await WriteEventAsync(context, payload, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         context.Response.ContentType = JsonMimeType;
         await JsonSerializer
             .SerializeAsync(context.Response.Body, response, McpJsonContext.Default.McpJsonRpcResponse, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private static async Task WriteBatchAsync(
+        HttpContext context,
+        List<McpJsonRpcResponse> responses,
+        CancellationToken cancellationToken)
+    {
+        context.Response.StatusCode = StatusCodes.Status200OK;
+
+        if (AcceptsEventStream(context))
+        {
+            var payload = JsonSerializer.Serialize(responses, McpJsonContext.Default.ListMcpJsonRpcResponse);
+            StartEventStream(context);
+            await WriteEventAsync(context, payload, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        context.Response.ContentType = JsonMimeType;
+        await JsonSerializer
+            .SerializeAsync(
+                context.Response.Body,
+                responses,
+                McpJsonContext.Default.ListMcpJsonRpcResponse,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the request's <c>Accept</c> header advertises
+    /// <c>text/event-stream</c> (exactly or via a <c>*/*</c> / <c>text/*</c>
+    /// wildcard), meaning the server may answer with a Server-Sent-Events stream.
+    /// </summary>
+    private static bool AcceptsEventStream(HttpContext context)
+    {
+        var accept = context.Request.Headers.Accept;
+        if (accept.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var value in accept)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
+
+            foreach (var media in value.Split(','))
+            {
+                // Strip any q-value/parameters after ';' and trim whitespace.
+                var token = media.Split(';', 2)[0].Trim();
+                if (token.Equals(EventStreamMimeType, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static void StartEventStream(HttpContext context)
+    {
+        context.Response.ContentType = EventStreamMimeType;
+        // SSE responses must not be cached or buffered along the path.
+        context.Response.Headers[HeaderNames.CacheControl] = "no-cache";
+        context.Response.Headers[HeaderNames.Connection] = "keep-alive";
+    }
+
+    /// <summary>
+    /// Writes a single SSE <c>message</c> event whose <c>data:</c> field carries
+    /// the JSON-RPC payload, terminated by the blank line the SSE wire format
+    /// requires, then flushes so the client receives the frame promptly.
+    /// </summary>
+    private static async Task WriteEventAsync(HttpContext context, string json, CancellationToken cancellationToken)
+    {
+        var builder = new StringBuilder();
+        builder.Append("event: message\n");
+        // A JSON payload never contains a raw newline at the top level after
+        // serialization, so a single data: line is sufficient; the blank line
+        // delimits the event per the SSE specification.
+        builder.Append("data: ").Append(json).Append("\n\n");
+
+        var bytes = Encoding.UTF8.GetBytes(builder.ToString());
+        await context.Response.Body.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+        await context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static McpJsonRpcResponse ErrorResponse(JsonElement id, McpJsonRpcError error) => new()
@@ -261,6 +479,18 @@ internal static class McpEndpointExtensions
         Id = id,
         Error = error
     };
+
+    /// <summary>
+    /// Returns <c>true</c> when the supplied JSON element is a single JSON-RPC
+    /// object whose <c>method</c> is <c>initialize</c>. Used by the transport to
+    /// decide whether to bypass session validation and whether to issue a new
+    /// session id on success.
+    /// </summary>
+    private static bool IsInitialize(JsonElement message) =>
+        message.ValueKind == JsonValueKind.Object
+        && message.TryGetProperty("method", out var methodElement)
+        && methodElement.ValueKind == JsonValueKind.String
+        && string.Equals(methodElement.GetString(), "initialize", StringComparison.Ordinal);
 
     /// <summary>
     /// Returns <c>true</c> when any element of the batch carries the
@@ -273,14 +503,7 @@ internal static class McpEndpointExtensions
     {
         foreach (var element in batch.EnumerateArray())
         {
-            if (element.ValueKind != JsonValueKind.Object)
-            {
-                continue;
-            }
-
-            if (element.TryGetProperty("method", out var methodElement)
-                && methodElement.ValueKind == JsonValueKind.String
-                && string.Equals(methodElement.GetString(), "initialize", StringComparison.Ordinal))
+            if (IsInitialize(element))
             {
                 return true;
             }

@@ -1267,9 +1267,13 @@ public static class EndpointRegistry
         new("GET", "/samples/stac-ops"),
 
         // MCP operator surface (#728) — JSON-RPC dispatch over a single route.
+        // Streamable-HTTP transport (#1954) adds the SSE GET stream and the
+        // session-termination DELETE alongside the POST dispatcher.
         new("POST", "/v1/grounding/spec/mutate"),
         new("POST", "/v1/grounding/spec/summarize"),
         new("POST", "/mcp"),
+        new("GET", "/mcp"),
+        new("DELETE", "/mcp"),
 
         // Spec plan / apply engine (#789).
         new("POST", "/v1/spec/validate"),
