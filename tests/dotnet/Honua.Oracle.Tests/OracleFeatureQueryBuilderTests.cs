@@ -145,7 +145,10 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("SDO_RELATE(\"SHAPE\", SDO_UTIL.FROM_WKBGEOMETRY(:p0), 'mask=INSIDE+COVEREDBY') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        // Esri esriSpatialRelWithin = filter geometry within feature geometry. SDO_RELATE masks
+        // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
+        // the filter geometry must be the FIRST operand (#2068).
+        Assert.Contains("SDO_RELATE(SDO_UTIL.FROM_WKBGEOMETRY(:p0), \"SHAPE\", 'mask=INSIDE+COVEREDBY') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -159,7 +162,10 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("SDO_RELATE(\"SHAPE\", SDO_UTIL.FROM_WKBGEOMETRY(:p0), 'mask=CONTAINS+COVERS') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        // Esri esriSpatialRelContains = filter geometry contains feature geometry. SDO_RELATE
+        // masks are operand-order sensitive, so the filter geometry must be the FIRST operand:
+        // SDO_RELATE(filter, feature, 'mask=CONTAINS') (#2068).
+        Assert.Contains("SDO_RELATE(SDO_UTIL.FROM_WKBGEOMETRY(:p0), \"SHAPE\", 'mask=CONTAINS+COVERS') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
