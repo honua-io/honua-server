@@ -51,6 +51,16 @@ public sealed class DatabaseFixtureAdapter : IDatabaseFixture
         await _postgresFixture.ExecuteAsync(sql, schemaName);
     }
 
+    public async Task CreateSchemaUnderLockAsync(string schemaName)
+    {
+        await _postgresFixture.CreateSchemaUnderLockAsync(schemaName);
+    }
+
+    public async Task ExecuteDdlUnderLockAsync(string sql, string? schemaName = null)
+    {
+        await _postgresFixture.ExecuteDdlUnderLockAsync(sql, schemaName);
+    }
+
     public async Task ApplyGlobalSeedSqlAsync(string sql, string? schemaName = null)
     {
         await _postgresFixture.ApplyGlobalSeedSqlAsync(sql, schemaName);
