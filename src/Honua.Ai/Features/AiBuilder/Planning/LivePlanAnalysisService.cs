@@ -9,6 +9,7 @@ using Honua.Core.Features.WorkflowPackages.Generation.Domain;
 using Honua.ServiceDefaults;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.AiBuilder.Planning;
 
@@ -40,14 +41,23 @@ internal sealed class LivePlanAnalysisService : IPlanAnalysisService
     private readonly IWorkflowNodeRegistry _nodeRegistry;
     private readonly ILogger<LivePlanAnalysisService> _logger;
 
+    // PlanAnalysis:Provider override; null/blank means "use the WorkflowGeneration
+    // default provider". Normalised once at construction.
+    private readonly string? _providerOverride;
+
     public LivePlanAnalysisService(
         IWorkflowGenerationService generationService,
         IWorkflowNodeRegistry nodeRegistry,
+        IOptions<PlanAnalysisConfiguration> options,
         ILogger<LivePlanAnalysisService> logger)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         _generationService = generationService;
         _nodeRegistry = nodeRegistry;
         _logger = logger;
+
+        _providerOverride = options.Value.NormalizedProvider();
     }
 
     /// <inheritdoc />
@@ -62,7 +72,17 @@ internal sealed class LivePlanAnalysisService : IPlanAnalysisService
         try
         {
             result = await _generationService
-                .GenerateAsync(new WorkflowGenerationRequest { Prompt = intent }, cancellationToken)
+                .GenerateAsync(
+                    new WorkflowGenerationRequest
+                    {
+                        Prompt = intent,
+
+                        // Route the plan lane to the PlanAnalysis-selected provider
+                        // when one is configured; null lets the WorkflowGeneration
+                        // seam pick its configured default provider.
+                        ProviderId = _providerOverride
+                    },
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

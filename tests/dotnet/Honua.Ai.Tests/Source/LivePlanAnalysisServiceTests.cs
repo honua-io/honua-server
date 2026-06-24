@@ -228,10 +228,160 @@ public sealed class LivePlanAnalysisServiceTests
             .Should().BeOfType<LivePlanAnalysisService>();
     }
 
+    // --- Dedicated PlanAnalysis seam (#1955): independent gate + provider override ---
+
+    [UnitTest]
+    public void ShouldUseLivePlanner_PlanAnalysisEnabledTrue_OverridesWorkflowGenerationDisabled()
+    {
+        // The Studio WorkflowGeneration feature is OFF, but the operator opts the
+        // MCP plan lane IN via the dedicated PlanAnalysis seam — naming a live
+        // provider there. The plan lane goes live without enabling Studio.
+        var configuration = BuildConfiguration(
+            enabled: false,
+            defaultProvider: "deterministic",
+            planEnabled: true,
+            planProvider: "bedrock");
+
+        AiBuilderServiceCollectionExtensions.ShouldUseLivePlanner(configuration).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ShouldUseLivePlanner_PlanAnalysisEnabledFalse_PinsFixturesEvenWhenWorkflowGenerationLive()
+    {
+        // WorkflowGeneration is live, but the operator pins the MCP plan lane to
+        // deterministic fixtures via PlanAnalysis:Enabled=false.
+        var configuration = BuildConfiguration(
+            enabled: true,
+            defaultProvider: "bedrock",
+            planEnabled: false);
+
+        AiBuilderServiceCollectionExtensions.ShouldUseLivePlanner(configuration).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ShouldUseLivePlanner_PlanAnalysisProviderOverridesDeterministicWorkflowDefault_IsTrue()
+    {
+        // WorkflowGeneration is enabled but its default provider is deterministic;
+        // PlanAnalysis:Provider overrides it to a live provider for the plan lane.
+        var configuration = BuildConfiguration(
+            enabled: true,
+            defaultProvider: "deterministic",
+            planProvider: "anthropic");
+
+        AiBuilderServiceCollectionExtensions.ShouldUseLivePlanner(configuration).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ShouldUseLivePlanner_PlanAnalysisProviderDeterministic_OverridesLiveWorkflowDefault_IsFalse()
+    {
+        // Symmetric: an operator can pin the plan lane to deterministic even when
+        // the WorkflowGeneration default is a live provider.
+        var configuration = BuildConfiguration(
+            enabled: true,
+            defaultProvider: "bedrock",
+            planProvider: "deterministic");
+
+        AiBuilderServiceCollectionExtensions.ShouldUseLivePlanner(configuration).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task PlanAsync_PlanAnalysisProviderSet_RoutesGenerationToThatProvider()
+    {
+        // The PlanAnalysis:Provider override must steer the WorkflowGeneration seam
+        // to a DIFFERENT provider than its default. The default here is "bedrock";
+        // the override names "anthropic", so the anthropic provider is invoked.
+        var bedrock = RecordingProvider.Generated("bedrock", CannedGraph());
+        var anthropic = RecordingProvider.Generated("anthropic", CannedGraph());
+        var service = CreateLiveService(
+            new IWorkflowGenerationProvider[] { bedrock, anthropic },
+            new PlanAnalysisConfiguration { Provider = "anthropic" });
+
+        var output = await service.PlanAsync(BufferIntent, context: null, CancellationToken.None);
+
+        output.Status.Should().Be("planned");
+        anthropic.WasInvoked.Should().BeTrue("PlanAnalysis:Provider selected the anthropic provider");
+        bedrock.WasInvoked.Should().BeFalse("the override steered away from the WorkflowGeneration default");
+    }
+
+    [UnitTest]
+    public async Task PlanAsync_NoPlanAnalysisProvider_UsesWorkflowGenerationDefaultProvider()
+    {
+        // No override → the WorkflowGeneration default provider ("bedrock") runs.
+        var bedrock = RecordingProvider.Generated("bedrock", CannedGraph());
+        var anthropic = RecordingProvider.Generated("anthropic", CannedGraph());
+        var service = CreateLiveService(
+            new IWorkflowGenerationProvider[] { bedrock, anthropic },
+            new PlanAnalysisConfiguration());
+
+        var output = await service.PlanAsync(BufferIntent, context: null, CancellationToken.None);
+
+        output.Status.Should().Be("planned");
+        bedrock.WasInvoked.Should().BeTrue("absent an override the WorkflowGeneration default provider runs");
+        anthropic.WasInvoked.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void PlanAnalysisConfigurationValidator_UnknownProvider_Fails()
+    {
+        var validator = new PlanAnalysisConfigurationValidator();
+
+        var result = validator.Validate(name: null, new PlanAnalysisConfiguration { Provider = "gemini" });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("gemini");
+    }
+
+    [UnitTest]
+    public void PlanAnalysisConfigurationValidator_NoProviderOverride_Succeeds()
+    {
+        var validator = new PlanAnalysisConfigurationValidator();
+
+        var result = validator.Validate(name: null, new PlanAnalysisConfiguration { Enabled = true });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void PlanAnalysisConfigurationValidator_KnownProvider_Succeeds()
+    {
+        var validator = new PlanAnalysisConfigurationValidator();
+
+        var result = validator.Validate(name: null, new PlanAnalysisConfiguration { Provider = "anthropic" });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void AddAiBuilderPlanAnalysis_PlanAnalysisEnabledOnly_ResolvesLivePlanner()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IWorkflowGenerationService>());
+        services.AddSingleton(Substitute.For<IWorkflowNodeRegistry>());
+
+        // WorkflowGeneration disabled; PlanAnalysis opts the lane in with a live provider.
+        services.AddAiBuilderPlanAnalysis(BuildConfiguration(
+            enabled: false,
+            defaultProvider: "deterministic",
+            planEnabled: true,
+            planProvider: "bedrock"));
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IPlanAnalysisService>()
+            .Should().BeOfType<LivePlanAnalysisService>();
+    }
+
     // Builds the live service over the REAL WorkflowGenerationService so the test
     // exercises the full seam (provider selection + node-registry grounding + the
     // hard validation gate), with only the provider faked.
-    private static LivePlanAnalysisService CreateLiveService(IWorkflowGenerationProvider fakeProvider)
+    private static LivePlanAnalysisService CreateLiveService(
+        IWorkflowGenerationProvider fakeProvider,
+        PlanAnalysisConfiguration? planOptions = null) =>
+        CreateLiveService(new[] { fakeProvider }, planOptions);
+
+    private static LivePlanAnalysisService CreateLiveService(
+        IReadOnlyList<IWorkflowGenerationProvider> fakeProviders,
+        PlanAnalysisConfiguration? planOptions = null)
     {
         var registry = Substitute.For<IWorkflowNodeRegistry>();
         registry.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(Snapshot());
@@ -241,7 +391,7 @@ public sealed class LivePlanAnalysisServiceTests
         }
 
         var generationService = new WorkflowGenerationService(
-            new[] { fakeProvider },
+            fakeProviders,
             registry,
             Options.Create(new WorkflowGenerationConfiguration
             {
@@ -253,6 +403,7 @@ public sealed class LivePlanAnalysisServiceTests
         return new LivePlanAnalysisService(
             generationService,
             registry,
+            Options.Create(planOptions ?? new PlanAnalysisConfiguration()),
             NullLogger<LivePlanAnalysisService>.Instance);
     }
 
@@ -310,14 +461,30 @@ public sealed class LivePlanAnalysisServiceTests
             ProcessId = processId
         };
 
-    private static IConfiguration BuildConfiguration(bool enabled, string defaultProvider) =>
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["WorkflowGeneration:Enabled"] = enabled ? "true" : "false",
-                ["WorkflowGeneration:DefaultProvider"] = defaultProvider
-            })
-            .Build();
+    private static IConfiguration BuildConfiguration(
+        bool enabled,
+        string defaultProvider,
+        bool? planEnabled = null,
+        string? planProvider = null)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["WorkflowGeneration:Enabled"] = enabled ? "true" : "false",
+            ["WorkflowGeneration:DefaultProvider"] = defaultProvider
+        };
+
+        if (planEnabled is { } flag)
+        {
+            settings["PlanAnalysis:Enabled"] = flag ? "true" : "false";
+        }
+
+        if (planProvider is not null)
+        {
+            settings["PlanAnalysis:Provider"] = planProvider;
+        }
+
+        return new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+    }
 
     private static AnalysisPlan ToDomainPlan(McpAnalysisPlanOutput plan)
     {
@@ -386,6 +553,45 @@ public sealed class LivePlanAnalysisServiceTests
             UnmappedRequests = [capability],
             ProviderId = "bedrock"
         });
+    }
+
+    /// <summary>
+    /// Fake provider carrying a fixed provider id that records whether it was
+    /// invoked, so tests can assert which provider the WorkflowGeneration seam
+    /// selected when the live planner applies the PlanAnalysis:Provider override.
+    /// </summary>
+    private sealed class RecordingProvider : IWorkflowGenerationProvider
+    {
+        private readonly WorkflowGenerationProposal _proposal;
+
+        private RecordingProvider(string providerId, WorkflowGenerationProposal proposal)
+        {
+            ProviderId = providerId;
+            _proposal = proposal;
+        }
+
+        public string ProviderId { get; }
+
+        public bool IsConfigured => true;
+
+        public bool WasInvoked { get; private set; }
+
+        public Task<WorkflowGenerationProposal> GenerateAsync(
+            WorkflowGenerationProviderRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            WasInvoked = true;
+            return Task.FromResult(_proposal);
+        }
+
+        public static RecordingProvider Generated(string providerId, WorkflowGraph graph) =>
+            new(providerId, new WorkflowGenerationProposal
+            {
+                Status = WorkflowGenerationStatus.Generated,
+                Graph = graph,
+                ProviderId = providerId,
+                Model = "fake-model"
+            });
     }
 
     /// <summary>
