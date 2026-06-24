@@ -80,12 +80,22 @@ internal static partial class FeatureEventsAndStreamingRegistration
                 sp.GetRequiredService<FeatureStreamSessionManager>(),
                 sp.GetRequiredService<ILogger<FeatureChangeRetryQueue>>(),
                 sp.GetService<IConnectionMultiplexer>()));
+        // Broker-agnostic event-bus sinks (#357). The publish path fans committed
+        // feature-change events out to every registered sink through the broadcaster.
+        // Sinks are off by default; the no-op sink keeps the fan-out path exercised
+        // and observable. Concrete Kafka/NATS adapters register additional sinks in a
+        // follow-up increment (they require a live broker).
+        services.AddOptions<FeatureChangeEventSinkOptions>()
+            .Bind(configuration.GetSection(FeatureChangeEventSinkOptions.SectionName));
+        services.AddSingleton<IFeatureChangeEventSink, NoOpFeatureChangeEventSink>();
+        services.AddSingleton<FeatureChangeEventSinkBroadcaster>();
         services.AddSingleton<IFeatureChangeEventPublisher>(sp =>
             new FeatureStreamPublisher(
                 sp.GetRequiredService<IFeatureChangeEventStore>(),
                 sp.GetRequiredService<FeatureStreamSessionManager>(),
                 sp.GetRequiredService<ILogger<FeatureStreamPublisher>>(),
-                sp.GetRequiredService<IFeatureChangeRetryQueue>()));
+                sp.GetRequiredService<IFeatureChangeRetryQueue>(),
+                sp.GetRequiredService<FeatureChangeEventSinkBroadcaster>()));
         services.AddSingleton<FeatureMutationEventService>();
 
         // Feature-change transactional outbox (#692). Capability provider, dispatcher, health,

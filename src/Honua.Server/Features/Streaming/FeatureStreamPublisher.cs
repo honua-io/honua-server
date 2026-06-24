@@ -16,12 +16,14 @@ internal sealed partial class FeatureStreamPublisher(
     IFeatureChangeEventStore store,
     FeatureStreamSessionManager sessionManager,
     ILogger<FeatureStreamPublisher> logger,
-    IFeatureChangeRetryQueue? retryQueue = null) : IFeatureChangeEventPublisher
+    IFeatureChangeRetryQueue? retryQueue = null,
+    FeatureChangeEventSinkBroadcaster? sinkBroadcaster = null) : IFeatureChangeEventPublisher
 {
     private readonly IFeatureChangeEventStore _store = store ?? throw new ArgumentNullException(nameof(store));
     private readonly FeatureStreamSessionManager _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
     private readonly ILogger<FeatureStreamPublisher> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IFeatureChangeRetryQueue? _retryQueue = retryQueue;
+    private readonly FeatureChangeEventSinkBroadcaster? _sinkBroadcaster = sinkBroadcaster;
 
     public async Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
     {
@@ -74,6 +76,11 @@ internal sealed partial class FeatureStreamPublisher(
             FeatureStreamMessage.Data(envelope, persisted.GeometryEnvelope, persisted.PropertiesJson));
 
         LogLocalEventBroadcast(_logger, delivered, persisted.Cursor);
+
+        // Fan the durably persisted event out to broker-agnostic sinks (#357).
+        // Sink delivery runs off the write hot path with per-sink failure isolation,
+        // so a slow or failing transport never blocks the originating edit.
+        _sinkBroadcaster?.Dispatch(persisted);
     }
 
     internal static FeatureStreamEnvelope ToEnvelope(FeatureChangeEvent e)
