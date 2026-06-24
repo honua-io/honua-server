@@ -45,6 +45,7 @@ using Honua.Server.Features.Plugins;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Protocols.OData;
 using Honua.Protocols.Ogc.Api.Coverages;
+using Honua.Protocols.Ogc.Api.Edr;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Maps;
 using Honua.Protocols.Ogc.Api.Processes;
@@ -102,6 +103,7 @@ internal static class FeatureRegistrationExtensions
         services.AddImageServer(configuration);
         services.AddMapServer(configuration);
         services.AddOgcCoverages();
+        services.AddEdr();
         services.AddOgcFeatures(configuration);
         services.AddOgcMaps();
         services.AddOgcStyles();
@@ -261,6 +263,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcCoveragesEndpoints();
+        endpoints.MapEdrEndpoints();
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();
         endpoints.MapOgcStylesEndpoints();

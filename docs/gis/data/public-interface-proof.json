@@ -2485,16 +2485,34 @@
       ],
       "endpointExactMatches": [],
       "endpointContains": [],
-      "operationKeys": [],
+      "operationKeys": [
+        "SensorThings-1.1::datastream.create",
+        "SensorThings-1.1::sensor.ingest"
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus endpoint integration tests for the SensorThings API (STA v1.1) Phase 1 read surface: Things/Sensors/ObservedProperties/Datastreams/Observations collections, by-id reads, and Datastream Observations navigation",
+          "proofMechanism": "EndpointRegistry coverage plus endpoint integration tests for the SensorThings API (STA v1.1) read surface (Phase 1: Things/Sensors/ObservedProperties/Datastreams/Observations collections, by-id reads, Datastream Observations navigation), the Phase 2 ingest surface (POST Observations single + bulk, POST Datastreams({id})/Observations, POST Datastreams), and the Phase 3 real-time observation stream (GET /sta/v1.1/ObservationsStream over SSE/WebSocket)",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsIngestEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsStreamEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1747",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "SensorThings Phase 2 ingest operations datastream.create and sensor.ingest are registered in OperationRegistry and exercised by integration tests carrying [InterfaceOperation(SensorThings-1.1, ...)]",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsIngestEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2503,14 +2521,58 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "SensorThings read integration tests retain conformance-shaped envelopes (@iot.id/@iot.selfLink/@iot.navigationLink), $expand=Observations inlining, $filter happy-path and negative-path ($filter 400), and $orderby descending observation ordering",
+          "proofMechanism": "SensorThings integration tests retain conformance-shaped read envelopes (@iot.id/@iot.selfLink/@iot.navigationLink), $expand=Observations inlining, $filter happy/negative paths, $orderby descending ordering, ingest round-trips (REST single + bulk appear in read queries; datastream.create creates a queryable datastream), and the real-time stream pushes a newly-ingested observation to a subscribed SSE client",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsIngestEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsStreamEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "honua-server#1747",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "ogc-api-edr",
+      "displayName": "OGC API - Environmental Data Retrieval (EDR)",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC API - EDR 1.1",
+      "canonicalIdentifier": "/edr",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/edr"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus endpoint integration tests for the OGC API - EDR surface: landing, conformance, collections list/by-id (with data_queries position+cube and parameter_names), the position (point time-series) query, and the cube (area/subset) query over registered coverage/datacube collections, returning CoverageJSON",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/EdrEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1757",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "EDR position returns a CoverageJSON PointSeries with a t-axis and per-parameter NdArray ranges sampled from the canonical raster read pipeline; EDR cube returns a CoverageJSON Grid subset for a bbox; invalid coords/bbox return 400 and unknown collections return 404",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/EdrEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1757",
           "versionCaptureRule": null
         }
       ]

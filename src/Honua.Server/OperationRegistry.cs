@@ -36,6 +36,7 @@ public static class OperationRegistry
     private const string Grpc = "Grpc";
     private const string Mcp = "Mcp";
     private const string VersionManagementServer = "VersionManagementServer";
+    private const string SensorThings11 = "SensorThings-1.1";
 
     /// <summary>
     /// All public-interface operations that require integration test coverage.
@@ -143,6 +144,12 @@ public static class OperationRegistry
         new(VersionManagementServer, "resolveConflicts"),
         new(VersionManagementServer, "post"),
         new(VersionManagementServer, "jobStatus"),
+
+        // OGC SensorThings API (STA v1.1) Phase 2 ingest operations (#1747). These are
+        // surfaced on the unified operations toolset so the console + AI reach observation
+        // ingest and datastream creation identically (dotted operation identifiers).
+        new(SensorThings11, "datastream.create"),
+        new(SensorThings11, "sensor.ingest"),
     ];
 }
 
