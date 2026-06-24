@@ -16,10 +16,20 @@
 # ONLY when exactly one job failed AND its name matches the format job.
 train_is_format_only_failure() {
   local failing="$1"
+  # Aggregator / non-blocking meta-jobs (CI Gate, Test Suite Summary, and the
+  # non-blocking aux jobs in TRAIN_NONBLOCKING_JOBS) fail as a CONSEQUENCE of the
+  # real failure — they must NOT count toward "is the sole real failure a format
+  # failure". Without this strip, a format-only batch reds on BOTH "Build & Format
+  # Check" AND "CI Gate" (n=2 -> not format-only), so the forward-fix NEVER fired
+  # and the batch escalated instead of auto-running `dotnet format`. Strip them,
+  # then require exactly one remaining (real) failing job whose name is the format
+  # job.
+  local real
+  real="$(printf '%s\n' "${failing}" | sed '/^$/d' | grep -vxiF "${TRAIN_NONBLOCKING_JOBS}" || true)"
   local n
-  n="$(printf '%s\n' "${failing}" | sed '/^$/d' | wc -l | tr -d ' ')"
+  n="$(printf '%s\n' "${real}" | sed '/^$/d' | wc -l | tr -d ' ')"
   [[ "${n}" == "1" ]] || return 1
-  printf '%s\n' "${failing}" | grep -Eqi 'format'
+  printf '%s\n' "${real}" | grep -Eqi 'format'
 }
 
 # train_forward_fix <batch-branch> <attempt-count>: apply dotnet format, commit,

@@ -177,6 +177,13 @@ echo "== Case 4: format-drift (forward-fix path) =="
 train_is_format_only_failure "build / Format Verification" && ok "fwdfix: single format job => format-only" || bad "fwdfix: should be format-only"
 train_is_format_only_failure $'build / Format Verification\nserver-tests (Core)' && bad "fwdfix: multi-failure must NOT be format-only" || ok "fwdfix: multi-failure not format-only"
 train_is_format_only_failure "server-tests (Core)" && bad "fwdfix: non-format must NOT be format-only" || ok "fwdfix: non-format not format-only"
+# Real-world: the format job ALWAYS co-fails with the CI Gate (and often Test Suite
+# Summary) aggregators. After stripping non-blocking/aggregator jobs the sole real
+# failure is the format job => format-only (this is what was broken: it escalated).
+train_is_format_only_failure $'Build & Format Check\nCI Gate' && ok "fwdfix: format+CI Gate aggregator => format-only" || bad "fwdfix: format+aggregator must be format-only"
+train_is_format_only_failure $'Build & Format Check\nCI Gate\nTest Suite Summary' && ok "fwdfix: format+2 aggregators => format-only" || bad "fwdfix: format+aggregators must be format-only"
+train_is_format_only_failure $'Build & Format Check\nCI Gate\nServer Tests (OData Core)' && bad "fwdfix: format+REAL shard must NOT be format-only" || ok "fwdfix: format+real shard not format-only"
+train_is_format_only_failure $'CI Gate\nTest Suite Summary' && bad "fwdfix: aggregators-only must NOT be format-only" || ok "fwdfix: aggregators-only not format-only"
 # Fake formatter that produces a change -> forward-fix commits it.
 git fetch -q origin trunk; git checkout -q -B fwdfix-batch origin/trunk
 export TRAIN_FORMAT_CMD=__fake_fmt
