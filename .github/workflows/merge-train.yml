@@ -258,7 +258,7 @@ jobs:
       # re-dispatch and fall back to the schedule. Only applying runs chain (a dry-run
       # report must never spawn live runs).
       - name: Self-chain next run while PRs remain
-        if: always() && steps.mode.outputs.train_apply == 'true'
+        if: always() && steps.mode.outputs.train_apply == '1'
         env:
           # MUST be the PAT: a `gh workflow run` authenticated with GITHUB_TOKEN does
           # NOT trigger a new workflow run (GitHub's recursion guard), so the chain
