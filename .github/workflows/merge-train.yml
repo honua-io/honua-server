@@ -34,7 +34,7 @@ on:
         description: 'Max PRs per batch.'
         type: string
         required: false
-        default: '3'
+        default: '10'
       use_llm:
         description: 'Enable the OPTIONAL gated Bedrock LLM judgment layer (TRAIN_LLM=1). Off by default; every gate has a deterministic fallback. Requires secrets.BEDROCK_AWS_ACCESS_KEY_ID / secrets.BEDROCK_AWS_SECRET_ACCESS_KEY.'
         type: boolean
@@ -121,7 +121,7 @@ jobs:
             apply=1
           fi
           echo "train_apply=${apply}" >> "$GITHUB_OUTPUT"
-          mb="${DISPATCH_MAX_BATCH:-3}"; [[ -z "${mb}" ]] && mb=3
+          mb="${DISPATCH_MAX_BATCH:-10}"; [[ -z "${mb}" ]] && mb=10
           echo "max_batch=${mb}" >> "$GITHUB_OUTPUT"
           # TRAIN_LLM: on whenever we're applying live AND Bedrock keys exist
           # (autonomous schedule/workflow_run, or an explicit dispatch).
@@ -283,7 +283,7 @@ jobs:
           if [[ "${ready:-0}" -gt 0 ]]; then
             echo "Dispatching the next train run (continuous drain; concurrency-guarded, single-instance)."
             gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
-              -f train_apply=true -f use_llm=true -f use_autofix=true -f max_batch=3
+              -f train_apply=true -f use_llm=true -f use_autofix=true -f max_batch=10
           else
             echo "No selectable PRs remain — chain stops; the */15 schedule remains as the backstop."
           fi
