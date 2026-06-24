@@ -175,6 +175,43 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    public async Task GenuinelyScopedApiKey_IsDeniedAdminEndpoint()
+    {
+        // A key whose grants are genuinely scoped — neither a full-admin grant
+        // (admin / * / admin:*) nor a layer-scoped write: grant — must NOT be
+        // silently elevated to full admin (issue #1985). It authenticates but is
+        // forbidden from the admin surface guarded by RequireAdminAuthorization.
+        var scoped = await CreateApiKeyAsync("scoped-read-key", permissions: ["read:layers"]);
+        using var scopedClient = CreateApiKeyClient(scoped.Key);
+
+        var response = await scopedClient.GetAsync("/api/v1/admin/api-keys");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    public async Task FullAdminApiKey_PassesAdminEndpoint()
+    {
+        // Backward compatibility: a key carrying a full-admin grant (and the
+        // default unscoped key, normalized to admin:*) still passes every admin
+        // endpoint (issue #1985).
+        var explicitAdmin = await CreateApiKeyAsync("explicit-admin-key", permissions: ["admin:*"]);
+        var defaultAdmin = await CreateApiKeyAsync("default-admin-key");
+        Assert.Equal("admin:*", Assert.Single(defaultAdmin.ApiKey.Permissions));
+
+        using var explicitAdminClient = CreateApiKeyClient(explicitAdmin.Key);
+        using var defaultAdminClient = CreateApiKeyClient(defaultAdmin.Key);
+
+        var explicitResponse = await explicitAdminClient.GetAsync("/api/v1/admin/api-keys");
+        var defaultResponse = await defaultAdminClient.GetAsync("/api/v1/admin/api-keys");
+
+        Assert.Equal(HttpStatusCode.OK, explicitResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
+    }
+
     private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(
         string name,
         DateTimeOffset? expiresAt = null,
