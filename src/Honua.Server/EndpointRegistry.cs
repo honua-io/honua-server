@@ -1237,6 +1237,9 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/zarr-stores/{id}"),
         new("POST", "/api/v1/admin/zarr-stores/{id}/refresh"),
 
+        // Datacube tile rendering (#1835): Zarr coverage slice -> PNG map tile
+        new("GET", "/api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}"),
+
         // STAC (SpatioTemporal Asset Catalog)
         new("GET", "/stac"),
         new("GET", "/stac/conformance"),
