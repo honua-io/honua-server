@@ -2401,9 +2401,12 @@ internal sealed partial class FeatureServerQueryHandler(
         // special handling. The ArcGIS Maps SDK for .NET ServiceFeatureTable.QueryFeaturesAsync
         // always sends it, so rejecting it broke every .NET FeatureServer client (#1460).
         //
-        // returnTrueCurves is also accepted as a no-op. Honua does not advertise true-curve
-        // support and the current geometry writers emit linearized geometries, but ArcGIS
-        // clients may still include the flag on otherwise ordinary feature queries.
+        // returnTrueCurves is accepted as a no-op on OUTPUT. True-curve INPUT (curvePaths/
+        // curveRings on applyEdits or query geometry) is densified to linear vertices by
+        // CurveGeometryConverter before storage (#1877 Part A), and NTS/WKB cannot represent a
+        // true curve, so stored geometry is always linear and cannot be losslessly re-curved.
+        // Honua therefore still advertises supportsTrueCurve=false and emits linearized geometry;
+        // ArcGIS clients may still include the flag on otherwise ordinary feature queries.
 
         if (unsupported.Count == 0)
         {
