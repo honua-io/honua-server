@@ -1045,12 +1045,16 @@ internal sealed partial class FeatureServerQueryHandler(
                     ? query with { Limit = distinctScanLimit, Offset = null }
                     : query;
                 var queryStopwatch = Stopwatch.StartNew();
+                // Pass the authenticated caller so plugin computed-field providers (#1562) can
+                // scope derived values per-actor. Projection inside the executor is a no-op unless
+                // the Enterprise plugin SDK is licensed, enabled, and a provider is registered.
                 QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
                     queryLayer.Service,
                     queryLayer.Resource,
                     queryLayer.Publication,
                     queryLayer.StorageLayerId,
                     queryForExecution,
+                    context.User?.Identity?.Name,
                     cancellationToken).ConfigureAwait(false);
                 queryStopwatch.Stop();
                 var queryOperation = isParquet ? "query_parquet" : isArrow ? "query_arrow" : "query";
