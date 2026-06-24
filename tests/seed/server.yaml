@@ -117,6 +117,78 @@ sql:
               UNIQUE (role, service, layer, attribute, claim_type)
       );
   - "CREATE INDEX IF NOT EXISTS idx_rbac_rls_policies_scope ON honua.rbac_rls_policies (service, layer);"
+  # Persistent RBAC role/permission store (#1374). Mirrors migration
+  # 041_CreateRbacRoleStore.sql so the migration-skipping integration fixture has
+  # the honua.rbac_roles / rbac_role_permissions / rbac_role_memberships tables.
+  # Without these, PostgresRoleStore queries 500 with
+  # `relation "honua.rbac_roles" does not exist`, cascading into unrelated
+  # shard failures (honua-server#1568).
+  - |
+      CREATE TABLE IF NOT EXISTS honua.rbac_roles (
+          role_id       UUID         PRIMARY KEY,
+          name          VARCHAR(128) NOT NULL,
+          description   TEXT,
+          is_built_in   BOOLEAN      NOT NULL DEFAULT FALSE,
+          created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_rbac_roles_name_lower ON honua.rbac_roles (LOWER(name));"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.rbac_role_permissions (
+          role_id       UUID         NOT NULL,
+          service       VARCHAR(256) NOT NULL,
+          layer         VARCHAR(256) NOT NULL,
+          operation     VARCHAR(64)  NOT NULL,
+          CONSTRAINT rbac_role_permissions_role_fk
+              FOREIGN KEY (role_id) REFERENCES honua.rbac_roles(role_id) ON DELETE CASCADE,
+          CONSTRAINT rbac_role_permissions_unique
+              UNIQUE (role_id, service, layer, operation)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_rbac_role_permissions_role ON honua.rbac_role_permissions (role_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.rbac_role_memberships (
+          role_id       UUID         NOT NULL,
+          user_id       VARCHAR(256) NOT NULL,
+          created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          CONSTRAINT rbac_role_memberships_role_fk
+              FOREIGN KEY (role_id) REFERENCES honua.rbac_roles(role_id) ON DELETE CASCADE,
+          CONSTRAINT rbac_role_memberships_pk PRIMARY KEY (role_id, user_id)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_rbac_role_memberships_user ON honua.rbac_role_memberships (user_id);"
+  - |
+      CREATE OR REPLACE FUNCTION honua.rbac_set_updated_at()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          NEW.updated_at = NOW();
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+  - "DROP TRIGGER IF EXISTS trg_rbac_roles_updated_at ON honua.rbac_roles;"
+  - |
+      CREATE TRIGGER trg_rbac_roles_updated_at
+          BEFORE UPDATE ON honua.rbac_roles
+          FOR EACH ROW
+          EXECUTE FUNCTION honua.rbac_set_updated_at();
+  - |
+      INSERT INTO honua.rbac_roles (role_id, name, description, is_built_in)
+      VALUES
+          ('00000000-0000-0000-0000-000000000001', 'admin',  'Full administrative access', TRUE),
+          ('00000000-0000-0000-0000-000000000003', 'editor', 'Read and write access to all services and layers', TRUE),
+          ('00000000-0000-0000-0000-000000000002', 'viewer', 'Read-only access to all services and layers', TRUE)
+      ON CONFLICT (role_id) DO NOTHING;
+  - |
+      INSERT INTO honua.rbac_role_permissions (role_id, service, layer, operation)
+      VALUES
+          ('00000000-0000-0000-0000-000000000001', '*', '*', '*'),
+          ('00000000-0000-0000-0000-000000000003', '*', '*', 'query'),
+          ('00000000-0000-0000-0000-000000000003', '*', '*', 'insert'),
+          ('00000000-0000-0000-0000-000000000003', '*', '*', 'update'),
+          ('00000000-0000-0000-0000-000000000003', '*', '*', 'delete'),
+          ('00000000-0000-0000-0000-000000000003', '*', '*', 'export'),
+          ('00000000-0000-0000-0000-000000000003', '*', '*', 'metadata'),
+          ('00000000-0000-0000-0000-000000000002', '*', '*', 'query'),
+          ('00000000-0000-0000-0000-000000000002', '*', '*', 'metadata')
+      ON CONFLICT (role_id, service, layer, operation) DO NOTHING;
   - |
       CREATE TABLE IF NOT EXISTS honua.analysis_content_items (
           item_id            TEXT        PRIMARY KEY,
