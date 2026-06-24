@@ -10,7 +10,9 @@ using Honua.Ai.ReportGeneration;
 using Honua.Ai.WorkflowGeneration;
 using Honua.Core.Features.Publishing.Dashboards;
 using Honua.Core.Features.Publishing.Reports;
+using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Core.Features.WorkflowPackages.Generation;
+using Honua.Core.Features.WorkflowPackages.Generation.Domain;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -151,6 +153,70 @@ public sealed class BedrockStudioProviderTests
 
         result.Status.Should().Be("error");
     }
+
+    [UnitTest]
+    public async Task BedrockWorkflowProvider_WhenResponseTruncatedAtMaxTokens_ReturnsTruncationError()
+    {
+        // Regression for #1760: large workflow prompts (vector-tiles, geocoding) overflow MaxTokens,
+        // so Bedrock returns a truncated tool-call. The Converse adapter maps StopReason.Max_tokens to
+        // ChatFinishReason.Length; the provider must surface an actionable truncation message instead of
+        // the opaque generic "Provider response could not be parsed." (#1979 added this to the
+        // OpenAI/Anthropic providers but skipped the Bedrock provider.)
+        var factory = Substitute.For<IBedrockChatClientFactory>();
+        factory.Create(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(_ =>
+            {
+                // A tool-call whose JSON arguments were cut off mid-object — what a truncated
+                // Converse response actually surfaces — paired with FinishReason == Length.
+                var truncated = new FunctionCallContent(
+                    "call-1",
+                    "emit_workflow",
+                    new Dictionary<string, object?> { ["status"] = "generated", ["graph"] = null });
+                return new FakeChatClient(new ChatResponse(new ChatMessage(ChatRole.Assistant, [truncated]))
+                {
+                    FinishReason = ChatFinishReason.Length
+                });
+            });
+
+        var provider = new BedrockWorkflowGenerationProvider(
+            WorkflowGenerationConfiguration.BedrockProviderId,
+            factory,
+            BedrockOptions(),
+            NullLogger<BedrockWorkflowGenerationProvider>.Instance);
+
+        var result = await provider.GenerateAsync(new WorkflowGenerationProviderRequest
+        {
+            Prompt = "Generate vector tiles (PMTiles) for maui-roads and publish as a tile service.",
+            Registry = WorkflowRegistrySnapshot()
+        });
+
+        result.Status.Should().Be(WorkflowGenerationStatus.Error);
+        result.ErrorMessage.Should().Contain("truncated");
+        result.ErrorMessage.Should().Contain("MaxTokens");
+        result.ErrorMessage.Should().NotContain("could not be parsed");
+    }
+
+    private static WorkflowNodeRegistrySnapshot WorkflowRegistrySnapshot() => new()
+    {
+        RegistryVersion = "test-registry-1",
+        GeneratedAt = DateTimeOffset.UnixEpoch,
+        Providers = [],
+        Nodes =
+        [
+            new WorkflowNodeDefinition
+            {
+                NodeTypeId = "process:data-management.copy-features",
+                ProviderId = "test",
+                RuntimeKind = WorkflowNodeRuntimeKind.Geoprocessing,
+                Title = "Copy Features",
+                Description = "Copy features",
+                Category = "transform",
+                ParameterSchemas = [],
+                CapabilityFlags = new WorkflowNodeCapabilityFlags { Executable = true },
+                RuntimeHints = new WorkflowNodeRuntimeHints()
+            }
+        ]
+    };
 
     [UnitTest]
     public void BedrockWorkflowProvider_IsConfigured_WhenModelIsSet()

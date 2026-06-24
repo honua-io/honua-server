@@ -132,6 +132,21 @@ internal sealed class BedrockWorkflowGenerationProvider : IWorkflowGenerationPro
                 return WorkflowGenerationProposal.Error(Reason, _providerId, model);
             }
 
+            // Surface max_tokens truncation explicitly. Bedrock's Converse adapter maps a
+            // StopReason.Max_tokens to ChatFinishReason.Length; when that happens the forced
+            // tool-call's JSON arguments are cut off mid-payload, so the DeserializeProposal below
+            // would fail (or silently drop fields) and flatten to the opaque generic
+            // "Provider response could not be parsed." Larger workflows (e.g. vector-tiles,
+            // geocoding) are the ones that overflow MaxTokens, which is exactly the #1760 symptom.
+            // The OpenAI-compatible and Anthropic providers already do this (#1979); the Bedrock
+            // provider was missed.
+            if (response.FinishReason == ChatFinishReason.Length)
+            {
+                const string Reason = "Provider response was truncated (max_tokens reached); try a higher MaxTokens.";
+                WorkflowGenerationLog.GenerationFailed(_logger, _providerId, Reason);
+                return WorkflowGenerationProposal.Error(Reason, _providerId, model);
+            }
+
             var call = response.Messages
                 .SelectMany(m => m.Contents)
                 .OfType<FunctionCallContent>()
