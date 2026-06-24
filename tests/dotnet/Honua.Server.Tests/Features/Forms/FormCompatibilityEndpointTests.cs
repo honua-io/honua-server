@@ -5,8 +5,10 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Forms;
@@ -15,7 +17,12 @@ namespace Honua.Server.Tests.Features.Forms;
 [Protocol(TestProtocols.Admin)]
 public sealed class FormCompatibilityEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    // The offline compatibility manifest is gated behind the fieldops.offline-sync
+    // entitlement (Pro). Provision a Pro test license so the endpoint serves the
+    // manifest (200) instead of 402; the Community-edition 402 posture is covered
+    // separately by FormPackageEndpointsTests.OfflineFormRuntime_WithCommunityLicense_*.
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 

@@ -385,6 +385,15 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             SET capabilities = ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete']
             WHERE service_name = 'test';
             """, _fixture.CurrentSchema);
+
+        // The FormPackage validator reads edit capabilities from the Metadata v2 graph
+        // (publication.Capabilities), not the legacy honua.services table, so the SQL
+        // UPDATE above alone leaves the target service advertising only "Query" and the
+        // publish-time capability check fails. Mirror the editable capability set onto the
+        // v2 graph so the target service advertises Create/Update/Delete.
+        _fixture.EnableV2ServiceEditingCapabilities(
+            "test",
+            ["Query", "Extract", "Create", "Update", "Delete"]);
     }
 
     private async Task<FormPackageVersion> CreateDraftAsync(FormPackageDocument package)

@@ -309,7 +309,12 @@ public sealed class WorkflowOrchestrationEngineTests
 
         var final = await harness.RunStore.GetAsync(run.RunId);
         Assert.Equal(WorkflowStepStatus.Failed, final!.StepStates.Single(s => s.StepId == "a").Status);
-        Assert.Contains("result package not yet available", final.StepStates.Single(s => s.StepId == "a").ErrorMessage);
+        // The engine surfaces a stable operator-facing message on the failed step
+        // (the underlying transient result-fetch exception is logged, not embedded in
+        // the step error). Assert the step is failed with that diagnostic.
+        Assert.Contains(
+            "job succeeded but artifact retrieval failed",
+            final.StepStates.Single(s => s.StepId == "a").ErrorMessage);
         Assert.Equal(WorkflowRunStatus.Failed, final.Status);
 
         // Step B was gated on A's artifacts and must be cancelled, not submitted to the substrate.
