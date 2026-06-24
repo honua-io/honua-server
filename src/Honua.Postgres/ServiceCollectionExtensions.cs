@@ -173,6 +173,10 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<Honua.Core.Features.FieldWorkflows.Review.IFieldReviewStore,
             Features.FieldWorkflows.PostgresFieldReviewStore>();
 
+        // Register back-office field export store (#1160)
+        services.AddScoped<Honua.Core.Features.FieldWorkflows.Export.IFieldExportStore,
+            Features.FieldWorkflows.PostgresFieldExportStore>();
+
         // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
         services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataV2GraphStore(

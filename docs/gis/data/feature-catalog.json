@@ -308,6 +308,32 @@
       "maturity": "implemented"
     },
     {
+      "id": "delete-api-v1-admin-oauth-clients-id",
+      "route": "/api/v1/admin/oauth-clients/{id}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.GetAndDeleteClient_RemovesRegistration"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "delete-api-v1-admin-oauth-scopes-scope",
+      "route": "/api/v1/admin/oauth-scopes/{scope}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "delete-api-v1-admin-oidc-providers-id",
       "route": "/api/v1/admin/oidc/providers/{id}",
       "method": "DELETE",
@@ -587,6 +613,20 @@
       "maturity": "implemented"
     },
     {
+      "id": "delete-mcp",
+      "route": "/mcp",
+      "method": "DELETE",
+      "family": "MCP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_TerminatesSession_AndSubsequentUseReturns404",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_UnknownSession_Returns404"
+      ],
+      "proof_ledger_surface": "mcp-operator",
+      "maturity": "implemented"
+    },
+    {
       "id": "delete-odata-features-layerid-layerid-objectid-objectid",
       "route": "/odata/Features(LayerId={layerId},ObjectId={objectId})",
       "method": "DELETE",
@@ -841,7 +881,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.CreateAndListApiKeys_ReturnsPlaintextOnlyAtCreation"
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.CreateAndListApiKeys_ReturnsPlaintextOnlyAtCreation",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.FullAdminApiKey_PassesAdminEndpoint",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -1276,6 +1318,19 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetFeatureOverview_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ProEdition_ShowsUpgradeMessagesForEnterprise",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ReturnsEditionAndFeatures"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-field-workflows-exports",
+      "route": "/api/v1/admin/field-workflows/exports",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_GeoJson_ReturnsPackageRecordsAuditsAndListsHistory"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -2222,6 +2277,46 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Get_AfterRegister_ReturnsDataset",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Get_Missing_Returns404"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-oauth-clients",
+      "route": "/api/v1/admin/oauth-clients",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.ManagementSurface_RequiresAdminAuthorization",
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.RegisterAndListClient_ReturnsSecretOnlyAtCreation"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-oauth-clients-id",
+      "route": "/api/v1/admin/oauth-clients/{id}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.GetAndDeleteClient_RemovesRegistration"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-oauth-scopes",
+      "route": "/api/v1/admin/oauth-scopes",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -4417,6 +4512,21 @@
         "Honua.Server.Tests.Infrastructure.Middleware.SecurityHeadersMiddlewareTests.SecurityHeaders_MultipleRequests_ConsistentlyAppliesHeaders"
       ],
       "proof_ledger_surface": "platform-http",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-mcp",
+      "route": "/mcp",
+      "method": "GET",
+      "family": "MCP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_WithValidSession_OpensEventStream",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_WithoutEventStreamAccept_Returns405",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_WithoutValidSession_Returns404"
+      ],
+      "proof_ledger_surface": "mcp-operator",
       "maturity": "implemented"
     },
     {
@@ -10901,6 +11011,21 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-admin-field-workflows-exports",
+      "route": "/api/v1/admin/field-workflows/exports",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_Csv_ReturnsCsvWithHeaderAndFilteredRows",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_GeoJson_ReturnsPackageRecordsAuditsAndListsHistory",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_InvalidFormat_Returns400"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-admin-field-workflows-submissions-submissionid-assignment",
       "route": "/api/v1/admin/field-workflows/submissions/{submissionId}/assignment",
       "method": "POST",
@@ -11859,6 +11984,20 @@
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_DuplicateId_Returns409",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_UnsafeEdgeTable_Returns400",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_ValidPayload_Returns201WithDto"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-oauth-clients",
+      "route": "/api/v1/admin/oauth-clients",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.RegisterAndListClient_ReturnsSecretOnlyAtCreation",
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.RegisterClient_WithInvalidClientType_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -13266,7 +13405,9 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.EmptyBatch_ReturnsInvalidRequestWithNullId",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.EmptyBody_ReturnsParseErrorWithNullId",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.FractionalId_IsRejectedAsInvalidRequest",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_Failure_DoesNotIssueSessionHeader",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_MissingClientInfo_ReturnsInvalidArgumentJsonRpcError",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_Success_IssuesMcpSessionIdHeader",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_WithSupportedVersion_NegotiatesAndReturnsServerInfo",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_WithUnsupportedVersion_FallsBackToLatestServerVersion",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_WithoutParams_ReturnsInvalidArgumentJsonRpcError",
@@ -13279,6 +13420,9 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.NullId_IsRejectedAsInvalidRequest",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ObjectId_IsRejectedAsInvalidRequest",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.PrimitiveBody_ReturnsInvalidRequestWithNullId",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithEventStreamAccept_ReturnsSseMessageFrame",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithIssuedSessionId_IsAccepted",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithUnknownSessionId_Returns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ResourceTemplatesList_AdvertisesParameterizedUris",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ResourcesList_ExcludesParameterizedUris",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ResourcesRead_UnknownUri_ReturnsResourceNotFoundJsonRpcCode",
@@ -15993,8 +16137,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_AllItemsHaveStacFields",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WhenMorePagesExist_EmitsConformantPostNextLink",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithBbox_ReturnsFilteredResults",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithBody_ReturnsItems",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithInvalidPaginationToken_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithInvalidSortDirection_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithInvalidThreeDimensionalBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithOutOfRangeBbox_ReturnsBadRequest",
@@ -16540,6 +16686,19 @@
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_ChangesMutableFields",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_Missing_Returns404",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_UnsafeVertexTable_Returns400"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "put-api-v1-admin-oauth-scopes",
+      "route": "/api/v1/admin/oauth-scopes",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"

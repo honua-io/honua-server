@@ -586,6 +586,10 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/decision"),
         new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/comments"),
 
+        // Back-office field export packages (#1160)
+        new("POST", "/api/v1/admin/field-workflows/exports"),
+        new("GET", "/api/v1/admin/field-workflows/exports"),
+
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
         new("GET", "/api/v1/admin/tile-operations/jobs"),

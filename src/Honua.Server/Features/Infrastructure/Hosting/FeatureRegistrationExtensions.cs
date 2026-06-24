@@ -22,6 +22,7 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Forms;
 using Honua.Server.Features.FieldWorkflows;
+using Honua.Server.Features.FieldWorkflows.Export;
 using Honua.Server.Features.FieldWorkflows.Review;
 using Honua.Ai.Grounding.Spec;
 using Honua.Protocols.GeoServices.GeometryService;
@@ -235,6 +236,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapGeocodingEndpoints();
         endpoints.MapFormPackageEndpoints();
         endpoints.MapFieldReviewEndpoints();
+        endpoints.MapFieldExportEndpoints();
         endpoints.MapCogEndpoints();
         endpoints.MapMultidimensionalCoverageEndpoints();
         endpoints.MapZarrEndpoints();
