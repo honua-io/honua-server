@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Scene;
 
 namespace Honua.Protocols.Scene.I3s;
 
@@ -66,9 +67,21 @@ internal static class I3sSceneServiceBuilder
     /// z-bearing <c>fullExtent</c>; otherwise the vertical extent is omitted
     /// rather than fabricated.
     /// </param>
+    /// <param name="datasetType">
+    /// The dataset's I3S source kind, mapped to the advertised <c>layerType</c>
+    /// and store <c>profile</c> (#1812).
+    /// </param>
+    /// <param name="advertiseNodePages">
+    /// When <see langword="true"/>, the store advertises <c>nodePages</c> and a
+    /// <c>defaultGeometrySchema</c> so a conformant client traverses the layer
+    /// through <c>nodepages/{n}</c> (#1809). Only set when the tileset actually
+    /// projects to fetchable node pages.
+    /// </param>
     public static I3sSceneLayerDocument BuildLayer(
         SceneDataset scene,
-        SceneExtent? extent)
+        SceneExtent? extent,
+        SceneDatasetType datasetType = SceneDatasetType.HostedTiles,
+        bool advertiseNodePages = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
 
@@ -92,10 +105,39 @@ internal static class I3sSceneServiceBuilder
                 SpatialReference = spatialReference,
             };
 
+        // #1812: advertise the I3S layerType + store profile the dataset's source
+        // kind maps to (3DObject / Building / PointCloud) instead of a hardcoded
+        // 3DObject.
+        var layerType = I3sLayerTypeMap.ToLayerType(datasetType);
+        var storeProfile = I3sLayerTypeMap.ToStoreProfile(datasetType);
+
+        var store = new I3sStore
+        {
+            Id = scene.Id,
+            Profile = storeProfile,
+            Version = I3sVersion,
+            NormalReferenceFrame = "east-north-up",
+        };
+
+        // #1809: once the layer's tileset projects to fetchable node pages, the
+        // store advertises store.nodePages so a conformant client traverses the
+        // layer through nodepages/{n}. When no node pages are available (e.g. a
+        // config-registry scene with no loadable tileset) the store stays a
+        // descriptor-only block rather than advertising a node URL that 404s.
+        if (advertiseNodePages)
+        {
+            store.NodePages = new I3sNodePageDefinition
+            {
+                NodesPerPage = I3sNodePageProjector.NodesPerPage,
+                LodSelectionMetricType = I3sNodePageProjector.LodSelectionMetricType,
+            };
+            store.DefaultGeometrySchema = DefaultGeometryDefinitions[0];
+        }
+
         return new I3sSceneLayerDocument
         {
             Id = LayerId,
-            LayerType = DefaultLayerType,
+            LayerType = layerType,
             Name = scene.Name,
             Description = scene.Description,
             Version = I3sVersion,
@@ -107,23 +149,10 @@ internal static class I3sSceneServiceBuilder
                 HeightUnit = "meter",
             },
             FullExtent = fullExtent,
-            // Descriptor preview only: do NOT advertise a fetchable rootNode /
-            // node-page store, because the server maps no node/geometry routes
-            // yet (#1202, hard lane #1809-1811). Advertising one would make
-            // conformant clients request a node URL that 404s. Only the
-            // honestly-servable store scalars are emitted here.
-            Store = new I3sStore
-            {
-                Id = scene.Id,
-                Profile = "meshpyramids",
-                Version = I3sVersion,
-            },
-            // Format definitions/schema that DESCRIBE the served 3D Object
-            // format (vertex/material/texture/attribute layout). These are
-            // honest, inert metadata — they tell a client what a node *would*
-            // contain — and crucially do NOT advertise any fetchable node /
-            // node-page resource, keeping the no-advertised-but-404 stance
-            // (#1202) while enriching the 1.7 descriptor.
+            Store = store,
+            // Format definitions/schema that DESCRIBE the served format
+            // (vertex/material/texture/attribute layout) and bind the node-page
+            // resource references emitted by I3sNodePageProjector.
             AttributeStorageInfo = DefaultAttributeStorageInfo,
             GeometryDefinitions = DefaultGeometryDefinitions,
             MaterialDefinitions = DefaultMaterialDefinitions,
@@ -213,9 +242,19 @@ internal static class I3sSceneServiceBuilder
     /// <param name="extent">
     /// The scene's WGS-84 extent (optionally z-bearing), when known.
     /// </param>
+    /// <param name="datasetType">
+    /// The dataset's I3S source kind, mapped to the advertised <c>layerType</c>
+    /// and store <c>profile</c> (#1812).
+    /// </param>
+    /// <param name="advertiseNodePages">
+    /// When <see langword="true"/>, the layer store advertises <c>nodePages</c>
+    /// so a client traverses the layer through <c>nodepages/{n}</c> (#1809).
+    /// </param>
     public static I3sSceneServiceDocument BuildService(
         SceneDataset scene,
-        SceneExtent? extent)
+        SceneExtent? extent,
+        SceneDatasetType datasetType = SceneDatasetType.HostedTiles,
+        bool advertiseNodePages = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
 
@@ -224,7 +263,7 @@ internal static class I3sSceneServiceBuilder
             ServiceName = scene.Name,
             ServiceVersion = I3sVersion,
             SupportedBindings = ["REST"],
-            Layers = [BuildLayer(scene, extent)],
+            Layers = [BuildLayer(scene, extent, datasetType, advertiseNodePages)],
         };
     }
 }

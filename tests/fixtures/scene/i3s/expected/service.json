@@ -1,0 +1,19 @@
+{
+  "serviceName": "I3S Conformance Fixture Scene",
+  "serviceVersion": "1.7",
+  "supportedBindings": ["REST"],
+  "layers": [
+    {
+      "id": 0,
+      "layerType": "3DObject",
+      "version": "1.7",
+      "store": {
+        "profile": "meshpyramids",
+        "nodePages": {
+          "nodesPerPage": 64,
+          "lodSelectionMetricType": "maxScreenThresholdSQ"
+        }
+      }
+    }
+  ]
+}

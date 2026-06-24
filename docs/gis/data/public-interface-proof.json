@@ -3044,11 +3044,31 @@
             "src/Honua.Server/EndpointRegistry.cs",
             "src/Honua.Protocols.Scene/I3s/I3sSceneServerEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sSceneServerEndpointTests.cs"
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sSceneServerEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sConformanceFixtureTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#1202",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "I3S 1.7 node-page traversal (nodepages/{n} projected from the hosted 3D Tiles node tree: oriented bounding boxes in the index CRS, lodThreshold from geometric error, parent/child references by global node index, and per-node geometry/attribute/material resource references), per-field attribute statistics (statistics/f_{n}/0), and SceneDatasetType -> I3S layerType mapping (3DObject/Building/PointCloud) validated end-to-end against a Honua-authored synthetic I3S 1.7 conformance fixture by a protocol-shape validator; the served node pages reference geometry/attribute/texture by index but the binary node resources (nodes/{id}/geometries|textures|attributes) remain a tracked follow-up (#1810/#1811)",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Scene/I3sNodePageProjector.cs",
+            "src/Honua.Scene/I3sNodeStore.cs",
+            "src/Honua.Scene/I3sSceneStatisticsBuilder.cs",
+            "src/Honua.Scene/I3sLayerTypeMap.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sConformanceFixtureTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sProtocolShapeValidator.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Scene/I3sNodePageProjectorTests.cs",
+            "tests/fixtures/scene/i3s/source-tileset/tileset.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1809",
           "versionCaptureRule": null
         },
         {
