@@ -1,6 +1,6 @@
 {
   "contractVersion": "workflow-generation-contract-v1",
-  "description": "Deterministic fixtures for natural-language workflow.package generation. Replayed by DeterministicWorkflowGenerationProvider so CI/eval can exercise the full grounding -> generate -> validate path with no live model. Node types reference the built-in geoprocessing process catalog.",
+  "description": "Deterministic fixtures for natural-language workflow.package generation. Replayed by DeterministicWorkflowGenerationProvider so CI/eval can exercise the full grounding -> generate -> validate path with no live model. Node types reference the built-in geoprocessing process catalog and the authoring/publishing catalog (publish/style/map/dashboard/STAC, honua-server#1759).",
   "scenarios": [
     {
       "id": "nightly-etl-publish",
@@ -83,6 +83,136 @@
         "rationale": "No node type can deliver a physical carrier pigeon, so that step cannot be built.",
         "unmappedRequests": [ "send a carrier pigeon to the county office" ],
         "capabilityState": { "name": "carrier-pigeon", "state": "unsupported", "reason": "No node type maps to physical mail delivery." }
+      }
+    },
+    {
+      "id": "authoring-publish-multiprotocol",
+      "case": "generated",
+      "prompt": "Publish maui-parcels as a FeatureServer and OGC API Features service.",
+      "generation": {
+        "status": "generated",
+        "provider": "deterministic",
+        "model": "deterministic-fixture",
+        "rationale": "Proposed a single publish node that exposes the maui-parcels layer as a FeatureServer plus OGC API Features service.",
+        "graph": {
+          "schemaVersion": "workflow-package.v1",
+          "nodes": [
+            {
+              "nodeId": "publish-maui-parcels",
+              "nodeTypeId": "authoring:publish.multiprotocol",
+              "parameters": {
+                "sourceLayerId": "42",
+                "serviceName": "maui-parcels",
+                "protocols": "feature-server,ogc-features"
+              }
+            }
+          ],
+          "edges": []
+        }
+      }
+    },
+    {
+      "id": "authoring-style-choropleth",
+      "case": "generated",
+      "prompt": "Style the parcels layer as a choropleth by assessed value.",
+      "generation": {
+        "status": "generated",
+        "provider": "deterministic",
+        "model": "deterministic-fixture",
+        "rationale": "Proposed a choropleth style node keyed on the assessed_value attribute over the parcels layer.",
+        "graph": {
+          "schemaVersion": "workflow-package.v1",
+          "nodes": [
+            {
+              "nodeId": "style-parcels",
+              "nodeTypeId": "authoring:style.choropleth",
+              "parameters": {
+                "layerId": "42",
+                "attribute": "assessed_value",
+                "classes": "5",
+                "colorRamp": "Blues"
+              }
+            }
+          ],
+          "edges": []
+        }
+      }
+    },
+    {
+      "id": "authoring-web-map-with-legend",
+      "case": "generated",
+      "prompt": "Build a web map of parcels, zoning, and flood with a legend.",
+      "generation": {
+        "status": "generated",
+        "provider": "deterministic",
+        "model": "deterministic-fixture",
+        "rationale": "Proposed a web map node composing the parcels, zoning, and flood layers with a legend.",
+        "graph": {
+          "schemaVersion": "workflow-package.v1",
+          "nodes": [
+            {
+              "nodeId": "build-map",
+              "nodeTypeId": "authoring:map.web-map",
+              "parameters": {
+                "title": "Parcels, Zoning, and Flood",
+                "layers": "parcels,zoning,flood",
+                "includeLegend": "true"
+              }
+            }
+          ],
+          "edges": []
+        }
+      }
+    },
+    {
+      "id": "authoring-dashboard",
+      "case": "generated",
+      "prompt": "Create a dashboard with a map and a chart of permits by district.",
+      "generation": {
+        "status": "generated",
+        "provider": "deterministic",
+        "model": "deterministic-fixture",
+        "rationale": "Proposed a dashboard node composing a map widget and a chart widget for permits by district.",
+        "graph": {
+          "schemaVersion": "workflow-package.v1",
+          "nodes": [
+            {
+              "nodeId": "build-dashboard",
+              "nodeTypeId": "authoring:dashboard.build",
+              "parameters": {
+                "title": "Permits by District",
+                "widgets": "map,chart"
+              }
+            }
+          ],
+          "edges": []
+        }
+      }
+    },
+    {
+      "id": "authoring-stac-catalog",
+      "case": "generated",
+      "prompt": "Create a STAC catalog over the Maui drone imagery.",
+      "generation": {
+        "status": "generated",
+        "provider": "deterministic",
+        "model": "deterministic-fixture",
+        "rationale": "Proposed a STAC catalog node indexing the Maui drone imagery into a STAC collection.",
+        "graph": {
+          "schemaVersion": "workflow-package.v1",
+          "nodes": [
+            {
+              "nodeId": "build-stac",
+              "nodeTypeId": "authoring:stac.catalog",
+              "parameters": {
+                "catalogId": "maui-drone",
+                "assetSource": "s3://maui/drone-imagery",
+                "collectionId": "maui-drone-2026"
+              }
+            }
+          ],
+          "edges": []
+        }
       }
     }
   ]

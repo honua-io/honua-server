@@ -21,6 +21,7 @@ internal static class WorkflowPackageServiceCollectionExtensions
         services.TryAddSingleton<IWorkflowPackageStore>(sp =>
             sp.GetRequiredService<InMemoryWorkflowPackageStore>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IWorkflowNodeProvider, ProcessCatalogWorkflowNodeProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IWorkflowNodeProvider, AuthoringWorkflowNodeProvider>());
         services.TryAddSingleton<IWorkflowNodeRegistry, WorkflowNodeRegistry>();
         services.TryAddScoped(sp => new WorkflowPackageService(
             sp.GetRequiredService<IWorkflowPackageStore>(),
