@@ -5208,7 +5208,7 @@
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.StoryCollection_AfterReset_ReturnsSeededOgcFeatures",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_FormatParameterOverridesAcceptHeader",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_ReturnsResponseWithPagingLinksAndTimeStamp",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_With3dBbox_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_With3dBbox_AcceptsAndUsesHorizontalExtent",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithBbox_ExcludesNullGeometryFeatures",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithCql2TextTemporalInstantOnAttributeField_Returns200",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithCql2TextTemporalOnUndefinedField_Returns400",
@@ -7251,6 +7251,24 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-geometries-geometryid-int",
+      "route": "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
+      "method": "GET",
+      "family": "I3S",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_CommunityEdition_Returns403",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_EnterpriseEdition_ReturnsTranscodedI3sBuffer",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_SceneWithNoTranscodableGeometry_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_UnknownGeometryId_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_UnknownLayerId_Returns404"
+      ],
+      "proof_ledger_surface": "i3s-sceneserver",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-serviceid-featureserver",
       "route": "/rest/services/{serviceId}/FeatureServer",
       "method": "GET",
@@ -9279,6 +9297,19 @@
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetLayer_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetLayer_SceneWithPersistedExtent_PopulatesFullExtent",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetLayer_UnknownLayerId_Returns404"
+      ],
+      "proof_ledger_surface": "scenes-3dtiles",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-geometries-geometryid-int",
+      "route": "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
+      "method": "GET",
+      "family": "3D-Tiles",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_AtScenesAlias_ReturnsTranscodedI3sBuffer"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented"

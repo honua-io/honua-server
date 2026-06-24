@@ -801,6 +801,11 @@ public static class EndpointRegistry
         new("GET", "/scenes/{sceneId}/SceneServer"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}"),
 
+        // I3S node geometry binary resource (#1810): transcoded renderable
+        // geometry served at the node/geometries path (GeoServices + /scenes alias).
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
+
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
 
