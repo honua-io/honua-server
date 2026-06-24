@@ -97,12 +97,17 @@ internal sealed partial class FeatureQueryBuilder
 
     private static IEnumerable<MetadataV2Field> GetEncodedBinaryAttributeFields(MetadataV2Resource resource, FeatureQuery query)
     {
+        // Field-level security (#1940): drop masked columns from the binary-format
+        // projection regardless of the requested outFields (fail-secure).
+        var maskedFields = ResolveMaskedFields(query);
+
         var includeAllFields = !query.OutFields.HasValue || query.OutFields.Value.IsDefaultOrEmpty;
         if (includeAllFields)
         {
             return resource.SchemaFields
                 .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
-                .Where(field => !IsObjectIdField(field.Name));
+                .Where(field => !IsObjectIdField(field.Name))
+                .Where(field => !maskedFields.Contains(field.Name));
         }
 
         var requestedOutFields = query.OutFields.GetValueOrDefault();
@@ -115,6 +120,7 @@ internal sealed partial class FeatureQueryBuilder
         var availableFields = resource.SchemaFields
             .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
             .Where(field => !IsObjectIdField(field.Name))
+            .Where(field => !maskedFields.Contains(field.Name))
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
 
         var orderedFields = new List<MetadataV2Field>(requestedOutFields.Length);

@@ -232,6 +232,15 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register Postgres-backed field-level security (column masking) policy store
+        // (#1940). Backs IFieldMaskPolicyStore so per-layer attribute-masking policies are
+        // durable and shared across scaled nodes; resolved per-request and dropped from
+        // query output at the shared projection seam.
+        services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IFieldMaskPolicyStore>(serviceProvider =>
+            new Features.Authorization.PostgresFieldMaskPolicyStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>
             new PostgresLayerStyleCatalog(

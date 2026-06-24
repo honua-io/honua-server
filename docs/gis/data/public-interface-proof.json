@@ -384,6 +384,52 @@
       ]
     },
     {
+      "surfaceId": "field-mask-policy-admin",
+      "displayName": "Field-level security (column masking) policy admin API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/field-mask-policies/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/field-mask-policies"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus FieldMaskPolicyEndpointsTests integration tests assert field-mask policy create/list/get/delete, admin authorization, and that a restricted role's query response drops the masked column while an unrestricted role still receives it.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Admin/FieldMaskPolicyEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/FieldMaskPolicyEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1940",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Field-level masking is resolved per-request from the caller's roles and the layer's field-mask policies, then dropped from the projected attributes at the shared projection seam inside the feature store (the column-masking companion to the EnforcedSqlFilter chokepoint used for rows). Integration tests prove a restricted role never receives a masked column even when it explicitly requests it via outFields, covering every query protocol and output format.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Hosting/Features/Authentication/FieldMaskSource.cs",
+            "src/Honua.Postgres/Features/FeatureStore/PostgresFeatureStore.cs",
+            "src/Honua.Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.SelectClauses.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/FieldMaskPolicyEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1940",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "console-workflow-packages",
       "displayName": "Console workflow package and node registry API",
       "surfaceKind": "http-route-family",
