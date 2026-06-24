@@ -315,9 +315,7 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        var writer = HasZ(feature.Geometry)
-            ? new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false)
-            : wkbWriter;
+        var writer = SelectWkbWriter(feature.Geometry, wkbWriter);
         var wkb = writer.Write(feature.Geometry);
 
         if (wkb.Length > _limits.MaxWkbSize)
@@ -339,5 +337,27 @@ internal sealed partial class StreamingFileImportService
         }
 
         return wkb;
+    }
+
+    /// <summary>
+    /// Picks the WKB writer dimensionality from the actual source geometry so XYZ,
+    /// XYM, and XYZM features round-trip their Z/M ordinates instead of being
+    /// silently flattened (#1981). 2-D geometries reuse the shared plain writer:
+    /// forcing emitZ/emitM on plain XY coordinates serializes NaN Z/M ordinates
+    /// that PostGIS rejects, dropping otherwise-valid rows. Each higher-dimension
+    /// writer is allocated per call because <see cref="WKBWriter"/> is not
+    /// thread-safe and is shared across concurrent batch workers.
+    /// </summary>
+    private static WKBWriter SelectWkbWriter(
+        NetTopologySuite.Geometries.Geometry geometry,
+        WKBWriter plainWriter)
+    {
+        var (hasZ, hasM) = DetectZm(geometry);
+        if (!hasZ && !hasM)
+        {
+            return plainWriter;
+        }
+
+        return new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: hasZ, emitM: hasM);
     }
 }
