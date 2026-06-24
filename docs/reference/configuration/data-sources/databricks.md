@@ -95,7 +95,9 @@ attribute identifiers are validated against a simple-identifier allow-list at st
 | Count | Yes |
 | Extent (envelope) | Yes (requires `ST_*`) |
 | Envelope/bbox spatial filter | Yes (`st_intersects`, requires `ST_*`) |
-| Statistics / top-features / date-bins / bins / H3 | No |
+| Attribute/spatial `where` (canonical filter translation) | Yes (parsed to the shared AST, translated to parameterized Spark SQL) |
+| Statistics (`outStatistics` + `groupByFieldsForStatistics`) | Yes (COUNT/SUM/MIN/MAX/AVG/STDDEV/VAR) |
+| Top-features / date-bins / bins / H3 | No |
 | Native MVT / FlatGeobuf / Geobuf / GML | No (shared formatters handle output) |
 | Streaming GeoJSON | No |
 | Edits (create/update/delete/transactions) | No — provider is read-only |
@@ -109,14 +111,24 @@ attribute identifiers are validated against a simple-identifier allow-list at st
   `ST_GeomFromText`, `ST_Intersects`, and the `ST_*min/max` aggregates require a
   Databricks runtime / DBSQL build that ships the spatial functions. On warehouses
   without them, geometry, extent, and spatial-filter queries will fail.
-- **`WHERE` is forwarded verbatim.** The canonical GeoServices-style `where` clause is
-  passed through as a Spark-SQL predicate without re-parsing. It is assumed to be
-  Spark-SQL compatible.
-- **Unsupported query shapes fail loudly.** Parameterized SQL filters, enforced/security
-  SQL filters, temporal filters, and non-envelope spatial filters throw
-  `NotSupportedException` rather than silently returning over-broad results.
+- **`WHERE` is re-parsed, not forwarded verbatim.** The GeoServices-style `where` clause is
+  parsed into the shared filter AST and translated into parameterized Spark SQL
+  (backtick-quoted identifiers, `:pN` bind markers). Literal operands are bound as
+  parameters, and field names are validated against the configured columns, so the raw
+  client string never reaches the warehouse SQL unparsed.
+- **Statistics use the shared pipeline.** `outStatistics` (with optional
+  `groupByFieldsForStatistics`) is translated to Spark aggregates (COUNT/SUM/MIN/MAX/AVG,
+  plus `STDDEV_SAMP`/`VAR_SAMP`) honoring the same WHERE/spatial filters as the SELECT.
+- **Unsupported query shapes fail loudly.** Enforced/security SQL filters, temporal filters,
+  distance predicates, scalar SQL functions (EXTRACT/SUBSTRING/CAST, …), and non-envelope
+  spatial filters throw `NotSupportedException` rather than silently returning over-broad
+  results. A pre-translated (Postgres-flavored) `SqlFilter` without the canonical `where`
+  text is likewise rejected.
 - **No schema introspection.** Attribute columns must be listed explicitly per layer.
-- **Statistics and analytics are deferred** to the hardening follow-up.
+- **Deferred to the hardening follow-up (#1719):** Metadata-v2 binding
+  (`IBindableFeatureDataProvider`) so layers resolve from secure connections rather than
+  static config, and a retry/resilience policy on the submit/poll loop. Top-features,
+  date/value bins, and H3 aggregation remain unsupported.
 
 Provider selection variables are listed in the
 [environment variable reference](../environment-variables.md#database-and-providers).
