@@ -499,20 +499,27 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_With3dBbox_ReturnsBadRequest()
+    public async Task GetItems_With3dBbox_AcceptsAndUsesHorizontalExtent()
     {
-        // Arrange - 3D bbox (minx, miny, minz, maxx, maxy, maxz)
+        // Arrange - 3D bbox (minx, miny, minz, maxx, maxy, maxz). A 6-element bbox is
+        // spec-legal per OGC API Features Part 1; this 2D feature surface ignores the
+        // vertical (minZ/maxZ) component and filters on the horizontal extent instead of
+        // rejecting the request, so 3D-aware OGC/ArcGIS clients are not refused (#1987).
         var bbox = "-180,-90,-10,180,90,10";
 
         // Act
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("3D bounding boxes are not supported");
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        json.RootElement.TryGetProperty("features", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
