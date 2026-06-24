@@ -81,6 +81,12 @@ public sealed class RoutingConfigurationValidator : IValidateOptions<RoutingConf
             errors.Add("Routing:NetworkDatasetId is required.");
         }
 
+        if (!Enum.IsDefined(options.CostUnit))
+        {
+            errors.Add(
+                "Routing:CostUnit must be one of Minutes, Seconds, or Hours (the declared physical unit of the topology cost/reverse_cost weight).");
+        }
+
         return errors.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(errors);
