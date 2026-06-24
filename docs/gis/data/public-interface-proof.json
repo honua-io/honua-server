@@ -1412,6 +1412,52 @@
           "status": "implemented",
           "linkedTicket": "honua-io/honua-server#1241",
           "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus OAuth2 RFC 7662 introspection integration tests (opt-in JWT + introspection, ADR-0054)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalTokenIntrospectionService.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalJwtAccessTokenService.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingOAuth2IntrospectionTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#1890",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus client_credentials IdP/OIDC federation integration tests (opt-in, ADR-0053 Increment 3)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Hosting/Features/Authentication/ClientCredentialsFederationService.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalOAuthTokenService.cs",
+            "tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/ClientCredentialsFederationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#1889",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus Portal community-group and item-sharing integration tests (#1868)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalGroupStore.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalItemSharingStore.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingCommunityTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#1868",
+          "versionCaptureRule": null
         }
       ]
     },

@@ -15,6 +15,12 @@ namespace Honua.Protocols.GeoServices.Sharing;
 [JsonSerializable(typeof(PortalItem))]
 [JsonSerializable(typeof(OAuth2TokenResponse))]
 [JsonSerializable(typeof(OAuth2ErrorResponse))]
+[JsonSerializable(typeof(OAuth2IntrospectionResponse))]
+[JsonSerializable(typeof(GroupResponse))]
+[JsonSerializable(typeof(GroupOperationResponse))]
+[JsonSerializable(typeof(GroupMembershipResponse))]
+[JsonSerializable(typeof(ItemSharingResponse))]
+[JsonSerializable(typeof(ItemSharingState))]
 internal sealed partial class SharingRestJsonContext : JsonSerializerContext
 {
 }
