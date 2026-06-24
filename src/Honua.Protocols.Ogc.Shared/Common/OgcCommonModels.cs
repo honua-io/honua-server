@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
 
@@ -111,6 +112,26 @@ public sealed record Link : ILink
     [JsonPropertyName("method")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Method { get; init; }
+
+    /// <summary>
+    /// For POST links (e.g. the STAC API <c>next</c> link), indicates whether
+    /// the <see cref="Body"/> should be merged with the originating request body
+    /// (<c>true</c>) or used verbatim (<c>false</c>/omitted). Defined by the STAC
+    /// API pagination contract. Only serialized when set.
+    /// </summary>
+    [JsonPropertyName("merge")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Merge { get; init; }
+
+    /// <summary>
+    /// For POST links, the JSON request body the client should send when
+    /// following the link (e.g. the continuation token/offset for the STAC API
+    /// <c>next</c> link). Combined with <see cref="Merge"/> per the STAC API
+    /// pagination contract. Only serialized when set.
+    /// </summary>
+    [JsonPropertyName("body")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Body { get; init; }
 
     /// <summary>
     /// Creates a link with required properties.

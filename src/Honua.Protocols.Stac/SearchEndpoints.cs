@@ -137,15 +137,22 @@ internal static class SearchEndpoints
             "/stac/search",
             HttpMethods.Post);
 
+        if (!TryParseContinuationToken(request.Token, out var postOffset))
+        {
+            StacTelemetry.SetFailed(activity, "invalid_pagination_token");
+            return StandardErrorHelpers.CreateBadRequest(context, "Invalid pagination token.");
+        }
+
         return await ExecuteSearchAsync(
             request,
-            0,
+            postOffset,
             context,
             deps.FeatureReader,
             deps.GeometryService,
             deps.FilterProcessor,
             defaultFilterLangIsText: false,
-            deps.Logger);
+            deps.Logger,
+            isPostSearch: true);
     }
 
     private static async Task<IResult> ExecuteSearchAsync(
@@ -156,7 +163,8 @@ internal static class SearchEndpoints
         IGeometryService geometryService,
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
-        ILogger logger)
+        ILogger logger,
+        bool isPostSearch = false)
     {
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.SearchExecute,
@@ -257,7 +265,8 @@ internal static class SearchEndpoints
                     logger,
                     targetList,
                     normalizedIds,
-                    effectiveLimit);
+                    effectiveLimit,
+                    isPostSearch);
             }
 
             var allTargets = targets.ToArray();
@@ -274,7 +283,8 @@ internal static class SearchEndpoints
                 logger,
                 allTargets,
                 null,
-                effectiveLimit);
+                effectiveLimit,
+                isPostSearch);
         }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -303,7 +313,8 @@ internal static class SearchEndpoints
         ILogger logger,
         StacV2Lookups.ResolvedStacPublication[] targets,
         ImmutableArray<string>? requestedItemIds,
-        int effectiveLimit)
+        int effectiveLimit,
+        bool isPostSearch)
     {
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.SearchWork,
@@ -419,13 +430,15 @@ internal static class SearchEndpoints
                 title: "STAC Catalog"));
 
             var nextOffset = offset + allItems.Count;
-            if (totalMatched > nextOffset)
+            if (totalMatched > nextOffset && allItems.Count > 0)
             {
-                linksBuilder.Add(Link.Create(
-                    href: $"{stacBase}/search?{BuildSearchQuery(effectiveLimit, nextOffset, request, defaultFilterLangIsText)}",
-                    rel: "next",
-                    type: MediaTypes.GeoJson,
-                    title: "Next page"));
+                linksBuilder.Add(isPostSearch
+                    ? CreatePostNextLink(stacBase, nextOffset)
+                    : Link.Create(
+                        href: $"{stacBase}/search?{BuildSearchQuery(effectiveLimit, nextOffset, request, defaultFilterLangIsText)}",
+                        rel: "next",
+                        type: MediaTypes.GeoJson,
+                        title: "Next page"));
             }
 
             var response = new StacItemCollection
@@ -1521,6 +1534,60 @@ internal static class SearchEndpoints
         }
 
         return string.Join("&", query);
+    }
+
+    private const string ContinuationTokenPrefix = "offset:";
+
+    /// <summary>
+    /// Parses an opaque POST-search continuation token (as emitted in the
+    /// <c>next</c> link body) into the offset of the next page. A null/empty
+    /// token means "start at the first page" (offset 0).
+    /// </summary>
+    private static bool TryParseContinuationToken(string? token, out int offset)
+    {
+        offset = 0;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return true;
+        }
+
+        if (!token.StartsWith(ContinuationTokenPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var value = token.AsSpan(ContinuationTokenPrefix.Length);
+        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0)
+        {
+            offset = parsed;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Builds a spec-conformant POST <c>next</c> link for POST item-search:
+    /// <c>method: POST</c>, <c>merge: true</c>, and a JSON <c>body</c> carrying
+    /// the continuation token that is merged with the originating request body.
+    /// </summary>
+    private static Link CreatePostNextLink(string stacBase, int nextOffset)
+    {
+        var token = ContinuationTokenPrefix + nextOffset.ToString(CultureInfo.InvariantCulture);
+        var body = JsonSerializer.SerializeToElement(
+            new Dictionary<string, object?> { ["token"] = token },
+            StacJsonContext.Default.DictionaryStringObject);
+
+        return new Link
+        {
+            Href = $"{stacBase}/search",
+            Rel = "next",
+            Type = MediaTypes.GeoJson,
+            Title = "Next page",
+            Method = HttpMethods.Post,
+            Merge = true,
+            Body = body
+        };
     }
 
     private static bool TryRequireTenantContext(HttpContext context, Activity? activity, out IResult? error)
