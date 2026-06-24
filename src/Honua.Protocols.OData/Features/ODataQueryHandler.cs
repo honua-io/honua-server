@@ -494,21 +494,25 @@ internal sealed partial class ODataQueryHandler(
                     effectiveToken);
             }
 
-            // Build feature query using query service. Probe one extra row beyond the
-            // requested page (Limit + 1) so @odata.nextLink can be decided from whether a
-            // full page came back, independent of provider TotalCount fidelity. The
-            // optimized Postgres path derives TotalCount from a COUNT(*) OVER() column, but
-            // the ExtractTotalCount fallback (and read-only non-Postgres providers) can
-            // degrade TotalCount to the page length, which would suppress nextLink and
-            // silently truncate paging. The streaming path guards this the same way (#1989).
-            // A $top=0 GeoParquet export keeps Limit 0 (an empty page, no probe row).
-            var probeLimit = pagination.Limit is > 0 and < int.MaxValue
-                ? pagination.Limit + 1
-                : pagination.Limit;
+            // Build feature query using query service with the clamped page size, then
+            // probe one extra row beyond the requested page (Limit + 1) so @odata.nextLink
+            // can be decided from whether a full page came back, independent of provider
+            // TotalCount fidelity. The optimized Postgres path derives TotalCount from a
+            // COUNT(*) OVER() column, but the ExtractTotalCount fallback (and read-only
+            // non-Postgres providers) can degrade TotalCount to the page length, which
+            // would suppress nextLink and silently truncate paging. The streaming path
+            // guards this the same way (#1989).
+            //
+            // The probe is applied AFTER the build, on the materialized FeatureQuery, rather
+            // than by inflating the requested $top: the OData query-parameter adapter clamps
+            // $top to OData:MaxPageSize (#1644), so a pre-build Limit + 1 would be clamped
+            // straight back to the page size and drop the probe row — truncating paging at
+            // the first server page (#1989). pagination.Limit is already clamped to
+            // MaxPageSize, so probing the built query keeps the +1 row intact.
             var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
                 effectiveFilter,
                 orderby,
-                probeLimit,
+                pagination.Limit,
                 pagination.Offset,
                 resource,
                 select,
@@ -522,6 +526,11 @@ internal sealed partial class ODataQueryHandler(
             if (queryError != null)
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
+            }
+
+            if (featureQuery.Limit is > 0 and < int.MaxValue)
+            {
+                featureQuery = featureQuery with { Limit = featureQuery.Limit.Value + 1 };
             }
 
             var canCache = ResponseCacheUtilities.ShouldCache(context, _cacheOptions) &&
@@ -769,11 +778,16 @@ internal sealed partial class ODataQueryHandler(
         long? totalCount = null;
         if (count == true)
         {
+            // The count is the true total of the filtered set, independent of the empty
+            // ($top=0) data page. Build the count query with a null limit rather than the
+            // page's Limit of 0: the shared query validator rejects Limit <= 0 ("Limit must
+            // be greater than zero"), so passing 0 here would turn $top=0&$count=true into a
+            // 400 (#1989). Offset is likewise irrelevant to the total, so it is dropped.
             var (countQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
                 filter,
                 orderby,
-                pagination.Limit,
-                pagination.Offset,
+                resultRecordCount: null,
+                resultOffset: null,
                 resource,
                 select,
                 expand,

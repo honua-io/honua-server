@@ -410,6 +410,40 @@ internal sealed partial class ODataStreamingQueryHandler(
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
             requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, publicLayerId.ToString(CultureInfo.InvariantCulture));
 
+            // OData v4 allows $top=0 (a deliberately empty page, commonly paired with
+            // $count=true for the total). The empty-page short-circuit lives in the
+            // non-streaming handler, so delegate before building the canonical query: the
+            // shared query validator rejects Limit <= 0 ("Limit must be greater than zero"),
+            // which would otherwise turn a spec-valid $top=0 into a 400 (#1989).
+            if (pagination.Limit == 0)
+            {
+                var emptyPageHandler = context.RequestServices.GetRequiredService<ODataQueryHandler>();
+                if (applyTrackChangesPreference)
+                {
+                    ODataUtilityService.ApplyTrackChangesPreference(context);
+                }
+
+                return await emptyPageHandler.HandleGetFeaturesNonStreamingAsync(
+                    context,
+                    publicLayerId,
+                    filter,
+                    select,
+                    orderby,
+                    topValue,
+                    skipValue,
+                    countValue,
+                    expand,
+                    useSkipToken,
+                    compute,
+                    format,
+                    deltaSince,
+                    trackChangesRequested,
+                    deltatoken,
+                    deltaDefinition,
+                    bboxFilter,
+                    cancellationToken);
+            }
+
             // Build feature query using query service
             var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
                 effectiveFilter,
