@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Prompts;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
 
@@ -14,9 +15,10 @@ namespace Honua.Ai.Protocols.Mcp;
 /// Central JSON-RPC dispatcher and registry for the MCP operator surface.
 /// Hosts the tool and resource catalogs, routes <c>initialize</c>,
 /// <c>notifications/initialized</c>, <c>tools/list</c>, <c>tools/call</c>,
-/// <c>resources/list</c>, <c>resources/templates/list</c>, and
-/// <c>resources/read</c> methods, and converts domain exceptions into
-/// JSON-RPC errors via <see cref="McpErrorMapper"/>.
+/// <c>resources/list</c>, <c>resources/templates/list</c>,
+/// <c>resources/read</c>, <c>prompts/list</c>, and <c>prompts/get</c> methods,
+/// and converts domain exceptions into JSON-RPC errors via
+/// <see cref="McpErrorMapper"/>.
 /// </summary>
 internal sealed class McpOperatorSurface
 {
@@ -144,6 +146,8 @@ internal sealed class McpOperatorSurface
                 "resources/list" => SuccessResponse(request.Id, ListResources(), McpJsonContext.Default.McpResourcesListResult),
                 "resources/templates/list" => SuccessResponse(request.Id, ListResourceTemplates(), McpJsonContext.Default.McpResourceTemplatesListResult),
                 "resources/read" => await ReadResourceAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
+                "prompts/list" => SuccessResponse(request.Id, McpPromptCatalog.List(), McpJsonContext.Default.McpPromptsListResult),
+                "prompts/get" => GetPrompt(request),
                 _ => ErrorResponse(request.Id, McpErrorMapper.MethodNotFound($"Unknown MCP method '{request.Method}'."))
             };
         }
@@ -212,6 +216,37 @@ internal sealed class McpOperatorSurface
             .OrderBy(d => d.Name, StringComparer.Ordinal)
             .ToList()
     };
+
+    private static McpJsonRpcResponse GetPrompt(McpJsonRpcRequest request)
+    {
+        McpPromptsGetParams? parameters;
+        try
+        {
+            parameters = ParseParams(request.Params, McpJsonContext.Default.McpPromptsGetParams);
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+        }
+
+        if (string.IsNullOrWhiteSpace(parameters?.Name))
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument("prompts/get requires a prompt name."));
+        }
+
+        try
+        {
+            // Unknown prompt names and missing required arguments both surface as
+            // GeoprocessingValidationException → JSON-RPC invalid_params (-32602),
+            // matching how tools/call maps the prompt name and argument shape.
+            var result = McpPromptCatalog.Get(parameters.Name, parameters.Arguments);
+            return SuccessResponse(request.Id, result, McpJsonContext.Default.McpPromptGetResult);
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+        }
+    }
 
     private async Task<McpJsonRpcResponse> CallToolAsync(
         HttpContext httpContext,

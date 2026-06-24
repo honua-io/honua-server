@@ -55,7 +55,7 @@ internal static class McpEndpointExtensions
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpOperatorSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
-            .WithDescription("Accepts JSON-RPC 2.0 requests. Single-request-only: initialize (MCP lifecycle forbids batching). Single or batched: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, and resources/read.")
+            .WithDescription("Accepts JSON-RPC 2.0 requests. Single-request-only: initialize (MCP lifecycle forbids batching). Single or batched: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, resources/read, prompts/list, and prompts/get.")
             .WithTags("Mcp");
 
         return endpoints;

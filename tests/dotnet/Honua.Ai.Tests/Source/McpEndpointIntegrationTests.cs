@@ -791,6 +791,151 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task Initialize_AdvertisesPromptsCapability()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"caps-1","method":"initialize","params":{
+                "protocolVersion":"2025-03-26",
+                "capabilities":{},
+                "clientInfo":{"name":"honua-tests","version":"1.0.0"}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var capabilities = root.GetProperty("result").GetProperty("capabilities");
+        capabilities.TryGetProperty("prompts", out var prompts).Should().BeTrue(
+            "the server must advertise the prompts capability so clients discover prompts/list");
+        prompts.GetProperty("listChanged").GetBoolean().Should().BeFalse(
+            "the curated prompt catalog is static");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "prompts/list")]
+    public async Task PromptsList_AdvertisesCuratedCatalog()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"prompts-1","method":"prompts/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var prompts = root.GetProperty("result").GetProperty("prompts");
+        prompts.ValueKind.Should().Be(JsonValueKind.Array);
+        var names = prompts.EnumerateArray()
+            .Select(p => p.GetProperty("name").GetString())
+            .ToArray();
+
+        names.Should().Contain("site_selection_analysis");
+        names.Should().Contain("hazard_assessment");
+        names.Should().Contain("permit_review");
+        names.Should().Contain("dashboard_scaffolding");
+
+        var siteSelection = prompts.EnumerateArray()
+            .Single(p => p.GetProperty("name").GetString() == "site_selection_analysis");
+        siteSelection.GetProperty("title").GetString().Should().NotBeNullOrWhiteSpace();
+        siteSelection.GetProperty("arguments").EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .Should().Contain("objective");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "prompts/get")]
+    public async Task PromptsGet_RendersMessagesWithSubstitutedArguments()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"prompts-get-1","method":"prompts/get","params":{
+                "name":"site_selection_analysis",
+                "arguments":{"objective":"a new fire station","studyArea":"Travis County"}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.TryGetProperty("error", out _).Should().BeFalse();
+        var result = root.GetProperty("result");
+        var messages = result.GetProperty("messages");
+        messages.GetArrayLength().Should().BeGreaterThan(0);
+
+        var first = messages[0];
+        first.GetProperty("role").GetString().Should().Be("user");
+        var text = first.GetProperty("content").GetProperty("text").GetString();
+        text.Should().Contain("a new fire station");
+        text.Should().Contain("Travis County");
+        text.Should().NotContain("{objective}");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task PromptsGet_MissingRequiredArgument_ReturnsInvalidParamsJsonRpcError()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"prompts-get-bad","method":"prompts/get","params":{
+                "name":"hazard_assessment",
+                "arguments":{"hazard":"100-year flood"}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32602);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+        error.GetProperty("message").GetString().Should().Contain("exposureLayer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task PromptsGet_UnknownPromptName_ReturnsInvalidParamsJsonRpcError()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"prompts-get-unk","method":"prompts/get","params":{"name":"does_not_exist"}}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32602);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task PromptsGet_WithoutName_ReturnsInvalidArgumentJsonRpcError()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"prompts-get-noname","method":"prompts/get","params":{"arguments":{}}}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var error = root.GetProperty("error");
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+        error.GetProperty("message").GetString().Should().Contain("prompt name");
+    }
+
     private async Task<HttpResponseMessage> PostRpcAsync(string body)
     {
         using var content = new StringContent(body, Encoding.UTF8);
