@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using Amazon;
@@ -178,14 +179,20 @@ internal interface IAwsEcsClient
 /// used by <see cref="AwsSdkLambdaAliasClient"/> so credential resolution and region
 /// selection follow the same chain that the rest of the server already trusts.
 /// </summary>
-internal sealed class AwsSdkAlbClient : IAwsAlbClient
+internal sealed class AwsSdkAlbClient : IAwsAlbClient, IDisposable
 {
+    // AWS SDK clients are thread-safe and meant to be reused for the process lifetime. This client
+    // is a singleton, but its construction varies by region, so cache one ELBv2 client per resolved
+    // region rather than building (and discarding) one per call.
+    private readonly ConcurrentDictionary<string, AmazonElasticLoadBalancingV2Client> _clients =
+        new(StringComparer.Ordinal);
+
     public async Task<AwsAlbListenerRuleState> GetListenerRuleWeightsAsync(
         string ruleArn,
         string? region,
         CancellationToken cancellationToken = default)
     {
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         var response = await client.DescribeRulesAsync(
                 new DescribeRulesRequest
                 {
@@ -205,7 +212,7 @@ internal sealed class AwsSdkAlbClient : IAwsAlbClient
         string? region,
         CancellationToken cancellationToken = default)
     {
-        using var client = CreateClient(region);
+        var client = GetClient(region);
 
         // Read the existing rule first so ModifyRule can preserve the forward
         // action's TargetGroupStickinessConfig, action ordering, and any sibling
@@ -237,10 +244,24 @@ internal sealed class AwsSdkAlbClient : IAwsAlbClient
         return MapRule(rule);
     }
 
-    private static AmazonElasticLoadBalancingV2Client CreateClient(string? region)
-        => string.IsNullOrWhiteSpace(region)
+    private AmazonElasticLoadBalancingV2Client GetClient(string? region)
+    {
+        var key = string.IsNullOrWhiteSpace(region) ? string.Empty : region;
+        return _clients.GetOrAdd(key, static k => string.IsNullOrEmpty(k)
             ? new AmazonElasticLoadBalancingV2Client()
-            : new AmazonElasticLoadBalancingV2Client(RegionEndpoint.GetBySystemName(region));
+            : new AmazonElasticLoadBalancingV2Client(RegionEndpoint.GetBySystemName(k)));
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        foreach (var client in _clients.Values)
+        {
+            client.Dispose();
+        }
+
+        _clients.Clear();
+    }
 
     private static AwsAlbListenerRuleState MapRule(Rule rule)
     {
@@ -329,15 +350,21 @@ internal static class AwsAlbActionMutator
 /// <summary>
 /// AWS SDK implementation of <see cref="IAwsEcsClient"/> backed by <c>AmazonECSClient</c>.
 /// </summary>
-internal sealed class AwsSdkEcsClient : IAwsEcsClient
+internal sealed class AwsSdkEcsClient : IAwsEcsClient, IDisposable
 {
+    // AWS SDK clients are thread-safe and meant to be reused for the process lifetime. This client
+    // is a singleton, but its construction varies by region, so cache one AmazonECSClient per
+    // resolved region rather than building (and discarding) one per call.
+    private readonly ConcurrentDictionary<string, AmazonECSClient> _clients =
+        new(StringComparer.Ordinal);
+
     public async Task<AwsEcsServiceState> DescribeServiceAsync(
         string cluster,
         string serviceName,
         string? region,
         CancellationToken cancellationToken = default)
     {
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         var response = await client.DescribeServicesAsync(
                 new DescribeServicesRequest
                 {
@@ -388,7 +415,7 @@ internal sealed class AwsSdkEcsClient : IAwsEcsClient
         string? region,
         CancellationToken cancellationToken = default)
     {
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         await client.UpdateServiceAsync(
                 new UpdateServiceRequest
                 {
@@ -400,10 +427,24 @@ internal sealed class AwsSdkEcsClient : IAwsEcsClient
             .ConfigureAwait(false);
     }
 
-    private static AmazonECSClient CreateClient(string? region)
-        => string.IsNullOrWhiteSpace(region)
+    private AmazonECSClient GetClient(string? region)
+    {
+        var key = string.IsNullOrWhiteSpace(region) ? string.Empty : region;
+        return _clients.GetOrAdd(key, static k => string.IsNullOrEmpty(k)
             ? new AmazonECSClient()
-            : new AmazonECSClient(RegionEndpoint.GetBySystemName(region));
+            : new AmazonECSClient(RegionEndpoint.GetBySystemName(k)));
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        foreach (var client in _clients.Values)
+        {
+            client.Dispose();
+        }
+
+        _clients.Clear();
+    }
 }
 
 /// <summary>
