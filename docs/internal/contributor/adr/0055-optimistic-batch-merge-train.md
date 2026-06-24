@@ -13,7 +13,7 @@ batch. A human flips it live later. Phases 2/3 are tracked as roadmap below.
 honua-server merges one PR at a time. GitHub's native merge queue was disabled
 (2026-06-18, ruleset 17808547) after batch sizes of ~5 caused runner
 starvation, ejected the front PR, reformed the group, and spiralled into zombie
-runs (see `docs/internal/contributor/merge-queue-runbook.md`). The lean
+runs (see `docs/internal/contributor/lean-merge-queue-runbook.md`). The lean
 `Merge Queue Gate` job replaced the full matrix on `merge_group`, but the queue
 itself is off, so throughput is gated by serial human merges.
 
