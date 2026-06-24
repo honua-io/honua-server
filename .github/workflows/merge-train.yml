@@ -246,3 +246,44 @@ jobs:
           path: ${{ github.workspace }}/merge-train-metrics.json
           if-no-files-found: warn
           retention-days: 30
+
+      # Continuous drain: GitHub throttles the */15 schedule to ~every 2h, so after
+      # an APPLYING run finishes the train would otherwise sit idle for hours with
+      # PRs still waiting. Instead, if selectable PRs remain, dispatch the next run
+      # NOW. The `concurrency: merge-train` group (cancel-in-progress:false) makes the
+      # dispatched run QUEUE behind this one and only start once it fully exits —
+      # single-instance, back-to-back, no storm. The chain TERMINATES on its own:
+      # every PR eventually either lands (closed → leaves the set) or is escalated
+      # (train:escalated → excluded below), so when nothing is selectable we do NOT
+      # re-dispatch and fall back to the schedule. Only applying runs chain (a dry-run
+      # report must never spawn live runs).
+      - name: Self-chain next run while PRs remain
+        if: always() && steps.mode.outputs.train_apply == 'true'
+        env:
+          # MUST be the PAT: a `gh workflow run` authenticated with GITHUB_TOKEN does
+          # NOT trigger a new workflow run (GitHub's recursion guard), so the chain
+          # would silently never start. MERGE_TRAIN_TOKEN is a repo-admin PAT.
+          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
+          HAS_PAT: ${{ secrets.MERGE_TRAIN_TOKEN != '' }}
+        run: |
+          if [[ "${HAS_PAT}" != "true" ]]; then
+            echo "::warning::MERGE_TRAIN_TOKEN not set; a GITHUB_TOKEN dispatch won't trigger the next run. Self-chain skipped (schedule remains)."
+            exit 0
+          fi
+          # Selectable = open, not draft, not CONFLICTING, and not held/escalated.
+          # This is a rough "is there work?" gate; train.sh's own select step remains
+          # the authority on what actually batches.
+          ready="$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open \
+            --json number,isDraft,mergeable,labels \
+            --jq '[.[] | select(.isDraft == false)
+                       | select((.mergeable // "MERGEABLE") != "CONFLICTING")
+                       | select([.labels[].name] | (index("train:hold") or index("train:escalated")) | not)]
+                  | length')"
+          echo "Selectable PRs remaining after this run: ${ready:-0}"
+          if [[ "${ready:-0}" -gt 0 ]]; then
+            echo "Dispatching the next train run (continuous drain; concurrency-guarded, single-instance)."
+            gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
+              -f train_apply=true -f use_llm=true -f use_autofix=true -f max_batch=3
+          else
+            echo "No selectable PRs remain — chain stops; the */15 schedule remains as the backstop."
+          fi
