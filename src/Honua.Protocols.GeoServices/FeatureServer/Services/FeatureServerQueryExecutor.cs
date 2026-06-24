@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
@@ -26,19 +27,25 @@ internal sealed partial class FeatureServerQueryExecutor
     private readonly StreamingQueryFormatter _streamingFormatter;
     private readonly FeatureProviderQueryRouter? _providerQueryRouter;
     private readonly IMetadataV2GraphProvider? _metadataGraphProvider;
+    private readonly IComputedFieldPipeline _computedFieldPipeline;
 
     public FeatureServerQueryExecutor(
         IFeatureReader featureReader,
         IStreamingFeatureStore streamingFeatureStore,
         StreamingQueryFormatter streamingFormatter,
         FeatureProviderQueryRouter? providerQueryRouter = null,
-        IMetadataV2GraphProvider? metadataGraphProvider = null)
+        IMetadataV2GraphProvider? metadataGraphProvider = null,
+        IComputedFieldPipeline? computedFieldPipeline = null)
     {
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         _streamingFeatureStore = streamingFeatureStore ?? throw new ArgumentNullException(nameof(streamingFeatureStore));
         _streamingFormatter = streamingFormatter ?? throw new ArgumentNullException(nameof(streamingFormatter));
         _providerQueryRouter = providerQueryRouter;
         _metadataGraphProvider = metadataGraphProvider;
+        // Plugin computed-field projection (#1562). Optional so direct-construction tests keep
+        // working; defaults to the zero-overhead no-op pipeline when no Enterprise plugin SDK is
+        // present. Applied at the materialized-Feature query seam in the V2 overload below.
+        _computedFieldPipeline = computedFieldPipeline ?? NoOpComputedFieldPipeline.Instance;
     }
 
     public bool SupportsGeobufOutput => _featureReader is IGeobufFeatureStore;

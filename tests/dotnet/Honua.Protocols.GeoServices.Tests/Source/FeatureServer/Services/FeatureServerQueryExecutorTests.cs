@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Infrastructure;
@@ -607,11 +608,87 @@ public sealed class FeatureServerQueryExecutorTests
         properties.GetProperty("name").GetString().Should().Be("alpha");
     }
 
+    [Fact]
+    public async Task QueryWithValidationAsync_V2_WithComputedFieldPipeline_ProjectsComputedFields()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        featureReader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(
+                totalCount: 1,
+                items: ImmutableArray.Create(CreateFeature(1, "alpha")))));
+
+        var pipeline = new StubComputedFieldPipeline("computed", "value");
+        var sut = CreateSut(featureReader, computedFieldPipeline: pipeline);
+        var service = CreateService();
+        var resource = CreateResource();
+        var publication = CreatePublication(service, resource);
+
+        var result = await sut.QueryWithValidationAsync(
+            service,
+            resource,
+            publication,
+            7,
+            new FeatureQuery(),
+            actor: "tester",
+            CancellationToken.None);
+
+        result.Items.Should().HaveCount(1);
+        result.Items[0].Attributes.Should().ContainKey("computed").WhoseValue.Should().Be("value");
+        result.Items[0].Attributes.Should().ContainKey("name");
+        result.TotalCount.Should().Be(1);
+        pipeline.LastContext.Should().NotBeNull();
+        pipeline.LastContext!.ServiceId.Should().Be(resource.Metadata.Id);
+        pipeline.LastContext.LayerId.Should().Be(7);
+        pipeline.LastContext.Actor.Should().Be("tester");
+    }
+
+    [Fact]
+    public async Task QueryWithValidationAsync_V2_WithoutComputedFields_LeavesFeaturesUnchanged()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var feature = CreateFeature(1, "alpha");
+        featureReader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(
+                totalCount: 1,
+                items: ImmutableArray.Create(feature))));
+
+        // Default executor uses the no-op pipeline (no Enterprise plugin SDK / no providers).
+        var sut = CreateSut(featureReader);
+        var service = CreateService();
+        var resource = CreateResource();
+        var publication = CreatePublication(service, resource);
+
+        var result = await sut.QueryWithValidationAsync(
+            service,
+            resource,
+            publication,
+            7,
+            new FeatureQuery(),
+            actor: null,
+            CancellationToken.None);
+
+        result.Items.Should().ContainSingle().Which.Should().Be(feature);
+    }
+
+    private sealed class StubComputedFieldPipeline(string fieldName, object? value) : IComputedFieldPipeline
+    {
+        public ComputedFieldContext? LastContext { get; private set; }
+
+        public bool HasComputedFields => true;
+
+        public ValueTask<Feature> ProjectAsync(Feature feature, ComputedFieldContext context, CancellationToken cancellationToken)
+        {
+            LastContext = context;
+            return ValueTask.FromResult(feature with { Attributes = feature.Attributes.SetItem(fieldName, value) });
+        }
+    }
+
     private static FeatureServerQueryExecutor CreateSut(
         IFeatureReader featureReader,
         IStreamingFeatureStore? streamingStore = null,
         FeatureProviderQueryRouter? providerQueryRouter = null,
-        IMetadataV2GraphProvider? metadataGraphProvider = null)
+        IMetadataV2GraphProvider? metadataGraphProvider = null,
+        IComputedFieldPipeline? computedFieldPipeline = null)
     {
         streamingStore ??= Substitute.For<IStreamingFeatureStore>();
         var formatter = new StreamingQueryFormatter(Options.Create(new LimitsOptions()));
@@ -621,7 +698,8 @@ public sealed class FeatureServerQueryExecutorTests
             streamingStore,
             formatter,
             providerQueryRouter,
-            metadataGraphProvider);
+            metadataGraphProvider,
+            computedFieldPipeline);
     }
 
     private static FeatureProviderQueryRouter CreateProviderRouter(IFeatureReader reader)

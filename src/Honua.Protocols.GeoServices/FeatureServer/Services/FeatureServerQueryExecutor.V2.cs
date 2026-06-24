@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
@@ -81,6 +82,40 @@ internal sealed partial class FeatureServerQueryExecutor
         int storageLayerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
+        => await QueryWithValidationAsync(
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            query,
+            actor: null,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Materializes a FeatureServer query and applies plugin computed-field projection
+    /// (<see cref="IComputedFieldProvider"/>, issue #1562) to each returned feature before it is
+    /// formatted. Projection is a no-op unless the Enterprise plugin SDK is licensed, enabled, and
+    /// at least one computed-field provider is registered, so the common path adds no overhead.
+    /// The raw GeoServices/Geobuf/FlatGeobuf fast paths bypass the canonical <see cref="Feature"/>
+    /// representation and therefore do not (yet) carry computed fields; those formats are tracked
+    /// separately in the phase-2 follow-ups for #1562.
+    /// </summary>
+    /// <param name="service">The owning V2 service.</param>
+    /// <param name="resource">The queried V2 resource (carries layer identity for the compute context).</param>
+    /// <param name="publication">The publication binding the resource to the service.</param>
+    /// <param name="storageLayerId">The resolved storage layer id.</param>
+    /// <param name="query">The canonical feature query.</param>
+    /// <param name="actor">The authenticated caller, when known; flows into the compute context.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The query result whose features include any projected computed fields.</returns>
+    public async Task<QueryResult<Feature>> QueryWithValidationAsync(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        FeatureQuery query,
+        string? actor,
+        CancellationToken cancellationToken)
     {
         var reader = await ResolveReaderV2Async(
             service,
@@ -89,7 +124,40 @@ internal sealed partial class FeatureServerQueryExecutor
             storageLayerId,
             FeatureProviderReadOperation.Query,
             cancellationToken).ConfigureAwait(false);
-        return await QueryWithValidationAsync(reader, storageLayerId, query, cancellationToken).ConfigureAwait(false);
+        var result = await QueryWithValidationAsync(reader, storageLayerId, query, cancellationToken).ConfigureAwait(false);
+        return await ProjectComputedFieldsAsync(result, resource, storageLayerId, actor, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<QueryResult<Feature>> ProjectComputedFieldsAsync(
+        QueryResult<Feature> result,
+        MetadataV2Resource resource,
+        int storageLayerId,
+        string? actor,
+        CancellationToken cancellationToken)
+    {
+        if (!_computedFieldPipeline.HasComputedFields || result.Items.IsDefaultOrEmpty)
+        {
+            return result;
+        }
+
+        var context = new ComputedFieldContext(
+            ServiceId: resource.Metadata.Id,
+            LayerId: storageLayerId,
+            ResourceName: resource.Metadata.Name,
+            Actor: actor);
+
+        var builder = ImmutableArray.CreateBuilder<Feature>(result.Items.Length);
+        foreach (var feature in result.Items)
+        {
+            builder.Add(await _computedFieldPipeline
+                .ProjectAsync(feature, context, cancellationToken)
+                .ConfigureAwait(false));
+        }
+
+        return QueryResult<Feature>.Create(
+            totalCount: result.TotalCount,
+            items: builder.MoveToImmutable(),
+            hasMoreResults: result.HasMoreResults);
     }
 
     public async Task<byte[]?> QueryFlatGeobufWithValidationAsync(
