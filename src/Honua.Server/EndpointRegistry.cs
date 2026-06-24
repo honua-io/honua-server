@@ -1095,6 +1095,14 @@ public static class EndpointRegistry
         new("GET", "/ogc/coverages/collections/{collectionId}/schema"),
         new("GET", "/ogc/coverages/collections/{collectionId}/coverage"),
 
+        // OGC API - Environmental Data Retrieval (EDR) (#1757)
+        new("GET", "/edr"),
+        new("GET", "/edr/conformance"),
+        new("GET", "/edr/collections"),
+        new("GET", "/edr/collections/{collectionId}"),
+        new("GET", "/edr/collections/{collectionId}/position"),
+        new("GET", "/edr/collections/{collectionId}/cube"),
+
         // OGC API Processes
         new("GET", "/ogc/processes"),
         new("GET", "/ogc/processes/conformance"),
@@ -1273,6 +1281,12 @@ public static class EndpointRegistry
         new("GET", "/sta/v1.1/Datastreams({id})/Observations"),
         new("GET", "/sta/v1.1/Observations"),
         new("GET", "/sta/v1.1/Observations({id})"),
+
+        // OGC SensorThings API (STA v1.1) Phase 2 ingest + Phase 3 streaming (#1747)
+        new("POST", "/sta/v1.1/Observations"),
+        new("POST", "/sta/v1.1/Datastreams({id})/Observations"),
+        new("POST", "/sta/v1.1/Datastreams"),
+        new("GET", "/sta/v1.1/ObservationsStream"),
 
         // Hosted samples
         new("GET", "/samples/stac-ops"),
