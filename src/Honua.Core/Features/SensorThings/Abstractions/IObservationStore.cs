@@ -55,4 +55,29 @@ public interface IObservationStore
 
     /// <summary>Gets a single observation by identifier, or <see langword="null"/> if absent.</summary>
     Task<SensorThingsObservation?> GetObservationAsync(long id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Ingests a batch of observations into the time-series store (Phase 2). Each input
+    /// row is assigned a server-generated identifier. The datastream referenced by
+    /// <see cref="ObservationIngestRow.DatastreamId"/> must already exist.
+    /// </summary>
+    /// <param name="rows">The observations to insert.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The persisted observations, in input order, with assigned identifiers.</returns>
+    Task<IReadOnlyList<SensorThingsObservation>> IngestObservationsAsync(
+        IReadOnlyList<ObservationIngestRow> rows,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Creates a new Datastream catalog entity and (when needed) the related Thing,
+    /// Sensor, and ObservedProperty entities referenced by it (Phase 2). Identifiers
+    /// referenced by the request that do not exist are created from the inline
+    /// definitions carried on <paramref name="request"/>.
+    /// </summary>
+    /// <param name="request">The datastream-creation request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The created datastream.</returns>
+    Task<SensorThingsDatastream> CreateDatastreamAsync(
+        CreateDatastreamRequest request,
+        CancellationToken cancellationToken);
 }

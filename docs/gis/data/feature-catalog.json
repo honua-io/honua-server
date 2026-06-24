@@ -308,6 +308,32 @@
       "maturity": "implemented"
     },
     {
+      "id": "delete-api-v1-admin-oauth-clients-id",
+      "route": "/api/v1/admin/oauth-clients/{id}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.GetAndDeleteClient_RemovesRegistration"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "delete-api-v1-admin-oauth-scopes-scope",
+      "route": "/api/v1/admin/oauth-scopes/{scope}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "delete-api-v1-admin-oidc-providers-id",
       "route": "/api/v1/admin/oidc/providers/{id}",
       "method": "DELETE",
@@ -2222,6 +2248,46 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Get_AfterRegister_ReturnsDataset",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Get_Missing_Returns404"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-oauth-clients",
+      "route": "/api/v1/admin/oauth-clients",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.ManagementSurface_RequiresAdminAuthorization",
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.RegisterAndListClient_ReturnsSecretOnlyAtCreation"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-oauth-clients-id",
+      "route": "/api/v1/admin/oauth-clients/{id}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.GetAndDeleteClient_RemovesRegistration"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-oauth-scopes",
+      "route": "/api/v1/admin/oauth-scopes",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -4287,6 +4353,87 @@
         "Honua.Server.Tests.ApiExplorerEndpointTests.Docs_WhenEnabled_ReturnsHtmlPage"
       ],
       "proof_ledger_surface": "platform-http",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr",
+      "route": "/edr",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-collections",
+      "route": "/edr/collections",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-collections-collectionid",
+      "route": "/edr/collections/{collectionId}",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_UnknownCollection_Returns404"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-collections-collectionid-cube",
+      "route": "/edr/collections/{collectionId}/cube",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_MissingBbox_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ReturnsCoverageJsonGridSubset"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-collections-collectionid-position",
+      "route": "/edr/collections/{collectionId}/position",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_InvalidCoords_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ReturnsCoverageJsonPointSeries"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-conformance",
+      "route": "/edr/conformance",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
       "maturity": "implemented"
     },
     {
@@ -9468,6 +9615,20 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-sta-v1-1-observationsstream",
+      "route": "/sta/v1.1/ObservationsStream",
+      "method": "GET",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_Sse_EmitsConnectedThenPushesIngestedObservation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_WithoutTransportHeader_Returns400"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-sta-v1-1-observedproperties",
       "route": "/sta/v1.1/ObservedProperties",
       "method": "GET",
@@ -11859,6 +12020,20 @@
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_DuplicateId_Returns409",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_UnsafeEdgeTable_Returns400",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_ValidPayload_Returns201WithDto"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-oauth-clients",
+      "route": "/api/v1/admin/oauth-clients",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.RegisterAndListClient_ReturnsSecretOnlyAtCreation",
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.RegisterClient_WithInvalidClientType_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -15985,6 +16160,48 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-sta-v1-1-datastreams",
+      "route": "/sta/v1.1/Datastreams",
+      "method": "POST",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostDatastream_MissingBody_Returns400",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostDatastream_WithInlineRelatedEntities_CreatesQueryableDatastream"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-sta-v1-1-datastreams-id-observations",
+      "route": "/sta/v1.1/Datastreams({id})/Observations",
+      "method": "POST",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_OnDatastreamNavigation_PersistsToThatDatastream"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-sta-v1-1-observations",
+      "route": "/sta/v1.1/Observations",
+      "method": "POST",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_MissingDatastream_Returns404",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_SingleIntoSeededDatastream_PersistsAndIsReadable",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservations_BulkEnvelope_PersistsAllRows"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-stac-search",
       "route": "/stac/search",
       "method": "POST",
@@ -16540,6 +16757,19 @@
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_ChangesMutableFields",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_Missing_Returns404",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_UnsafeVertexTable_Returns400"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "put-api-v1-admin-oauth-scopes",
+      "route": "/api/v1/admin/oauth-scopes",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
