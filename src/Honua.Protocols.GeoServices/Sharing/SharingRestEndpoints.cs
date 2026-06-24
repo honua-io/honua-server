@@ -78,6 +78,7 @@ public static class SharingRestEndpoints
 
         endpoints.MapSharingRestReadEndpoints();
         endpoints.MapSharingOAuth2Endpoints();
+        endpoints.MapSharingCommunityEndpoints();
 
         return endpoints;
     }

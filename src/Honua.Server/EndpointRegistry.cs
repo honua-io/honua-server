@@ -659,6 +659,18 @@ public static class EndpointRegistry
         new("POST", "/sharing/rest/oauth2/token"),
         new("GET", "/sharing/rest/oauth2/token"),
 
+        // OAuth2 RFC 7662 token introspection (#1890).
+        new("POST", "/sharing/rest/oauth2/introspect"),
+
+        // ArcGIS Portal community group + item sharing surface (#1868).
+        new("POST", "/sharing/rest/community/createGroup"),
+        new("GET", "/sharing/rest/community/groups/{groupId}"),
+        new("POST", "/sharing/rest/community/groups/{groupId}/delete"),
+        new("POST", "/sharing/rest/community/groups/{groupId}/addUsers"),
+        new("POST", "/sharing/rest/community/groups/{groupId}/removeUsers"),
+        new("POST", "/sharing/rest/content/items/{itemId}/share"),
+        new("POST", "/sharing/rest/content/items/{itemId}/unshare"),
+
         new("GET", "/rest/services"),
         new("GET", "/rest/info"),
         new("GET", "/rest/services/{locatorName}/GeocodeServer"),

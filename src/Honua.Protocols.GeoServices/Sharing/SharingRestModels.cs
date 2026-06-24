@@ -88,3 +88,40 @@ internal sealed record OAuth2ErrorResponse
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ErrorDescription { get; init; }
 }
+
+/// <summary>
+/// RFC 7662 token introspection response (ADR-0054, #1890). An inactive token
+/// returns only <c>active=false</c> (RFC 7662 §2.2); the remaining fields are
+/// present only for an active token.
+/// </summary>
+internal sealed record OAuth2IntrospectionResponse
+{
+    /// <summary>Whether the presented token is currently active (live, not revoked).</summary>
+    [JsonPropertyName("active")]
+    public required bool Active { get; init; }
+
+    /// <summary>Subject the token was issued to (the principal id).</summary>
+    [JsonPropertyName("sub")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Sub { get; init; }
+
+    /// <summary>Human-readable identifier for the resource owner (mirrors <c>sub</c>).</summary>
+    [JsonPropertyName("username")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Username { get; init; }
+
+    /// <summary>Space-delimited roles/scopes carried by the token.</summary>
+    [JsonPropertyName("scope")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Scope { get; init; }
+
+    /// <summary>Token type; <c>Bearer</c> for an active token.</summary>
+    [JsonPropertyName("token_type")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TokenType { get; init; }
+
+    /// <summary>Expiry as seconds since the Unix epoch (<c>exp</c>).</summary>
+    [JsonPropertyName("exp")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? Exp { get; init; }
+}

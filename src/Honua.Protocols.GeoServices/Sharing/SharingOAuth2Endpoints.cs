@@ -73,7 +73,75 @@ internal static class SharingOAuth2Endpoints
             .Produces<OAuth2ErrorResponse>(StatusCodes.Status400BadRequest, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 
+        endpoints.MapPost(PortalOAuthRoutes.IntrospectPath, HandleIntrospectAsync)
+            .WithDisplayName("ArcGIS Portal OAuth2 Token Introspection")
+            .WithName("SharingRestOAuth2Introspect")
+            .WithSummary("RFC 7662 token introspection for opaque and JWT access tokens")
+            .WithDescription("Returns { active } plus token metadata when the presented token is live and not revoked; { active: false } otherwise. Off by default; requires admin authorization when enabled (#1890).")
+            .WithTags("GeoServices Sharing")
+            .RequireAdminAuthorization()
+            .Produces<OAuth2IntrospectionResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status404NotFound);
+
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleIntrospectAsync(
+        HttpContext context,
+        [FromServices] PortalTokenIntrospectionService introspectionService,
+        [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions,
+        [FromServices] ILogger<SharingRestLog> logger)
+    {
+        // The whole introspection surface is off by default; when disabled it 404s
+        // so it is never a silent discovery surface (RFC 7662 §4: the endpoint must
+        // be protected, and Honua keeps it absent unless explicitly enabled).
+        if (!tokenOptions.Value.Enabled || !introspectionService.IntrospectionEnabled)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Token introspection is not enabled.");
+        }
+
+        string? token;
+        if (HttpMethods.IsPost(context.Request.Method) && context.Request.HasFormContentType)
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+            token = ReadFirst(form["token"]);
+        }
+        else
+        {
+            token = ReadFirst(context.Request.Query["token"]);
+        }
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return OAuth2Error("invalid_request", "token is required.");
+        }
+
+        var result = await introspectionService.IntrospectAsync(token, context.RequestAborted).ConfigureAwait(false);
+
+        // RFC 7662 §2.2: an inactive token returns only { "active": false } — no
+        // other detail is leaked, regardless of whether it was unknown, expired,
+        // revoked, or a forged JWT.
+        if (result is null)
+        {
+            return Results.Json(
+                new OAuth2IntrospectionResponse { Active = false },
+                SharingRestJsonContext.Default.OAuth2IntrospectionResponse,
+                contentType: JsonContentType);
+        }
+
+        var response = new OAuth2IntrospectionResponse
+        {
+            Active = true,
+            Sub = result.PrincipalId,
+            Username = result.PrincipalId,
+            Scope = result.Roles.Count > 0 ? string.Join(' ', result.Roles) : null,
+            TokenType = "Bearer",
+            Exp = result.ExpiresAt.ToUnixTimeSeconds(),
+        };
+
+        return Results.Json(response, SharingRestJsonContext.Default.OAuth2IntrospectionResponse, contentType: JsonContentType);
     }
 
     private static async Task<IResult> HandleAuthorizeAsync(
