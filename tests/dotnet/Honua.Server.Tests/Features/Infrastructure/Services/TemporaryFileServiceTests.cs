@@ -812,7 +812,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         public Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_files.ContainsKey(fileId));
 
-        public Task<IReadOnlyList<CloudFile>> ListFilesAsync(string? folder = null, int maxResults = 1000, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<CloudFile>> ListFilesAsync(string? folder = null, int maxResults = 1000, bool includeMetadata = true, CancellationToken cancellationToken = default)
         {
             IReadOnlyList<CloudFile> files = _files.Values
                 .Where(file => string.IsNullOrWhiteSpace(folder) || file.StoragePath.StartsWith(folder, StringComparison.Ordinal))

@@ -331,8 +331,12 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     public override Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
+        bool includeMetadata = true,
         CancellationToken cancellationToken = default)
     {
+        // The local index already holds the full CloudFile (including metadata and expiry), so
+        // includeMetadata cannot save any work here and is intentionally ignored.
+        _ = includeMetadata;
         var files = _fileIndex.Values
             .Where(f => string.IsNullOrEmpty(folder) || f.StoragePath.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(f => f.UploadedAt)
