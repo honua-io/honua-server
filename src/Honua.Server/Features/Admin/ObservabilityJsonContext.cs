@@ -23,6 +23,7 @@ namespace Honua.Server.Features.Admin;
 [JsonSerializable(typeof(ObservabilityAlertResolveRequest))]
 [JsonSerializable(typeof(ObservabilityAuditRecordResponse))]
 [JsonSerializable(typeof(ObservabilityAuditPageResponse))]
+[JsonSerializable(typeof(ObservabilityAuditIntegrityResponse))]
 [JsonSerializable(typeof(OperateEventResponse))]
 [JsonSerializable(typeof(OperateEventPageResponse))]
 [JsonSerializable(typeof(OperateProviderLinkResponse))]

@@ -180,6 +180,8 @@ public sealed class PostgresAuditLogReaderTests(PostgresFixture fixture)
                 remote_ip        VARCHAR(64),
                 user_agent       VARCHAR(512),
                 details          TEXT         NOT NULL DEFAULT '',
+                prev_hash        CHAR(64),
+                entry_hash       CHAR(64),
                 CONSTRAINT chk_audit_log_event_type_{schema} CHECK (event_type IN (
                     'Authentication','Authorization','AdminAction',
                     'ConfigChange','DataExport','DataDelete')),
