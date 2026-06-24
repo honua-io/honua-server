@@ -57,6 +57,8 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0051](0051-branch-versioning-storage-model.md) | Branch-Versioning Storage Model (Overlay/Moment Over the Live Base Table) | Accepted | 2026-06 |
 | [0052](0052-kubernetes-closed-loop-promotion-via-argo-rollouts.md) | Kubernetes Closed-Loop Promotion via Argo Rollouts | Accepted | 2026-06 |
 | [0054](0054-evidence-based-feature-catalog.md) | Evidence-Based Feature Catalog (Generated, Drift-Gated Capability Map) | Proposed | 2026-06 |
+| [0055](0055-optimistic-batch-merge-train.md) | Optimistic Batch Merge Train | Accepted | 2026-06 |
+| [0056](0056-mcp-redesign-unified-governed-surface.md) | MCP Redesign — Unified, Client-Agnostic, Governed Surface (Sequencing Plan) | Proposed | 2026-06 |
 
 ## Template
 
