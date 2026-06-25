@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Cloud-integration test harness (#2163). Opt-in, Docker-backed integration tests that
+    stand up REAL emulated cloud backends via Testcontainers and exercise Honua's cloud
+    seams end-to-end. Every test is tagged [Trait("Category","CloudIntegration")] so it is
+    EXCLUDED from the default PR test run (which filters Category!=CloudIntegration) and only
+    runs in the dedicated nightly / explicit cloud-integration workflow.
+
+    Default (FREE) tier — no paid token required:
+      * kind / k3d           : real Kubernetes-in-Docker for KubernetesJobBatchComputeBackend.
+      * LocalStack Community  : S3, Lambda, CloudWatch (the free service set).
+
+    Optional (PAID/REAL) tier — gated on LOCALSTACK_AUTH_TOKEN:
+      * LocalStack Pro        : AWS Batch / ECS emulation. SKIPPED (not failed) when the token
+                                is absent. Azure Batch has NO emulator and is real-cloud only.
+
+    This project is a test project (never AOT-published) and is intentionally NOT registered in
+    the Honua.Server.Tests ADR-0037 shard matrix, so it never runs on the per-PR server-test path.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RootNamespace>Honua.CloudIntegration.Tests</RootNamespace>
+    <!-- These tests require a live Docker daemon (kind + LocalStack). They are correct-by-
+         construction and only executed in CI / local Docker environments. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Xunit.SkippableFact" />
+    <PackageReference Include="Testcontainers" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="AWSSDK.Lambda" />
+    <PackageReference Include="AWSSDK.CloudWatch" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Aws\Honua.Aws.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

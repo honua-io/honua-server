@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.CloudIntegration.Tests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />

@@ -308,6 +308,7 @@ public sealed class DeployWorkflowReconcilerLambdaTests
             string functionName,
             string aliasName,
             string? region,
+            string? serviceUrl = null,
             CancellationToken cancellationToken = default)
             => Task.FromResult(CurrentState);
 
@@ -317,6 +318,7 @@ public sealed class DeployWorkflowReconcilerLambdaTests
             string functionVersion,
             IReadOnlyDictionary<string, double>? additionalVersionWeights,
             string? region,
+            string? serviceUrl = null,
             CancellationToken cancellationToken = default)
         {
             var weights = additionalVersionWeights is { Count: > 0 }

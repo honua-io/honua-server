@@ -107,10 +107,11 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var functionName = ResolveFunctionName(spec);
         var aliasName = ResolveAliasName(spec.Parameters);
         var region = ResolveRegion(spec.Parameters);
+        var serviceUrl = ResolveServiceUrl(spec.Parameters);
 
         try
         {
-            var aliasState = await aliasClient.GetAliasAsync(functionName, aliasName, region, cancellationToken).ConfigureAwait(false);
+            var aliasState = await aliasClient.GetAliasAsync(functionName, aliasName, region, serviceUrl, cancellationToken).ConfigureAwait(false);
             _ = TryResolveCanaryWeightFraction(spec.Parameters, out var canaryWeightFraction, out _);
             var currentStableVersion = aliasState.FunctionVersion;
 
@@ -127,6 +128,7 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                             [spec.DesiredRevision] = canaryWeightFraction.Value
                         },
                         region,
+                        serviceUrl,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -139,6 +141,7 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                         spec.DesiredRevision,
                         null,
                         region,
+                        serviceUrl,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -178,7 +181,8 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
             var functionName = ResolveFunctionName(spec);
             var aliasName = ResolveAliasName(spec.Parameters);
             var region = ResolveRegion(spec.Parameters);
-            var aliasState = await aliasClient.GetAliasAsync(functionName, aliasName, region, cancellationToken).ConfigureAwait(false);
+            var serviceUrl = ResolveServiceUrl(spec.Parameters);
+            var aliasState = await aliasClient.GetAliasAsync(functionName, aliasName, region, serviceUrl, cancellationToken).ConfigureAwait(false);
             var hasWeightedTraffic = aliasState.AdditionalVersionWeights.Count > 0;
             _ = TryResolveCanaryWeightFraction(spec.Parameters, out var desiredWeightFraction, out _);
             var routesDesiredRevision = aliasState.AdditionalVersionWeights.TryGetValue(spec.DesiredRevision, out var currentCanaryWeight);
@@ -280,6 +284,7 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var functionName = ResolveFunctionName(spec);
         var aliasName = ResolveAliasName(spec.Parameters);
         var region = ResolveRegion(spec.Parameters);
+        var serviceUrl = ResolveServiceUrl(spec.Parameters);
 
         try
         {
@@ -289,6 +294,7 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                     spec.DesiredRevision,
                     null,
                     region,
+                    serviceUrl,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -341,6 +347,7 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var functionName = ResolveFunctionName(spec);
         var aliasName = ResolveAliasName(spec.Parameters);
         var region = ResolveRegion(spec.Parameters);
+        var serviceUrl = ResolveServiceUrl(spec.Parameters);
 
         try
         {
@@ -350,6 +357,7 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                     rollbackVersion,
                     null,
                     region,
+                    serviceUrl,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -407,6 +415,13 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
         var match = LambdaArnRegionPattern.Match(resourceId);
         return match.Success ? match.Groups["region"].Value : null;
     }
+
+    // Opt-in, config-driven endpoint override. When set (for example to a LocalStack Community
+    // Lambda endpoint such as http://localhost:4566) it is forwarded to the SDK as a ServiceURL;
+    // when unset the SDK uses the default regional endpoint, so production behaviour is unchanged.
+    private static string? ResolveServiceUrl(IReadOnlyDictionary<string, string> parameters)
+        => GetParameter(parameters, "aws.service_url")
+            ?? GetParameter(parameters, "lambda.service_url");
 
     private static string? GetParameter(IReadOnlyDictionary<string, string> parameters, string key)
         => parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)

@@ -235,6 +235,76 @@ public sealed class AwsLambdaGitOpsDeployBackendTests
         aliasClient.LastUpdatedVersion.Should().BeNull();
     }
 
+    [Fact]
+    public async Task StartAsync_WithServiceUrlParameter_ForwardsEndpointOverride()
+    {
+        // An opt-in lambda.service_url / aws.service_url parameter (for example a LocalStack
+        // Community Lambda endpoint) must reach the SDK client seam as a ServiceURL override.
+        var aliasClient = new StubAwsLambdaAliasClient
+        {
+            CurrentState = new AwsLambdaAliasState
+            {
+                AliasName = "live",
+                AliasArn = "arn:aws:lambda:us-east-1:123456789012:function:honua:live",
+                FunctionVersion = "41"
+            }
+        };
+        var backend = new AwsLambdaGitOpsDeployBackend(aliasClient, NullLogger<AwsLambdaGitOpsDeployBackend>.Instance);
+
+        await backend.StartAsync(CreateOperation(
+            desiredRevision: "42",
+            currentRevision: null,
+            parameters: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["lambda.alias_name"] = "live",
+                ["target.resource_id"] = "arn:aws:lambda:us-east-1:123456789012:function:honua-prod-lambda",
+                ["telemetry.connection"] = "prod-prom",
+                ["lambda.service_url"] = "http://localhost:4566"
+            }));
+
+        aliasClient.LastServiceUrl.Should().Be("http://localhost:4566");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithoutServiceUrlParameter_LeavesEndpointOverrideUnset()
+    {
+        var aliasClient = new StubAwsLambdaAliasClient
+        {
+            CurrentState = new AwsLambdaAliasState
+            {
+                AliasName = "live",
+                AliasArn = "arn:aws:lambda:us-east-1:123456789012:function:honua:live",
+                FunctionVersion = "41"
+            }
+        };
+        var backend = new AwsLambdaGitOpsDeployBackend(aliasClient, NullLogger<AwsLambdaGitOpsDeployBackend>.Instance);
+
+        await backend.StartAsync(CreateOperation(desiredRevision: "42", currentRevision: null));
+
+        aliasClient.LastServiceUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public void CreateClient_WithServiceUrl_AppliesEndpointOverride()
+    {
+        using var client = AwsSdkLambdaAliasClient.CreateClient("us-east-1", "http://localhost:4566");
+
+        // The AWS SDK treats ServiceURL and RegionEndpoint as mutually exclusive: setting an
+        // explicit ServiceURL clears RegionEndpoint (mirrors AwsS3FileStorage). The override must
+        // win so the client targets the emulator endpoint.
+        client.Config.ServiceURL.Should().Be("http://localhost:4566/");
+        client.Config.RegionEndpoint.Should().BeNull();
+    }
+
+    [Fact]
+    public void CreateClient_WithoutServiceUrl_UsesDefaultRegionalEndpoint()
+    {
+        using var client = AwsSdkLambdaAliasClient.CreateClient("us-east-1", serviceUrl: null);
+
+        client.Config.RegionEndpoint!.SystemName.Should().Be("us-east-1");
+        string.IsNullOrEmpty(client.Config.ServiceURL).Should().BeTrue();
+    }
+
     private static DeployOperationSpec CreateSpec(
         string desiredRevision,
         IReadOnlyDictionary<string, string>? parameters = null)
@@ -297,12 +367,18 @@ public sealed class AwsLambdaGitOpsDeployBackendTests
 
         public IReadOnlyDictionary<string, double> LastAdditionalVersionWeights { get; private set; } = new Dictionary<string, double>(StringComparer.Ordinal);
 
+        public string? LastServiceUrl { get; private set; }
+
         public Task<AwsLambdaAliasState> GetAliasAsync(
             string functionName,
             string aliasName,
             string? region,
+            string? serviceUrl = null,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(CurrentState);
+        {
+            LastServiceUrl = serviceUrl;
+            return Task.FromResult(CurrentState);
+        }
 
         public Task<AwsLambdaAliasState> UpdateAliasAsync(
             string functionName,
@@ -310,8 +386,10 @@ public sealed class AwsLambdaGitOpsDeployBackendTests
             string functionVersion,
             IReadOnlyDictionary<string, double>? additionalVersionWeights,
             string? region,
+            string? serviceUrl = null,
             CancellationToken cancellationToken = default)
         {
+            LastServiceUrl = serviceUrl;
             LastUpdatedVersion = functionVersion;
             LastAdditionalVersionWeights = additionalVersionWeights is { Count: > 0 }
                 ? new Dictionary<string, double>(additionalVersionWeights, StringComparer.Ordinal)

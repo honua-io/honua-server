@@ -26,6 +26,7 @@ internal interface IAwsLambdaAliasClient
         string functionName,
         string aliasName,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default);
 
     Task<AwsLambdaAliasState> UpdateAliasAsync(
@@ -34,6 +35,7 @@ internal interface IAwsLambdaAliasClient
         string functionVersion,
         IReadOnlyDictionary<string, double>? additionalVersionWeights,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -43,9 +45,10 @@ internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient
         string functionName,
         string aliasName,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
-        using var client = CreateClient(region);
+        using var client = CreateClient(region, serviceUrl);
         var response = await client.GetAliasAsync(
             new GetAliasRequest
             {
@@ -67,9 +70,10 @@ internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient
         string functionVersion,
         IReadOnlyDictionary<string, double>? additionalVersionWeights,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
-        using var client = CreateClient(region);
+        using var client = CreateClient(region, serviceUrl);
         var response = await client.UpdateAliasAsync(
             new UpdateAliasRequest
             {
@@ -92,14 +96,27 @@ internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient
             response.RoutingConfig?.AdditionalVersionWeights);
     }
 
-    private static AmazonLambdaClient CreateClient(string? region)
+    // Visible for testing. Applies an opt-in, config-driven ServiceURL override (for example a
+    // LocalStack Community Lambda endpoint) when supplied; when unset the client uses the default
+    // regional endpoint, keeping production behaviour unchanged.
+    internal static AmazonLambdaClient CreateClient(string? region, string? serviceUrl)
     {
+        var config = new AmazonLambdaConfig();
+
         if (!string.IsNullOrWhiteSpace(region))
         {
-            return new AmazonLambdaClient(RegionEndpoint.GetBySystemName(region));
+            config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
         }
 
-        return new AmazonLambdaClient();
+        // Mirrors AwsS3FileStorage.CreateClient: when an explicit endpoint is supplied it takes
+        // precedence for the actual request URL while the region (when set) still provides the
+        // SigV4 signing region. Unset = default regional endpoint, keeping production behaviour.
+        if (!string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            config.ServiceURL = serviceUrl;
+        }
+
+        return new AmazonLambdaClient(config);
     }
 
     private static AwsLambdaAliasState ToState(

@@ -24,7 +24,8 @@ internal interface ICloudWatchMetricClient
         DateTime startUtc,
         DateTime endUtc,
         int periodSeconds,
-        CancellationToken cancellationToken);
+        string? serviceUrl = null,
+        CancellationToken cancellationToken = default);
 }
 
 internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
@@ -35,9 +36,10 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
         DateTime startUtc,
         DateTime endUtc,
         int periodSeconds,
-        CancellationToken cancellationToken)
+        string? serviceUrl = null,
+        CancellationToken cancellationToken = default)
     {
-        using var client = CreateClient(region);
+        using var client = CreateClient(region, serviceUrl);
         var response = await client.GetMetricDataAsync(
             new GetMetricDataRequest
             {
@@ -67,10 +69,28 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
         return null;
     }
 
-    private static AmazonCloudWatchClient CreateClient(string? region)
-        => string.IsNullOrWhiteSpace(region)
-            ? new AmazonCloudWatchClient()
-            : new AmazonCloudWatchClient(RegionEndpoint.GetBySystemName(region));
+    // Visible for testing. Applies an opt-in, config-driven ServiceURL override (for example a
+    // LocalStack Community CloudWatch endpoint) when supplied; when unset the client uses the
+    // default regional endpoint, keeping production behaviour unchanged.
+    internal static AmazonCloudWatchClient CreateClient(string? region, string? serviceUrl)
+    {
+        var config = new AmazonCloudWatchConfig();
+
+        if (!string.IsNullOrWhiteSpace(region))
+        {
+            config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
+        }
+
+        // Mirrors AwsS3FileStorage.CreateClient: when an explicit endpoint is supplied it takes
+        // precedence for the actual request URL while the region (when set) still provides the
+        // SigV4 signing region. Unset = default regional endpoint, keeping production behaviour.
+        if (!string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            config.ServiceURL = serviceUrl;
+        }
+
+        return new AmazonCloudWatchClient(config);
+    }
 }
 
 /// <summary>
@@ -106,12 +126,13 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
         }
 
         var region = ResolveRegion(connection);
+        var serviceUrl = ResolveServiceUrl(connection);
         var endUtc = DateTime.UtcNow;
         var startUtc = endUtc.AddSeconds(-WindowSeconds);
 
         var sampleCount = string.IsNullOrWhiteSpace(policy.MinimumSampleQuery)
             ? (double?)null
-            : await metricClient.GetExpressionValueAsync(region, policy.MinimumSampleQuery, startUtc, endUtc, WindowSeconds, cancellationToken).ConfigureAwait(false);
+            : await metricClient.GetExpressionValueAsync(region, policy.MinimumSampleQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
 
         if (policy.MinimumSampleCount.HasValue && (!sampleCount.HasValue || sampleCount.Value < policy.MinimumSampleCount.Value))
         {
@@ -121,13 +142,13 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
         double? errorRate = null;
         if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
         {
-            errorRate = await metricClient.GetExpressionValueAsync(region, policy.ErrorRateQuery, startUtc, endUtc, WindowSeconds, cancellationToken).ConfigureAwait(false);
+            errorRate = await metricClient.GetExpressionValueAsync(region, policy.ErrorRateQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
         }
 
         double? latencyP95 = null;
         if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
         {
-            latencyP95 = await metricClient.GetExpressionValueAsync(region, policy.LatencyP95Query, startUtc, endUtc, WindowSeconds, cancellationToken).ConfigureAwait(false);
+            latencyP95 = await metricClient.GetExpressionValueAsync(region, policy.LatencyP95Query, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
         }
 
         return new DeployTelemetryReadings
@@ -136,6 +157,29 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
             ErrorRate = errorRate,
             LatencyP95 = latencyP95
         };
+    }
+
+    // Opt-in, config-driven endpoint override. A custom CloudWatch BaseUrl (for example a
+    // LocalStack Community endpoint such as http://localhost:4566) is forwarded to the SDK as a
+    // ServiceURL so the telemetry gate can be exercised against an emulator. Standard regional
+    // monitoring endpoints are left to ResolveRegion / the SDK default endpoint, so production
+    // connections that only set BaseUrl for region inference keep their existing behaviour.
+    private static string? ResolveServiceUrl(DeployTelemetryConnectionDescriptor connection)
+    {
+        if (string.IsNullOrWhiteSpace(connection.BaseUrl) ||
+            !Uri.TryCreate(connection.BaseUrl, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        var labels = uri.Host.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var isStandardRegionalEndpoint =
+            labels.Length >= 4 &&
+            string.Equals(labels[0], "monitoring", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(labels[^2], "amazonaws", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(labels[^1], "com", StringComparison.OrdinalIgnoreCase);
+
+        return isStandardRegionalEndpoint ? null : connection.BaseUrl.Trim();
     }
 
     private static string? ResolveRegion(DeployTelemetryConnectionDescriptor connection)
