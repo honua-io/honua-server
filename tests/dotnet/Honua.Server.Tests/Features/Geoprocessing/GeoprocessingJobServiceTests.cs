@@ -442,6 +442,130 @@ public sealed class GeoprocessingJobServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithLocalAndBatchWorkloads_PrefersBatchAndCarriesTierParams()
+    {
+        // Both the always-present local baseline AND a fully-configured AWS Batch GP
+        // workload are registered. The service must prefer the Batch workload and
+        // route the job to the honua-aws-batch backend, carrying the queue + tier ARNs.
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        var batchBackend = Substitute.For<IBatchComputeBackend>();
+        batchBackend.BackendName.Returns("honua-aws-batch");
+        batchBackend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-local",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "Geoprocessing (local baseline)"
+            },
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-aws-batch",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "honua-aws-batch",
+                WorkloadName = "Geoprocessing (AWS Batch)",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["batch.job_queue_arn"] = "arn:aws:batch:us-east-1:123:job-queue/honua-gp",
+                    ["batch.region"] = "us-east-1",
+                    ["batch.job_definition_arn.s"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-s:1",
+                    ["batch.job_definition_arn.m"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-m:1",
+                    ["batch.job_definition_arn.l"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-l:1",
+                    ["batch.job_definition_arn.xl"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-xl:1"
+                }
+            }
+        });
+        batchBackend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "job-batch-789",
+                Message = "Submitted to AWS Batch"
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry,
+            backends: [batchBackend]);
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        job.Spec.WorkloadId.Should().Be("geoprocessing-aws-batch");
+        job.Spec.Backend.Should().Be("honua-aws-batch");
+        job.Spec.TargetKind.Should().Be(BatchComputeTargetKind.AwsBatch);
+        job.Spec.Parameters.Should().ContainKey("batch.job_queue_arn")
+            .WhoseValue.Should().Be("arn:aws:batch:us-east-1:123:job-queue/honua-gp");
+        job.Spec.Parameters.Should().ContainKey("batch.region").WhoseValue.Should().Be("us-east-1");
+        job.Spec.Parameters.Should().ContainKey("batch.job_definition_arn.s");
+        job.Spec.Parameters.Should().ContainKey("batch.job_definition_arn.xl");
+        await batchBackend.Received().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+        await _jobQueue.DidNotReceive().EnqueueAsync(
+            Arg.Any<string>(),
+            Arg.Any<OperationPriority>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithOnlyLocalWorkload_FallsBackToLocalBackend()
+    {
+        // Without an activated remote workload (the AWS Batch row gated off / absent),
+        // GP must keep routing to the local baseline backend — no regression.
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-local",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "Geoprocessing (local baseline)"
+            }
+        });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry);
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        job.Spec.Backend.Should().Be("local");
+        job.Spec.WorkloadId.Should().Be("geoprocessing-local");
+        await _jobQueue.Received().EnqueueAsync(
+            job.OperationId,
+            Arg.Any<OperationPriority>(),
+            Arg.Any<CancellationToken>());
+    }
+
     // -----------------------------------------------------------------------
     // GetJobAsync
     // -----------------------------------------------------------------------
