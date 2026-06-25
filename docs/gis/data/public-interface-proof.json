@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-06-03T00:00:00Z",
+  "updatedUtc": "2026-06-23T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "capability-manifest",
@@ -379,6 +379,55 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#502",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "datacube-tiles",
+      "displayName": "Datacube (Zarr coverage) tile rendering",
+      "surfaceKind": "http-route",
+      "protocol": "Datacube Tiles HTTP",
+      "canonicalIdentifier": "/api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/datacubes/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus DatacubeTileEndpointTests assert the public GET tile route is backed by a real HTTP request and returns 404 when a layer has no servable Zarr coverage; ZarrTileSlicePlannerTests and ZarrTileRendererTests prove tile-bbox->grid-index mapping, time/elevation axis resolution, no-intersection handling, and PNG encoding.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Protocols/Zarr/ZarrEndpoints.cs",
+            "src/Honua.Core/Features/Raster/ZarrParser/ZarrTileSlicePlanner.cs",
+            "src/Honua.Core/Features/Raster/ZarrParser/ZarrTileRenderer.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Zarr/DatacubeTileEndpointTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Raster/ZarrParser/ZarrTileSlicePlannerTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Raster/ZarrParser/ZarrTileRendererTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1835",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "A datacube tile binds a (z/x/y, time, elevation, variable) Zarr coverage slice to an RGBA PNG: the tile bbox is mapped to a half-open grid-index window, time and vertical axes are resolved through the shared CF axis indexers (#1790), the bounded subset is read via IZarrSubsetReader, the little-endian dtype buffer is decoded and colour-mapped, and the result is encoded by the managed AOT-safe PNG encoder. Temporal parameters use the neutral Core-level Iso8601TemporalIntervalParser rather than any OGC protocol parser.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Core/Features/Raster/ZarrParser/Iso8601TemporalIntervalParser.cs",
+            "src/Honua.Core/Features/Raster/ZarrParser/CfTimeAxisIndexer.cs",
+            "src/Honua.Core/Features/Raster/ZarrParser/PngEncoder.cs",
+            "tests/dotnet/Honua.Core.Tests/Raster/ZarrParser/ZarrTileRendererTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1835",
           "versionCaptureRule": null
         }
       ]
