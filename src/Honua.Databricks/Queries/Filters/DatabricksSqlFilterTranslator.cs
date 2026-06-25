@@ -152,36 +152,36 @@ internal sealed class DatabricksSqlFilterTranslator : SqlFilterExpressionVisitor
         switch (expression)
         {
             case GeometryLiteral geometry:
-            {
-                if (geometry.Srid != 0 && geometry.Srid != context.Wkid)
                 {
-                    throw new NotSupportedException(
-                        $"Cross-SRID geometry literals are not supported by the Databricks provider " +
-                        $"(layer SRID is {context.Wkid}, literal SRID is {geometry.Srid}). " +
-                        $"Pre-project geometries to the layer SRID before filtering.");
-                }
+                    if (geometry.Srid != 0 && geometry.Srid != context.Wkid)
+                    {
+                        throw new NotSupportedException(
+                            $"Cross-SRID geometry literals are not supported by the Databricks provider " +
+                            $"(layer SRID is {context.Wkid}, literal SRID is {geometry.Srid}). " +
+                            $"Pre-project geometries to the layer SRID before filtering.");
+                    }
 
-                // Bind the WKB as a hex-string parameter and reconstruct the geometry in-database.
-                var hex = Convert.ToHexString(geometry.Wkb);
-                var marker = AddParameter(hex);
-                return $"st_geomfromwkb(unhex({marker}))";
-            }
+                    // Bind the WKB as a hex-string parameter and reconstruct the geometry in-database.
+                    var hex = Convert.ToHexString(geometry.Wkb);
+                    var marker = AddParameter(hex);
+                    return $"st_geomfromwkb(unhex({marker}))";
+                }
 
             case PropertyReference property:
-            {
-                var field = context.TryGetField(property.PropertyName);
-                if (field is { IsGeometry: true })
                 {
-                    return Dialect.QuoteIdentifier(field.Value.Name);
-                }
+                    var field = context.TryGetField(property.PropertyName);
+                    if (field is { IsGeometry: true })
+                    {
+                        return Dialect.QuoteIdentifier(field.Value.Name);
+                    }
 
-                if (field is null && IsGeometryAlias(property.PropertyName) && context.GeometryColumnName is { Length: > 0 } geom)
-                {
-                    return Dialect.QuoteIdentifier(geom);
-                }
+                    if (field is null && IsGeometryAlias(property.PropertyName) && context.GeometryColumnName is { Length: > 0 } geom)
+                    {
+                        return Dialect.QuoteIdentifier(geom);
+                    }
 
-                throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field.");
-            }
+                    throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field.");
+                }
 
             default:
                 throw new NotSupportedException(
