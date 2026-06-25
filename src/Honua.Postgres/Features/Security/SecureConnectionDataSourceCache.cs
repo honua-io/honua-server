@@ -20,7 +20,8 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        _schemaHeadersEnabled = bool.TryParse(configuration["HONUA_TEST_SCHEMA_HEADERS"], out var schemaHeadersEnabled) && schemaHeadersEnabled;
+        // Request-scoped schema mode covers per-test schema headers and tenant schema routing (#346).
+        _schemaHeadersEnabled = RequestScopedSchemaConfiguration.IsEnabled(configuration);
         _connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
         // Preserve the configured default schema so named secure connections
         // get the same search_path embedded in their Options parameter as the
