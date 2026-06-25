@@ -235,10 +235,14 @@ internal static partial class SnowflakeFeatureQueryBuilder
         {
             SpatialRelationship.Intersects or SpatialRelationship.EnvelopeIntersects =>
                 $"ST_INTERSECTS({geomCol}, {filterExpr})",
+            // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
+            // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
+            // filter geometry to match the canonical PostGIS reference (#2068). Reversing the
+            // operands inverts the relationship and returns the wrong (typically empty) result set.
             SpatialRelationship.Within =>
-                $"ST_WITHIN({geomCol}, {filterExpr})",
+                $"ST_WITHIN({filterExpr}, {geomCol})",
             SpatialRelationship.Contains =>
-                $"ST_CONTAINS({geomCol}, {filterExpr})",
+                $"ST_CONTAINS({filterExpr}, {geomCol})",
             SpatialRelationship.Disjoint =>
                 $"ST_DISJOINT({geomCol}, {filterExpr})",
             _ => throw new NotSupportedException(

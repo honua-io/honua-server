@@ -192,6 +192,14 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/geocoding/providers"),
         new("GET", "/api/v1/admin/features"),
 
+        // v1 admin rate limit policy endpoints (#355)
+        new("GET", "/api/v1/admin/rate-limits"),
+        new("POST", "/api/v1/admin/rate-limits"),
+        new("GET", "/api/v1/admin/rate-limits/{id}"),
+        new("PUT", "/api/v1/admin/rate-limits/{id}"),
+        new("DELETE", "/api/v1/admin/rate-limits/{id}"),
+        new("GET", "/api/v1/admin/rate-limits/status"),
+
         // v1 admin compliance endpoints (#352)
         new("GET", "/api/v1/admin/compliance/dashboard"),
         new("GET", "/api/v1/admin/compliance/report"),
@@ -607,6 +615,8 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/observability/alerts/{eventId}/suppress"),
         new("POST", "/api/v1/admin/observability/alerts/{eventId}/resolve"),
         new("GET", "/api/v1/admin/observability/audit"),
+        new("GET", "/api/v1/admin/observability/audit/export"),
+        new("GET", "/api/v1/admin/observability/audit/verify"),
         new("GET", "/api/v1/admin/observability/events"),
         new("GET", "/api/v1/admin/observability/logs"),
         new("GET", "/api/v1/admin/investigations"),
@@ -658,6 +668,18 @@ public static class EndpointRegistry
         new("GET", "/sharing/rest/oauth2/callback"),
         new("POST", "/sharing/rest/oauth2/token"),
         new("GET", "/sharing/rest/oauth2/token"),
+
+        // OAuth2 RFC 7662 token introspection (#1890).
+        new("POST", "/sharing/rest/oauth2/introspect"),
+
+        // ArcGIS Portal community group + item sharing surface (#1868).
+        new("POST", "/sharing/rest/community/createGroup"),
+        new("GET", "/sharing/rest/community/groups/{groupId}"),
+        new("POST", "/sharing/rest/community/groups/{groupId}/delete"),
+        new("POST", "/sharing/rest/community/groups/{groupId}/addUsers"),
+        new("POST", "/sharing/rest/community/groups/{groupId}/removeUsers"),
+        new("POST", "/sharing/rest/content/items/{itemId}/share"),
+        new("POST", "/sharing/rest/content/items/{itemId}/unshare"),
 
         new("GET", "/rest/services"),
         new("GET", "/rest/info"),
@@ -778,9 +800,14 @@ public static class EndpointRegistry
 
         // Saved-map collaboration session seam.
         new("POST", "/api/v1/saved-maps/{mapId}/collaboration/sessions/join"),
+        // Realtime presence/cursor/follow WebSocket transport (#971/#1290).
+        new("GET", "/api/v1/saved-maps/{mapId}/collaboration/sessions/stream"),
         new("POST", "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim"),
         new("POST", "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew"),
         new("POST", "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release"),
+        // Durable collaborative edit op-log: append (cursor + idempotency) and replay (#972).
+        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/operations"),
+        new("GET", "/api/v1/saved-maps/{mapId}/collaboration/operations"),
 
         // Public SDK-compatible scene discovery (#923).
         new("GET", "/api/scenes"),
@@ -800,6 +827,13 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}"),
+
+        // I3S node-page traversal (#1809) and per-field statistics (#1811),
+        // served at the canonical GeoServices path plus the /scenes alias.
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}"),
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0"),
 
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
@@ -1088,6 +1122,14 @@ public static class EndpointRegistry
         new("GET", "/ogc/coverages/collections/{collectionId}/schema"),
         new("GET", "/ogc/coverages/collections/{collectionId}/coverage"),
 
+        // OGC API - Environmental Data Retrieval (EDR) (#1757)
+        new("GET", "/edr"),
+        new("GET", "/edr/conformance"),
+        new("GET", "/edr/collections"),
+        new("GET", "/edr/collections/{collectionId}"),
+        new("GET", "/edr/collections/{collectionId}/position"),
+        new("GET", "/edr/collections/{collectionId}/cube"),
+
         // OGC API Processes
         new("GET", "/ogc/processes"),
         new("GET", "/ogc/processes/conformance"),
@@ -1241,6 +1283,9 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/zarr-stores/{id}"),
         new("POST", "/api/v1/admin/zarr-stores/{id}/refresh"),
 
+        // Datacube tile rendering (#1835): Zarr coverage slice -> PNG map tile
+        new("GET", "/api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}"),
+
         // STAC (SpatioTemporal Asset Catalog)
         new("GET", "/stac"),
         new("GET", "/stac/conformance"),
@@ -1266,6 +1311,12 @@ public static class EndpointRegistry
         new("GET", "/sta/v1.1/Datastreams({id})/Observations"),
         new("GET", "/sta/v1.1/Observations"),
         new("GET", "/sta/v1.1/Observations({id})"),
+
+        // OGC SensorThings API (STA v1.1) Phase 2 ingest + Phase 3 streaming (#1747)
+        new("POST", "/sta/v1.1/Observations"),
+        new("POST", "/sta/v1.1/Datastreams({id})/Observations"),
+        new("POST", "/sta/v1.1/Datastreams"),
+        new("GET", "/sta/v1.1/ObservationsStream"),
 
         // Hosted samples
         new("GET", "/samples/stac-ops"),

@@ -261,6 +261,15 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
         }
 
+        // RLS / permanent-filter enforcement runs only on the read path; the edit SQL
+        // filters by (layer_id, objectid) with no row-level predicate. So every update/delete
+        // target MUST be pre-resolved through the RLS-enforced reader and fail closed when a
+        // row is hidden from the caller — otherwise a caller could mutate or delete a row RLS
+        // hides from them by supplying its objectid (#2071). Adds carry no objectid and are
+        // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
+        await EnsureEditTargetsVisibleAsync(
+            request.LayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
+
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
 
@@ -300,6 +309,58 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             context).ConfigureAwait(false);
 
         return GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+    }
+
+    /// <summary>
+    /// Pre-reads every update and delete target through the RLS-enforced
+    /// <see cref="IFeatureReader.GetAsync(int, long, CancellationToken)"/> so the gRPC edit
+    /// surface enforces the same row-level visibility as the read path. A row that is hidden
+    /// from the caller by a row-level-security policy or a metadata permanent filter resolves
+    /// to <see langword="null"/>; the request is rejected (fail closed) rather than mutating or
+    /// deleting it, because the underlying edit SQL filters only on <c>(layer_id, objectid)</c>
+    /// with no RLS predicate (#2071). Adds carry no objectid and are not pre-read.
+    /// </summary>
+    private async Task EnsureEditTargetsVisibleAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        CancellationToken cancellationToken)
+    {
+        if (editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        // Collect distinct target objectids across updates and deletes; a single hidden/missing
+        // target fails the whole batch closed.
+        var targets = new HashSet<long>();
+        if (!editBatch.Updates.IsDefaultOrEmpty)
+        {
+            foreach (var update in editBatch.Updates)
+            {
+                targets.Add(update.Id);
+            }
+        }
+
+        if (!editBatch.Deletes.IsDefaultOrEmpty)
+        {
+            foreach (var objectId in editBatch.Deletes)
+            {
+                targets.Add(objectId);
+            }
+        }
+
+        foreach (var objectId in targets)
+        {
+            var existing = await _featureReader
+                .GetAsync(layerId, objectId, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing is null)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.NotFound,
+                    $"Feature with objectid {objectId} was not found."));
+            }
+        }
     }
 
     private async Task PublishFeatureChangeEventsAsync(

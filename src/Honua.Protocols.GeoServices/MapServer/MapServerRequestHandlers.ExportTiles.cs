@@ -42,6 +42,7 @@ internal static partial class MapServerEndpoints
         ExportRenderLayer[] Layers,
         RenderLayerDescriptor[] RenderLayers,
         ExportTileCoordinate[] Tiles,
+        long TotalTileCount,
         double[] Bounds,
         int MinZoom,
         int MaxZoom,
@@ -57,10 +58,13 @@ internal static partial class MapServerEndpoints
             return error;
         }
 
-        var estimatedSizeBytes = checked(plan!.Tiles.LongLength * ExportTilesTileSizeBytesEstimate);
+        // Report the TRUE tile count (not the maxTiles-bounded build size) so the estimate stays
+        // meaningful even when the request exceeds the transfer limit; the bounded build only ever
+        // exists to keep the allocation from OOM-ing the host (#2065).
+        var estimatedSizeBytes = checked(plan!.TotalTileCount * ExportTilesTileSizeBytesEstimate);
         var response = new ExportTilesEstimateResponse
         {
-            TileCount = plan.Tiles.LongLength,
+            TileCount = plan.TotalTileCount,
             Size = estimatedSizeBytes,
             SizeUnit = "bytes",
             EstimatedSizeBytes = estimatedSizeBytes,
@@ -365,14 +369,10 @@ internal static partial class MapServerEndpoints
         }
 
         var bounds = NormalizeExportTilesBounds(extentTransform.Extent);
-        var allTiles = BuildExportTileCoordinates(bounds, requestedZooms);
-        var exceededTransferLimit = allTiles.Length > maxTiles;
-        var selectedTiles = allTiles.Take(maxTiles).ToArray();
-        if (selectedTiles.Length == 0)
-        {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, "exportTiles selected no tiles."));
-        }
 
+        // Run service validation and the access-policy gate BEFORE materializing the tile
+        // grid so an unauthenticated request against a non-existent or unauthorized service
+        // is rejected without allocating anything (#2065).
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
@@ -397,6 +397,28 @@ internal static partial class MapServerEndpoints
         if (accessError != null)
         {
             return (null, accessError);
+        }
+
+        // Compute the total tile count Σ(xMax-xMin+1)*(yMax-yMin+1) per zoom level FIRST and
+        // reject when it exceeds maxTiles, BEFORE building the full grid. The previous code
+        // materialized every coordinate then .Take(maxTiles)'d, so a whole-world request at a
+        // high zoom (e.g. z18 → ~6.9e10 entries) allocated hundreds of GB before any cap was
+        // applied — an unauthenticated OOM DoS (#2065).
+        var totalTileCount = CountExportTileCoordinates(bounds, requestedZooms);
+        var exceededTransferLimit = totalTileCount > maxTiles;
+        if (totalTileCount <= 0)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "exportTiles selected no tiles."));
+        }
+
+        // Bound the build to maxTiles tiles. When the request exceeds the transfer limit the
+        // estimate path still reports exceededTransferLimit; the export path returns only the
+        // first maxTiles tiles (never the unbounded full grid).
+        var buildLimit = (int)Math.Min(totalTileCount, maxTiles);
+        var selectedTiles = BuildExportTileCoordinates(bounds, requestedZooms, buildLimit);
+        if (selectedTiles.Length == 0)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "exportTiles selected no tiles."));
         }
 
         var renderSelection = ResolveRenderLayers(
@@ -426,6 +448,7 @@ internal static partial class MapServerEndpoints
             renderLayers,
             descriptors,
             selectedTiles,
+            totalTileCount,
             bounds,
             minZoom,
             maxZoom,
@@ -783,13 +806,49 @@ internal static partial class MapServerEndpoints
         return [minLon, minLat, maxLon, maxLat];
     }
 
-    private static ExportTileCoordinate[] BuildExportTileCoordinates(double[] bounds, IReadOnlyList<int> levels)
+    /// <summary>
+    /// Counts the total number of tiles the request would produce as
+    /// <c>Σ (xMax-xMin+1)*(yMax-yMin+1)</c> across the requested zoom levels, using
+    /// <see cref="long"/> arithmetic so a whole-world high-zoom request cannot overflow.
+    /// This is computed before the grid is materialized so the caller can reject an
+    /// over-limit request without allocating the full coordinate list (#2065).
+    /// </summary>
+    private static long CountExportTileCoordinates(double[] bounds, IReadOnlyList<int> levels)
     {
         var minLon = bounds[0];
         var minLat = bounds[1];
         var maxLon = bounds[2];
         var maxLat = bounds[3];
-        var coordinates = new List<ExportTileCoordinate>();
+        long total = 0;
+
+        foreach (var z in levels)
+        {
+            var n = 1 << z;
+            var xMin = LonToExportTileX(minLon, z, n);
+            var xMax = LonToExportTileX(maxLon, z, n);
+            var yMin = LatToExportTileY(maxLat, z, n);
+            var yMax = LatToExportTileY(minLat, z, n);
+
+            var width = (long)(xMax - xMin + 1);
+            var height = (long)(yMax - yMin + 1);
+            total += width * height;
+        }
+
+        return total;
+    }
+
+    private static ExportTileCoordinate[] BuildExportTileCoordinates(
+        double[] bounds,
+        IReadOnlyList<int> levels,
+        int maxTiles)
+    {
+        var minLon = bounds[0];
+        var minLat = bounds[1];
+        var maxLon = bounds[2];
+        var maxLat = bounds[3];
+        // Pre-size to the bounded cap, never the (potentially enormous) full grid, so the
+        // build itself can never allocate more than maxTiles coordinates (#2065).
+        var coordinates = new List<ExportTileCoordinate>(Math.Max(0, maxTiles));
 
         foreach (var z in levels)
         {
@@ -803,6 +862,11 @@ internal static partial class MapServerEndpoints
             {
                 for (var y = yMin; y <= yMax; y++)
                 {
+                    if (coordinates.Count >= maxTiles)
+                    {
+                        return [.. coordinates];
+                    }
+
                     coordinates.Add(new ExportTileCoordinate(z, x, y));
                 }
             }

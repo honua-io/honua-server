@@ -1,0 +1,51 @@
+### Honua local GP dev — geometry.buffer over OGC API Processes
+### Prereq: docker compose -f docker-compose.gp-dev.yml up
+### Works with the VS Code REST Client / JetBrains HTTP client.
+###
+### The job runs IN-PROCESS in the honua container on the local backend
+### ("local"); Redis carries the job queue / status / result package. No cloud.
+
+@base = http://localhost:8080
+# Admin password (compose default) doubles as the X-API-Key; the admin role
+# holds the process-execute grant.
+@apiKey = quickstart-admin-password
+# POINT(-122.4194 37.7749) as base64-encoded little-endian WKB.
+@wkb = AQEAAABQ/Bhz15pewNDVVuwv40JA
+
+### 0. Readiness
+GET {{base}}/healthz/ready
+
+### 1. Discover the process catalog (anonymous)
+GET {{base}}/ogc/processes/processes
+
+### 2. Describe geometry.buffer (inputs: wkb, srid, distance)
+GET {{base}}/ogc/processes/processes/geometry.buffer
+
+### 3. Submit the buffer job (async). Returns 201 + Location: .../jobs/{jobId}.
+# @name submit
+POST {{base}}/ogc/processes/processes/geometry.buffer/execution
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+Prefer: respond-async
+
+{
+  "inputs": {
+    "wkb": "{{wkb}}",
+    "srid": 4326,
+    "distance": 500
+  }
+}
+
+### 4. Poll status — re-run until "status": "successful".
+# Capture the job id from step 3's response body (jobID) or Location header.
+@jobId = {{submit.response.body.jobID}}
+GET {{base}}/ogc/processes/jobs/{{jobId}}
+X-API-Key: {{apiKey}}
+
+### 5. Fetch the results document for the terminal job.
+GET {{base}}/ogc/processes/jobs/{{jobId}}/results
+X-API-Key: {{apiKey}}
+
+### 6. Dismiss the job when done.
+DELETE {{base}}/ogc/processes/jobs/{{jobId}}
+X-API-Key: {{apiKey}}

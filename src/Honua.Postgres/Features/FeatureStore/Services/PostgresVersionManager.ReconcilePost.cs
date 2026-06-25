@@ -229,13 +229,29 @@ internal sealed partial class PostgresVersionManager
         await SetVersionStateAsync(versionId, VersionState.Posting, cancellationToken).ConfigureAwait(false);
         try
         {
-            var (applied, serverGeneration) = await ReplayOverlayOntoDefaultAsync(versionId, cancellationToken).ConfigureAwait(false);
-            await AdvanceCommonAncestorAsync(versionId, serverGeneration, cancellationToken).ConfigureAwait(false);
-            activity?.SetTag("honua.version.applied_changes", applied);
-            activity?.SetTag("honua.version.server_generation", serverGeneration);
+            var replay = await ReplayOverlayOntoDefaultAsync(versionId, cancellationToken).ConfigureAwait(false);
+
+            // A clean CountPendingConflictsAsync only reflects the conflict set computed by the LAST
+            // reconcile. The version lock serializes reconcile/post for THIS version but does not block
+            // DEFAULT writers, so a DEFAULT edit committed between that reconcile and this post would be
+            // silently overwritten by the whole-row overlay replay (lost update). ReplayOverlayOntoDefault
+            // re-validates each overlay row's captured base_* image against the LIVE DEFAULT row inside the
+            // post transaction; if any update/delete target diverged, it rolls back and reports the
+            // divergent keys here so the caller must reconcile again instead of clobbering (#2063).
+            if (replay.Conflicted)
+            {
+                activity?.SetTag("honua.version.conflict_count", replay.ConflictingKeys.Count);
+                activity?.SetTag("honua.version.outcome", "blocked_by_default_drift");
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                return new VersionPostResult(Posted: false, AppliedChanges: 0, ServerGeneration: 0, BlockedByConflicts: true);
+            }
+
+            await AdvanceCommonAncestorAsync(versionId, replay.ServerGeneration, cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.version.applied_changes", replay.Applied);
+            activity?.SetTag("honua.version.server_generation", replay.ServerGeneration);
             activity?.SetTag("honua.version.outcome", "posted");
             activity?.SetStatus(ActivityStatusCode.Ok);
-            return new VersionPostResult(Posted: true, AppliedChanges: applied, ServerGeneration: serverGeneration, BlockedByConflicts: false);
+            return new VersionPostResult(Posted: true, AppliedChanges: replay.Applied, ServerGeneration: replay.ServerGeneration, BlockedByConflicts: false);
         }
         finally
         {
@@ -251,7 +267,7 @@ internal sealed partial class PostgresVersionManager
     /// DEFAULT change-tracking trigger fires per row (no version GUC set), advancing the generation and
     /// recording NULL-version DEFAULT changes. Returns the applied row count and the post generation.
     /// </summary>
-    private async Task<(int Applied, long ServerGeneration)> ReplayOverlayOntoDefaultAsync(
+    private async Task<OverlayReplayResult> ReplayOverlayOntoDefaultAsync(
         Guid versionId,
         CancellationToken cancellationToken)
     {
@@ -264,12 +280,90 @@ internal sealed partial class PostgresVersionManager
         var transaction = (NpgsqlTransaction)dbTransaction;
         await using var __ = transaction;
 
+        // Optimistic-concurrency guard (#2063): an update/delete overlay row may only be replayed when the
+        // LIVE DEFAULT row still matches the base image the branch captured on first touch. If DEFAULT was
+        // edited since (committed by a concurrent DEFAULT writer the version lock cannot block), the
+        // whole-row replay would silently discard that committed edit. Detect every diverged
+        // (layer_id, objectid) target BEFORE writing, inside this transaction, and abort the post when any
+        // exists so the operator must reconcile again. IS NOT DISTINCT FROM makes the comparison NULL-safe
+        // (a NULL base must match a NULL live value); geometry is compared by binary identity so any
+        // re-write of the DEFAULT geometry counts as drift, matching the strict lost-update semantics.
+        // Inserts (operation = 1) carry no base image and create a new objectid, so they are not guarded
+        // here. FOR UPDATE on the matched DEFAULT rows pins them for the duration of the transaction so a
+        // DEFAULT writer cannot slip a committed edit between this check and the replay.
+        // Pin the live DEFAULT rows targeted by this version's update/delete overlay rows so a concurrent
+        // DEFAULT writer cannot slip a committed edit between the drift check below and the replay. This is
+        // a separate INNER-JOIN lock because Postgres rejects FOR UPDATE on the nullable side of an outer
+        // join: the drift detection needs a LEFT JOIN (to spot an update target whose DEFAULT row vanished),
+        // but only rows that actually exist in DEFAULT can be — and need to be — locked. Locking these rows
+        // first holds them for the remainder of the transaction, so the subsequent LEFT-JOIN drift query
+        // observes a stable snapshot of every target that still exists.
+        await using (var lockCommand = new NpgsqlCommand(
+            $"""
+            SELECT f.objectid
+            FROM {featuresTable} f
+            JOIN honua.version_edits ve
+              ON f.layer_id = ve.layer_id AND f.objectid = ve.objectid
+            WHERE ve.version_id = @version
+              AND ve.operation IN (2, 3)
+            FOR UPDATE OF f
+            """,
+            connection)
+        { Transaction = transaction })
+        {
+            lockCommand.Parameters.AddWithValue("version", versionId);
+            await using var lockReader = await lockCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await lockReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                // Drain: the lock is the side effect; the rows themselves are re-evaluated below.
+            }
+        }
+
+        var conflictingKeys = new List<(int LayerId, long ObjectId)>();
+        await using (var driftCommand = new NpgsqlCommand(
+            $"""
+            SELECT ve.layer_id, ve.objectid
+            FROM honua.version_edits ve
+            LEFT JOIN {featuresTable} f
+              ON f.layer_id = ve.layer_id AND f.objectid = ve.objectid
+            WHERE ve.version_id = @version
+              AND ve.operation IN (2, 3)
+              -- A branch delete whose DEFAULT row is already gone is a convergent no-op (DEFAULT
+              -- reached the desired end state), not drift — exclude it so it does not spuriously
+              -- block the post. Every other update/delete target must still match its captured base.
+              AND NOT (ve.operation = 3 AND f.objectid IS NULL)
+              AND NOT (
+                    f.geometry IS NOT DISTINCT FROM ve.base_geometry
+                AND f.attributes IS NOT DISTINCT FROM ve.base_attributes
+              )
+            """,
+            connection)
+        { Transaction = transaction })
+        {
+            driftCommand.Parameters.AddWithValue("version", versionId);
+            await using var reader = await driftCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                conflictingKeys.Add((reader.GetInt32(0), reader.GetInt64(1)));
+            }
+        }
+
+        if (conflictingKeys.Count > 0)
+        {
+            // DEFAULT drifted under at least one update/delete target. Roll back so nothing is overwritten;
+            // the caller surfaces a conflict and the operator must re-reconcile against the new DEFAULT.
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new OverlayReplayResult(Applied: 0, ServerGeneration: 0, Conflicted: true, ConflictingKeys: conflictingKeys);
+        }
+
         var applied = 0;
 
-        // Deletes: remove DEFAULT rows the branch deleted.
+        // Deletes: remove DEFAULT rows the branch deleted, only while DEFAULT still matches the captured
+        // base image (defense-in-depth alongside the drift pre-check above).
         await using (var deleteCommand = new NpgsqlCommand(
             $"DELETE FROM {featuresTable} f USING honua.version_edits ve " +
-            "WHERE ve.version_id = @version AND ve.operation = 3 AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid",
+            "WHERE ve.version_id = @version AND ve.operation = 3 AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid " +
+            "AND f.geometry IS NOT DISTINCT FROM ve.base_geometry AND f.attributes IS NOT DISTINCT FROM ve.base_attributes",
             connection)
         { Transaction = transaction })
         {
@@ -277,11 +371,13 @@ internal sealed partial class PostgresVersionManager
             applied += await deleteCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        // Updates: overwrite DEFAULT geometry/attributes for branch-updated rows.
+        // Updates: overwrite DEFAULT geometry/attributes for branch-updated rows, only while DEFAULT still
+        // matches the captured base image.
         await using (var updateCommand = new NpgsqlCommand(
             $"UPDATE {featuresTable} f SET geometry = ve.geometry, attributes = ve.attributes " +
             "FROM honua.version_edits ve " +
-            "WHERE ve.version_id = @version AND ve.operation = 2 AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid",
+            "WHERE ve.version_id = @version AND ve.operation = 2 AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid " +
+            "AND f.geometry IS NOT DISTINCT FROM ve.base_geometry AND f.attributes IS NOT DISTINCT FROM ve.base_attributes",
             connection)
         { Transaction = transaction })
         {
@@ -311,15 +407,26 @@ internal sealed partial class PostgresVersionManager
         }
 
         long serverGeneration;
-        await using (var genCommand = new NpgsqlCommand("SELECT last_value FROM honua.sync_generation", connection) { Transaction = transaction })
+        await using (var genCommand = new NpgsqlCommand("SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes", connection) { Transaction = transaction })
         {
             var result = await genCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             serverGeneration = result is long gen ? gen : 0;
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return (applied, serverGeneration);
+        return new OverlayReplayResult(applied, serverGeneration, Conflicted: false, ConflictingKeys: conflictingKeys);
     }
+
+    /// <summary>
+    /// Outcome of replaying a version's overlay onto DEFAULT. <see cref="Conflicted"/> is set (and nothing
+    /// is written) when a concurrent DEFAULT edit diverged from the overlay's captured base image for an
+    /// update/delete target, listing the divergent keys (#2063).
+    /// </summary>
+    private sealed record OverlayReplayResult(
+        int Applied,
+        long ServerGeneration,
+        bool Conflicted,
+        IReadOnlyList<(int LayerId, long ObjectId)> ConflictingKeys);
 
     private async Task<GdbVersion?> LoadVersionAsync(Guid versionId, CancellationToken cancellationToken)
     {
@@ -593,14 +700,33 @@ internal sealed partial class PostgresVersionManager
         VersionConflictResolutionChoice choice,
         CancellationToken cancellationToken)
     {
-        if (choice == VersionConflictResolutionChoice.TakeVersion)
-        {
-            // The branch overlay already carries the version image; nothing to rewrite.
-            return;
-        }
-
         var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        if (choice == VersionConflictResolutionChoice.TakeVersion)
+        {
+            // The branch overlay already carries the version image to write, but its captured base image
+            // still reflects the common ancestor. DEFAULT has since diverged (that is why this is a
+            // conflict), so the post-time drift guard (f.* IS NOT DISTINCT FROM ve.base_*) would block the
+            // replay and DEFAULT would keep its own value. Resolving "take version" means the operator
+            // accepts the current DEFAULT as the new base to overwrite: rebase the overlay's base image onto
+            // the live DEFAULT row so the drift check passes and the version's value lands on DEFAULT. If
+            // DEFAULT deleted the row, leave the base untouched — the drift guard already treats a vanished
+            // update target as a conflict, which is the correct outcome for "take version" over a deletion.
+            await using var rebaseCommand = new NpgsqlCommand($"""
+                UPDATE honua.version_edits ve
+                SET base_geometry = f.geometry, base_attributes = f.attributes, modified_at = now()
+                FROM {featuresTable} f
+                WHERE ve.version_id = @version AND ve.layer_id = @layer AND ve.objectid = @objectid
+                  AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid
+                  AND ve.operation = 2
+                """, connection);
+            rebaseCommand.Parameters.AddWithValue("version", versionId);
+            rebaseCommand.Parameters.AddWithValue("layer", layerId);
+            rebaseCommand.Parameters.AddWithValue("objectid", objectId);
+            await rebaseCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
 
         if (choice == VersionConflictResolutionChoice.TakeDefault)
         {

@@ -358,6 +358,8 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/healthz/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/odata", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/edr", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("/edr/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/rest/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/sharing/", StringComparison.OrdinalIgnoreCase) ||
@@ -471,7 +473,10 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
             // opening parenthesis. Without it, an endpoint exercised only via
             // GetFromJsonAsync<T> (e.g. GET /api/v1/admin/oauth-scopes) is reported as
             // uncovered even though it has a backing HTTP request.
-            "GET" => @"(?:\.Get(?:FromJson)?|Get\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Get\s*,",
+            // ConnectAsync(...) matches a WebSocket upgrade, which the server routes as an
+            // HTTP GET endpoint (e.g. GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream);
+            // those routes are exercised by ws-client ConnectAsync rather than a plain GetAsync.
+            "GET" => @"(?:\.Get(?:FromJson)?|Get\w*)Async(?:<[^()]*>)?\s*\(|\.ConnectAsync\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Get\s*,",
             "POST" => @"(?:\.Post(?:AsJson)?|Post\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Post\s*,",
             "PUT" => @"(?:\.Put(?:AsJson)?|Put\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Put\s*,",
             "PATCH" => @"(?:\.Patch(?:AsJson)?|Patch\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Patch\s*,",

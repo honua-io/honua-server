@@ -97,6 +97,38 @@ internal sealed partial class PortalTokenIssuer(
         return new PortalTokenValidation(principal, record.ExpiresAt);
     }
 
+    /// <inheritdoc />
+    public async Task<PortalTokenIntrospection?> IntrospectAsync(
+        string tokenReference,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(tokenReference))
+        {
+            return null;
+        }
+
+        // Introspection deliberately skips the binding check (the introspecting party
+        // is not the bound client); active/expired/revoked is decided by cache
+        // presence + lifetime, which GetAsync already enforces (it evicts and returns
+        // null for an expired entry).
+        var record = await GetAsync(
+            TokenKeyPrefix,
+            tokenReference,
+            PortalTokenJsonContext.Default.PortalTokenRecord,
+            cancellationToken).ConfigureAwait(false);
+
+        if (record is null)
+        {
+            return null;
+        }
+
+        return new PortalTokenIntrospection(
+            record.PrincipalId,
+            record.Roles,
+            record.TenantId,
+            record.ExpiresAt);
+    }
+
     private static string CreateTokenValue()
     {
         // 256 bits of entropy matches AdminAuthSessionStore. Hex output keeps the

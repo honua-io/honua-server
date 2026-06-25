@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using Amazon;
 using Amazon.Batch;
 using Amazon.Batch.Model;
@@ -97,8 +98,14 @@ internal interface IAwsBatchJobClient
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
+internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient, IDisposable
 {
+    // AWS SDK clients are thread-safe and intended to be reused for the process lifetime. This
+    // client is registered as a singleton, but its construction varies by region, so cache one
+    // AmazonBatchClient per resolved region rather than building (and discarding) one per call.
+    private readonly ConcurrentDictionary<string, AmazonBatchClient> _clients =
+        new(StringComparer.Ordinal);
+
     public async Task<AwsBatchSubmitResult> SubmitJobAsync(
         AwsBatchJobSubmission submission,
         string? region,
@@ -106,7 +113,7 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
     {
         ArgumentNullException.ThrowIfNull(submission);
 
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         var request = new SubmitJobRequest
         {
             JobName = submission.JobName,
@@ -152,7 +159,7 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
 
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         var response = await client.DescribeJobsAsync(
             new DescribeJobsRequest { Jobs = [jobId] },
             cancellationToken).ConfigureAwait(false);
@@ -187,40 +194,50 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
         ArgumentException.ThrowIfNullOrWhiteSpace(jobQueue);
         ArgumentException.ThrowIfNullOrWhiteSpace(jobName);
 
-        using var client = CreateClient(region);
-        var response = await client.ListJobsAsync(
-            new ListJobsRequest
+        var client = GetClient(region);
+        var states = new List<AwsBatchJobState>();
+        string? nextToken = null;
+
+        // ListJobs is paginated. The sole consumer reads the newest match, but a busy queue can push
+        // recent jobs past the first page, so walk every page (NextToken) until exhausted rather than
+        // silently truncating to the first response.
+        do
+        {
+            var response = await client.ListJobsAsync(
+                new ListJobsRequest
+                {
+                    JobQueue = jobQueue,
+                    NextToken = nextToken,
+                    Filters =
+                    [
+                        new Amazon.Batch.Model.KeyValuesPair
+                        {
+                            Name = "JOB_NAME",
+                            Values = [jobName]
+                        }
+                    ]
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            if (response.JobSummaryList is { Count: > 0 } summaries)
             {
-                JobQueue = jobQueue,
-                Filters =
-                [
-                    new Amazon.Batch.Model.KeyValuesPair
+                foreach (var summary in summaries)
+                {
+                    states.Add(new AwsBatchJobState
                     {
-                        Name = "JOB_NAME",
-                        Values = [jobName]
-                    }
-                ]
-            },
-            cancellationToken).ConfigureAwait(false);
+                        JobId = summary.JobId,
+                        JobArn = summary.JobArn,
+                        Status = summary.Status?.Value,
+                        StatusReason = summary.StatusReason
+                    });
+                }
+            }
 
-        if (response.JobSummaryList == null || response.JobSummaryList.Count == 0)
-        {
-            return Array.Empty<AwsBatchJobState>();
+            nextToken = response.NextToken;
         }
+        while (!string.IsNullOrEmpty(nextToken));
 
-        var states = new List<AwsBatchJobState>(response.JobSummaryList.Count);
-        foreach (var summary in response.JobSummaryList)
-        {
-            states.Add(new AwsBatchJobState
-            {
-                JobId = summary.JobId,
-                JobArn = summary.JobArn,
-                Status = summary.Status?.Value,
-                StatusReason = summary.StatusReason
-            });
-        }
-
-        return states;
+        return states.Count == 0 ? Array.Empty<AwsBatchJobState>() : states;
     }
 
     public async Task CancelJobAsync(
@@ -231,7 +248,7 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
 
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         await client.CancelJobAsync(
             new CancelJobRequest
             {
@@ -249,7 +266,7 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
 
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         await client.TerminateJobAsync(
             new TerminateJobRequest
             {
@@ -306,13 +323,22 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
         return overrides;
     }
 
-    private static AmazonBatchClient CreateClient(string? region)
+    private AmazonBatchClient GetClient(string? region)
     {
-        if (!string.IsNullOrWhiteSpace(region))
+        var key = string.IsNullOrWhiteSpace(region) ? string.Empty : region;
+        return _clients.GetOrAdd(key, static k => string.IsNullOrEmpty(k)
+            ? new AmazonBatchClient()
+            : new AmazonBatchClient(RegionEndpoint.GetBySystemName(k)));
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        foreach (var client in _clients.Values)
         {
-            return new AmazonBatchClient(RegionEndpoint.GetBySystemName(region));
+            client.Dispose();
         }
 
-        return new AmazonBatchClient();
+        _clients.Clear();
     }
 }

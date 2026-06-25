@@ -24,6 +24,8 @@ internal sealed class PortalOAuthTokenService(
     IAdminApiKeyStore apiKeyStore,
     IOAuthClientStore clientStore,
     IOAuthScopeCatalogue scopeCatalogue,
+    PortalJwtAccessTokenService jwtService,
+    ClientCredentialsFederationService federation,
     IOptions<PortalTokenAuthenticationOptions> tokenOptions)
 {
     private const string AuthorizationCodeGrant = "authorization_code";
@@ -40,7 +42,20 @@ internal sealed class PortalOAuthTokenService(
     private readonly IAdminApiKeyStore _apiKeyStore = apiKeyStore;
     private readonly IOAuthClientStore _clientStore = clientStore;
     private readonly IOAuthScopeCatalogue _scopeCatalogue = scopeCatalogue;
+    private readonly PortalJwtAccessTokenService _jwtService = jwtService;
+    private readonly ClientCredentialsFederationService _federation = federation;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
+
+    // Optional JWT access-token format (ADR-0054, #1890): when enabled the issued
+    // access_token is a signed JWT whose jti is the cache reference, so revocation
+    // and the single request-path validator are preserved. Off by default — the
+    // opaque path below is byte-for-byte unchanged.
+    private async Task<PortalTokenIssuance> MintAccessTokenAsync(
+        PortalTokenIssueRequest issueRequest,
+        CancellationToken cancellationToken)
+        => _jwtService.JwtEnabled
+            ? await _jwtService.IssueAsync(issueRequest, cancellationToken).ConfigureAwait(false)
+            : await _tokenIssuer.IssueAsync(issueRequest, cancellationToken).ConfigureAwait(false);
 
     /// <summary>Exchanges a grant for an Esri-shaped token envelope.</summary>
     public async Task<PortalOAuthTokenResult> ExchangeAsync(
@@ -75,6 +90,37 @@ internal sealed class PortalOAuthTokenService(
         {
             // RFC 6749 §5.2: a missing/invalid client credential is invalid_client.
             return PortalOAuthTokenResult.Failure("invalid_client", "client_secret is required for the client_credentials grant.");
+        }
+
+        // Increment 3 (ADR-0053, #1889): optional pluggable IdP/OIDC federation. When
+        // configured, the presented client_id/client_secret are delegated to the
+        // operator's external token endpoint first. A successful federated exchange
+        // means the IdP authenticated the machine identity; Honua then mints its own
+        // token carrying the operator-configured roles (no second token store —
+        // ADR-0049). A federation miss falls through to the in-tree resolution below,
+        // so federation is purely additive. The credential is resolved before the
+        // IP-binding check (below) so an unknown/bad credential always returns
+        // invalid_client (RFC 6749 §5.2), never the binding-resolution failure mode.
+        if (_federation.FederationEnabled)
+        {
+            var federatedRoles = await _federation
+                .TryAuthenticateAsync(request.ClientId, secret, request.Scope, cancellationToken)
+                .ConfigureAwait(false);
+            if (federatedRoles is not null)
+            {
+                var federatedIp = RequireClientIp(request);
+                if (federatedIp is null)
+                {
+                    return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
+                }
+
+                return await MintClientCredentialsTokenAsync(
+                    principalId: string.IsNullOrWhiteSpace(request.ClientId) ? "federated-client" : request.ClientId!,
+                    roles: federatedRoles,
+                    clientIp: federatedIp,
+                    grantedScope: request.Scope,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         // Increment 2 (ADR-0053, #1888): prefer the first-class OAuth client registry.
@@ -113,9 +159,11 @@ internal sealed class PortalOAuthTokenService(
         // The credential is valid; now bind the token to the issuing client's IP.
         // Service clients have no browser referer, so an IP binding mirrors how API-key
         // automation reaches the request path and is validated by
-        // PortalTokenAuthenticationHandler (binding.ClientIp).
-        var clientIp = request.ClientIp;
-        if (string.IsNullOrWhiteSpace(clientIp))
+        // PortalTokenAuthenticationHandler (binding.ClientIp). This is checked AFTER
+        // credential validation so an unknown/bad secret returns invalid_client, never
+        // leaking the binding-resolution failure mode (ADR-0053).
+        var clientIp = RequireClientIp(request);
+        if (clientIp is null)
         {
             return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
         }
@@ -186,7 +234,7 @@ internal sealed class PortalOAuthTokenService(
         var ttlMinutes = ResolveExpirationMinutes(requested: null);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
 
-        var issuance = await _tokenIssuer.IssueAsync(
+        var issuance = await MintAccessTokenAsync(
             new PortalTokenIssueRequest(
                 PrincipalId: principalId,
                 DisplayName: principalId,
@@ -203,6 +251,9 @@ internal sealed class PortalOAuthTokenService(
         // re-requests with its own secret, avoiding a long-lived secondary credential.
         return PortalOAuthTokenResult.Success(issuance.Token, expiresInSeconds, refreshToken: null, scope: grantedScope);
     }
+
+    private static string? RequireClientIp(PortalOAuthTokenRequest request)
+        => string.IsNullOrWhiteSpace(request.ClientIp) ? null : request.ClientIp;
 
     private static IReadOnlyList<string> ResolveRoles(IReadOnlyList<string> keyPermissions, string? requestedScope)
     {
@@ -355,7 +406,7 @@ internal sealed class PortalOAuthTokenService(
         var ttlMinutes = ResolveExpirationMinutes(requestedMinutes);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
 
-        var issuance = await _tokenIssuer.IssueAsync(
+        var issuance = await MintAccessTokenAsync(
             new PortalTokenIssueRequest(
                 PrincipalId: principal.PrincipalId,
                 DisplayName: principal.DisplayName,

@@ -85,8 +85,13 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
     }
 
     [Fact]
-    public void BuildSelectQuery_WithFirstPageLikeFilter_DoesNotAddImplicitObjectIdOrderBy()
+    public void BuildSelectQuery_WithFirstPageLikeFilter_AddsImplicitObjectIdOrderBy()
     {
+        // A first page (Limit, no Offset) with a LIKE filter must still get a stable tiebreaker
+        // ORDER BY objectid. Without it the database returns an arbitrary heap/plan order while
+        // the next page (which injects ORDER BY objectid because it carries an Offset) is drawn
+        // from a different ordering, silently skipping and duplicating rows across the page
+        // boundary (#2070). Mirrors the sibling MySQL provider, which has no LIKE carve-out.
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
         {
@@ -96,7 +101,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
 
-        result.Sql.Should().NotContain("ORDER BY objectid ASC");
+        result.Sql.Should().Contain("ORDER BY objectid ASC");
         result.Sql.Should().Contain("LIMIT $3");
         result.WhereParameters.Should().Equal("feature\\_999%");
     }

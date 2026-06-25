@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using Amazon;
 using Amazon.Lambda;
 using Amazon.Lambda.Model;
@@ -37,15 +38,21 @@ internal interface IAwsLambdaAliasClient
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient
+internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient, IDisposable
 {
+    // AWS SDK clients are thread-safe and meant to be reused for the process lifetime. This client
+    // is a singleton, but its construction varies by region, so cache one AmazonLambdaClient per
+    // resolved region rather than building (and discarding) one per call.
+    private readonly ConcurrentDictionary<string, AmazonLambdaClient> _clients =
+        new(StringComparer.Ordinal);
+
     public async Task<AwsLambdaAliasState> GetAliasAsync(
         string functionName,
         string aliasName,
         string? region,
         CancellationToken cancellationToken = default)
     {
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         var response = await client.GetAliasAsync(
             new GetAliasRequest
             {
@@ -69,7 +76,7 @@ internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient
         string? region,
         CancellationToken cancellationToken = default)
     {
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         var response = await client.UpdateAliasAsync(
             new UpdateAliasRequest
             {
@@ -92,14 +99,23 @@ internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient
             response.RoutingConfig?.AdditionalVersionWeights);
     }
 
-    private static AmazonLambdaClient CreateClient(string? region)
+    private AmazonLambdaClient GetClient(string? region)
     {
-        if (!string.IsNullOrWhiteSpace(region))
+        var key = string.IsNullOrWhiteSpace(region) ? string.Empty : region;
+        return _clients.GetOrAdd(key, static k => string.IsNullOrEmpty(k)
+            ? new AmazonLambdaClient()
+            : new AmazonLambdaClient(RegionEndpoint.GetBySystemName(k)));
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        foreach (var client in _clients.Values)
         {
-            return new AmazonLambdaClient(RegionEndpoint.GetBySystemName(region));
+            client.Dispose();
         }
 
-        return new AmazonLambdaClient();
+        _clients.Clear();
     }
 
     private static AwsLambdaAliasState ToState(

@@ -734,10 +734,18 @@ builder.Services.AddHonuaAuditLog();
 // the MultiTenancy configuration section; the inline callback is the wiring
 // point for environment-specific overrides.
 builder.Services.AddHonuaTenantContext(builder.Configuration, _ => { });
+// Configure schema-per-tenant routing + usage metering rail (#346). Disabled by
+// default (MultiTenancy:SchemaRouting:Enabled=false) so single-tenant deployments
+// retain byte-identical behavior; registration only adds the resolver/meter seam.
+builder.Services.AddHonuaTenantSchemaRouting(builder.Configuration);
 // Configure CORS policies
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddInputValidation(builder.Configuration);
-// Rate limiting disabled per project requirements
+// App-level rate limiting services (issue #355). Off by default — operators opt in via
+// RateLimiting:Enabled. Registers options validation, the policy store backing the admin
+// surface, and the partitioned middleware. Edge enforcement (ADR-0004) remains the
+// baseline; this is the opt-in identity-aware (tenant/user/API-key) enterprise slice.
+builder.Services.AddRateLimiting(builder.Configuration);
 
 // Configure API versioning for admin endpoints
 builder.Services.AddApiVersioning(options =>
@@ -851,6 +859,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Protocols.Elevation.VisibilityJsonContext.Default,
         Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
         Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
+        Honua.Server.Features.Collaboration.Operations.SavedMapOperationJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
         Honua.Server.Features.Admin.ObservabilityJsonContext.Default,
         Honua.Server.Features.Admin.InvestigationJsonContext.Default,
@@ -1212,12 +1221,21 @@ app.UsePortalTokenAuthentication();
 // before any downstream feature handler reads ITenantContext (#1144).
 app.UseHonuaTenantContext();
 
+// Route the resolved tenant to its PostgreSQL schema and record a usage signal (#346).
+// No-op unless MultiTenancy:SchemaRouting:Enabled=true. Must run after tenant context
+// resolution and before any feature handler that reads the database.
+app.UseHonuaTenantSchemaRouting();
+
 // Audit-log middleware records security-relevant request outcomes. It runs after
 // auth so the audit actor is the authenticated principal, and before endpoint
 // execution so 401/403/5xx responses are still observed (#1144).
 app.UseHonuaAuditLog();
 
-// Rate limiting disabled per project requirements
+// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
+// so buckets partition by tenant + authenticated user/API-key identity (falling back to
+// source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
+// posture is still edge enforcement (ADR-0004).
+app.UseRateLimiting();
 
 // Add limits enforcement middleware (after auth, before request logging)
 app.UseLimitsEnforcement();
@@ -1304,6 +1322,11 @@ app.MapAdminInfoEndpoints();
 app.MapCacheAdminEndpoints();
 app.MapGeocodingAdminEndpoints();
 app.MapFeatureOverviewEndpoints();
+
+// Rate limit policy administration (issue #355): CRUD + status for tenant/user/API-key
+// quota policies. Admin-authorized; the policies are consumed by the rate limiting
+// middleware registered above.
+app.MapRateLimitEndpoints();
 
 // Configure compliance admin endpoints (SOC 2 / FedRAMP readiness, key rotation, report export) (#352)
 app.MapComplianceAdminEndpoints();

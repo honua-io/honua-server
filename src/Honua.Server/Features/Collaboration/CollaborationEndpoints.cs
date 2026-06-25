@@ -3,6 +3,7 @@
 
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Server.Features.Collaboration.FeatureLocks;
+using Honua.Server.Features.Collaboration.Operations;
 
 namespace Honua.Server.Features.Collaboration;
 
@@ -12,5 +13,6 @@ internal static class CollaborationEndpoints
     {
         endpoints.MapCollaborationSessionEndpoints();
         endpoints.MapFeatureLockEndpoints();
+        endpoints.MapSavedMapOperationEndpoints();
     }
 }

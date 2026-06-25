@@ -250,6 +250,68 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
         response.Be400BadRequest();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Densify)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
+    public async Task Densify_TinyMaxSegmentLengthOverLargeExtent_Returns400WithoutOom()
+    {
+        // #2064: a 2,000,000-unit polyline at maxSegmentLength=0.001 would densify to ~2e9
+        // interpolated coordinates synchronously and OOM the host. The vertex-count guard must
+        // reject it with a 400 (fast, allocation-free) instead of attempting the densify.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[2000000,0]]]}
+                ]
+            },
+            "sr": "3857",
+            "maxSegmentLength": 0.001
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/densify",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Densify)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
+    public async Task Densify_ReasonableMaxSegmentLengthOverLargeExtent_StillSucceeds()
+    {
+        // The cap must not reject legitimate densify requests: a 2,000,000-unit segment at
+        // maxSegmentLength=1000 yields ~2000 vertices, far under the per-geometry cap.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[2000000,0]]]}
+                ]
+            },
+            "sr": "3857",
+            "maxSegmentLength": 1000.0
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/densify",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+        var paths = result.Geometries![0];
+        paths.TryGetProperty("paths", out var pathsElement).Should().BeTrue();
+        pathsElement[0].GetArrayLength().Should().BeGreaterThan(2);
+    }
+
     // --- convexHull ---
 
     [IntegrationTest]

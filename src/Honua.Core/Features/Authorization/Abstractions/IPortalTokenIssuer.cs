@@ -40,7 +40,40 @@ public interface IPortalTokenIssuer
         string token,
         PortalTokenBinding binding,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves an active token reference for RFC 7662 introspection (#1890),
+    /// <em>without</em> the referer/IP binding check that
+    /// <see cref="ValidateAsync"/> applies. Introspection is a trusted,
+    /// authorization-protected server-to-server query made by a party that is not
+    /// the bound client, so the binding cannot match; the active/expired/revoked
+    /// state is determined solely by the cache entry's presence and lifetime.
+    /// Returns the introspection metadata when the token is active, otherwise
+    /// <see langword="null"/> (the caller maps that to <c>{ "active": false }</c>).
+    /// </summary>
+    /// <param name="tokenReference">
+    /// The opaque token value (for the opaque format) or the JWT <c>jti</c> (for the
+    /// JWT format) that keys the cache entry.
+    /// </param>
+    /// <param name="cancellationToken">Token used to abort the lookup.</param>
+    /// <returns>The active token's introspection metadata, or <see langword="null"/>.</returns>
+    Task<PortalTokenIntrospection?> IntrospectAsync(
+        string tokenReference,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Active-token metadata returned for RFC 7662 introspection (#1890).
+/// </summary>
+/// <param name="PrincipalId">Subject (<c>sub</c>/<c>username</c>) the token was issued to.</param>
+/// <param name="Roles">Roles carried by the token, surfaced as the introspection <c>scope</c>.</param>
+/// <param name="TenantId">Tenant the token is scoped to, when present.</param>
+/// <param name="ExpiresAt">Absolute expiry instant (<c>exp</c>).</param>
+public sealed record PortalTokenIntrospection(
+    string PrincipalId,
+    IReadOnlyList<string> Roles,
+    string? TenantId,
+    DateTimeOffset ExpiresAt);
 
 /// <summary>
 /// Inputs required to issue an opaque portal token.

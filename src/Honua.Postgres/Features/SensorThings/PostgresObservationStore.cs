@@ -330,6 +330,220 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadObservation(reader) : null;
     }
 
+    public async Task<IReadOnlyList<SensorThingsObservation>> IngestObservationsAsync(
+        IReadOnlyList<ObservationIngestRow> rows,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
+        if (rows.Count == 0)
+        {
+            return Array.Empty<SensorThingsObservation>();
+        }
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = lease.Connection;
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Reserve a contiguous id block atomically. The observation id is a plain bigint
+        // (the partition key participates in the PK), so a transactional MAX+offset keeps
+        // ids monotonic without a dedicated sequence and works on the self-healed schema.
+        long nextId;
+        await using (var maxCommand = new NpgsqlCommand(
+            "SELECT COALESCE(MAX(id), 0) FROM honua.sta_observation", connection, transaction))
+        {
+            var max = (long)(await maxCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
+            nextId = max + 1;
+        }
+
+        var results = new List<SensorThingsObservation>(rows.Count);
+        const string insertSql = @"
+INSERT INTO honua.sta_observation (id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
+VALUES (@id, @datastream_id, @phenomenon_time, @result_time, @result, @feature_of_interest_id)";
+
+        foreach (var row in rows)
+        {
+            var id = nextId++;
+            await using var command = new NpgsqlCommand(insertSql, connection, transaction);
+            command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
+            command.Parameters.AddWithValue("datastream_id", NpgsqlDbType.Bigint, row.DatastreamId);
+            command.Parameters.AddWithValue("phenomenon_time", NpgsqlDbType.TimestampTz, row.PhenomenonTime);
+            command.Parameters.AddWithValue(
+                "result_time",
+                NpgsqlDbType.TimestampTz,
+                (object?)row.ResultTime ?? DBNull.Value);
+            command.Parameters.AddWithValue("result", NpgsqlDbType.Double, row.Result);
+            command.Parameters.AddWithValue(
+                "feature_of_interest_id",
+                NpgsqlDbType.Bigint,
+                (object?)row.FeatureOfInterestId ?? DBNull.Value);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            results.Add(new SensorThingsObservation
+            {
+                Id = id,
+                DatastreamId = row.DatastreamId,
+                PhenomenonTime = row.PhenomenonTime,
+                ResultTime = row.ResultTime,
+                Result = row.Result,
+                FeatureOfInterestId = row.FeatureOfInterestId
+            });
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return results;
+    }
+
+    public async Task<SensorThingsDatastream> CreateDatastreamAsync(
+        CreateDatastreamRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = lease.Connection;
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        var thingId = await UpsertRelatedAsync(
+            connection, transaction, "sta_thing", request.Thing, cancellationToken).ConfigureAwait(false);
+        var sensorId = await UpsertSensorAsync(
+            connection, transaction, request.Sensor, cancellationToken).ConfigureAwait(false);
+        var observedPropertyId = await UpsertObservedPropertyAsync(
+            connection, transaction, request.ObservedProperty, cancellationToken).ConfigureAwait(false);
+
+        var datastreamId = await NextIdAsync(connection, transaction, "sta_datastream", cancellationToken).ConfigureAwait(false);
+
+        const string insertSql = @"
+INSERT INTO honua.sta_datastream
+    (id, name, description, observation_type, unit_name, unit_symbol, unit_definition, thing_id, sensor_id, observed_property_id)
+VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @unit_definition, @thing_id, @sensor_id, @observed_property_id)";
+
+        await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
+        {
+            command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, datastreamId);
+            command.Parameters.AddWithValue("name", NpgsqlDbType.Text, request.Name);
+            command.Parameters.AddWithValue("description", NpgsqlDbType.Text, request.Description);
+            command.Parameters.AddWithValue("observation_type", NpgsqlDbType.Text, request.ObservationType);
+            command.Parameters.AddWithValue("unit_name", NpgsqlDbType.Text, request.UnitName);
+            command.Parameters.AddWithValue("unit_symbol", NpgsqlDbType.Text, request.UnitSymbol);
+            command.Parameters.AddWithValue("unit_definition", NpgsqlDbType.Text, request.UnitDefinition);
+            command.Parameters.AddWithValue("thing_id", NpgsqlDbType.Bigint, thingId);
+            command.Parameters.AddWithValue("sensor_id", NpgsqlDbType.Bigint, sensorId);
+            command.Parameters.AddWithValue("observed_property_id", NpgsqlDbType.Bigint, observedPropertyId);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return new SensorThingsDatastream
+        {
+            Id = datastreamId,
+            Name = request.Name,
+            Description = request.Description,
+            ObservationType = request.ObservationType,
+            UnitName = request.UnitName,
+            UnitSymbol = request.UnitSymbol,
+            UnitDefinition = request.UnitDefinition,
+            ThingId = thingId,
+            SensorId = sensorId,
+            ObservedPropertyId = observedPropertyId
+        };
+    }
+
+    private static async Task<long> NextIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            $"SELECT COALESCE(MAX(id), 0) + 1 FROM honua.{table}", connection, transaction);
+        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 1L);
+    }
+
+    private static async Task<bool> ExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string table,
+        long id,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            $"SELECT 1 FROM honua.{table} WHERE id = @id", connection, transaction);
+        command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+    }
+
+    private static async Task<long> UpsertRelatedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string table,
+        RelatedEntityRef entity,
+        CancellationToken cancellationToken)
+    {
+        if (entity.Id > 0 && await ExistsAsync(connection, transaction, table, entity.Id, cancellationToken).ConfigureAwait(false))
+        {
+            return entity.Id;
+        }
+
+        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, table, cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            $"INSERT INTO honua.{table} (id, name, description) VALUES (@id, @name, @description)", connection, transaction);
+        command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
+        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Thing {id}");
+        command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return id;
+    }
+
+    private static async Task<long> UpsertSensorAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        RelatedEntityRef entity,
+        CancellationToken cancellationToken)
+    {
+        if (entity.Id > 0 && await ExistsAsync(connection, transaction, "sta_sensor", entity.Id, cancellationToken).ConfigureAwait(false))
+        {
+            return entity.Id;
+        }
+
+        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, "sta_sensor", cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            "INSERT INTO honua.sta_sensor (id, name, description, encoding_type, metadata) VALUES (@id, @name, @description, 'application/pdf', '')",
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
+        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Sensor {id}");
+        command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return id;
+    }
+
+    private static async Task<long> UpsertObservedPropertyAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        RelatedEntityRef entity,
+        CancellationToken cancellationToken)
+    {
+        if (entity.Id > 0 && await ExistsAsync(connection, transaction, "sta_observed_property", entity.Id, cancellationToken).ConfigureAwait(false))
+        {
+            return entity.Id;
+        }
+
+        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, "sta_observed_property", cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            "INSERT INTO honua.sta_observed_property (id, name, definition, description) VALUES (@id, @name, '', @description)",
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
+        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"ObservedProperty {id}");
+        command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return id;
+    }
+
     private static SensorThingsDatastream ReadDatastream(NpgsqlDataReader reader) => new()
     {
         Id = reader.GetInt64(0),

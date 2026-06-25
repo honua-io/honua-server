@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using Amazon;
 using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
@@ -27,8 +28,14 @@ internal interface ICloudWatchMetricClient
         CancellationToken cancellationToken);
 }
 
-internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
+internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient, IDisposable
 {
+    // AWS SDK clients are thread-safe and meant to be reused for the process lifetime. This client
+    // is a singleton, but its construction varies by region, so cache one AmazonCloudWatchClient
+    // per resolved region rather than building (and discarding) one per call.
+    private readonly ConcurrentDictionary<string, AmazonCloudWatchClient> _clients =
+        new(StringComparer.Ordinal);
+
     public async Task<double?> GetExpressionValueAsync(
         string? region,
         string expression,
@@ -37,7 +44,7 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
         int periodSeconds,
         CancellationToken cancellationToken)
     {
-        using var client = CreateClient(region);
+        var client = GetClient(region);
         var response = await client.GetMetricDataAsync(
             new GetMetricDataRequest
             {
@@ -67,10 +74,24 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
         return null;
     }
 
-    private static AmazonCloudWatchClient CreateClient(string? region)
-        => string.IsNullOrWhiteSpace(region)
+    private AmazonCloudWatchClient GetClient(string? region)
+    {
+        var key = string.IsNullOrWhiteSpace(region) ? string.Empty : region;
+        return _clients.GetOrAdd(key, static k => string.IsNullOrEmpty(k)
             ? new AmazonCloudWatchClient()
-            : new AmazonCloudWatchClient(RegionEndpoint.GetBySystemName(region));
+            : new AmazonCloudWatchClient(RegionEndpoint.GetBySystemName(k)));
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        foreach (var client in _clients.Values)
+        {
+            client.Dispose();
+        }
+
+        _clients.Clear();
+    }
 }
 
 /// <summary>

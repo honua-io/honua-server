@@ -103,8 +103,48 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    private static bool HasZ(NtsGeometry geometry)
-        => geometry.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z));
+    /// <summary>
+    /// Detects whether a geometry carries Z and/or M ordinates by inspecting its
+    /// coordinate sequences (not the flattened <see cref="NtsGeometry.Coordinates"/>
+    /// array, which discards measures). The WKB writer dimensionality is then chosen
+    /// from the actual source geometry so XYZ, XYM, and XYZM features round-trip
+    /// instead of being silently flattened (#1981). Mirrors the export side's
+    /// <c>DetectZMFromGeometry</c>.
+    /// </summary>
+    private static (bool HasZ, bool HasM) DetectZm(NtsGeometry geometry)
+    {
+        var filter = new ZmCoordinateFilter();
+        geometry.Apply(filter);
+        return (filter.HasZ, filter.HasM);
+    }
+
+    /// <summary>
+    /// Coordinate-sequence filter that reports whether any coordinate carries a
+    /// finite Z or M ordinate, without materializing the coordinate array.
+    /// </summary>
+    private sealed class ZmCoordinateFilter : ICoordinateSequenceFilter
+    {
+        public bool HasZ { get; private set; }
+
+        public bool HasM { get; private set; }
+
+        public bool Done => HasZ && HasM;
+
+        public bool GeometryChanged => false;
+
+        public void Filter(CoordinateSequence seq, int i)
+        {
+            if (!HasZ && seq.HasZ && !double.IsNaN(seq.GetZ(i)))
+            {
+                HasZ = true;
+            }
+
+            if (!HasM && seq.HasM && !double.IsNaN(seq.GetM(i)))
+            {
+                HasM = true;
+            }
+        }
+    }
 
     /// <summary>
     /// Validates a geometry against configured limits.

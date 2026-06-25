@@ -10,6 +10,7 @@ using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
+using Honua.Scene;
 using Honua.Scene.Assets;
 using Microsoft.AspNetCore.Mvc;
 
@@ -72,6 +73,42 @@ internal static partial class I3sSceneServerEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
+        // I3S node-page traversal (#1809): a conformant SceneLayer client walks
+        // the layer's HLOD tree through nodepages/{n}. Each page projects a
+        // fixed-size window of the tileset node tree (MBS/OBB in index CRS,
+        // lodThreshold from geometric error, child references, per-node
+        // geometry/attribute resource references). Enterprise-gated.
+        endpoints.MapGet(
+                "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}",
+                HandleGetNodePage)
+            .WithName("GetGeoServicesSceneNodePage")
+            .WithDisplayName("Get GeoServices SceneServer Node Page")
+            .WithSummary("Get an I3S node page projected from the scene's tileset node tree")
+            .WithDescription("Returns an I3S 1.7 node page (HLOD nodes with oriented bounding boxes, LOD thresholds, parent/child references, and per-node geometry/attribute resource references) projected from the hosted scene's 3D Tiles node tree. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces<I3sNodePageDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
+        // I3S per-field statistics (#1811): an ArcGIS client reads the field
+        // statistics summary to drive identify, classification, and renderer
+        // ranges. Served from the layer's attributeStorageInfo + tileset stats.
+        endpoints.MapGet(
+                "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0",
+                HandleGetStatistics)
+            .WithName("GetGeoServicesSceneStatistics")
+            .WithDisplayName("Get GeoServices SceneServer Field Statistics")
+            .WithSummary("Get the I3S attribute statistics summary for a scene-layer field")
+            .WithDescription("Returns the I3S statistics summary (totalValuesCount, min/max, count) for one attributeStorageInfo field of a hosted scene layer, used by ArcGIS identify and classification. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces<I3sAttributeStatisticsDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
         // Legacy /scenes/{id}/SceneServer routes (#1202) retained as a
         // documented ALIAS of the GeoServices path above so existing clients and
         // links keep working. Both paths share the same handlers and descriptor.
@@ -103,6 +140,34 @@ internal static partial class I3sSceneServerEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
+        endpoints.MapGet(
+                "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}",
+                HandleGetNodePage)
+            .WithName("GetI3sSceneNodePage")
+            .WithDisplayName("Get I3S Scene Node Page")
+            .WithSummary("Alias of the GeoServices SceneServer node-page route")
+            .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}/nodepages/{pageId}. Returns an I3S 1.7 node page projected from the hosted scene's 3D Tiles node tree. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces<I3sNodePageDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
+        endpoints.MapGet(
+                "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0",
+                HandleGetStatistics)
+            .WithName("GetI3sSceneStatistics")
+            .WithDisplayName("Get I3S Scene Field Statistics")
+            .WithSummary("Alias of the GeoServices SceneServer field-statistics route")
+            .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}/statistics/{fieldKey}/0. Returns the I3S attribute statistics summary for one scene-layer field. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces<I3sAttributeStatisticsDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
         return endpoints;
     }
 
@@ -123,7 +188,140 @@ internal static partial class I3sSceneServerEndpoints
         CancellationToken cancellationToken)
         => HandleAsync(sceneId, layerId, context, registry, licenseStatusProvider, cancellationToken);
 
+    private static Task<IResult> HandleGetNodePage(
+        string sceneId,
+        int layerId,
+        int pageId,
+        HttpContext context,
+        [FromServices] ISceneDatasetRegistry registry,
+        [FromServices] ILicenseStatusProvider licenseStatusProvider,
+        CancellationToken cancellationToken)
+        => HandleNodePageAsync(sceneId, layerId, pageId, context, registry, licenseStatusProvider, cancellationToken);
+
+    private static Task<IResult> HandleGetStatistics(
+        string sceneId,
+        int layerId,
+        string fieldKey,
+        HttpContext context,
+        [FromServices] ISceneDatasetRegistry registry,
+        [FromServices] ILicenseStatusProvider licenseStatusProvider,
+        CancellationToken cancellationToken)
+        => HandleStatisticsAsync(sceneId, layerId, fieldKey, context, registry, licenseStatusProvider, cancellationToken);
+
     private static async Task<IResult> HandleAsync(
+        string sceneId,
+        int? layerId,
+        HttpContext context,
+        ISceneDatasetRegistry registry,
+        ILicenseStatusProvider licenseStatusProvider,
+        CancellationToken cancellationToken)
+    {
+        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, licenseStatusProvider, cancellationToken)
+            .ConfigureAwait(false);
+        if (gate.Failure is { } failure)
+        {
+            return failure;
+        }
+
+        var scene = gate.Scene!;
+        var extent = await ResolveExtentAsync(context, scene, cancellationToken)
+            .ConfigureAwait(false);
+        var datasetType = await ResolveDatasetTypeAsync(context, scene, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Advertise store.nodePages only when the tileset actually projects to
+        // fetchable node pages (#1809), so a conformant client never requests a
+        // node URL that 404s.
+        var advertiseNodePages = I3sNodeStore.TryBuildNodePages(scene, out _);
+
+        if (layerId is null)
+        {
+            var service = I3sSceneServiceBuilder.BuildService(scene, extent, datasetType, advertiseNodePages);
+            return SerializeService(service);
+        }
+
+        var layer = I3sSceneServiceBuilder.BuildLayer(scene, extent, datasetType, advertiseNodePages);
+        return SerializeLayer(layer);
+    }
+
+    private static async Task<IResult> HandleNodePageAsync(
+        string sceneId,
+        int layerId,
+        int pageId,
+        HttpContext context,
+        ISceneDatasetRegistry registry,
+        ILicenseStatusProvider licenseStatusProvider,
+        CancellationToken cancellationToken)
+    {
+        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, licenseStatusProvider, cancellationToken)
+            .ConfigureAwait(false);
+        if (gate.Failure is { } failure)
+        {
+            return failure;
+        }
+
+        if (pageId < 0)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Node page index must be non-negative.");
+        }
+
+        if (!I3sNodeStore.TryBuildNodePages(gate.Scene!, out var pages) || pageId >= pages.Count)
+        {
+            // No loadable tileset (descriptor-only scene) or a page index past the
+            // projected node tree: a deterministic 404 rather than an empty body.
+            return StandardErrorHelpers.CreateNotFound(context, "Scene node page was not found.");
+        }
+
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(
+            pages[pageId],
+            I3sNodePageJsonContext.Default.I3sNodePageDocument);
+        return Results.Bytes(bytes, I3sContentType);
+    }
+
+    private static async Task<IResult> HandleStatisticsAsync(
+        string sceneId,
+        int layerId,
+        string fieldKey,
+        HttpContext context,
+        ISceneDatasetRegistry registry,
+        ILicenseStatusProvider licenseStatusProvider,
+        CancellationToken cancellationToken)
+    {
+        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, licenseStatusProvider, cancellationToken)
+            .ConfigureAwait(false);
+        if (gate.Failure is { } failure)
+        {
+            return failure;
+        }
+
+        var scene = gate.Scene!;
+        var extent = await ResolveExtentAsync(context, scene, cancellationToken).ConfigureAwait(false);
+        var datasetType = await ResolveDatasetTypeAsync(context, scene, cancellationToken).ConfigureAwait(false);
+
+        // The served field set is the layer descriptor's attributeStorageInfo, so
+        // a statistics request can only resolve a field the descriptor advertises.
+        var layer = I3sSceneServiceBuilder.BuildLayer(scene, extent, datasetType, advertiseNodePages: false);
+        var field = layer.AttributeStorageInfo?
+            .FirstOrDefault(a => string.Equals(a.Key, fieldKey, StringComparison.Ordinal));
+        if (field is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Scene statistics field was not found.");
+        }
+
+        var stats = I3sSceneStatisticsBuilder.Build(scene, field);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(
+            stats,
+            I3sAttributeStatisticsJsonContext.Default.I3sAttributeStatisticsDocument);
+        return Results.Bytes(bytes, I3sContentType);
+    }
+
+    /// <summary>
+    /// Shared gate for every I3S SceneServer resource: validates the scene id,
+    /// enforces the Enterprise edition, rejects any non-zero layer id, resolves
+    /// the scene, and enforces its access policy. Returns the resolved scene on
+    /// success or the failing <see cref="IResult"/> to short-circuit with.
+    /// </summary>
+    private static async Task<SceneGateResult> ResolveSceneAsync(
         string sceneId,
         int? layerId,
         HttpContext context,
@@ -133,15 +331,15 @@ internal static partial class I3sSceneServerEndpoints
     {
         if (string.IsNullOrWhiteSpace(sceneId))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Scene identifier is required.");
+            return new SceneGateResult(null, StandardErrorHelpers.CreateBadRequest(context, "Scene identifier is required."));
         }
 
         var edition = licenseStatusProvider.GetCurrentStatus().Edition;
         if (edition < HonuaEdition.Enterprise)
         {
-            return StandardErrorHelpers.CreateForbidden(
+            return new SceneGateResult(null, StandardErrorHelpers.CreateForbidden(
                 context,
-                $"I3S scene serving requires the Enterprise edition. Current edition: {edition}.");
+                $"I3S scene serving requires the Enterprise edition. Current edition: {edition}."));
         }
 
         // Only layer 0 exists per scene; reject any other index explicitly so a
@@ -149,13 +347,13 @@ internal static partial class I3sSceneServerEndpoints
         // layer-0 body.
         if (layerId is { } requestedLayerId && requestedLayerId != I3sSceneServiceBuilder.LayerId)
         {
-            return StandardErrorHelpers.CreateNotFound(context, "Scene layer was not found.");
+            return new SceneGateResult(null, StandardErrorHelpers.CreateNotFound(context, "Scene layer was not found."));
         }
 
         var scene = await registry.FindAsync(sceneId, cancellationToken).ConfigureAwait(false);
         if (scene is null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
+            return new SceneGateResult(null, StandardErrorHelpers.CreateNotFound(context, "Scene was not found."));
         }
 
         if (scene.AccessPolicy is { } accessPolicy)
@@ -167,21 +365,35 @@ internal static partial class I3sSceneServerEndpoints
                 scope: AccessScope.Read);
             if (deniedResult is not null)
             {
-                return deniedResult;
+                return new SceneGateResult(null, deniedResult);
             }
         }
 
-        var extent = await ResolveExtentAsync(context, scene, cancellationToken)
-            .ConfigureAwait(false);
+        return new SceneGateResult(scene, null);
+    }
 
-        if (layerId is null)
+    private readonly record struct SceneGateResult(SceneDataset? Scene, IResult? Failure);
+
+    /// <summary>
+    /// Resolves the dataset's I3S source kind for layerType mapping (#1812). The
+    /// lean <see cref="SceneDataset"/> read model carries no source kind, so the
+    /// type is read from the persisted <see cref="SceneDatasetRecord"/> when a
+    /// registration service is available; config-registry scenes fall back to the
+    /// default hosted-tiles (<c>3DObject</c>) kind.
+    /// </summary>
+    private static async Task<SceneDatasetType> ResolveDatasetTypeAsync(
+        HttpContext context,
+        SceneDataset scene,
+        CancellationToken cancellationToken)
+    {
+        var registration = context.RequestServices.GetService<ISceneRegistrationService>();
+        if (registration is null)
         {
-            var service = I3sSceneServiceBuilder.BuildService(scene, extent);
-            return SerializeService(service);
+            return SceneDatasetType.HostedTiles;
         }
 
-        var layer = I3sSceneServiceBuilder.BuildLayer(scene, extent);
-        return SerializeLayer(layer);
+        var record = await registration.GetBySceneIdAsync(scene.Id, cancellationToken).ConfigureAwait(false);
+        return record?.DatasetType ?? SceneDatasetType.HostedTiles;
     }
 
     private static IResult SerializeService(I3sSceneServiceDocument service)

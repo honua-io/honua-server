@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net.Http;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -289,7 +290,9 @@ public sealed class PortalOAuthClientCredentialsTests
             OAuth2 = new PortalOAuth2Options { EnableClientCredentials = true },
         });
 
-        var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, options);
+        var jwtService = new PortalJwtAccessTokenService(issuer, options);
+        var federation = new ClientCredentialsFederationService(new NullHttpClientFactory(), options);
+        var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, jwtService, federation, options);
         return (service, issuer, created.Record.ClientId, created.Secret!);
     }
 
@@ -328,7 +331,19 @@ public sealed class PortalOAuthClientCredentialsTests
 
         var clientStore = new InMemoryOAuthClientStore();
         var scopeCatalogue = new InMemoryOAuthScopeCatalogue();
-        var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, options);
+        var jwtService = new PortalJwtAccessTokenService(issuer, options);
+        var federation = new ClientCredentialsFederationService(new NullHttpClientFactory(), options);
+        var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, jwtService, federation, options);
         return (service, issuer, created.Key);
+    }
+
+    /// <summary>
+    /// An <see cref="IHttpClientFactory"/> that hands out a plain client. Federation
+    /// is disabled in these tests (no TokenEndpoint configured), so the factory is
+    /// never asked to reach an external IdP.
+    /// </summary>
+    private sealed class NullHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new();
     }
 }

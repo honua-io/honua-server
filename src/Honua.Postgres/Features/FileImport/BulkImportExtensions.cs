@@ -82,11 +82,11 @@ internal static class BulkImportExtensions
         {
             var feature = features[index];
 
-            // WKBWriter is not thread-safe; use one per worker iteration. A plain 2-D writer
-            // is used here: forcing emitZ/emitM serializes NaN Z/M ordinates for 2-D coordinates
-            // (the GeoJSON/CSV reader produces plain XY Coordinates whose Z is NaN), which PostGIS
-            // rejects and silently drops the row. The streaming insert path preserves true 3-D
-            // geometries per-feature via CreateWkb's HasZ branch instead.
+            // WKBWriter is not thread-safe; use one per worker iteration. CreateWkb
+            // picks the writer dimensionality from the actual source geometry so XYZ/
+            // XYM/XYZM features keep their Z/M ordinates while plain 2-D geometries use
+            // a 2-D writer (forcing emitZ/emitM serializes NaN Z/M ordinates that
+            // PostGIS rejects, dropping otherwise-valid rows) (#1981).
             wkbArray[index] = CreateWkb(feature, new WKBWriter()) ?? Array.Empty<byte>();
 
             var featureSrid = feature.Geometry?.SRID;
@@ -162,9 +162,69 @@ internal static class BulkImportExtensions
         return (int)(await finalizeCommand.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 
-    private static byte[]? CreateWkb(IFeature feature, WKBWriter writer)
+    private static byte[]? CreateWkb(IFeature feature, WKBWriter plainWriter)
     {
-        return feature.Geometry != null ? writer.Write(feature.Geometry) : null;
+        if (feature.Geometry == null)
+        {
+            return null;
+        }
+
+        var writer = SelectWkbWriter(feature.Geometry, plainWriter);
+        return writer.Write(feature.Geometry);
+    }
+
+    /// <summary>
+    /// Picks the WKB writer dimensionality from the actual source geometry so XYZ,
+    /// XYM, and XYZM features round-trip their Z/M ordinates instead of being
+    /// silently flattened (#1981). 2-D geometries reuse the shared plain writer:
+    /// forcing emitZ/emitM on plain XY coordinates serializes NaN Z/M ordinates
+    /// that PostGIS rejects, dropping otherwise-valid rows. Higher-dimension
+    /// writers are allocated fresh because <see cref="WKBWriter"/> is not
+    /// thread-safe and these bulk paths serialize features in parallel.
+    /// </summary>
+    private static WKBWriter SelectWkbWriter(
+        NetTopologySuite.Geometries.Geometry geometry,
+        WKBWriter plainWriter)
+    {
+        var filter = new ZmCoordinateFilter();
+        geometry.Apply(filter);
+        var hasZ = filter.HasZ;
+        var hasM = filter.HasM;
+
+        if (!hasZ && !hasM)
+        {
+            return plainWriter;
+        }
+
+        return new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: hasZ, emitM: hasM);
+    }
+
+    /// <summary>
+    /// Coordinate-sequence filter that reports whether any coordinate carries a
+    /// finite Z or M ordinate, without materializing the coordinate array.
+    /// </summary>
+    private sealed class ZmCoordinateFilter : NetTopologySuite.Geometries.ICoordinateSequenceFilter
+    {
+        public bool HasZ { get; private set; }
+
+        public bool HasM { get; private set; }
+
+        public bool Done => HasZ && HasM;
+
+        public bool GeometryChanged => false;
+
+        public void Filter(NetTopologySuite.Geometries.CoordinateSequence seq, int i)
+        {
+            if (!HasZ && seq.HasZ && !double.IsNaN(seq.GetZ(i)))
+            {
+                HasZ = true;
+            }
+
+            if (!HasM && seq.HasM && !double.IsNaN(seq.GetM(i)))
+            {
+                HasM = true;
+            }
+        }
     }
 
     /// <summary>

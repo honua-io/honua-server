@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-06-03T00:00:00Z",
+  "updatedUtc": "2026-06-23T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "capability-manifest",
@@ -122,9 +122,11 @@
       "endpointPrefixes": [],
       "endpointExactMatches": [
         "/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
+        "/api/v1/saved-maps/{mapId}/collaboration/sessions/stream",
         "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim",
         "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew",
-        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release"
+        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release",
+        "/api/v1/saved-maps/{mapId}/collaboration/operations"
       ],
       "endpointContains": [],
       "operationKeys": [],
@@ -142,6 +144,34 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "honua-server#971",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "Authenticated WebSocket presence/cursor/selection/follow transport with Redis cross-node backplane; join authorized through the shared fail-closed saved-map collaboration authorizer. Integration tests assert connect+snapshot, cross-participant presence/cursor fan-out, and rejected unauthorized joins.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs",
+            "src/Honua.Server/Features/Collaboration/Sessions/RedisCollaborationSessionBackplane.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Collaboration/Sessions/CollaborationSessionStreamEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#971",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "Durable collaborative edit op-log: append assigns monotonic server cursors with operation-id/idempotency-key dedupe and typed conflict/resync responses; replay returns operations since a known cursor. Integration tests assert cursor monotonicity, idempotent duplicates, replay, and fail-closed authorization.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Collaboration/Operations/SavedMapOperationEndpoints.cs",
+            "src/Honua.Core/Features/Collaboration/Operations/InMemorySavedMapOperationLogRepository.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Collaboration/OperationLog/SavedMapOperationEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#972",
           "versionCaptureRule": null
         }
       ]
@@ -384,6 +414,55 @@
       ]
     },
     {
+      "surfaceId": "datacube-tiles",
+      "displayName": "Datacube (Zarr coverage) tile rendering",
+      "surfaceKind": "http-route",
+      "protocol": "Datacube Tiles HTTP",
+      "canonicalIdentifier": "/api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/datacubes/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus DatacubeTileEndpointTests assert the public GET tile route is backed by a real HTTP request and returns 404 when a layer has no servable Zarr coverage; ZarrTileSlicePlannerTests and ZarrTileRendererTests prove tile-bbox->grid-index mapping, time/elevation axis resolution, no-intersection handling, and PNG encoding.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Protocols/Zarr/ZarrEndpoints.cs",
+            "src/Honua.Core/Features/Raster/ZarrParser/ZarrTileSlicePlanner.cs",
+            "src/Honua.Core/Features/Raster/ZarrParser/ZarrTileRenderer.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Zarr/DatacubeTileEndpointTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Raster/ZarrParser/ZarrTileSlicePlannerTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Raster/ZarrParser/ZarrTileRendererTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1835",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "A datacube tile binds a (z/x/y, time, elevation, variable) Zarr coverage slice to an RGBA PNG: the tile bbox is mapped to a half-open grid-index window, time and vertical axes are resolved through the shared CF axis indexers (#1790), the bounded subset is read via IZarrSubsetReader, the little-endian dtype buffer is decoded and colour-mapped, and the result is encoded by the managed AOT-safe PNG encoder. Temporal parameters use the neutral Core-level Iso8601TemporalIntervalParser rather than any OGC protocol parser.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Core/Features/Raster/ZarrParser/Iso8601TemporalIntervalParser.cs",
+            "src/Honua.Core/Features/Raster/ZarrParser/CfTimeAxisIndexer.cs",
+            "src/Honua.Core/Features/Raster/ZarrParser/PngEncoder.cs",
+            "tests/dotnet/Honua.Core.Tests/Raster/ZarrParser/ZarrTileRendererTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1835",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "console-workflow-packages",
       "displayName": "Console workflow package and node registry API",
       "surfaceKind": "http-route-family",
@@ -467,6 +546,53 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "audit-trail-siem",
+      "displayName": "Audit trail SIEM export and tamper-evidence API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/observability/audit/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/observability/audit"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus ObservabilityEventEndpointsTests assert the audit query, JSON-Lines/CEF SIEM export, hash-chain verify, and operator-authorization surfaces; PostgresAuditLogChainTests prove the append-only trail is tamper-evident (entry_hash/prev_hash chain detects row mutation and deletion) and that the exporter returns the time-range-filtered trail oldest-first.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/ObservabilityEventEndpointsTests.cs",
+            "tests/dotnet/Honua.Postgres.Tests/Features/AuditLog/PostgresAuditLogChainTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#509",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Migration 069 adds the prev_hash/entry_hash tamper-evident chain to the append-only honua.audit_log (migration 033); AuditEntryHasher and AuditCefFormatter (unit-tested) define the canonical chain hash and the CEF SIEM wire format; source-generated ObservabilityJsonContext keeps the export/integrity DTOs AOT-safe.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Migrations/069_AddAuditLogHashChain.sql",
+            "src/Honua.Core/Features/AuditLog/Abstractions/AuditEntryHasher.cs",
+            "src/Honua.Core/Features/AuditLog/Abstractions/AuditCefFormatter.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/AuditLog/AuditEntryHasherTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/AuditLog/AuditCefFormatterTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#350",
           "versionCaptureRule": null
         }
       ]
@@ -1365,6 +1491,52 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "honua-io/honua-server#1241",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus OAuth2 RFC 7662 introspection integration tests (opt-in JWT + introspection, ADR-0054)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalTokenIntrospectionService.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalJwtAccessTokenService.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingOAuth2IntrospectionTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#1890",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus client_credentials IdP/OIDC federation integration tests (opt-in, ADR-0053 Increment 3)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Hosting/Features/Authentication/ClientCredentialsFederationService.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalOAuthTokenService.cs",
+            "tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/ClientCredentialsFederationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#1889",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus Portal community-group and item-sharing integration tests (#1868)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalGroupStore.cs",
+            "src/Honua.Hosting/Features/Authentication/PortalItemSharingStore.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingCommunityTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#1868",
           "versionCaptureRule": null
         }
       ]
@@ -2531,16 +2703,34 @@
       ],
       "endpointExactMatches": [],
       "endpointContains": [],
-      "operationKeys": [],
+      "operationKeys": [
+        "SensorThings-1.1::datastream.create",
+        "SensorThings-1.1::sensor.ingest"
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus endpoint integration tests for the SensorThings API (STA v1.1) Phase 1 read surface: Things/Sensors/ObservedProperties/Datastreams/Observations collections, by-id reads, and Datastream Observations navigation",
+          "proofMechanism": "EndpointRegistry coverage plus endpoint integration tests for the SensorThings API (STA v1.1) read surface (Phase 1: Things/Sensors/ObservedProperties/Datastreams/Observations collections, by-id reads, Datastream Observations navigation), the Phase 2 ingest surface (POST Observations single + bulk, POST Datastreams({id})/Observations, POST Datastreams), and the Phase 3 real-time observation stream (GET /sta/v1.1/ObservationsStream over SSE/WebSocket)",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsIngestEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsStreamEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1747",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "SensorThings Phase 2 ingest operations datastream.create and sensor.ingest are registered in OperationRegistry and exercised by integration tests carrying [InterfaceOperation(SensorThings-1.1, ...)]",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsIngestEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2549,14 +2739,58 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "SensorThings read integration tests retain conformance-shaped envelopes (@iot.id/@iot.selfLink/@iot.navigationLink), $expand=Observations inlining, $filter happy-path and negative-path ($filter 400), and $orderby descending observation ordering",
+          "proofMechanism": "SensorThings integration tests retain conformance-shaped read envelopes (@iot.id/@iot.selfLink/@iot.navigationLink), $expand=Observations inlining, $filter happy/negative paths, $orderby descending ordering, ingest round-trips (REST single + bulk appear in read queries; datastream.create creates a queryable datastream), and the real-time stream pushes a newly-ingested observation to a subscribed SSE client",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsIngestEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsStreamEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "honua-server#1747",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "ogc-api-edr",
+      "displayName": "OGC API - Environmental Data Retrieval (EDR)",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC API - EDR 1.1",
+      "canonicalIdentifier": "/edr",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/edr"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus endpoint integration tests for the OGC API - EDR surface: landing, conformance, collections list/by-id (with data_queries position+cube and parameter_names), the position (point time-series) query, and the cube (area/subset) query over registered coverage/datacube collections, returning CoverageJSON",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/EdrEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1757",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "EDR position returns a CoverageJSON PointSeries with a t-axis and per-parameter NdArray ranges sampled from the canonical raster read pipeline; EDR cube returns a CoverageJSON Grid subset for a bbox; invalid coords/bbox return 400 and unknown collections return 404",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/EdrEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1757",
           "versionCaptureRule": null
         }
       ]
@@ -3090,11 +3324,31 @@
             "src/Honua.Server/EndpointRegistry.cs",
             "src/Honua.Protocols.Scene/I3s/I3sSceneServerEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sSceneServerEndpointTests.cs"
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sSceneServerEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sConformanceFixtureTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#1202",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "I3S 1.7 node-page traversal (nodepages/{n} projected from the hosted 3D Tiles node tree: oriented bounding boxes in the index CRS, lodThreshold from geometric error, parent/child references by global node index, and per-node geometry/attribute/material resource references), per-field attribute statistics (statistics/f_{n}/0), and SceneDatasetType -> I3S layerType mapping (3DObject/Building/PointCloud) validated end-to-end against a Honua-authored synthetic I3S 1.7 conformance fixture by a protocol-shape validator; the served node pages reference geometry/attribute/texture by index but the binary node resources (nodes/{id}/geometries|textures|attributes) remain a tracked follow-up (#1810/#1811)",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Scene/I3sNodePageProjector.cs",
+            "src/Honua.Scene/I3sNodeStore.cs",
+            "src/Honua.Scene/I3sSceneStatisticsBuilder.cs",
+            "src/Honua.Scene/I3sLayerTypeMap.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sConformanceFixtureTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sProtocolShapeValidator.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Scene/I3sNodePageProjectorTests.cs",
+            "tests/fixtures/scene/i3s/source-tileset/tileset.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1809",
           "versionCaptureRule": null
         },
         {

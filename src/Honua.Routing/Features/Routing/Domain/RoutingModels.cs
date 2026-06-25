@@ -175,9 +175,11 @@ public sealed record RouteSolveResult(
 /// </summary>
 /// <param name="Facilities">Facility points to generate service areas around.</param>
 /// <param name="Breaks">
-/// Cost cutoffs defining concentric service-area rings, in ascending order. Units
-/// match the topology cost weights interpreted as minutes for the MVP (e.g.
-/// <c>[5, 10, 15]</c> for 5/10/15-minute drive-time areas).
+/// Travel-time cutoffs in <em>minutes</em> defining concentric service-area rings,
+/// in ascending order (e.g. <c>[5, 10, 15]</c> for 5/10/15-minute drive-time areas).
+/// The provider converts each break into the topology's raw cost unit (declared by
+/// <c>RoutingConfiguration.CostUnit</c>) before passing it to pgRouting as the
+/// reachability cutoff.
 /// </param>
 /// <param name="TravelDirection">Direction of travel relative to each facility.</param>
 /// <param name="OutSrid">Output spatial reference (SRID/WKID). Defaults to 4326.</param>

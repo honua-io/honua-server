@@ -16,13 +16,16 @@ internal sealed class RateLimitingOptions
     public const string SectionName = "RateLimiting";
 
     /// <summary>
-    /// Whether rate limiting is enabled. Default is true.
+    /// Whether app-level rate limiting is enabled. Default is <see langword="false"/>:
+    /// the MVP/baseline posture enforces limits at the edge (nginx/ALB/WAF) per ADR-0004,
+    /// so operators must opt in by setting <c>RateLimiting:Enabled=true</c> (issue #355).
     /// </summary>
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; }
 
     /// <summary>
-    /// Global rate limit for requests per minute per IP/API key.
-    /// Default is 1000 requests per minute.
+    /// Global rate limit for requests per minute per partition (tenant/user/API key/IP).
+    /// Defaults to a generous 1000 requests per minute so an accidental enable does not
+    /// throttle legitimate traffic; tune per deployment.
     /// </summary>
     [Range(1, 100000, ErrorMessage = "GlobalRequestsPerMinute must be between 1 and 100000")]
     public int GlobalRequestsPerMinute { get; set; } = 1000;

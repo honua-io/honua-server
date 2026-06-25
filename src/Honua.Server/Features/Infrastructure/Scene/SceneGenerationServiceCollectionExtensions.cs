@@ -4,6 +4,7 @@
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Postgres.Features.Scene;
+using Honua.Server.Features.Admin.Scene;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Infrastructure.Scene;
@@ -52,6 +53,16 @@ internal static class SceneGenerationServiceCollectionExtensions
         // other scene executors so the Enterprise-gated admin point-cloud ingest
         // endpoint can resolve it.
         services.TryAddScoped<PointCloudScenePublishExecutor>();
+
+        // LAZ/COPC decompression + projected-CRS reprojection auto-dispatch
+        // (#1854): a factory that binds the request principal to a decompressor
+        // submitting the canonical pcloud.translate worker job. Registered as a
+        // singleton over the always-present IGeoprocessingJobService; the ingest
+        // endpoint resolves it optionally and only engages it for compressed or
+        // projected uploads, so an absent worker still rejects such input cleanly.
+        services.Configure<PointCloudDecompressionOptions>(
+            configuration.GetSection(PointCloudDecompressionOptions.SectionName));
+        services.TryAddSingleton<IPointCloudDecompressorFactory, GeoprocessingPointCloudDecompressorFactory>();
 
         return services;
     }

@@ -1,0 +1,160 @@
+# Honua geoprocessing (GP) local dev quickstart.
+#
+#   docker compose -f docker-compose.gp-dev.yml up
+#
+# Brings up the MINIMAL stack needed to submit a geoprocessing job, watch it
+# run, and fetch results locally — with NO AWS / Azure Batch / cloud creds and
+# NO manual license step. Mirrors the zero-override pattern of the root
+# docker-compose.yml: every setting has a sensible `${VAR:-default}` dev value.
+#
+# How local GP actually executes (grounded in the code, not guessed):
+#   * The serving image (honua) registers BOTH the durable job orchestration
+#     substrate (AddJobOrchestration) AND the in-process worker loop
+#     (AddJobWorker) — see
+#     src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs.
+#   * Managed geometry.* / analytics-managed / GeoETL processes run IN-PROCESS
+#     inside the honua container via GeoprocessingDispatchJobExecutor. The
+#     LocalBatchComputeBackend (Backend: "local") bridges their progress back to
+#     the canonical reconciler — there is no `docker run` per job and no Batch.
+#   * The worker loop, job queue, execution-job store, and result-package store
+#     are all Redis-backed and self-gate on a Redis IConnectionMultiplexer
+#     (JobOrchestrationServiceCollectionExtensions.AddJobOrchestration /
+#     AddJobWorker). So Redis is REQUIRED for any GP job to run locally.
+#   * IConnectionMultiplexer is only wired when the `caching.redis` entitlement
+#     (Pro) is present at bootstrap. In a non-Production environment the bootstrap
+#     license snapshot honors `Licensing:DevGrantEdition`
+#     (StartupConfigurationHelpers.IsRedisCacheEntitledAsync ->
+#     FileBackedLicenseService.LoadBootstrapSnapshotAsync(honorDevGrant: true)),
+#     so `Licensing__DevGrantEdition=Pro` grants caching.redis WITHOUT a signed
+#     license. That is the zero-cloud-cred, no-manual-license dev path.
+#
+# The optional `gdal-worker` profile adds the heavyweight GDAL/PDAL worker for
+# the native-profile `gdal.*` raster/surface family (ADR-0038). The geometry.*
+# sample below does NOT need it.
+
+services:
+  # PostGIS — required at startup (the server connects to DefaultConnection on
+  # boot and runs migrations). The geometry.* GP sample is self-contained
+  # (inline WKB) and does not query Postgres, but the host still needs a healthy
+  # database connection to come up.
+  postgres:
+    image: pgrouting/pgrouting:17-3.5-3.7.3
+    environment:
+      POSTGRES_DB: honua_dev
+      POSTGRES_USER: honua_user
+      POSTGRES_PASSWORD: honua_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
+      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - gp_postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honua_user -d honua_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis — REQUIRED for GP. Backs the job queue, execution-job store, log store,
+  # and result-package store, and gates the in-process worker loop. Without it,
+  # submitted jobs are stuck in `accepted` and never drain.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - gp_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Honua server — the lean serving image. Runs the in-process GP worker loop.
+  honua:
+    build:
+      context: .
+    ports:
+      # Bind to localhost by default (dev admin password is a public placeholder).
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_HTTP_PORT:-8080}:8080"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_GRPC_PORT:-8081}:8081"
+    environment:
+      # Development environment => requiresDurableDistributedEvents is false and
+      # the bootstrap license snapshot honors the dev grant below.
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
+      # Drives both the cache and the durable job substrate. Resolved by
+      # GetConnectionString("redis") in Program.cs (config keys are
+      # case-insensitive). Matches the root compose's ConnectionStrings__Redis.
+      ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
+      # Dev grant: unlocks the Pro `caching.redis` entitlement at bootstrap so
+      # IConnectionMultiplexer (and therefore the GP job substrate) is wired —
+      # WITHOUT a signed license or any cloud credentials. Never use in prod.
+      Licensing__DevGrantEdition: "${HONUA_DEV_GRANT_EDITION:-Pro}"
+      # Admin password doubles as the X-API-Key for authenticated calls. The
+      # admin role holds the process-execute grant the GP submit path requires.
+      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      Security__ConnectionEncryption__MasterKey: "${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-honua-compose-dev-master-key-0123456789}"
+      Security__ConnectionEncryption__Salt: "${HONUA_CONNECTION_ENCRYPTION_SALT:-aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2}"
+      Kestrel__Endpoints__Http__Url: "http://+:8080"
+      Kestrel__Endpoints__Http__Protocols: "Http1"
+      Kestrel__Endpoints__Grpc__Url: "http://+:8081"
+      Kestrel__Endpoints__Grpc__Protocols: "Http2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    # Security hardening (matches the root compose).
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - gp_honua_logs:/tmp/honua-logs
+      - gp_honua_cache:/tmp/honua-cache
+
+  # OPTIONAL: heavyweight GDAL/PDAL worker (ADR-0038 honua-worker-etl). Only
+  # needed for the native-profile `gdal.*` raster/surface family — NOT for the
+  # geometry.* sample. Enable with: `--profile gdal-worker`.
+  #
+  # It is headless (no ports) and joins the SAME durable substrate as the server
+  # by sharing Redis: it runs the identical JobExecutionService claim/lease loop
+  # but registers ONLY native-profile executors, so it claims ONLY jobs whose
+  # RuntimeProfile is "native" and leaves managed jobs to the in-process loop.
+  gdal-worker:
+    profiles:
+      - gdal-worker
+    build:
+      context: .
+      dockerfile: docker/worker-gdal/Dockerfile
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      # The worker requires a `redis` connection string (AddGdalWorker throws
+      # without it). Same Redis instance as the server = same job substrate.
+      ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
+      # Per-job scratch root (already set in the image; pinned here for clarity).
+      GdalWorker__ScratchRoot: "/tmp/honua-gdal-worker"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  gp_postgres_data:
+  gp_redis_data:
+  gp_honua_logs:
+  gp_honua_cache:

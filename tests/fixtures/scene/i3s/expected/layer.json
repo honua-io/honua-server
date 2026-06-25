@@ -1,0 +1,66 @@
+{
+  "id": 0,
+  "layerType": "3DObject",
+  "version": "1.7",
+  "spatialReference": {
+    "wkid": 4326,
+    "latestWkid": 4326,
+    "vcsWkid": 115700
+  },
+  "heightModelInfo": {
+    "heightModel": "ellipsoidal",
+    "vertCRS": "meter",
+    "heightUnit": "meter"
+  },
+  "store": {
+    "profile": "meshpyramids",
+    "version": "1.7",
+    "normalReferenceFrame": "east-north-up",
+    "nodePages": {
+      "nodesPerPage": 64,
+      "lodSelectionMetricType": "maxScreenThresholdSQ"
+    },
+    "defaultGeometrySchema": {
+      "geometryBuffers": [
+        {
+          "position": { "type": "Float32", "component": 3 },
+          "normal": { "type": "Float32", "component": 3 },
+          "uv0": { "type": "Float32", "component": 2 }
+        }
+      ]
+    }
+  },
+  "attributeStorageInfo": [
+    {
+      "key": "f_0",
+      "name": "OBJECTID",
+      "ordering": ["attributeValues"],
+      "attributeValues": { "valueType": "Oid32", "valuesPerElement": 1 }
+    }
+  ],
+  "geometryDefinitions": [
+    {
+      "geometryBuffers": [
+        {
+          "position": { "type": "Float32", "component": 3 },
+          "normal": { "type": "Float32", "component": 3 },
+          "uv0": { "type": "Float32", "component": 2 }
+        }
+      ]
+    }
+  ],
+  "materialDefinitions": [
+    {
+      "alphaMode": "OPAQUE",
+      "doubleSided": false,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 1.0
+      }
+    }
+  ],
+  "textureSetDefinitions": [
+    { "formats": [{ "name": "0", "format": "jpg" }] }
+  ]
+}

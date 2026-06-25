@@ -24,7 +24,18 @@ internal sealed class PostgresChangeTracker : IChangeTracker
 
     public async Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
     {
-        const string sql = "SELECT last_value FROM honua.sync_generation";
+        // Committed high-watermark for replica sync. The honua.sync_generation sequence reports
+        // its last ALLOCATED value (last_value), which includes generations consumed by edit
+        // transactions that have called nextval but not yet committed. A replica that persisted
+        // last_value as its cursor and then selected strictly generation > cursor would skip any
+        // lower-generation change that committed after the cursor was read (commit order != gen
+        // order under concurrency), losing it from the replica forever (#2062). Reading the
+        // committed MAX(generation) from honua.feature_changes instead gives a watermark the
+        // puller can advance to without skipping an in-flight write; migration 067 takes a
+        // generation-allocation advisory lock in the change-tracking triggers so generation order
+        // equals commit order and this committed-MAX watermark is gap-free. Mirrors the proven
+        // honua.fieldcollection_changes pattern (PostgresFieldCollectionSyncStore).
+        const string sql = "SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes";
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
