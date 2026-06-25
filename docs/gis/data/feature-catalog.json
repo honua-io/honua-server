@@ -4385,6 +4385,87 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-edr",
+      "route": "/edr",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-collections",
+      "route": "/edr/collections",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-collections-collectionid",
+      "route": "/edr/collections/{collectionId}",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_UnknownCollection_Returns404"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-collections-collectionid-cube",
+      "route": "/edr/collections/{collectionId}/cube",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_MissingBbox_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ReturnsCoverageJsonGridSubset"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-collections-collectionid-position",
+      "route": "/edr/collections/{collectionId}/position",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_InvalidCoords_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ReturnsCoverageJsonPointSeries"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-edr-conformance",
+      "route": "/edr/conformance",
+      "method": "GET",
+      "family": "OGC API - EDR 1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
+      ],
+      "proof_ledger_surface": "ogc-api-edr",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-elevation-datasetid-profile",
       "route": "/elevation/{datasetId}/profile",
       "method": "GET",
@@ -9573,6 +9654,20 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Observations_ById_ReturnsEntity"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-sta-v1-1-observationsstream",
+      "route": "/sta/v1.1/ObservationsStream",
+      "method": "GET",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_Sse_EmitsConnectedThenPushesIngestedObservation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_WithoutTransportHeader_Returns400"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "implemented"
@@ -16126,6 +16221,48 @@
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Token_WhenPortalTokenDisabled_Returns404"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-sta-v1-1-datastreams",
+      "route": "/sta/v1.1/Datastreams",
+      "method": "POST",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostDatastream_MissingBody_Returns400",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostDatastream_WithInlineRelatedEntities_CreatesQueryableDatastream"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-sta-v1-1-datastreams-id-observations",
+      "route": "/sta/v1.1/Datastreams({id})/Observations",
+      "method": "POST",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_OnDatastreamNavigation_PersistsToThatDatastream"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-sta-v1-1-observations",
+      "route": "/sta/v1.1/Observations",
+      "method": "POST",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_MissingDatastream_Returns404",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_SingleIntoSeededDatastream_PersistsAndIsReadable",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservations_BulkEnvelope_PersistsAllRows"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "implemented"
     },
     {
