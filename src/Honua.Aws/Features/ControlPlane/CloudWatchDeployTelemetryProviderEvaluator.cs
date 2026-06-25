@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Amazon;
 using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
@@ -25,26 +24,22 @@ internal interface ICloudWatchMetricClient
         DateTime startUtc,
         DateTime endUtc,
         int periodSeconds,
-        CancellationToken cancellationToken);
+        string? serviceUrl = null,
+        CancellationToken cancellationToken = default);
 }
 
-internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient, IDisposable
+internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
 {
-    // AWS SDK clients are thread-safe and meant to be reused for the process lifetime. This client
-    // is a singleton, but its construction varies by region, so cache one AmazonCloudWatchClient
-    // per resolved region rather than building (and discarding) one per call.
-    private readonly ConcurrentDictionary<string, AmazonCloudWatchClient> _clients =
-        new(StringComparer.Ordinal);
-
     public async Task<double?> GetExpressionValueAsync(
         string? region,
         string expression,
         DateTime startUtc,
         DateTime endUtc,
         int periodSeconds,
-        CancellationToken cancellationToken)
+        string? serviceUrl = null,
+        CancellationToken cancellationToken = default)
     {
-        var client = GetClient(region);
+        using var client = CreateClient(region, serviceUrl);
         var response = await client.GetMetricDataAsync(
             new GetMetricDataRequest
             {
@@ -74,23 +69,27 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient, ID
         return null;
     }
 
-    private AmazonCloudWatchClient GetClient(string? region)
+    // Visible for testing. Applies an opt-in, config-driven ServiceURL override (for example a
+    // LocalStack Community CloudWatch endpoint) when supplied; when unset the client uses the
+    // default regional endpoint, keeping production behaviour unchanged.
+    internal static AmazonCloudWatchClient CreateClient(string? region, string? serviceUrl)
     {
-        var key = string.IsNullOrWhiteSpace(region) ? string.Empty : region;
-        return _clients.GetOrAdd(key, static k => string.IsNullOrEmpty(k)
-            ? new AmazonCloudWatchClient()
-            : new AmazonCloudWatchClient(RegionEndpoint.GetBySystemName(k)));
-    }
+        var config = new AmazonCloudWatchConfig();
 
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        foreach (var client in _clients.Values)
+        if (!string.IsNullOrWhiteSpace(region))
         {
-            client.Dispose();
+            config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
         }
 
-        _clients.Clear();
+        // Mirrors AwsS3FileStorage.CreateClient: when an explicit endpoint is supplied it takes
+        // precedence for the actual request URL while the region (when set) still provides the
+        // SigV4 signing region. Unset = default regional endpoint, keeping production behaviour.
+        if (!string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            config.ServiceURL = serviceUrl;
+        }
+
+        return new AmazonCloudWatchClient(config);
     }
 }
 
@@ -127,12 +126,13 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
         }
 
         var region = ResolveRegion(connection);
+        var serviceUrl = ResolveServiceUrl(connection);
         var endUtc = DateTime.UtcNow;
         var startUtc = endUtc.AddSeconds(-WindowSeconds);
 
         var sampleCount = string.IsNullOrWhiteSpace(policy.MinimumSampleQuery)
             ? (double?)null
-            : await metricClient.GetExpressionValueAsync(region, policy.MinimumSampleQuery, startUtc, endUtc, WindowSeconds, cancellationToken).ConfigureAwait(false);
+            : await metricClient.GetExpressionValueAsync(region, policy.MinimumSampleQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
 
         if (policy.MinimumSampleCount.HasValue && (!sampleCount.HasValue || sampleCount.Value < policy.MinimumSampleCount.Value))
         {
@@ -142,13 +142,13 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
         double? errorRate = null;
         if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
         {
-            errorRate = await metricClient.GetExpressionValueAsync(region, policy.ErrorRateQuery, startUtc, endUtc, WindowSeconds, cancellationToken).ConfigureAwait(false);
+            errorRate = await metricClient.GetExpressionValueAsync(region, policy.ErrorRateQuery, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
         }
 
         double? latencyP95 = null;
         if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
         {
-            latencyP95 = await metricClient.GetExpressionValueAsync(region, policy.LatencyP95Query, startUtc, endUtc, WindowSeconds, cancellationToken).ConfigureAwait(false);
+            latencyP95 = await metricClient.GetExpressionValueAsync(region, policy.LatencyP95Query, startUtc, endUtc, WindowSeconds, serviceUrl, cancellationToken).ConfigureAwait(false);
         }
 
         return new DeployTelemetryReadings
@@ -157,6 +157,29 @@ internal sealed class CloudWatchDeployTelemetryProviderEvaluator(
             ErrorRate = errorRate,
             LatencyP95 = latencyP95
         };
+    }
+
+    // Opt-in, config-driven endpoint override. A custom CloudWatch BaseUrl (for example a
+    // LocalStack Community endpoint such as http://localhost:4566) is forwarded to the SDK as a
+    // ServiceURL so the telemetry gate can be exercised against an emulator. Standard regional
+    // monitoring endpoints are left to ResolveRegion / the SDK default endpoint, so production
+    // connections that only set BaseUrl for region inference keep their existing behaviour.
+    private static string? ResolveServiceUrl(DeployTelemetryConnectionDescriptor connection)
+    {
+        if (string.IsNullOrWhiteSpace(connection.BaseUrl) ||
+            !Uri.TryCreate(connection.BaseUrl, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        var labels = uri.Host.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var isStandardRegionalEndpoint =
+            labels.Length >= 4 &&
+            string.Equals(labels[0], "monitoring", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(labels[^2], "amazonaws", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(labels[^1], "com", StringComparison.OrdinalIgnoreCase);
+
+        return isStandardRegionalEndpoint ? null : connection.BaseUrl.Trim();
     }
 
     private static string? ResolveRegion(DeployTelemetryConnectionDescriptor connection)

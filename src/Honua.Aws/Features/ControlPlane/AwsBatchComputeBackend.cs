@@ -17,6 +17,15 @@ internal static class AwsBatchParameterKeys
     public const string JobDefinitionArn = "batch.job_definition_arn";
     public const string JobQueueArn = "batch.job_queue_arn";
     public const string Region = "batch.region";
+
+    /// <summary>
+    /// Optional, config-driven AWS Batch endpoint override. When set (for example to a LocalStack
+    /// Pro Batch endpoint or a real-cloud integration endpoint) it is forwarded to the SDK as a
+    /// ServiceURL; when unset the SDK uses the default regional endpoint, so production behaviour
+    /// is unchanged. Batch emulation requires LocalStack Pro, so this is primarily for paid/real
+    /// integration coverage rather than the free CI tier.
+    /// </summary>
+    public const string ServiceUrl = "batch.service_url";
     public const string TimeoutSeconds = "batch.timeout_seconds";
     public const string Vcpus = "batch.vcpus";
     public const string MemoryMib = "batch.memory_mib";
@@ -236,6 +245,7 @@ internal sealed partial class AwsBatchComputeBackend(
         var jobDefinition = GetRequiredParameter(parameters, AwsBatchParameterKeys.JobDefinitionArn);
         var jobQueue = GetRequiredParameter(parameters, AwsBatchParameterKeys.JobQueueArn);
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
+        var serviceUrl = GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl);
 
         var jobName = BuildJobName(job.OperationId, job.AttemptCount);
         var submission = new AwsBatchJobSubmission
@@ -254,7 +264,7 @@ internal sealed partial class AwsBatchComputeBackend(
 
         try
         {
-            var result = await batchClient.SubmitJobAsync(submission, region, cancellationToken).ConfigureAwait(false);
+            var result = await batchClient.SubmitJobAsync(submission, region, serviceUrl, cancellationToken).ConfigureAwait(false);
             Log.BatchJobSubmitted(logger, job.OperationId, result.JobId, jobQueue, jobDefinition);
             ControlPlaneTelemetry.RecordExecutionSubmission(job);
 
@@ -308,6 +318,7 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var providerId = job.ProviderOperationId;
         var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
+        var serviceUrl = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.ServiceUrl);
 
         if (string.IsNullOrWhiteSpace(providerId))
         {
@@ -318,7 +329,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // real AWS Batch job if the provider accepted the submission.
             if (TryDeriveOrphanedSubmissionName(job, out var orphanedJobName))
             {
-                return await ObservePendingDiscoveryAsync(job, orphanedJobName, region, cancellationToken).ConfigureAwait(false);
+                return await ObservePendingDiscoveryAsync(job, orphanedJobName, region, serviceUrl, cancellationToken).ConfigureAwait(false);
             }
 
             return new BatchComputeObservation
@@ -330,12 +341,12 @@ internal sealed partial class AwsBatchComputeBackend(
 
         if (TryExtractPendingJobName(providerId, out var pendingJobName))
         {
-            return await ObservePendingDiscoveryAsync(job, pendingJobName, region, cancellationToken).ConfigureAwait(false);
+            return await ObservePendingDiscoveryAsync(job, pendingJobName, region, serviceUrl, cancellationToken).ConfigureAwait(false);
         }
 
         try
         {
-            var state = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
+            var state = await batchClient.DescribeJobAsync(providerId, region, serviceUrl, cancellationToken).ConfigureAwait(false);
             if (state == null)
             {
                 Log.BatchJobNotFound(logger, job.OperationId, providerId);
@@ -381,7 +392,8 @@ internal sealed partial class AwsBatchComputeBackend(
         ExecutionJobRecord job,
         string pendingJobName,
         string? region,
-        CancellationToken cancellationToken)
+        string? serviceUrl = null,
+        CancellationToken cancellationToken = default)
     {
         var jobQueue = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.JobQueueArn);
         if (string.IsNullOrWhiteSpace(jobQueue))
@@ -400,7 +412,7 @@ internal sealed partial class AwsBatchComputeBackend(
         try
         {
             var matches = await batchClient
-                .ListJobsByNameAsync(jobQueue, pendingJobName, region, cancellationToken)
+                .ListJobsByNameAsync(jobQueue, pendingJobName, region, serviceUrl, cancellationToken)
                 .ConfigureAwait(false);
             if (matches.Count == 0)
             {
@@ -483,6 +495,7 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var providerId = job.ProviderOperationId;
         var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
+        var serviceUrl = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.ServiceUrl);
 
         if (string.IsNullOrWhiteSpace(providerId))
         {
@@ -493,7 +506,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // name so ListJobsByName can rediscover and cancel the real provider job.
             if (TryDeriveOrphanedSubmissionName(job, out var orphanedJobName))
             {
-                return await CancelPendingDiscoveryAsync(job, orphanedJobName, region, cancellationToken).ConfigureAwait(false);
+                return await CancelPendingDiscoveryAsync(job, orphanedJobName, region, serviceUrl, cancellationToken).ConfigureAwait(false);
             }
 
             return new BatchComputeObservation
@@ -505,12 +518,12 @@ internal sealed partial class AwsBatchComputeBackend(
 
         if (TryExtractPendingJobName(providerId, out var pendingJobName))
         {
-            return await CancelPendingDiscoveryAsync(job, pendingJobName, region, cancellationToken).ConfigureAwait(false);
+            return await CancelPendingDiscoveryAsync(job, pendingJobName, region, serviceUrl, cancellationToken).ConfigureAwait(false);
         }
 
         try
         {
-            var state = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
+            var state = await batchClient.DescribeJobAsync(providerId, region, serviceUrl, cancellationToken).ConfigureAwait(false);
             if (state == null)
             {
                 return new BatchComputeObservation
@@ -534,19 +547,19 @@ internal sealed partial class AwsBatchComputeBackend(
 
             if (AwsBatchStateMapper.CanCancelWithoutTerminate(state.Status))
             {
-                await batchClient.CancelJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, cancellationToken).ConfigureAwait(false);
+                await batchClient.CancelJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, serviceUrl, cancellationToken).ConfigureAwait(false);
                 Log.BatchJobCancelled(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
             }
             else
             {
-                await batchClient.TerminateJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, cancellationToken).ConfigureAwait(false);
+                await batchClient.TerminateJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, serviceUrl, cancellationToken).ConfigureAwait(false);
                 Log.BatchJobTerminated(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
             }
 
             // Re-observe so we only report terminal Cancelled once AWS has actually reached a
             // terminal state. If AWS has not yet transitioned (e.g. TerminateJob is still propagating
             // SIGTERM), surface the current non-terminal state so the reconciler keeps polling.
-            var postCancelState = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
+            var postCancelState = await batchClient.DescribeJobAsync(providerId, region, serviceUrl, cancellationToken).ConfigureAwait(false);
             if (postCancelState == null)
             {
                 return new BatchComputeObservation
@@ -592,7 +605,8 @@ internal sealed partial class AwsBatchComputeBackend(
         ExecutionJobRecord job,
         string pendingJobName,
         string? region,
-        CancellationToken cancellationToken)
+        string? serviceUrl = null,
+        CancellationToken cancellationToken = default)
     {
         var jobQueue = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.JobQueueArn);
         if (string.IsNullOrWhiteSpace(jobQueue))
@@ -611,7 +625,7 @@ internal sealed partial class AwsBatchComputeBackend(
         try
         {
             var matches = await batchClient
-                .ListJobsByNameAsync(jobQueue, pendingJobName, region, cancellationToken)
+                .ListJobsByNameAsync(jobQueue, pendingJobName, region, serviceUrl, cancellationToken)
                 .ConfigureAwait(false);
             if (matches.Count == 0)
             {

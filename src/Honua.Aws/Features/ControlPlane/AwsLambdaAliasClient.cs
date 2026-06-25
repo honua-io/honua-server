@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Amazon;
 using Amazon.Lambda;
 using Amazon.Lambda.Model;
@@ -27,6 +26,7 @@ internal interface IAwsLambdaAliasClient
         string functionName,
         string aliasName,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default);
 
     Task<AwsLambdaAliasState> UpdateAliasAsync(
@@ -35,24 +35,20 @@ internal interface IAwsLambdaAliasClient
         string functionVersion,
         IReadOnlyDictionary<string, double>? additionalVersionWeights,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient, IDisposable
+internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient
 {
-    // AWS SDK clients are thread-safe and meant to be reused for the process lifetime. This client
-    // is a singleton, but its construction varies by region, so cache one AmazonLambdaClient per
-    // resolved region rather than building (and discarding) one per call.
-    private readonly ConcurrentDictionary<string, AmazonLambdaClient> _clients =
-        new(StringComparer.Ordinal);
-
     public async Task<AwsLambdaAliasState> GetAliasAsync(
         string functionName,
         string aliasName,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
-        var client = GetClient(region);
+        using var client = CreateClient(region, serviceUrl);
         var response = await client.GetAliasAsync(
             new GetAliasRequest
             {
@@ -74,9 +70,10 @@ internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient, IDisposab
         string functionVersion,
         IReadOnlyDictionary<string, double>? additionalVersionWeights,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
-        var client = GetClient(region);
+        using var client = CreateClient(region, serviceUrl);
         var response = await client.UpdateAliasAsync(
             new UpdateAliasRequest
             {
@@ -99,23 +96,27 @@ internal sealed class AwsSdkLambdaAliasClient : IAwsLambdaAliasClient, IDisposab
             response.RoutingConfig?.AdditionalVersionWeights);
     }
 
-    private AmazonLambdaClient GetClient(string? region)
+    // Visible for testing. Applies an opt-in, config-driven ServiceURL override (for example a
+    // LocalStack Community Lambda endpoint) when supplied; when unset the client uses the default
+    // regional endpoint, keeping production behaviour unchanged.
+    internal static AmazonLambdaClient CreateClient(string? region, string? serviceUrl)
     {
-        var key = string.IsNullOrWhiteSpace(region) ? string.Empty : region;
-        return _clients.GetOrAdd(key, static k => string.IsNullOrEmpty(k)
-            ? new AmazonLambdaClient()
-            : new AmazonLambdaClient(RegionEndpoint.GetBySystemName(k)));
-    }
+        var config = new AmazonLambdaConfig();
 
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        foreach (var client in _clients.Values)
+        if (!string.IsNullOrWhiteSpace(region))
         {
-            client.Dispose();
+            config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
         }
 
-        _clients.Clear();
+        // Mirrors AwsS3FileStorage.CreateClient: when an explicit endpoint is supplied it takes
+        // precedence for the actual request URL while the region (when set) still provides the
+        // SigV4 signing region. Unset = default regional endpoint, keeping production behaviour.
+        if (!string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            config.ServiceURL = serviceUrl;
+        }
+
+        return new AmazonLambdaClient(config);
     }
 
     private static AwsLambdaAliasState ToState(

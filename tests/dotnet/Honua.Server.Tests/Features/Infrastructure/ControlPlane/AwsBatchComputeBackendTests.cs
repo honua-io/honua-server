@@ -91,6 +91,74 @@ public sealed class AwsBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_WithServiceUrlParameter_ForwardsEndpointOverride()
+    {
+        // An opt-in batch.service_url parameter (LocalStack Pro / real-cloud Batch endpoint) must
+        // reach the SDK client seam as a ServiceURL override.
+        var client = new StubAwsBatchJobClient
+        {
+            NextSubmitResult = new AwsBatchSubmitResult
+            {
+                JobId = "aws-job-1",
+                JobName = "honua-op-1"
+            }
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(parameters: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [AwsBatchParameterKeys.JobDefinitionArn] = "arn:aws:batch:us-west-2:123:job-definition/heavy-gdal:1",
+            [AwsBatchParameterKeys.JobQueueArn] = "arn:aws:batch:us-west-2:123:job-queue/gp-heavy",
+            [AwsBatchParameterKeys.Region] = "us-west-2",
+            [AwsBatchParameterKeys.ServiceUrl] = "http://localhost:4566"
+        });
+
+        await backend.StartAsync(job);
+
+        client.LastServiceUrl.Should().Be("http://localhost:4566");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithoutServiceUrlParameter_LeavesEndpointOverrideUnset()
+    {
+        var client = new StubAwsBatchJobClient
+        {
+            NextSubmitResult = new AwsBatchSubmitResult { JobId = "aws-job-1", JobName = "honua-op-1" }
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(parameters: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [AwsBatchParameterKeys.JobDefinitionArn] = "arn:aws:batch:us-west-2:123:job-definition/heavy-gdal:1",
+            [AwsBatchParameterKeys.JobQueueArn] = "arn:aws:batch:us-west-2:123:job-queue/gp-heavy",
+            [AwsBatchParameterKeys.Region] = "us-west-2"
+        });
+
+        await backend.StartAsync(job);
+
+        client.LastServiceUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public void CreateClient_WithServiceUrl_AppliesEndpointOverride()
+    {
+        using var client = AwsSdkBatchJobClient.CreateClient("us-west-2", "http://localhost:4566");
+
+        // The AWS SDK treats ServiceURL and RegionEndpoint as mutually exclusive: setting an
+        // explicit ServiceURL clears RegionEndpoint (mirrors AwsS3FileStorage). The override must
+        // win so the client targets the emulator endpoint.
+        client.Config.ServiceURL.Should().Be("http://localhost:4566/");
+        client.Config.RegionEndpoint.Should().BeNull();
+    }
+
+    [Fact]
+    public void CreateClient_WithoutServiceUrl_UsesDefaultRegionalEndpoint()
+    {
+        using var client = AwsSdkBatchJobClient.CreateClient("us-west-2", serviceUrl: null);
+
+        client.Config.RegionEndpoint!.SystemName.Should().Be("us-west-2");
+        string.IsNullOrEmpty(client.Config.ServiceURL).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ObserveAsync_MapsRunningToRunning()
     {
         var client = new StubAwsBatchJobClient
@@ -1201,6 +1269,8 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
 
     public string? LastRegion { get; private set; }
 
+    public string? LastServiceUrl { get; private set; }
+
     public string? LastListJobsQueue { get; private set; }
 
     public string? LastListJobsName { get; private set; }
@@ -1216,10 +1286,12 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
     public Task<AwsBatchSubmitResult> SubmitJobAsync(
         AwsBatchJobSubmission submission,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         LastSubmission = submission;
         LastRegion = region;
+        LastServiceUrl = serviceUrl;
         if (SubmitException != null)
         {
             throw SubmitException;
@@ -1231,10 +1303,12 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
     public Task<AwsBatchJobState?> DescribeJobAsync(
         string jobId,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         DescribeCallCount++;
         LastRegion = region;
+        LastServiceUrl = serviceUrl;
         if (DescribeException != null)
         {
             throw DescribeException;
@@ -1248,12 +1322,14 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
         string jobQueue,
         string jobName,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         ListJobsCallCount++;
         LastListJobsQueue = jobQueue;
         LastListJobsName = jobName;
         LastRegion = region;
+        LastServiceUrl = serviceUrl;
         if (ListJobsException != null)
         {
             throw ListJobsException;
@@ -1267,9 +1343,11 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
         string jobId,
         string reason,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         CancelCallCount++;
+        LastServiceUrl = serviceUrl;
         if (CancelException != null)
         {
             throw CancelException;
@@ -1282,9 +1360,11 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
         string jobId,
         string reason,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         TerminateCallCount++;
+        LastServiceUrl = serviceUrl;
         if (TerminateException != null)
         {
             throw TerminateException;

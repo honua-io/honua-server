@@ -1,0 +1,190 @@
+name: Cloud Integration Harness
+
+# Opt-in, Docker-backed cloud-integration tests (#2163). Stands up REAL emulated cloud
+# backends and exercises Honua's cloud seams end-to-end. Every test is tagged
+# [Trait("Category","CloudIntegration")] so it is EXCLUDED from the default PR test run
+# (which never invokes this project) and only runs here.
+#
+# FREE tier (always): kind (real Kubernetes-in-Docker) for KubernetesJobBatchComputeBackend,
+# plus LocalStack Community (S3/Lambda/CloudWatch) via the project's Testcontainers fixture.
+# PAID tier (optional): LocalStack Pro (AWS Batch / ECS) — gated on the LOCALSTACK_AUTH_TOKEN
+# repo secret. When the secret is absent the Pro-tagged scenarios skip (never fail), so the
+# free lane stays green without a LocalStack subscription.
+
+on:
+  schedule:
+    # Nightly; the harness is Docker-heavy and not part of the per-PR gate.
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Which tier(s) to run'
+        type: choice
+        required: false
+        default: free
+        options:
+          - free
+          - pro
+          - all
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  CSPROJ: tests/dotnet/Honua.CloudIntegration.Tests/Honua.CloudIntegration.Tests.csproj
+  # Self-terminating worker image the kind-backed Job lifecycle test submits. Built and loaded
+  # into the kind node below; ImagePullPolicy=Never in the test keeps it local-only.
+  JOB_IMAGE: honua-ci/job-succeed:latest
+
+concurrency:
+  group: cloud-integration-harness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  free-tier:
+    name: Free Tier (kind + LocalStack Community)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Skip when a manual dispatch explicitly selects only the Pro tier.
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.tier != 'pro' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build cloud-integration test binaries
+        timeout-minutes: 25
+        run: dotnet build ${{ env.CSPROJ }} --no-restore --configuration Release
+
+      - name: Pre-pull LocalStack Community image
+        shell: bash
+        run: |
+          # Warm the docker cache so the LocalStackFixture Testcontainer does not pull during
+          # the test run. Container provisioning itself is owned by the fixture.
+          docker pull localstack/localstack:3.6.0 || echo "::warning::could not pre-pull localstack"
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: honua-cloud-integration
+
+      - name: Build and load the self-terminating worker image into kind
+        shell: bash
+        run: |
+          # A minimal image whose entrypoint runs to completion and exits 0 — stands in for a GP
+          # worker. The lifecycle test sets ImagePullPolicy=Never, so the image must be present
+          # on the kind node (no registry pull).
+          workdir="$(mktemp -d)"
+          cat > "${workdir}/Dockerfile" <<'EOF'
+          FROM busybox:1.36
+          ENTRYPOINT ["/bin/true"]
+          EOF
+          docker build -t "${JOB_IMAGE}" "${workdir}"
+          kind load docker-image "${JOB_IMAGE}" --name honua-cloud-integration
+
+      - name: Export kind cluster inputs for the harness
+        shell: bash
+        run: |
+          # The KindClusterFixture consumes these out-of-cluster credentials (mirroring the
+          # ControlPlane:Kubernetes:* surface an operator configures for a remote cluster).
+          # Extract them with kubectl — the canonical Kubernetes tool — so the harness needs no
+          # kubeconfig parser. The kind API server URL must be reachable from the host network.
+          api_server="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+          ca_bundle="${RUNNER_TEMP}/kind-ca.pem"
+          kubectl config view --minify --raw \
+            -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d > "${ca_bundle}"
+
+          # A ServiceAccount token permitted to create/observe/delete Jobs in the default namespace.
+          kubectl create clusterrolebinding honua-ci-jobs \
+            --clusterrole=cluster-admin \
+            --serviceaccount=default:default || true
+          token="$(kubectl create token default --duration=3600s)"
+
+          {
+            echo "HONUA_TEST_K8S_API_SERVER_URL=${api_server}"
+            echo "HONUA_TEST_K8S_CA_BUNDLE_PATH=${ca_bundle}"
+            echo "HONUA_TEST_K8S_BEARER_TOKEN=${token}"
+            echo "HONUA_TEST_K8S_NAMESPACE=default"
+            echo "HONUA_TEST_K8S_JOB_IMAGE=${JOB_IMAGE}"
+          } >> "$GITHUB_ENV"
+
+      - name: Run free-tier cloud-integration tests
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: false
+        run: |
+          mkdir -p ./tests/TestResults
+          # Free lane: Category=CloudIntegration excluding the Pro tier (no LocalStack token here).
+          dotnet test ${{ env.CSPROJ }} \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=CloudIntegration&Tier!=Pro" \
+            --logger "trx;LogFileName=cloud-integration-free.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Upload free-tier results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cloud-integration-free-results
+          path: tests/TestResults/
+          retention-days: 14
+
+  pro-tier:
+    name: Pro Tier (LocalStack Batch/ECS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Only run when explicitly requested. The fixture additionally skips Pro scenarios at
+    # runtime when LOCALSTACK_AUTH_TOKEN is absent, so a missing secret degrades gracefully.
+    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.tier == 'pro' || github.event.inputs.tier == 'all') }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build cloud-integration test binaries
+        timeout-minutes: 25
+        run: dotnet build ${{ env.CSPROJ }} --no-restore --configuration Release
+
+      - name: Run Pro-tier cloud-integration tests
+        env:
+          # When this secret is unset the LocalStackFixture leaves Batch/ECS disabled and the
+          # Pro-tagged scenarios skip rather than fail, so this lane never hard-fails on a
+          # missing subscription.
+          LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+          TESTCONTAINERS_RYUK_DISABLED: false
+        run: |
+          mkdir -p ./tests/TestResults
+          dotnet test ${{ env.CSPROJ }} \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=CloudIntegration&Tier=Pro" \
+            --logger "trx;LogFileName=cloud-integration-pro.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Upload Pro-tier results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cloud-integration-pro-results
+          path: tests/TestResults/
+          retention-days: 14

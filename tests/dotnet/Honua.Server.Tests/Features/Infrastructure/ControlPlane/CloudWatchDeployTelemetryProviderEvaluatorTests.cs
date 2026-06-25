@@ -142,6 +142,61 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
         client.LastRegion.Should().Be("us-east-2");
     }
 
+    [Fact]
+    public async Task EvaluateAsync_CustomBaseUrl_ForwardsServiceUrlOverride()
+    {
+        // A non-standard CloudWatch BaseUrl (for example a LocalStack Community endpoint) must be
+        // forwarded to the SDK as a ServiceURL so the telemetry gate can run against an emulator.
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 50,
+            [ErrorRateExpression] = 0.01,
+            [LatencyExpression] = 120
+        });
+
+        await Evaluate(client, region: "us-east-1", baseUrl: "http://localhost:4566");
+
+        client.LastServiceUrl.Should().Be("http://localhost:4566");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_StandardRegionalBaseUrl_DoesNotForwardServiceUrl()
+    {
+        // A standard regional monitoring endpoint is used only for region inference and must NOT
+        // be forwarded as a ServiceURL override, so production connections keep default endpoints.
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 50,
+            [ErrorRateExpression] = 0.01,
+            [LatencyExpression] = 120
+        });
+
+        await Evaluate(client, baseUrl: "https://monitoring.us-east-2.amazonaws.com");
+
+        client.LastServiceUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public void CreateClient_WithServiceUrl_AppliesEndpointOverride()
+    {
+        using var client = AwsSdkCloudWatchMetricClient.CreateClient("us-east-1", "http://localhost:4566");
+
+        // The AWS SDK treats ServiceURL and RegionEndpoint as mutually exclusive: setting an
+        // explicit ServiceURL clears RegionEndpoint (mirrors AwsS3FileStorage). The override must
+        // win so the client targets the emulator endpoint.
+        client.Config.ServiceURL.Should().Be("http://localhost:4566/");
+        client.Config.RegionEndpoint.Should().BeNull();
+    }
+
+    [Fact]
+    public void CreateClient_WithoutServiceUrl_UsesDefaultRegionalEndpoint()
+    {
+        using var client = AwsSdkCloudWatchMetricClient.CreateClient("us-east-1", serviceUrl: null);
+
+        client.Config.RegionEndpoint!.SystemName.Should().Be("us-east-1");
+        string.IsNullOrEmpty(client.Config.ServiceURL).Should().BeTrue();
+    }
+
     private static async Task<DeployTelemetryDecision?> Evaluate(
         FakeCloudWatchMetricClient client,
         string? region = null,
@@ -235,15 +290,19 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
 
         public string? LastRegion { get; private set; }
 
+        public string? LastServiceUrl { get; private set; }
+
         public Task<double?> GetExpressionValueAsync(
             string? region,
             string expression,
             DateTime startUtc,
             DateTime endUtc,
             int periodSeconds,
-            CancellationToken cancellationToken)
+            string? serviceUrl = null,
+            CancellationToken cancellationToken = default)
         {
             LastRegion = region;
+            LastServiceUrl = serviceUrl;
             RequestedExpressions.Enqueue(expression);
             return Task.FromResult(values.TryGetValue(expression, out var value) ? value : null);
         }
