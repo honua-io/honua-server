@@ -26,6 +26,13 @@ internal sealed record DeployTelemetryDecision
     public bool RollbackRecommended { get; init; }
 
     public string Message { get; init; } = string.Empty;
+
+    /// <summary>
+    /// When set, the deploy spec parameters the reconciler should persist alongside the decision.
+    /// Used by the anti-flap debounce to carry the consecutive-breach streak between reconcile
+    /// cycles without a separate store. Null leaves the existing parameters untouched.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? UpdatedDeployParameters { get; init; }
 }
 
 /// <summary>
@@ -61,10 +68,29 @@ internal sealed class DeployTelemetrySignalEvaluator(
 
         if (!policy.IsValid)
         {
+            // Bounded wait (#2161): an invalid policy is a configuration error that will never
+            // self-heal from telemetry, so an unbounded WaitForMoreTelemetry silently parks the
+            // deploy in Reconciling forever. Hold for a finite grace window (so a transient
+            // mid-edit config is tolerated), then escalate to a rollback recommendation rather
+            // than promoting a deploy whose health gate is broken. The grace window is bounded
+            // even when misconfigured to a non-positive value.
+            var grace = ResolveInvalidPolicyGrace(operation.Deploy);
+            var elapsed = DateTimeOffset.UtcNow - operation.CreatedAt;
+            var validationDetail = policy.ValidationError ?? "Deploy telemetry policy is invalid.";
+            if (elapsed < grace)
+            {
+                var remaining = grace - elapsed;
+                return new DeployTelemetryDecision
+                {
+                    WaitForMoreTelemetry = true,
+                    Message = $"{validationDetail} Holding for up to {Math.Ceiling(Math.Max(remaining.TotalSeconds, 0))}s before escalating an invalid telemetry policy."
+                };
+            }
+
             return new DeployTelemetryDecision
             {
-                WaitForMoreTelemetry = true,
-                Message = policy.ValidationError ?? "Deploy telemetry policy is invalid."
+                RollbackRecommended = true,
+                Message = $"Automatic rollback requested because the deploy telemetry policy is invalid and could not be evaluated within the configured grace window: {validationDetail}"
             };
         }
 
@@ -115,7 +141,8 @@ internal sealed class DeployTelemetrySignalEvaluator(
             var readings = await providerEvaluator
                 .ReadAsync(policy.ToDescriptor(), ToDescriptor(connection), cancellationToken)
                 .ConfigureAwait(false);
-            return Evaluate(policy, readings);
+            var instantaneous = Evaluate(policy, readings);
+            return ApplyBreachDebounce(operation, instantaneous);
         }
         catch (Exception ex)
         {
@@ -191,6 +218,120 @@ internal sealed class DeployTelemetrySignalEvaluator(
                 : "Telemetry gate passed."
         };
     }
+
+    /// <summary>
+    /// Reserved deploy-spec parameter key that an operator sets to require N consecutive breaching
+    /// scrapes before a telemetry-driven rollback fires. Defaults to single-scrape behavior (1) when
+    /// unset or invalid, preserving the historical instantaneous gate.
+    /// </summary>
+    internal const string BreachDebounceThresholdParameterKey = "telemetry.rollback.consecutive_breaches";
+
+    /// <summary>
+    /// Reserved deploy-spec parameter key the evaluator uses to carry the current consecutive-breach
+    /// streak between reconcile cycles. The reconciler persists the updated parameters returned on the
+    /// decision, so the streak survives without a separate store.
+    /// </summary>
+    internal const string BreachStreakParameterKey = "telemetry.rollback.breach_streak";
+
+    /// <summary>
+    /// Reserved deploy-spec parameter key bounding how long an invalid telemetry policy is tolerated
+    /// before the gate escalates to a rollback recommendation. Defaults to 15 minutes.
+    /// </summary>
+    internal const string InvalidPolicyGraceSecondsParameterKey = "telemetry.invalid_policy_grace_seconds";
+
+    private static readonly TimeSpan DefaultInvalidPolicyGrace = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan MaximumInvalidPolicyGrace = TimeSpan.FromHours(1);
+
+    private static TimeSpan ResolveInvalidPolicyGrace(DeployOperationSpec? spec)
+    {
+        if (spec != null &&
+            spec.Parameters.TryGetValue(InvalidPolicyGraceSecondsParameterKey, out var raw) &&
+            double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var seconds) &&
+            seconds > 0)
+        {
+            // Clamp so a misconfiguration can never re-create the unbounded-park bug.
+            return seconds >= MaximumInvalidPolicyGrace.TotalSeconds
+                ? MaximumInvalidPolicyGrace
+                : TimeSpan.FromSeconds(seconds);
+        }
+
+        return DefaultInvalidPolicyGrace;
+    }
+
+    /// <summary>
+    /// Opt-in N-consecutive-breach anti-flap. A single noisy scrape (GP metrics are burstier) must not
+    /// trigger a production rollback. When the operator configures a debounce threshold &gt; 1, a
+    /// breach is only escalated to a rollback once that many consecutive scrapes breach; any healthy
+    /// scrape resets the streak. When the threshold is 1 (the default) this is a no-op and the
+    /// instantaneous decision is returned unchanged.
+    /// </summary>
+    private static DeployTelemetryDecision ApplyBreachDebounce(
+        WorkflowOperationRecord operation,
+        DeployTelemetryDecision instantaneous)
+    {
+        var spec = operation.Deploy;
+        if (spec == null)
+        {
+            return instantaneous;
+        }
+
+        var threshold = ResolveBreachDebounceThreshold(spec);
+        if (threshold <= 1)
+        {
+            return instantaneous;
+        }
+
+        var priorStreak = ResolveBreachStreak(spec);
+
+        // A healthy or waiting scrape resets the streak; only an instantaneous rollback recommendation
+        // contributes to it.
+        if (!instantaneous.RollbackRecommended)
+        {
+            return priorStreak == 0
+                ? instantaneous
+                : instantaneous with { UpdatedDeployParameters = WithBreachStreak(spec.Parameters, 0) };
+        }
+
+        var newStreak = priorStreak + 1;
+        if (newStreak >= threshold)
+        {
+            return instantaneous with
+            {
+                Message = $"{instantaneous.Message} ({newStreak} consecutive breaching scrapes reached the configured anti-flap threshold of {threshold}.)",
+                UpdatedDeployParameters = WithBreachStreak(spec.Parameters, 0)
+            };
+        }
+
+        // Below threshold: suppress the rollback this cycle and keep waiting for confirmation.
+        return new DeployTelemetryDecision
+        {
+            WaitForMoreTelemetry = true,
+            Message = $"Holding deploy: telemetry breached once ({newStreak} of {threshold} consecutive breaching scrapes required before rollback). {instantaneous.Message}",
+            UpdatedDeployParameters = WithBreachStreak(spec.Parameters, newStreak)
+        };
+    }
+
+    private static int ResolveBreachDebounceThreshold(DeployOperationSpec spec)
+        => spec.Parameters.TryGetValue(BreachDebounceThresholdParameterKey, out var raw) &&
+            int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
+            parsed > 0
+                ? parsed
+                : 1;
+
+    private static int ResolveBreachStreak(DeployOperationSpec spec)
+        => spec.Parameters.TryGetValue(BreachStreakParameterKey, out var raw) &&
+            int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
+            parsed > 0
+                ? parsed
+                : 0;
+
+    private static Dictionary<string, string> WithBreachStreak(
+        IReadOnlyDictionary<string, string> parameters,
+        int streak)
+        => new(parameters, StringComparer.Ordinal)
+        {
+            [BreachStreakParameterKey] = streak.ToString(CultureInfo.InvariantCulture)
+        };
 
     private static DeployTelemetryConnectionDescriptor ToDescriptor(DeployTelemetryConnectionOptions connection)
         => new()
