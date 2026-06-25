@@ -33,6 +33,21 @@ public sealed record ForwardGeocodeRequest(
     /// exact suggestion the token encodes rather than treating <see cref="Query"/> as free text.
     /// </summary>
     public string? MagicKey { get; init; }
+
+    /// <summary>
+    /// Optional proximity-bias point. Providers that support proximity weighting
+    /// (<see cref="GeocodeProviderCapabilities.SupportsBiasing"/>) rank candidates near this
+    /// location ahead of equally-matching distant ones. Providers without proximity support
+    /// ignore it gracefully. A <see langword="null"/> value applies no bias.
+    /// </summary>
+    public GeocodePoint? BiasLocation { get; init; }
+
+    /// <summary>
+    /// Optional radius in meters that scopes the proximity bias around <see cref="BiasLocation"/>.
+    /// Only meaningful alongside <see cref="BiasLocation"/>; providers that support a bounded
+    /// proximity radius use it to weight or constrain candidates, while others ignore it.
+    /// </summary>
+    public double? BiasDistanceMeters { get; init; }
 }
 
 /// <summary>
@@ -68,6 +83,13 @@ public sealed record SuggestGeocodeRequest(
     /// Bias results towards this location
     /// </summary>
     public GeocodePoint? BiasLocation { get; init; }
+
+    /// <summary>
+    /// Optional radius in meters that scopes the proximity bias around <see cref="BiasLocation"/>.
+    /// Only meaningful alongside <see cref="BiasLocation"/>; providers that support a bounded
+    /// proximity radius use it to weight or constrain suggestions, while others ignore it.
+    /// </summary>
+    public double? BiasDistanceMeters { get; init; }
 
     /// <summary>
     /// Search within this bounding box
