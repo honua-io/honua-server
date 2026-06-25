@@ -182,6 +182,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         EnsurePlanCatalogValid(plan);
         EnsureApproved(principal, plan);
 
+        // Phase 0 auth spine (Deliverable 1): pin the submitter's owner snapshot
+        // when the job declares a custom-code resource scope. The declared scope is
+        // validated to be ⊆ what the submitter can reach; anything beyond is
+        // rejected here, so the durable snapshot can only ever attenuate (never
+        // widen) a later scoped-job callback token. Behavior is unchanged for
+        // ordinary jobs, which declare no scope and pin no snapshot.
+        var ownerScope = CustomCodeOwnerScopeCapture.TryCapture(
+            principal,
+            protocolMetadata,
+            globalDataEditorRoles: null,
+            out var scopeRejection);
+        if (scopeRejection is not null)
+        {
+            GeoprocessingServiceLog.DeclaredScopeRejected(_logger, scopeRejection);
+            throw new GeoprocessingValidationException(scopeRejection);
+        }
+
         var jobStore = RequireJobStore();
         var now = DateTimeOffset.UtcNow;
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
@@ -225,7 +242,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             {
                 IdempotencyKey = resolvedKey,
                 RequestedBy = principal.Identity?.Name,
-                RequestFingerprint = requestFingerprint
+                RequestFingerprint = requestFingerprint,
+                CustomCodeOwnerScope = ownerScope
             },
             Spec = spec
         };

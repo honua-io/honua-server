@@ -176,4 +176,9 @@ internal static partial class GeoprocessingServiceLog
     public static partial void JobOwnershipDenied(
         ILogger logger,
         string jobId);
+
+    [LoggerMessage(8030, LogLevel.Warning, "Custom-code declared scope rejected: {Reason}")]
+    public static partial void DeclaredScopeRejected(
+        ILogger logger,
+        string reason);
 }

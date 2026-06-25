@@ -53,6 +53,7 @@ public static class PortalTokenAuthenticationExtensions
             .ValidateOnStart();
 
         services.TryAddSingletonPortalTokenIssuer();
+        services.TryAddSingletonScopedJobTokenIssuer();
         services.TryAddPortalCredentialVerifier();
         services.TryAddPortalAccessProjection(configuration);
         services.TryAddPortalOAuthBridge();
@@ -84,6 +85,19 @@ public static class PortalTokenAuthenticationExtensions
         if (!services.Any(d => d.ServiceType == typeof(IPortalTokenIssuer)))
         {
             services.AddSingleton<IPortalTokenIssuer, PortalTokenIssuer>();
+        }
+    }
+
+    /// <summary>
+    /// Registers the custom-code geoprocessing scoped-job token issuer (Phase 0
+    /// auth spine). A separate singleton from the portal-token issuer so the ArcGIS
+    /// portal token is never overloaded to carry job-bound attenuation.
+    /// </summary>
+    private static void TryAddSingletonScopedJobTokenIssuer(this IServiceCollection services)
+    {
+        if (!services.Any(d => d.ServiceType == typeof(IScopedJobTokenIssuer)))
+        {
+            services.AddSingleton<IScopedJobTokenIssuer, ScopedJobTokenIssuer>();
         }
     }
 
