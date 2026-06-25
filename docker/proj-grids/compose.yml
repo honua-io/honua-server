@@ -1,0 +1,50 @@
+name: honua-proj-grids
+
+# Datum-fidelity PostGIS database for the gated grid-transform integration test
+# and local datum/CRS provisioning (issue #1501).
+#
+# The default Honua runtime/test PostGIS images (postgis/postgis:*) ship only the
+# minimal Debian libproj-data subset, so the canonical NADCON/NADCON5/NTv2/GEOID
+# grid files the Esri-default datum transformations depend on are absent. This
+# compose builds the docker/proj-grids image (PostGIS + the baked PROJ grids) so
+# grid-gated reprojection resolves at full accuracy through the shared
+# DatumTransformSql chokepoint.
+#
+# Usage:
+#   docker compose -f docker/proj-grids/compose.yml up -d --build
+#   psql against localhost:${POSTGRES_PROJ_GRIDS_PORT:-5436}
+#
+# Point the gated integration test at this DB:
+#   export HONUA_PROJ_GRID_TEST=1
+#   export HONUA_TEST_DB_URL='Host=localhost;Port=5436;Database=honua_test;Username=test;Password=test'
+#   dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+#       --filter "FullyQualifiedName~DatumGridProvisioning"
+
+services:
+  proj-grids-db:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: honua-postgis-proj-grids:local
+    environment:
+      POSTGRES_DB: honua_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
+    ports:
+      - "${POSTGRES_PROJ_GRIDS_PORT:-5436}:5432"
+    # PostGIS 18+ images store data under a major-version subdirectory and expect
+    # the mount at /var/lib/postgresql (not the legacy /var/lib/postgresql/data,
+    # which fails startup with "PostgreSQL data in (unused mount/volume)").
+    volumes:
+      - postgres_proj_grids_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d honua_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_proj_grids_data:
