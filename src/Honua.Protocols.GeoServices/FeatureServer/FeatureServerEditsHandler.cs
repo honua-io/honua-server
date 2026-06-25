@@ -379,7 +379,13 @@ internal sealed class FeatureServerEditsHandler(
             try
             {
                 Feature? existingFeature = existingFeatures.TryGetValue(objectId, out var resolvedFeature) ? resolvedFeature : null;
-                if (!ShouldUseInternalObjectIdFastPath(resource) && existingFeature is null)
+                // The pre-read (ResolveFeaturesByGeoServicesObjectIdsAsync) is RLS-enforced on
+                // both the fast path and the custom-objectid path, so a null result means the
+                // row does not exist OR is hidden from this caller by row-level security. The
+                // edit SQL filters only on (layer_id, objectid) with no RLS predicate, so the
+                // not-found rejection MUST be unconditional — skipping it on the default-OBJECTID
+                // fast path would let a caller mutate an RLS-hidden row (#2066).
+                if (existingFeature is null)
                 {
                     context.HasValidationErrors = true;
                     context.UpdateResults![i] = CreateFailureResult(
@@ -471,7 +477,12 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             Feature? existingFeature = existingFeatures.TryGetValue(objectId, out var resolvedFeature) ? resolvedFeature : null;
-            if (!ShouldUseInternalObjectIdFastPath(resource) && existingFeature is null)
+            // The pre-read is RLS-enforced on both the fast path and the custom-objectid path,
+            // so a null result means the row is missing OR hidden from this caller by RLS. The
+            // DELETE SQL filters only on (layer_id, objectid) with no RLS predicate, so the
+            // not-found rejection MUST be unconditional — skipping it on the default-OBJECTID
+            // fast path would let a caller delete an RLS-hidden row (#2066).
+            if (existingFeature is null)
             {
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
@@ -481,33 +492,11 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            var internalObjectId = existingFeature?.Id ?? objectId;
+            var internalObjectId = existingFeature.Value.Id;
             context.DeleteIds.Add(internalObjectId);
             context.DeleteResponseObjectIds.Add(objectId);
             context.DeleteIndexes.Add(i);
-            context.DeleteFeatures.Add(existingFeature ?? await ReadDeleteFeatureSnapshotAsync(storageLayerId, internalObjectId, cancellationToken));
-        }
-    }
-
-    private async Task<Feature?> ReadDeleteFeatureSnapshotAsync(
-        int layerId,
-        long objectId,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await _featureReader.GetAsync(layerId, objectId, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            // The snapshot only enriches delete events/plugin hooks; a read failure
-            // must not fail the delete itself, but it should leave an operator signal.
-            FeatureServerLog.DeleteSnapshotReadFailed(_logger, layerId, objectId, ex);
-            return null;
+            context.DeleteFeatures.Add(existingFeature);
         }
     }
 

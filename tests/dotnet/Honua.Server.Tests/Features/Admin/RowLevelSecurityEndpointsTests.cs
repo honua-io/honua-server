@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -127,6 +128,69 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /api/v1/admin/rls-policies")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
+    public async Task RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer()
+    {
+        // #2066: on a default-OBJECTID layer, the edit not-found guard was skipped on the fast
+        // path, so a caller could delete/update a row RLS hides from them by its OBJECTID. The
+        // guard must now reject the hidden objectId ("Feature not found") and leave the row intact.
+        var adminClient = CreateAdminClient();
+        Guid? policyId = null;
+
+        try
+        {
+            // Capture a 'test'-category row's OBJECTID BEFORE the policy exists (unrestricted query).
+            var rowsBefore = await QueryObjectIdsByCategoryAsync(claimCategory: "test");
+            rowsBefore.Should().HaveCount(CategoryTestCount);
+            var hiddenObjectId = rowsBefore[0].ObjectId;
+
+            policyId = await CreatePolicyAsync(adminClient);
+
+            // Caller's claim is 'sample' — the 'test' row is RLS-hidden from them.
+            var visibleToSample = await QueryObjectIdsByCategoryAsync(claimCategory: "sample");
+            visibleToSample.Should().OnlyContain(r => r.Category == "sample");
+            visibleToSample.Should().NotContain(r => r.ObjectId == hiddenObjectId);
+
+            // deleteFeatures of the hidden objectId must NOT succeed — either rejected outright
+            // (write-RBAC) or returned as a per-row failure ("Feature not found" from the RLS guard).
+            var deleteSucceeded = await EditHiddenRowSucceededAsync(
+                claimCategory: "sample",
+                path: $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/deleteFeatures",
+                form: [new KeyValuePair<string, string>("objectIds", hiddenObjectId.ToString(CultureInfo.InvariantCulture))],
+                resultsProperty: "deleteResults");
+            deleteSucceeded.Should().BeFalse("an RLS-hidden row must not be deletable via its OBJECTID");
+
+            // updateFeatures of the hidden objectId must likewise not succeed.
+            var updateFeatureJson =
+                "[{\"attributes\":{\"objectid\":" + hiddenObjectId.ToString(CultureInfo.InvariantCulture) + ",\"category\":\"pwned\"}}]";
+            var updateSucceeded = await EditHiddenRowSucceededAsync(
+                claimCategory: "sample",
+                path: $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/updateFeatures",
+                form: [new KeyValuePair<string, string>("features", updateFeatureJson)],
+                resultsProperty: "updateResults");
+            updateSucceeded.Should().BeFalse("an RLS-hidden row must not be updatable via its OBJECTID");
+
+            // The row still exists and is unchanged: drop the policy and re-query unrestricted.
+            _ = await adminClient.DeleteAsync($"/api/v1/admin/rls-policies/{policyId.Value}");
+            policyId = null;
+
+            var rowsAfter = await QueryObjectIdsByCategoryAsync(claimCategory: "test");
+            rowsAfter.Should().Contain(r => r.ObjectId == hiddenObjectId && r.Category == "test",
+                "the RLS-hidden row must survive the blocked edit/delete intact");
+        }
+        finally
+        {
+            if (policyId.HasValue)
+            {
+                _ = await adminClient.DeleteAsync($"/api/v1/admin/rls-policies/{policyId.Value}");
+            }
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /api/v1/admin/rls-policies")]
     public async Task RlsPolicyEndpoints_RejectAnonymousCallers()
@@ -197,6 +261,72 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
             payload,
             RlsPolicyJsonContext.Default.ApiResponseIReadOnlyListRlsPolicyResponse);
         return parsed?.Data ?? Array.Empty<RlsPolicyResponse>();
+    }
+
+    private async Task<IReadOnlyList<(long ObjectId, string? Category)>> QueryObjectIdsByCategoryAsync(string? claimCategory)
+    {
+        var client = _fixture.CreateClient();
+        client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.UserHeader, "rls-user");
+        if (!string.IsNullOrEmpty(claimCategory))
+        {
+            client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.CategoryHeader, claimCategory);
+        }
+
+        var response = await client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&outFields=*&returnGeometry=false&f=json");
+
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+
+        using var document = JsonDocument.Parse(payload);
+        return document.RootElement
+            .GetProperty("features")
+            .EnumerateArray()
+            .Select(feature =>
+            {
+                var attributes = feature.GetProperty("attributes");
+                var objectId = attributes.GetProperty("objectid").GetInt64();
+                var category = attributes.GetProperty("category").GetString();
+                return (objectId, category);
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Issues an edit/delete for the hidden objectId as the RLS-constrained caller and reports
+    /// whether the mutation SUCCEEDED. A successful per-row result on a 200 response is the bypass;
+    /// any non-success status (write-RBAC rejection) or a per-row failure is a correct block.
+    /// </summary>
+    private async Task<bool> EditHiddenRowSucceededAsync(
+        string claimCategory,
+        string path,
+        IEnumerable<KeyValuePair<string, string>> form,
+        string resultsProperty)
+    {
+        var client = _fixture.CreateClient();
+        client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.UserHeader, "rls-user");
+        client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.CategoryHeader, claimCategory);
+
+        var body = new List<KeyValuePair<string, string>>(form) { new("f", "json") };
+        var response = await client.PostAsync(path, new FormUrlEncodedContent(body));
+        var payload = await response.Content.ReadAsStringAsync();
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            // Write-RBAC rejected the request entirely; the row was never touched.
+            return false;
+        }
+
+        using var document = JsonDocument.Parse(payload);
+        if (!document.RootElement.TryGetProperty(resultsProperty, out var results)
+            || results.ValueKind != JsonValueKind.Array
+            || results.GetArrayLength() == 0)
+        {
+            return false;
+        }
+
+        return results[0].TryGetProperty("success", out var success)
+            && success.ValueKind == JsonValueKind.True;
     }
 
     private async Task<IReadOnlyList<string?>> QueryCategoriesAsync(string? claimCategory)
