@@ -1,0 +1,32 @@
+# PROJ grid manifest for the Honua datum-fidelity image (issue #1501).
+#
+# Each line is the canonical PROJ grid filename as it appears in the PROJ 9.x
+# coordinate-operation pipelines (resolved with `projinfo -o PROJ`), fetched from
+# the PROJ CDN (https://cdn.proj.org). The base postgis/postgis:* images ship only
+# the minimal Debian libproj-data subset (legacy NTv1 nad27/nad83 tables), so the
+# canonical NADCON/NTv2/GEOID `.tif` grids that the Esri-default datum
+# transformations depend on are absent — grid-gated pipelines fall back to a
+# lower-accuracy bundled operation or fail. This manifest provisions exactly the
+# grids the catalog's `requiredGrids` reference plus the realization-chain and
+# vertical (GEOID) grids needed for full parity.
+#
+# Lines beginning with '#' and blank lines are ignored. Keep this list in sync with
+# the `requiredGrids` entries in
+# src/Honua.Core/Features/Infrastructure/Crs/Resources/esri-default-datum-transformations.json
+# and the grid names documented in docs/internal/evidence/datum-transformation-parity.md.
+
+# --- NADCON / NADCON5 horizontal (NAD27 <-> NAD83 and realization chain, CONUS + Alaska) ---
+us_noaa_conus.tif
+us_noaa_alaska.tif
+us_noaa_nadcon5_nad27_nad83_1986_conus.tif
+us_noaa_nadcon5_nad83_1986_nad83_harn_conus.tif
+us_noaa_nadcon5_nad83_harn_nad83_fbn_conus.tif
+us_noaa_nadcon5_nad83_fbn_nad83_2007_conus.tif
+us_noaa_nadcon5_nad83_2007_nad83_2011_conus.tif
+
+# --- NTv2 horizontal (Canada NAD27 <-> NAD83) ---
+ca_nrc_ntv2_0.tif
+
+# --- GEOID vertical (NAD83 ellipsoidal <-> NAVD88 orthometric, CONUS) ---
+us_noaa_g2018u0.tif
+us_noaa_g2012ba0.tif
