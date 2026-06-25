@@ -9925,6 +9925,32 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-tiles-imported-tilecacheid",
+      "route": "/tiles/imported/{tileCacheId}",
+      "method": "GET",
+      "family": "MVT \u002B TileJSON \u002B PMTiles",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Import.TileCachePackageEndpointTests.GetImportedTileSet_UnknownCache_ReturnsNotFound"
+      ],
+      "proof_ledger_surface": "vector-tiles-mvt",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-tiles-imported-tilecacheid-z-x-y",
+      "route": "/tiles/imported/{tileCacheId}/{z}/{x}/{y}",
+      "method": "GET",
+      "family": "MVT \u002B TileJSON \u002B PMTiles",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Import.TileCachePackageEndpointTests.ImportTilePackage_ThenServesTileAndTileSet"
+      ],
+      "proof_ledger_surface": "vector-tiles-mvt",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-tiles-layerid-h3-z-x-y-mvt",
       "route": "/tiles/{layerId}/h3/{z}/{x}/{y}.mvt",
       "method": "GET",
@@ -11512,6 +11538,21 @@
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_WithInvalidGeoservicesUrl_ReturnsBadRequest",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_WithMissingSourceKind_ReturnsBadRequest",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_WithNonPositiveTimeout_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-import-tile-package",
+      "route": "/api/v1/admin/import/tile-package",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Import.TileCachePackageEndpointTests.ImportTilePackage_DryRun_ReportsPlanWithoutWriting",
+        "Honua.Server.Tests.Import.TileCachePackageEndpointTests.ImportTilePackage_WithMissingTilesetId_ReturnsBadRequest",
+        "Honua.Server.Tests.Import.TileCachePackageEndpointTests.ImportTilePackage_WithUnknownFormat_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
