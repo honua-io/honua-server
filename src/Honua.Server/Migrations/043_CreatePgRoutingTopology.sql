@@ -85,9 +85,13 @@ BEGIN
         -- Matches the osm2pgrouting edge schema closely enough for
         -- pgr_dijkstra / pgr_drivingDistance (gid PK, source/target vertex ids,
         -- cost / reverse_cost, the_geom LineString/4326). cost/reverse_cost are
-        -- generic graph weights; the provider treats them as both length and
-        -- travel-time weights for the MVP and documents the unit mapping in the
-        -- canonical model XML docs.
+        -- generic graph weights with no unit declared by this topology. The routing
+        -- provider derives travel time from them through an explicit, operator-set
+        -- cost-unit contract (Honua.Routing RoutingConfiguration.CostUnit, default
+        -- Minutes => 1 cost unit = 1 minute); set CostUnit=Seconds for a topology
+        -- built with the osm2pgrouting cost_s (seconds) convention so drive-time
+        -- outputs and isochrone cutoffs are unit-correct. Geodesic length is computed
+        -- from the_geom independently of cost.
         -- -------------------------------------------------------------------
         CREATE TABLE IF NOT EXISTS public.ways (
             gid           BIGINT PRIMARY KEY,
@@ -145,7 +149,7 @@ BEGIN
         COMMENT ON TABLE public.ways_vertices_pgr IS
             'pgRouting vertex table (osm2pgrouting-compatible) used for nearest-vertex snapping and as routing graph nodes.';
         COMMENT ON COLUMN public.ways.cost IS
-            'Forward traversal weight (generic graph cost; mapped to both length-meters and travel-time by the routing provider for the MVP).';
+            'Forward traversal weight (generic graph cost; the routing provider converts it to travel-time via the explicit Honua.Routing RoutingConfiguration.CostUnit contract, default Minutes).';
         COMMENT ON COLUMN public.ways.reverse_cost IS
             'Reverse traversal weight; negative or NULL marks the edge as one-way in the forward direction.';
 
