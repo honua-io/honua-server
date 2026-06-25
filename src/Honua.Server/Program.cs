@@ -44,6 +44,7 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Honua.Import.TileCachePackage;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.AuditLog;
@@ -1403,6 +1404,9 @@ app.MapMigrationRunAdminEndpoints();
 
 // Configure OGC WMTS tile-cache export endpoints (#1016 slice 4)
 app.MapOgcTileCacheExportEndpoints();
+
+// Configure Esri tile/vector-tile cache package import + serving endpoints (#1269)
+app.MapTileCachePackageEndpoints();
 
 if (isTestEnvironment)
 {

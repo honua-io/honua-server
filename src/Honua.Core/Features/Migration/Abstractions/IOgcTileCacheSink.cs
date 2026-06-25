@@ -71,6 +71,19 @@ public sealed record OgcTileCacheDescriptor
 
     /// <summary>Resolved maximum zoom level included in the export.</summary>
     public required int MaxZoom { get; init; }
+
+    /// <summary>
+    /// Tile payload kind served from this cache: <c>raster</c> (PNG/JPEG) or
+    /// <c>vector</c> (MVT/PBF). The WMTS exporter leaves this <see langword="null"/>
+    /// (the catalog default <c>raster</c> applies); the package importer (#1269)
+    /// sets it from the imported package's tiling scheme.
+    /// </summary>
+    public string? DataType { get; init; }
+
+    /// <summary>
+    /// Optional human-readable title carried into the served tileset descriptor.
+    /// </summary>
+    public string? Title { get; init; }
 }
 
 /// <summary>
