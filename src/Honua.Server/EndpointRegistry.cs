@@ -508,6 +508,11 @@ public static class EndpointRegistry
         // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
         new("POST", "/api/v1/admin/import/ogc-tiles/export"),
 
+        // Esri tile/vector-tile cache package import + serving binding (#1269)
+        new("POST", "/api/v1/admin/import/tile-package"),
+        new("GET", "/tiles/imported/{tileCacheId}"),
+        new("GET", "/tiles/imported/{tileCacheId}/{z}/{x}/{y}"),
+
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("GET", "/api/v1/admin/operations/cache/statistics"),

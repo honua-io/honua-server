@@ -586,6 +586,17 @@ internal static class ServiceCollectionExtensions
             },
             configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
         services.AddScoped<IOgcTileCacheSink, PostgresOgcTileCacheSink>();
+
+        // Esri tile/vector-tile cache package importer + serving binding (#1269).
+        // The reader and import orchestrator are provider-agnostic; the serving read
+        // path is Postgres-backed (reads the tile catalog populated by the importer).
+        services.AddSingleton<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageReader,
+            Honua.Core.Features.TileCachePackage.Services.EsriTileCachePackageReader>();
+        services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageImportService,
+            Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
+        services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
+            Honua.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
+
         services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
         {
             var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();

@@ -1378,3 +1378,40 @@ ON CONFLICT (raster_data_id, band_number) DO UPDATE SET
     computed_at = NOW();
 
 SELECT honua.seed_metadata_v2_compat_snapshot();
+
+-- Tile-cache catalog (#1016 slice 4) + package-import serving columns (#1269).
+-- Mirrors migrations 033_CreateTileCacheCatalog and 067_AddTileCachePackageImport so
+-- the .tpk/.tpkx/.vtpk import + serving binding has its tables in CI seed schemas.
+CREATE TABLE IF NOT EXISTS honua.tile_caches (
+    tile_cache_id      TEXT PRIMARY KEY,
+    layer_identifier   TEXT NOT NULL,
+    tile_matrix_set    TEXT NOT NULL,
+    source_service_url TEXT NOT NULL,
+    tile_format        TEXT NOT NULL DEFAULT 'image/png',
+    style_identifier   TEXT NOT NULL DEFAULT 'default',
+    min_zoom           INTEGER NOT NULL,
+    max_zoom           INTEGER NOT NULL,
+    data_type          TEXT NOT NULL DEFAULT 'raster',
+    tileset_title      TEXT,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (layer_identifier, tile_matrix_set, style_identifier, tile_format, source_service_url)
+);
+
+CREATE TABLE IF NOT EXISTS honua.tile_cache_entries (
+    tile_cache_id  TEXT NOT NULL REFERENCES honua.tile_caches (tile_cache_id) ON DELETE CASCADE,
+    zoom_level     INTEGER NOT NULL,
+    tile_column    INTEGER NOT NULL,
+    tile_row       INTEGER NOT NULL,
+    content_type   TEXT NOT NULL,
+    content        BYTEA NOT NULL,
+    source_url     TEXT NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tile_cache_id, zoom_level, tile_column, tile_row),
+    CHECK (zoom_level >= 0),
+    CHECK (tile_column >= 0),
+    CHECK (tile_row >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS tile_cache_entries_cache_zoom_idx
+    ON honua.tile_cache_entries (tile_cache_id, zoom_level);
