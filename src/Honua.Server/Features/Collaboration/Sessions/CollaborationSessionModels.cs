@@ -124,6 +124,48 @@ internal sealed record CollaborationFanOutResult
     public required int DeliveredCount { get; init; }
 }
 
+/// <summary>
+/// Cross-node collaboration broadcast envelope published over the Redis backplane. The
+/// originating instance id lets each node ignore its own echoes and prevents fan-out loops.
+/// </summary>
+internal sealed record CollaborationBackplaneMessage
+{
+    public required string OriginInstanceId { get; init; }
+
+    public required CollaborationEventEnvelope Event { get; init; }
+}
+
+/// <summary>
+/// WebSocket control frame sent by a collaboration client to update its presence/cursor/follow
+/// state over the live session stream. The frame <see cref="Type"/> mirrors the documented
+/// collaboration event vocabulary.
+/// </summary>
+internal sealed record CollaborationClientFrame
+{
+    public string? Type { get; init; }
+
+    public CollaborationCursor? Cursor { get; init; }
+
+    public CollaborationSelection? Selection { get; init; }
+
+    public Guid? FollowSessionId { get; init; }
+}
+
+/// <summary>
+/// Status/error frame emitted to a collaboration WebSocket client for connection lifecycle
+/// and control acknowledgements.
+/// </summary>
+internal sealed record CollaborationStatusFrame
+{
+    public required string Type { get; init; }
+
+    public required string Status { get; init; }
+
+    public string? Message { get; init; }
+
+    public Guid? SessionId { get; init; }
+}
+
 internal enum SavedMapCollaborationAuthorizationStatus
 {
     Authorized,

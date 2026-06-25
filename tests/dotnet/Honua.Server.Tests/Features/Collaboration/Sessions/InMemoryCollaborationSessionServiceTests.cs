@@ -176,8 +176,75 @@ public sealed class InMemoryCollaborationSessionServiceTests
         result.Authorization.Status.Should().Be(SavedMapCollaborationAuthorizationStatus.RequiresAuthentication);
     }
 
+    [UnitTest]
+    public async Task UpdateCursor_PublishesEventToBackplane_ForCrossNodeFanOut()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var backplane = new RecordingBackplane();
+        var service = new InMemoryCollaborationSessionService(
+            new AllowSavedMapCollaborationAuthorizer(), clock, backplane);
+        var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
+        backplane.Published.Clear();
+
+        service.UpdateCursor(alice.SessionId, new CollaborationCursor { Longitude = 1, Latitude = 2 });
+
+        backplane.Published.Should().ContainSingle(e => e.Type == CollaborationSessionEventTypes.CursorUpdated);
+    }
+
+    [UnitTest]
+    public async Task ApplyRemoteEvent_FromPeerNode_DeliversToLocalParticipantsExcludingOrigin()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var service = CreateService(clock);
+        var local = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Local" }, Principal("local"))).Response!;
+        _ = service.DrainEvents(local.SessionId);
+
+        // Simulate a cursor event produced by a participant on another node.
+        var remote = new CollaborationEventEnvelope
+        {
+            Type = CollaborationSessionEventTypes.CursorUpdated,
+            EventId = Guid.NewGuid(),
+            MapId = "map-a",
+            SessionId = Guid.NewGuid(),
+            Timestamp = clock.UtcNow,
+            Cursor = new CollaborationCursor { Longitude = -122.4, Latitude = 37.7 }
+        };
+        service.ApplyRemoteEvent(remote);
+
+        service.DrainEvents(local.SessionId).Should().ContainSingle(e =>
+            e.Type == CollaborationSessionEventTypes.CursorUpdated &&
+            e.Cursor!.Longitude == -122.4);
+    }
+
+    [UnitTest]
+    public async Task WaitForEventsAsync_SignalsWhenPeerEventArrives()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var service = CreateService(clock);
+        var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
+        var bob = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Bob" }, Principal("bob"))).Response!;
+        // Drain the join events so the wait below blocks until a new event arrives.
+        _ = service.DrainEvents(alice.SessionId);
+        _ = service.DrainEvents(bob.SessionId);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var wait = service.WaitForEventsAsync(alice.SessionId, cts.Token);
+        wait.IsCompleted.Should().BeFalse();
+
+        service.UpdateCursor(bob.SessionId, new CollaborationCursor { Longitude = 1, Latitude = 2 });
+
+        (await wait).Should().BeTrue();
+    }
+
     private static InMemoryCollaborationSessionService CreateService(FakeCollaborationClock clock) =>
         new(new AllowSavedMapCollaborationAuthorizer(), clock);
+
+    private sealed class RecordingBackplane : ICollaborationSessionBackplane
+    {
+        public List<CollaborationEventEnvelope> Published { get; } = [];
+
+        public void Publish(CollaborationEventEnvelope ev) => Published.Add(ev);
+    }
 
     private static DateTimeOffset FixedUtcNow() =>
         new(2026, 5, 12, 0, 0, 0, TimeSpan.Zero);

@@ -122,9 +122,11 @@
       "endpointPrefixes": [],
       "endpointExactMatches": [
         "/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
+        "/api/v1/saved-maps/{mapId}/collaboration/sessions/stream",
         "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim",
         "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew",
-        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release"
+        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release",
+        "/api/v1/saved-maps/{mapId}/collaboration/operations"
       ],
       "endpointContains": [],
       "operationKeys": [],
@@ -142,6 +144,34 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "honua-server#971",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "Authenticated WebSocket presence/cursor/selection/follow transport with Redis cross-node backplane; join authorized through the shared fail-closed saved-map collaboration authorizer. Integration tests assert connect+snapshot, cross-participant presence/cursor fan-out, and rejected unauthorized joins.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs",
+            "src/Honua.Server/Features/Collaboration/Sessions/RedisCollaborationSessionBackplane.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Collaboration/Sessions/CollaborationSessionStreamEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#971",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "Durable collaborative edit op-log: append assigns monotonic server cursors with operation-id/idempotency-key dedupe and typed conflict/resync responses; replay returns operations since a known cursor. Integration tests assert cursor monotonicity, idempotent duplicates, replay, and fail-closed authorization.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Collaboration/Operations/SavedMapOperationEndpoints.cs",
+            "src/Honua.Core/Features/Collaboration/Operations/InMemorySavedMapOperationLogRepository.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Collaboration/OperationLog/SavedMapOperationEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#972",
           "versionCaptureRule": null
         }
       ]

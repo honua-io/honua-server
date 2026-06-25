@@ -4274,6 +4274,35 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-saved-maps-mapid-collaboration-operations",
+      "route": "/api/v1/saved-maps/{mapId}/collaboration/operations",
+      "method": "GET",
+      "family": "Portal Collaboration HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_AssignsMonotonicCursors_AndReplayReturnsThem"
+      ],
+      "proof_ledger_surface": "saved-map-collaboration",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-saved-maps-mapid-collaboration-sessions-stream",
+      "route": "/api/v1/saved-maps/{mapId}/collaboration/sessions/stream",
+      "method": "GET",
+      "family": "Portal Collaboration HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WhenPeerJoins_ReceivesParticipantJoinedPresenceEvent",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WhenPeerSendsCursorFrame_FanOutsCursorEvent",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WithAuthorizedJoin_ReceivesConnectedStatusAndSnapshot",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WithoutAuthorization_RejectsUpgrade"
+      ],
+      "proof_ledger_surface": "saved-map-collaboration",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-streaming-features",
       "route": "/api/v1/streaming/features",
       "method": "GET",
@@ -13348,6 +13377,21 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.RenewAndRelease_WithSameHolder_ReturnSuccess"
+      ],
+      "proof_ledger_surface": "saved-map-collaboration",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-saved-maps-mapid-collaboration-operations",
+      "route": "/api/v1/saved-maps/{mapId}/collaboration/operations",
+      "method": "POST",
+      "family": "Portal Collaboration HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_AssignsMonotonicCursors_AndReplayReturnsThem",
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_DuplicateOperationId_IsIdempotent",
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_WithoutAuthentication_ReturnsUnauthorized"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
       "maturity": "implemented"
