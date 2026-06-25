@@ -37,6 +37,7 @@ public sealed class SchemaMutationConcurrencyTests : IAsyncLifetime
     public async Task DisposeAsync() => await _postgres.DisposeAsync();
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ConcurrentSchemaCreateMigrateDrop_DoesNotDeadlock()
     {
         const int workers = 16;

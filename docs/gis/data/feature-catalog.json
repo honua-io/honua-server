@@ -897,7 +897,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.CreateAndListApiKeys_ReturnsPlaintextOnlyAtCreation",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.FullAdminApiKey_PassesAdminEndpoint",
-        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint"
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CanReadAdminSurface"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -2383,10 +2384,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.ExportAuditTrail_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ExportAudit_CefFormat_StreamsCefLines",
         "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ExportAudit_DefaultFormat_StreamsJsonLines",
-        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ExportAudit_RejectsUnknownFormat",
-        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ExportAudit_RequiresOperatorAuthorization"
+        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ExportAudit_RejectsUnknownFormat"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -2399,7 +2400,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.VerifyAudit_RequiresOperatorAuthorization",
+        "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.VerifyAuditTrail_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.VerifyAudit_ReturnsIntegrityReport"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -8967,6 +8968,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_EstimateExportTilesSize_ReturnsStorageBackedEstimate",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_EstimateExportTilesSize_WholeWorldHighZoom_DoesNotMaterializeFullGrid",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_EstimateExportTilesSize_WithTpk_ReportsTilePackage"
       ],
       "proof_ledger_surface": "map-server",
@@ -10865,7 +10867,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.CreateAndListApiKeys_ReturnsPlaintextOnlyAtCreation",
-        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.CreateApiKey_WithNullPermissions_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.CreateApiKey_WithNullPermissions_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.FullAdminScopedKey_RetainsFullAdminAuthority",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CannotPerformMutatingAdminOperations"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -10878,6 +10882,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CannotPerformMutatingAdminOperations",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RevokeApiKey_PreventsFurtherAuthentication"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -12522,6 +12527,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicyEndpoints_RejectAnonymousCallers",
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer",
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -12607,10 +12613,13 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_EmptyFile_Returns400",
-        "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_LazCompressed_Returns400",
+        "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_InvalidSourceEpsg_Returns400",
+        "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_LazCompressed_WithDecompressor_Returns201AndServesTileset",
+        "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_LazCompressed_WithoutWorker_Returns400",
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_LiteralRoute_AcceptsValidUpload",
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_MalformedDocument_Returns400",
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_NonEnterpriseEdition_Returns402",
+        "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_ProjectedSourceEpsg_WithDecompressor_ReprojectsAndServesTileset",
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_Unauthenticated_Returns401",
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_ValidLas_Returns201AndServesTileset"
       ],
@@ -14178,7 +14187,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_PostPolyline_AddsVertices"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_PostPolyline_AddsVertices",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_ReasonableMaxSegmentLengthOverLargeExtent_StillSucceeds",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_TinyMaxSegmentLengthOverLargeExtent_Returns400WithoutOom"
       ],
       "proof_ledger_surface": "geometry-service",
       "maturity": "implemented"
@@ -15211,7 +15222,8 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.DeleteFeatures_WithGeometryFilterInQuery_DeletesMatchingFeatures",
         "Honua.Server.Tests.FeatureServerEndpointTests.DeleteFeatures_WithMalformedObjectIdsDelimiter_ReturnsBadRequest",
         "Honua.Server.Tests.FeatureServerEndpointTests.DeleteFeatures_WithObjectIdsPayload_ReturnsDeleteResults",
-        "Honua.Server.Tests.FeatureServerEndpointTests.DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures"
+        "Honua.Server.Tests.FeatureServerEndpointTests.DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures",
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented"
@@ -15459,7 +15471,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.FeatureServerEndpointTests.UpdateFeatures_WithAttributeOnlyPayload_PreservesExistingGeometryAndAttributes",
-        "Honua.Server.Tests.FeatureServerEndpointTests.UpdateFeatures_WithFeaturePayload_ReturnsUpdateResults"
+        "Honua.Server.Tests.FeatureServerEndpointTests.UpdateFeatures_WithFeaturePayload_ReturnsUpdateResults",
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented"
