@@ -134,6 +134,10 @@ internal static class ServiceCollectionExtensions
 
         // Console Operate read APIs (#1168)
         services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
+
+        // SIEM export + tamper-evidence surfaces over the audit trail (#350, #509)
+        services.AddScoped<IAuditLogExporter, PostgresAuditLogExporter>();
+        services.AddScoped<IAuditLogIntegrityVerifier, PostgresAuditLogIntegrityVerifier>();
         services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
         services.AddScoped<IShareExportStore>(serviceProvider =>
             new PostgresShareExportStore(

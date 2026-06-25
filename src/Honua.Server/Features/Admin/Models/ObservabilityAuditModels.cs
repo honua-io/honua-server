@@ -59,3 +59,24 @@ internal sealed class ObservabilityAuditPageResponse
     /// <summary>Cursor for the next page or null when none.</summary>
     public string? NextCursor { get; init; }
 }
+
+/// <summary>
+/// Result of an audit hash-chain integrity verification pass (#350).
+/// </summary>
+internal sealed class ObservabilityAuditIntegrityResponse
+{
+    /// <summary>True when the tamper-evident chain verified end-to-end.</summary>
+    public required bool Verified { get; init; }
+
+    /// <summary>Number of rows examined.</summary>
+    public required long RowsChecked { get; init; }
+
+    /// <summary>Leading rows with no hash (written before migration 069).</summary>
+    public required long UnhashedRows { get; init; }
+
+    /// <summary>The audit_id of the first row that failed verification, if any.</summary>
+    public long? FirstBrokenAuditId { get; init; }
+
+    /// <summary>Human-readable failure description, if any.</summary>
+    public string? FailureReason { get; init; }
+}

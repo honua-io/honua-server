@@ -30,6 +30,12 @@ internal sealed class PostgresAuditLog : IAuditLog
     private const int MaxUserAgentLength = 512;
     private const string TruncationMarker = "…";
 
+    // Stable, table-scoped key for the transaction advisory lock that serializes
+    // hash-chain construction (#350). Concurrent audit inserts briefly contend on
+    // this lock so the (prev_hash -> entry_hash) chain stays linear; audit volume
+    // is low (security-relevant events only) so the contention is negligible.
+    private const long HashChainAdvisoryLockKey = 0x484F4E55_41554449L; // "HONUAUDI"
+
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresAuditLog> _logger;
     private readonly string _table;
@@ -50,15 +56,29 @@ internal sealed class PostgresAuditLog : IAuditLog
     {
         ArgumentNullException.ThrowIfNull(auditEvent);
 
+        // Compute the stored (truncated) field values up front so the hash chain
+        // is built over exactly what is persisted — the verifier replays the same
+        // stored values, so the two hashes must agree.
+        var actor = Truncate(auditEvent.Actor, MaxActorLength);
+        var resourceType = Truncate(auditEvent.ResourceType, MaxResourceTypeLength);
+        var resourceId = auditEvent.ResourceId is null ? null : Truncate(auditEvent.ResourceId, MaxResourceIdLength);
+        var action = Truncate(auditEvent.Action, MaxActionLength);
+        var correlationId = Truncate(auditEvent.CorrelationId, MaxCorrelationIdLength);
+        var remoteIp = auditEvent.RemoteIp is null ? null : Truncate(auditEvent.RemoteIp, MaxRemoteIpLength);
+        var userAgent = auditEvent.UserAgent is null ? null : Truncate(auditEvent.UserAgent, MaxUserAgentLength);
+        var details = auditEvent.Details ?? string.Empty;
+
         var sql = $"""
             INSERT INTO {_table} (
                 timestamp, event_type, actor, actor_type,
                 resource_type, resource_id, action, outcome,
-                correlation_id, remote_ip, user_agent, details
+                correlation_id, remote_ip, user_agent, details,
+                prev_hash, entry_hash
             ) VALUES (
                 @timestamp, @event_type, @actor, @actor_type,
                 @resource_type, @resource_id, @action, @outcome,
-                @correlation_id, @remote_ip, @user_agent, @details
+                @correlation_id, @remote_ip, @user_agent, @details,
+                @prev_hash, @entry_hash
             )
             """;
 
@@ -67,30 +87,63 @@ internal sealed class PostgresAuditLog : IAuditLog
             await using var connection = await _connectionProvider
                 .OpenNpgsqlConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
-            await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@timestamp", auditEvent.Timestamp.UtcDateTime);
-            command.Parameters.AddWithValue("@event_type", auditEvent.EventType.ToString());
-            command.Parameters.AddWithValue("@actor", Truncate(auditEvent.Actor, MaxActorLength));
-            command.Parameters.AddWithValue("@actor_type", auditEvent.ActorType.ToString());
-            command.Parameters.AddWithValue("@resource_type", Truncate(auditEvent.ResourceType, MaxResourceTypeLength));
-            command.Parameters.AddWithValue("@resource_id",
-                auditEvent.ResourceId is null
-                    ? (object)DBNull.Value
-                    : Truncate(auditEvent.ResourceId, MaxResourceIdLength));
-            command.Parameters.AddWithValue("@action", Truncate(auditEvent.Action, MaxActionLength));
-            command.Parameters.AddWithValue("@outcome", auditEvent.Outcome.ToString());
-            command.Parameters.AddWithValue("@correlation_id", Truncate(auditEvent.CorrelationId, MaxCorrelationIdLength));
-            command.Parameters.AddWithValue("@remote_ip",
-                auditEvent.RemoteIp is null
-                    ? (object)DBNull.Value
-                    : Truncate(auditEvent.RemoteIp, MaxRemoteIpLength));
-            command.Parameters.AddWithValue("@user_agent",
-                auditEvent.UserAgent is null
-                    ? (object)DBNull.Value
-                    : Truncate(auditEvent.UserAgent, MaxUserAgentLength));
-            command.Parameters.AddWithValue("@details", auditEvent.Details ?? string.Empty);
 
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            // Serialize chain construction so the latest entry_hash we read is the
+            // true tail of the chain. The advisory lock is transaction-scoped and
+            // released on commit/rollback.
+            await using var transaction = await connection.Connection
+                .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+            await using (var lockCommand = new NpgsqlCommand("SELECT pg_advisory_xact_lock(@key)", connection, transaction))
+            {
+                lockCommand.Parameters.AddWithValue("@key", HashChainAdvisoryLockKey);
+                await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            string? previousHash;
+            await using (var tailCommand = new NpgsqlCommand(
+                $"SELECT entry_hash FROM {_table} ORDER BY audit_id DESC LIMIT 1", connection, transaction))
+            {
+                var tail = await tailCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                previousHash = tail is null or DBNull ? null : (string)tail;
+            }
+
+            var entryHash = AuditEntryHasher.ComputeEntryHash(
+                previousHash,
+                auditEvent.Timestamp,
+                auditEvent.EventType,
+                actor,
+                auditEvent.ActorType,
+                resourceType,
+                resourceId,
+                action,
+                auditEvent.Outcome,
+                correlationId,
+                remoteIp,
+                userAgent,
+                details);
+
+            await using (var command = new NpgsqlCommand(sql, connection, transaction))
+            {
+                command.Parameters.AddWithValue("@timestamp", auditEvent.Timestamp.UtcDateTime);
+                command.Parameters.AddWithValue("@event_type", auditEvent.EventType.ToString());
+                command.Parameters.AddWithValue("@actor", actor);
+                command.Parameters.AddWithValue("@actor_type", auditEvent.ActorType.ToString());
+                command.Parameters.AddWithValue("@resource_type", resourceType);
+                command.Parameters.AddWithValue("@resource_id", (object?)resourceId ?? DBNull.Value);
+                command.Parameters.AddWithValue("@action", action);
+                command.Parameters.AddWithValue("@outcome", auditEvent.Outcome.ToString());
+                command.Parameters.AddWithValue("@correlation_id", correlationId);
+                command.Parameters.AddWithValue("@remote_ip", (object?)remoteIp ?? DBNull.Value);
+                command.Parameters.AddWithValue("@user_agent", (object?)userAgent ?? DBNull.Value);
+                command.Parameters.AddWithValue("@details", details);
+                command.Parameters.AddWithValue("@prev_hash", (object?)previousHash ?? DBNull.Value);
+                command.Parameters.AddWithValue("@entry_hash", entryHash);
+
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

@@ -160,6 +160,25 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // SIEM export and tamper-evidence surfaces are operator-only (#350, #509):
+    // reading the audit trail in bulk or verifying its integrity must require
+    // admin credentials.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/audit/export")]
+    public async Task ExportAuditTrail_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/observability/audit/export");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/audit/verify")]
+    public async Task VerifyAuditTrail_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/observability/audit/verify");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/migrations")]
     public async Task GetMigrationStatus_WithoutAuth_Returns401()
