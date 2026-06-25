@@ -161,4 +161,14 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Error,
         Message = "SECURITY: HONUA_DEV_AUTH=true detected in Production environment. Refusing to start.")]
     public static partial void DevelopmentBypassInProductionFatal(ILogger logger);
+
+    /// <summary>
+    /// Logs when a scoped admin API key is denied an admin request because its
+    /// persisted permission grants do not authorize the request method (#1985).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4114,
+        Level = LogLevel.Warning,
+        Message = "Scoped admin API key denied {Method} admin request: key permissions do not authorize this operation")]
+    public static partial void ScopedAdminKeyDenied(ILogger logger, string method);
 }
