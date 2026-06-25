@@ -176,6 +176,62 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
         client.LastServiceUrl.Should().BeNull();
     }
 
+    // The ServiceUrl override repurposes connection.BaseUrl (which on trunk drove only region
+    // inference). Only the canonical commercial regional endpoint — monitoring.{region}.amazonaws.com
+    // — is treated as "standard" (region inference only, no ServiceURL override). Every other host
+    // shape routes via an explicit ServiceURL so non-standard CloudWatch edges keep working. The
+    // three tests below pin that intentional behaviour for China, FIPS, and VPC PrivateLink hosts.
+
+    [Theory]
+    // China partition: the ...amazonaws.com.cn suffix is NOT the commercial endpoint, so it must
+    // be forwarded as an explicit ServiceURL (and region is not inferred from the host).
+    [InlineData("https://monitoring.cn-north-1.amazonaws.com.cn")]
+    // FIPS endpoint: the "monitoring-fips" host label is not the bare "monitoring" label, so it is
+    // not treated as the standard endpoint and routes via explicit ServiceURL.
+    [InlineData("https://monitoring-fips.us-east-1.amazonaws.com")]
+    // VPC PrivateLink (interface endpoint) DNS name: a vpce-* host targeting the CloudWatch service
+    // is non-standard and must be forwarded verbatim as the ServiceURL.
+    [InlineData("https://vpce-0a1b2c3d-abcde.monitoring.us-east-1.vpce.amazonaws.com")]
+    public async Task EvaluateAsync_NonStandardCloudWatchHost_ForwardsExplicitServiceUrl(string baseUrl)
+    {
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 50,
+            [ErrorRateExpression] = 0.01,
+            [LatencyExpression] = 120
+        });
+
+        // Region must be supplied explicitly because a non-standard host is NOT region-inferable;
+        // the SigV4 signing region therefore comes from the connection's Region, not the URL.
+        await Evaluate(client, region: "us-east-1", baseUrl: baseUrl);
+
+        client.LastServiceUrl.Should().Be(
+            baseUrl,
+            "non-standard CloudWatch hosts (China/FIPS/VPC) must route via an explicit ServiceURL override");
+    }
+
+    [Theory]
+    [InlineData("https://monitoring.cn-north-1.amazonaws.com.cn")]
+    [InlineData("https://monitoring-fips.us-east-1.amazonaws.com")]
+    [InlineData("https://vpce-0a1b2c3d-abcde.monitoring.us-east-1.vpce.amazonaws.com")]
+    public async Task EvaluateAsync_NonStandardCloudWatchHost_DoesNotInferRegionFromHost(string baseUrl)
+    {
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 50,
+            [ErrorRateExpression] = 0.01,
+            [LatencyExpression] = 120
+        });
+
+        // No explicit Region and a non-standard host: region inference only fires for the canonical
+        // monitoring.{region}.amazonaws.com shape, so these hosts yield a null region (SDK default
+        // chain) rather than mis-parsing a label as the region.
+        await Evaluate(client, region: null, baseUrl: baseUrl);
+
+        client.LastRegion.Should().BeNull(
+            "only the canonical commercial monitoring.{region}.amazonaws.com host is region-inferable");
+    }
+
     [Fact]
     public void CreateClient_WithServiceUrl_AppliesEndpointOverride()
     {

@@ -8,18 +8,19 @@ using Xunit;
 namespace Honua.CloudIntegration.Tests;
 
 /// <summary>
-/// Testcontainers fixture that boots a single LocalStack container and exposes its
-/// edge endpoint. The default (free) tier enables only the LocalStack Community service
-/// set — S3, Lambda, CloudWatch, and CloudWatch Logs — which require no paid token.
+/// Testcontainers fixture that boots a single LocalStack Community container and exposes its
+/// edge endpoint. Only the free (Community) service set is enabled — currently S3, which the
+/// <see cref="S3ArtifactRoundTripCloudIntegrationTests"/> exercises end-to-end. No paid
+/// LocalStack Pro token is required.
 ///
-/// When the optional <c>LOCALSTACK_AUTH_TOKEN</c> environment variable is present the
-/// fixture additionally requests the Pro service set (AWS Batch + ECS emulation) and
-/// passes the token through to the container. Pro-tier tests check
-/// <see cref="ProEnabled"/> and skip (never fail) when the token is absent, so the free
-/// CI lane stays green without a LocalStack subscription.
+/// When Docker is unavailable (for example a developer box without a daemon) container startup
+/// fails; the fixture catches that, reports <see cref="Available"/> = false, and the dependent
+/// tests skip (never fail) — mirroring <see cref="KindClusterFixture"/>'s skip-when-absent
+/// behaviour so the project still compiles and runs everywhere.
 ///
-/// Mirrors <c>Honua.TestKit.EmulatorFixture</c> (same image/tag, port 4566, health probe)
-/// so the harness shares the repo's proven LocalStack Community wiring.
+/// Pins the same image/tag the repo already uses in <c>Honua.TestKit.EmulatorFixture</c> (port
+/// 4566, <c>/_localstack/health</c> probe) so the harness reuses the repo's proven LocalStack
+/// Community wiring.
 /// </summary>
 public sealed class LocalStackFixture : IAsyncLifetime
 {
@@ -28,12 +29,9 @@ public sealed class LocalStackFixture : IAsyncLifetime
     private const string Image = "localstack/localstack:3.6.0";
     private const int EdgePort = 4566;
 
-    /// <summary>
-    /// Name of the optional environment variable carrying a LocalStack Pro auth token.
-    /// When set, Batch/ECS emulation is enabled and Pro-tier scenarios run; when unset,
-    /// those scenarios skip.
-    /// </summary>
-    public const string AuthTokenEnvVar = "LOCALSTACK_AUTH_TOKEN";
+    // Community service set exercised by this harness. Kept minimal (only what a runnable test
+    // actually uses) so the fixture does not imply coverage it does not have.
+    private const string Services = "s3";
 
     /// <summary>
     /// Static credential pair LocalStack accepts for SigV4 signing. LocalStack does not
@@ -55,55 +53,54 @@ public sealed class LocalStackFixture : IAsyncLifetime
     private IContainer? _container;
 
     /// <summary>
-    /// True when a LocalStack Pro auth token was supplied, so Batch/ECS emulation is available.
+    /// True when the LocalStack container started and reported its Community services ready, so
+    /// the dependent integration tests can run. False when Docker is unavailable.
     /// </summary>
-    public bool ProEnabled { get; private set; }
+    public bool Available { get; private set; }
 
     /// <summary>
     /// Edge service URL (for example <c>http://localhost:32789</c>) used as the SDK
-    /// <c>ServiceURL</c> override for every emulated AWS client.
+    /// <c>ServiceURL</c> override for every emulated AWS client. Empty when unavailable.
     /// </summary>
     public string ServiceUrl { get; private set; } = string.Empty;
 
     /// <summary>
-    /// Boots LocalStack, enabling the Pro service set only when an auth token is present.
+    /// Boots LocalStack Community. When Docker is unavailable the failure is swallowed and
+    /// <see cref="Available"/> stays false so the dependent tests skip instead of failing.
     /// </summary>
     public async Task InitializeAsync()
     {
-        var authToken = Environment.GetEnvironmentVariable(AuthTokenEnvVar);
-        ProEnabled = !string.IsNullOrWhiteSpace(authToken);
-
-        // Community set is always available; Batch/ECS are Pro-only emulations. Requesting
-        // them without a token would have LocalStack reject those service calls, so only add
-        // them when the token unlocks them.
-        var services = ProEnabled
-            ? "s3,lambda,cloudwatch,logs,batch,ecs,iam,ec2"
-            : "s3,lambda,cloudwatch,logs";
-
-        var builder = new ContainerBuilder()
-            .WithImage(Image)
-            .WithPortBinding(EdgePort, true)
-            .WithEnvironment("SERVICES", services)
-            .WithEnvironment("DEFAULT_REGION", Region)
-            .WithEnvironment("AWS_DEFAULT_REGION", Region)
-            .WithEnvironment("AWS_ACCESS_KEY_ID", AccessKeyId)
-            .WithEnvironment("AWS_SECRET_ACCESS_KEY", SecretAccessKey)
-            // Lambda emulation needs a Docker socket to spawn function containers; LocalStack
-            // detects the mounted socket automatically. The kind/Docker-in-CI host provides it.
-            .WithBindMount("/var/run/docker.sock", "/var/run/docker.sock");
-
-        if (ProEnabled)
+        try
         {
-            builder = builder.WithEnvironment(AuthTokenEnvVar, authToken!);
+            _container = new ContainerBuilder()
+                .WithImage(Image)
+                .WithPortBinding(EdgePort, true)
+                .WithEnvironment("SERVICES", Services)
+                .WithEnvironment("DEFAULT_REGION", Region)
+                .WithEnvironment("AWS_DEFAULT_REGION", Region)
+                .WithEnvironment("AWS_ACCESS_KEY_ID", AccessKeyId)
+                .WithEnvironment("AWS_SECRET_ACCESS_KEY", SecretAccessKey)
+                .Build();
+
+            await _container.StartAsync();
+
+            var mappedPort = _container.GetMappedPublicPort(EdgePort);
+            ServiceUrl = $"http://localhost:{mappedPort}";
+
+            await WaitForReadyAsync(mappedPort);
+            Available = true;
         }
-
-        _container = builder.Build();
-        await _container.StartAsync();
-
-        var mappedPort = _container.GetMappedPublicPort(EdgePort);
-        ServiceUrl = $"http://localhost:{mappedPort}";
-
-        await WaitForReadyAsync(mappedPort, services);
+        catch (Exception ex) when (ex is not TimeoutException)
+        {
+            // Docker not available (or the daemon refused the container): degrade to skip rather
+            // than fail, exactly like KindClusterFixture when its env vars are absent.
+            Available = false;
+            if (_container is not null)
+            {
+                await _container.DisposeAsync();
+                _container = null;
+            }
+        }
     }
 
     /// <summary>
@@ -118,15 +115,11 @@ public sealed class LocalStackFixture : IAsyncLifetime
         }
     }
 
-    private static async Task WaitForReadyAsync(int port, string services)
+    private static async Task WaitForReadyAsync(int port)
     {
-        var timeout = TimeSpan.FromSeconds(180);
+        var timeout = TimeSpan.FromSeconds(120);
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
-
-        // Only the always-present Community services are required for readiness; Pro services
-        // may take longer to provision and are not gating for the free lane.
-        var requiredServices = new[] { "s3", "lambda", "cloudwatch" };
         Exception? lastError = null;
 
         while (DateTimeOffset.UtcNow < deadline)
@@ -138,7 +131,7 @@ public sealed class LocalStackFixture : IAsyncLifetime
                 if (response.IsSuccessStatusCode)
                 {
                     var body = await response.Content.ReadAsStringAsync();
-                    if (requiredServices.All(svc => IsServiceUp(body, svc)))
+                    if (IsServiceUp(body, "s3"))
                     {
                         return;
                     }
@@ -154,7 +147,7 @@ public sealed class LocalStackFixture : IAsyncLifetime
 
         var detail = lastError is null ? string.Empty : $" Last error: {lastError.Message}";
         throw new TimeoutException(
-            $"Timed out waiting for LocalStack services [{services}] to become ready.{detail}");
+            $"Timed out waiting for LocalStack service [{Services}] to become ready.{detail}");
     }
 
     // LocalStack reports each service state as "available", "running", or "disabled" in the

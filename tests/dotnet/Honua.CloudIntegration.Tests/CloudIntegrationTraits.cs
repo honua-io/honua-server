@@ -24,23 +24,4 @@ internal static class CloudIntegrationTraits
     /// Trait value applied to every Docker-backed cloud-integration test.
     /// </summary>
     public const string CloudIntegration = "CloudIntegration";
-
-    /// <summary>
-    /// Trait key marking a test as requiring the paid LocalStack Pro tier (AWS Batch / ECS
-    /// emulation). Combined with the <see cref="CloudIntegration"/> category so the optional
-    /// Pro lane can be selected with <c>Category=CloudIntegration&amp;Tier=Pro</c> and the free
-    /// lane can exclude it with <c>Tier!=Pro</c>.
-    /// </summary>
-    public const string Tier = "Tier";
-
-    /// <summary>
-    /// Trait value for tests that require a LocalStack Pro auth token. These skip (not fail)
-    /// when <c>LOCALSTACK_AUTH_TOKEN</c> is absent so the default free CI tier stays green.
-    /// </summary>
-    public const string Pro = "Pro";
-
-    /// <summary>
-    /// Trait value for the free default tier (kind + LocalStack Community).
-    /// </summary>
-    public const string Free = "Free";
 }
