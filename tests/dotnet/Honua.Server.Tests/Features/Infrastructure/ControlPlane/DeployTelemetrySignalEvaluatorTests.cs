@@ -431,6 +431,264 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         decision.Message.Should().Contain("error rate");
     }
 
+    // ---- health-gate boundary + anti-flap (#2161) ------------------------
+
+    [Fact]
+    public void Evaluate_AtExactThreshold_DoesNotRollback()
+    {
+        // The gate uses strict '>' so a reading AT the threshold is healthy, not a breach. This pins
+        // the boundary so a refactor to '>=' cannot silently start rolling back at-threshold deploys.
+        var policy = CreateThresholdPolicy(errorThreshold: 0.05, latencyThreshold: 2000);
+        var readings = new DeployTelemetryReadings
+        {
+            SampleCount = 100,
+            ErrorRate = 0.05,
+            LatencyP95 = 2000
+        };
+
+        var decision = DeployTelemetrySignalEvaluator.Evaluate(policy, readings);
+
+        decision.RollbackRecommended.Should().BeFalse("a reading exactly at the threshold is within bounds");
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("passed");
+    }
+
+    [Fact]
+    public void Evaluate_OneScrapeOverThreshold_RecommendsRollback()
+    {
+        var policy = CreateThresholdPolicy(errorThreshold: 0.05, latencyThreshold: 2000);
+        var readings = new DeployTelemetryReadings
+        {
+            SampleCount = 100,
+            ErrorRate = 0.0500001,
+            LatencyP95 = 1000
+        };
+
+        var decision = DeployTelemetrySignalEvaluator.Evaluate(policy, readings);
+
+        decision.RollbackRecommended.Should().BeTrue("a single reading over the threshold breaches the instantaneous gate");
+        decision.Message.Should().Contain("error rate");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_DebounceConfigured_SingleNoisyScrape_DoesNotRollback()
+    {
+        // GP metrics are burstier: with the opt-in N-consecutive-breach debounce a single breaching
+        // scrape must NOT trigger a production rollback. The evaluator suppresses the rollback and
+        // records a breach streak of 1.
+        var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
+        {
+            SampleCount = 50,
+            ErrorRate = 0.5,
+            LatencyP95 = 120
+        });
+
+        var evaluator = CreateProviderEvaluator(fakeProvider);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-metrics",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.sample_count.query"] = "requests",
+                ["telemetry.sample_count.minimum"] = "10",
+                ["telemetry.rollback.consecutive_breaches"] = "3"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeFalse("one breach is below the configured debounce threshold of 3");
+        decision.WaitForMoreTelemetry.Should().BeTrue();
+        decision.UpdatedDeployParameters.Should().NotBeNull();
+        decision.UpdatedDeployParameters!["telemetry.rollback.breach_streak"].Should().Be("1");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_DebounceConfigured_HealthyScrapeResetsBreachStreak()
+    {
+        // breach → recover: a healthy scrape after a prior breach must reset the streak so a later
+        // single breach does not piggy-back on stale state and trip the gate.
+        var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
+        {
+            SampleCount = 50,
+            ErrorRate = 0.01,
+            LatencyP95 = 120
+        });
+
+        var evaluator = CreateProviderEvaluator(fakeProvider);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-metrics",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.sample_count.query"] = "requests",
+                ["telemetry.sample_count.minimum"] = "10",
+                ["telemetry.rollback.consecutive_breaches"] = "3",
+                // A prior breach streak that a healthy scrape must clear.
+                ["telemetry.rollback.breach_streak"] = "2"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeFalse();
+        decision.UpdatedDeployParameters.Should().NotBeNull();
+        decision.UpdatedDeployParameters!["telemetry.rollback.breach_streak"].Should().Be("0", "a healthy scrape resets the streak");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_DebounceConfigured_NSustainedBreaches_RecommendsRollback()
+    {
+        // N sustained breaches DOES roll back: with a prior streak of N-1 the next breach reaches the
+        // configured threshold and the rollback fires.
+        var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
+        {
+            SampleCount = 50,
+            ErrorRate = 0.5,
+            LatencyP95 = 120
+        });
+
+        var evaluator = CreateProviderEvaluator(fakeProvider);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-metrics",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.sample_count.query"] = "requests",
+                ["telemetry.sample_count.minimum"] = "10",
+                ["telemetry.rollback.consecutive_breaches"] = "3",
+                ["telemetry.rollback.breach_streak"] = "2"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue("the third consecutive breach reaches the debounce threshold");
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("error rate");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_DebounceNotConfigured_PreservesInstantaneousRollback()
+    {
+        // Default (no debounce param): behavior is unchanged — a single breach rolls back immediately.
+        var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
+        {
+            SampleCount = 50,
+            ErrorRate = 0.5,
+            LatencyP95 = 120
+        });
+
+        var evaluator = CreateProviderEvaluator(fakeProvider);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-metrics",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.sample_count.query"] = "requests",
+                ["telemetry.sample_count.minimum"] = "10"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.UpdatedDeployParameters.Should().BeNull("no debounce configured means no streak bookkeeping");
+    }
+
+    // ---- invalid-policy bounded wait (#2161) -----------------------------
+
+    [Fact]
+    public async Task EvaluateAsync_InvalidPolicy_WithinGraceWindow_Waits()
+    {
+        // A freshly-created operation with an invalid policy holds (does not promote, does not roll
+        // back) inside the bounded grace window.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                // Unsupported preset so the built-in Kubernetes preset does not synthesize a fallback
+                // threshold; an explicit error-rate query without a threshold => invalid policy.
+                ["telemetry.policy"] = "no-such-preset",
+                ["telemetry.error_rate.query"] = "errors / requests"
+            },
+            createdAt: DateTimeOffset.UtcNow));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+        capturedQueries.Should().BeEmpty("an invalid policy must not query the backend");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_InvalidPolicy_PastGraceWindow_EscalatesToRollback()
+    {
+        // Past the (configurable) grace window an invalid policy escalates to a rollback recommendation
+        // rather than parking the deploy in Reconciling forever.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                // Unsupported preset (no fallback threshold) + explicit query with no threshold => invalid.
+                ["telemetry.policy"] = "no-such-preset",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.invalid_policy_grace_seconds"] = "60"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-10)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue("an invalid policy must not silently park a deploy forever");
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("invalid");
+        capturedQueries.Should().BeEmpty();
+    }
+
+    private static DeployTelemetryPolicy CreateThresholdPolicy(double errorThreshold, double latencyThreshold)
+        => new()
+        {
+            ConnectionId = "prod-prom",
+            ErrorRateQuery = "errors / requests",
+            ErrorRateThreshold = errorThreshold,
+            LatencyP95Query = "p95",
+            LatencyP95ThresholdMs = latencyThreshold,
+            MinimumSampleQuery = "requests",
+            MinimumSampleCount = 10
+        };
+
+    private static DeployTelemetrySignalEvaluator CreateProviderEvaluator(FakeProviderEvaluator fakeProvider)
+        => new(
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions
+                    {
+                        ConnectionId = "prod-metrics",
+                        Provider = "fake-metrics",
+                        BaseUrl = "https://example.com",
+                        TimeoutSeconds = 2
+                    }
+                ]
+            }),
+            [fakeProvider],
+            NullLogger<DeployTelemetrySignalEvaluator>.Instance);
+
     private static DeployTelemetrySignalEvaluator CreateEvaluator(
         ConcurrentQueue<string> capturedQueries,
         DeployTelemetryConnectionOptions? connection = null,
