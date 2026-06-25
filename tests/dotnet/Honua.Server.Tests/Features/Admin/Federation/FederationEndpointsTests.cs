@@ -27,8 +27,6 @@ namespace Honua.Server.Tests.Features.Admin.Federation;
 [Operation(Operations.Configuration)]
 public sealed class FederationEndpointsTests : IAsyncLifetime
 {
-    private const string Route = "/api/v1/admin/federation/sources";
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -83,7 +81,7 @@ public sealed class FederationEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/federation/sources")]
     public async Task ListSources_ReturnsConfiguredSourcesWithoutCredentials()
     {
-        var response = await _client.GetAsync(Route);
+        var response = await _client.GetAsync("/api/v1/admin/federation/sources");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var sources = await response.Content.ReadFromJsonAsync<FederationSourceResponse[]>(JsonOptions);
@@ -101,7 +99,7 @@ public sealed class FederationEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/federation/sources/{id}/plan")]
     public async Task PlanQuery_EsriRestWithWhereAndBbox_RefinesNothingAndPushesDown()
     {
-        var response = await _client.GetAsync($"{Route}/esri-parcels/plan?where=zoning%3D%27R1%27&bbox=true&joinLocal=true");
+        var response = await _client.GetAsync("/api/v1/admin/federation/sources/esri-parcels/plan?where=zoning%3D%27R1%27&bbox=true&joinLocal=true");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var plan = await response.Content.ReadFromJsonAsync<FederationQueryPlanResponse>(JsonOptions);
@@ -118,7 +116,7 @@ public sealed class FederationEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/federation/sources/{id}/plan")]
     public async Task PlanQuery_UnknownSource_Returns404()
     {
-        var response = await _client.GetAsync($"{Route}/does-not-exist/plan?where=1%3D1");
+        var response = await _client.GetAsync("/api/v1/admin/federation/sources/does-not-exist/plan?where=1%3D1");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
