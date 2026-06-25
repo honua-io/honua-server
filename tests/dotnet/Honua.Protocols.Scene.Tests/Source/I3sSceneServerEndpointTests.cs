@@ -34,6 +34,10 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     // the I3S descriptor's fullExtent is populated. Config scenes carry no
     // extent and so only cover the null-extent path.
     private const string ExtentSceneId = "i3s-extent-scene";
+
+    // A database-backed scene whose source kind is Building so the descriptor's
+    // I3S layerType mapping (#1812) is exercised end to end.
+    private const string BuildingSceneId = "i3s-building-scene";
     private const double ExtentXMin = -122.5;
     private const double ExtentYMin = 37.7;
     private const double ExtentXMax = -122.4;
@@ -92,6 +96,31 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
             c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
 
         await RegisterExtentSceneAsync();
+        await RegisterBuildingSceneAsync();
+    }
+
+    /// <summary>
+    /// Registers a database-backed Building scene so the I3S layerType mapping
+    /// (#1812) is exercised: the descriptor must advertise <c>Building</c>.
+    /// </summary>
+    private async Task RegisterBuildingSceneAsync()
+    {
+        var registration = _enterpriseFixture.GetService<ISceneRegistrationService>();
+        await registration.RegisterAsync(new SceneDatasetRecord
+        {
+            DatasetId = Guid.NewGuid(),
+            Id = BuildingSceneId,
+            Name = "I3S Building Scene",
+            AssetRoot = _fixtureRoot,
+            TilesetFileName = "tileset.json",
+            DatasetType = SceneDatasetType.Building,
+            Extent = new SceneExtent(ExtentXMin, ExtentYMin, ExtentXMax, ExtentYMax),
+            CachePolicy = SceneCachePolicy.Default,
+            IsPublic = true,
+            Status = SceneDatasetStatus.Active,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = "test",
+        });
     }
 
     /// <summary>
@@ -327,13 +356,14 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}")]
-    public async Task GetLayer_DescriptorIsHonest_RichMetadataButNoFetchableNodeStore()
+    public async Task GetLayer_DescriptorIsHonest_RichMetadataAndNodePages()
     {
-        // #1808 descriptor honesty: the enriched 1.7 descriptor carries the
-        // z-bearing fullExtent (read from the tileset root bounding volume),
-        // heightModelInfo, and format definitions/schema — but it must NOT
-        // advertise a fetchable rootNode / nodePages store (#1202): those routes
-        // are the separate hard lane and would 404 for a conformant client.
+        // The enriched 1.7 descriptor carries the z-bearing fullExtent (read from
+        // the tileset root bounding volume), heightModelInfo, and format
+        // definitions/schema. With #1809 landed, the store now ALSO advertises the
+        // I3S 1.7 store.nodePages model (the fixture tileset is loadable), while
+        // the legacy 1.6 store.rootNode tree stays absent — Honua serves the
+        // nodePages traversal model, not a 1.6 root-node tree.
         var response = await _enterpriseFixture.Client.GetAsync($"/rest/services/{ExtentSceneId}/SceneServer/layers/0");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -355,10 +385,89 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         root.TryGetProperty("textureSetDefinitions", out _).Should().BeTrue();
         root.TryGetProperty("attributeStorageInfo", out _).Should().BeTrue();
 
-        // Honesty guard: no fetchable node store is advertised.
+        // #1809: the loadable tileset projects to fetchable node pages, so the
+        // store advertises store.nodePages (and a defaultGeometrySchema) but NOT
+        // a legacy 1.6 rootNode tree.
         var store = root.GetProperty("store");
         store.TryGetProperty("rootNode", out _).Should().BeFalse();
-        store.TryGetProperty("nodePages", out _).Should().BeFalse();
+        store.TryGetProperty("nodePages", out var nodePages).Should().BeTrue();
+        nodePages.GetProperty("nodesPerPage").GetInt32().Should().BePositive();
+        store.TryGetProperty("defaultGeometrySchema", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}")]
+    public async Task GetLayer_BuildingScene_AdvertisesBuildingLayerType()
+    {
+        // #1812: a Building-source scene maps to the I3S Building layerType.
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{BuildingSceneId}/SceneServer/layers/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("layerType").GetString().Should().Be("Building");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}")]
+    public async Task GetLayer_SceneWithLoadableTileset_AdvertisesNodePagesStore()
+    {
+        // #1809: once the tileset projects to fetchable node pages, the store
+        // advertises store.nodePages so a conformant client traverses the layer.
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{ExtentSceneId}/SceneServer/layers/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var store = json.RootElement.GetProperty("store");
+        store.TryGetProperty("nodePages", out var nodePages).Should().BeTrue();
+        nodePages.GetProperty("nodesPerPage").GetInt32().Should().BePositive();
+        store.GetProperty("profile").GetString().Should().Be("meshpyramids");
+        store.GetProperty("normalReferenceFrame").GetString().Should().Be("east-north-up");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}")]
+    public async Task GetNodePage_ScenesAlias_CommunityEdition_Returns403()
+    {
+        var response = await _communityFixture.Client.GetAsync(
+            $"/scenes/{SceneId}/SceneServer/layers/0/nodepages/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}")]
+    public async Task GetNodePage_ScenesAlias_EnterpriseEdition_ReturnsNodePage()
+    {
+        // The fixture scene (config registry) has a loadable tileset, so the
+        // /scenes alias node-page route projects and serves page 0.
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/scenes/{SceneId}/SceneServer/layers/0/nodepages/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("nodes").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0")]
+    public async Task GetStatistics_ScenesAlias_EnterpriseEdition_ReturnsStatistics()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/scenes/{SceneId}/SceneServer/layers/0/statistics/f_0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("stats").GetProperty("totalValuesCount").GetInt64()
+            .Should().BeGreaterThanOrEqualTo(0);
     }
 
     private sealed class StubLicenseStatusProvider : ILicenseStatusProvider

@@ -801,6 +801,13 @@ public static class EndpointRegistry
         new("GET", "/scenes/{sceneId}/SceneServer"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}"),
 
+        // I3S node-page traversal (#1809) and per-field statistics (#1811),
+        // served at the canonical GeoServices path plus the /scenes alias.
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}"),
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0"),
+
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
 
