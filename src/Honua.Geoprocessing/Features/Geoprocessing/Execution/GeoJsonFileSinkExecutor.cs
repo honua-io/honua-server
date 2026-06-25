@@ -20,7 +20,7 @@ namespace Honua.Geoprocessing.Execution;
 /// null geometry are written (GeoJSON permits a null geometry member) but counted as
 /// rejected so the result reflects them.
 /// </summary>
-internal sealed partial class GeoJsonFileSinkExecutor : IJobExecutor
+internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "sink.geojson-file";
 
@@ -40,6 +40,13 @@ internal sealed partial class GeoJsonFileSinkExecutor : IJobExecutor
         : this(options, Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoJsonFileSinkExecutor>.Instance)
     {
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

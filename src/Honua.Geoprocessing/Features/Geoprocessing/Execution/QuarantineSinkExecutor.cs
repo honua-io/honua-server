@@ -19,7 +19,7 @@ namespace Honua.Geoprocessing.Execution;
 /// rejected rows route here instead of aborting the run. Reconciled from the GeoETL
 /// baseline QuarantineSinkConnector onto the #1185 process/executor contract.
 /// </summary>
-internal sealed partial class QuarantineSinkExecutor : IJobExecutor
+internal sealed partial class QuarantineSinkExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "sink.quarantine";
 
@@ -41,6 +41,13 @@ internal sealed partial class QuarantineSinkExecutor : IJobExecutor
         : this(options, Microsoft.Extensions.Logging.Abstractions.NullLogger<QuarantineSinkExecutor>.Instance)
     {
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

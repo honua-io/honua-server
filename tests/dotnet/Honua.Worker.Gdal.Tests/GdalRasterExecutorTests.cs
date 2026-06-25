@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
@@ -718,7 +719,8 @@ public sealed class GdalRasterExecutorTests
     {
         var runner = FakeGdalCommandRunner.Failing(1, "n/a");
         var options = GdalJobFactory.Options(Path.Combine(Path.GetTempPath(), "honua-gdal-dispatch-test"));
-        return new GdalDispatchJobExecutor(
+        IProcessExecutor[] executors =
+        {
             new GdalVectorConvertJobExecutor(runner, options, NullLogger<GdalVectorConvertJobExecutor>.Instance),
             new GdalRasterReprojectJobExecutor(runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
             new GdalSurfaceJobExecutor(runner, options, NullLogger<GdalSurfaceJobExecutor>.Instance),
@@ -728,6 +730,10 @@ public sealed class GdalRasterExecutorTests
             new GdalRasterZonalStatisticsJobExecutor(runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             new GdalMultidimCoverageMetadataJobExecutor(runner, options, NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance),
             new PdalPointCloudConvertJobExecutor(runner, options, NullLogger<PdalPointCloudConvertJobExecutor>.Instance),
+        };
+
+        return new GdalDispatchJobExecutor(
+            executors,
             NullLogger<GdalDispatchJobExecutor>.Instance);
     }
 

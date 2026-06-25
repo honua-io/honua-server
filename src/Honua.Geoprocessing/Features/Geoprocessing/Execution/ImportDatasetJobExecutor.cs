@@ -58,7 +58,7 @@ namespace Honua.Geoprocessing.Execution;
 /// rather than checkpointing each row; finer-grained resume is deferred.
 /// </para>
 /// </summary>
-internal sealed partial class ImportDatasetJobExecutor : IJobExecutor
+internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
 {
     /// <summary>
     /// The single process id this executor handles. Matches the catalog entry
@@ -84,6 +84,13 @@ internal sealed partial class ImportDatasetJobExecutor : IJobExecutor
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

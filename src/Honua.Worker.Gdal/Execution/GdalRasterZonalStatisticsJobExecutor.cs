@@ -27,7 +27,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalRasterZonalStatisticsJobExecutor> logger) : IJobExecutor
+    ILogger<GdalRasterZonalStatisticsJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.zonal-statistics";
@@ -46,6 +46,13 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
     /// <inheritdoc />

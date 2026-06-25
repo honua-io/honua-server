@@ -136,7 +136,12 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
         monitor.CurrentValue.Returns(options);
 
-        return new GeoprocessingDispatchJobExecutor(
+        // Auto-registration contract (#2122): the dispatcher routes by enumerating
+        // the IProcessExecutor set and keying on each executor's self-declared
+        // ProcessIds, so the test composes the same executor instances as a flat
+        // list instead of the former positional constructor.
+        IProcessExecutor[] executors =
+        {
             new GeometryBufferJobExecutor(monitor, NullLogger<GeometryBufferJobExecutor>.Instance),
             new GeometryClipJobExecutor(monitor, NullLogger<GeometryClipJobExecutor>.Instance),
             new GeometryIntersectJobExecutor(monitor, NullLogger<GeometryIntersectJobExecutor>.Instance),
@@ -171,6 +176,10 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new ImportDatasetJobExecutor(
                 Substitute.For<IServiceScopeFactory>(),
                 NullLogger<ImportDatasetJobExecutor>.Instance),
+        };
+
+        return new GeoprocessingDispatchJobExecutor(
+            executors,
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
     }
 

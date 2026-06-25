@@ -30,7 +30,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalMultidimCoverageMetadataJobExecutor> logger) : IJobExecutor
+    ILogger<GdalMultidimCoverageMetadataJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "coverage.multidim.metadata";
@@ -41,6 +41,13 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
     /// <inheritdoc />
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
     /// <inheritdoc />

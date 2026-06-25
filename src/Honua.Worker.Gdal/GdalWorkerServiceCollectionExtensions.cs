@@ -83,17 +83,20 @@ public static class GdalWorkerServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        // GDAL CLI runner + native-profile executors.
+        // GDAL CLI runner + native-profile executors. The per-process executors
+        // implement IProcessExecutor and self-declare their process id(s) (GP Devkit
+        // authoring contract #2122), so GdalDispatchJobExecutor builds its routing
+        // table by enumerating IProcessExecutor instead of a hand-maintained ctor.
         services.TryAddSingleton<IGdalCommandRunner, ProcessGdalCommandRunner>();
-        services.TryAddSingleton<GdalVectorConvertJobExecutor>();
-        services.TryAddSingleton<GdalRasterReprojectJobExecutor>();
-        services.TryAddSingleton<GdalSurfaceJobExecutor>();
-        services.TryAddSingleton<GdalRasterClipJobExecutor>();
-        services.TryAddSingleton<GdalRasterReprojectCatalogJobExecutor>();
-        services.TryAddSingleton<GdalRasterStatisticsJobExecutor>();
-        services.TryAddSingleton<GdalRasterZonalStatisticsJobExecutor>();
-        services.TryAddSingleton<GdalMultidimCoverageMetadataJobExecutor>();
-        services.TryAddSingleton<PdalPointCloudConvertJobExecutor>();
+        RegisterGdalExecutor<GdalVectorConvertJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterReprojectJobExecutor>(services);
+        RegisterGdalExecutor<GdalSurfaceJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterClipJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterReprojectCatalogJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterStatisticsJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterZonalStatisticsJobExecutor>(services);
+        RegisterGdalExecutor<GdalMultidimCoverageMetadataJobExecutor>(services);
+        RegisterGdalExecutor<PdalPointCloudConvertJobExecutor>(services);
 
         // Register the native dispatcher as the single IJobExecutor for the
         // Geoprocessing kind in this host. It declares AcceptedRuntimeProfiles =
@@ -122,5 +125,25 @@ public static class GdalWorkerServiceCollectionExtensions
         services.AddHostedService<JobReconciliationService>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers a GDAL <see cref="IProcessExecutor"/> as its concrete type and
+    /// surfaces the same singleton into the enumerable <see cref="IProcessExecutor"/>
+    /// set <see cref="GdalDispatchJobExecutor"/> consumes — both bound to one
+    /// instance via a resolving factory (GP Devkit authoring contract #2122).
+    /// </summary>
+    private static void RegisterGdalExecutor<TExecutor>(IServiceCollection services)
+        where TExecutor : class, IProcessExecutor
+    {
+        services.TryAddSingleton<TExecutor>();
+
+        if (!services.Any(d =>
+                d.ServiceType == typeof(IProcessExecutor)
+                && d.ImplementationFactory is not null
+                && d.ImplementationFactory.Method.ReturnType == typeof(TExecutor)))
+        {
+            services.AddSingleton<IProcessExecutor>(sp => sp.GetRequiredService<TExecutor>());
+        }
     }
 }

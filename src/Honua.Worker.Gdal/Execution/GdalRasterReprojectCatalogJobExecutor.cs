@@ -22,7 +22,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalRasterReprojectCatalogJobExecutor> logger) : IJobExecutor
+    ILogger<GdalRasterReprojectCatalogJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.reproject";
@@ -49,6 +49,13 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
     /// <inheritdoc />
