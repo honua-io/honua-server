@@ -521,6 +521,53 @@
       ]
     },
     {
+      "surfaceId": "audit-trail-siem",
+      "displayName": "Audit trail SIEM export and tamper-evidence API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/observability/audit/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/observability/audit"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus ObservabilityEventEndpointsTests assert the audit query, JSON-Lines/CEF SIEM export, hash-chain verify, and operator-authorization surfaces; PostgresAuditLogChainTests prove the append-only trail is tamper-evident (entry_hash/prev_hash chain detects row mutation and deletion) and that the exporter returns the time-range-filtered trail oldest-first.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/ObservabilityEventEndpointsTests.cs",
+            "tests/dotnet/Honua.Postgres.Tests/Features/AuditLog/PostgresAuditLogChainTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#509",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Migration 069 adds the prev_hash/entry_hash tamper-evident chain to the append-only honua.audit_log (migration 033); AuditEntryHasher and AuditCefFormatter (unit-tested) define the canonical chain hash and the CEF SIEM wire format; source-generated ObservabilityJsonContext keeps the export/integrity DTOs AOT-safe.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Migrations/069_AddAuditLogHashChain.sql",
+            "src/Honua.Core/Features/AuditLog/Abstractions/AuditEntryHasher.cs",
+            "src/Honua.Core/Features/AuditLog/Abstractions/AuditCefFormatter.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/AuditLog/AuditEntryHasherTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/AuditLog/AuditCefFormatterTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#350",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "console-job-observability",
       "displayName": "Console durable job observability API",
       "surfaceKind": "http-route-family",
