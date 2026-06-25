@@ -11,12 +11,18 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 /// <summary>
-/// Failure-of-failure coverage (#2161) for the deploy reconciler's rollback escalation: when the
-/// telemetry gate decides a rollback is required but the provider backend cannot honour it (returns
-/// <see cref="WorkflowOperationStatus.Failed"/> or echoes a non-terminal status on a transient
-/// error — as the Lambda/ECS/Argo backends do), the reconciler must escalate to
-/// <see cref="WorkflowOperationStatus.ManualInterventionRequired"/> rather than parking the deploy in
-/// a never-terminal loop with the degraded revision still live.
+/// Failure-of-failure coverage (#2161) for the deploy reconciler's rollback escalation. When the
+/// telemetry gate decides a rollback is required but the provider backend cannot honour it, the
+/// reconciler distinguishes two failure shapes:
+/// <list type="bullet">
+/// <item>A TERMINAL/hard failure (the backend returns <see cref="WorkflowOperationStatus.Failed"/> or
+/// <see cref="WorkflowOperationStatus.ManualInterventionRequired"/>) escalates immediately.</item>
+/// <item>A TRANSIENT failure (the Lambda backend echoes the operation's pre-rollback status on a
+/// throttle/transient AWS error) is retried on a bounded budget — a single blip must NOT page an
+/// operator — and escalates only once the budget is exhausted.</item>
+/// </list>
+/// Either way the deploy must reach a terminal manual-intervention state rather than parking in a
+/// never-terminal loop with the degraded revision still live.
 /// </summary>
 public sealed class DeployWorkflowReconcilerRollbackFailureTests
 {
@@ -49,17 +55,17 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
     }
 
     [Fact]
-    public async Task Reconciler_WhenRollbackBackendReturnsNonTerminal_ReDrivesOrEscalates_DoesNotStickForever()
+    public async Task Reconciler_WhenRollbackBackendTransientlyFailsForever_RetriesThenEscalates_DoesNotStickForever()
     {
-        // The Lambda/ECS backends echo the operation's CURRENT status on a transient failure. Because
-        // the rollback path is entered from a non-RollbackRequested status, a returned status that is
-        // neither RollbackRequested nor RolledBack (here: Reconciling) means the rollback did not take.
-        // Driving the reconciler repeatedly must reach a terminal manual-intervention state rather than
-        // looping forever in a non-terminal status.
+        // The Lambda backend echoes the operation's CURRENT status (here: Reconciling) with a "will
+        // retry" message on a TRANSIENT provider error. The reconciler must NOT escalate on the first
+        // blip — it retries on a bounded budget. But a rollback that transiently fails on EVERY cycle
+        // is genuinely stuck: once the budget is exhausted the reconciler must escalate to a terminal
+        // manual-intervention state rather than looping forever (the original #2161 bug).
         var store = new InMemoryWorkflowOperationStore();
         var backend = new FailingRollbackBackend(
             rollbackStatus: WorkflowOperationStatus.Reconciling,
-            rollbackMessage: "Rollback could not be applied; provider is still reconciling.");
+            rollbackMessage: "Lambda alias rollback failed due to a transient AWS error.");
         var operation = CreateOperation(WorkflowOperationStatus.Reconciling);
         await store.TryCreateAsync(operation);
 
@@ -71,23 +77,83 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
         var reconciler = CreateReconciler(store, backend, telemetry);
 
         WorkflowOperationRecord? updated = null;
-        for (var cycle = 0; cycle < 5; cycle++)
+        var firstCycleStatus = WorkflowOperationStatus.Planned;
+        for (var cycle = 0; cycle < 10; cycle++)
         {
             await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
             updated = await store.GetAsync(operation.OperationId);
+            if (cycle == 0)
+            {
+                firstCycleStatus = updated!.Status;
+            }
+
             if (updated is not null && IsTerminal(updated.Status))
             {
                 break;
             }
         }
 
+        firstCycleStatus.Should().Be(
+            WorkflowOperationStatus.Reconciling,
+            "the first transient blip must NOT page an operator — it stays re-drivable and retries");
+
         updated.Should().NotBeNull();
         updated!.Status.Should().Be(
             WorkflowOperationStatus.ManualInterventionRequired,
-            "a rollback that never settles must escalate to a terminal manual-intervention state, not loop forever");
+            "a rollback that never settles after the bounded retries must escalate, not loop forever");
         updated.CompletedAt.Should().NotBeNull();
-        updated.ErrorMessage.Should().Contain("Automatic rollback failed");
-        backend.RollbackCalls.Should().Be(1, "once escalated to a terminal state the reconciler stops re-driving");
+        updated.ErrorMessage.Should().Contain("Automatic rollback failed after");
+        // Default budget is 3 attempts (DeployWorkflowReconciler.DefaultRollbackRetryBudget).
+        backend.RollbackCalls.Should().Be(3, "the rollback is retried up to the bounded budget before escalating");
+    }
+
+    [Fact]
+    public async Task Reconciler_WhenRollbackBackendTransientlyFailsThenSucceeds_RetriesAndSettles_DoesNotEscalate()
+    {
+        // A single transient throttle on a rollback must self-heal: the first cycle echoes the
+        // pre-rollback status (Reconciling) and the reconciler retries; the next cycle the backend
+        // honours the rollback (RollbackRequested). The operation must settle WITHOUT ever escalating
+        // to manual intervention — a transient blip does not page an operator.
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new FailingRollbackBackend(
+            rollbackStatusSequence:
+            [
+                WorkflowOperationStatus.Reconciling,   // transient blip
+                WorkflowOperationStatus.RollbackRequested // honoured on retry
+            ],
+            rollbackMessage: "Rollback transiently failed, then took.");
+        var operation = CreateOperation(WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+
+        var telemetry = new StubDeployTelemetrySignalEvaluator(new DeployTelemetryDecision
+        {
+            RollbackRecommended = true,
+            Message = "Automatic rollback requested because telemetry detected canary degradation."
+        });
+        var reconciler = CreateReconciler(store, backend, telemetry);
+
+        // Cycle 1: transient failure -> stays re-drivable, does not escalate.
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var afterFirst = await store.GetAsync(operation.OperationId);
+        afterFirst.Should().NotBeNull();
+        afterFirst!.Status.Should().Be(
+            WorkflowOperationStatus.Reconciling,
+            "a transient rollback failure must not escalate on the first blip");
+        afterFirst.CompletedAt.Should().BeNull();
+        afterFirst.CurrentPhase.Should().Contain("will be retried");
+
+        // Cycle 2: rollback honoured -> settles to RollbackRequested, never manual intervention.
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var afterSecond = await store.GetAsync(operation.OperationId);
+        afterSecond.Should().NotBeNull();
+        afterSecond!.Status.Should().Be(
+            WorkflowOperationStatus.RollbackRequested,
+            "once the transient error clears the rollback takes and the operation settles");
+        afterSecond.Status.Should().NotBe(WorkflowOperationStatus.ManualInterventionRequired);
+        backend.RollbackCalls.Should().Be(2, "one retry after the transient blip");
+        // The transient-attempt counter is cleared once the rollback settles.
+        afterSecond.Deploy!.Parameters.Should().NotContainKey(
+            DeployWorkflowReconciler.RollbackTransientAttemptsParameterKey);
     }
 
     [Fact]
@@ -174,10 +240,24 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
         };
     }
 
-    private sealed class FailingRollbackBackend(
-        WorkflowOperationStatus rollbackStatus,
-        string rollbackMessage) : IDeployBackend
+    private sealed class FailingRollbackBackend : IDeployBackend
     {
+        private readonly IReadOnlyList<WorkflowOperationStatus> _rollbackStatusSequence;
+        private readonly string _rollbackMessage;
+
+        public FailingRollbackBackend(WorkflowOperationStatus rollbackStatus, string rollbackMessage)
+            : this([rollbackStatus], rollbackMessage)
+        {
+        }
+
+        public FailingRollbackBackend(
+            IReadOnlyList<WorkflowOperationStatus> rollbackStatusSequence,
+            string rollbackMessage)
+        {
+            _rollbackStatusSequence = rollbackStatusSequence;
+            _rollbackMessage = rollbackMessage;
+        }
+
         public int RollbackCalls { get; private set; }
 
         public string BackendName => "honua-gitops-kubernetes";
@@ -214,13 +294,17 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
 
         public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {
+            // Walk the configured status sequence, pinning the last entry once exhausted so a
+            // single-status backend keeps returning the same status on every call.
+            var index = Math.Min(RollbackCalls, _rollbackStatusSequence.Count - 1);
+            var status = _rollbackStatusSequence[index];
             RollbackCalls++;
             return Task.FromResult(new DeployObservation
             {
-                Status = rollbackStatus,
+                Status = status,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = operation.Deploy?.CurrentRevision,
-                Message = rollbackMessage
+                Message = _rollbackMessage
             });
         }
     }
