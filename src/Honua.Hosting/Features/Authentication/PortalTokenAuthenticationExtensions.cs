@@ -137,6 +137,24 @@ public static class PortalTokenAuthenticationExtensions
             sp => new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
 
+        // Portal community-group + item-sharing surface (#1868). In-memory singletons
+        // mirror the OAuth client-registry / Admin API-key pattern: no parallel
+        // durable store (ADR-0049). They compose the shared identity/role model for
+        // authorization rather than introducing a separate RBAC model.
+        services.TryAddSingleton<IPortalGroupStore>(
+            sp => new InMemoryPortalGroupStore(sp.GetService<TimeProvider>()));
+        services.TryAddSingleton<IPortalItemSharingStore, InMemoryPortalItemSharingStore>();
+
+        // Optional JWT access-token format + RFC 7662 introspection (ADR-0054, #1890)
+        // and pluggable IdP/OIDC federation for client_credentials (ADR-0053
+        // Increment 3, #1889). All strictly opt-in via options; registering the
+        // services unconditionally keeps the flag-off path a no-op (the services
+        // report disabled and the token service falls back to the opaque/in-tree
+        // paths) so there is no behaviour change by default.
+        services.TryAddSingleton<PortalJwtAccessTokenService>();
+        services.TryAddSingleton<ClientCredentialsFederationService>();
+        services.AddScoped<PortalTokenIntrospectionService>();
+
         services.AddScoped<PortalOAuthBroker>();
         services.AddScoped<PortalOAuthTokenService>();
 
@@ -146,6 +164,7 @@ public static class PortalTokenAuthenticationExtensions
         }
 
         services.AddHttpClient(PortalOAuthBroker.HttpClientName);
+        services.AddHttpClient(ClientCredentialsFederationService.HttpClientName);
     }
 
     private static void TryAddPortalAccessProjection(this IServiceCollection services, IConfiguration configuration)

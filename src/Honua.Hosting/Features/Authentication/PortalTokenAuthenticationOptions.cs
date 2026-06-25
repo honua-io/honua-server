@@ -112,4 +112,126 @@ public sealed class PortalOAuth2Options
     /// before, so no existing deployment gains a new credential path implicitly.
     /// </summary>
     public bool EnableClientCredentials { get; set; }
+
+    /// <summary>
+    /// Optional JWT access-token format and RFC 7662 introspection options
+    /// (ADR-0054, #1890). Off by default: the opaque, cache-backed token path is
+    /// unchanged unless an operator opts in.
+    /// </summary>
+    public PortalOAuthJwtOptions Jwt { get; set; } = new();
+
+    /// <summary>
+    /// Optional pluggable IdP/OIDC federation for the <c>client_credentials</c>
+    /// grant (ADR-0053 Increment 3, #1889). Off by default.
+    /// </summary>
+    public PortalOAuthClientCredentialsFederationOptions ClientCredentialsFederation { get; set; } = new();
+}
+
+/// <summary>
+/// Optional JWT access-token format and RFC 7662 introspection options
+/// (ADR-0054, #1890). The default opaque, cache-backed portal-token path is
+/// unchanged; JWT issuance is strictly opt-in and additive.
+/// </summary>
+public sealed class PortalOAuthJwtOptions
+{
+    /// <summary>
+    /// Configuration section binding root, relative to
+    /// <see cref="PortalOAuth2Options.SectionName"/>.
+    /// </summary>
+    public const string SectionName = "Jwt";
+
+    /// <summary>
+    /// Default JWT issuer (the <c>iss</c> claim) when the operator does not override
+    /// it. Used for both minting and validation.
+    /// </summary>
+    public const string DefaultIssuer = "https://honua.local/sharing";
+
+    /// <summary>
+    /// When <see langword="true"/> the OAuth2 token endpoint mints a signed JWT
+    /// access token instead of the opaque portal token. The JWT is still recorded in
+    /// the distributed cache by its <c>jti</c> so cache-eviction revocation and the
+    /// single request-path validator (ADR-0049/0053) keep working. Defaults to
+    /// <see langword="false"/>: with the flag off every token is the opaque format,
+    /// byte-for-byte the prior behaviour.
+    /// </summary>
+    public bool EnableJwtAccessTokens { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/> the RFC 7662 introspection endpoint
+    /// (<c>POST /sharing/rest/oauth2/introspect</c>) is wired and answers for both
+    /// opaque and JWT access tokens. Defaults to <see langword="false"/>: with the
+    /// flag off the endpoint returns 404, so it is never a silent surface.
+    /// </summary>
+    public bool EnableIntrospection { get; set; }
+
+    /// <summary>
+    /// Symmetric HMAC-SHA256 signing secret for JWT access tokens. Required (and must
+    /// be at least 32 bytes) when <see cref="EnableJwtAccessTokens"/> is set. Supports
+    /// <c>env:</c> indirection through the standard secret-resolution helper.
+    /// </summary>
+    public string? SigningKey { get; set; }
+
+    /// <summary>JWT issuer (<c>iss</c>). Defaults to <see cref="DefaultIssuer"/>.</summary>
+    public string Issuer { get; set; } = DefaultIssuer;
+
+    /// <summary>
+    /// Optional JWT audience (<c>aud</c>). When set it is stamped on minted tokens
+    /// and required on validation.
+    /// </summary>
+    public string? Audience { get; set; }
+}
+
+/// <summary>
+/// Optional pluggable IdP/OIDC federation for the OAuth2 <c>client_credentials</c>
+/// grant (ADR-0053 Increment 3, #1889). When enabled, the presented
+/// <c>client_id</c>/<c>client_secret</c> are delegated to an external OIDC token
+/// endpoint (the operator's centralised machine-identity IdP) rather than the
+/// in-tree client registry / Admin API-key store. On a successful federated
+/// exchange Honua mints its own opaque (or JWT) portal access token bound to the
+/// caller IP, carrying roles mapped from the federated response — there is no
+/// parallel token store (ADR-0049). Off by default and composes only when
+/// <see cref="PortalOAuth2Options.EnableClientCredentials"/> is also set.
+/// </summary>
+public sealed class PortalOAuthClientCredentialsFederationOptions
+{
+    /// <summary>
+    /// Configuration section binding root, relative to
+    /// <see cref="PortalOAuth2Options.SectionName"/>.
+    /// </summary>
+    public const string SectionName = "ClientCredentialsFederation";
+
+    /// <summary>
+    /// When <see langword="true"/> the <c>client_credentials</c> grant is delegated to
+    /// the external token endpoint before falling back to the in-tree client registry /
+    /// API-key store. Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// Absolute URL of the external IdP OAuth2 token endpoint that the presented
+    /// credentials are forwarded to with <c>grant_type=client_credentials</c>.
+    /// Required when <see cref="Enabled"/> is set.
+    /// </summary>
+    public string? TokenEndpoint { get; set; }
+
+    /// <summary>
+    /// Optional space- or comma-delimited scope forwarded to the external token
+    /// endpoint when the caller does not request one.
+    /// </summary>
+    public string? DefaultScope { get; set; }
+
+    /// <summary>
+    /// Roles granted to the minted Honua token when the federated exchange succeeds.
+    /// The external IdP is trusted to have authenticated the machine identity; these
+    /// roles are the local RBAC projection of that trust. Empty grants no roles
+    /// (the federated client gets a token with no privileges — never an escalation).
+    /// </summary>
+    public string[] GrantedRoles { get; set; } = [];
+
+    /// <summary>
+    /// When <see langword="true"/> (the default) the federated token endpoint must be
+    /// reached over HTTPS, so the forwarded <c>client_secret</c> is never sent in
+    /// plaintext. Set to <see langword="false"/> only for a trusted in-cluster test IdP.
+    /// </summary>
+    public bool RequireHttps { get; set; } = true;
 }
