@@ -287,7 +287,11 @@ main() {
       _write_state "${batch}" "${trunk_sha}" "${included}" "autofix" "${run_id}" "${fwdfix}" "${flake_reruns}"
       local fqns errout
       fqns="$(train_failed_test_names "${run_id}")"
-      errout="$(gh run view "${run_id}" --log-failed 2>/dev/null | tail -c 12000 || echo "")"
+      # Per-FAILING-JOB logs, not `--log-failed` (which is EMPTY on a run_all batch
+      # CI — the #2060 bug). Without this the autofix had no error context and fixed
+      # blind, so its commits never resolved the failure (esp. non-shard jobs like
+      # Build & Format / CI Router Validation that have no test FQNs at all).
+      errout="$(train_failing_job_logs "${run_id}")"
       if train_autofix_attempt "${batch}" "${failing}" "${fqns}" "${errout}" "${autofix_attempts}"; then
         autofix_attempts=$((autofix_attempts + 1))
         train_metric_set autofix_attempts "${autofix_attempts}"
