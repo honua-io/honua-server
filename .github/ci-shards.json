@@ -1000,6 +1000,24 @@
       ]
     },
     {
+      "name": "GP Devkit CLI",
+      "_comment": "GP Devkit (#2123/#2176) honua-gp dev tool. Its offline unit tests live in their OWN assembly (Honua.Geoprocessing.Cli.Tests) rather than the Honua.Server.Tests monolith, so the shard targets that csproj via `csproj`. Filters on the assembly's root namespace so every CLI test class is auto-covered. Paths claim the CLI src tree and its test tree so a publish/runner change targets this shard instead of tripping the unmapped-source run_all net for src/Honua.Geoprocessing.Cli/.",
+      "shard_name": "GP Devkit CLI",
+      "artifact_suffix": "gp-devkit-cli",
+      "log_name": "server-tests-gp-devkit-cli",
+      "timeout_minutes": 15,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj",
+      "filter": "FullyQualifiedName~Honua.Geoprocessing.Cli.Tests",
+      "paths": [
+        "src/Honua.Geoprocessing.Cli/",
+        "tests/dotnet/Honua.Geoprocessing.Cli.Tests/"
+      ]
+    },
+    {
       "name": "MCP",
       "shard_name": "MCP",
       "artifact_suffix": "mcp",
