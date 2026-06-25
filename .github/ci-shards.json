@@ -309,7 +309,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.EmulatorCloudStorage",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.EmulatorCloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage",
       "paths": [
         "src/Honua.Core/Features/FileImport/",
         "src/Honua.Core/Features/Import/",
