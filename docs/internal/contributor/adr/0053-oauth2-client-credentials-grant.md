@@ -2,10 +2,13 @@
 
 ## Status
 
-Proposed. Increment 1 (opt-in / off-by-default `client_credentials` over the
-Admin API-key store) and Increment 2 (first-class OAuth2 client registry + scope
-catalogue, #1888) are implemented; Increments 3-4 remain follow-ups. Phased
-rollout below.
+Proposed. Increments 1-4 are implemented: Increment 1 (opt-in / off-by-default
+`client_credentials` over the Admin API-key store), Increment 2 (first-class OAuth2
+client registry + scope catalogue, #1888), Increment 3 (optional pluggable IdP/OIDC
+federation for `client_credentials`, #1889), and Increment 4 (optional JWT access
+tokens + RFC 7662 introspection, #1890, recorded in its own ADR-0054). Phased
+rollout below. The interactive named-user `authorization_code`+PKCE and
+`refresh_token` grants (#1242/#1484) remain shipped and unchanged.
 
 ## Context
 
@@ -202,12 +205,23 @@ A first-class client not authorized for the grant returns `unauthorized_client`.
 2. **Increment 2 (shipped, #1888):** first-class OAuth2 *client registration*
    admin surface (`client_id`/`client_secret` pairs distinct from human API
    keys), client-type metadata, and `scope` catalogue → permission mapping.
-3. **Increment 3 (follow-up):** optional pluggable IdP/OIDC federation for
-   `client_credentials` (delegate to an external token endpoint /
-   introspection) for operators who centralise machine identity in their IdP.
-4. **Increment 4 (follow-up, only if required):** optional JWT access-token
-   format + RFC 7662 introspection endpoint for stateless validation, behind its
-   own ADR (it reopens the single-validator decision).
+3. **Increment 3 (shipped, #1889):** optional pluggable IdP/OIDC federation for
+   `client_credentials` (`PortalOAuthClientCredentialsFederationOptions`,
+   default off). When enabled, the presented `client_id`/`client_secret` are
+   delegated to the operator's external OIDC token endpoint
+   (`grant_type=client_credentials`) via `ClientCredentialsFederationService`
+   before the in-tree client-registry / API-key resolution. A successful federated
+   exchange means the IdP authenticated the machine identity; Honua then mints its
+   own portal token carrying the operator-configured `GrantedRoles` (no second
+   token store — ADR-0049; an empty role set grants nothing, never an escalation).
+   A federation miss falls through to the in-tree path, so federation is purely
+   additive. Requires HTTPS to the IdP by default.
+4. **Increment 4 (shipped, #1890, ADR-0054):** optional JWT access-token format +
+   RFC 7662 introspection endpoint. JWT issuance keeps the single request-path
+   validator by making the JWT's `jti` the opaque cache reference, so
+   cache-eviction revocation is preserved; the introspection endpoint
+   (`POST /sharing/rest/oauth2/introspect`) is admin-authorized and off by
+   default. See ADR-0054 for the full decision.
 
 ## Consequences
 
