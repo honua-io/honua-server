@@ -47,11 +47,16 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})?$top=0")]
-    public async Task Top_Zero_ReturnsBadRequest()
+    public async Task Top_Zero_ReturnsEmptyPage()
     {
+        // OData v4 conformance (#1989): $top=0 is a deliberately empty page and
+        // returns 200 with an empty value array, not a 400. Negative $top is
+        // still rejected.
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var (features, _) = await ParseResponseAsync(response);
+        features.Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -569,11 +574,22 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})?$top=0&$count=true")]
-    public async Task TopZero_WithCount_ReturnsBadRequest()
+    public async Task TopZero_WithCount_ReturnsEmptyPageAndTrueCount()
     {
+        // OData v4 conformance (#1989): $top=0 with $count=true returns 200 with an
+        // empty value array while @odata.count still reports the true total,
+        // independent of the empty data page.
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=0&$count=true");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        features.Should().BeEmpty();
+
+        document.RootElement.TryGetProperty("@odata.count", out var countElement).Should().BeTrue();
+        countElement.GetInt64().Should().Be(TotalTestFeatures);
     }
 
     [IntegrationTest]
