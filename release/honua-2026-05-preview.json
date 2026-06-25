@@ -270,6 +270,22 @@
       ]
     },
     {
+      "id": "terraform-rc-module-metadata",
+      "owningRepo": "honua-io/honua-iac",
+      "requirement": "Terraform module/version metadata points at the release candidate rather than placeholder/latest metadata.",
+      "evidenceState": "blocked",
+      "latestEvidence": null,
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-iac",
+          "number": 67,
+          "url": "https://github.com/honua-io/honua-iac/issues/67",
+          "reason": "Terraform versioned module/release pipeline remains open; release-candidate Terraform module metadata evidence is not attached."
+        }
+      ]
+    },
+    {
       "id": "release-train-scoreboard",
       "owningRepo": "honua-io/honua-devops",
       "requirement": "A release-train matrix is published and referenced by server, admin, SDK, devops, and docs release notes.",
