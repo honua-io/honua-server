@@ -38,6 +38,27 @@ train_run_logs_match_flake() {
   return 1
 }
 
+# train_failing_job_logs <run-id>: concatenated per-failing-job log TAILS, for the
+# autofix's error context. `gh run view --log-failed` returns EMPTY on a large
+# run_all batch CI (the #2060 bug), so without this the autofix fixed BLIND — no
+# error output, and no test FQNs when the failures are non-shard jobs (Build &
+# Format, CI Router Validation). Per-job logs are bounded and carry the real
+# errors (format diff, unmapped-class, assertion tails). Each job's tail is capped
+# and the whole is capped so it can't blow the prompt.
+train_failing_job_logs() {
+  local run_id="$1" jids jid out="" cap="${TRAIN_AUTOFIX_PERJOB_CAP:-5000}"
+  jids="$(gh run view "${run_id}" --json jobs \
+    --jq '[.jobs[] | select(.conclusion=="failure")] | .[].databaseId' 2>/dev/null || echo "")"
+  if [[ -z "${jids}" ]]; then
+    gh run view "${run_id}" --log-failed 2>/dev/null | tail -c 12000 || echo ""
+    return 0
+  fi
+  for jid in ${jids}; do
+    out+="$(gh run view --job "${jid}" --log 2>/dev/null | tail -c "${cap}" || true)"$'\n'
+  done
+  printf '%s' "${out}" | tail -c 12000
+}
+
 # train_classify_flake <run-id> <rerun-count>: if the failure looks like a flake
 # and we are under the rerun cap, issue ONE rerun and return 0 (caller re-polls).
 # Otherwise return 1 (treat as real -> attribute). The rerun is side-effecting
