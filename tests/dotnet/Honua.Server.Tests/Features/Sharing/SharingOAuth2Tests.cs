@@ -432,6 +432,67 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/introspect")]
+    public async Task Introspect_WhenEnabledForUnknownToken_ReturnsActiveFalse()
+    {
+        // RFC 7662 introspection (#1890) is off by default; opt in and drive the real
+        // admin-guarded endpoint. An unknown/forged token must introspect as
+        // { active: false } per RFC 7662 §2.2 — no other detail is leaked.
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+                builder.UseSetting("Authentication:PortalToken:OAuth2:Jwt:EnableIntrospection", "true");
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            // Use the literal route path (not a const) so the endpoint-registry governance
+            // scanner recognises this as a same-method (POST) HTTP request that backs
+            // POST /sharing/rest/oauth2/introspect.
+            using var response = await client.PostAsync(
+                "/sharing/rest/oauth2/introspect",
+                new FormUrlEncodedContent(new[]
+                {
+                    new KeyValuePair<string, string>("token", "00000000000000000000000000000000"),
+                }));
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(json);
+            document.RootElement.GetProperty("active").GetBoolean().Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/introspect")]
+    public async Task Introspect_WhenDisabled_Returns404()
+    {
+        // The introspection surface is absent (404) unless explicitly enabled, so it is
+        // never a silent discovery surface (RFC 7662 §4). The default fixture does not
+        // enable it; the admin-authenticated request still 404s.
+        using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        using var response = await client.PostAsync(
+            "/sharing/rest/oauth2/introspect",
+            new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("token", "x"),
+            }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_WhenPortalTokenDisabled_Returns404()
     {

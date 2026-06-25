@@ -16538,7 +16538,9 @@
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_TamperedJwt_ReturnsActiveFalse",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_UnknownToken_ReturnsActiveFalse",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_ValidJwtAccessToken_ReturnsActiveTrue",
-        "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_WhenDisabled_Returns404"
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_WhenDisabled_Returns404",
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Introspect_WhenDisabled_Returns404",
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Introspect_WhenEnabledForUnknownToken_ReturnsActiveFalse"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
       "maturity": "implemented"
