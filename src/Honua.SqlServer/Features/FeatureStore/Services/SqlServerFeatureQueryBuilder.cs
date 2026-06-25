@@ -251,10 +251,14 @@ internal static partial class SqlServerFeatureQueryBuilder
                 $"{geomCol}.STIntersects({filterExpr}) = 1",
             SpatialRelationship.EnvelopeIntersects =>
                 $"{geomCol}.STEnvelope().STIntersects({filterExpr}.STEnvelope()) = 1",
+            // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
+            // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
+            // filter geometry to match the canonical PostGIS reference (#2068). Reversing the
+            // operands inverts the relationship and returns the wrong (typically empty) result set.
             SpatialRelationship.Within =>
-                $"{geomCol}.STWithin({filterExpr}) = 1",
+                $"{filterExpr}.STWithin({geomCol}) = 1",
             SpatialRelationship.Contains =>
-                $"{geomCol}.STContains({filterExpr}) = 1",
+                $"{filterExpr}.STContains({geomCol}) = 1",
             SpatialRelationship.Disjoint =>
                 $"{geomCol}.STDisjoint({filterExpr}) = 1",
             _ => throw new NotSupportedException(

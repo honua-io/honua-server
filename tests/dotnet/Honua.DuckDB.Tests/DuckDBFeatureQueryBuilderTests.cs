@@ -198,6 +198,41 @@ public class DuckDBFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_WithinFilter_LeadsWithFilterGeometry()
+    {
+        // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
+        // geometry must be the FIRST operand: ST_Within(filter, feature). Leading with the
+        // feature column inverts the relationship and returns the wrong (empty) set (#2068).
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Within, 4326)
+        };
+
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+
+        Assert.Contains("ST_Within(ST_GeomFromWKB($", result.Sql);
+        Assert.DoesNotContain("ST_Within(\"geom\"", result.Sql);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
+    {
+        // Esri esriSpatialRelContains = filter geometry contains feature geometry: the filter
+        // geometry must be the FIRST operand, ST_Contains(filter, feature) (#2068).
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Contains, 4326)
+        };
+
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+
+        Assert.Contains("ST_Contains(ST_GeomFromWKB($", result.Sql);
+        Assert.DoesNotContain("ST_Contains(\"geom\"", result.Sql);
+    }
+
+    [Fact]
     public void BuildSelectQuery_SpatialFilter_DifferentSrid_TransformsToLayerSrid()
     {
         // Layer is 4326; client supplies a Web Mercator (3857) filter geometry.
