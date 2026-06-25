@@ -53,10 +53,12 @@ internal sealed partial class StreamingFileImportService
         // unconditionally for the freshly-named staging table.
         await CreateTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
 
-        // 2-D default writer. CreateWkb upgrades to an emitZ writer per geometry when the
-        // geometry actually carries Z (see HasZ), so GPX/KML/3-D GeoJSON altitudes are
-        // preserved without forcing every 2-D coordinate through an emitZ/emitM writer
-        // (which serializes NaN Z/M ordinates that PostGIS rejects, dropping otherwise-valid rows).
+        // 2-D default writer. CreateWkb upgrades to an emitZ and/or emitM writer per
+        // geometry when the source geometry actually carries Z and/or M ordinates
+        // (see SelectWkbWriter / DetectZm), so GPX/KML/3-D GeoJSON altitudes and
+        // FileGDB/shapefile XYM/XYZM measures are preserved (#1981) without forcing
+        // every 2-D coordinate through an emitZ/emitM writer (which serializes NaN
+        // Z/M ordinates that PostGIS rejects, dropping otherwise-valid rows).
         var wkbWriter = new WKBWriter();
         var batch = new List<IFeature>(_limits.BatchSize);
         var totalImported = 0;
