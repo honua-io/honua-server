@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Raster.ZarrParser;
 
 namespace Honua.Protocols.Ogc.Common;
 
@@ -60,87 +60,16 @@ internal static class OgcTemporalFilterParser
     /// Parses an OGC API datetime parameter (RFC 3339 instant or interval) into a
     /// (start, end) pair without requiring a layer. Supported forms: instant,
     /// <c>start/end</c>, <c>../end</c>, <c>start/..</c>. For an instant T both
-    /// <paramref name="start"/> and <paramref name="end"/> are set to T.
+    /// <paramref name="start"/> and <paramref name="end"/> are set to T. Delegates to
+    /// the neutral <see cref="Iso8601TemporalIntervalParser"/> in <c>Honua.Core</c> so
+    /// the OGC adapters and the coverage/datacube tile path share one implementation.
     /// </summary>
     public static bool TryParseRange(
         string? datetime,
         out DateTimeOffset? start,
         out DateTimeOffset? end,
         out string? errorMessage)
-    {
-        start = null;
-        end = null;
-        errorMessage = null;
-
-        if (string.IsNullOrWhiteSpace(datetime))
-        {
-            return true;
-        }
-
-        var parts = datetime.Split('/', StringSplitOptions.TrimEntries);
-
-        if (parts.Length == 1)
-        {
-            if (!TryParseDateTimeOffset(parts[0], out var instant))
-            {
-                errorMessage = "Invalid datetime parameter.";
-                return false;
-            }
-
-            start = instant;
-            end = instant;
-            return true;
-        }
-
-        if (parts.Length == 2)
-        {
-            if (!string.IsNullOrWhiteSpace(parts[0]) && parts[0] != "..")
-            {
-                if (!TryParseDateTimeOffset(parts[0], out var parsedStart))
-                {
-                    errorMessage = "Invalid datetime parameter.";
-                    return false;
-                }
-
-                start = parsedStart;
-            }
-
-            if (!string.IsNullOrWhiteSpace(parts[1]) && parts[1] != "..")
-            {
-                if (!TryParseDateTimeOffset(parts[1], out var parsedEnd))
-                {
-                    errorMessage = "Invalid datetime parameter.";
-                    return false;
-                }
-
-                end = parsedEnd;
-            }
-
-            if (start is null && end is null)
-            {
-                errorMessage = "Invalid datetime parameter.";
-                return false;
-            }
-
-            if (start is { } s && end is { } e && s > e)
-            {
-                errorMessage = "Invalid datetime parameter.";
-                return false;
-            }
-
-            return true;
-        }
-
-        errorMessage = "Invalid datetime parameter.";
-        return false;
-    }
-
-    private static bool TryParseDateTimeOffset(string value, out DateTimeOffset parsed)
-        => DateTimeOffset.TryParse(
-            value,
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-            out parsed);
+        => Iso8601TemporalIntervalParser.TryParseRange(datetime, out start, out end, out errorMessage);
 
     private static bool TryResolveTemporalFieldsV2(
         MetadataV2Resource resource,
