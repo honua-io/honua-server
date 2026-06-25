@@ -60,12 +60,20 @@ export ANTHROPIC_SMALL_FAST_MODEL="${TRAIN_AUTOFIX_SMALL_MODEL:-us.anthropic.cla
 PROMPT="$(cat "${REQUEST_FILE}")"
 TIMEOUT="${TRAIN_AUTOFIX_TIMEOUT:-900}"
 
+# Feed the prompt via STDIN, NOT as a positional arg. `--allowed-tools` is
+# VARIADIC: it greedily swallowed BOTH "Edit,Write,Read,Bash" AND the trailing
+# "${PROMPT}" positional, so the whole fix-request got parsed as bogus tool rules
+# ("Ignoring --allowedTools rule '(requires `ST_*`)'", "'(#1719):**'", ...), claude
+# was left with NO prompt, and exited immediately: "Error: Input must be provided
+# either through stdin or as a prompt argument when using --print". The model NEVER
+# ran — every prior "autofix produced no commit" was THIS, not Claude failing to
+# fix. Piping the prompt on stdin keeps --allowed-tools to its single value and
+# delivers the prompt unambiguously. printf (not echo) so content isn't mangled.
 ( cd "${REPO_ROOT}" && \
-  timeout "${TIMEOUT}" claude \
+  printf '%s' "${PROMPT}" | timeout "${TIMEOUT}" claude \
     --print \
     --dangerously-skip-permissions \
-    --allowed-tools "Edit,Write,Read,Bash" \
-    "${PROMPT}" < /dev/null ) \
+    --allowed-tools "Edit,Write,Read,Bash" ) \
   || echo "::warning::autofix-agent: claude headless run exited non-zero or timed out; train will check for a partial commit." >&2
 
 # Intentionally exit 0: success/failure is judged by whether a NEW commit landed
