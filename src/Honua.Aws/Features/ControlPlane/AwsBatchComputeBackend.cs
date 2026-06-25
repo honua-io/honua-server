@@ -23,6 +23,160 @@ internal static class AwsBatchParameterKeys
     public const string GpuCount = "batch.gpu_count";
     public const string RetryAttempts = "batch.retry_attempts";
     public const string ShareIdentifier = "batch.share_identifier";
+
+    /// <summary>
+    /// Per-tier job-definition ARN keys exposed by the honua-iac serverless module's
+    /// fixed job-definition pool (honua-iac#70). The pool mints four job definitions that
+    /// differ only by ephemeral (scratch) storage — the one knob AWS Batch SubmitJob cannot
+    /// override. The runtime selects a tier by the job's ephemeral-storage floor and submits
+    /// against that tier's ARN. The suffix is the tier id (<c>s</c>/<c>m</c>/<c>l</c>/<c>xl</c>):
+    /// <c>batch.job_definition_arn.s</c> = 20 GiB, <c>.m</c> = 50 GiB, <c>.l</c> = 100 GiB,
+    /// <c>.xl</c> = 200 GiB.
+    /// </summary>
+    public const string JobDefinitionArnTierPrefix = JobDefinitionArn + ".";
+
+    /// <summary>
+    /// Optional per-job ephemeral (scratch) storage need, in GiB, used to pick a job-definition
+    /// tier from the pool. Sourced from the GP job's request. Absent or non-positive values fall
+    /// back to the smallest tier (<c>s</c>, 20 GiB).
+    /// </summary>
+    public const string EphemeralGib = "batch.ephemeral_gib";
+}
+
+/// <summary>
+/// Resolves the effective AWS Batch job-definition ARN for a job by selecting a size tier from
+/// the honua-iac job-definition pool (honua-iac#70) by the job's ephemeral-storage need.
+/// </summary>
+/// <remarks>
+/// The pool's four tiers differ only by ephemeral (scratch) storage, the one knob SubmitJob
+/// cannot override: <c>s</c>=20, <c>m</c>=50, <c>l</c>=100, <c>xl</c>=200 GiB. vCPU/memory/
+/// timeout/retry stay SubmitJob overrides and are unaffected by tier selection. The
+/// ephemeral-need ceilings are inclusive and mirror the honua-devops sizing-hint boundaries
+/// exactly (<c>≤20→s</c>, <c>≤50→m</c>, <c>≤100→l</c>, <c>≤200→xl</c>, <c>&gt;200</c> rejected).
+/// </remarks>
+internal static class AwsBatchJobDefinitionTierSelector
+{
+    /// <summary>Smallest tier (Fargate default ephemeral storage of 20 GiB).</summary>
+    internal const string DefaultTier = "s";
+
+    private const int CeilingSmall = 20;
+    private const int CeilingMedium = 50;
+    private const int CeilingLarge = 100;
+    private const int CeilingExtraLarge = 200;
+
+    /// <summary>
+    /// Resolves the job-definition ARN the backend should submit against.
+    /// </summary>
+    /// <remarks>
+    /// Back-compat: when no per-tier keys are configured the single
+    /// <see cref="AwsBatchParameterKeys.JobDefinitionArn"/> is required and returned unchanged,
+    /// preserving existing non-tiered ControlPlane:ExecutionWorkloads configs. When tier keys are
+    /// present, the job's ephemeral need selects the tier and that tier's ARN is returned.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when neither tier keys nor a single ARN are configured, when the ephemeral need
+    /// exceeds the 200 GiB pool ceiling, or when the selected tier's ARN is not configured.
+    /// </exception>
+    public static string ResolveJobDefinitionArn(IReadOnlyDictionary<string, string> parameters)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        if (!HasTierKeys(parameters))
+        {
+            // No tier pool configured: fall back to the single ARN (non-tiered configs).
+            if (parameters.TryGetValue(AwsBatchParameterKeys.JobDefinitionArn, out var single)
+                && !string.IsNullOrWhiteSpace(single))
+            {
+                return single.Trim();
+            }
+
+            throw new InvalidOperationException(
+                $"AWS Batch submission requires parameter '{AwsBatchParameterKeys.JobDefinitionArn}' "
+                + $"or a per-tier '{AwsBatchParameterKeys.JobDefinitionArnTierPrefix}<tier>' pool.");
+        }
+
+        var ephemeralGib = ResolveEphemeralGib(parameters);
+        var tier = MapEphemeralGibToTier(ephemeralGib);
+        var tierKey = AwsBatchParameterKeys.JobDefinitionArnTierPrefix + tier;
+
+        if (parameters.TryGetValue(tierKey, out var arn) && !string.IsNullOrWhiteSpace(arn))
+        {
+            return arn.Trim();
+        }
+
+        throw new InvalidOperationException(
+            $"AWS Batch job needs the '{tier}' job-definition tier (ephemeral {ephemeralGib} GiB) "
+            + $"but parameter '{tierKey}' is not configured.");
+    }
+
+    /// <summary>
+    /// Maps an ephemeral-storage need (GiB) to a pool tier id using inclusive ceilings that mirror
+    /// the honua-devops sizing-hint boundaries: <c>≤20→s</c>, <c>≤50→m</c>, <c>≤100→l</c>,
+    /// <c>≤200→xl</c>. A need above 200 GiB exceeds the Fargate/pool ceiling and is rejected.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when the need exceeds 200 GiB.</exception>
+    public static string MapEphemeralGibToTier(int ephemeralGib)
+    {
+        if (ephemeralGib <= CeilingSmall)
+        {
+            return "s";
+        }
+
+        if (ephemeralGib <= CeilingMedium)
+        {
+            return "m";
+        }
+
+        if (ephemeralGib <= CeilingLarge)
+        {
+            return "l";
+        }
+
+        if (ephemeralGib <= CeilingExtraLarge)
+        {
+            return "xl";
+        }
+
+        throw new InvalidOperationException(
+            $"AWS Batch job ephemeral-storage need of {ephemeralGib} GiB exceeds the {CeilingExtraLarge} GiB "
+            + "Fargate/job-definition pool ceiling (largest tier 'xl').");
+    }
+
+    /// <summary>
+    /// True when the parameters carry at least one per-tier job-definition ARN key, signalling the
+    /// tiered honua-iac contract rather than a single-ARN config.
+    /// </summary>
+    private static bool HasTierKeys(IReadOnlyDictionary<string, string> parameters)
+    {
+        foreach (var entry in parameters)
+        {
+            if (entry.Key.StartsWith(AwsBatchParameterKeys.JobDefinitionArnTierPrefix, StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(entry.Value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Reads the job's ephemeral need (GiB) from <see cref="AwsBatchParameterKeys.EphemeralGib"/>.
+    /// Absent, unparseable, or non-positive values default to the smallest tier's 20 GiB so a job
+    /// with no hint lands on <c>s</c>.
+    /// </summary>
+    private static int ResolveEphemeralGib(IReadOnlyDictionary<string, string> parameters)
+    {
+        if (parameters.TryGetValue(AwsBatchParameterKeys.EphemeralGib, out var raw)
+            && !string.IsNullOrWhiteSpace(raw)
+            && int.TryParse(raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            && parsed > 0)
+        {
+            return parsed;
+        }
+
+        return CeilingSmall;
+    }
 }
 
 /// <summary>
@@ -233,7 +387,10 @@ internal sealed partial class AwsBatchComputeBackend(
         cancellationToken.ThrowIfCancellationRequested();
 
         var parameters = job.Spec.Parameters;
-        var jobDefinition = GetRequiredParameter(parameters, AwsBatchParameterKeys.JobDefinitionArn);
+        // Select the job-definition tier from the honua-iac pool by the job's ephemeral-storage
+        // need (honua-iac#70); falls back to the single batch.job_definition_arn for non-tiered
+        // configs. vCPU/memory/timeout/retry stay SubmitJob overrides below.
+        var jobDefinition = AwsBatchJobDefinitionTierSelector.ResolveJobDefinitionArn(parameters);
         var jobQueue = GetRequiredParameter(parameters, AwsBatchParameterKeys.JobQueueArn);
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
 

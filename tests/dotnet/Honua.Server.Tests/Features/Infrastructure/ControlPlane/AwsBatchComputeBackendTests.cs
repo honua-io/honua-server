@@ -76,6 +76,72 @@ public sealed class AwsBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_SelectsTierJobDefinitionFromEphemeralHint()
+    {
+        var client = new StubAwsBatchJobClient
+        {
+            NextSubmitResult = new AwsBatchSubmitResult
+            {
+                JobId = "aws-job-tier",
+                JobArn = "arn:aws:batch:us-west-2:123:job/aws-job-tier",
+                JobName = "honua-op-tier"
+            }
+        };
+
+        var backend = CreateBackend(client);
+        var job = CreateJob(parameters: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [AwsBatchParameterKeys.JobDefinitionArnTierPrefix + "s"] = "arn:aws:batch:us-west-2:123:job-definition/gp-s:1",
+            [AwsBatchParameterKeys.JobDefinitionArnTierPrefix + "m"] = "arn:aws:batch:us-west-2:123:job-definition/gp-m:1",
+            [AwsBatchParameterKeys.JobDefinitionArnTierPrefix + "l"] = "arn:aws:batch:us-west-2:123:job-definition/gp-l:1",
+            [AwsBatchParameterKeys.JobDefinitionArnTierPrefix + "xl"] = "arn:aws:batch:us-west-2:123:job-definition/gp-xl:1",
+            [AwsBatchParameterKeys.EphemeralGib] = "75",
+            [AwsBatchParameterKeys.JobQueueArn] = "arn:aws:batch:us-west-2:123:job-queue/gp",
+            [AwsBatchParameterKeys.Vcpus] = "4",
+            [AwsBatchParameterKeys.MemoryMib] = "8192"
+        });
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Queued);
+        client.LastSubmission.Should().NotBeNull();
+        // 75 GiB falls in the (50,100] band -> 'l' tier.
+        client.LastSubmission!.JobDefinition.Should().Be("arn:aws:batch:us-west-2:123:job-definition/gp-l:1");
+        // vCPU/memory remain SubmitJob overrides regardless of tier selection.
+        client.LastSubmission.Vcpus.Should().Be(4);
+        client.LastSubmission.MemoryMib.Should().Be(8192);
+        // The tier and ephemeral keys are batch.* params and must not leak as env overrides.
+        client.LastSubmission.EnvironmentOverrides.Should()
+            .NotContain(entry => entry.Name.Contains("job_definition_arn") || entry.Name.Contains("ephemeral"));
+    }
+
+    [Fact]
+    public async Task StartAsync_DefaultsToSmallestTier_WhenNoEphemeralHint()
+    {
+        var client = new StubAwsBatchJobClient
+        {
+            NextSubmitResult = new AwsBatchSubmitResult
+            {
+                JobId = "aws-job-tier-default",
+                JobArn = "arn:aws:batch:us-west-2:123:job/aws-job-tier-default",
+                JobName = "honua-op-tier-default"
+            }
+        };
+
+        var backend = CreateBackend(client);
+        var job = CreateJob(parameters: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [AwsBatchParameterKeys.JobDefinitionArnTierPrefix + "s"] = "arn:aws:batch:us-west-2:123:job-definition/gp-s:1",
+            [AwsBatchParameterKeys.JobDefinitionArnTierPrefix + "xl"] = "arn:aws:batch:us-west-2:123:job-definition/gp-xl:1",
+            [AwsBatchParameterKeys.JobQueueArn] = "arn:aws:batch:us-west-2:123:job-queue/gp"
+        });
+
+        await backend.StartAsync(job);
+
+        client.LastSubmission!.JobDefinition.Should().Be("arn:aws:batch:us-west-2:123:job-definition/gp-s:1");
+    }
+
+    [Fact]
     public async Task StartAsync_ThrowsWhenJobDefinitionMissing()
     {
         var backend = CreateBackend(new StubAwsBatchJobClient());
