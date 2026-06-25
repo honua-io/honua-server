@@ -197,3 +197,21 @@ public sealed class FeatureTemplate
     /// </summary>
     public object? Prototype { get; init; }
 }
+
+/// <summary>
+/// Prototype payload of a <see cref="FeatureTemplate"/>: the seed attribute values a new
+/// feature created from the template starts with. Modelled as the Esri
+/// <c>{ "attributes": { field: value, … } }</c> shape so the ArcGIS editing clients can
+/// read the per-field defaults directly. Honua populates this from the canonical subtype's
+/// field default values plus the subtype code (#1878).
+/// </summary>
+public sealed class FeatureTemplatePrototype
+{
+    /// <summary>
+    /// Seed attribute values keyed by field name. Each value is JSON-typed to match the
+    /// field. Includes the subtype code under the layer's subtype field when known.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("attributes")]
+    public IReadOnlyDictionary<string, System.Text.Json.JsonElement> Attributes { get; init; }
+        = new Dictionary<string, System.Text.Json.JsonElement>(StringComparer.OrdinalIgnoreCase);
+}

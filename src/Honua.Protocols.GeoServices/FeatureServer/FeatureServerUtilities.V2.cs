@@ -166,6 +166,11 @@ internal static partial class FeatureServerEndpoints
             Type = "Feature Layer",
             GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
             SpatialReference = spatialReference,
+            // Advertise hasZ/hasM from the authored Metadata v2 display flags so 3D/measured
+            // layers self-describe to Esri clients (#1877 Part C). Both default to false and are
+            // omitted from the response when unset to keep 2D documents CITE/byte-stable.
+            HasZ = resource.Display?.HasZ ?? false,
+            HasM = resource.Display?.HasM ?? false,
             Extent = extent,
             TimeInfo = timeInfo,
             ExtrusionInfo = extrusionInfo,
@@ -203,14 +208,31 @@ internal static partial class FeatureServerEndpoints
             AllowGeometryUpdates = supportsEditing,
             EditFieldsInfo = null,
             EditingInfo = supportsEditing ? new EditingInfo() : null,
+            // Esri projects a layer's editing types/templates from its subtypes (one type per
+            // subtype, each carrying an editing template seeded with the subtype's default
+            // values + subtype code). Honua has no separate template authoring on the canonical
+            // graph, so the subtype-derived types ARE the layer template surface (#1878). The
+            // layer-root `templates` array stays empty because, in the Esri model, when a layer
+            // has typed/subtyped templates they live inside each `types[]` entry; it is populated
+            // only by layers without subtypes (none authored on the canonical graph today).
             Templates = [],
+            Types = GeoServicesTemplateMapper.MapTypes(
+                resource.Subtypes,
+                MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)),
             AdvancedQueryCapabilities = advancedQueryCapabilities,
             // Esri subtype surface (subtypeField / subtypes / defaultSubtypeCode) carried
             // from the canonical resource so it survives import → publish → compat-compile
             // and reaches Esri clients (honua-server#1378). Omitted when the layer has none.
             SubtypeField = resource.Subtypes?.SubtypeField,
             DefaultSubtypeCode = resource.Subtypes?.DefaultSubtypeCode,
-            Subtypes = GeoServicesSubtypeMapper.Map(resource.Subtypes)
+            Subtypes = GeoServicesSubtypeMapper.Map(resource.Subtypes),
+            // Contingent-value definition surfaced on the layer metadata from the canonical
+            // resource's contingentValueGroups (the same source the service-level
+            // queryContingentValues operation reads), reusing GeoServicesContingentValueMapper.
+            // Omitted when the layer declares no contingent values (#1878).
+            ContingentValuesDefinition = GeoServicesContingentValueMapper.Map(
+                publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
+                resource.ContingentValueGroups)
         };
     }
 

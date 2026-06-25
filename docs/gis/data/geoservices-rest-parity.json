@@ -49,13 +49,14 @@
         "spatialJoin (Honua extension, Pro)",
         "queryBufferAggregate (Honua extension, Pro)",
         "queryDensity (Honua extension, Pro)",
-        "generateRenderer"
+        "generateRenderer",
+        "queryContingentValues (+ layer contingentValuesDefinition)",
+        "subtype-derived layer types/editing templates"
       ],
       "knownGaps": [
         "cleanupChangeTracking",
-        "queryContingentValues",
-        "sharedTemplates",
-        "asset and 3D operations",
+        "standalone sharedTemplates store",
+        "utility-network/asset data model and 3D operations",
         "full ArcGIS SQL parity",
         "full offline change-tracking parity"
       ],
@@ -670,8 +671,8 @@
           },
           {
             "name": "returnTrueCurves",
-            "status": "ignored",
-            "notes": "Accepted for client compatibility; Honua advertises supportsTrueCurve=false and emits linearized geometries."
+            "status": "partial",
+            "notes": "Input densified: curvePaths/curveRings (circular-arc and cubic-Bezier segments) supplied on applyEdits or query spatial filters are densified to linear vertices before storage (#1877 Part A); elliptic-arc segments are rejected. Output stays linear: NTS/WKB cannot represent a true curve so returnTrueCurves=true returns the densified linear geometry; Honua advertises supportsTrueCurve=false. Lossless curve storage/re-emission deferred (Refs #1877 Part B)."
           },
           {
             "name": "returnExceededLimitFeatures",
