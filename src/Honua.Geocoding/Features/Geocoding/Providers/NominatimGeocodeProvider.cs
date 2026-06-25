@@ -314,9 +314,38 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
                    request.SearchBounds.YMin.ToString("F6", CultureInfo.InvariantCulture);
             url += "&bounded=1";
         }
+        else if (request.BiasLocation != null)
+        {
+            // Nominatim has no dedicated proximity parameter, so a proximity bias is expressed as
+            // an UNbounded viewbox centred on the bias point: results inside it are preferred but
+            // results outside are still returned (omitting bounded=1). The half-extent is derived
+            // from BiasDistanceMeters when supplied, otherwise a small default radius (#2148).
+            var radiusMeters = request.BiasDistanceMeters is > 0 ? request.BiasDistanceMeters.Value : DefaultBiasRadiusMeters;
+            var latHalf = radiusMeters / MetersPerDegreeLatitude;
+            var cosLat = Math.Cos(request.BiasLocation.Y * Math.PI / 180.0);
+            var lonHalf = latHalf / Math.Max(Math.Abs(cosLat), 1e-6);
+
+            var xmin = request.BiasLocation.X - lonHalf;
+            var xmax = request.BiasLocation.X + lonHalf;
+            var ymin = request.BiasLocation.Y - latHalf;
+            var ymax = request.BiasLocation.Y + latHalf;
+
+            url += "&viewbox=" +
+                   xmin.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   ymax.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   xmax.ToString("F6", CultureInfo.InvariantCulture) + "," +
+                   ymin.ToString("F6", CultureInfo.InvariantCulture);
+        }
 
         return url;
     }
+
+    // Default proximity-bias half-extent (meters) used when a forward request supplies a bias
+    // location but no explicit distance. Sized so the unbounded viewbox covers a city-scale area.
+    private const double DefaultBiasRadiusMeters = 25_000.0;
+
+    // Approximate meters per degree of latitude (constant; longitude is scaled by cos(latitude)).
+    private const double MetersPerDegreeLatitude = 111_320.0;
 
     private string BuildReverseUrl(ReverseGeocodeRequest request)
     {

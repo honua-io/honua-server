@@ -116,8 +116,14 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
                     .ToList();
             }
 
-            // Add bias position if search bounds are provided
-            if (request.SearchBounds != null)
+            // Add a bias position. An explicit proximity-bias location wins; otherwise fall back
+            // to the centre of the search bounds. Amazon Location weights nearby results higher
+            // when BiasPosition is supplied (proximity bias, #2148).
+            if (request.BiasLocation != null)
+            {
+                searchRequest.BiasPosition = [request.BiasLocation.X, request.BiasLocation.Y];
+            }
+            else if (request.SearchBounds != null)
             {
                 var centerX = (request.SearchBounds.XMin + request.SearchBounds.XMax) / 2;
                 var centerY = (request.SearchBounds.YMin + request.SearchBounds.YMax) / 2;

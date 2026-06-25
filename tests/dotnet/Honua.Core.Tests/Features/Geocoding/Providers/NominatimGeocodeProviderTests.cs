@@ -280,6 +280,54 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal("ops@example.com", handler.CapturedContactEmail);
     }
 
+    // #2148: a forward-geocode proximity bias (location, no SearchBounds) is expressed as an
+    // UNbounded viewbox centred on the bias point — results inside are preferred but outside
+    // results are still returned (no &bounded=1).
+    [Fact]
+    public async Task ForwardGeocodeAsync_WithBiasLocation_EmitsUnboundedViewboxAroundBiasPoint()
+    {
+        var handler = new UriCapturingHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://example.com/", UriKind.Absolute)
+        };
+
+        var provider = new NominatimGeocodeProvider(
+            new NominatimProviderConfiguration { BaseUrl = "https://example.com" },
+            httpClient);
+
+        await provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("cafe", 5, 4326, null)
+            {
+                BiasLocation = new GeocodePoint(-0.1276, 51.5034),
+                BiasDistanceMeters = 1000
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(handler.CapturedUri);
+        var query = handler.CapturedUri!.Query;
+        Assert.Contains("viewbox=", query, StringComparison.Ordinal);
+        // Proximity bias is a soft preference, so the bounded flag must NOT be present.
+        Assert.DoesNotContain("bounded=1", query, StringComparison.Ordinal);
+    }
+
+    private sealed class UriCapturingHandler : HttpMessageHandler
+    {
+        public Uri? CapturedUri { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CapturedUri = request.RequestUri;
+
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("[]", Encoding.UTF8, "application/json")
+            };
+
+            return Task.FromResult(response);
+        }
+    }
+
     private sealed class HeaderCapturingHandler : HttpMessageHandler
     {
         public string? CapturedUserAgent { get; private set; }

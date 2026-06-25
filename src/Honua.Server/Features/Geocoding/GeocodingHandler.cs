@@ -72,13 +72,7 @@ internal sealed class GeocodingHandler(
                     Wkid = _options.DefaultSpatialReferenceWkid,
                     LatestWkid = _options.DefaultSpatialReferenceWkid
                 },
-                LocatorProperties = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["LocatorName"] = _options.LocatorName,
-                    ["Provider"] = provider.Name,
-                    ["SupportsSuggest"] = capabilities.SupportsSuggest ? "true" : "false",
-                    ["SupportsBatch"] = capabilities.SupportsBatch ? "true" : "false"
-                }
+                LocatorProperties = BuildLocatorProperties(provider.Name, capabilities)
             };
 
             return Task.FromResult<IResult>(Results.Json(response, GeocodingJsonContext.Default.GeocodeServerInfoResponse, contentType: JsonContentType));
@@ -176,6 +170,15 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, searchExtentError ?? "Invalid searchExtent parameter.");
             }
 
+            // Forward proximity bias (#2148): an optional location/distance pair ranks nearby
+            // candidates higher on providers that support proximity weighting and is gracefully
+            // ignored on providers that do not (SupportsBiasing=false). location/distance are
+            // validated up front so malformed values are rejected with a clear error.
+            if (!TryParseBias(values, out var biasLocation, out var biasDistanceMeters, out var biasError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, biasError ?? "Invalid location/distance parameter.");
+            }
+
             var providerRequest = new Honua.Geocoding.Features.Geocoding.Domain.ForwardGeocodeRequest(
                 Query: query,
                 MaxResults: maxLocations,
@@ -184,7 +187,9 @@ internal sealed class GeocodingHandler(
                 SearchBounds: searchBounds)
             {
                 CategoryFilter = requestedCategories is null ? null : string.Join(',', requestedCategories),
-                MagicKey = string.IsNullOrWhiteSpace(rawMagicKey) ? null : rawMagicKey
+                MagicKey = string.IsNullOrWhiteSpace(rawMagicKey) ? null : rawMagicKey,
+                BiasLocation = biasLocation,
+                BiasDistanceMeters = biasDistanceMeters
             };
 
             var stopwatch = Stopwatch.StartNew();
@@ -454,18 +459,11 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, suggestExtentError ?? "Invalid searchExtent parameter.");
             }
 
-            Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint? biasLocation = null;
-            var rawLocation = GetValue(values, "location");
-            if (!string.IsNullOrWhiteSpace(rawLocation))
+            // Forward proximity bias (#2148): location/distance bias suggestions towards a point on
+            // providers that support proximity weighting, gracefully ignored elsewhere.
+            if (!TryParseBias(values, out var biasLocation, out var biasDistanceMeters, out var biasError))
             {
-                if (!TryParseLocation(rawLocation, out var biasX, out var biasY))
-                {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.");
-                }
-
-                biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasX, biasY, _options.DefaultSpatialReferenceWkid);
+                return StandardErrorHelpers.CreateBadRequest(context, biasError ?? "Invalid location/distance parameter.");
             }
 
             var requestedCategories = GeocodeCategoryFilter.ParseCategories(GetValue(values, "category"));
@@ -477,7 +475,8 @@ internal sealed class GeocodingHandler(
                 CategoryFilter: requestedCategories is null ? null : string.Join(',', requestedCategories))
             {
                 SearchBounds = suggestBounds,
-                BiasLocation = biasLocation
+                BiasLocation = biasLocation,
+                BiasDistanceMeters = biasDistanceMeters
             };
 
             var stopwatch = Stopwatch.StartNew();
@@ -921,6 +920,34 @@ internal sealed class GeocodingHandler(
         return string.IsNullOrWhiteSpace(joined) ? null : joined;
     }
 
+    // Builds the GeocodeServer locatorProperties from the ACTIVE provider's capabilities so the
+    // metadata is fidelity-accurate per provider (#2147): SuggestedBatchSize reflects the provider's
+    // MaxBatchSize, and batch-specific properties are advertised only when the provider supports
+    // batch (an unsupported capability is absent/false rather than falsely advertised).
+    private Dictionary<string, string> BuildLocatorProperties(
+        string providerName,
+        Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderCapabilities capabilities)
+    {
+        var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["LocatorName"] = _options.LocatorName,
+            ["Provider"] = providerName,
+            ["SupportsSuggest"] = capabilities.SupportsSuggest ? "true" : "false",
+            ["SupportsBatch"] = capabilities.SupportsBatch ? "true" : "false",
+            ["MaxResultsPerRequest"] = capabilities.MaxResultsPerRequest.ToString(CultureInfo.InvariantCulture)
+        };
+
+        // SuggestedBatchSize is the batch-call sizing hint ArcGIS clients read before chunking a
+        // geocodeAddresses request. Advertise it only when the active provider actually supports
+        // batch, and derive it from that provider's MaxBatchSize rather than a hard-coded constant.
+        if (capabilities.SupportsBatch && capabilities.MaxBatchSize > 0)
+        {
+            properties["SuggestedBatchSize"] = capabilities.MaxBatchSize.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return properties;
+    }
+
     private static string BuildCapabilitiesString(Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderCapabilities capabilities)
     {
         var availableCapabilities = new List<string>(capacity: 4)
@@ -1021,6 +1048,45 @@ internal sealed class GeocodingHandler(
         }
 
         distanceMeters = parsed;
+        return true;
+    }
+
+    // Parses the forward-geocode proximity-bias parameters (#2148): the Esri `location` point and
+    // optional `distance` radius (meters) accepted by findAddressCandidates/suggest. The bias is
+    // only meaningful when a location is supplied; the parsed location is stamped with the service's
+    // default spatial reference (the GeoServices bias point convention) and the distance reuses the
+    // shared positive-meters validation. A blank location yields no bias (null) even if a distance
+    // is present, since a radius without a centre cannot bias results. Invalid values are rejected.
+    private bool TryParseBias(
+        IReadOnlyDictionary<string, StringValues> values,
+        out Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint? biasLocation,
+        out double? biasDistanceMeters,
+        out string? error)
+    {
+        biasLocation = null;
+        biasDistanceMeters = null;
+        error = null;
+
+        var rawLocation = GetValue(values, "location");
+        if (string.IsNullOrWhiteSpace(rawLocation))
+        {
+            return true;
+        }
+
+        if (!TryParseLocation(rawLocation, out var biasX, out var biasY))
+        {
+            error = "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.";
+            return false;
+        }
+
+        if (!TryParseDistanceMeters(GetValue(values, "distance"), out var distanceMeters, out var distanceError))
+        {
+            error = distanceError ?? "Invalid distance parameter.";
+            return false;
+        }
+
+        biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasX, biasY, _options.DefaultSpatialReferenceWkid);
+        biasDistanceMeters = distanceMeters;
         return true;
     }
 
