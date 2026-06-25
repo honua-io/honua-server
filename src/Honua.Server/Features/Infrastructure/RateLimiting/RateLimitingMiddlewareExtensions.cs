@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Server.Features.Admin.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -39,13 +41,31 @@ public static class RateLimitingMiddlewareExtensions
 
     /// <summary>
     /// Adds the rate limiting middleware to the application pipeline.
-    /// Should be registered after authentication but before authorization.
+    /// Should be registered after authentication and tenant resolution so request buckets
+    /// partition by tenant and authenticated user/API-key identity.
     /// </summary>
     /// <param name="app">The application builder</param>
     /// <returns>The application builder for method chaining</returns>
     public static IApplicationBuilder UseRateLimiting(this IApplicationBuilder app)
     {
-        return app.UseMiddleware<RateLimitingMiddleware>();
+        ArgumentNullException.ThrowIfNull(app);
+
+        // Construct the middleware explicitly rather than via UseMiddleware<T> so the
+        // optional IConnectionMultiplexer can be resolved with GetService (it is registered
+        // only when durable coordination is configured; UseMiddleware<T> would call
+        // GetRequiredService and throw on single-node hosts). The policy store and options
+        // are singletons, so a single middleware instance is safe to reuse across requests.
+        var services = app.ApplicationServices;
+        var policyStore = services.GetRequiredService<IRateLimitPolicyStore>();
+        var options = services.GetRequiredService<IOptions<RateLimitingOptions>>();
+        var logger = services.GetRequiredService<ILogger<RateLimitingMiddleware>>();
+        var redis = services.GetService<IConnectionMultiplexer>();
+
+        return app.Use(next =>
+        {
+            var middleware = new RateLimitingMiddleware(next, policyStore, options, logger, redis);
+            return middleware.InvokeAsync;
+        });
     }
 }
 
