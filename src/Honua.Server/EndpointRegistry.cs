@@ -1395,6 +1395,10 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/multidim-coverages/{id}"),
         new("POST", "/api/v1/admin/multidim-coverages/{id}/refresh"),
         new("GET", "/api/v1/admin/multidim-coverages/jobs/{jobId}"),
+
+        // Federated-query source configuration and query-plan inspection (#341).
+        new("GET", "/api/v1/admin/federation/sources"),
+        new("GET", "/api/v1/admin/federation/sources/{id}/plan"),
     ];
 }
 

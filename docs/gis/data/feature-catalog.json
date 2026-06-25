@@ -723,32 +723,6 @@
       "maturity": "implemented"
     },
     {
-      "id": "delete-scim-v2-groups-id",
-      "route": "/scim/v2/Groups/{id}",
-      "method": "DELETE",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
-      "maturity": "implemented"
-    },
-    {
-      "id": "delete-scim-v2-users-id",
-      "route": "/scim/v2/Users/{id}",
-      "method": "DELETE",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.DeleteUser_RevokesAccess"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
-      "maturity": "implemented"
-    },
-    {
       "id": "get-api-enrich-catalog",
       "route": "/api/enrich/catalog",
       "method": "GET",
@@ -1349,14 +1323,28 @@
       "maturity": "implemented"
     },
     {
-      "id": "get-api-v1-admin-field-workflows-exports",
-      "route": "/api/v1/admin/field-workflows/exports",
+      "id": "get-api-v1-admin-federation-sources",
+      "route": "/api/v1/admin/federation/sources",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_GeoJson_ReturnsPackageRecordsAuditsAndListsHistory"
+        "Honua.Server.Tests.Features.Admin.Federation.FederationEndpointsTests.ListSources_ReturnsConfiguredSourcesWithoutCredentials"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-federation-sources-id-plan",
+      "route": "/api/v1/admin/federation/sources/{id}/plan",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Federation.FederationEndpointsTests.PlanQuery_EsriRestWithWhereAndBbox_RefinesNothingAndPushesDown",
+        "Honua.Server.Tests.Features.Admin.Federation.FederationEndpointsTests.PlanQuery_UnknownSource_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -5234,7 +5222,7 @@
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.StoryCollection_AfterReset_ReturnsSeededOgcFeatures",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_FormatParameterOverridesAcceptHeader",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_ReturnsResponseWithPagingLinksAndTimeStamp",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_With3dBbox_AcceptsAndUsesHorizontalExtent",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_With3dBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithBbox_ExcludesNullGeometryFeatures",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithCql2TextTemporalInstantOnAttributeField_Returns200",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithCql2TextTemporalOnUndefinedField_Returns400",
@@ -9262,19 +9250,6 @@
       "maturity": "implemented"
     },
     {
-      "id": "get-saml-metadata",
-      "route": "/saml/metadata",
-      "method": "GET",
-      "family": "SAML 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Metadata_WhenConfigured_ReturnsSpMetadata"
-      ],
-      "proof_ledger_surface": "saml-sso",
-      "maturity": "implemented"
-    },
-    {
       "id": "get-samples-stac-ops",
       "route": "/samples/stac-ops",
       "method": "GET",
@@ -9407,60 +9382,6 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetSceneAsset_UnknownAsset_Returns404"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented"
-    },
-    {
-      "id": "get-scim-v2-groups",
-      "route": "/scim/v2/Groups",
-      "method": "GET",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateGroup_WithMembers_MapsRoleToMembers"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
-      "maturity": "implemented"
-    },
-    {
-      "id": "get-scim-v2-groups-id",
-      "route": "/scim/v2/Groups/{id}",
-      "method": "GET",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
-      "maturity": "implemented"
-    },
-    {
-      "id": "get-scim-v2-users",
-      "route": "/scim/v2/Users",
-      "method": "GET",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ListUsers_WithUserNameFilter_ReturnsMatch",
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.Request_WithWrongBearerToken_ReturnsUnauthorized",
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.Request_WithoutBearerToken_ReturnsUnauthorized"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
-      "maturity": "implemented"
-    },
-    {
-      "id": "get-scim-v2-users-id",
-      "route": "/scim/v2/Users/{id}",
-      "method": "GET",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GetUser_Existing_ReturnsUser"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented"
     },
     {
@@ -10580,32 +10501,6 @@
       "maturity": "implemented"
     },
     {
-      "id": "patch-scim-v2-groups-id",
-      "route": "/scim/v2/Groups/{id}",
-      "method": "PATCH",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
-      "maturity": "implemented"
-    },
-    {
-      "id": "patch-scim-v2-users-id",
-      "route": "/scim/v2/Users/{id}",
-      "method": "PATCH",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.PatchUser_SetActiveFalse_DeprovisionsUser"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
-      "maturity": "implemented"
-    },
-    {
       "id": "post-api-enrich",
       "route": "/api/enrich",
       "method": "POST",
@@ -11125,21 +11020,6 @@
         "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithMissingUrl_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithOgcApiFeaturesFixture_ReturnsCollectionCandidates",
         "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithWfsGetCapabilitiesFixture_ReturnsFeatureTypeCandidates"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
-    },
-    {
-      "id": "post-api-v1-admin-field-workflows-exports",
-      "route": "/api/v1/admin/field-workflows/exports",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_Csv_ReturnsCsvWithHeaderAndFilteredRows",
-        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_GeoJson_ReturnsPackageRecordsAuditsAndListsHistory",
-        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_InvalidFormat_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -16185,23 +16065,6 @@
       "maturity": "implemented"
     },
     {
-      "id": "post-saml-acs",
-      "route": "/saml/acs",
-      "method": "POST",
-      "family": "SAML 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_ExpiredAssertion_IsRejected",
-        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_ForgedSignature_IsRejected",
-        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_MissingSamlResponse_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_UnsignedAssertion_IsRejected",
-        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_ValidSignedAssertion_EstablishesSession"
-      ],
-      "proof_ledger_surface": "saml-sso",
-      "maturity": "implemented"
-    },
-    {
       "id": "post-scenes-sceneid-access-envelope",
       "route": "/scenes/{sceneId}/access-envelope",
       "method": "POST",
@@ -16218,33 +16081,6 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeMisconfiguredEndpointTests.IssueEnvelope_MissingSigningKey_Returns500"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented"
-    },
-    {
-      "id": "post-scim-v2-groups",
-      "route": "/scim/v2/Groups",
-      "method": "POST",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateGroup_WithMembers_MapsRoleToMembers"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
-      "maturity": "implemented"
-    },
-    {
-      "id": "post-scim-v2-users",
-      "route": "/scim/v2/Users",
-      "method": "POST",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateUser_DuplicateUserName_ReturnsConflict",
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateUser_ValidRequest_ProvisionsUser"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented"
     },
     {
@@ -17266,32 +17102,6 @@
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_WithValidMapLibre_Returns204"
       ],
       "proof_ledger_surface": "ogc-api-styles",
-      "maturity": "implemented"
-    },
-    {
-      "id": "put-scim-v2-groups-id",
-      "route": "/scim/v2/Groups/{id}",
-      "method": "PUT",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
-      "maturity": "implemented"
-    },
-    {
-      "id": "put-scim-v2-users-id",
-      "route": "/scim/v2/Users/{id}",
-      "method": "PUT",
-      "family": "SCIM 2.0",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ReplaceUser_UpdatesAttributes"
-      ],
-      "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented"
     }
   ]

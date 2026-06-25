@@ -24,6 +24,7 @@ using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Admin.Federation;
 using Honua.Server.Features.Admin.Jobs;
 using Honua.Server.Features.Admin.OperateFixtures;
 using Honua.Server.Features.Admin.Share;
@@ -491,6 +492,9 @@ builder.Services.AddCloudFileStorage(builder.Configuration);
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
+
+// Federated-query planning and source configuration (#341).
+builder.Services.AddFederationServices(builder.Configuration);
 
 // Register configuration validators to ensure application fails fast on invalid configuration
 StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
@@ -1352,6 +1356,7 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+app.MapFederationEndpoints();
 app.MapClientCertificateAdminEndpoints();
 
 // Configure control plane IAM endpoints (#511)
