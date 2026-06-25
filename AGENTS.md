@@ -142,7 +142,7 @@ Every `honua-server` PR runs a **Validate PR Template Compliance** check (in `ci
 ## MVP Deferrals (Operational Simplicity)
 
 The MVP intentionally defers enterprise/operational features to reduce complexity:
-- No app-level rate limiting; enforce at the edge (nginx/ALB/WAF).
+- Edge enforcement (nginx/ALB/WAF) remains the default rate-limiting posture (ADR-0004). An opt-in app-level rate limiter exists (`RateLimiting:Enabled`, off by default) that partitions by tenant/user/API-key and emits `429` + `Retry-After` (#355); it does not replace edge enforcement.
 - No secure-connection allowlist or connection audit trail; secure connections are encrypted or secret references only.
 - No security compliance framework, audit log storage, or compliance dashboards/monitoring.
 
