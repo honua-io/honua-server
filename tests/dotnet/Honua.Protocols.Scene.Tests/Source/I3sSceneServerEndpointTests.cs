@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -27,6 +29,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
 {
     private const string SceneId = "i3s-fixture";
     private const string ProtectedSceneId = "i3s-protected";
+    private const string NoGeometrySceneId = "i3s-no-geometry";
     private const string AdminPassword = "i3s-auth-test-key";
 
     // A database-backed scene carrying a persisted WGS-84 extent so the
@@ -75,11 +78,25 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
                         [$"Scenes:Datasets:1:Name"] = "I3S Protected Scene",
                         [$"Scenes:Datasets:1:AssetRoot"] = _fixtureRoot,
                         [$"Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false",
+
+                        // Scene the stub geometry provider answers with null, so
+                        // the geometries route's honest 404 path is covered.
+                        [$"Scenes:Datasets:2:Id"] = NoGeometrySceneId,
+                        [$"Scenes:Datasets:2:Name"] = "I3S No-Geometry Scene",
+                        [$"Scenes:Datasets:2:AssetRoot"] = _fixtureRoot,
                     });
                 });
             })
             .ConfigureServices(services =>
-                services.AddSingleton<ILicenseStatusProvider>(new StubLicenseStatusProvider(edition)));
+            {
+                services.AddSingleton<ILicenseStatusProvider>(new StubLicenseStatusProvider(edition));
+                // Register a real-transcoder-backed node geometry provider so the
+                // #1810 geometries route serves actual transcoded bytes end to
+                // end. It transcodes a single fixture square for every scene/node
+                // except the dedicated "no geometry" scene, which it answers with
+                // null to exercise the honest 404 path.
+                services.AddSingleton<ISceneNodeGeometryProvider, StubSceneNodeGeometryProvider>();
+            });
 
         return fixture;
     }
@@ -359,6 +376,145 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var store = root.GetProperty("store");
         store.TryGetProperty("rootNode", out _).Should().BeFalse();
         store.TryGetProperty("nodePages", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
+    public async Task GetNodeGeometry_EnterpriseEdition_ReturnsTranscodedI3sBuffer()
+    {
+        // #1810: the geometries route serves the transcoded I3S Default geometry
+        // binary (not just the descriptor). The buffer must lead with the
+        // vertexCount/featureCount header the transcoder emits.
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/geometries/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/octet-stream");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Length.Should().BeGreaterThan(I3sGeometryTranscoder.HeaderBytes);
+
+        var vertexCount = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4));
+        var featureCount = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
+        vertexCount.Should().Be(6u); // fixture square -> 2 triangles
+        featureCount.Should().Be(1u);
+
+        var expectedLength = I3sGeometryTranscoder.HeaderBytes
+            + ((int)vertexCount * I3sGeometryTranscoder.VertexStrideBytes)
+            + ((int)featureCount * I3sGeometryTranscoder.FeatureRecordBytes);
+        bytes.Length.Should().Be(expectedLength);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
+    public async Task GetNodeGeometry_AtScenesAlias_ReturnsTranscodedI3sBuffer()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/scenes/{SceneId}/SceneServer/layers/0/nodes/0/geometries/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/octet-stream");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
+    public async Task GetNodeGeometry_CommunityEdition_Returns403()
+    {
+        var response = await _communityFixture.Client.GetAsync(
+            $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/geometries/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
+    public async Task GetNodeGeometry_UnknownGeometryId_Returns404()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/geometries/7");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
+    public async Task GetNodeGeometry_UnknownLayerId_Returns404()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{SceneId}/SceneServer/layers/7/nodes/0/geometries/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
+    public async Task GetNodeGeometry_SceneWithNoTranscodableGeometry_Returns404()
+    {
+        // The provider returns null for this scene, so the route answers an
+        // honest 404 rather than fabricating an empty buffer.
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{NoGeometrySceneId}/SceneServer/layers/0/nodes/0/geometries/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
+    public async Task GetNodeGeometry_ProtectedScene_WithoutAuth_ReturnsUnauthorized()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{ProtectedSceneId}/SceneServer/layers/0/nodes/0/geometries/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
+    /// In-memory <see cref="ISceneNodeGeometryProvider"/> that transcodes a
+    /// single fixture square with the real <see cref="I3sGeometryTranscoder"/>,
+    /// proving the #1810 geometries route serves genuine transcoded bytes. It
+    /// returns <see langword="null"/> for the dedicated no-geometry scene so the
+    /// route's honest 404 path is exercised.
+    /// </summary>
+    private sealed class StubSceneNodeGeometryProvider : ISceneNodeGeometryProvider
+    {
+        public Task<I3sTranscodedGeometry?> GetNodeGeometryAsync(
+            SceneDataset scene,
+            int nodeId,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(scene);
+
+            if (string.Equals(scene.Id, NoGeometrySceneId, StringComparison.Ordinal))
+            {
+                return Task.FromResult<I3sTranscodedGeometry?>(null);
+            }
+
+            var feature = new SceneFeature
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.Polygon,
+                    Vertices = new[]
+                    {
+                        new SceneVertex(-122.4200, 37.7700, 10.0),
+                        new SceneVertex(-122.4199, 37.7700, 10.0),
+                        new SceneVertex(-122.4199, 37.7701, 10.0),
+                        new SceneVertex(-122.4200, 37.7701, 10.0),
+                    },
+                },
+            };
+
+            return Task.FromResult<I3sTranscodedGeometry?>(
+                I3sGeometryTranscoder.Transcode(new[] { feature }));
+        }
     }
 
     private sealed class StubLicenseStatusProvider : ILicenseStatusProvider
