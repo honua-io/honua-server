@@ -720,7 +720,7 @@ public sealed class TileOperationJobServicePublishTests
         public Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
             => Task.FromResult(_files.ContainsKey(fileId));
 
-        public Task<IReadOnlyList<CloudFile>> ListFilesAsync(string? folder = null, int maxResults = 1000, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<CloudFile>> ListFilesAsync(string? folder = null, int maxResults = 1000, bool includeMetadata = true, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<CloudFile>>(_files.Values.ToArray());
 
         public Task<string?> GetPresignedUrlAsync(string fileId, TimeSpan? expiresIn = null, CancellationToken cancellationToken = default)
