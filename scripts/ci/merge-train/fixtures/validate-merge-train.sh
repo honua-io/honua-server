@@ -233,6 +233,72 @@ both="$(train_attribute "server-tests (FeatureServer Endpoints)" "${INC}" | sort
 assert_eq "attribute: >=2 suspects => drop all" "${both}" "401 402"
 unset TRAIN_DIFF_FOR_PR
 
+echo "== Case 5b: non-shard failure (path-based attribution; env => escalate) =="
+# train_extract_error_paths unit: a C# build error names src/.../Foo.cs(line,col)
+# (strip the suffix) and a runner-absolute path is made repo-relative.
+EXTRACT_LOG=$'src/Honua.Server/Foo.cs(12,34): error CS1002: ; expected\n/home/runner/work/honua-server/honua-server/src/Honua.Core/Bar.cs(7,1): error CS0103: name missing\n  ./tests/dotnet/Honua.Server.Tests/Baz.cs(5,9): warning ignored'
+xpaths="$(train_extract_error_paths "${EXTRACT_LOG}" | tr '\n' ' ' | xargs)"
+assert_eq "extract: strips (line,col) + runner-abs + ./ => repo-relative sorted" \
+  "${xpaths}" "src/Honua.Core/Bar.cs src/Honua.Server/Foo.cs tests/dotnet/Honua.Server.Tests/Baz.cs"
+
+# Build a 2-PR batch reused across the path-based cases.
+: >"${INC}"
+printf '501\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"
+printf '502\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"
+export TRAIN_DIFF_FOR_PR=__diff_for_pr_ns
+__diff_for_pr_ns() {
+  case "$1" in
+    501) printf 'src/Honua.Server/Foo.cs\n' ;;
+    502) printf 'src/Honua.Core/Other.cs\n' ;;
+  esac
+}
+export -f __diff_for_pr_ns
+
+# Build & Format Check build error in src/Honua.Server/Foo.cs => only #501 (the
+# PR that touched it), NOT ESCALATE_BATCH. The failing job maps to no shard.
+BUILD_ERR=$'src/Honua.Server/Foo.cs(12,34): error CS1002: ; expected\nBuild FAILED.'
+ns="$(train_attribute "Build & Format Check" "${INC}" "${BUILD_ERR}" | tr '\n' ' ' | xargs)"
+assert_eq "attribute(non-shard): build error => culprit #501 (not escalate)" "${ns}" "501"
+
+# CI Router Validation naming an unmapped tests/dotnet path => the PR that added it.
+: >"${INC}"
+printf '601\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"
+printf '602\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"
+__diff_for_pr_router() {
+  case "$1" in
+    601) printf 'tests/dotnet/Honua.Server.Tests/Foo/NewThing.cs\n' ;;
+    602) printf 'docs/readme.md\n' ;;
+  esac
+}
+export TRAIN_DIFF_FOR_PR=__diff_for_pr_router; export -f __diff_for_pr_router
+ROUTER_ERR=$'CI Router Validation: path tests/dotnet/Honua.Server.Tests/Foo/NewThing.cs is not mapped to any shard in .github/ci-shards.json'
+router="$(train_attribute "CI Router Validation" "${INC}" "${ROUTER_ERR}" | tr '\n' ' ' | xargs)"
+assert_eq "attribute(non-shard): unmapped path => culprit #601" "${router}" "601"
+
+# Two PRs touch files named in the build error => both dropped (>=2 policy).
+: >"${INC}"
+printf '701\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"
+printf '702\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"
+__diff_for_pr_two() {
+  case "$1" in
+    701) printf 'src/Honua.Server/A.cs\n' ;;
+    702) printf 'src/Honua.Server/B.cs\n' ;;
+  esac
+}
+export TRAIN_DIFF_FOR_PR=__diff_for_pr_two; export -f __diff_for_pr_two
+TWO_ERR=$'src/Honua.Server/A.cs(1,1): error CS0103: x\nsrc/Honua.Server/B.cs(2,2): error CS0103: y'
+two_ns="$(train_attribute "Build & Format Check" "${INC}" "${TWO_ERR}" | sort | tr '\n' ' ' | xargs)"
+assert_eq "attribute(non-shard): two suspects in build error => drop both" "${two_ns}" "701 702"
+
+# Environmental Build & Format Check (nuget 401) with no attributable source path
+# => ESCALATE_BATCH (do NOT blame a PR for infra).
+__diff_for_pr_env() { printf 'src/Honua.Server/Untouched.cs\n'; }
+export TRAIN_DIFF_FOR_PR=__diff_for_pr_env; export -f __diff_for_pr_env
+ENV_ERR=$'error NU1301: Unable to load the service index for source https://nuget.pkg.github.com/honua-io/index.json.\n  Response status code does not indicate success: 401 (Unauthorized).'
+env_esc="$(train_attribute "Build & Format Check" "${INC}" "${ENV_ERR}")"
+assert_eq "attribute(non-shard): environmental nuget 401 => ESCALATE_BATCH" "${env_esc}" "ESCALATE_BATCH"
+unset TRAIN_DIFF_FOR_PR
+
 echo "== Case 6: flake (single rerun, no bisection; reproduce-twice => real) =="
 export TRAIN_RUN_LOG_TEXT="... ERROR 40P01: deadlock detected ..."
 train_run_logs_match_flake 999 && ok "flake: 40P01 recognized" || bad "flake: 40P01 missed"

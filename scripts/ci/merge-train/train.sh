@@ -320,7 +320,11 @@ main() {
 
     # --- (2) attribute + escalate (real failure, not autofixed) -------------
     _write_state "${batch}" "${trunk_sha}" "${included}" "attribute" "${run_id}" "${fwdfix}" "${flake_reruns}"
-    local culprits; culprits="$(train_attribute "${failing}" "${TRAIN_INCLUDED_FILE}")"
+    # Pass the failing jobs' per-job error logs so attribution can fall back to
+    # FILE-PATH attribution for NON-SHARD failures (Build & Format build errors,
+    # CI Router Validation unmapped paths) instead of dropping the whole batch.
+    local attr_err; attr_err="$(train_failing_job_logs "${run_id}")"
+    local culprits; culprits="$(train_attribute "${failing}" "${TRAIN_INCLUDED_FILE}" "${attr_err}")"
     if [[ "${culprits}" == "ESCALATE_BATCH" ]]; then
       train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
       train_annotate_warn "escalating entire batch; manual triage required"
