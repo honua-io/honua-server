@@ -615,6 +615,8 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/observability/alerts/{eventId}/suppress"),
         new("POST", "/api/v1/admin/observability/alerts/{eventId}/resolve"),
         new("GET", "/api/v1/admin/observability/audit"),
+        new("GET", "/api/v1/admin/observability/audit/export"),
+        new("GET", "/api/v1/admin/observability/audit/verify"),
         new("GET", "/api/v1/admin/observability/events"),
         new("GET", "/api/v1/admin/observability/logs"),
         new("GET", "/api/v1/admin/investigations"),

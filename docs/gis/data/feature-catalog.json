@@ -2375,6 +2375,36 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-observability-audit-export",
+      "route": "/api/v1/admin/observability/audit/export",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ExportAudit_CefFormat_StreamsCefLines",
+        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ExportAudit_DefaultFormat_StreamsJsonLines",
+        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ExportAudit_RejectsUnknownFormat",
+        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ExportAudit_RequiresOperatorAuthorization"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-observability-audit-verify",
+      "route": "/api/v1/admin/observability/audit/verify",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.VerifyAudit_RequiresOperatorAuthorization",
+        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.VerifyAudit_ReturnsIntegrityReport"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-observability-errors",
       "route": "/api/v1/admin/observability/errors",
       "method": "GET",
