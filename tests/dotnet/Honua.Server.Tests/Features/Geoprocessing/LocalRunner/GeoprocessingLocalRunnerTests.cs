@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.LocalRunner;
@@ -62,6 +63,61 @@ public sealed class GeoprocessingLocalRunnerTests
             .GetDouble()
             .Should().BeApproximately(10d, 1e-9);
     }
+
+    [UnitTest]
+    public async Task RunAsync_Default_OmitsGlassBoxForManagedOp()
+    {
+        var runner = new GeoprocessingLocalRunner([CreateBufferExecutor()]);
+
+        // No GlassBoxCapture: the default, production-equivalent path.
+        var result = await runner.RunAsync(
+            GeometryBufferJobExecutor.HandledProcessId,
+            BufferInputs());
+
+        result.Succeeded.Should().BeTrue(result.ErrorMessage);
+        result.GlassBox.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task RunAsync_GlassBox_RendersTimelineAndPreviewForManagedGeometryOp()
+    {
+        var runner = new GeoprocessingLocalRunner([CreateBufferExecutor()]);
+        var capture = new GlassBoxCapture();
+
+        var result = await runner.RunAsync(
+            GeometryBufferJobExecutor.HandledProcessId,
+            BufferInputs(),
+            capture);
+
+        result.Succeeded.Should().BeTrue(result.ErrorMessage);
+        result.GlassBox.Should().NotBeNull();
+        var glassBox = result.GlassBox!;
+
+        // A managed geometry op shells out to no GDAL subprocess, so there are no native
+        // commands and no scratch dirs — but the timeline and artifact preview still render.
+        glassBox.Commands.Should().BeEmpty();
+        glassBox.ScratchDirectories.Should().BeEmpty();
+
+        // (c) The artifact preview renders for the geometry op (a GeoJSON Feature).
+        glassBox.ArtifactPreviews.Should().ContainSingle();
+        var preview = glassBox.ArtifactPreviews[0];
+        preview.MediaType.Should().Be("application/geo+json");
+        preview.SizeBytes.Should().BeGreaterThan(0);
+        preview.Summary.Should().Contain("GeoJSON Feature");
+
+        // Timeline: the buffer executor's reported phases, in order, with timing.
+        glassBox.Timeline.Should().NotBeEmpty();
+        glassBox.Timeline.Select(p => p.Phase).Should().Contain("Computing buffer geometry");
+        glassBox.Timeline.Should().BeInAscendingOrder(p => p.Elapsed);
+    }
+
+    private static Dictionary<string, string> BufferInputs() =>
+        new(StringComparer.Ordinal)
+        {
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10",
+        };
 
     [UnitTest]
     public async Task RunAsync_UnknownProcessId_FailsWithoutInvokingAnyExecutor()

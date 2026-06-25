@@ -38,6 +38,15 @@ public sealed record LocalRunResult
     public TimeSpan Elapsed { get; init; }
 
     /// <summary>
+    /// The DEV-ONLY glass-box view of the run (issue #2128): the UNSANITIZED native
+    /// command(s) with real scratch paths and FULL stdout/stderr, the phase timeline, and
+    /// artifact previews. Populated only when the run was driven in glass-box mode (an
+    /// explicit dev opt-in); <c>null</c> on the default, production-equivalent sanitized
+    /// path so no raw paths or untruncated output leak unless a developer asks for them.
+    /// </summary>
+    public GlassBoxReport? GlassBox { get; init; }
+
+    /// <summary>
     /// Builds the failed result returned when the requested process id is not
     /// registered with the runner.
     /// </summary>
