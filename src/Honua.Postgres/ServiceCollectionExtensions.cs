@@ -85,7 +85,9 @@ internal static class ServiceCollectionExtensions
     /// <returns>Updated service collection</returns>
     public static IServiceCollection AddPostgreSqlServices(this IServiceCollection services, IConfiguration configuration)
     {
-        var schemaHeadersEnabled = configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
+        // Request-scoped schema mode is required by per-test schema headers AND by
+        // schema-per-tenant routing (#346); both share the same SET search_path mechanism.
+        var schemaHeadersEnabled = Honua.Core.Configuration.RequestScopedSchemaConfiguration.IsEnabled(configuration);
         var connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
 
         var defaultSchema = configuration["Database:Schema"];

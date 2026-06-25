@@ -743,6 +743,10 @@ builder.Services.AddHonuaAuditLog();
 // the MultiTenancy configuration section; the inline callback is the wiring
 // point for environment-specific overrides.
 builder.Services.AddHonuaTenantContext(builder.Configuration, _ => { });
+// Configure schema-per-tenant routing + usage metering rail (#346). Disabled by
+// default (MultiTenancy:SchemaRouting:Enabled=false) so single-tenant deployments
+// retain byte-identical behavior; registration only adds the resolver/meter seam.
+builder.Services.AddHonuaTenantSchemaRouting(builder.Configuration);
 // Configure CORS policies
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddInputValidation(builder.Configuration);
@@ -1221,6 +1225,11 @@ app.UsePortalTokenAuthentication();
 // X-Honua-Tenant override header) are evaluated against the resolved principal
 // before any downstream feature handler reads ITenantContext (#1144).
 app.UseHonuaTenantContext();
+
+// Route the resolved tenant to its PostgreSQL schema and record a usage signal (#346).
+// No-op unless MultiTenancy:SchemaRouting:Enabled=true. Must run after tenant context
+// resolution and before any feature handler that reads the database.
+app.UseHonuaTenantSchemaRouting();
 
 // Audit-log middleware records security-relevant request outcomes. It runs after
 // auth so the audit actor is the authenticated principal, and before endpoint
