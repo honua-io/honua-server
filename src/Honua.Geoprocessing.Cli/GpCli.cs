@@ -50,6 +50,7 @@ public static class GpCli
                 "list" => RunList(),
                 "run" => await RunRun(rest).ConfigureAwait(false),
                 "test" => await RunTest(rest).ConfigureAwait(false),
+                "new" => await RunNew(rest).ConfigureAwait(false),
                 "-h" or "--help" or "help" => PrintUsageAndOk(),
                 _ => Fail($"Unknown command '{verb}'."),
             };
@@ -324,6 +325,195 @@ public static class GpCli
         return failed == 0 ? 0 : 1;
     }
 
+    private static async Task<int> RunNew(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            throw new GpCliUsageException(
+                "Missing <processId>. Usage: honua gp new <id> [--kind geometry|gdal] [--output <dir>]");
+        }
+
+        var processId = args[0];
+        var kind = GpProcessKind.Geometry;
+        string? outputDir = null;
+
+        for (var i = 1; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--kind" or "-k":
+                    var kindRaw = NextValue(args, ref i, "--kind");
+                    kind = kindRaw.ToLowerInvariant() switch
+                    {
+                        "geometry" or "managed" => GpProcessKind.Geometry,
+                        "gdal" or "native" => GpProcessKind.Gdal,
+                        _ => throw new GpCliUsageException(
+                            $"Unknown --kind '{kindRaw}'. Expected 'geometry' or 'gdal'."),
+                    };
+                    break;
+                case "--output" or "-o":
+                    outputDir = NextValue(args, ref i, "--output");
+                    break;
+                default:
+                    throw new GpCliUsageException($"Unknown option '{args[i]}'.");
+            }
+        }
+
+        if (!GpScaffolder.TryValidateProcessId(processId, out var validationError))
+        {
+            throw new GpCliUsageException($"Invalid process id: {validationError}");
+        }
+
+        // Reuse the live P1 registration as the collision source of truth: the runner's
+        // available ids are exactly the registered IProcessExecutor set.
+        using var provider = BuildProvider();
+        var executors = provider.GetServices<IProcessExecutor>();
+        var runner = new GeoprocessingLocalRunner(executors);
+        var existingIds = runner.AvailableProcessIds;
+
+        GpScaffoldPlan plan;
+        try
+        {
+            plan = GpScaffolder.Plan(processId, kind, existingIds);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new GpCliUsageException(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new GpCliUsageException(ex.Message);
+        }
+
+        if (outputDir is not null)
+        {
+            // Preview mode: write every rendered file under <outputDir>, untouched repo.
+            Console.WriteLine($"Previewing scaffold for '{processId}' ({plan.Kind}) under {outputDir}:");
+            foreach (var file in plan.Files)
+            {
+                var target = Path.Combine(outputDir, file.RelativePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                await File.WriteAllTextAsync(target, file.Contents).ConfigureAwait(false);
+                Console.WriteLine($"  wrote {file.RelativePath}  ({file.Description})");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Preview only — no repo files were modified. To scaffold in place, omit --output.");
+            Console.WriteLine();
+            Console.WriteLine(plan.NextSteps);
+            return 0;
+        }
+
+        // In-place mode: write the executor + fixture files at their real locations and
+        // inject the one-line DI registration + catalog entry so the process is REGISTERED.
+        var repoRoot = ResolveRepoRoot();
+        if (repoRoot is null)
+        {
+            throw new GpCliUsageException(
+                "Could not locate the repository root (no Honua.sln found walking up). "
+                + "Run from inside the checkout, or use --output <dir> to preview the files instead.");
+        }
+
+        Console.WriteLine($"Scaffolding '{processId}' ({plan.Kind}) in {repoRoot}:");
+        foreach (var file in plan.Files)
+        {
+            var target = Path.Combine(repoRoot, file.RelativePath);
+            if (File.Exists(target))
+            {
+                throw new GpCliUsageException(
+                    $"Refusing to overwrite existing file {file.RelativePath}. "
+                    + "Remove it first or pick a different id.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            await File.WriteAllTextAsync(target, file.Contents).ConfigureAwait(false);
+            Console.WriteLine($"  wrote {file.RelativePath}");
+        }
+
+        await InjectRegistrationAndCatalogAsync(repoRoot, processId, plan.Kind).ConfigureAwait(false);
+
+        Console.WriteLine();
+        Console.WriteLine(plan.NextSteps);
+        return 0;
+    }
+
+    /// <summary>
+    /// Injects the DI registration line and the catalog <c>ProcessDefinition</c> for the new
+    /// process so it is registered + plannable. Reports (rather than fails) when an anchor is
+    /// missing so the author can wire the one line by hand from the printed note.
+    /// </summary>
+    private static async Task InjectRegistrationAndCatalogAsync(
+        string repoRoot,
+        string processId,
+        GpProcessKind kind)
+    {
+        var className = GpScaffolder.ToTypeStem(processId)
+            + (kind == GpProcessKind.Gdal ? "NativeJobExecutor" : "JobExecutor");
+        var registrationCall = kind == GpProcessKind.Gdal
+            ? $"RegisterGdalExecutor<{className}>(services);"
+            : $"Register<{className}>(services);";
+        var registrationFile = Path.Combine(
+            repoRoot,
+            kind == GpProcessKind.Gdal
+                ? "src/Honua.Worker.Gdal/GdalWorkerServiceCollectionExtensions.cs"
+                : "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs");
+
+        if (File.Exists(registrationFile))
+        {
+            var source = await File.ReadAllTextAsync(registrationFile).ConfigureAwait(false);
+            if (GpScaffoldInjector.TryInsertRegistration(source, registrationCall, out var updated, out var error))
+            {
+                await File.WriteAllTextAsync(registrationFile, updated).ConfigureAwait(false);
+                Console.WriteLine($"  registered {className} in {Path.GetFileName(registrationFile)}");
+            }
+            else
+            {
+                Console.WriteLine($"  NOTE: could not auto-register ({error}). Add '{registrationCall}' by hand.");
+            }
+        }
+
+        // The catalog lives in Honua.Geoprocessing for both kinds (it is the managed-side
+        // metadata surface; native processes still declare a definition with the native
+        // runtime profile).
+        var catalogFile = Path.Combine(
+            repoRoot,
+            "src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs");
+        if (File.Exists(catalogFile))
+        {
+            var source = await File.ReadAllTextAsync(catalogFile).ConfigureAwait(false);
+            if (GpScaffoldInjector.TryInsertCatalogEntry(source, processId, kind, out var updated, out var error))
+            {
+                await File.WriteAllTextAsync(catalogFile, updated).ConfigureAwait(false);
+                Console.WriteLine($"  catalogued {processId} in BuiltInProcessCatalog.cs");
+            }
+            else
+            {
+                Console.WriteLine($"  NOTE: could not auto-catalog ({error}). Add a ProcessDefinition by hand.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves the repository root by walking up from the current directory looking for
+    /// <c>Honua.sln</c>, so the scaffolder writes files to the right place regardless of the
+    /// working directory inside the checkout.
+    /// </summary>
+    private static string? ResolveRepoRoot()
+    {
+        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Honua.sln")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// Resolves the GP fixtures root: the explicit <c>--root</c> when supplied, else the
     /// first <c>samples/gp</c> found by walking up from the current directory (so the tool
@@ -432,6 +622,7 @@ public static class GpCli
         Console.WriteLine("  honua gp list");
         Console.WriteLine("  honua gp run <processId> [--input <file>] [--param k=v ...] [--out <file>]");
         Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
+        Console.WriteLine("  honua gp new <id> [--kind geometry|gdal] [--output <dir>]");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --input, -i <file>  Read a file and bind it (base64) to the process's primary input.");
@@ -439,6 +630,8 @@ public static class GpCli
         Console.WriteLine("  --out,   -o <file>  Write the first published artifact's bytes to <file>.");
         Console.WriteLine("  --root,  -r <dir>   Golden fixtures directory (default: nearest samples/gp).");
         Console.WriteLine("  --update,-u         Regenerate goldens from the produced artifacts (also via HONUA_GP_UPDATE_GOLDENS).");
+        Console.WriteLine("  --kind,  -k <k>     'geometry' (managed, default) or 'gdal' (native) scaffold for `new`.");
+        Console.WriteLine("  --output,-o <dir>   Preview the scaffold under <dir> instead of writing into the checkout.");
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine("  honua gp run geometry.buffer --param wkb=<base64> --param srid=4326 --param distance=10");
@@ -446,6 +639,8 @@ public static class GpCli
         Console.WriteLine("  honua gp test                       # run every golden fixture under samples/gp");
         Console.WriteLine("  honua gp test geometry-buffer-point # run one fixture by id");
         Console.WriteLine("  honua gp test --update              # regenerate goldens after an intended change");
+        Console.WriteLine("  honua gp new geometry.recenter      # scaffold a registered, runnable, golden-tested process");
+        Console.WriteLine("  honua gp new gdal.warp-clip --kind gdal --output /tmp/preview  # preview only");
     }
 }
 
