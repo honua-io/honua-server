@@ -82,7 +82,10 @@ public sealed class BranchVersioningOverlayReadScaleTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _fixture.ExecuteAsync($"CREATE SCHEMA {_schema}");
+        // honua-server#1568 residual: serialize the raw CREATE SCHEMA on the shared schema-mutation
+        // advisory lock (symmetric with the locked migration set below) so this per-test namespace DDL
+        // does not race a concurrent collection's locked DROP SCHEMA ... CASCADE and deadlock (40P01).
+        await _fixture.CreateSchemaUnderLockAsync(_schema);
 
         // honua-server#1568 follow-up: serialize the embedded migration set (it mutates the literal,
         // process-global honua schema, which per-test search_path isolation does NOT scope) under the
