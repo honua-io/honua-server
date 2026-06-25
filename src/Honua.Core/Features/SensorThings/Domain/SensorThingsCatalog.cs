@@ -152,3 +152,64 @@ public readonly record struct ObservationQuery(
     bool OrderByDescending,
     int Skip,
     int Top);
+
+/// <summary>
+/// A single observation row supplied to <c>IObservationStore.IngestObservationsAsync</c>
+/// (Phase 2). The identifier is assigned by the store, so it is not carried here.
+/// </summary>
+/// <param name="DatastreamId">Identifier of the owning datastream.</param>
+/// <param name="PhenomenonTime">When the observed phenomenon occurred.</param>
+/// <param name="ResultTime">When the result was generated, if distinct.</param>
+/// <param name="Result">The numeric measurement result.</param>
+/// <param name="FeatureOfInterestId">Identifier of the related FeatureOfInterest, if any.</param>
+public readonly record struct ObservationIngestRow(
+    long DatastreamId,
+    DateTimeOffset PhenomenonTime,
+    DateTimeOffset? ResultTime,
+    double Result,
+    long? FeatureOfInterestId);
+
+/// <summary>
+/// Inline definition of a related catalog entity referenced by a
+/// <see cref="CreateDatastreamRequest"/>. When <see cref="Id"/> resolves to an existing
+/// row the existing entity is reused; otherwise a new row is created from these fields.
+/// </summary>
+/// <param name="Id">Stable identifier of the related entity. When 0, the store assigns one.</param>
+/// <param name="Name">Entity name (used only when creating a new entity).</param>
+/// <param name="Description">Entity description (used only when creating a new entity).</param>
+public readonly record struct RelatedEntityRef(long Id, string? Name, string? Description);
+
+/// <summary>
+/// Request to create a SensorThings <c>Datastream</c> and, when needed, the related
+/// Thing, Sensor, and ObservedProperty entities (Phase 2 <c>datastream.create</c>).
+/// </summary>
+public sealed record CreateDatastreamRequest
+{
+    /// <summary>Datastream name.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Datastream description.</summary>
+    public required string Description { get; init; }
+
+    /// <summary>The O&amp;M observation type URI.</summary>
+    public string ObservationType { get; init; } =
+        "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement";
+
+    /// <summary>Unit-of-measurement display name.</summary>
+    public required string UnitName { get; init; }
+
+    /// <summary>Unit-of-measurement symbol.</summary>
+    public required string UnitSymbol { get; init; }
+
+    /// <summary>Unit-of-measurement definition URI.</summary>
+    public required string UnitDefinition { get; init; }
+
+    /// <summary>The related Thing (created when its id does not already exist).</summary>
+    public required RelatedEntityRef Thing { get; init; }
+
+    /// <summary>The related Sensor (created when its id does not already exist).</summary>
+    public required RelatedEntityRef Sensor { get; init; }
+
+    /// <summary>The related ObservedProperty (created when its id does not already exist).</summary>
+    public required RelatedEntityRef ObservedProperty { get; init; }
+}
