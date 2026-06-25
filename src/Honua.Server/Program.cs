@@ -40,6 +40,9 @@ using Honua.Server.Features.Provisioner;
 using Honua.ControlPlane;
 using Honua.FileStorage;
 using Honua.Server.Features.HealthCheck;
+using Honua.Server.Features.Identity;
+using Honua.Server.Features.Identity.Saml;
+using Honua.Server.Features.Identity.Scim;
 using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
@@ -736,6 +739,11 @@ builder.Services.AddCollaborationSessionTransport();
 // ---- Extracted: authentication & authorization options (Startup/AuthenticationOptionsRegistration.cs)
 builder.Services.AddHonuaAuthenticationOptions(builder.Configuration, builder.Environment);
 // ---- End extracted block
+
+// Enterprise identity: SCIM 2.0 provisioning (#510) and SAML 2.0 SP-initiated SSO (#508).
+// Both adapt into the existing identity/role model: SCIM provisions users + maps groups to
+// roles; SAML consumes a signed assertion and establishes a Honua session.
+builder.Services.AddEnterpriseIdentity(builder.Configuration);
 // Configure security headers
 builder.Services.AddSecurityHeaders(builder.Configuration);
 // Configure security audit log sink (#1144)
@@ -1353,6 +1361,10 @@ app.MapUserManagementEndpoints();
 app.MapRoleEndpoints();
 app.MapRlsPolicyEndpoints();
 app.MapFieldMaskPolicyEndpoints();
+
+// Enterprise identity provisioning + SSO (#510 SCIM 2.0, #508 SAML 2.0)
+app.MapScimEndpoints();
+app.MapSamlEndpoints();
 
 // Configure Console metadata v2 content + RBAC endpoints (#1162)
 app.MapConsoleSessionEndpoints();

@@ -509,6 +509,109 @@
       ]
     },
     {
+      "surfaceId": "scim-provisioning",
+      "displayName": "SCIM 2.0 user and group provisioning",
+      "surfaceKind": "http-route-family",
+      "protocol": "SCIM 2.0",
+      "canonicalIdentifier": "/scim/v2/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/scim/v2/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus ScimProvisioningEndpointsTests integration tests assert Users and Groups CRUD, list filtering/pagination, and bearer-token authentication for the /scim/v2 surface.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Identity/Scim/ScimEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Identity/ScimProvisioningEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#510",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "SCIM provisions users into the shared identity store (ProvisioningSource=scim) and maps group membership to Honua RBAC roles; integration tests prove provision, deprovision (active=false revokes roles), and group membership changes update the member's role assignments, plus rejection of requests without a valid bearer token.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Admin/Services/InMemoryUserStore.cs",
+            "src/Honua.Server/Features/Admin/Services/InMemoryScimGroupStore.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Identity/ScimProvisioningEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#510",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "SCIM wire shapes (User/Group resources, ListResponse, PatchOp, Error) are emitted through a source-generated JSON context (ScimJsonContext) keeping the application/scim+json contract AOT-safe.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Identity/Scim/Models/ScimModels.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#510",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "saml-sso",
+      "displayName": "SAML 2.0 Service Provider SSO bridge",
+      "surfaceKind": "http-route-family",
+      "protocol": "SAML 2.0",
+      "canonicalIdentifier": "/saml/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/saml/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus SamlBridgeEndpointsTests integration tests assert SP metadata generation and the Assertion Consumer Service (POST /saml/acs) over the /saml surface.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Identity/Saml/SamlEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Identity/SamlBridgeEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#508",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "The ACS verifies the enveloped XML-DSig signature against the configured IdP certificate (AOT-safe Exclusive C14N, no SignedXml), enforces issuer/audience/NotBefore/NotOnOrAfter, maps SAML attributes to RBAC roles, and establishes the same session/claims model as OIDC; integration and unit tests prove a valid assertion authenticates while a forged signature and an expired assertion are rejected.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Identity/Saml/SamlAssertionValidator.cs",
+            "src/Honua.Server/Features/Identity/Saml/SamlSignatureVerifier.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Identity/SamlBridgeEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Identity/SamlAssertionValidatorTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#508",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "console-workflow-packages",
       "displayName": "Console workflow package and node registry API",
       "surfaceKind": "http-route-family",
