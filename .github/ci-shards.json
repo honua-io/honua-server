@@ -772,16 +772,18 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
-      "_comment": "ADR-0037 finer-sharding: carved from OGC API Maps and Tiles. Selects the Tiles, Coverages and Processes namespaces.",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes",
+      "_comment": "ADR-0037 finer-sharding: carved from OGC API Maps and Tiles. Selects the Tiles, Coverages, Processes and EDR namespaces.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr",
       "paths": [
         "src/Honua.Protocols.OgcApi/Tiles/",
         "src/Honua.Protocols.OgcApi/Coverages/",
         "src/Honua.Protocols.OgcApi/Processes/",
+        "src/Honua.Protocols.OgcApi/Edr/",
         "src/Honua.Core/Features/Raster/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/",
         "src/Honua.Core/Features/Validation/"
       ]
     },
