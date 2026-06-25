@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -101,9 +102,11 @@ internal static partial class MapServerEndpoints
             activity?.SetTag(HonuaTelemetry.Tags.TileY, y);
             activity?.SetTag(HonuaTelemetry.Tags.TileX, x);
 
-            var renderLayers = publishedLayers
+            var renderResources = publishedLayers
                 .Where(layer => IsTileLayerVisibleByDefault(layer.Resource))
                 .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                .ToArray();
+            var renderLayers = renderResources
                 .Select(BuildTileRenderDescriptor)
                 .ToArray();
             var maxFeatures = service.Settings?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
@@ -111,6 +114,15 @@ internal static partial class MapServerEndpoints
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
             var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
             var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
+            // The rendered PNG contains RLS-filtered feature geometry for the *current*
+            // principal, so the cloud tile cache key MUST be partitioned by the effective
+            // RLS predicate. Without it, principal A's tile would be served to principal B
+            // for the same z/x/y, leaking rows RLS hides from B (#2067).
+            var rlsFilterSource = context.RequestServices.GetService<IRowLevelSecurityFilterSource>();
+            var rlsFingerprint = await BuildTileRlsFingerprintAsync(
+                rlsFilterSource,
+                renderResources,
+                cancellationToken).ConfigureAwait(false);
             var tileCacheKey = BuildMapServerTileCacheKey(
                 storageOptions,
                 snapshot,
@@ -119,6 +131,7 @@ internal static partial class MapServerEndpoints
                 renderLayers,
                 serviceSrid,
                 maxFeatures,
+                rlsFingerprint,
                 z,
                 y,
                 x);
@@ -246,6 +259,45 @@ internal static partial class MapServerEndpoints
     private static bool IsTileLayerVisibleByDefault(MetadataV2Resource resource)
         => resource.Display?.DefaultVisibility ?? true;
 
+    /// <summary>
+    /// Builds a stable fingerprint of the effective row-level-security predicate for the
+    /// current principal across the tile's render layers. The fingerprint partitions the
+    /// cloud tile cache so a tile rendered from one principal's RLS-visible rows is never
+    /// served to a principal with different RLS visibility (#2067). The fingerprint folds
+    /// in both the parameterized predicate SQL and its bound claim values, since two
+    /// principals can share a policy shape but bind different claim values (different rows).
+    /// A layer with no applicable policy contributes an empty marker so the unconstrained
+    /// case stays distinct from any constrained one.
+    /// </summary>
+    private static async Task<string> BuildTileRlsFingerprintAsync(
+        IRowLevelSecurityFilterSource? rlsFilterSource,
+        IReadOnlyList<TileLayerDescriptor> renderResources,
+        CancellationToken cancellationToken)
+    {
+        if (rlsFilterSource is null || renderResources.Count == 0)
+        {
+            return "none";
+        }
+
+        var parts = new List<string>(renderResources.Count);
+        foreach (var layer in renderResources.OrderBy(static l => l.StorageLayerId))
+        {
+            var fragment = await rlsFilterSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
+            if (fragment is null)
+            {
+                parts.Add($"{layer.StorageLayerId}:");
+                continue;
+            }
+
+            var values = string.Join(
+                ',',
+                fragment.Parameters.Select(static p => p?.ToString() ?? " "));
+            parts.Add($"{layer.StorageLayerId}:{fragment.Sql}={values}");
+        }
+
+        return GeoServicesCloudTileCache.Hash(string.Join('|', parts));
+    }
+
     private static string BuildMapServerTileCacheKey(
         CloudStorageOptions? storageOptions,
         MetadataV2GraphSnapshot snapshot,
@@ -254,6 +306,7 @@ internal static partial class MapServerEndpoints
         IReadOnlyList<RenderLayerDescriptor> renderLayers,
         int serviceSrid,
         int maxFeatures,
+        string rlsFingerprint,
         int z,
         int y,
         int x)
@@ -273,7 +326,8 @@ internal static partial class MapServerEndpoints
             service.Metadata.Id,
             serviceSrid.ToString(CultureInfo.InvariantCulture),
             maxFeatures.ToString(CultureInfo.InvariantCulture),
-            renderLayerKey));
+            renderLayerKey,
+            rlsFingerprint));
 
         return GeoServicesCloudTileCache.BuildObjectKey(
             storageOptions,
