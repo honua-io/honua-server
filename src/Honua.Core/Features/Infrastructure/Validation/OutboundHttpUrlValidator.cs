@@ -194,11 +194,21 @@ public static class OutboundHttpUrlValidator
         return false;
     }
 
-    private static bool IsLocalhostHostName(string host)
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="host"/> is the loopback alias
+    /// <c>localhost</c> or any <c>*.localhost</c> name, which always resolve to a loopback address.
+    /// </summary>
+    public static bool IsLocalhostHostName(string host)
         => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
            || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsPrivateOrReservedAddress(IPAddress address)
+    /// <summary>
+    /// Returns <see langword="true"/> when the supplied IP address falls in a private,
+    /// loopback, link-local, multicast, or otherwise reserved range. Exposed so other
+    /// outbound-destination guards (for example the data-source connection host policy)
+    /// can reuse the same RFC/cloud-metadata coverage as the HTTP outbound guard.
+    /// </summary>
+    public static bool IsPrivateOrReservedAddress(IPAddress address)
     {
         if (IPAddress.IsLoopback(address))
         {

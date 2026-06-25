@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -117,13 +118,15 @@ internal static partial class SecureConnectionEndpoints
     private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleTestDraftConnection(
             CreateSecureConnectionRequest request,
-            [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
             [FromServices] IConnectionSecretResolver secretResolver,
             [FromServices] IConnectionHealthTester connectionTester,
             [FromServices] IConnectionDriverRegistry driverRegistry,
-            HttpContext context,
-            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
+            [FromServices] SecureConnectionGovernance governance,
+            HttpContext context)
     {
+        var logger = context.RequestServices.GetRequiredService<ILogger<SecureConnectionEndpointsLog>>();
+        var connectionStringBuilder = context.RequestServices.GetRequiredService<IDatabaseConnectionStringBuilder>();
+
         try
         {
             var validationResults = new List<ValidationResult>();
@@ -150,6 +153,34 @@ internal static partial class SecureConnectionEndpoints
             if (!DataConnection.IsSslModeCompatibleWithRequirement(request.SslRequired, parsedSslMode))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
+            }
+
+            // Enforce the host policy before issuing an outbound probe so a non-allowlisted
+            // (or reserved-address) destination cannot be reached even at draft-test time.
+            var draftUsesSecretReference = !string.IsNullOrWhiteSpace(request.SecretReference);
+            if (governance.IsHostEvaluable(request.Host, draftUsesSecretReference))
+            {
+                var hostDecision = await governance.EvaluateHostAsync(request.Host, context.RequestAborted);
+                if (!hostDecision.IsAllowed)
+                {
+                    await governance.RecordAsync(
+                        context,
+                        "connection.test",
+                        AuditOutcome.Denied,
+                        resourceId: null,
+                        new SecureConnectionAuditDetails
+                        {
+                            Name = request.Name,
+                            Host = request.Host,
+                            Port = request.Port,
+                            Provider = request.Provider,
+                            UsesSecretReference = draftUsesSecretReference,
+                            Reason = hostDecision.Reason
+                        },
+                        context.RequestAborted);
+
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure(hostDecision.Reason!));
+                }
             }
 
             // Provider-aware: build + probe with the engine driver for the requested provider so MySQL / SQL
@@ -325,6 +356,7 @@ internal static partial class SecureConnectionEndpoints
             [FromServices] IConnectionEncryptionService encryptionService,
             [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
             [FromServices] IConnectionDriverRegistry driverRegistry,
+            [FromServices] SecureConnectionGovernance governance,
             HttpContext context)
     {
         var logger = context.RequestServices.GetRequiredService<ILogger<SecureConnectionEndpointsLog>>();
@@ -356,6 +388,35 @@ internal static partial class SecureConnectionEndpoints
             if (!DataConnection.IsSslModeCompatibleWithRequirement(request.SslRequired, parsedSslMode))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
+            }
+
+            // Enforce the outbound connection host policy before persisting. For an inline
+            // password the host is the connection target; for a secret reference the host is
+            // optional display metadata, so only evaluate it when supplied.
+            var usesSecretReference = !string.IsNullOrWhiteSpace(request.SecretReference);
+            if (governance.IsHostEvaluable(request.Host, usesSecretReference))
+            {
+                var hostDecision = await governance.EvaluateHostAsync(request.Host, context.RequestAborted);
+                if (!hostDecision.IsAllowed)
+                {
+                    await governance.RecordAsync(
+                        context,
+                        "connection.create",
+                        AuditOutcome.Denied,
+                        resourceId: null,
+                        new SecureConnectionAuditDetails
+                        {
+                            Name = request.Name,
+                            Host = request.Host,
+                            Port = request.Port,
+                            Provider = request.Provider,
+                            UsesSecretReference = usesSecretReference,
+                            Reason = hostDecision.Reason
+                        },
+                        context.RequestAborted);
+
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure(hostDecision.Reason!));
+                }
             }
 
             DataConnection connection;
@@ -452,6 +513,21 @@ internal static partial class SecureConnectionEndpoints
 
             SecureConnectionLog.SecureConnectionCreated(logger, createdConnection.Name, createdConnection.ConnectionId);
 
+            await governance.RecordAsync(
+                context,
+                "connection.create",
+                AuditOutcome.Success,
+                createdConnection.ConnectionId.ToString(),
+                new SecureConnectionAuditDetails
+                {
+                    Name = createdConnection.Name,
+                    Host = createdConnection.Host,
+                    Port = createdConnection.Port,
+                    Provider = createdConnection.NormalizedProvider,
+                    UsesSecretReference = !string.IsNullOrWhiteSpace(createdConnection.SecretRef)
+                },
+                context.RequestAborted);
+
             return TypedResults.Created($"/api/v1/admin/connections/{createdConnection.ConnectionId}",
                 ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
         }
@@ -496,6 +572,7 @@ internal static partial class SecureConnectionEndpoints
             Guid id,
             [FromServices] ISecureConnectionResolver resolver,
             [FromServices] ISecureConnectionRegistry registry,
+            [FromServices] SecureConnectionGovernance governance,
             HttpContext context,
             [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
@@ -519,6 +596,22 @@ internal static partial class SecureConnectionEndpoints
             };
 
             SecureConnectionLog.ConnectionTestCompleted(logger, connection.Name, isHealthy);
+
+            await governance.RecordAsync(
+                context,
+                "connection.test",
+                isHealthy ? AuditOutcome.Success : AuditOutcome.Failure,
+                id.ToString(),
+                new SecureConnectionAuditDetails
+                {
+                    Name = connection.Name,
+                    Host = connection.Host,
+                    Port = connection.Port,
+                    Provider = connection.NormalizedProvider,
+                    UsesSecretReference = !string.IsNullOrWhiteSpace(connection.SecretRef),
+                    Healthy = isHealthy
+                },
+                context.RequestAborted);
 
             return TypedResults.Ok(ApiResponse<ConnectionTestResult>.CreateSuccess(result));
         }
@@ -574,11 +667,13 @@ internal static partial class SecureConnectionEndpoints
             UpdateSecureConnectionRequest request,
             [FromServices] ISecureConnectionRegistry registry,
             [FromServices] IConnectionEncryptionService encryptionService,
-            [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
             [FromServices] IConnectionDriverRegistry driverRegistry,
-            HttpContext context,
-            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
+            [FromServices] SecureConnectionGovernance governance,
+            HttpContext context)
     {
+        var logger = context.RequestServices.GetRequiredService<ILogger<SecureConnectionEndpointsLog>>();
+        var connectionStringBuilder = context.RequestServices.GetRequiredService<IDatabaseConnectionStringBuilder>();
+
         try
         {
             var validationResults = new List<ValidationResult>();
@@ -619,6 +714,36 @@ internal static partial class SecureConnectionEndpoints
             if (!DataConnection.IsSslModeCompatibleWithRequirement(sslRequired, sslMode))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
+            }
+
+            // Re-validate the (possibly changed) destination host against the connection
+            // policy. Only evaluate when the host actually changes so existing connections
+            // are not retroactively invalidated by a later policy tightening on unrelated edits.
+            var usesSecretReference = !string.IsNullOrWhiteSpace(existing.SecretRef);
+            if (!string.Equals(host, existing.Host, StringComparison.Ordinal) &&
+                governance.IsHostEvaluable(host, usesSecretReference))
+            {
+                var hostDecision = await governance.EvaluateHostAsync(host, context.RequestAborted);
+                if (!hostDecision.IsAllowed)
+                {
+                    await governance.RecordAsync(
+                        context,
+                        "connection.update",
+                        AuditOutcome.Denied,
+                        id.ToString(),
+                        new SecureConnectionAuditDetails
+                        {
+                            Name = existing.Name,
+                            Host = host,
+                            Port = port,
+                            Provider = existing.NormalizedProvider,
+                            UsesSecretReference = usesSecretReference,
+                            Reason = hostDecision.Reason
+                        },
+                        context.RequestAborted);
+
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure(hostDecision.Reason!));
+                }
             }
 
             byte[]? encryptedConnection = existing.ConnectionStringEncrypted;
@@ -716,6 +841,21 @@ internal static partial class SecureConnectionEndpoints
                 CreatedBy = saved.CreatedBy
             };
 
+            await governance.RecordAsync(
+                context,
+                "connection.update",
+                AuditOutcome.Success,
+                saved.ConnectionId.ToString(),
+                new SecureConnectionAuditDetails
+                {
+                    Name = saved.Name,
+                    Host = saved.Host,
+                    Port = saved.Port,
+                    Provider = saved.NormalizedProvider,
+                    UsesSecretReference = !string.IsNullOrWhiteSpace(saved.SecretRef)
+                },
+                context.RequestAborted);
+
             return TypedResults.Ok(ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -732,11 +872,15 @@ internal static partial class SecureConnectionEndpoints
         HandleDeleteConnection(
             Guid id,
             [FromServices] ISecureConnectionRegistry registry,
+            [FromServices] SecureConnectionGovernance governance,
             HttpContext context,
             [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
         try
         {
+            // Capture metadata before deletion so the audit record carries the target.
+            var existing = await registry.GetConnectionAsync(id, context.RequestAborted);
+
             var deleted = await registry.DeleteConnectionAsync(id, context.RequestAborted);
             if (!deleted)
             {
@@ -744,6 +888,21 @@ internal static partial class SecureConnectionEndpoints
             }
 
             SecureConnectionLog.SecureConnectionDeleted(logger, id);
+
+            await governance.RecordAsync(
+                context,
+                "connection.delete",
+                AuditOutcome.Success,
+                id.ToString(),
+                new SecureConnectionAuditDetails
+                {
+                    Name = existing?.Name,
+                    Host = existing?.Host,
+                    Port = existing?.Port,
+                    Provider = existing?.NormalizedProvider
+                },
+                context.RequestAborted);
+
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Connection deleted"));
         }
         catch (Npgsql.PostgresException ex) when (ex.SqlState == "23503")

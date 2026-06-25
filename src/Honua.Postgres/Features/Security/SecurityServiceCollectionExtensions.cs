@@ -6,6 +6,7 @@ using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
@@ -49,6 +50,13 @@ internal static class SecurityServiceCollectionExtensions
 
         services.TryAddSingleton<IDatabaseConnectionStringBuilder, PostgresConnectionStringBuilder>();
         services.TryAddSingleton<IConnectionHealthTester, PostgresConnectionHealthTester>();
+
+        // Outbound data-source connection host policy (#354): an operator-configured
+        // allowlist of permitted database destinations plus optional private-address
+        // blocking, generalizing the outbound-HTTP SSRF guard (#2004). Opt-in — an
+        // unconfigured section leaves registration unrestricted.
+        services.TryAddSingleton<IConnectionHostAllowlist>(_ =>
+            new ConnectionHostAllowlist(BindConnectionHostAllowlistOptions(configuration)));
 
         // Register secret resolvers
         services.AddAwsSecretsManagerSupport(configuration);
@@ -319,4 +327,27 @@ internal static class SecurityServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Binds <see cref="ConnectionHostAllowlistOptions"/> from the
+    /// <c>Security:ConnectionAllowlist</c> configuration section without relying on
+    /// reflection-based binding, keeping the path AOT-safe.
+    /// </summary>
+    private static ConnectionHostAllowlistOptions BindConnectionHostAllowlistOptions(IConfiguration configuration)
+    {
+        var section = configuration.GetSection(ConnectionHostAllowlistOptions.SectionName);
+
+        var allowedHosts = section.GetSection("AllowedHosts").GetChildren()
+            .Select(child => child.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .ToArray();
+
+        var blockPrivate = section.GetValue("BlockPrivateAddresses", false);
+
+        return new ConnectionHostAllowlistOptions
+        {
+            AllowedHosts = allowedHosts,
+            BlockPrivateAddresses = blockPrivate
+        };
+    }
 }
