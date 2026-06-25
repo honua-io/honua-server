@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.TileCachePackage.Abstractions;
 using Honua.Core.Features.TileCachePackage.Domain;
 using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Import.TileCachePackage;
 
@@ -56,13 +57,20 @@ internal static class TileCachePackageEndpoints
     private static async Task<IResult> HandleImport(
         HttpContext context,
         string tilesetId,
-        ITileCachePackageImportService importService,
         string? fileName = null,
         int? minZoom = null,
         int? maxZoom = null,
         bool dryRun = false)
     {
         var cancellationToken = context.RequestAborted;
+
+        // Resolve the import service from the request scope rather than as a route-handler
+        // parameter. The service is provider-specific (registered only when the active
+        // data provider supplies it) so declaring it as a parameter would make the minimal
+        // API request-delegate factory infer it as a JSON body parameter on hosts where it
+        // is absent, which fails app startup when the source-generated JSON resolver cannot
+        // produce metadata for the service interface.
+        var importService = context.RequestServices.GetRequiredService<ITileCachePackageImportService>();
 
         if (string.IsNullOrWhiteSpace(tilesetId))
         {
@@ -140,10 +148,10 @@ internal static class TileCachePackageEndpoints
 
     private static async Task<IResult> HandleGetTileSet(
         string tileCacheId,
-        IImportedTileCacheReader reader,
         HttpContext context)
     {
         var cancellationToken = context.RequestAborted;
+        var reader = context.RequestServices.GetRequiredService<IImportedTileCacheReader>();
         var info = await reader.GetTileCacheAsync(tileCacheId, cancellationToken).ConfigureAwait(false);
         if (info is null)
         {
@@ -174,7 +182,6 @@ internal static class TileCachePackageEndpoints
         int z,
         int x,
         int y,
-        IImportedTileCacheReader reader,
         HttpContext context)
     {
         var cancellationToken = context.RequestAborted;
@@ -184,6 +191,7 @@ internal static class TileCachePackageEndpoints
             return Results.BadRequest("Tile coordinates must be non-negative.");
         }
 
+        var reader = context.RequestServices.GetRequiredService<IImportedTileCacheReader>();
         var tile = await reader.GetTileAsync(tileCacheId, z, x, y, cancellationToken).ConfigureAwait(false);
         if (tile is null)
         {
