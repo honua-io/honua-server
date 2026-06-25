@@ -53,6 +53,10 @@ public static class AdminServiceCollectionExtensions
 
         services.TryAddScoped<ILayerValidationService, LayerValidationService>();
 
+        // Secure-connection governance (#354): host allowlist enforcement + connection
+        // audit trail. Scoped because it consumes the scoped IAuditLog sink.
+        services.TryAddScoped<SecureConnectionGovernance>();
+
         return services;
     }
 }
