@@ -5,7 +5,9 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -701,6 +703,301 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
 
         Assert.NotNull(apiResponse);
         Assert.False(apiResponse.Success);
+    }
+
+    // ---- #354 governance: host allowlist enforcement ----
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections")]
+    public async Task CreateConnection_HostNotInConfiguredAllowlist_ReturnsBadRequest()
+    {
+        // Arrange. Stand up a fixture whose connection policy only permits a single
+        // destination host, then attempt to register a connection to a different host.
+        var localFixture = CreateAllowlistFixture(
+            allowedHosts: ["db.allowed.example.com"],
+            blockPrivateAddresses: false,
+            out var audit);
+
+        await localFixture.InitializeAsync();
+        try
+        {
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            var request = new CreateSecureConnectionRequest
+            {
+                Name = $"blocked-host-{Guid.NewGuid():N}",
+                Host = "db.denied.example.com",
+                Port = 5432,
+                DatabaseName = "testdb",
+                Username = "testuser",
+                Password = "testpassword123",
+                SslRequired = true,
+                SslMode = "Require"
+            };
+
+            var content = new StringContent(
+                JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+
+            // Act
+            var response = await client.PostAsync("/api/v1/admin/connections", content);
+
+            // Assert: policy rejects the destination, and the denial is audited.
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var responseJson = await response.Content.ReadAsStringAsync();
+            responseJson.Should().Contain("allowlist");
+
+            var denied = await WaitForEventAsync(
+                audit,
+                e => e.Action == "connection.create" && e.Outcome == AuditOutcome.Denied);
+            denied.Should().NotBeNull();
+            denied!.ResourceType.Should().Be("connection");
+            denied.EventType.Should().Be(AuditEventType.ConfigChange);
+            denied.Details.Should().Contain("db.denied.example.com");
+            // The denied connection must never have been persisted.
+            denied.ResourceId.Should().BeNull();
+        }
+        finally
+        {
+            await localFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections")]
+    public async Task CreateConnection_HostInConfiguredAllowlist_ReturnsCreatedAndAudited()
+    {
+        // Arrange. localhost is on the allowlist, so registration is permitted and the
+        // create action is recorded with a success outcome and the persisted resource id.
+        var localFixture = CreateAllowlistFixture(
+            allowedHosts: ["localhost"],
+            blockPrivateAddresses: false,
+            out var audit);
+
+        await localFixture.InitializeAsync();
+        try
+        {
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            var request = new CreateSecureConnectionRequest
+            {
+                Name = $"allowed-host-{Guid.NewGuid():N}",
+                Host = "localhost",
+                Port = 5432,
+                DatabaseName = "testdb",
+                Username = "testuser",
+                Password = "testpassword123",
+                SslRequired = true,
+                SslMode = "Require"
+            };
+
+            var content = new StringContent(
+                JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+
+            // Act
+            var response = await client.PostAsync("/api/v1/admin/connections", content);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var success = await WaitForEventAsync(
+                audit,
+                e => e.Action == "connection.create" && e.Outcome == AuditOutcome.Success);
+            success.Should().NotBeNull();
+            success!.ResourceId.Should().NotBeNullOrWhiteSpace();
+            success.Details.Should().Contain("localhost");
+            // Sanity: the audit detail must never leak the inline password.
+            success.Details.Should().NotContain("testpassword123");
+        }
+        finally
+        {
+            await localFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections")]
+    public async Task CreateConnection_PrivateAddressBlocked_WhenPolicyBlocksPrivate()
+    {
+        // Arrange. A private-address block (no host allowlist) rejects a loopback literal,
+        // reusing the same reserved-range coverage as the outbound-HTTP SSRF guard.
+        var localFixture = CreateAllowlistFixture(
+            allowedHosts: [],
+            blockPrivateAddresses: true,
+            out var audit);
+
+        await localFixture.InitializeAsync();
+        try
+        {
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            var request = new CreateSecureConnectionRequest
+            {
+                Name = $"private-host-{Guid.NewGuid():N}",
+                Host = "127.0.0.1",
+                Port = 5432,
+                DatabaseName = "testdb",
+                Username = "testuser",
+                Password = "testpassword123",
+                SslRequired = true,
+                SslMode = "Require"
+            };
+
+            var content = new StringContent(
+                JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+
+            // Act
+            var response = await client.PostAsync("/api/v1/admin/connections", content);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var responseJson = await response.Content.ReadAsStringAsync();
+            responseJson.Should().Contain("reserved");
+
+            var denied = await WaitForEventAsync(
+                audit,
+                e => e.Action == "connection.create" && e.Outcome == AuditOutcome.Denied);
+            denied.Should().NotBeNull();
+        }
+        finally
+        {
+            await localFixture.DisposeAsync();
+        }
+    }
+
+    // ---- #354 governance: connection audit trail ----
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections")]
+    [Endpoint("DELETE /api/v1/admin/connections/{id}")]
+    public async Task ConnectionLifecycle_EmitsCreateAndDeleteAuditEvents()
+    {
+        // With no allowlist configured (governance not enforced), the audit trail must
+        // still record create and delete actions for the secure-connection domain.
+        var localFixture = CreateAllowlistFixture(
+            allowedHosts: [],
+            blockPrivateAddresses: false,
+            out var audit);
+
+        await localFixture.InitializeAsync();
+        try
+        {
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            var request = new CreateSecureConnectionRequest
+            {
+                Name = $"lifecycle-{Guid.NewGuid():N}",
+                Host = "localhost",
+                Port = 5432,
+                DatabaseName = "testdb",
+                Username = "testuser",
+                Password = "testpassword123",
+                SslRequired = true,
+                SslMode = "Require"
+            };
+
+            var content = new StringContent(
+                JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+
+            var createResponse = await client.PostAsync("/api/v1/admin/connections", content);
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var createJson = await createResponse.Content.ReadAsStringAsync();
+            var created = JsonSerializer.Deserialize<ApiResponse<SecureConnectionSummary>>(createJson, _jsonOptions);
+            created!.Data.Should().NotBeNull();
+            var connectionId = created.Data!.ConnectionId;
+
+            var createEvent = await WaitForEventAsync(
+                audit,
+                e => e.Action == "connection.create" && e.Outcome == AuditOutcome.Success &&
+                     e.ResourceId == connectionId.ToString());
+            createEvent.Should().NotBeNull();
+
+            // Act: delete the connection.
+            var deleteResponse = await client.DeleteAsync($"/api/v1/admin/connections/{connectionId}");
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            // Assert: a delete audit event for the same resource is recorded.
+            var deleteEvent = await WaitForEventAsync(
+                audit,
+                e => e.Action == "connection.delete" && e.Outcome == AuditOutcome.Success &&
+                     e.ResourceId == connectionId.ToString());
+            deleteEvent.Should().NotBeNull();
+            deleteEvent!.EventType.Should().Be(AuditEventType.ConfigChange);
+            deleteEvent.ResourceType.Should().Be("connection");
+        }
+        finally
+        {
+            await localFixture.DisposeAsync();
+        }
+    }
+
+    private WebAppFixture CreateAllowlistFixture(
+        string[] allowedHosts,
+        bool blockPrivateAddresses,
+        out CapturingAuditLog audit)
+    {
+        var capturingAudit = new CapturingAuditLog();
+        audit = capturingAudit;
+
+        // The isolated test bootstrap re-registers the Postgres provider against a
+        // standalone configuration that does not carry ConfigureWebHost/UseSetting keys,
+        // so the connection host policy is wired directly here through ConfigureServices
+        // (which runs after the provider registration and therefore wins the override).
+        var options = new ConnectionHostAllowlistOptions
+        {
+            AllowedHosts = allowedHosts,
+            BlockPrivateAddresses = blockPrivateAddresses
+        };
+
+        return new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IAuditLog>();
+                services.AddSingleton<IAuditLog>(capturingAudit);
+
+                services.RemoveAll<IConnectionHostAllowlist>();
+                services.AddSingleton<IConnectionHostAllowlist>(new ConnectionHostAllowlist(options));
+            });
+    }
+
+    private static async Task<AuditEvent?> WaitForEventAsync(
+        CapturingAuditLog audit,
+        Func<AuditEvent, bool> predicate)
+    {
+        // The governance record is awaited within the request, but the test host may
+        // schedule the continuation slightly after the response is observed; poll briefly.
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            var match = audit.Events.FirstOrDefault(predicate);
+            if (match is not null)
+            {
+                return match;
+            }
+
+            await Task.Delay(20);
+        }
+
+        return audit.Events.FirstOrDefault(predicate);
+    }
+
+    private sealed class CapturingAuditLog : IAuditLog
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<AuditEvent> _events = new();
+
+        public IReadOnlyCollection<AuditEvent> Events => _events.ToArray();
+
+        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            _events.Enqueue(auditEvent);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class CapturingConnectionDriver : IConnectionDriver
