@@ -47,6 +47,7 @@
   - [Query features](guides/query-analyze/query-features.md)
   - [Export data](guides/query-analyze/export-data.md)
   - [Run geoprocessing](guides/query-analyze/run-geoprocessing.md)
+  - [Author a geoprocessing process](guides/query-analyze/gp-devkit-authoring.md)
   - [Automate workflows](guides/query-analyze/automate-workflows.md)
   - [Work with time](guides/query-analyze/work-with-time.md)
 - Connect clients
