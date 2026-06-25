@@ -56,6 +56,10 @@ PostGIS starts automatically. Migrations run on first boot. HTTP/1 REST and gRPC
 For self-hosted pilots, run the [pilot onboarding runbook](docs/guides/deploy/pilot-onboarding-runbook.md)
 before exercising durable jobs/workflows or handing the deployment to another team.
 
+To run geoprocessing jobs locally (in-process, no cloud) and prototype your own GP
+process, use the [local GP dev quickstart](docs/guides/query-analyze/gp-local-dev-quickstart.md)
+(`docker compose -f docker-compose.gp-dev.yml up`).
+
 **Pre-built image** (bring your own PostGIS):
 
 ```bash

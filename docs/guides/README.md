@@ -29,6 +29,7 @@ Task-oriented guides, grouped by what you want to do. New to Honua? Start with t
 | Query features with filters across protocols | [Query features](query-analyze/query-features.md) |
 | Export data to GeoJSON, GeoParquet, and other formats | [Export data](query-analyze/export-data.md) |
 | Run server-side geoprocessing jobs | [Run geoprocessing](query-analyze/run-geoprocessing.md) |
+| Run geoprocessing locally and prototype your own GP process | [Local GP dev quickstart](query-analyze/gp-local-dev-quickstart.md) |
 | Query temporal data and time series | [Work with time](query-analyze/work-with-time.md) |
 | Automate recurring data workflows | [Automate workflows](query-analyze/automate-workflows.md) |
 
