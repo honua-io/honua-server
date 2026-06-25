@@ -448,6 +448,57 @@ public sealed record CreateMetadataReleasePackageRequest
 }
 
 /// <summary>
+/// Request to emit a metadata release package for a published workflow / geoprocessing
+/// package version. Unlike <see cref="CreateMetadataReleasePackageRequest"/>, this does not
+/// resolve semantic ids against a Metadata v2 graph snapshot: a workflow is not a graph node,
+/// so the publish path supplies the artifact identity (semantic id, version, content hash)
+/// directly and the service records a single <see cref="MetadataSemanticArtifactKind.Workflow"/>
+/// entry. A workflow publish is additive (<see cref="MetadataReleaseChangeClass.Content"/>).
+/// </summary>
+public sealed record CreateWorkflowReleasePackageRequest
+{
+    /// <summary>Stable semantic identifier for the published workflow (for example <c>workflow.{packageId}</c>).</summary>
+    [JsonPropertyName("semanticId")]
+    public required string SemanticId { get; init; }
+
+    /// <summary>Workflow package identifier.</summary>
+    [JsonPropertyName("packageId")]
+    public required string PackageId { get; init; }
+
+    /// <summary>Published workflow package version.</summary>
+    [JsonPropertyName("packageVersion")]
+    public required int PackageVersion { get; init; }
+
+    /// <summary>Content hash of the published workflow graph; recorded as the desired content-version reference.</summary>
+    [JsonPropertyName("packageHash")]
+    public required string PackageHash { get; init; }
+
+    /// <summary>Workflow publication identifier that produced this release entry.</summary>
+    [JsonPropertyName("publicationId")]
+    public required string PublicationId { get; init; }
+
+    /// <summary>Logical source environment recorded on the package (defaults to the publication origin).</summary>
+    [JsonPropertyName("sourceEnvironment")]
+    public required string SourceEnvironment { get; init; }
+
+    /// <summary>Target environments for downstream GitOps promotion.</summary>
+    [JsonPropertyName("targetEnvironments")]
+    public IReadOnlyList<string> TargetEnvironments { get; init; } = Array.Empty<string>();
+
+    /// <summary>Optional display title.</summary>
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    /// <summary>Optional namespace applied to the package.</summary>
+    [JsonPropertyName("namespace")]
+    public string? Namespace { get; init; }
+
+    /// <summary>Provenance references reused from Console content metadata.</summary>
+    [JsonPropertyName("provenance")]
+    public IReadOnlyList<ConsoleProvenanceRef> Provenance { get; init; } = Array.Empty<ConsoleProvenanceRef>();
+}
+
+/// <summary>
 /// Persisted metadata release package.
 /// </summary>
 public sealed record MetadataReleasePackage

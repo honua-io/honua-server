@@ -13229,6 +13229,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.DataWiredWorkflow_ValidatesAndPublishesToScheduleButRejectsSingleJobTargets",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_EmitsWorkflowMetadataReleaseArtifact",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_WithDuplicatePublicationId_ReturnsConflict",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowLifecycle_ValidatesDryRunsPublishesTargetsAndStampsJobProvenance"
       ],

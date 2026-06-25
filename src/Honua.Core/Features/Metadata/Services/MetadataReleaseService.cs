@@ -250,6 +250,132 @@ public sealed class MetadataReleaseService(
     }
 
     /// <inheritdoc />
+    public async Task<MetadataReleasePackage> CreateWorkflowReleasePackageAsync(
+        CreateWorkflowReleasePackageRequest request,
+        string createdBy,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.SemanticId))
+        {
+            throw new ArgumentException("Workflow semantic id is required.", nameof(request));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PackageId))
+        {
+            throw new ArgumentException("Workflow package id is required.", nameof(request));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PackageHash))
+        {
+            throw new ArgumentException("Workflow package hash is required.", nameof(request));
+        }
+
+        ValidateEnvironment(request.SourceEnvironment);
+        var targetEnvironments = NormalizeRequiredList(
+            request.TargetEnvironments,
+            nameof(request.TargetEnvironments),
+            MaxBindingEnvironments);
+        var provenance = NormalizeOptionalList(request.Provenance, nameof(request.Provenance));
+
+        using var activity = ActivitySource.StartActivity("honua.metadata.release.workflow.create", ActivityKind.Internal);
+        activity?.SetTag("metadata.source_environment", request.SourceEnvironment);
+        activity?.SetTag("metadata.target_environment.count", targetEnvironments.Count);
+        activity?.SetTag("metadata.workflow.package_id", request.PackageId);
+        activity?.SetTag("metadata.workflow.package_version", request.PackageVersion);
+
+        var semanticId = request.SemanticId.Trim();
+        var now = _timeProvider.GetUtcNow();
+
+        // A workflow is not a Metadata v2 graph node, so we cannot project a target binding from
+        // a snapshot. Record the entry as Missing in every target so the GitOps changeset builder
+        // treats it as an additive promotion rather than an update of an existing graph artifact.
+        var targetStates = targetEnvironments
+            .Select(environment => new MetadataReleaseTargetState
+            {
+                Environment = environment,
+                CurrentMetadataRevision = null,
+                CurrentContentVersionId = null,
+                BindingState = MetadataEnvironmentBindingState.Missing,
+            })
+            .ToArray();
+
+        var entry = new MetadataReleaseEntry
+        {
+            SemanticId = semanticId,
+            ArtifactKind = MetadataSemanticArtifactKind.Workflow,
+            ResourceType = null,
+            SourceField = null,
+            DesiredMetadataRevision = request.PackageVersion,
+            DesiredContentVersionId = request.PackageHash.Trim(),
+            DesiredProvenance = provenance,
+            // A workflow publish ships a new content version of the workflow graph; classify it as
+            // a Content (additive) change, never a destructive Delete/Binding mutation.
+            ChangeClass = MetadataReleaseChangeClass.Content,
+            TargetStates = targetStates,
+            DependentSemanticIds = Array.Empty<string>(),
+            Status = MetadataReleaseEntryStatus.Ready,
+        };
+
+        var packageId = Guid.NewGuid();
+        var packageKey = BuildWorkflowPackageKey(request, now, packageId);
+        var metadata = new MetadataV2ObjectMetadata
+        {
+            Id = packageId.ToString("D"),
+            Name = packageKey,
+            Namespace = string.IsNullOrWhiteSpace(request.Namespace) ? null : request.Namespace.Trim(),
+            Title = string.IsNullOrWhiteSpace(request.Title)
+                ? $"Workflow {request.PackageId} v{request.PackageVersion.ToString(CultureInfo.InvariantCulture)}"
+                : request.Title.Trim(),
+            Description = $"Published workflow package {request.PackageId} version {request.PackageVersion.ToString(CultureInfo.InvariantCulture)}.",
+            CreatedAt = now,
+            UpdatedAt = now,
+            Generation = 1,
+            Labels = new Dictionary<string, string>
+            {
+                ["sourceEnvironment"] = request.SourceEnvironment,
+                ["workflowPackageId"] = request.PackageId,
+                ["workflowPackageVersion"] = request.PackageVersion.ToString(CultureInfo.InvariantCulture),
+                ["workflowPublicationId"] = request.PublicationId,
+            },
+            Annotations = new Dictionary<string, string>
+            {
+                ["metadata.honua.io/workflowPackageHash"] = request.PackageHash.Trim(),
+            },
+        };
+
+        var package = new MetadataReleasePackage
+        {
+            PackageId = packageId,
+            Metadata = metadata,
+            SourceEnvironment = request.SourceEnvironment.Trim(),
+            // Workflow release packages do not derive from a Metadata v2 revision; record the
+            // package version as the source revision and the content hash as the source etag so
+            // the package remains self-describing for the GitOps changeset builder.
+            SourceRevision = request.PackageVersion,
+            SourceEtag = request.PackageHash.Trim(),
+            TargetEnvironments = targetEnvironments,
+            Entries = [entry],
+            Status = MetadataReleasePackageStatus.Ready,
+            CreatedBy = string.IsNullOrWhiteSpace(createdBy) ? "system" : createdBy.Trim(),
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+
+        var stored = await packageStore.CreateAsync(package, cancellationToken).ConfigureAwait(false);
+        activity?.SetTag("metadata.package_id", stored.PackageId);
+        MetadataReleaseServiceLog.WorkflowPackageEmitted(
+            logger,
+            stored.PackageId,
+            request.PackageId,
+            request.PackageVersion,
+            request.PublicationId,
+            stored.TargetEnvironments.Count);
+        return stored;
+    }
+
+    /// <inheritdoc />
     public Task<MetadataReleasePackage?> GetReleasePackageAsync(
         Guid packageId,
         CancellationToken cancellationToken = default)
@@ -928,6 +1054,36 @@ public sealed class MetadataReleaseService(
         return string.Concat(result, "-", timestamp, "-", nonce);
     }
 
+    private static string BuildWorkflowPackageKey(
+        CreateWorkflowReleasePackageRequest request,
+        DateTimeOffset now,
+        Guid packageId)
+    {
+        var basis = $"workflow-{request.PackageId}-v{request.PackageVersion.ToString(CultureInfo.InvariantCulture)}";
+        var builder = new StringBuilder(basis.Length + 26);
+        foreach (var ch in basis.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                builder.Append(ch);
+            }
+            else if (builder.Length > 0 && builder[^1] != '-')
+            {
+                builder.Append('-');
+            }
+        }
+
+        var result = builder.ToString().Trim('-');
+        if (string.IsNullOrEmpty(result))
+        {
+            result = "workflow-release";
+        }
+
+        var timestamp = now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+        var nonce = packageId.ToString("N")[..8];
+        return string.Concat(result, "-", timestamp, "-", nonce);
+    }
+
     private sealed record ResolvedSemanticArtifact(
         string SemanticId,
         MetadataSemanticArtifactKind Kind,
@@ -989,6 +1145,18 @@ internal static partial class MetadataReleaseServiceLog
         ILogger logger,
         Guid packageId,
         int entryCount);
+
+    [LoggerMessage(
+        EventId = 116305,
+        Level = LogLevel.Information,
+        Message = "Metadata release package {PackageId} emitted for workflow package {WorkflowPackageId} v{WorkflowPackageVersion} (publication {PublicationId}) targeting {TargetEnvironmentCount} environments.")]
+    public static partial void WorkflowPackageEmitted(
+        ILogger logger,
+        Guid packageId,
+        string workflowPackageId,
+        int workflowPackageVersion,
+        string publicationId,
+        int targetEnvironmentCount);
 
     [LoggerMessage(
         EventId = 116304,

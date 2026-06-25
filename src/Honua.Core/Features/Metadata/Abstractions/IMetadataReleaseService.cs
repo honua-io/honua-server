@@ -34,6 +34,19 @@ public interface IMetadataReleaseService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Emits and persists a metadata release package for a published workflow / geoprocessing
+    /// package version. The workflow is recorded as a single
+    /// <see cref="Domain.V2.MetadataSemanticArtifactKind.Workflow"/> entry without resolving it
+    /// against a Metadata v2 graph snapshot, so the downstream GitOps changeset builder can promote
+    /// the published workflow. A workflow publish is additive
+    /// (<see cref="Domain.V2.MetadataReleaseChangeClass.Content"/>).
+    /// </summary>
+    Task<MetadataReleasePackage> CreateWorkflowReleasePackageAsync(
+        CreateWorkflowReleasePackageRequest request,
+        string createdBy,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns a persisted metadata release package.
     /// </summary>
     Task<MetadataReleasePackage?> GetReleasePackageAsync(

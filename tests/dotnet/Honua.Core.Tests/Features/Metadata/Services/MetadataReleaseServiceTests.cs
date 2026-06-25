@@ -387,6 +387,125 @@ public sealed class MetadataReleaseServiceTests
         json.Should().NotContain("super-secret-password");
     }
 
+    [UnitTest]
+    public async Task CreateWorkflowReleasePackageAsync_EmitsAdditiveWorkflowEntry()
+    {
+        // No Metadata v2 graphs are required: a workflow is not a graph node, so the publish
+        // path supplies the artifact identity directly.
+        var service = CreateService();
+
+        var package = await service.CreateWorkflowReleasePackageAsync(
+            new CreateWorkflowReleasePackageRequest
+            {
+                SemanticId = "workflow.parcels-pipeline",
+                PackageId = "pkg-parcels-pipeline",
+                PackageVersion = 3,
+                PackageHash = "abc123hash",
+                PublicationId = "wfp-001",
+                SourceEnvironment = "console",
+                TargetEnvironments = ["production"],
+            },
+            "user-1");
+
+        package.Status.Should().Be(MetadataReleasePackageStatus.Ready);
+        package.SourceEnvironment.Should().Be("console");
+        package.SourceRevision.Should().Be(3);
+        package.SourceEtag.Should().Be("abc123hash");
+        package.TargetEnvironments.Should().ContainSingle().Which.Should().Be("production");
+
+        var entry = package.Entries.Should().ContainSingle().Subject;
+        entry.SemanticId.Should().Be("workflow.parcels-pipeline");
+        entry.ArtifactKind.Should().Be(MetadataSemanticArtifactKind.Workflow);
+        entry.ChangeClass.Should().Be(MetadataReleaseChangeClass.Content);
+        entry.DesiredMetadataRevision.Should().Be(3);
+        entry.DesiredContentVersionId.Should().Be("abc123hash");
+        entry.Status.Should().Be(MetadataReleaseEntryStatus.Ready);
+        entry.TargetStates.Should().ContainSingle()
+            .Which.BindingState.Should().Be(MetadataEnvironmentBindingState.Missing);
+        entry.ResourceType.Should().BeNull();
+
+        package.Metadata.Labels.Should().Contain(new KeyValuePair<string, string>("workflowPackageId", "pkg-parcels-pipeline"));
+        package.Metadata.Labels.Should().Contain(new KeyValuePair<string, string>("workflowPublicationId", "wfp-001"));
+    }
+
+    [UnitTest]
+    public async Task CreateWorkflowReleasePackageAsync_RoundTripsWorkflowKindThroughGitOpsManifest()
+    {
+        var service = CreateService();
+
+        var package = await service.CreateWorkflowReleasePackageAsync(
+            new CreateWorkflowReleasePackageRequest
+            {
+                SemanticId = "workflow.parcels-pipeline",
+                PackageId = "pkg-parcels-pipeline",
+                PackageVersion = 5,
+                PackageHash = "deadbeef",
+                PublicationId = "wfp-002",
+                SourceEnvironment = "console",
+                TargetEnvironments = ["production"],
+            },
+            "user-1");
+
+        var manifest = await service.GetGitOpsManifestAsync(package.PackageId);
+
+        manifest.Should().NotBeNull();
+        manifest!.Spec.Entries.Should().ContainSingle(entry =>
+            entry.SemanticId == "workflow.parcels-pipeline" &&
+            entry.ArtifactKind == MetadataSemanticArtifactKind.Workflow &&
+            entry.ChangeClass == MetadataReleaseChangeClass.Content &&
+            entry.DesiredMetadataRevision == 5 &&
+            entry.DesiredContentVersionId == "deadbeef");
+
+        // The new enum member must serialize/deserialize as "workflow" via the source-generated
+        // (AOT-safe) JSON context so the downstream GitOps changeset builder can consume it.
+        var json = JsonSerializer.Serialize(
+            manifest,
+            MetadataReleaseJsonContext.Default.GitOpsMetadataReleaseManifest);
+        json.Should().Contain("\"workflow\"");
+
+        var roundTripped = JsonSerializer.Deserialize(
+            json,
+            MetadataReleaseJsonContext.Default.GitOpsMetadataReleaseManifest);
+        roundTripped!.Spec.Entries.Should().ContainSingle()
+            .Which.ArtifactKind.Should().Be(MetadataSemanticArtifactKind.Workflow);
+    }
+
+    [UnitTest]
+    public async Task CreateWorkflowReleasePackageAsync_WithBlankIdentity_ThrowsValidationError()
+    {
+        var service = CreateService();
+
+        var blankSemanticId = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateWorkflowReleasePackageAsync(
+                new CreateWorkflowReleasePackageRequest
+                {
+                    SemanticId = "  ",
+                    PackageId = "pkg-1",
+                    PackageVersion = 1,
+                    PackageHash = "hash",
+                    PublicationId = "wfp-1",
+                    SourceEnvironment = "console",
+                    TargetEnvironments = ["production"],
+                },
+                "user-1"));
+        blankSemanticId.Message.Should().Contain("Workflow semantic id is required.");
+
+        var blankHash = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateWorkflowReleasePackageAsync(
+                new CreateWorkflowReleasePackageRequest
+                {
+                    SemanticId = "workflow.x",
+                    PackageId = "pkg-1",
+                    PackageVersion = 1,
+                    PackageHash = "  ",
+                    PublicationId = "wfp-1",
+                    SourceEnvironment = "console",
+                    TargetEnvironments = ["production"],
+                },
+                "user-1"));
+        blankHash.Message.Should().Contain("Workflow package hash is required.");
+    }
+
     private static MetadataReleaseService CreateService(params MetadataV2Graph[] graphs)
     {
         var reader = new StaticEnvironmentReader(graphs);
