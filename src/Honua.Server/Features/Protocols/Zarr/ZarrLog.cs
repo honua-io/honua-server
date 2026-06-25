@@ -45,4 +45,10 @@ internal static partial class ZarrLog
         Level = LogLevel.Error,
         Message = "Zarr metadata scan failed for {RegistrationId}")]
     public static partial void MetadataScanFailed(ILogger logger, Exception ex, long registrationId);
+
+    [LoggerMessage(
+        EventId = 7926,
+        Level = LogLevel.Debug,
+        Message = "Rendered datacube tile for layer {LayerId} variable '{Variable}' at {Z}/{X}/{Y} ({Bytes} bytes)")]
+    public static partial void DatacubeTileRendered(ILogger logger, int layerId, string variable, int z, int x, int y, int bytes);
 }
