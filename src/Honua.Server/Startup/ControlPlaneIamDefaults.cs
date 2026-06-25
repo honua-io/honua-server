@@ -28,7 +28,17 @@ internal static class ControlPlaneIamDefaults
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton<IOidcProviderStore, InMemoryOidcProviderStore>();
-        services.TryAddSingleton<IUserStore, InMemoryUserStore>();
+
+        // The in-memory user store backs both the admin IUserStore surface and the SCIM
+        // provisioning surface (IScimUserStore, #510). Register the concrete singleton once
+        // and project all three contracts onto the SAME instance so SCIM-provisioned users
+        // are visible to the admin endpoints and group->role sync mutates a single record set.
+        services.TryAddSingleton<InMemoryUserStore>();
+        services.TryAddSingleton<IUserStore>(static sp => sp.GetRequiredService<InMemoryUserStore>());
+        services.TryAddSingleton<IScimUserStore>(static sp => sp.GetRequiredService<InMemoryUserStore>());
+        services.TryAddSingleton<IScimGroupStore>(static sp =>
+            new InMemoryScimGroupStore(sp.GetRequiredService<InMemoryUserStore>()));
+
         services.TryAddSingleton<IRoleStore, InMemoryRoleStore>();
 
         return services;
