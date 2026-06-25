@@ -76,17 +76,47 @@ public static class GdalWorkerServiceCollectionExtensions
         // ships; the worker does not introduce its own BackgroundService.
         services.AddGdalWorkerExecutionLoop();
 
-        // GDAL executor options.
+        // GDAL executor options, CLI runner, and the native-profile executor set.
+        // The per-process executors implement IProcessExecutor and self-declare their
+        // process id(s) (GP Devkit authoring contract #2122), so GdalDispatchJobExecutor
+        // builds its routing table by enumerating IProcessExecutor instead of a
+        // hand-maintained ctor. Shared with the Redis-free AddGdalProcessExecutors seam.
+        services.AddGdalProcessExecutors(configuration);
+
+        // Register the native dispatcher as the single IJobExecutor for the
+        // Geoprocessing kind in this host. It declares AcceptedRuntimeProfiles =
+        // { "native" }, so JobExecutionService passes that profile set to the
+        // queue claim filter and the worker only claims native-profile jobs.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IJobExecutor, GdalDispatchJobExecutor>());
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers ONLY the native GDAL <see cref="IProcessExecutor"/> set plus its
+    /// dependencies — the <c>GdalWorkerOptions</c>, the <see cref="IGdalCommandRunner"/>
+    /// CLI runner, and each per-process executor — with NO Redis connection, queue,
+    /// job store, or hosted execution loop. This is the Redis-free seam the GP Devkit
+    /// headless runner / <c>honua gp</c> dev CLI consume (issue #2123) so a developer
+    /// can run a single native op directly without the durable substrate
+    /// <see cref="AddGdalWorker"/> wires for the worker host.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="configuration">Host configuration; binds the <c>GdalWorker</c> section.</param>
+    public static IServiceCollection AddGdalProcessExecutors(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
         services
             .AddOptions<GdalWorkerOptions>()
             .Bind(configuration.GetSection(GdalWorkerOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        // GDAL CLI runner + native-profile executors. The per-process executors
-        // implement IProcessExecutor and self-declare their process id(s) (GP Devkit
-        // authoring contract #2122), so GdalDispatchJobExecutor builds its routing
-        // table by enumerating IProcessExecutor instead of a hand-maintained ctor.
         services.TryAddSingleton<IGdalCommandRunner, ProcessGdalCommandRunner>();
         RegisterGdalExecutor<GdalVectorConvertJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterReprojectJobExecutor>(services);
@@ -97,13 +127,6 @@ public static class GdalWorkerServiceCollectionExtensions
         RegisterGdalExecutor<GdalRasterZonalStatisticsJobExecutor>(services);
         RegisterGdalExecutor<GdalMultidimCoverageMetadataJobExecutor>(services);
         RegisterGdalExecutor<PdalPointCloudConvertJobExecutor>(services);
-
-        // Register the native dispatcher as the single IJobExecutor for the
-        // Geoprocessing kind in this host. It declares AcceptedRuntimeProfiles =
-        // { "native" }, so JobExecutionService passes that profile set to the
-        // queue claim filter and the worker only claims native-profile jobs.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IJobExecutor, GdalDispatchJobExecutor>());
 
         return services;
     }

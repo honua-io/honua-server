@@ -983,6 +983,7 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc",
       "paths": [
         "src/Honua.Geoprocessing/Features/Geoprocessing/",
+        "src/Honua.Geoprocessing.Cli/",
         "src/Honua.Core/Features/Geoprocessing/",
         "src/Honua.Server/Features/Protocols/Grpc/",
         "src/Honua.Protocols.OgcApi/Processes/",

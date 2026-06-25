@@ -210,6 +210,8 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 // Each gdalwarp/gdalinfo call gets its own CTS so a multi-zone
                 // job whose cumulative runtime exceeds the per-tool ceiling is
                 // not aborted unless an individual invocation actually hangs.
+                await GdalCommandLog.LogCommandAsync(context, "gdalwarp", clipArgs, workspace, cancellationToken).ConfigureAwait(false);
+
                 GdalCommandResult clipResult;
                 using (var clipTimeoutCts = new CancellationTokenSource(opts.ToolTimeout))
                 using (var clipLinked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, clipTimeoutCts.Token))
@@ -233,6 +235,8 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 }
 
                 var infoArgs = new List<string> { "-json", "-stats", clippedPath };
+                await GdalCommandLog.LogCommandAsync(context, "gdalinfo", infoArgs, workspace, cancellationToken).ConfigureAwait(false);
+
                 GdalCommandResult infoResult;
                 using (var infoTimeoutCts = new CancellationTokenSource(opts.ToolTimeout))
                 using (var infoLinked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, infoTimeoutCts.Token))

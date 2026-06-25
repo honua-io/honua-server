@@ -130,6 +130,8 @@ internal sealed partial class GdalSurfaceJobExecutor(
             args.Add(inputPath);
             args.Add(outputPath);
 
+            await GdalCommandLog.LogCommandAsync(context, "gdaldem", args, workspace, cancellationToken).ConfigureAwait(false);
+
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
