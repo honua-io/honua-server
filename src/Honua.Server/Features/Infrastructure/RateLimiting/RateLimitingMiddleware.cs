@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Logging;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 
 namespace Honua.Infrastructure.RateLimiting;
@@ -14,8 +15,15 @@ namespace Honua.Infrastructure.RateLimiting;
 /// <summary>
 /// Middleware for enforcing rate limits on incoming requests.
 /// </summary>
+/// <remarks>
+/// Requests are partitioned independently per tenant, per authenticated user/API key,
+/// and per source IP for anonymous traffic (issue #355). Limits are off by default and
+/// must be enabled and tuned through the <c>RateLimiting</c> configuration section; the
+/// MVP posture remains edge enforcement (ADR-0004) unless an operator opts in.
+/// </remarks>
 internal sealed partial class RateLimitingMiddleware
 {
+    private const string TenantKeyFamily = "tenant";
     private const string UserKeyFamily = "user";
     private const string IpKeyFamily = "ip";
     private const string UnknownKeyFamily = "unknown";
@@ -43,15 +51,21 @@ internal sealed partial class RateLimitingMiddleware
     /// </summary>
     /// <param name="next">The next middleware in the pipeline.</param>
     /// <param name="policyStore">Rate limit policy store.</param>
-    /// <param name="redis">Redis connection for distributed rate limiting.</param>
     /// <param name="options">Rate limiting options.</param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="redis">
+    /// Optional Redis connection for distributed (cross-node) rate limiting. Registered only
+    /// when durable coordination is configured, so it is passed in optionally by
+    /// <see cref="RateLimitingMiddlewareExtensions.UseRateLimiting"/> rather than required via
+    /// injection; when <see langword="null"/> the middleware falls back to process-local
+    /// fixed-window counters.
+    /// </param>
     public RateLimitingMiddleware(
         RequestDelegate next,
         IRateLimitPolicyStore policyStore,
-        IConnectionMultiplexer? redis,
         IOptions<RateLimitingOptions> options,
-        ILogger<RateLimitingMiddleware> logger)
+        ILogger<RateLimitingMiddleware> logger,
+        IConnectionMultiplexer? redis)
     {
         _next = next;
         _policyStore = policyStore;
@@ -98,7 +112,9 @@ internal sealed partial class RateLimitingMiddleware
     }
 
     /// <summary>
-    /// Determines the rate limit key for the request.
+    /// Determines the rate limit key for the request. The key is partitioned by tenant
+    /// (when one is resolved) and then by authenticated user/API key identity, falling
+    /// back to the source IP for anonymous traffic (issue #355).
     /// </summary>
     /// <param name="context">The HTTP context.</param>
     /// <returns>Rate limit key or null if no rate limiting should be applied.</returns>
@@ -118,6 +134,17 @@ internal sealed partial class RateLimitingMiddleware
             return null;
         }
 
+        // Tenant scope (resolved by TenantContextMiddleware, which runs earlier in the
+        // pipeline). When present it prefixes the bucket so two tenants sharing an
+        // identity provider — or an anonymous IP straddling tenants — never share a
+        // counter. The id is a stable opaque tenant identifier, never a secret.
+        var tenantPrefix = string.Empty;
+        var tenantContext = context.RequestServices?.GetService(typeof(ITenantContext)) as ITenantContext;
+        if (!string.IsNullOrEmpty(tenantContext?.TenantId))
+        {
+            tenantPrefix = $"{TenantKeyFamily}:{tenantContext.TenantId}|";
+        }
+
         // Key on the authenticated principal when one is present. Never derive the
         // bucket from raw, unauthenticated credentials (Authorization header or
         // ?api_key=): an attacker could mint a fresh bucket per request by sending
@@ -126,11 +153,11 @@ internal sealed partial class RateLimitingMiddleware
         var identity = context.User?.Identity;
         if (identity?.IsAuthenticated == true && !string.IsNullOrEmpty(identity.Name))
         {
-            return $"{UserKeyFamily}:{identity.Name}";
+            return $"{tenantPrefix}{UserKeyFamily}:{identity.Name}";
         }
 
         // Fall back to IP-based rate limiting for unauthenticated requests
-        return $"{IpKeyFamily}:{clientIp}";
+        return $"{tenantPrefix}{IpKeyFamily}:{clientIp}";
     }
 
     /// <summary>
@@ -338,6 +365,13 @@ internal sealed partial class RateLimitingMiddleware
         RateLimitingLog.RateLimitExceeded(_logger, keyFamily, keyHash, result.RequestCount, result.Limit);
 
         AddRateLimitHeaders(context, result);
+
+        // RFC 9110 Retry-After: advise clients how long to wait (in whole seconds, never
+        // negative) before retrying. Mirrors the X-RateLimit-Reset window boundary.
+        var retryAfterSeconds = Math.Max(0, (int)Math.Ceiling((result.WindowReset - DateTimeOffset.UtcNow).TotalSeconds));
+        context.Response.Headers.RetryAfter =
+            retryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
         context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
         context.Response.ContentType = "application/json";
 
@@ -383,8 +417,10 @@ internal sealed partial class RateLimitingMiddleware
     }
 
     /// <summary>
-    /// Splits a rate-limit key (<c>family:value</c>) into a fixed family label and a short
-    /// correlation hash so neither the principal name nor the raw IP appears in log output.
+    /// Splits a rate-limit key into a fixed family label and a short correlation hash so
+    /// neither the tenant id, principal name, nor raw IP appears in log output. Keys may
+    /// be tenant-prefixed (<c>tenant:&lt;id&gt;|user:&lt;name&gt;</c>); the most specific
+    /// (rightmost) family is reported and the whole key is hashed for correlation.
     /// </summary>
     private static (string Family, string Hash) SplitRateLimitKey(string? rateLimitKey)
     {
@@ -393,21 +429,29 @@ internal sealed partial class RateLimitingMiddleware
             return (UnknownKeyFamily, LogValueRedactor.Hash(null));
         }
 
-        var separatorIndex = rateLimitKey.IndexOf(':', StringComparison.Ordinal);
-        if (separatorIndex <= 0)
+        // The bucket family is identified by the last segment so a tenant-prefixed key
+        // reports user/ip rather than the tenant scope marker.
+        var lastSegment = rateLimitKey;
+        var pipeIndex = rateLimitKey.LastIndexOf('|');
+        if (pipeIndex >= 0 && pipeIndex < rateLimitKey.Length - 1)
         {
-            return (UnknownKeyFamily, LogValueRedactor.Hash(rateLimitKey));
+            lastSegment = rateLimitKey[(pipeIndex + 1)..];
         }
 
-        var family = rateLimitKey[..separatorIndex];
-        var value = rateLimitKey[(separatorIndex + 1)..];
+        var separatorIndex = lastSegment.IndexOf(':', StringComparison.Ordinal);
+        var family = separatorIndex <= 0 ? UnknownKeyFamily : lastSegment[..separatorIndex];
 
-        return family switch
+        var resolvedFamily = family switch
         {
-            UserKeyFamily => (UserKeyFamily, LogValueRedactor.Hash(value)),
-            IpKeyFamily => (IpKeyFamily, LogValueRedactor.Hash(value)),
-            _ => (UnknownKeyFamily, LogValueRedactor.Hash(value))
+            TenantKeyFamily => TenantKeyFamily,
+            UserKeyFamily => UserKeyFamily,
+            IpKeyFamily => IpKeyFamily,
+            _ => UnknownKeyFamily
         };
+
+        // Hash the full key (including tenant prefix) so distinct buckets get distinct
+        // correlation hashes without exposing any identifier.
+        return (resolvedFamily, LogValueRedactor.Hash(rateLimitKey));
     }
 }
 
