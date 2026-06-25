@@ -203,9 +203,17 @@ internal sealed partial class FeatureQueryBuilder
             return "NULL";
         }
 
+        // Field-level security (#1940): the enforced masked-field set is the source of
+        // attribute columns this expression may project, regardless of the requested
+        // outFields. Resolved provider-side, so a restricted role never receives a masked
+        // column even when it explicitly asks for it. Empty/unset means no masking.
+        var maskedFields = ResolveMaskedFields(query);
+
         if (!query.OutFields.HasValue || query.OutFields.Value.IsDefault)
         {
-            return DatabaseSchema.AttributesColumn;
+            // All fields: subtract masked columns from the attributes jsonb via the
+            // key-removal operator (field names bound as a parameter, injection-safe).
+            return BuildMaskedAttributesColumn(maskedFields, ref paramIndex, parameters);
         }
 
         var requestedOutFields = query.OutFields.Value;
@@ -222,6 +230,12 @@ internal sealed partial class FeatureQueryBuilder
             if (!IsValidFieldName(fieldName))
             {
                 throw new ArgumentException($"Invalid field name for projection: {fieldName}");
+            }
+
+            // A masked field is dropped even when explicitly requested (fail-secure).
+            if (maskedFields.Contains(fieldName))
+            {
+                continue;
             }
 
             if (!DatabaseSchema.CanUseJsonPath(fieldName) || !seenFields.Add(fieldName))
@@ -243,6 +257,50 @@ internal sealed partial class FeatureQueryBuilder
         return $"jsonb_build_object({string.Join(", ", projectedFields)})::text";
     }
 
+    /// <summary>
+    /// Resolves the enforced field-level-security (column masking) set (#1940) from the
+    /// query into a case-insensitive lookup. Empty when no masking applies.
+    /// </summary>
+    private static HashSet<string> ResolveMaskedFields(FeatureQuery query)
+    {
+        var masked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } fields)
+        {
+            foreach (var field in fields)
+            {
+                if (!string.IsNullOrWhiteSpace(field))
+                {
+                    masked.Add(field.Trim());
+                }
+            }
+        }
+
+        return masked;
+    }
+
+    /// <summary>
+    /// Builds the attributes-column source expression, subtracting any masked fields
+    /// (#1940) from the raw attributes <c>jsonb</c> via the key-removal operator. Masked
+    /// field names are bound as a single <c>text[]</c> parameter so they can never inject
+    /// SQL regardless of contents. Returns the bare attributes column when nothing is
+    /// masked, preserving the prior byte-identical query.
+    /// </summary>
+    private static string BuildMaskedAttributesColumn(
+        HashSet<string> maskedFields,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        if (maskedFields.Count == 0)
+        {
+            return DatabaseSchema.AttributesColumn;
+        }
+
+        var maskParamIndex = paramIndex++;
+        parameters.Add(maskedFields.ToArray());
+        // jsonb - text[] removes every listed top-level key from the object.
+        return $"({DatabaseSchema.AttributesColumn} - ${maskParamIndex})";
+    }
+
     private static (string PublicIdSelect, string AttributesSelect) BuildRawAttributeSelectExpressions(
         FeatureQuery query,
         ref int paramIndex,
@@ -253,17 +311,47 @@ internal sealed partial class FeatureQueryBuilder
             return ("NULL", "NULL");
         }
 
+        // Field-level security (#1940): subtract masked columns from the raw attributes
+        // jsonb (in addition to the promoted public-id field), so the GeoJSON/GeoServices
+        // raw fast paths honor masking just like the materialized-Feature paths.
+        var maskedFields = ResolveMaskedFields(query);
+
         if (!string.IsNullOrWhiteSpace(query.PublicIdAttributeName) &&
             IsValidFieldName(query.PublicIdAttributeName))
         {
             var fieldParamIndex = paramIndex++;
             parameters.Add(query.PublicIdAttributeName);
             var fieldParam = $"${fieldParamIndex}";
+            var attributesExpr = ApplyMaskRemoval(
+                $"({DatabaseSchema.AttributesColumn} - {fieldParam})", maskedFields, ref paramIndex, parameters);
             return (
                 $"{DatabaseSchema.AttributesColumn} -> {fieldParam}",
-                $"({DatabaseSchema.AttributesColumn} - {fieldParam})::text");
+                $"{attributesExpr}::text");
         }
 
-        return ("NULL", $"{DatabaseSchema.AttributesColumn}::text");
+        var unprojected = ApplyMaskRemoval(
+            DatabaseSchema.AttributesColumn, maskedFields, ref paramIndex, parameters);
+        return ("NULL", $"{unprojected}::text");
+    }
+
+    /// <summary>
+    /// Wraps an attributes-jsonb expression with the masked-field key-removal (#1940)
+    /// when any field is masked, binding the masked names as a single <c>text[]</c>
+    /// parameter. Returns the expression unchanged when nothing is masked.
+    /// </summary>
+    private static string ApplyMaskRemoval(
+        string attributesExpression,
+        HashSet<string> maskedFields,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        if (maskedFields.Count == 0)
+        {
+            return attributesExpression;
+        }
+
+        var maskParamIndex = paramIndex++;
+        parameters.Add(maskedFields.ToArray());
+        return $"({attributesExpression} - ${maskParamIndex})";
     }
 }
