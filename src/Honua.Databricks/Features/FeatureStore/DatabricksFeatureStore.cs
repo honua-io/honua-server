@@ -31,7 +31,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         SupportsQuery = true,
         SupportsCount = true,
         SupportsExtent = true,
-        SupportsStatistics = false,
+        SupportsStatistics = true,
         Edits = FeatureProviderEditCapabilities.ReadOnly,
         Outputs = new FeatureProviderOutputCapabilities
         {
@@ -150,9 +150,13 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     }
 
     /// <inheritdoc />
-    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-        => throw NotSupported(nameof(QueryStatisticsAsync), layerId);
+    {
+        var mapping = _mappings.Resolve(layerId);
+        var statement = _queryBuilder.BuildStatistics(mapping, query);
+        return await _dataAccess.ExecuteStatisticsAsync(statement, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
