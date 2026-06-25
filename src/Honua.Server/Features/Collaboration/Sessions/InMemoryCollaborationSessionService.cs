@@ -17,13 +17,16 @@ internal sealed class InMemoryCollaborationSessionService
     private readonly ConcurrentDictionary<Guid, string> _sessionMapIndex = new();
     private readonly ISavedMapCollaborationAuthorizer _authorizer;
     private readonly ICollaborationSessionClock _clock;
+    private readonly ICollaborationSessionBackplane _backplane;
 
     public InMemoryCollaborationSessionService(
         ISavedMapCollaborationAuthorizer authorizer,
-        ICollaborationSessionClock clock)
+        ICollaborationSessionClock clock,
+        ICollaborationSessionBackplane? backplane = null)
     {
         _authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _backplane = backplane ?? NullCollaborationSessionBackplane.Instance;
     }
 
     public async ValueTask<CollaborationJoinResult> JoinAsync(
@@ -57,6 +60,7 @@ internal sealed class InMemoryCollaborationSessionService
         };
 
         CollaborationSessionSnapshot snapshot;
+        CollaborationEventEnvelope joined;
         while (true)
         {
             var channel = _channels.GetOrAdd(mapId, static id => new MapChannel(id));
@@ -74,7 +78,7 @@ internal sealed class InMemoryCollaborationSessionService
                 channel.Participants.Add(sessionId, new ParticipantState(participant));
                 _sessionMapIndex[sessionId] = mapId;
 
-                var joined = CreateEvent(
+                joined = CreateEvent(
                     CollaborationSessionEventTypes.ParticipantJoined,
                     mapId,
                     participant,
@@ -85,6 +89,8 @@ internal sealed class InMemoryCollaborationSessionService
                 break;
             }
         }
+
+        _backplane.Publish(joined);
 
         return new CollaborationJoinResult
         {
@@ -188,7 +194,7 @@ internal sealed class InMemoryCollaborationSessionService
                 Follow = updatedPresence.Follow
             };
             var delivered = FanOutLocked(channel, ev, excludeSessionId: sessionId);
-            return new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered };
+            return Publish(new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered });
         }
     }
 
@@ -212,6 +218,7 @@ internal sealed class InMemoryCollaborationSessionService
             return false;
         }
 
+        CollaborationEventEnvelope left;
         lock (channel.Sync)
         {
             if (!channel.Participants.Remove(sessionId, out var state))
@@ -220,9 +227,12 @@ internal sealed class InMemoryCollaborationSessionService
                 return false;
             }
 
+            // Waking the leaving participant's writer lets it observe the removed session and
+            // terminate promptly instead of blocking until its next idle timeout.
+            state.OutboxSignal.Set();
             _sessionMapIndex.TryRemove(sessionId, out _);
             ClearFollowsTargetingLocked(channel, mapId, sessionId, _clock.UtcNow);
-            var left = CreateEvent(
+            left = CreateEvent(
                 CollaborationSessionEventTypes.ParticipantLeft,
                 mapId,
                 state.Presence,
@@ -230,8 +240,10 @@ internal sealed class InMemoryCollaborationSessionService
             { Participant = state.Presence };
             FanOutLocked(channel, left, excludeSessionId: sessionId);
             RemoveChannelIfEmpty(mapId, channel);
-            return true;
         }
+
+        _backplane.Publish(left);
+        return true;
     }
 
     public int PruneStaleParticipants(TimeSpan maxIdle)
@@ -243,6 +255,7 @@ internal sealed class InMemoryCollaborationSessionService
 
         var now = _clock.UtcNow;
         var removed = 0;
+        var publishQueue = new List<CollaborationEventEnvelope>();
         foreach (var (mapId, channel) in _channels)
         {
             lock (channel.Sync)
@@ -259,6 +272,8 @@ internal sealed class InMemoryCollaborationSessionService
                         continue;
                     }
 
+                    // Wake the pruned participant's writer so a stale WebSocket terminates promptly.
+                    state.OutboxSignal.Set();
                     _sessionMapIndex.TryRemove(sessionId, out _);
                     removed++;
                     ClearFollowsTargetingLocked(channel, mapId, sessionId, now);
@@ -270,10 +285,16 @@ internal sealed class InMemoryCollaborationSessionService
                         now) with
                     { Participant = state.Presence };
                     FanOutLocked(channel, left, excludeSessionId: sessionId);
+                    publishQueue.Add(left);
                 }
 
                 RemoveChannelIfEmpty(mapId, channel);
             }
+        }
+
+        foreach (var ev in publishQueue)
+        {
+            _backplane.Publish(ev);
         }
 
         return removed;
@@ -295,8 +316,80 @@ internal sealed class InMemoryCollaborationSessionService
 
             var events = state.Outbox.ToArray();
             state.Outbox.Clear();
+            // Reset the signal only while holding the lock so a concurrent enqueue either
+            // happens-before this drain (already captured above) or re-sets afterwards.
+            state.OutboxSignal.Reset();
             return events;
         }
+    }
+
+    /// <summary>
+    /// Waits until the participant's outbox has pending events or the session ends. Returns
+    /// <see langword="false"/> when the participant is no longer present (left or pruned), which
+    /// the WebSocket writer treats as a terminal condition. Used by the streaming transport to
+    /// avoid busy-polling <see cref="DrainEvents"/>.
+    /// </summary>
+    public async Task<bool> WaitForEventsAsync(Guid sessionId, CancellationToken cancellationToken)
+    {
+        if (!TryResolveSession(sessionId, out _, out var channel))
+        {
+            return false;
+        }
+
+        AsyncManualResetSignal signal;
+        lock (channel.Sync)
+        {
+            if (!channel.Participants.TryGetValue(sessionId, out var state))
+            {
+                return false;
+            }
+
+            if (state.Outbox.Count > 0)
+            {
+                return true;
+            }
+
+            signal = state.OutboxSignal;
+        }
+
+        await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return TryResolveSession(sessionId, out _, out _);
+    }
+
+    /// <summary>
+    /// Applies a collaboration event that originated on another node (delivered over the Redis
+    /// backplane) to the local participant outboxes for its map. Remote events are never
+    /// re-published, preventing fan-out loops between nodes. The actor's own session is excluded
+    /// so a participant does not receive an echo of its own action from a peer node.
+    /// </summary>
+    public void ApplyRemoteEvent(CollaborationEventEnvelope ev)
+    {
+        ArgumentNullException.ThrowIfNull(ev);
+        if (!_channels.TryGetValue(ev.MapId, out var channel))
+        {
+            // No local participants for this map on this node; nothing to deliver.
+            return;
+        }
+
+        lock (channel.Sync)
+        {
+            if (channel.Removed)
+            {
+                return;
+            }
+
+            FanOutLocked(channel, ev, excludeSessionId: ev.SessionId ?? Guid.Empty);
+        }
+    }
+
+    private CollaborationFanOutResult Publish(CollaborationFanOutResult result)
+    {
+        // Cross-node fan-out happens after the local outboxes have been written so a single-node
+        // deployment never pays for the backplane round-trip on its hot path. The backplane is
+        // best-effort: a Redis outage degrades to local-only delivery, mirroring the feature-stream
+        // cluster-broadcast contract.
+        _backplane.Publish(result.Event);
+        return result;
     }
 
     private CollaborationFanOutResult UpdateParticipant(
@@ -325,7 +418,7 @@ internal sealed class InMemoryCollaborationSessionService
                 CreateEvent(eventType, mapId, updatedPresence, now) with { Participant = updatedPresence },
                 updatedPresence);
             var delivered = FanOutLocked(channel, ev, excludeSessionId: sessionId);
-            return new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered };
+            return Publish(new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered });
         }
     }
 
@@ -365,6 +458,7 @@ internal sealed class InMemoryCollaborationSessionService
             }
 
             state.Outbox.Enqueue(ev);
+            state.OutboxSignal.Set();
             delivered++;
         }
 
@@ -512,5 +606,49 @@ internal sealed class InMemoryCollaborationSessionService
         public CollaborationParticipantPresence Presence { get; set; }
 
         public Queue<CollaborationEventEnvelope> Outbox { get; } = new();
+
+        /// <summary>
+        /// Pulsed whenever an event is enqueued onto <see cref="Outbox"/> so a WebSocket
+        /// writer loop can wake without polling. The signal is set when events are pending
+        /// and reset by the writer when it drains them.
+        /// </summary>
+        public AsyncManualResetSignal OutboxSignal { get; } = new();
+    }
+
+    /// <summary>
+    /// Minimal manual-reset async signal used to wake a single WebSocket writer when its
+    /// participant outbox receives events. Multiple sets coalesce; a single wait observes them.
+    /// </summary>
+    internal sealed class AsyncManualResetSignal
+    {
+        private volatile TaskCompletionSource<bool> _tcs =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Set() => _tcs.TrySetResult(true);
+
+        public Task WaitAsync(CancellationToken cancellationToken)
+        {
+            var tcs = _tcs;
+            if (tcs.Task.IsCompleted)
+            {
+                return tcs.Task;
+            }
+
+            // Replace the completed source on the next reset cycle; the waiter races with Set,
+            // and a coalesced Set is acceptable because the writer always drains the full outbox.
+            return tcs.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Reset()
+        {
+            var current = _tcs;
+            if (current.Task.IsCompleted)
+            {
+                Interlocked.CompareExchange(
+                    ref _tcs,
+                    new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+                    current);
+            }
+        }
     }
 }

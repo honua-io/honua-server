@@ -784,9 +784,14 @@ public static class EndpointRegistry
 
         // Saved-map collaboration session seam.
         new("POST", "/api/v1/saved-maps/{mapId}/collaboration/sessions/join"),
+        // Realtime presence/cursor/follow WebSocket transport (#971/#1290).
+        new("GET", "/api/v1/saved-maps/{mapId}/collaboration/sessions/stream"),
         new("POST", "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim"),
         new("POST", "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew"),
         new("POST", "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release"),
+        // Durable collaborative edit op-log: append (cursor + idempotency) and replay (#972).
+        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/operations"),
+        new("GET", "/api/v1/saved-maps/{mapId}/collaboration/operations"),
 
         // Public SDK-compatible scene discovery (#923).
         new("GET", "/api/scenes"),
