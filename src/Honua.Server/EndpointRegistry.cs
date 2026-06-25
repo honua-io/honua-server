@@ -236,6 +236,12 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/rls-policies/{id}"),
         new("DELETE", "/api/v1/admin/rls-policies/{id}"),
 
+        // v1 admin field-level security (column masking) policy endpoints (#1940)
+        new("GET", "/api/v1/admin/field-mask-policies"),
+        new("POST", "/api/v1/admin/field-mask-policies"),
+        new("GET", "/api/v1/admin/field-mask-policies/{id}"),
+        new("DELETE", "/api/v1/admin/field-mask-policies/{id}"),
+
         // v1 console metadata v2 content + RBAC baseline (#1162)
         new("GET", "/api/v1/console/session"),
         new("GET", "/api/v1/console/content"),

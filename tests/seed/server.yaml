@@ -117,6 +117,24 @@ sql:
               UNIQUE (role, service, layer, attribute, claim_type)
       );
   - "CREATE INDEX IF NOT EXISTS idx_rbac_rls_policies_scope ON honua.rbac_rls_policies (service, layer);"
+  # Field-level security (column masking) policy store (#1940). Mirrors migration
+  # 068_CreateFieldMaskPolicies.sql so the migration-skipping integration fixture has
+  # the table; PostgresFieldMaskPolicyStore persists per-layer attribute-masking policies
+  # here, dropped from query output at the shared projection seam.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.rbac_field_mask_policies (
+          policy_id     UUID         PRIMARY KEY,
+          role          VARCHAR(128) NOT NULL,
+          service       VARCHAR(256) NOT NULL,
+          layer         VARCHAR(256) NOT NULL,
+          attribute     VARCHAR(256) NOT NULL,
+          description   TEXT,
+          created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          CONSTRAINT rbac_field_mask_policies_scope_unique
+              UNIQUE (role, service, layer, attribute)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_rbac_field_mask_policies_scope ON honua.rbac_field_mask_policies (service, layer);"
   # Persistent RBAC role/permission store (#1374). Mirrors migration
   # 041_CreateRbacRoleStore.sql so the migration-skipping integration fixture has
   # the honua.rbac_roles / rbac_role_permissions / rbac_role_memberships tables.

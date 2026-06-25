@@ -86,6 +86,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "delete-api-v1-admin-field-mask-policies-id",
+      "route": "/api/v1/admin/field-mask-policies/{id}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FieldMaskPolicyEndpointsTests.FieldMaskPolicy_MasksColumn_ForRestrictedRoleOnly"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "delete-api-v1-admin-import-formats",
       "route": "/api/v1/admin/import/formats",
       "method": "DELETE",
@@ -1333,6 +1346,32 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetFeatureOverview_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ProEdition_ShowsUpgradeMessagesForEnterprise",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ReturnsEditionAndFeatures"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-field-mask-policies",
+      "route": "/api/v1/admin/field-mask-policies",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FieldMaskPolicyEndpointsTests.FieldMaskPolicy_MasksColumn_ForRestrictedRoleOnly"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-field-mask-policies-id",
+      "route": "/api/v1/admin/field-mask-policies/{id}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FieldMaskPolicyEndpointsTests.FieldMaskPolicy_MasksColumn_ForRestrictedRoleOnly"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -7936,6 +7975,7 @@
         "Honua.Server.Tests.FeatureServerQueryValidationEdgeCaseTests.Query_GroupByUnknownColumn_Returns400",
         "Honua.Server.Tests.FeatureServerStatisticsHavingTests.QueryStatistics_WithHavingPredicate_FiltersAggregatedGroups",
         "Honua.Server.Tests.FeatureServerStatisticsHavingTests.QueryStatistics_WithoutHaving_ReturnsAllGroups",
+        "Honua.Server.Tests.Features.Admin.FieldMaskPolicyEndpointsTests.FieldMaskPolicy_MasksColumn_ForRestrictedRoleOnly",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFilter_WithValidPermanentFilter_PersistsAndFiltersPublicQueries",
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.Reset_WithValidToken_SeedsFeatureServerContractAliases",
@@ -11343,6 +11383,20 @@
         "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithMissingUrl_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithOgcApiFeaturesFixture_ReturnsCollectionCandidates",
         "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryEndpointsTests.DiscoverExternalService_WithWfsGetCapabilitiesFixture_ReturnsFeatureTypeCandidates"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-field-mask-policies",
+      "route": "/api/v1/admin/field-mask-policies",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FieldMaskPolicyEndpointsTests.FieldMaskPolicyEndpoints_RejectAnonymousCallers",
+        "Honua.Server.Tests.Features.Admin.FieldMaskPolicyEndpointsTests.FieldMaskPolicy_MasksColumn_ForRestrictedRoleOnly"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"

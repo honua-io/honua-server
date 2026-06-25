@@ -62,6 +62,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
                 Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
                 Honua.Server.Features.Admin.Models.RlsPolicyJsonContext.Default,
+                Honua.Server.Features.Admin.Models.FieldMaskPolicyJsonContext.Default,
                 Honua.Server.Features.Admin.Models.ProposalJsonContext.Default,
                 Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
                 Honua.Server.Features.Admin.Share.ShareAdminJsonContext.Default,

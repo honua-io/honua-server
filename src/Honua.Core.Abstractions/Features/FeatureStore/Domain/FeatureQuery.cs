@@ -31,6 +31,17 @@ public readonly record struct FeatureQuery
     public SqlFragment? EnforcedSqlFilter { get; init; }
 
     /// <summary>
+    /// Provider-enforced field-level security (column masking) set (#1940). Attribute
+    /// (field) names listed here are dropped from the projected attributes server-side,
+    /// regardless of <see cref="OutFields"/> / <c>$select</c> / <c>properties</c>, so a
+    /// restricted role never receives a masked column's value. Resolved at the shared
+    /// projection seam (parallel to <see cref="EnforcedSqlFilter"/>) so a single
+    /// enforcement point covers every query protocol and output format. Default
+    /// (unset/empty) means no masking applies.
+    /// </summary>
+    public ImmutableArray<string>? EnforcedMaskedFields { get; init; }
+
+    /// <summary>
     /// Optional list of object IDs to filter by
     /// </summary>
     public ImmutableArray<long>? ObjectIds { get; init; }

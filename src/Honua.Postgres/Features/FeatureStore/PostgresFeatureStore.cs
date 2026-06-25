@@ -50,6 +50,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
     private readonly IFilterExpressionService? _filterExpressionService;
     private readonly IRowLevelSecurityFilterSource? _rlsFilterSource;
+    private readonly IFieldMaskSource? _fieldMaskSource;
     private readonly ILogger<PostgresStorageMappedFeatureReader>? _storageMappedReaderLogger;
 
     public PostgresFeatureStoreRefactored(
@@ -77,7 +78,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IFilterExpressionService? filterExpressionService = null,
         IMetadataV2GraphProvider? v2Provider = null,
         ILogger<PostgresStorageMappedFeatureReader>? storageMappedReaderLogger = null,
-        IRowLevelSecurityFilterSource? rlsFilterSource = null)
+        IRowLevelSecurityFilterSource? rlsFilterSource = null,
+        IFieldMaskSource? fieldMaskSource = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
@@ -89,6 +91,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         _filterExpressionService = filterExpressionService;
         _storageMappedReaderLogger = storageMappedReaderLogger;
         _rlsFilterSource = rlsFilterSource;
+        _fieldMaskSource = fieldMaskSource;
     }
 
     public string ProviderName => DataProviderNames.Postgis;
@@ -125,8 +128,11 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         // Enforce the layer's permanent (row-visibility) filter: a row hidden by
         // the metadata-v2 PermanentFilter must not be readable item-by-id either.
         var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
-        if (query.EnforcedSqlFilter is null)
+        if (query.EnforcedSqlFilter is null && query.EnforcedMaskedFields is null)
         {
+            // No enforced row-visibility filter and no field-level masking apply — take the
+            // optimized by-id read path. When either applies we fall through to the select
+            // builder so the enforced filter and column masking (#1940) are honored.
             return await _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken);
         }
 
@@ -905,13 +911,50 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        if (query.EnforcedSqlFilter != null)
+        // Idempotency guard: a query that already carries an enforced filter or masked-field
+        // set has been through this seam (e.g. a nested re-entrant call), so do not resolve
+        // again. Both enforced concerns are resolved together below for the unresolved case.
+        if (query.EnforcedSqlFilter != null || query.EnforcedMaskedFields != null)
         {
             return query;
         }
 
         var enforcedFilter = await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-        return enforcedFilter == null ? query : query with { EnforcedSqlFilter = enforcedFilter };
+        var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
+
+        if (enforcedFilter != null)
+        {
+            query = query with { EnforcedSqlFilter = enforcedFilter };
+        }
+
+        if (!maskedFields.IsDefaultOrEmpty)
+        {
+            query = query with { EnforcedMaskedFields = maskedFields };
+        }
+
+        return query;
+    }
+
+    /// <summary>
+    /// Resolves the request-scoped field-level-security (column masking) set (#1940) for
+    /// the layer, or an empty set when no masking applies (no policy, no request context).
+    /// Best-effort metadata lookup so a missing resource never throws here; the field-mask
+    /// source itself returns an empty set when nothing matches.
+    /// </summary>
+    private async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(int layerId, CancellationToken cancellationToken)
+    {
+        if (_fieldMaskSource is null || _v2Provider is null)
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        return await _fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
