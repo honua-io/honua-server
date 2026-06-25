@@ -301,8 +301,13 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
     public override async Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
+        bool includeMetadata = true,
         CancellationToken cancellationToken = default)
     {
+        // The Azure list API returns blob metadata inline in a single paged enumeration when
+        // BlobTraits.Metadata is requested, so populating the full CloudFile costs no extra round
+        // trips. includeMetadata is therefore accepted for interface parity but always honoured.
+        _ = includeMetadata;
         var prefix = CloudStoragePath.BuildPrefix(folder, _options.BlobPrefix);
         var results = new List<CloudFile>();
 
