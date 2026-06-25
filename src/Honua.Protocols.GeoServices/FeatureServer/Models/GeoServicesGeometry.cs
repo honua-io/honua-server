@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
@@ -82,6 +83,26 @@ public sealed class GeoServicesGeometry
     /// Polygon rings
     /// </summary>
     public double[][][]? Rings { get; init; }
+
+    /// <summary>
+    /// Esri true-curve polyline paths. Each path is an array whose elements are
+    /// either a plain <c>[x, y(, z)(, m)]</c> vertex (a JSON array) or a curve-segment
+    /// object: <c>{"c": [[endX, endY], [centerX, centerY]]}</c> (circular arc),
+    /// <c>{"b": [[endX, endY], [ctrl1X, ctrl1Y], [ctrl2X, ctrl2Y]]}</c> (cubic Bézier),
+    /// or <c>{"a": [...]}</c> (elliptic arc — parsed but not densified). Stored as raw
+    /// <see cref="JsonElement"/> so the heterogeneous vertex/segment shape round-trips
+    /// losslessly and is AOT-safe under the source-generated JSON context (#1877 Part A/B).
+    /// </summary>
+    [JsonPropertyName("curvePaths")]
+    public JsonElement[][]? CurvePaths { get; init; }
+
+    /// <summary>
+    /// Esri true-curve polygon rings. Same element grammar as
+    /// <see cref="CurvePaths"/> (mixed vertex/segment arrays), used for curved polygon
+    /// boundaries (#1877 Part A/B).
+    /// </summary>
+    [JsonPropertyName("curveRings")]
+    public JsonElement[][]? CurveRings { get; init; }
 
     /// <summary>
     /// Spatial reference information

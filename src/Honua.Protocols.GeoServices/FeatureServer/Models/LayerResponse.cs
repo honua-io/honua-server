@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 /// <summary>
@@ -41,6 +43,26 @@ public sealed class LayerResponse
     /// Layer's spatial reference system
     /// </summary>
     public required SpatialReferenceInfo SpatialReference { get; init; }
+
+    /// <summary>
+    /// Whether features in this layer carry Z (elevation) ordinates. Sourced from
+    /// the authored Metadata v2 spatial/display flag. Emitted only when <c>true</c>
+    /// (<see cref="JsonIgnoreCondition.WhenWritingDefault"/>) so 2D layer documents
+    /// stay byte-for-byte compatible with existing Esri clients (#1877 Part C).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonPropertyName("hasZ")]
+    public bool HasZ { get; init; }
+
+    /// <summary>
+    /// Whether features in this layer carry M (measure) ordinates. Sourced from
+    /// the authored Metadata v2 spatial/display flag. Emitted only when <c>true</c>
+    /// (<see cref="JsonIgnoreCondition.WhenWritingDefault"/>) so non-measured layer
+    /// documents stay byte-for-byte compatible with existing Esri clients (#1877 Part C).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonPropertyName("hasM")]
+    public bool HasM { get; init; }
 
     /// <summary>
     /// Field definitions for the layer
@@ -150,9 +172,13 @@ public sealed class LayerResponse
     public string? TypeIdField { get; init; }
 
     /// <summary>
-    /// Field used for type definitions
+    /// Esri-style editing <c>types</c> for the layer. Derived from the canonical
+    /// subtype set (one type per subtype, each with per-field domains and an editing
+    /// template seeded with the subtype's default values), mirroring how ArcGIS projects
+    /// layer types from subtypes. Null (and omitted from the response) when the layer
+    /// declares no subtypes (#1878).
     /// </summary>
-    public object[]? Types { get; init; }
+    public GeoServicesLayerType[]? Types { get; init; }
 
     /// <summary>
     /// Relationships to other layers
@@ -310,4 +336,16 @@ public sealed class LayerResponse
     /// when the layer declares no subtypes.
     /// </summary>
     public GeoServicesSubtypeInfo[]? Subtypes { get; init; }
+
+    /// <summary>
+    /// Contingent-value definition for the layer: the cross-field value-combination
+    /// constraints (field groups and their enumerated allowed value combinations) declared
+    /// on the canonical Metadata v2 resource. Surfaced here on the layer metadata in addition
+    /// to the service-level <c>queryContingentValues</c> operation, mirroring how Esri exposes
+    /// <c>contingentValuesDefinition</c> on a feature layer. Null (and omitted from the
+    /// response) when the layer declares no contingent values, so layers without them stay
+    /// byte-for-byte compatible with existing Esri clients (#1878).
+    /// </summary>
+    [JsonPropertyName("contingentValuesDefinition")]
+    public ContingentValuesDefinition? ContingentValuesDefinition { get; init; }
 }

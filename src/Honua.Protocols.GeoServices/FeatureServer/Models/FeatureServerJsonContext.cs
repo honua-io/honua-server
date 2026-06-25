@@ -32,6 +32,9 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(GeoServicesFieldDomainCodedValueInfo[]))]
 [JsonSerializable(typeof(GeoServicesSubtypeInfo))]
 [JsonSerializable(typeof(GeoServicesSubtypeInfo[]))]
+[JsonSerializable(typeof(GeoServicesLayerType))]
+[JsonSerializable(typeof(GeoServicesLayerType[]))]
+[JsonSerializable(typeof(FeatureTemplatePrototype))]
 [JsonSerializable(typeof(QueryResponse))]
 [JsonSerializable(typeof(ServiceQueryResponse))]
 [JsonSerializable(typeof(ServiceQueryLayerResponse))]
@@ -64,6 +67,10 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>[]))]
 [JsonSerializable(typeof(JsonElement))]
+// True-curve geometry (curvePaths/curveRings): each segment/vertex is a raw JsonElement
+// so the heterogeneous [x,y]-or-{"c":...}/{"b":...} grammar round-trips losslessly (#1877).
+[JsonSerializable(typeof(JsonElement[]))]
+[JsonSerializable(typeof(JsonElement[][]), TypeInfoPropertyName = "JsonElementJaggedArray")]
 [JsonSerializable(typeof(AttachmentInfo))]
 [JsonSerializable(typeof(AttachmentInfosResponse))]
 [JsonSerializable(typeof(AttachmentGroup))]

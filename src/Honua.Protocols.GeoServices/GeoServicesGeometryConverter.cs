@@ -154,6 +154,15 @@ internal static class GeoServicesGeometryConverter
     {
         ArgumentNullException.ThrowIfNull(geometry);
 
+        // True curves (curvePaths/curveRings) are densified into linear paths/rings up front so the
+        // rest of the pipeline only ever deals with linear geometry. NTS/WKB cannot represent a true
+        // curve, so densification is the storage representation (#1877 Part A; storage-linearization
+        // limitation documented on CurveGeometryConverter).
+        if (CurveGeometryConverter.HasTrueCurves(geometry))
+        {
+            geometry = CurveGeometryConverter.Densify(geometry);
+        }
+
         if (IsEmptyGeometry(geometry))
         {
             throw new ArgumentException(UnsupportedGeometryMessage);
