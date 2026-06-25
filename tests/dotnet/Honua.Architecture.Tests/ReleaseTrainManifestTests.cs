@@ -28,6 +28,7 @@ public sealed class ReleaseTrainManifestTests
         "mobile-dotnet-sdk-train",
         "helm-release-candidate-metadata",
         "admin-docs-supported-surfaces",
+        "terraform-rc-module-metadata",
         "release-train-scoreboard",
         "release-candidate-image-compatibility",
         "release-evidence-pack",
