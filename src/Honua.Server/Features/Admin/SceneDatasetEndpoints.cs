@@ -609,9 +609,18 @@ internal static partial class SceneDatasetEndpoints
                 type = SceneDatasetType.Terrain;
                 error = string.Empty;
                 return true;
+            case "building":
+                type = SceneDatasetType.Building;
+                error = string.Empty;
+                return true;
+            case "point_cloud":
+            case "pointcloud":
+                type = SceneDatasetType.PointCloud;
+                error = string.Empty;
+                return true;
             default:
                 type = SceneDatasetType.HostedTiles;
-                error = $"Unknown dataset type '{value}'. Allowed: hosted_tiles, terrain.";
+                error = $"Unknown dataset type '{value}'. Allowed: hosted_tiles, terrain, building, point_cloud.";
                 return false;
         }
     }
@@ -665,6 +674,8 @@ internal static partial class SceneDatasetEndpoints
     {
         SceneDatasetType.HostedTiles => "hosted_tiles",
         SceneDatasetType.Terrain => "terrain",
+        SceneDatasetType.Building => "building",
+        SceneDatasetType.PointCloud => "point_cloud",
         _ => "hosted_tiles"
     };
 
