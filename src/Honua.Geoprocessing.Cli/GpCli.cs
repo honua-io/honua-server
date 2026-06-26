@@ -50,6 +50,7 @@ public static class GpCli
             return verb switch
             {
                 "list" => RunList(),
+                "describe" => RunDescribe(rest),
                 "run" => await RunRun(rest).ConfigureAwait(false),
                 "test" => await RunTest(rest).ConfigureAwait(false),
                 "plan" => await RunPlan(rest).ConfigureAwait(false),
@@ -117,6 +118,46 @@ public static class GpCli
             }
         }
 
+        return 0;
+    }
+
+    private static int RunDescribe(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            throw new GpCliUsageException(
+                "Missing <processId>. Usage: honua gp describe <processId> [--json]");
+        }
+
+        var processId = args[0];
+        var asJson = false;
+        for (var i = 1; i < args.Length; i++)
+        {
+            asJson = args[i] switch
+            {
+                "--json" or "-j" => true,
+                _ => throw new GpCliUsageException($"Unknown option '{args[i]}'."),
+            };
+        }
+
+        // Resolve from the SAME live catalog `list`/`run`/`plan` use, so a described
+        // process is exactly one the runner can invoke — id, typed params, outputs,
+        // and runtime profile all come from the registered ProcessDefinition.
+        using var provider = BuildProvider();
+        var catalog = provider.GetService<IProcessCatalog>()
+            ?? throw new GpCliUsageException("Process catalog is unavailable.");
+
+        var definition = catalog.GetProcess(processId);
+        if (definition is null)
+        {
+            // Mirror `run`'s unknown-process usage error rather than a crash.
+            throw new GpCliUsageException(
+                $"Process id '{processId}' is not registered. Run 'honua gp list' to see available processes.");
+        }
+
+        Console.WriteLine(asJson
+            ? GpDescribeRenderer.RenderJson(definition)
+            : GpDescribeRenderer.RenderText(definition));
         return 0;
     }
 
@@ -925,6 +966,7 @@ public static class GpCli
         Console.WriteLine();
         Console.WriteLine("Usage:");
         Console.WriteLine("  honua gp list");
+        Console.WriteLine("  honua gp describe <processId> [--json]");
         Console.WriteLine("  honua gp plan <processId> [--input <file>] [--param k=v ...]");
         Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>] [--glass-box]");
         Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
@@ -943,6 +985,7 @@ public static class GpCli
         Console.WriteLine("                      full stdout/stderr, scratch dirs, and a repro hint (also HONUA_GP_GLASSBOX).");
         Console.WriteLine();
         Console.WriteLine("Commands:");
+        Console.WriteLine("  describe  Show a process's typed parameters, outputs, inputs JSON Schema, and an example (--json for the machine view).");
         Console.WriteLine("  plan  Dry-run: validate params + DAG and estimate output size/cost WITHOUT executing.");
         Console.WriteLine("  run   Execute the process and emit its artifact(s).");
         Console.WriteLine("  test  Run golden-file fixtures under samples/gp (or --root) and assert outputs.");
@@ -959,6 +1002,8 @@ public static class GpCli
         Console.WriteLine("  --publish           Also publish the created version to a process endpoint.");
         Console.WriteLine();
         Console.WriteLine("Examples:");
+        Console.WriteLine("  honua gp describe geometry.buffer          # typed params, outputs, JSON Schema, example");
+        Console.WriteLine("  honua gp describe geometry.buffer --json   # machine-readable descriptor");
         Console.WriteLine("  honua gp plan geometry.buffer --param wkb=<base64> --param srid=4326 --param distance=10");
         Console.WriteLine("  honua gp run geometry.buffer --param wkb=<base64> --param srid=4326 --param distance=10");
         Console.WriteLine("  honua gp run gdal.ogr2ogr --input in.geojson --param sourceFormat=GeoJSON --param targetFormat=CSV --out out.csv");
