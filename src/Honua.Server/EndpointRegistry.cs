@@ -200,6 +200,15 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/rate-limits/{id}"),
         new("GET", "/api/v1/admin/rate-limits/status"),
 
+        // v1 admin tenant lifecycle endpoints (#2156)
+        new("GET", "/api/v1/admin/tenants"),
+        new("POST", "/api/v1/admin/tenants"),
+        new("GET", "/api/v1/admin/tenants/usage"),
+        new("GET", "/api/v1/admin/tenants/{tenantId}"),
+        new("POST", "/api/v1/admin/tenants/{tenantId}/suspend"),
+        new("POST", "/api/v1/admin/tenants/{tenantId}/resume"),
+        new("DELETE", "/api/v1/admin/tenants/{tenantId}"),
+
         // v1 admin compliance endpoints (#352)
         new("GET", "/api/v1/admin/compliance/dashboard"),
         new("GET", "/api/v1/admin/compliance/report"),
