@@ -59,6 +59,12 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(double[]))]
 [JsonSerializable(typeof(double[][]))]
 [JsonSerializable(typeof(double[][][]))]
+// GeoJSON MultiPolygon coordinates nest four levels deep
+// (multipolygon -> polygon -> ring -> position). GeoJsonGeometry.Coordinates is typed
+// `object`, so the source-generated context must know every coordinate shape it may hold
+// polymorphically. Without double[][][][] the f=geojson path throws NotSupportedException
+// while serializing a MultiPolygon, which the global exception mapper turns into a 405.
+[JsonSerializable(typeof(double[][][][]))]
 [JsonSerializable(typeof(int[]))]
 [JsonSerializable(typeof(ApiErrorResponse))]
 [JsonSerializable(typeof(GeoServicesError))]
