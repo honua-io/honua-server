@@ -20,6 +20,12 @@ public sealed class WorkflowBranchingAndForEachTests
     private static readonly ClaimsPrincipal Operator = new(
         new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "tester") }, "TestAuth"));
 
+    private static readonly string[] ForEachRegions = ["east", "west", "north"];
+    private static readonly string[] AlphaBeta = ["alpha", "beta"];
+    private static readonly string[] ExpectedRegionsSorted = ["east", "north", "west"];
+    private static readonly string[] ExpectedThreeIterationIds = ["work::0", "work::1", "work::2"];
+    private static readonly string[] ExpectedGateAndTwoIterationIds = ["gate", "work::0", "work::1"];
+
     [Fact]
     public async Task ReconcileWorkflowRun_ConditionalBranch_RunsTakenSkipsNotTaken()
     {
@@ -61,8 +67,8 @@ public sealed class WorkflowBranchingAndForEachTests
         var aJob = afterA!.StepStates.Single(s => s.StepId == "a").JobId!;
         harness.JobService.Complete(aJob, new[]
         {
-            new ArtifactRef { ArtifactId = "art-1", Kind = ArtifactKind.FeatureLayer, Uri = "s3://b/1" },
-            new ArtifactRef { ArtifactId = "art-2", Kind = ArtifactKind.FeatureLayer, Uri = "s3://b/2" }
+            new ArtifactRef { ArtifactId = "art-1", Kind = ArtifactKind.FeatureLayer, Label = "a1", Uri = "s3://b/1" },
+            new ArtifactRef { ArtifactId = "art-2", Kind = ArtifactKind.FeatureLayer, Label = "a2", Uri = "s3://b/2" }
         });
 
         // Tick 2: observe A; B taken (submitted), C not taken (Skipped) in the same pass.
@@ -90,7 +96,7 @@ public sealed class WorkflowBranchingAndForEachTests
         var harness = new Harness();
         var now = harness.Clock.GetUtcNow();
 
-        var items = new[] { "east", "west", "north" };
+        var items = ForEachRegions;
         var forEachStep = new WorkflowStepDefinition
         {
             StepId = "work",
@@ -111,7 +117,7 @@ public sealed class WorkflowBranchingAndForEachTests
 
         // The run is unrolled into one concrete step per item, deterministically ordered.
         Assert.Equal(items.Length, run.StepStates.Count);
-        Assert.Equal(new[] { "work::0", "work::1", "work::2" }, run.StepStates.Select(s => s.StepId).ToArray());
+        Assert.Equal(ExpectedThreeIterationIds, run.StepStates.Select(s => s.StepId).ToArray());
 
         // Tick 1: all three iteration jobs are submitted with the item substituted in.
         await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
@@ -119,7 +125,7 @@ public sealed class WorkflowBranchingAndForEachTests
             .Select(p => p.Steps[0].Inputs["region"])
             .OrderBy(v => v, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "east", "north", "west" }, submittedRegions);
+        Assert.Equal(ExpectedRegionsSorted, submittedRegions);
 
         var queued = await harness.RunStore.GetAsync(run.RunId);
         foreach (var state in queued!.StepStates)
@@ -151,7 +157,7 @@ public sealed class WorkflowBranchingAndForEachTests
             Plan = BuildPlanWithInput("plan-work", "region", "${item}"),
             DependsOn = new[] { "gate" },
             Condition = new WorkflowStepCondition("gate", WorkflowStepConditionKind.HasArtifact),
-            ForEach = new WorkflowForEachSpec(new[] { "alpha", "beta" })
+            ForEach = new WorkflowForEachSpec(AlphaBeta)
         };
 
         var definition = new WorkflowDefinition
@@ -166,7 +172,7 @@ public sealed class WorkflowBranchingAndForEachTests
         var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
 
         // gate + two iteration sub-steps.
-        Assert.Equal(new[] { "gate", "work::0", "work::1" }, run.StepStates.Select(s => s.StepId).ToArray());
+        Assert.Equal(ExpectedGateAndTwoIterationIds, run.StepStates.Select(s => s.StepId).ToArray());
 
         // Tick 1: submit gate.
         await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
@@ -199,7 +205,7 @@ public sealed class WorkflowBranchingAndForEachTests
             Plan = BuildPlanWithInput("plan-work", "region", "${item}"),
             DependsOn = new[] { "gate" },
             Condition = new WorkflowStepCondition("gate", WorkflowStepConditionKind.HasArtifact),
-            ForEach = new WorkflowForEachSpec(new[] { "alpha", "beta" })
+            ForEach = new WorkflowForEachSpec(AlphaBeta)
         };
 
         var definition = new WorkflowDefinition
@@ -218,7 +224,7 @@ public sealed class WorkflowBranchingAndForEachTests
         var gateJob = afterGate!.StepStates.Single(s => s.StepId == "gate").JobId!;
         harness.JobService.Complete(gateJob, new[]
         {
-            new ArtifactRef { ArtifactId = "g-1", Kind = ArtifactKind.FeatureLayer, Uri = "s3://g/1" }
+            new ArtifactRef { ArtifactId = "g-1", Kind = ArtifactKind.FeatureLayer, Label = "g1", Uri = "s3://g/1" }
         });
 
         // Tick 2: gate observed Succeeded WITH an artifact; both iterations are taken.

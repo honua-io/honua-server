@@ -216,7 +216,7 @@ public sealed class HonuaLayerSinkExecutorTests
     }
 
     private static async Task<(ExecutionJobStatus Status, string? Uri, string Message)> RunAsync(
-        IJobExecutor executor,
+        HonuaLayerSinkExecutor executor,
         params (string Name, string Value)[] inputs)
     {
         const string processId = HonuaLayerSinkExecutor.HandledProcessId;
