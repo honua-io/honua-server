@@ -157,6 +157,12 @@ public sealed class CatalogExecutableConformanceTests
         // NOT in the lean dispatcher handler map).
         "gdal.gdalwarp",
         "gdal.ogr2ogr",
+        // GDAL/OGR-backed import reader (GdalVectorSourceReadJobExecutor): the
+        // native counterpart to the managed source.geojson / source.csv readers,
+        // canonicalizing the broader OGR format universe (FileGDB, GML, KML, TAB,
+        // Shapefile, GeoPackage, FlatGeobuf) into the standard FeatureCollection
+        // artifact. Declares RuntimeProfile = native; no lean-dispatcher executor.
+        "source.ogr",
     };
 
     [UnitTest]

@@ -16,6 +16,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
@@ -463,9 +464,53 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             {
                 return profile;
             }
+
+            // Dynamic escalation: a few catalog processes are managed for their
+            // in-memory fast paths but require the native PROJ-backed worker for
+            // datum-shift inputs. The catalog RuntimeProfile is a STATIC per-process
+            // declaration that cannot express "managed for some inputs, native for
+            // others", so inspect the step inputs here. transform.reproject escalates
+            // to native when the from/to SRID pair is not a managed fast path (i.e. a
+            // datum/grid shift): the GDAL worker's GdalVectorReprojectJobExecutor
+            // handles the SAME transform.reproject process id under the native profile.
+            if (RequiresNativeRuntimeEscalation(step))
+            {
+                return RuntimeProfiles.Native;
+            }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when an otherwise-managed <paramref name="step"/> carries
+    /// inputs that force it onto the native worker profile. Currently this covers
+    /// <c>transform.reproject</c> jobs whose <c>fromSrid</c>/<c>toSrid</c> pair is a
+    /// datum/grid shift the lean executor cannot serve (see
+    /// <see cref="ManagedReprojectFastPath"/>). When the SRID inputs are missing or
+    /// unparseable, escalation is declined so the managed executor produces the
+    /// canonical input-validation error rather than silently routing native.
+    /// </summary>
+    private static bool RequiresNativeRuntimeEscalation(AnalysisPlanStep step)
+    {
+        if (!string.Equals(step.ProcessId, ReprojectTransformExecutor.HandledProcessId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!step.Inputs.TryGetValue("fromSrid", out var fromRaw)
+            || !step.Inputs.TryGetValue("toSrid", out var toRaw))
+        {
+            return false;
+        }
+
+        if (!ManagedReprojectFastPath.TryParseSrid(fromRaw, out var fromSrid)
+            || !ManagedReprojectFastPath.TryParseSrid(toRaw, out var toSrid))
+        {
+            return false;
+        }
+
+        return ManagedReprojectFastPath.RequiresNativeWorker(fromSrid, toSrid);
     }
 
     private static ExecutionJobSpec BuildSpec(

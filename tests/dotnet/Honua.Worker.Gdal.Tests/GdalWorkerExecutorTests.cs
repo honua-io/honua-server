@@ -82,6 +82,8 @@ public sealed class GdalWorkerExecutorTests
         IProcessExecutor[] executors =
         {
             new GdalVectorConvertJobExecutor(runner, options, NullLogger<GdalVectorConvertJobExecutor>.Instance),
+            new GdalVectorReprojectJobExecutor(runner, options, NullLogger<GdalVectorReprojectJobExecutor>.Instance),
+            new GdalVectorSourceReadJobExecutor(runner, options, NullLogger<GdalVectorSourceReadJobExecutor>.Instance),
             new GdalRasterReprojectJobExecutor(runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
             new GdalSurfaceJobExecutor(runner, options, NullLogger<GdalSurfaceJobExecutor>.Instance),
             new GdalRasterClipJobExecutor(runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
@@ -306,8 +308,211 @@ public sealed class GdalWorkerExecutorTests
     }
 
     // -------------------------------------------------------------------------
+    // Vector reproject (ogr2ogr datum shift) — fake runner + routing
+    // -------------------------------------------------------------------------
+
+    [UnitTest]
+    public void VectorReproject_DeclaresNativeProfile_AndHandlesTransformReproject()
+    {
+        var executor = NewVectorReprojectExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out _);
+
+        executor.Kind.Should().Be(ExecutionJobKind.Geoprocessing);
+        executor.AcceptedRuntimeProfiles.Should().ContainSingle().Which.Should().Be(RuntimeProfiles.Native);
+        executor.AcceptedRuntimeProfiles.Should().NotContain(RuntimeProfiles.Managed);
+        // The native reproject executor handles the SAME process id as the managed
+        // executor — escalation routes by RuntimeProfile, not by a distinct id.
+        GdalVectorReprojectJobExecutor.HandledProcessId.Should().Be("transform.reproject");
+    }
+
+    [UnitTest]
+    public async Task VectorReproject_Succeeds_PublishesGeoJsonArtifact_AndPassesBothSrs()
+    {
+        var reprojected = Encoding.UTF8.GetBytes(PointGeoJson);
+        // ogr2ogr arg order is "-f GeoJSON -s_srs .. -t_srs .. <output> <input>", so
+        // the output path is the second-to-last argument.
+        var runner = FakeGdalCommandRunner.Succeeding(reprojected, outputArgIndexFromEnd: 1);
+        var executor = NewVectorReprojectExecutor(runner, out var scratch);
+
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalVectorReprojectJobExecutor.HandledProcessId,
+                ("input", "data:application/geo+json;base64," + Base64(PointGeoJson)),
+                ("fromSrid", "4267"),
+                ("toSrid", "4326"));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            context.Artifacts.Should().ContainSingle();
+            context.Artifacts[0].Should().StartWith("data:application/geo+json;base64,");
+
+            // PROJ selects the datum-shift pipeline from the explicit s_srs/t_srs pair.
+            var args = runner.Invocations.Single().Arguments;
+            args.Should().ContainInOrder("-s_srs", "EPSG:4267");
+            args.Should().ContainInOrder("-t_srs", "EPSG:4326");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task VectorReproject_RejectsNonGeoJsonDataUri()
+    {
+        var executor = NewVectorReprojectExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalVectorReprojectJobExecutor.HandledProcessId,
+                ("input", "not-a-data-uri"),
+                ("fromSrid", "4267"),
+                ("toSrid", "4326"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("data URI");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // OGR source read (ogr2ogr canonicalization) — fake runner + routing
+    // -------------------------------------------------------------------------
+
+    [UnitTest]
+    public void SourceRead_DeclaresNativeProfile_AndHandlesSourceOgr()
+    {
+        var executor = NewSourceReadExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out _);
+
+        executor.Kind.Should().Be(ExecutionJobKind.Geoprocessing);
+        executor.AcceptedRuntimeProfiles.Should().ContainSingle().Which.Should().Be(RuntimeProfiles.Native);
+        GdalVectorSourceReadJobExecutor.HandledProcessId.Should().Be("source.ogr");
+    }
+
+    [UnitTest]
+    public async Task SourceRead_Succeeds_CanonicalizesToGeoJsonArtifact()
+    {
+        var canonical = Encoding.UTF8.GetBytes(PointGeoJson);
+        var runner = FakeGdalCommandRunner.Succeeding(canonical, outputArgIndexFromEnd: 1);
+        var executor = NewSourceReadExecutor(runner, out var scratch);
+
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalVectorSourceReadJobExecutor.HandledProcessId,
+                ("source", Base64(PointGeoJson)),
+                ("sourceFormat", "GeoJSON"));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            context.Artifacts.Should().ContainSingle();
+            context.Artifacts[0].Should().StartWith("data:application/geo+json;base64,");
+            runner.Invocations.Single().Arguments.Should().ContainInOrder("-f", "GeoJSON");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Real GDAL CLI — datum-shift reprojection proof when ogr2ogr is available
+    // -------------------------------------------------------------------------
+
+    [GdalCliFact("ogr2ogr")]
+    [Protocol(ProtocolNames.TestQuality)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task VectorReproject_WithRealOgr2Ogr_AppliesNad27ToWgs84DatumShift()
+    {
+        var scratch = NewScratch();
+        var executor = new GdalVectorReprojectJobExecutor(
+            new ProcessGdalCommandRunner(NullLogger<ProcessGdalCommandRunner>.Instance),
+            GdalJobFactory.Options(scratch),
+            NullLogger<GdalVectorReprojectJobExecutor>.Instance);
+
+        try
+        {
+            // A point near Meades Ranch, Kansas — the NAD 27 origin region where the
+            // NAD27→WGS84 datum shift is on the order of tens of metres (well above any
+            // rounding). NAD 27 = EPSG:4267, WGS 84 = EPSG:4326. The managed fast path
+            // REJECTS this pair; only the PROJ-backed worker performs the grid shift.
+            const double srcLon = -98.5;
+            const double srcLat = 39.0;
+            var nad27Point =
+                "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":" +
+                "{\"type\":\"Point\",\"coordinates\":[" +
+                srcLon.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                srcLat.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                "]},\"properties\":{}}]}";
+
+            var job = GdalJobFactory.Job(
+                GdalVectorReprojectJobExecutor.HandledProcessId,
+                ("input", "data:application/geo+json;base64," + Base64(nad27Point)),
+                ("fromSrid", "4267"),
+                ("toSrid", "4326"));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            context.Artifacts.Should().ContainSingle();
+
+            var outGeoJson = Encoding.UTF8.GetString(GdalCli.DecodeDataUri(context.Artifacts[0]));
+            var (outLon, outLat) = FirstPointCoordinates(outGeoJson);
+
+            // The datum shift must move the coordinate — but only slightly (the NAD27
+            // vs WGS84 horizontal difference is sub-kilometre). A passthrough/identity
+            // bug would leave the coordinate exactly unchanged; a wrong CRS would move
+            // it kilometres. Assert a non-zero shift bounded to a realistic envelope.
+            var deltaLon = Math.Abs(outLon - srcLon);
+            var deltaLat = Math.Abs(outLat - srcLat);
+            (deltaLon + deltaLat).Should().BeGreaterThan(1e-6,
+                "NAD27→WGS84 is a real datum shift, not an identity transform");
+            deltaLon.Should().BeLessThan(0.01, "the horizontal datum shift is sub-kilometre, not a CRS mistake");
+            deltaLat.Should().BeLessThan(0.01, "the horizontal datum shift is sub-kilometre, not a CRS mistake");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    private static (double Lon, double Lat) FirstPointCoordinates(string geoJson)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(geoJson);
+        var coords = doc.RootElement
+            .GetProperty("features")[0]
+            .GetProperty("geometry")
+            .GetProperty("coordinates");
+        return (coords[0].GetDouble(), coords[1].GetDouble());
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private static GdalVectorReprojectJobExecutor NewVectorReprojectExecutor(IGdalCommandRunner runner, out string scratch)
+    {
+        scratch = NewScratch();
+        return new GdalVectorReprojectJobExecutor(
+            runner, GdalJobFactory.Options(scratch), NullLogger<GdalVectorReprojectJobExecutor>.Instance);
+    }
+
+    private static GdalVectorSourceReadJobExecutor NewSourceReadExecutor(IGdalCommandRunner runner, out string scratch)
+    {
+        scratch = NewScratch();
+        return new GdalVectorSourceReadJobExecutor(
+            runner, GdalJobFactory.Options(scratch), NullLogger<GdalVectorSourceReadJobExecutor>.Instance);
+    }
 
     private static GdalVectorConvertJobExecutor NewVectorExecutor(IGdalCommandRunner runner, out string scratch)
     {

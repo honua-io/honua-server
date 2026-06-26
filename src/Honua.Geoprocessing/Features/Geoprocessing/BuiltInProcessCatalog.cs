@@ -1200,6 +1200,20 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             OutputArtifactKinds = [ArtifactKind.FeatureLayer],
             RuntimeProfile = RuntimeProfiles.Native
         },
+        new ProcessDefinition
+        {
+            ProcessId = "source.ogr",
+            Title = "OGR Source (GDAL)",
+            Description = "GDAL/OGR-backed import reader executed out-of-process by the heavyweight worker via the ogr2ogr CLI. The native counterpart to the managed source.geojson / source.csv readers (hand-rolled NetTopologySuite parsers limited to GeoJSON and CSV): source.ogr canonicalizes the FULL OGR driver universe — native File Geodatabase (OpenFileGDB), GML / GML application schemas, KML, MapInfo TAB, ESRI Shapefile, GeoPackage, FlatGeobuf, and (where the worker image's drivers are compiled in) database-spatial sources — into the standard GeoJSON FeatureCollection artifact every workflow DAG starts from. Multi-file datasets (Shapefile sidecars, FileGDB directories) are supplied as a base64 ZIP and unpacked in an isolated scratch workspace. Routed to the native worker profile — NOT executable in the GDAL-free serving image.",
+            Category = "source",
+            Parameters =
+            [
+                Param("source", "Source Dataset", "Source dataset as base64-encoded bytes in the source format. Multi-file datasets (Shapefile, FileGDB) are supplied as a base64-encoded ZIP archive, which the worker unpacks before opening with OGR.", ProcessParameterValueType.Text, required: true),
+                Param("sourceFormat", "Source Format", "Source OGR driver hint used to choose the input file extension when the payload is a single file. Allowed values include: GeoJSON, GML, KML, GPKG, FlatGeobuf, MapInfo File, CSV, ESRI Shapefile, OpenFileGDB. Defaults to GeoJSON. ZIP-packaged datasets are detected by content and the hint is advisory.", ProcessParameterValueType.Text, defaultValue: "GeoJSON"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
 
         // -----------------------------------------------------------------------
         // Point-cloud conversion (1)

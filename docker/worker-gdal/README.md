@@ -6,15 +6,31 @@ It is the GDAL-equipped counterpart to the lean serving image (`/Dockerfile`).
 
 ## What it is
 
-- Built on a **GDAL base image** (`ghcr.io/osgeo/gdal`) with the .NET runtime
-  layered on. The GDAL CLI tools (`gdalwarp`, `ogr2ogr`, …) are on `PATH`.
+- Built on a **GDAL base image** (`ghcr.io/osgeo/gdal:ubuntu-full-3.12.4`, pinned)
+  with the .NET runtime layered on. The GDAL CLI tools (`gdalwarp`, `ogr2ogr`, …)
+  and PROJ (datum-shift grids) are on `PATH`.
 - Runs the **same** durable job-execution loop (`JobExecutionService` /
   `JobReconciliationService` / `RedisJobQueue`) that the serving image hosts —
   it does **not** fork a parallel runtime. The entrypoint is
   `Honua.Worker.Gdal.dll`, a headless .NET Generic Host.
-- Registers **only native-profile executors** (`GdalDispatchJobExecutor` →
-  `gdal.ogr2ogr`, `gdal.gdalwarp`). Each overrides
-  `AcceptedRuntimeProfiles` to `{ "native" }`.
+- Registers **only native-profile executors** (`GdalDispatchJobExecutor`). Each
+  overrides `AcceptedRuntimeProfiles` to `{ "native" }`. Native processes:
+  - `gdal.gdalwarp` — raster reprojection (PROJ).
+  - `gdal.ogr2ogr` — vector format conversion.
+  - `transform.reproject` — **native vector reproject with full PROJ datum/grid
+    shifts** (e.g. NAD 27 → WGS 84). The heavyweight counterpart to the managed
+    `transform.reproject`, which serves only the in-memory fast paths (identity,
+    Web Mercator aliases, WGS 84 ↔ Web Mercator) and rejects datum shifts. The
+    submit path escalates a reproject job to the native profile when its SRID
+    pair is not a managed fast path (`ManagedReprojectFastPath`), so the claim
+    fence routes it here.
+  - `source.ogr` — **GDAL/OGR-backed import reader** for the broad format
+    universe the managed `source.geojson` / `source.csv` readers cannot serve
+    (native FileGDB / OpenFileGDB, GML app-schema, KML, MapInfo TAB, ESRI
+    Shapefile, GeoPackage, FlatGeobuf), canonicalizing to a GeoJSON
+    FeatureCollection. Multi-file datasets arrive as a base64 ZIP.
+  - `pcloud.translate` — LAZ/COPC decompress + reproject (PDAL).
+  - `surface.*` / `raster.*` / `coverage.multidim.metadata` raster families.
 
 ## How heavy jobs route here (and never to the lean image)
 

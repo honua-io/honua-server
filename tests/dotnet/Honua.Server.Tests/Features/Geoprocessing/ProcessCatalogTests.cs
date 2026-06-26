@@ -51,8 +51,13 @@ public sealed class ProcessCatalogTests
         // point-cloud translate (pcloud.translate, LAZ/COPC decompress +
         // projected-CRS reproject) added by #1854 + 4 relational transforms
         // (transform.attribute-join, transform.aggregate, transform.pivot,
-        // transform.unpivot) added alongside the safe expression engine.
-        all.Should().HaveCount(63);
+        // transform.unpivot) added alongside the safe expression engine + the
+        // first-class remote DAG source connectors (source.honua-layer,
+        // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis)
+        // + 1 native-profile GDAL/OGR import reader (source.ogr, broad-format
+        // FeatureCollection canonicalization) added for the honua-worker-etl format
+        // breadth (ADR-0038 roadmap F).
+        all.Should().HaveCount(69);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
