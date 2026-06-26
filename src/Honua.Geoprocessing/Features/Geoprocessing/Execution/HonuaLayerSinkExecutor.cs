@@ -183,7 +183,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         _ => throw new TransformInputException($"loadMode '{raw}' is invalid; expected append, replace, or upsert.")
     };
 
-    private static IReadOnlyList<string> ParseKeyFields(string raw)
+    private static List<string> ParseKeyFields(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
