@@ -46,7 +46,8 @@ internal sealed record DeployTelemetryDecision
 internal sealed class DeployTelemetrySignalEvaluator(
     IOptionsMonitor<ControlPlaneOptions> optionsMonitor,
     IEnumerable<IDeployTelemetryProviderEvaluator> providerEvaluators,
-    ILogger<DeployTelemetrySignalEvaluator> logger) : IDeployTelemetrySignalEvaluator
+    ILogger<DeployTelemetrySignalEvaluator> logger,
+    IDeployHealthProbe? healthProbe = null) : IDeployTelemetrySignalEvaluator
 {
     private readonly Dictionary<string, IDeployTelemetryProviderEvaluator> _providers =
         BuildProviderMap(providerEvaluators);
@@ -104,6 +105,19 @@ internal sealed class DeployTelemetrySignalEvaluator(
             };
         }
 
+        // Synthetic /healthz/ready gate (#1849): a provider-independent rollback trigger inherited by
+        // every backend and change class. An unhealthy probe short-circuits to the same rollback path
+        // as an error-rate/latency breach (subject to the anti-flap debounce). A healthy probe does not
+        // promote on its own — it falls through to the metrics gate, which must also pass.
+        if (policy.HasHealthProbe)
+        {
+            var healthDecision = await EvaluateHealthProbeAsync(operation, policy, cancellationToken).ConfigureAwait(false);
+            if (healthDecision != null)
+            {
+                return healthDecision;
+            }
+        }
+
         var connection = optionsMonitor.CurrentValue.TelemetryConnections
             .FirstOrDefault(candidate => string.Equals(candidate.ConnectionId, policy.ConnectionId, StringComparison.Ordinal));
 
@@ -153,6 +167,78 @@ internal sealed class DeployTelemetrySignalEvaluator(
                 Message = "Waiting for telemetry confirmation because the telemetry query backend is unavailable."
             };
         }
+    }
+
+    /// <summary>
+    /// Runs the synthetic health probe and maps the outcome onto a deploy decision. Returns
+    /// <see langword="null"/> when the probe is healthy (so the caller can fall through to the metrics
+    /// gate); otherwise returns a rollback recommendation (subject to the anti-flap debounce) or a
+    /// bounded wait when the probe could not run (no probe service, misconfigured URL, or transport
+    /// failure) so a misconfiguration never silently promotes past an unverified health gate.
+    /// </summary>
+    private async Task<DeployTelemetryDecision?> EvaluateHealthProbeAsync(
+        WorkflowOperationRecord operation,
+        DeployTelemetryPolicy policy,
+        CancellationToken cancellationToken)
+    {
+        if (healthProbe == null)
+        {
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = "Waiting for telemetry confirmation because a synthetic health probe is configured but no health-probe service is available."
+            };
+        }
+
+        DeployHealthProbeResult result;
+        try
+        {
+            result = await healthProbe
+                .ProbeAsync(
+                    new DeployHealthProbeRequest
+                    {
+                        Url = policy.HealthProbeUrl!,
+                        Samples = policy.HealthProbeSamples,
+                        ExpectedStatusCode = policy.HealthProbeExpectedStatusCode,
+                        TimeoutSeconds = policy.HealthProbeTimeoutSeconds
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = "Waiting for telemetry confirmation because the synthetic health probe could not be executed."
+            };
+        }
+
+        if (!result.Validated)
+        {
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = $"Waiting for telemetry confirmation because the synthetic health probe is misconfigured: {result.Detail}"
+            };
+        }
+
+        if (result.Failures >= policy.HealthProbeFailureThreshold)
+        {
+            var breach = new DeployTelemetryDecision
+            {
+                RollbackRecommended = true,
+                Message = $"Automatic rollback requested because the synthetic health probe is unhealthy: {result.Failures} of {result.Attempts} checks did not return {policy.HealthProbeExpectedStatusCode} (failure threshold {policy.HealthProbeFailureThreshold})."
+            };
+
+            return ApplyBreachDebounce(operation, breach);
+        }
+
+        // Healthy probe: do not promote on the probe alone. The caller falls through to the metrics
+        // gate (whose own anti-flap debounce manages the breach streak), which must also pass before
+        // the deploy is promoted.
+        return null;
     }
 
     /// <summary>
