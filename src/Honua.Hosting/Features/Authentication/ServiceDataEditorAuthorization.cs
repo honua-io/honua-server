@@ -296,6 +296,25 @@ internal static class ServiceDataEditorAuthorization
             policy.AllowedWriteRoles is { Length: > 0 } ||
             policy.AllowedRoles is { Length: > 0 });
 
+    /// <summary>
+    /// Resolves whether the request's principal holds the administrative override role.
+    /// Used by the shared edit pipeline to let admins bypass owner-based edit policies
+    /// (ownership-based access control, #2132).
+    /// </summary>
+    /// <param name="context">The current HTTP context carrying the authenticated principal.</param>
+    /// <returns>True when the principal is an administrator.</returns>
+    internal static bool IsAdminPrincipal(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (context.User?.Identity?.IsAuthenticated != true)
+        {
+            return false;
+        }
+
+        var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
+        return IsAdmin(context.User, options);
+    }
+
     private static bool IsAdmin(ClaimsPrincipal principal, RbacOptions options)
     {
         foreach (var role in EnumerateRoles(principal, options))

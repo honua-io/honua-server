@@ -778,6 +778,16 @@ public sealed record MetadataV2AttributeRule
     /// </summary>
     [JsonPropertyName("isEnabled")]
     public bool IsEnabled { get; init; } = true;
+
+    /// <summary>
+    /// When <see langword="true"/> the rule is a <em>batch</em> rule: it does not run inline
+    /// on the edit that triggers it and is instead deferred to an explicit batch pass
+    /// (Esri "Evaluate Rules" / batch calculation/validation). When <see langword="false"/>
+    /// (the default) the rule is an <em>immediate</em> rule that runs inline on its
+    /// <see cref="TriggeringEvents"/>. Mirrors Esri's immediate-vs-batch evaluation mode.
+    /// </summary>
+    [JsonPropertyName("batch")]
+    public bool Batch { get; init; }
 }
 
 /// <summary>
@@ -792,5 +802,45 @@ public enum MetadataV2AttributeRuleType
     Constraint,
 
     /// <summary>Flags a non-conforming row; evaluated like a constraint on the edit path.</summary>
-    Validation
+    Validation,
+
+    /// <summary>
+    /// Excludes/aborts an edit when the rule's boolean expression evaluates to
+    /// <see langword="true"/> (the inverse of <see cref="Constraint"/>). Used to reject
+    /// feature edits that match an exclusion condition, surfacing an Esri-shaped error.
+    /// </summary>
+    Exclusion
+}
+
+/// <summary>
+/// Owner-based edit policy attached to a resource (ownership-based access control). When
+/// <see cref="Enabled"/>, update/delete of a feature is authorized only when the requesting
+/// principal owns the row — the value of the <see cref="OwnerField"/> matches the principal's
+/// name — while administrators bypass the check and inserts stamp the owner from the principal.
+/// Anonymous edits are rejected while the policy is active. Disabled (the default) preserves
+/// the full-edit behavior where any authorized editor may modify any row.
+/// </summary>
+public sealed record MetadataV2OwnerEditPolicy
+{
+    /// <summary>
+    /// Whether owner-based access control is active for the resource. Defaults to
+    /// <see langword="false"/> (full-edit: ownership is not enforced).
+    /// </summary>
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; init; }
+
+    /// <summary>
+    /// Name of the field that stores the owning principal for each feature. References a
+    /// declared <see cref="MetadataV2Resource.SchemaFields"/> entry. Required when
+    /// <see cref="Enabled"/> is <see langword="true"/>.
+    /// </summary>
+    [JsonPropertyName("ownerField")]
+    public string OwnerField { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Whether inserts stamp the <see cref="OwnerField"/> with the requesting principal's
+    /// name. Defaults to <see langword="true"/> so created rows are owned by their creator.
+    /// </summary>
+    [JsonPropertyName("stampOwnerOnInsert")]
+    public bool StampOwnerOnInsert { get; init; } = true;
 }
