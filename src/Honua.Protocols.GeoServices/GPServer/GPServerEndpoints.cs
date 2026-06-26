@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -125,6 +126,20 @@ internal static class GPServerEndpoints
             .WithSummary("Execute a synchronous GP task using GET")
             .WithDescription("Runs a sync-eligible GP task inline and returns its result envelope")
             .WithTags("GPServer");
+
+        // Jobs listing / history for a task (submitted/running/completed/failed),
+        // newest first, with opaque cursor paging. HANDLER-AUTHORIZED (#1144):
+        // ListJobsAsync enforces Job/Read authorization and per-job ownership in the
+        // shared service before any job is surfaced. Marked AllowAnonymous so the
+        // audit guard records the explicit decision.
+        endpoints.MapGet($"{RouteBase}/{{taskName}}/jobs",
+                static (HttpContext context, CancellationToken ct) => HandleJobsList(context, ct))
+            .WithDisplayName("GPServer Jobs List")
+            .WithName("GPServerJobsList")
+            .WithSummary("List GP jobs for a task")
+            .WithDescription("Returns submitted, running, completed, and failed jobs for a task with paging")
+            .WithTags("GPServer")
+            .AllowAnonymous();
 
         // Job status
         endpoints.MapGet($"{RouteBase}/{{taskName}}/jobs/{{jobId}}",
@@ -647,6 +662,130 @@ internal static class GPServerEndpoints
         };
 
         return Results.Json(response, GPServerJsonContext.Default.GPExecuteResponse, contentType: "application/json");
+    }
+
+    private static async Task<IResult> HandleJobsList(HttpContext context, CancellationToken ct)
+    {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
+        var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
+        EnrichActivity("JobsList", serviceId, taskName);
+        var logger = ResolveLogger(context);
+
+        var formatError = ValidateJsonFormat(context);
+        if (formatError != null)
+        {
+            return formatError;
+        }
+
+        if (!TryParseJobsListQuery(context, out var statuses, out var limit, out var cursor, out var queryError))
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, queryError!),
+                queryError!);
+        }
+
+        var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
+
+        try
+        {
+            var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+            if (!serviceValidation.IsValid)
+            {
+                return serviceValidation.ErrorResult!;
+            }
+
+            // Constrain the listing to jobs submitted through this service/task so the
+            // shared service cannot surface another protocol's or task's jobs.
+            var filter = new GeoprocessingJobListFilter
+            {
+                RequiredParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [GeoprocessingProtocolMetadataKeys.GPServerServiceId] = serviceId,
+                    [GeoprocessingProtocolMetadataKeys.GPServerTaskName] = taskName
+                },
+                Statuses = statuses,
+                Cursor = cursor,
+                Limit = limit
+            };
+
+            var page = await jobService.ListJobsAsync(filter, context.User, ct);
+
+            var jobs = new List<GPJobListItem>(page.Items.Count);
+            foreach (var job in page.Items)
+            {
+                jobs.Add(new GPJobListItem
+                {
+                    JobId = job.OperationId,
+                    JobStatus = GPServerStatusMapping.ToEsriJobStatus(job.Status),
+                    SubmissionTime = job.CreatedAt.ToUnixTimeMilliseconds(),
+                    LastUpdatedTime = (job.CompletedAt ?? job.UpdatedAt).ToUnixTimeMilliseconds()
+                });
+            }
+
+            GPServerLog.JobsListed(logger, serviceId, taskName, jobs.Count);
+
+            var response = new GPJobsListResponse
+            {
+                Jobs = jobs,
+                NextCursor = page.NextCursor
+            };
+
+            return Results.Json(response, GPServerJsonContext.Default.GPJobsListResponse,
+                contentType: "application/json");
+        }
+        catch (Exception ex)
+        {
+            return MapExceptionToResult(context, logger, "JobsList", ex);
+        }
+    }
+
+    private static bool TryParseJobsListQuery(
+        HttpContext context,
+        out IReadOnlyList<ExecutionJobStatus> statuses,
+        out int limit,
+        out string? cursor,
+        out string? error)
+    {
+        statuses = Array.Empty<ExecutionJobStatus>();
+        limit = 50;
+        cursor = null;
+        error = null;
+
+        var query = context.Request.Query;
+
+        // Esri clients use `num` for page size; accept `limit` as an alias.
+        var rawLimit = query["num"].FirstOrDefault() ?? query["limit"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(rawLimit))
+        {
+            if (!int.TryParse(rawLimit, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed <= 0)
+            {
+                error = "'num' must be a positive integer.";
+                return false;
+            }
+
+            limit = parsed;
+        }
+
+        cursor = query["cursor"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(cursor))
+        {
+            cursor = null;
+        }
+
+        var rawStatus = query["status"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(rawStatus))
+        {
+            if (!GPServerStatusMapping.TryParseEsriJobStatus(rawStatus, out var status))
+            {
+                error = $"'status' contains unsupported value '{rawStatus}'.";
+                return false;
+            }
+
+            statuses = [status];
+        }
+
+        return true;
     }
 
     private static async Task<IResult> HandleJobStatus(HttpContext context, CancellationToken ct)

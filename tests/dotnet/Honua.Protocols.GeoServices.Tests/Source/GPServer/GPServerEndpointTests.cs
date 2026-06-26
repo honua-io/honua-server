@@ -885,6 +885,104 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     }
 
     // -----------------------------------------------------------------------
+    // Jobs listing / history (#2143)
+    // -----------------------------------------------------------------------
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
+    public async Task JobsList_ReturnsServiceTaskBoundJobsNewestFirst()
+    {
+        var jobStore = _fixture.GetService<IExecutionJobStore>();
+        var task = $"ListTask{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        var olderId = $"gpjobs-old-{Guid.NewGuid():N}";
+        var newerId = $"gpjobs-new-{Guid.NewGuid():N}";
+        var otherTaskId = $"gpjobs-othertask-{Guid.NewGuid():N}";
+
+        (await jobStore!.TryCreateAsync(BoundJob(olderId, ExecutionJobStatus.Succeeded, now.AddMinutes(-10), task))).Should().BeTrue();
+        (await jobStore.TryCreateAsync(BoundJob(newerId, ExecutionJobStatus.Running, now.AddMinutes(-2), task))).Should().BeTrue();
+        // Different task on the same service must be excluded by the binding filter.
+        (await jobStore.TryCreateAsync(BoundJob(otherTaskId, ExecutionJobStatus.Running, now.AddMinutes(-1), "SomeOtherTask"))).Should().BeTrue();
+
+        var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{task}/jobs?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var jobs = doc.RootElement.GetProperty("jobs");
+        var ids = jobs.EnumerateArray().Select(j => j.GetProperty("jobId").GetString()).ToArray();
+
+        ids.Should().Equal(newerId, olderId); // newest first; other-task job excluded
+        jobs[0].GetProperty("jobStatus").GetString().Should().Be("esriJobExecuting");
+        jobs[1].GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
+        jobs[0].GetProperty("submissionTime").GetInt64().Should().BeGreaterThan(0);
+        jobs[1].GetProperty("lastUpdatedTime").GetInt64().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
+    public async Task JobsList_WithStatusFilter_ReturnsOnlyMatchingStatus()
+    {
+        var jobStore = _fixture.GetService<IExecutionJobStore>();
+        var task = $"FilterTask{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        var failedId = $"gpjobs-failed-{Guid.NewGuid():N}";
+        var succeededId = $"gpjobs-ok-{Guid.NewGuid():N}";
+        (await jobStore!.TryCreateAsync(BoundJob(failedId, ExecutionJobStatus.Failed, now.AddMinutes(-3), task))).Should().BeTrue();
+        (await jobStore.TryCreateAsync(BoundJob(succeededId, ExecutionJobStatus.Succeeded, now.AddMinutes(-2), task))).Should().BeTrue();
+
+        var response = await _client.GetAsync(
+            $"/rest/services/{ServiceId}/GPServer/{task}/jobs?status=esriJobFailed&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var ids = doc.RootElement.GetProperty("jobs").EnumerateArray()
+            .Select(j => j.GetProperty("jobId").GetString()).ToArray();
+        ids.Should().ContainSingle().Which.Should().Be(failedId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
+    public async Task JobsList_WithInvalidNum_ReturnsBadRequest()
+    {
+        var response = await _client.GetAsync(
+            $"/rest/services/{ServiceId}/GPServer/AnyTask/jobs?num=0&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private static ExecutionJobRecord BoundJob(
+        string jobId,
+        ExecutionJobStatus status,
+        DateTimeOffset createdAt,
+        string taskName)
+        => new()
+        {
+            OperationId = jobId,
+            Status = status,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+            CompletedAt = status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled
+                ? createdAt
+                : null,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "gptest",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["gpserver.serviceId"] = ServiceId,
+                    ["gpserver.taskName"] = taskName
+                }
+            }
+        };
+
+    // -----------------------------------------------------------------------
     // Cross-protocol binding rejection
     // -----------------------------------------------------------------------
 
@@ -1105,6 +1203,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     private sealed class TimeoutGeoprocessingJobService : IGeoprocessingJobService
     {
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
         public Task EnsureCallerAuthorizedAsync(
             ClaimsPrincipal principal,
             OperatorResourceType resourceType,
@@ -1150,6 +1254,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     private sealed class PreconditionFailedGeoprocessingJobService : IGeoprocessingJobService
     {
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
         public Task EnsureCallerAuthorizedAsync(
             ClaimsPrincipal principal,
             OperatorResourceType resourceType,
@@ -1193,6 +1303,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     private sealed class RecordingGeoprocessingJobService : IGeoprocessingJobService
     {
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
         public AnalysisPlan? LastPlan { get; private set; }
 
         public IReadOnlyDictionary<string, string>? LastProtocolMetadata { get; private set; }
@@ -1260,6 +1376,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     private sealed class ResultBackedGeoprocessingJobService : IGeoprocessingJobService
     {
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
         private readonly ExecutionJobRecord _job = new()
         {
             OperationId = "gp-result-job",
@@ -1353,6 +1475,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     /// </summary>
     private sealed class SyncExecuteGeoprocessingJobService : IGeoprocessingJobService
     {
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
         private static readonly AnalysisResultPackage SuccessPackage =
             AnalysisResultPackage.CreateCompleted(
                 resultPackageId: "pkg-gpserver-sync-execute",

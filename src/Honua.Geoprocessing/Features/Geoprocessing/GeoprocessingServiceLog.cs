@@ -186,4 +186,9 @@ internal static partial class GeoprocessingServiceLog
     public static partial void CustomCodeTokenRevokeFailed(
         ILogger logger,
         Exception exception);
+
+    [LoggerMessage(8032, LogLevel.Debug, "Jobs listed: Count={Count}")]
+    public static partial void JobsListed(
+        ILogger logger,
+        int count);
 }

@@ -8429,6 +8429,21 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-serviceid-gpserver-taskname-jobs",
+      "route": "/rest/services/{serviceId}/GPServer/{taskName}/jobs",
+      "method": "GET",
+      "family": "GeoServices REST GPServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobsList_ReturnsServiceTaskBoundJobsNewestFirst",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobsList_WithInvalidNum_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobsList_WithStatusFilter_ReturnsOnlyMatchingStatus"
+      ],
+      "proof_ledger_surface": "gpserver-adapter",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-serviceid-gpserver-taskname-jobs-jobid",
       "route": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}",
       "method": "GET",

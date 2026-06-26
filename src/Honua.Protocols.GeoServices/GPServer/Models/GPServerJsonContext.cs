@@ -21,6 +21,9 @@ namespace Honua.Protocols.GeoServices.GPServer.Models;
 [JsonSerializable(typeof(GPResultResponse))]
 [JsonSerializable(typeof(GPExecuteResponse))]
 [JsonSerializable(typeof(GPResultResponse[]))]
+[JsonSerializable(typeof(GPJobsListResponse))]
+[JsonSerializable(typeof(GPJobListItem))]
+[JsonSerializable(typeof(List<GPJobListItem>))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(string[]))]
 [JsonSourceGenerationOptions(

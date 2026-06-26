@@ -30,4 +30,40 @@ internal static class GPServerStatusMapping
     /// </summary>
     public static bool IsTerminalEsriStatus(string esriStatus)
         => esriStatus is "esriJobSucceeded" or "esriJobFailed" or "esriJobCancelled";
+
+    /// <summary>
+    /// Parses an Esri GPServer job status string back to a canonical
+    /// <see cref="ExecutionJobStatus"/> for jobs-listing status filters. Comparison is
+    /// case-insensitive. Returns false for unrecognised values.
+    /// </summary>
+    /// <param name="esriStatus">The Esri job status string.</param>
+    /// <param name="status">The parsed canonical status when recognised.</param>
+    /// <returns><see langword="true"/> when the value maps to a known status.</returns>
+    public static bool TryParseEsriJobStatus(string esriStatus, out ExecutionJobStatus status)
+    {
+        switch (esriStatus?.Trim().ToLowerInvariant())
+        {
+            case "esrijobsubmitted":
+                status = ExecutionJobStatus.Queued;
+                return true;
+            case "esrijobwaiting":
+                status = ExecutionJobStatus.Provisioning;
+                return true;
+            case "esrijobexecuting":
+                status = ExecutionJobStatus.Running;
+                return true;
+            case "esrijobsucceeded":
+                status = ExecutionJobStatus.Succeeded;
+                return true;
+            case "esrijobfailed":
+                status = ExecutionJobStatus.Failed;
+                return true;
+            case "esrijobcancelled":
+                status = ExecutionJobStatus.Cancelled;
+                return true;
+            default:
+                status = default;
+                return false;
+        }
+    }
 }
