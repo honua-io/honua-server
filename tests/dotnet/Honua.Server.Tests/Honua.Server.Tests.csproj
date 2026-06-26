@@ -67,6 +67,9 @@
     <None Update="TestData/Sld/*.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Features/Geoprocessing/customcode-harness-jobspec-contract.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

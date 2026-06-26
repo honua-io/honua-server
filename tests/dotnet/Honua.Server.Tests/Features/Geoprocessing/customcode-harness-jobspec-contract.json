@@ -1,0 +1,29 @@
+{
+  "_comment": "CHECKED-IN CONTRACT FIXTURE — the harness (image) half of the custom-code params seam (honua-server#2191). Pins the CUSTOMCODE_* container environment-variable names the Python harness reads, so the server's customcode.*->env.CUSTOMCODE_* emission cannot silently drift. Same drift-guard discipline as the AWS-adapter contract test (#108). When the harness changes its env contract, this fixture and the harness MUST change together.",
+  "_source": "honua-io/honua-server docker/worker-customcode-python/harness/honua_customcode_harness/jobspec.py @ feat/customcode-python-image (3e0c2b773f5cc1ae48e80bcffd124544ad356ac0). The harness resolves each spec field from CUSTOMCODE_<KEY-UPPER> when CUSTOMCODE_JOB_SPEC is absent (load_job_spec), and ALWAYS reads the auth spine HONUA_BASE_URL/HONUA_JOB_TOKEN from the environment only (never from the spec body).",
+  "harness_branch": "feat/customcode-python-image",
+  "harness_commit": "3e0c2b773f5cc1ae48e80bcffd124544ad356ac0",
+  "harness_file": "docker/worker-customcode-python/harness/honua_customcode_harness/jobspec.py",
+
+  "body_env_to_spec_key": {
+    "CUSTOMCODE_RUNTIME": "runtime",
+    "CUSTOMCODE_REPO_URL": "repo_url",
+    "CUSTOMCODE_GIT_REF": "git_ref",
+    "CUSTOMCODE_ENTRYPOINT": "entrypoint",
+    "CUSTOMCODE_DEPS_MANIFEST": "deps_manifest",
+    "CUSTOMCODE_PARAMS_JSON": "params_json",
+    "CUSTOMCODE_OUTPUT_PREFIX": "output_prefix",
+    "CUSTOMCODE_DECLARED_SCOPE": "declared_scope"
+  },
+
+  "_auth_spine_comment": "Injected separately by the server (env.HONUA_BASE_URL/env.HONUA_JOB_TOKEN) and read env-only by the harness; intentionally NOT part of the customcode.* body map.",
+  "auth_spine_env": [
+    "HONUA_BASE_URL",
+    "HONUA_JOB_TOKEN"
+  ],
+
+  "_harness_only_comment": "Optional harness input with a built-in default (1 GiB). The server has no customcode.output_max_bytes parameter today, so it is not emitted and the harness default applies. Listed here so the parity test treats its absence as intentional, not drift.",
+  "harness_only_optional_env": [
+    "CUSTOMCODE_OUTPUT_MAX_BYTES"
+  ]
+}
