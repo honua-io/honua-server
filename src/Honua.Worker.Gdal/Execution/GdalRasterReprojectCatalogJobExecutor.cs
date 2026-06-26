@@ -27,6 +27,17 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.reproject";
 
+    /// <summary>
+    /// The conversion-idiom alias this executor also handles (#2138). Shares the
+    /// identical <c>targetSrid</c> + <c>resampling</c> gdalwarp contract with
+    /// <see cref="HandledProcessId"/>; the conversion catalog entry exists so
+    /// adapters can expose an explicit "reproject to another CRS" conversion.
+    /// </summary>
+    public const string ConversionProcessId = "conversion.raster-reproject";
+
+    private static readonly FrozenSet<string> HandledIds =
+        new[] { HandledProcessId, ConversionProcessId }.ToFrozenSet(StringComparer.Ordinal);
+
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
 
     private static readonly IReadOnlySet<string> NativeProfileSet =
@@ -54,7 +65,7 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
     /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
     /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId, ConversionProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
@@ -72,7 +83,7 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
 
         var parameters = job.Spec.Parameters;
         var processId = GdalJobInputReader.ResolveProcessId(parameters);
-        if (!string.Equals(processId, HandledProcessId, StringComparison.Ordinal))
+        if (processId is null || !HandledIds.Contains(processId))
         {
             Log.UnsupportedProcessId(logger, job.OperationId, processId ?? "<none>");
             return JobExecutionResult.Failed(

@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing.Execution;
@@ -34,6 +35,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 {
     private readonly FrozenDictionary<string, IProcessExecutor> _handlers;
     private readonly ILogger<GeoprocessingDispatchJobExecutor> _logger;
+    private readonly IProcessUsageTelemetry? _usageTelemetry;
 
     /// <summary>
     /// Composes the dispatcher over the auto-registered per-process executors
@@ -45,13 +47,15 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     /// </summary>
     public GeoprocessingDispatchJobExecutor(
         IEnumerable<IProcessExecutor> executors,
-        ILogger<GeoprocessingDispatchJobExecutor> logger)
+        ILogger<GeoprocessingDispatchJobExecutor> logger,
+        IProcessUsageTelemetry? usageTelemetry = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = ProcessExecutorRouteTable.Build(executors);
         _logger = logger;
+        _usageTelemetry = usageTelemetry;
     }
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
@@ -62,7 +66,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     /// </summary>
     internal IReadOnlyCollection<string> SupportedProcessIds => _handlers.Keys;
 
-    public Task<JobExecutionResult> ExecuteAsync(
+    public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
         CancellationToken cancellationToken)
@@ -77,12 +81,18 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         {
             var supported = string.Join(", ", _handlers.Keys.OrderBy(id => id, StringComparer.Ordinal));
             Log.UnsupportedProcessId(_logger, job.OperationId, processId ?? "<none>");
-            return Task.FromResult(JobExecutionResult.Failed(
+            return JobExecutionResult.Failed(
                 $"Process id '{processId ?? "<none>"}' is not supported by the geoprocessing runtime. " +
-                $"Supported ids in this slice: {supported}."));
+                $"Supported ids in this slice: {supported}.");
         }
 
-        return handler.ExecuteAsync(job, context, cancellationToken);
+        var result = await handler.ExecuteAsync(job, context, cancellationToken).ConfigureAwait(false);
+
+        // Usage-ranked tiering (#2144): record every dispatched invocation with its
+        // outcome. Recording never throws, so it cannot affect the job result.
+        _usageTelemetry?.RecordInvocation(processId, result.Status == ExecutionJobStatus.Succeeded);
+
+        return result;
     }
 
     private static partial class Log
