@@ -44,6 +44,93 @@ internal sealed partial class StreamingFileImportService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Create-if-not-exists variant used by the append and upsert load modes, which must
+    /// not drop an existing target. Builds the same fixed import shape only when the table
+    /// is missing, leaving any existing rows untouched.
+    /// </summary>
+    private static async Task EnsureTableAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        int targetSrid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(EnsureImportTableSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", tableName);
+        command.Parameters.AddWithValue("target_srid", targetSrid);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds an empty <c>&lt;table&gt;__staging</c> sibling for a transactional replace.
+    /// Returns the physical staging table name the load streams into; the live target is
+    /// untouched until <see cref="SwapStagingTableAsync"/> renames the staging table over it.
+    /// </summary>
+    private static async Task<string> CreateStagingTableAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        int targetSrid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(CreateImportStagingTableSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", tableName);
+        command.Parameters.AddWithValue("target_srid", targetSrid);
+        var stagingName = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return stagingName ?? tableName + "__staging";
+    }
+
+    /// <summary>
+    /// Atomically replaces the live target with the freshly-loaded staging sibling inside a
+    /// single transaction, so the drop+rename is all-or-nothing.
+    /// </summary>
+    private static async Task SwapStagingTableAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await using (var command = new NpgsqlCommand(SwapImportTableSql, connection, transaction))
+            {
+                command.Parameters.AddWithValue("schema_name", schemaName);
+                command.Parameters.AddWithValue("table_name", tableName);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Ensures a stable unique index over the requested property key columns so the keyed
+    /// upsert path has a valid <c>ON CONFLICT</c> target.
+    /// </summary>
+    private static async Task EnsureUpsertKeyAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        IReadOnlyList<string> keyColumns,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(EnsureImportUpsertKeySql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", tableName);
+        command.Parameters.Add("key_columns", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text)
+            .Value = keyColumns.ToArray();
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task AnalyzeTableAsync(
         NpgsqlConnection connection,
         string schemaName,

@@ -1,0 +1,22 @@
+<Project>
+
+  <!--
+    Build props for the .NET custom-code harness solution. This tree is SEPARATE
+    from the main Honua.sln (like the Python harness under
+    docker/worker-customcode-python/harness) — it is built only in the image (and
+    in CI/agent offline checks), never as part of the AOT serving build.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Audit is opt-out here: the offline build has no audit feed. -->
+    <NuGetAudit>false</NuGetAudit>
+    <Deterministic>true</Deterministic>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

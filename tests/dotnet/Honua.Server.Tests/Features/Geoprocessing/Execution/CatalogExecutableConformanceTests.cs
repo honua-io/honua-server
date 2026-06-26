@@ -94,6 +94,10 @@ public sealed class CatalogExecutableConformanceTests
         "transform.attribute-cast",
         "transform.computed-field",
         "transform.attribute-filter",
+        "transform.attribute-join",
+        "transform.aggregate",
+        "transform.pivot",
+        "transform.unpivot",
         "transform.spatial-filter",
         "transform.clip",
         "transform.dedup",
@@ -101,6 +105,13 @@ public sealed class CatalogExecutableConformanceTests
         // GeoETL sources.
         "source.geojson",
         "source.csv",
+        // First-class remote DAG source connectors: each runs through the dispatcher
+        // via a per-process RemoteSourceExecutor that reuses an existing import reader.
+        "source.honua-layer",
+        "source.esri-featureserver",
+        "source.ogc-features",
+        "source.wfs",
+        "source.postgis",
         // GeoETL sinks.
         "sink.geojson-file",
         "sink.quarantine",
@@ -166,6 +177,12 @@ public sealed class CatalogExecutableConformanceTests
         // NOT in the lean dispatcher handler map).
         "gdal.gdalwarp",
         "gdal.ogr2ogr",
+        // GDAL/OGR-backed import reader (GdalVectorSourceReadJobExecutor): the
+        // native counterpart to the managed source.geojson / source.csv readers,
+        // canonicalizing the broader OGR format universe (FileGDB, GML, KML, TAB,
+        // Shapefile, GeoPackage, FlatGeobuf) into the standard FeatureCollection
+        // artifact. Declares RuntimeProfile = native; no lean-dispatcher executor.
+        "source.ogr",
     };
 
     [UnitTest]
@@ -370,6 +387,10 @@ public sealed class CatalogExecutableConformanceTests
             new AttributeCastTransformExecutor(monitor),
             new ComputedFieldTransformExecutor(monitor),
             new AttributeFilterTransformExecutor(monitor),
+            new AttributeJoinTransformExecutor(monitor),
+            new AggregateTransformExecutor(monitor),
+            new PivotTransformExecutor(monitor),
+            new UnpivotTransformExecutor(monitor),
             new SpatialFilterTransformExecutor(monitor),
             new ClipTransformExecutor(monitor),
             new DedupTransformExecutor(monitor),
@@ -385,10 +406,36 @@ public sealed class CatalogExecutableConformanceTests
                 NullLogger<ImportDatasetJobExecutor>.Instance),
         };
 
+        // Remote DAG source connectors self-register as IProcessExecutor, so they flow
+        // through the same single route-table scan as every other per-process executor.
+        var allExecutors = executors.Concat(BuildRemoteSourceExecutors(monitor)).ToArray();
+
         var dispatcher = new GeoprocessingDispatchJobExecutor(
-            executors,
+            allExecutors,
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
 
         return dispatcher.SupportedProcessIds;
+    }
+
+    private static RemoteSourceExecutor[] BuildRemoteSourceExecutors(
+        IOptionsMonitor<GeoprocessingExecutorOptions> monitor)
+    {
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        string[] sourceIds =
+        [
+            "source.honua-layer",
+            "source.esri-featureserver",
+            "source.ogc-features",
+            "source.wfs",
+            "source.postgis",
+        ];
+
+        return sourceIds
+            .Select(id => RemoteSourceExecutor.ForProcess(
+                id,
+                scopeFactory,
+                monitor,
+                NullLogger<RemoteSourceExecutor>.Instance))
+            .ToArray();
     }
 }

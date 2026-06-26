@@ -36,7 +36,7 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_ListProcesses_ReturnsExpectedBuiltInCount()
+    public void Catalog_ListProcesses_ReturnsExactlyAllBuiltIns()
     {
         var all = _catalog.ListProcesses();
 
@@ -49,13 +49,23 @@ public sealed class ProcessCatalogTests
         // gdal.ogr2ogr) reconciled from feat/gdal-heavy-worker + 1 durable
         // import pipeline (import.dataset) added by #1630 + 1 native-profile
         // point-cloud translate (pcloud.translate, LAZ/COPC decompress +
-        // projected-CRS reproject) added by #1854 + 12 managed tool-pack ops
+        // projected-CRS reproject) added by #1854
+        // + 13 Round-5 managed ops: 12 GP tool-pack ops
         // (overlay.clip/intersect/union/erase/merge/split, proximity.near,
         // proximity.near-table, statistics.summarize/frequency/calculate,
         // data-management.append) added by the GP tool packs (#2206/#2139/#2140)
         // + 1 managed honua-layer sink (sink.honua-layer) added by the GeoETL
-        // honua-layer sink path.
-        all.Should().HaveCount(72);
+        // honua-layer sink path
+        // + 10 Round-4 ops merged from trunk: 4 relational transforms
+        // (transform.attribute-join, transform.aggregate, transform.pivot,
+        // transform.unpivot) added alongside the safe expression engine + the
+        // first-class remote DAG source connectors (source.honua-layer,
+        // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis)
+        // + 1 native-profile GDAL/OGR import reader (source.ogr, broad-format
+        // FeatureCollection canonicalization) added for the honua-worker-etl format
+        // breadth (ADR-0038 roadmap F).
+        // Round-5 (72) ∪ Round-4 (69) = 82 distinct processes (59 shared).
+        all.Should().HaveCount(82);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 

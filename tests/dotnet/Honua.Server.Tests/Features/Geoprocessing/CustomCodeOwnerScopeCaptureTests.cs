@@ -103,6 +103,35 @@ public sealed class CustomCodeOwnerScopeCaptureTests
     }
 
     [UnitTest]
+    public void TryCapture_GrantBasedWriteSubmitter_PinsGrantsAndAcceptsScope()
+    {
+        // #2192: the submitter's write authority comes purely from a layer-scoped
+        // write:{service}/{layer} permission GRANT — no data-editor role. The capture
+        // must accept the declared write AND pin the grant into the snapshot so the
+        // later mint can intersect against it (instead of under-scoping the token).
+        var principal = Principal(
+            "dana",
+            tenant: "tenant-A",
+            roles: [],
+            permissions: ["write:parcels/lots"]);
+
+        var metadata = new Dictionary<string, string>
+        {
+            [CustomCodeOwnerScopeCapture.DeclaredScopeMetadataKey] = "write:parcels/lots",
+        };
+
+        var snapshot = CustomCodeOwnerScopeCapture.TryCapture(
+            principal, metadata, globalDataEditorRoles: null, out var rejection);
+
+        rejection.Should().BeNull();
+        snapshot.Should().NotBeNull();
+        snapshot!.Roles.Should().BeEmpty();
+        snapshot.Grants.Should().Contain("write:parcels/lots");
+        snapshot.DeclaredScope.Should().ContainSingle().Which.Should().Match<JobResourceScopeEntry>(e =>
+            e.ServiceId == "parcels" && e.LayerId == "lots" && e.Access == JobResourceAccess.Write);
+    }
+
+    [UnitTest]
     public void TryCapture_TenantPinnedFromClaim_NotFromMetadata()
     {
         // Even if metadata tried to carry a tenant, the snapshot tenant comes only

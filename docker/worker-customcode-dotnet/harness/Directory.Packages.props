@@ -1,0 +1,38 @@
+<Project>
+
+  <!-- Central package versions for the .NET custom-code harness solution. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Geometry stack (sample tool + pre-warmed image cache). -->
+    <PackageVersion Include="NetTopologySuite" Version="2.6.0" />
+    <PackageVersion Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      GDAL C# bindings for first-class in-process raster/vector GDAL interop
+      (OSGeo.GDAL / OSGeo.OGR / OSGeo.OSR). MaxRev.Gdal.* is the maintained
+      cross-platform binding that bundles its OWN self-contained native GDAL — so
+      there is no ABI risk against the base image's libgdal. The pinned
+      3.12.4.520 build bundles native GDAL 3.12.4, which also MATCHES the GDAL-full
+      base image (ghcr.io/osgeo/gdal:ubuntu-full-3.12.4) so the in-process binding
+      and the gdal* CLIs agree on driver behavior. LinuxRuntime.Minimal carries the
+      native payload for linux-x64. Init via GdalBase.ConfigureAll() (see the
+      RasterInfo sample + the README).
+    -->
+    <PackageVersion Include="MaxRev.Gdal.Core" Version="3.12.4.520" />
+    <PackageVersion Include="MaxRev.Gdal.LinuxRuntime.Minimal" Version="3.12.4.520" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Test stack. -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="FluentAssertions" Version="7.2.2" />
+  </ItemGroup>
+
+</Project>

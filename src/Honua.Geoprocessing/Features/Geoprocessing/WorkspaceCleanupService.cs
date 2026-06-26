@@ -8,6 +8,22 @@ using Microsoft.Extensions.Options;
 namespace Honua.Geoprocessing;
 
 /// <summary>
+/// Adapts the geoprocessing workspace cleanup sweep to the control-plane scheduled-tick dispatcher so
+/// EventBridge Scheduler can drive one sweep under <c>TriggerMode=Event</c> without hosting the
+/// in-process timer. The sweep acts on TTL/expiry state and creates a fresh scope each call, so a
+/// single invocation is safe.
+/// </summary>
+internal sealed class WorkspaceCleanupScheduledTickHandler(WorkspaceCleanupService service)
+    : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
+{
+    public Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind Kind
+        => Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind.WorkspaceCleanup;
+
+    public Task RunTickAsync(CancellationToken cancellationToken = default)
+        => service.RunCleanupAsync(cancellationToken);
+}
+
+/// <summary>
 /// Background service that periodically runs workspace cleanup sweeps.
 /// </summary>
 internal sealed class WorkspaceCleanupService : BackgroundService
@@ -60,7 +76,7 @@ internal sealed class WorkspaceCleanupService : BackgroundService
         WorkspaceCleanupLog.ServiceStopped(_logger);
     }
 
-    private async Task RunCleanupAsync(CancellationToken cancellationToken)
+    internal async Task RunCleanupAsync(CancellationToken cancellationToken)
     {
         using var scope = _serviceScopeFactory.CreateScope();
         var lifecycleService = scope.ServiceProvider.GetRequiredService<IWorkspaceLifecycleService>();

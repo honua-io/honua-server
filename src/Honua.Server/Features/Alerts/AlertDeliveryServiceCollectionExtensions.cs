@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Alerts;
 
@@ -46,7 +48,17 @@ internal static class AlertDeliveryServiceCollectionExtensions
         services.AddSingleton<IAlertDeliverySink, WebSocketAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink, EmailAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.Digest));
-        services.AddHostedService<DigestFlushBackgroundService>();
+
+        // Alert digest flush is a PERIODIC tick (bucket-b). The flush claims a batch atomically and
+        // is idempotent, so the scheduled-tick handler is registered in BOTH trigger modes; the
+        // in-process timer is hosted only under TriggerMode=Poll (default, on-prem), keeping that
+        // path byte-for-byte unchanged.
+        services.TryAddSingleton<DigestFlushBackgroundService>();
+        services.AddSingleton<IScheduledTickHandler, DigestFlushScheduledTickHandler>();
+        if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<DigestFlushBackgroundService>());
+        }
 
 #if HONUA_EXCLUDE_AWS
         RegisterUnsupportedAwsChannels(services);

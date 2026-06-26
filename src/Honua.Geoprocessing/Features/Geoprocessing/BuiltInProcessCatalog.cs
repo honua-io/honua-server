@@ -978,13 +978,14 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "transform.computed-field",
             Title = "Computed Field",
-            Description = "Adds a new attribute derived from existing attributes via a small AOT-safe operation set (no expression engine). Supported ops: concat, add, subtract, multiply, divide, const. Rows with non-numeric arithmetic operands are dropped as row-level data errors.",
+            Description = "Adds a new attribute derived from existing attributes. Two AOT-safe modes (no reflection, no runtime code generation): the legacy fixed op set (concat, add, subtract, multiply, divide, const), and a sandboxed expression engine (op=expression, or simply supply 'expression') that evaluates a whitelisted, parsed AST — arithmetic, string (concat/substr/upper/lower/trim/replace/length), conditional (if/coalesce/ternary ?:), comparison/logical, math (abs/round/floor/ceil/sqrt/pow/min/max), date (now/year/month/day/parsedate), cast/number/string, and field references. Example: upper(trim(name)) + \"-\" + cast(year, string). Rows whose arithmetic/expression evaluation fails (e.g. a non-numeric operand) are dropped as row-level data errors.",
             Category = "transform",
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
                 Param("target", "Target Field", "Attribute name to write the computed value to.", ProcessParameterValueType.Text, required: true),
-                Param("op", "Operation", "Computation. Allowed values: concat, add, subtract, multiply, divide, const.", ProcessParameterValueType.Text, required: true),
+                Param("op", "Operation", "Computation. Allowed values: concat, add, subtract, multiply, divide, const, expression. Optional when 'expression' is supplied (defaults to expression mode).", ProcessParameterValueType.Text),
+                Param("expression", "Expression", "Whitelisted expression evaluated per feature when op=expression. Bare identifiers reference source attributes; supports arithmetic, string/conditional/math/date functions, comparison and logical operators, and a ternary. AOT-safe parsed AST — no reflection, no arbitrary code. Example: upper(trim(name)) + \"-\" + cast(year, string).", ProcessParameterValueType.Text),
                 Param("fields", "Fields", "Comma-separated source field names for the concat op.", ProcessParameterValueType.Text),
                 Param("separator", "Separator", "Join separator for the concat op.", ProcessParameterValueType.Text),
                 Param("left", "Left Operand", "Left operand for arithmetic ops: a source field name, or a numeric literal prefixed with '='.", ProcessParameterValueType.Text),
@@ -1005,6 +1006,72 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("field", "Field", "Attribute name to test.", ProcessParameterValueType.Text, required: true),
                 Param("op", "Operator", "Comparison operator. Allowed values: eq, neq, gt, gte, lt, lte, contains, exists. Defaults to eq.", ProcessParameterValueType.Text, defaultValue: "eq"),
                 Param("value", "Value", "Comparison operand. Omitted for the 'exists' op.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.attribute-join",
+            Title = "Attribute Join",
+            Description = "Joins the input FeatureCollection to a second 'right' FeatureCollection (a second DAG input, a Honua layer materialized to GeoJSON, or a lookup table) on key columns, bringing selected right-side fields onto each output feature. Inner or left join. Managed in-memory hash join: the RIGHT (build) side is fully materialized — bounded by the configured MaxArtifactBytes ceiling (no spill); the LEFT side streams. When an input row matches multiple right rows the join fans out one output per match.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input (left/probe) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("right", "Right Features", "Join (right/build) FeatureCollection as a data:application/geo+json;base64 data URI. Materialized into an in-memory hash table keyed by rightKeys.", ProcessParameterValueType.Text, required: true),
+                Param("leftKeys", "Left Keys", "Comma-separated input attribute names forming the join key.", ProcessParameterValueType.Text, required: true),
+                Param("rightKeys", "Right Keys", "Comma-separated right attribute names forming the join key. Defaults to leftKeys. Must match the leftKeys column count.", ProcessParameterValueType.Text),
+                Param("fields", "Carry Fields", "Comma-separated right-side fields to bring onto the output. When omitted, all right attributes are carried.", ProcessParameterValueType.Text),
+                Param("type", "Join Type", "Join type. Allowed values: inner (default), left. Left preserves unmatched input features with null carried fields.", ProcessParameterValueType.Text, defaultValue: "inner"),
+                Param("prefix", "Field Prefix", "Optional prefix prepended to every carried right-side field name to avoid collisions with input attributes.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.aggregate",
+            Title = "Aggregate",
+            Description = "Group-by aggregate over the input FeatureCollection. Groups by zero or more attributes (groupBy) and emits one feature per group carrying the group-key attributes plus aggregate columns. Aggregate functions (semicolon-separated 'field:function[:alias]'): count, sum, min, max, mean, stddev, first, collect. An optional geometry aggregate (union/centroid/extent) reduces each group's geometries to a single representative geometry. Managed NetTopologySuite — running scalar accumulators bound memory to the grouped output.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("groupBy", "Group By", "Comma-separated attribute names to group by. When empty the whole stream collapses into a single group.", ProcessParameterValueType.Text),
+                Param("aggregates", "Aggregates", "Semicolon-separated 'field:function[:alias]' aggregate specs. Functions: count, sum, min, max, mean, stddev, first, collect. When omitted a plain group COUNT is emitted. Example: 'pop:sum;pop:mean;name:collect'.", ProcessParameterValueType.Text),
+                Param("geometry", "Geometry Aggregate", "Optional per-group geometry reduction. Allowed values: none (default), union, centroid, extent.", ProcessParameterValueType.Text, defaultValue: "none"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.pivot",
+            Title = "Pivot",
+            Description = "Reshapes a long (tall) FeatureCollection into a wide one: rows sharing a groupBy key collapse into one feature, and the distinct values of the pivotField column become new attribute columns taking their value from valueField. Last-write-wins on cell collisions. The first row's geometry per group is carried. Managed — no native dependency.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input (long) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("groupBy", "Group By", "Comma-separated attribute names identifying each output row. When empty all input rows pivot into a single feature.", ProcessParameterValueType.Text),
+                Param("pivotField", "Pivot Field", "Attribute whose distinct values become new output columns.", ProcessParameterValueType.Text, required: true),
+                Param("valueField", "Value Field", "Attribute whose value fills each pivoted cell.", ProcessParameterValueType.Text, required: true),
+                Param("prefix", "Column Prefix", "Optional prefix prepended to each pivoted column name.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.unpivot",
+            Title = "Unpivot",
+            Description = "Melts a wide FeatureCollection into a long one: for each input feature and each column in 'fields', emits one output feature carrying the 'keep' columns plus a nameField (source column name) and valueField (its value), reusing the input geometry. The inverse of transform.pivot. Managed — no native dependency.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input (wide) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("fields", "Fields", "Comma-separated attribute columns to unpivot; one output feature is emitted per column per input feature.", ProcessParameterValueType.Text, required: true),
+                Param("keep", "Keep Fields", "Comma-separated attribute columns carried unchanged onto every output feature.", ProcessParameterValueType.Text),
+                Param("nameField", "Name Field", "Output column receiving the source column name. Defaults to 'name'.", ProcessParameterValueType.Text, defaultValue: "name"),
+                Param("valueField", "Value Field", "Output column receiving the source column value. Defaults to 'value'.", ProcessParameterValueType.Text, defaultValue: "value"),
+                Param("dropNulls", "Drop Nulls", "Skip output rows whose unpivoted value is null. Defaults to false.", ProcessParameterValueType.Flag, defaultValue: "false"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -1096,6 +1163,117 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("inline", "Inline CSV", "CSV document supplied directly, including a header row.", ProcessParameterValueType.Text, required: true),
                 Param("delimiter", "Delimiter", "Single-character field delimiter override. Defaults to comma.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
+        // GeoETL remote source connectors (5)
+        // First-class DAG sources that stream features from a remote source straight
+        // into the workflow, REUSING the one-shot Honua.Import readers' pagination /
+        // streaming (ArcGisRestClient, the OGC/WFS GeoJSON paging path, the catalog
+        // query pipeline, and the external-PostGIS secure-connection handling) so a
+        // pipeline no longer has to bounce through a one-shot import to read from a
+        // Honua layer, Esri FeatureServer, OGC API Features, WFS, or external PostGIS.
+        // Each emits the standard FeatureCollection artifact downstream transforms
+        // consume. An optional since/watermark is passed through for incremental
+        // extract (persistence owned by the incremental-extract orchestration).
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "source.honua-layer",
+            Title = "Honua Layer Source",
+            Description = "Streams features from a Honua catalog layer through the canonical query pipeline (the layer's permanent filters, paging, CRS handling, and field masking are inherited) into the standard FeatureCollection artifact. Supply a where clause and/or a bbox to narrow the extract.",
+            Category = "source",
+            Parameters =
+            [
+                Param("layerId", "Layer Id", "Honua catalog layer identifier to read from.", ProcessParameterValueType.WholeNumber, required: true),
+                Param("where", "Where", "Optional GeoServices-style SQL where clause filtering the features.", ProcessParameterValueType.Text),
+                Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' envelope filter in the output CRS.", ProcessParameterValueType.Text),
+                Param("outFields", "Output Fields", "Optional comma-separated output field allow-list. Defaults to all fields.", ProcessParameterValueType.Text),
+                Param("outSrid", "Output SRID", "Optional output spatial reference identifier for server-side reprojection.", ProcessParameterValueType.Srid),
+                Param("since", "Since Watermark", "Optional incremental-extract watermark (ISO-8601 instant). Pairs with watermarkField.", ProcessParameterValueType.Text),
+                Param("watermarkField", "Watermark Field", "Attribute the since watermark filters on (e.g. updated_at).", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.esri-featureserver",
+            Title = "Esri FeatureServer Source",
+            Description = "Streams features from an ArcGIS GeoServices FeatureServer/MapServer layer by reusing the migration ArcGIS REST reader (resultOffset/resultRecordCount paging terminated by exceededTransferLimit) and its Esri-JSON to GeoJSON geometry conversion. Reuses the import path's ArcGIS portal-token / HTTP Basic credential handling.",
+            Category = "source",
+            Parameters =
+            [
+                Param("serviceUrl", "Service URL", "ArcGIS FeatureServer/MapServer service root URL.", ProcessParameterValueType.Text, required: true),
+                Param("esriLayerId", "Layer Index", "Layer index within the FeatureServer. Defaults to 0.", ProcessParameterValueType.WholeNumber),
+                Param("where", "Where", "Optional GeoServices SQL where clause. Defaults to 1=1.", ProcessParameterValueType.Text),
+                Param("outFields", "Output Fields", "Optional comma-separated output field allow-list. Defaults to all (*).", ProcessParameterValueType.Text),
+                Param("outSrid", "Output SRID", "Optional output spatial reference (outSR).", ProcessParameterValueType.Srid),
+                Param("pageSize", "Page Size", "Records per page (resultRecordCount). Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("token", "ArcGIS Token", "Inline ArcGIS token for immediate use. Prefer tokenSecretReference.", ProcessParameterValueType.Text),
+                Param("tokenSecretReference", "Token Secret Reference", "Secret reference that resolves to an ArcGIS token at execution time.", ProcessParameterValueType.Text),
+                Param("username", "Username", "HTTP Basic username for secured ArcGIS endpoints.", ProcessParameterValueType.Text),
+                Param("passwordSecretReference", "Password Secret Reference", "Secret reference that resolves to the HTTP Basic password.", ProcessParameterValueType.Text),
+                Param("since", "Since Watermark", "Optional incremental-extract watermark (ISO-8601 instant). Pairs with watermarkField.", ProcessParameterValueType.Text),
+                Param("watermarkField", "Watermark Field", "Edit-date field the since watermark filters on (e.g. last_edited_date).", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.ogc-features",
+            Title = "OGC API Features Source",
+            Description = "Streams features from an OGC API Features collection using link-based pagination (an items request with limit/bbox/filter followed by the rel=next link chain), reusing the migration HTTP/paging path. The where clause is interpreted as a CQL2-text filter.",
+            Category = "source",
+            Parameters =
+            [
+                Param("serviceUrl", "Service URL", "OGC API Features landing/base URL (the part before /collections).", ProcessParameterValueType.Text, required: true),
+                Param("collectionId", "Collection Id", "OGC API Features collection identifier.", ProcessParameterValueType.Text, required: true),
+                Param("where", "CQL2 Filter", "Optional CQL2-text filter expression.", ProcessParameterValueType.Text),
+                Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' bbox filter.", ProcessParameterValueType.Text),
+                Param("pageSize", "Page Size", "Features per page (limit). Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("username", "Username", "Optional HTTP Basic username.", ProcessParameterValueType.Text),
+                Param("passwordSecretReference", "Password Secret Reference", "Secret reference that resolves to the HTTP Basic password.", ProcessParameterValueType.Text),
+                Param("since", "Since Watermark", "Optional incremental-extract watermark (ISO-8601 instant), mapped to a datetime open interval.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.wfs",
+            Title = "WFS Source",
+            Description = "Streams features from a WFS GetFeature endpoint using startIndex/count paging with GeoJSON output, terminating on an empty page or once advanced past numberMatched (with a repeated-first-feature guard for servers that ignore startIndex). Reuses the migration HTTP/paging path.",
+            Category = "source",
+            Parameters =
+            [
+                Param("serviceUrl", "Service URL", "WFS service endpoint URL.", ProcessParameterValueType.Text, required: true),
+                Param("typeName", "Type Name", "WFS feature type name (typeNames).", ProcessParameterValueType.Text, required: true),
+                Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' bbox filter.", ProcessParameterValueType.Text),
+                Param("pageSize", "Page Size", "Features per page (count). Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("username", "Username", "Optional HTTP Basic username.", ProcessParameterValueType.Text),
+                Param("passwordSecretReference", "Password Secret Reference", "Secret reference that resolves to the HTTP Basic password.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.postgis",
+            Title = "External PostGIS Source",
+            Description = "Streams features from a customer-owned PostGIS table/view identified by a registered secure connection — the read-side mirror of sink.external-postgis. Geometry is projected with ST_AsGeoJSON server-side and rows stream through a forward-only reader. Uses the same secure-connection secret handling as the sink; raw connection strings are never accepted.",
+            Category = "source",
+            Parameters =
+            [
+                Param("connectionName", "Secure Connection Name", "Registered secure connection name for the external PostGIS database. Either connectionName or connectionId is required.", ProcessParameterValueType.Text),
+                Param("connectionId", "Secure Connection Id", "Registered secure connection id for the external PostGIS database. Either connectionName or connectionId is required.", ProcessParameterValueType.Text),
+                Param("table", "Table", "Source table or view name. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, required: true),
+                Param("schema", "Schema", "Source schema. Defaults to public. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "public"),
+                Param("geometryColumn", "Geometry Column", "Source geometry column. Defaults to geom. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "geom"),
+                Param("where", "Where", "Optional SQL predicate appended after WHERE.", ProcessParameterValueType.Text),
+                Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' envelope filter (&& ST_MakeEnvelope).", ProcessParameterValueType.Text),
+                Param("outSrid", "Bbox SRID", "SRID of the bbox envelope. Defaults to 4326.", ProcessParameterValueType.Srid),
+                Param("since", "Since Watermark", "Optional incremental-extract watermark. Pairs with watermarkField.", ProcessParameterValueType.Text),
+                Param("watermarkField", "Watermark Field", "Column the since watermark filters on (e.g. updated_at).", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -1224,6 +1402,20 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("source", "Source Dataset", "Source vector dataset as base64-encoded bytes in the source format.", ProcessParameterValueType.Text, required: true),
                 Param("targetFormat", "Target Format", "Target OGR driver. Allowed values: GeoJSON, GPKG, CSV, FlatGeobuf, ESRI Shapefile.", ProcessParameterValueType.Text, required: true),
                 Param("sourceFormat", "Source Format", "Source OGR driver hint used to choose the input file extension. Defaults to GeoJSON.", ProcessParameterValueType.Text, defaultValue: "GeoJSON"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.ogr",
+            Title = "OGR Source (GDAL)",
+            Description = "GDAL/OGR-backed import reader executed out-of-process by the heavyweight worker via the ogr2ogr CLI. The native counterpart to the managed source.geojson / source.csv readers (hand-rolled NetTopologySuite parsers limited to GeoJSON and CSV): source.ogr canonicalizes the FULL OGR driver universe — native File Geodatabase (OpenFileGDB), GML / GML application schemas, KML, MapInfo TAB, ESRI Shapefile, GeoPackage, FlatGeobuf, and (where the worker image's drivers are compiled in) database-spatial sources — into the standard GeoJSON FeatureCollection artifact every workflow DAG starts from. Multi-file datasets (Shapefile sidecars, FileGDB directories) are supplied as a base64 ZIP and unpacked in an isolated scratch workspace. Routed to the native worker profile — NOT executable in the GDAL-free serving image.",
+            Category = "source",
+            Parameters =
+            [
+                Param("source", "Source Dataset", "Source dataset as base64-encoded bytes in the source format. Multi-file datasets (Shapefile, FileGDB) are supplied as a base64-encoded ZIP archive, which the worker unpacks before opening with OGR.", ProcessParameterValueType.Text, required: true),
+                Param("sourceFormat", "Source Format", "Source OGR driver hint used to choose the input file extension when the payload is a single file. Allowed values include: GeoJSON, GML, KML, GPKG, FlatGeobuf, MapInfo File, CSV, ESRI Shapefile, OpenFileGDB. Defaults to GeoJSON. ZIP-packaged datasets are detected by content and the hint is advisory.", ProcessParameterValueType.Text, defaultValue: "GeoJSON"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer],
             RuntimeProfile = RuntimeProfiles.Native

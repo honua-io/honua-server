@@ -166,6 +166,38 @@ public static class WorkflowDefinitionValidator
             }
         }
 
+        if (definition.Trigger is { Kind: WorkflowTriggerKind.ChangeFeed } changeFeed)
+        {
+            if (changeFeed.WatchedLayerIds.Count == 0)
+            {
+                failures.Add("Change-feed trigger requires at least one watched layer id.");
+            }
+            else if (changeFeed.WatchedLayerIds.Any(id => id < 0))
+            {
+                failures.Add("Change-feed trigger watched layer ids must be non-negative.");
+            }
+        }
+
+        if (definition.Trigger is { Kind: WorkflowTriggerKind.ObjectStore } objectStore)
+        {
+            if (objectStore.ObjectStore is null)
+            {
+                failures.Add("Object-store trigger requires an object-store configuration.");
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(objectStore.ObjectStore.StoreId))
+                {
+                    failures.Add("Object-store trigger requires a non-empty store id.");
+                }
+
+                if (objectStore.ObjectStore.PollInterval is { } interval && interval <= TimeSpan.Zero)
+                {
+                    failures.Add("Object-store trigger poll interval must be positive when specified.");
+                }
+            }
+        }
+
         return failures;
     }
 

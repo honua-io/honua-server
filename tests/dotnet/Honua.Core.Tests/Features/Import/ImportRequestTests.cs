@@ -104,4 +104,86 @@ public sealed class ImportRequestTests
 
         request.UsesLocalFile.Should().BeFalse();
     }
+
+    [Fact]
+    public void LoadMode_DefaultsToReplace()
+    {
+        var request = new ImportRequest
+        {
+            FileName = "data.geojson",
+            TableName = "table"
+        };
+
+        request.LoadMode.Should().Be(ImportLoadMode.Replace);
+        request.EffectiveLoadMode.Should().Be(ImportLoadMode.Replace);
+    }
+
+    [Theory]
+    [InlineData(ImportLoadMode.Append)]
+    [InlineData(ImportLoadMode.Upsert)]
+    public void EffectiveLoadMode_WhenLoadModeSet_HonorsExplicitMode(ImportLoadMode mode)
+    {
+        var request = new ImportRequest
+        {
+            FileName = "data.geojson",
+            TableName = "table",
+            LoadMode = mode,
+            KeyColumns = mode == ImportLoadMode.Upsert ? ["id"] : []
+        };
+
+        request.EffectiveLoadMode.Should().Be(mode);
+    }
+
+    [Fact]
+    public void Validate_WhenUpsertWithoutKeyColumns_Throws()
+    {
+        using var stream = new MemoryStream();
+        var request = new ImportRequest
+        {
+            FileName = "data.geojson",
+            TableName = "table",
+            FileStream = stream,
+            LoadMode = ImportLoadMode.Upsert
+        };
+
+        Action act = () => request.Validate();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Upsert load mode requires at least one key column*");
+    }
+
+    [Fact]
+    public void Validate_WhenUpsertWithKeyColumns_DoesNotThrow()
+    {
+        using var stream = new MemoryStream();
+        var request = new ImportRequest
+        {
+            FileName = "data.geojson",
+            TableName = "table",
+            FileStream = stream,
+            LoadMode = ImportLoadMode.Upsert,
+            KeyColumns = ["id"]
+        };
+
+        Action act = () => request.Validate();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_WhenAppendWithoutKeyColumns_DoesNotThrow()
+    {
+        using var stream = new MemoryStream();
+        var request = new ImportRequest
+        {
+            FileName = "data.geojson",
+            TableName = "table",
+            FileStream = stream,
+            LoadMode = ImportLoadMode.Append
+        };
+
+        Action act = () => request.Validate();
+
+        act.Should().NotThrow();
+    }
 }

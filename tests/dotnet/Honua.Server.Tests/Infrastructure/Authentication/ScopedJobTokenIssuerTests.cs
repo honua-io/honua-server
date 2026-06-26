@@ -39,6 +39,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "alice",
                 TenantId: "tenant-A",
                 Roles: ["data-editor:parcels"],
+                Grants: [],
                 JobId: "gp-job-1",
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Write)],
                 ExpiresAt: expiresAt),
@@ -74,6 +75,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "alice",
                 TenantId: null,
                 Roles: ["data-editor:parcels"],
+                Grants: [],
                 JobId: "gp-job-2",
                 ResourceScope:
                 [
@@ -106,6 +108,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "root",
                 TenantId: "tenant-A",
                 Roles: ["admin"],
+                Grants: [],
                 JobId: "gp-job-3",
                 ResourceScope: [new JobResourceScopeEntry("parcels", "lots", JobResourceAccess.Read)],
                 ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
@@ -135,6 +138,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "alice",
                 TenantId: "tenant-A",
                 Roles: ["data-editor:parcels"],
+                Grants: [],
                 JobId: "gp-job-4",
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Read)],
                 ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
@@ -158,6 +162,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "alice",
                 TenantId: null,
                 Roles: ["data-editor:parcels"], // owner COULD write, but scope is read-only
+                Grants: [],
                 JobId: "gp-job-5",
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Read)],
                 ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
@@ -184,6 +189,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "carol",
                 TenantId: null,
                 Roles: [],
+                Grants: [],
                 JobId: "gp-job-6",
                 ResourceScope: [new JobResourceScopeEntry("zoning", null, JobResourceAccess.Write)],
                 ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
@@ -194,6 +200,118 @@ public sealed class ScopedJobTokenIssuerTests
         validation.Should().NotBeNull();
         // Owner had no reach on zoning (no role/grant), so nothing is granted at all.
         PermissionsOf(validation!.Principal).Should().NotContain(p => p.Contains("zoning", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
+    public async Task IssueAsync_GrantBasedWriteSubmitter_TokenCarriesTheGrantedWrite()
+    {
+        // #2192: the submitter's write authority comes purely from a layer-scoped
+        // write:{service}/{layer} permission GRANT — they hold NO data-editor role.
+        // Before the fix the issuer ignored grants, so this token was under-scoped
+        // (the write was dropped). Now the mint intersects against the owner's grants
+        // too, and the in-scope write is carried.
+        var issuer = CreateIssuer();
+
+        var issuance = await issuer.IssueAsync(
+            new ScopedJobTokenRequest(
+                PrincipalId: "dana",
+                TenantId: "tenant-A",
+                Roles: [],
+                Grants: ["write:parcels/lots"],
+                JobId: "gp-grant-1",
+                ResourceScope: [new JobResourceScopeEntry("parcels", "lots", JobResourceAccess.Write)],
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
+            CancellationToken.None);
+
+        var validation = await issuer.ValidateAsync(issuance.Token, "gp-grant-1", CancellationToken.None);
+
+        validation.Should().NotBeNull();
+        var permissions = PermissionsOf(validation!.Principal);
+        permissions.Should().Contain(["read:parcels/lots", "write:parcels/lots"]);
+        // A layer-specific grant must NOT widen to the whole-service editor role.
+        validation.Principal.IsInRole("data-editor:parcels").Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task IssueAsync_GrantBasedSubmitterWithoutTheGrant_StillDropsResource()
+    {
+        // The submitter holds a grant on 'parcels/lots' but the request asks for
+        // 'parcels/blocks', which they do NOT hold (and no role). The resource is
+        // dropped — a grant the owner does not have can never be emitted (⊆ owner).
+        var issuer = CreateIssuer();
+
+        var issuance = await issuer.IssueAsync(
+            new ScopedJobTokenRequest(
+                PrincipalId: "dana",
+                TenantId: null,
+                Roles: [],
+                Grants: ["write:parcels/lots"],
+                JobId: "gp-grant-2",
+                ResourceScope: [new JobResourceScopeEntry("parcels", "blocks", JobResourceAccess.Write)],
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
+            CancellationToken.None);
+
+        var validation = await issuer.ValidateAsync(issuance.Token, "gp-grant-2", CancellationToken.None);
+
+        validation.Should().NotBeNull();
+        PermissionsOf(validation!.Principal).Should()
+            .NotContain(p => p.Contains("blocks", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
+    public async Task IssueAsync_GrantBasedWrite_StaysWithinOwner_AcrossDeclaredScope()
+    {
+        // ⊆-owner invariant under the union of roles and grants: a grant-based write
+        // on the held layer is granted, while an unheld sibling layer in the same
+        // request is dropped — the token never out-grants the owner.
+        var issuer = CreateIssuer();
+
+        var issuance = await issuer.IssueAsync(
+            new ScopedJobTokenRequest(
+                PrincipalId: "dana",
+                TenantId: "tenant-A",
+                Roles: [],
+                Grants: ["write:parcels/lots"],
+                JobId: "gp-grant-3",
+                ResourceScope:
+                [
+                    new JobResourceScopeEntry("parcels", "lots", JobResourceAccess.Write),
+                    new JobResourceScopeEntry("parcels", "blocks", JobResourceAccess.Write),
+                ],
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
+            CancellationToken.None);
+
+        var validation = await issuer.ValidateAsync(issuance.Token, "gp-grant-3", CancellationToken.None);
+
+        validation.Should().NotBeNull();
+        var permissions = PermissionsOf(validation!.Principal);
+        permissions.Should().Contain("write:parcels/lots");
+        permissions.Should().NotContain("write:parcels/blocks");
+    }
+
+    [UnitTest]
+    public async Task IssueAsync_GrantBasedSubmitter_TenantStillFromSnapshotOnly()
+    {
+        // Threading grants through the mint must not weaken the non-forgeable tenant
+        // (invariant #2): the hydrated tenant is still the pinned snapshot tenant.
+        var issuer = CreateIssuer();
+
+        var issuance = await issuer.IssueAsync(
+            new ScopedJobTokenRequest(
+                PrincipalId: "dana",
+                TenantId: "tenant-A",
+                Roles: [],
+                Grants: ["write:parcels/lots"],
+                JobId: "gp-grant-4",
+                ResourceScope: [new JobResourceScopeEntry("parcels", "lots", JobResourceAccess.Write)],
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
+            CancellationToken.None);
+
+        var validation = await issuer.ValidateAsync(issuance.Token, "gp-grant-4", CancellationToken.None);
+
+        validation.Should().NotBeNull();
+        validation!.Principal.FindAll(TenantClaimType).Should().ContainSingle()
+            .Which.Value.Should().Be("tenant-A");
     }
 
     [UnitTest]
@@ -208,6 +326,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "alice",
                 TenantId: null,
                 Roles: ["data-editor:parcels"],
+                Grants: [],
                 JobId: "gp-job-7",
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Read)],
                 ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
@@ -231,6 +350,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "alice",
                 TenantId: null,
                 Roles: ["data-editor:parcels"],
+                Grants: [],
                 JobId: "gp-job-8",
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Read)],
                 ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),
@@ -257,6 +377,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "alice",
                 TenantId: null,
                 Roles: ["data-editor:parcels"],
+                Grants: [],
                 JobId: "gp-job-9",
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Read)],
                 ExpiresAt: DateTimeOffset.UtcNow.AddMilliseconds(-1)),
@@ -290,6 +411,7 @@ public sealed class ScopedJobTokenIssuerTests
                 PrincipalId: "alice",
                 TenantId: null,
                 Roles: ["admin"],
+                Grants: [],
                 JobId: "   ",
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Read)],
                 ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)),

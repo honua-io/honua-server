@@ -49,6 +49,12 @@ internal static class ConsoleJobEndpoints
             .Produces<ConsoleJobActionsResponse>()
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{jobId}/steps", HandleGetSteps)
+            .WithName("GetConsoleJobSteps")
+            .WithSummary("Get the sanitized per-step glass-box (command/timeline) for a durable execution job")
+            .Produces<ConsoleJobStepsResponse>()
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapPost("/{jobId}/cancel", HandleCancel)
             .WithName("CancelConsoleJob")
             .WithSummary("Cancel a durable execution job")
@@ -233,6 +239,36 @@ internal static class ConsoleJobEndpoints
 
             SetCorrelationHeader(context, response.CorrelationId);
             return Results.Json(response, ConsoleJobJsonContext.Default.ConsoleJobActionsResponse);
+        }
+        catch (ConsoleJobServiceUnavailableException ex)
+        {
+            return Unavailable(ex.Message);
+        }
+    }
+
+    private static async Task<IResult> HandleGetSteps(
+        HttpContext context,
+        string jobId,
+        [FromServices] IConsoleJobService service,
+        CancellationToken cancellationToken)
+    {
+        SetNoStore(context);
+        var authResult = await AuthorizeReadAsync(context, jobId).ConfigureAwait(false);
+        if (authResult is not null)
+        {
+            return authResult;
+        }
+
+        try
+        {
+            var response = await service.GetStepsAsync(context, jobId, cancellationToken).ConfigureAwait(false);
+            if (response == null)
+            {
+                return NotFound(jobId);
+            }
+
+            SetCorrelationHeader(context, response.CorrelationId);
+            return Results.Json(response, ConsoleJobJsonContext.Default.ConsoleJobStepsResponse);
         }
         catch (ConsoleJobServiceUnavailableException ex)
         {

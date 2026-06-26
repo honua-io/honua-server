@@ -41,7 +41,9 @@ using Honua.Postgres.Features.AnalysisContent;
 using Honua.Postgres.Features.AuditLog;
 using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.FeatureStore;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Postgres.Features.Geometry;
+using Honua.Postgres.Features.Geoprocessing;
 using Honua.Postgres.Features.GeometryService;
 using Honua.Postgres.Features.HealthCheck;
 using Honua.Postgres.Features.Migration;
@@ -596,6 +598,49 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<OgcWfsImportService>>(),
                 serviceProvider.GetService<PostgresSchemaConfiguration>());
         });
+
+        // First-class DAG remote source connectors (feat/etl-remote-source-connectors).
+        // Each IDagFeatureSource streams features into a geoprocessing workflow by reusing
+        // an existing one-shot import reader's pagination/streaming rather than bouncing
+        // through a one-shot import. The geoprocessing RemoteSourceExecutor resolves these
+        // at execution time through an IServiceScopeFactory scope.
+        //   - source.esri-featureserver wraps the migration ArcGisRestClient (registered above);
+        //   - source.honua-layer wraps the canonical IStreamingFeatureStore query pipeline;
+        //   - source.postgis mirrors the sink.external-postgis secure-connection handling;
+        //   - source.ogc-features / source.wfs reuse the migration bounded-buffer GeoJSON path.
+        services.AddScoped<IDagFeatureSource, EsriFeatureServerDagSource>(serviceProvider =>
+            new EsriFeatureServerDagSource(
+                serviceProvider.GetRequiredService<ArcGisRestClient>(),
+                serviceProvider.GetRequiredService<ILogger<EsriFeatureServerDagSource>>()));
+        services.AddScoped<IDagFeatureSource, HonuaLayerDagSource>(serviceProvider =>
+            new HonuaLayerDagSource(
+                serviceProvider.GetRequiredService<IStreamingFeatureStore>()));
+        services.AddScoped<IDagFeatureSource, ExternalPostgisDagSource>(_ =>
+            new ExternalPostgisDagSource());
+
+        services.AddResilientHttpClient<OgcFeaturesDagSource>(
+            "dag-source-ogc-features",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(10);
+            },
+            configureHandler: static () => OgcApiFeaturesImportService.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IDagFeatureSource>(serviceProvider =>
+            serviceProvider.GetRequiredService<OgcFeaturesDagSource>());
+
+        services.AddResilientHttpClient<WfsDagSource>(
+            "dag-source-wfs",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(5);
+            },
+            configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IDagFeatureSource>(serviceProvider =>
+            serviceProvider.GetRequiredService<WfsDagSource>());
 
         // Register OGC WMTS tile-cache export service (#1016 slice 4). Reuses the OGC service
         // migration scanner for inventory/manifest resolution; the dedicated HTTP client is

@@ -41,6 +41,7 @@ public sealed class CustomCodeTerminalRevokeTests
                 PrincipalId: "alice",
                 TenantId: "tenant-A",
                 Roles: ["data-editor:parcels"],
+                Grants: [],
                 JobId: jobId,
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Write)],
                 ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),

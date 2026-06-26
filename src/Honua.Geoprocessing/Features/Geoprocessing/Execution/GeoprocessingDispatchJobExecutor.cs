@@ -53,6 +53,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
 
+        // The remote DAG source connectors (source.honua-layer/esri-featureserver/
+        // ogc-features/wfs/postgis) self-register as IProcessExecutor instances, so the
+        // single route-table scan picks them up alongside every other per-process executor.
         _handlers = ProcessExecutorRouteTable.Build(executors);
         _logger = logger;
         _usageTelemetry = usageTelemetry;

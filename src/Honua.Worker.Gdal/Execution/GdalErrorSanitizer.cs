@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Domain;
+
 namespace Honua.Worker.Gdal.Execution;
 
 /// <summary>
@@ -11,11 +13,14 @@ namespace Honua.Worker.Gdal.Execution;
 /// Full unsanitized stderr is preserved in structured logs at the executor's
 /// <c>Log.ToolFailed</c> call so diagnosis is still possible.
 /// </summary>
+/// <remarks>
+/// This is a thin worker-side façade over <see cref="WorkspacePathSanitizer"/>
+/// in <c>Honua.Core</c>, which is the single source of truth shared with the
+/// console job glass-box HTTP projection. Behaviour is unchanged from when the
+/// redaction lived here.
+/// </remarks>
 internal static class GdalErrorSanitizer
 {
-    private const int MaxLength = 500;
-    private const string ScratchPlaceholder = "<scratch>";
-
     /// <summary>
     /// Returns a sanitized, length-capped stderr suitable for the job's
     /// client-visible error message. Replaces the per-job workspace path with
@@ -23,24 +28,7 @@ internal static class GdalErrorSanitizer
     /// instead of <c>/tmp/honua-gdal-worker/&lt;opId&gt;/input.tif</c>.
     /// </summary>
     public static string Sanitize(string stderr, string workspace)
-    {
-        if (string.IsNullOrEmpty(stderr))
-        {
-            return string.Empty;
-        }
-
-        var trimmed = stderr.Trim();
-        if (trimmed.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        var redacted = string.IsNullOrEmpty(workspace)
-            ? trimmed
-            : trimmed.Replace(workspace, ScratchPlaceholder, StringComparison.Ordinal);
-
-        return redacted.Length <= MaxLength ? redacted : redacted[..MaxLength] + "…";
-    }
+        => WorkspacePathSanitizer.Sanitize(stderr, workspace);
 
     /// <summary>
     /// Trims and length-caps unredacted stderr for the executor's operator-facing
@@ -49,13 +37,5 @@ internal static class GdalErrorSanitizer
     /// Centralized so every executor's <c>Log.ToolFailed</c> call shares one cap.
     /// </summary>
     public static string TruncateForLog(string stderr)
-    {
-        if (string.IsNullOrEmpty(stderr))
-        {
-            return string.Empty;
-        }
-
-        var trimmed = stderr.Trim();
-        return trimmed.Length <= MaxLength ? trimmed : trimmed[..MaxLength] + "…";
-    }
+        => WorkspacePathSanitizer.TruncateForLog(stderr);
 }

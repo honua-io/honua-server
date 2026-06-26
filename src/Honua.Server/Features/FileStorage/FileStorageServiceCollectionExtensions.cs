@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.FileStorage;
@@ -96,12 +97,41 @@ public static class FileStorageServiceCollectionExtensions
 
         // Register cleanup background service
         var enableCleanup = section.GetValue("EnableAutomaticCleanup", true);
-        if (enableCleanup)
-        {
-            services.AddHostedService<FileStorageCleanupService>();
-        }
+        RegisterFileStorageCleanup(
+            services,
+            enableCleanup,
+            Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolver
+                .ShouldHostInProcessTimers(configuration));
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers the file-storage cleanup as a PERIODIC control-plane tick (bucket-b). The cleanup
+    /// deletes already-expired files via a fresh scope and is idempotent, so the scheduled-tick
+    /// handler is registered in BOTH trigger modes; the in-process timer is hosted only when
+    /// <paramref name="hostInProcessTimer"/> is set (TriggerMode=Poll, default/on-prem), keeping that
+    /// path byte-for-byte unchanged. On AWS this tick can alternatively be replaced by an S3 lifecycle
+    /// policy (cheaper); the tick is kept for on-prem/portability.
+    /// </summary>
+    private static void RegisterFileStorageCleanup(
+        IServiceCollection services,
+        bool enableCleanup,
+        bool hostInProcessTimer)
+    {
+        if (!enableCleanup)
+        {
+            return;
+        }
+
+        services.TryAddSingleton<FileStorageCleanupService>();
+        services.AddSingleton<
+            Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler,
+            FileStorageCleanupScheduledTickHandler>();
+        if (hostInProcessTimer)
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<FileStorageCleanupService>());
+        }
     }
 
     /// <summary>
@@ -162,10 +192,10 @@ public static class FileStorageServiceCollectionExtensions
                 throw new InvalidOperationException($"Unknown storage provider: {options.Provider}");
         }
 
-        if (options.EnableAutomaticCleanup)
-        {
-            services.AddHostedService<FileStorageCleanupService>();
-        }
+        // This Action-based overload has no IConfiguration to read the trigger mode from; it is the
+        // programmatic/test composition path, which is always poll-style (in-process timer hosted).
+        // The IConfiguration overload above is the production path that honors TriggerMode=Event.
+        RegisterFileStorageCleanup(services, options.EnableAutomaticCleanup, hostInProcessTimer: true);
 
         return services;
     }

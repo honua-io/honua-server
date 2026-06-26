@@ -98,7 +98,11 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {inputError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
+        // Open the input as a streamed feature sequence so a >50 MiB load lands via
+        // batched COPY/insert without materializing the whole collection. Spilled NDJSON
+        // streams are unbounded; inline data URIs stay bounded by MaxArtifactBytes.
+        if (!FeatureStreamArtifact.TryOpenRead(
+                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -152,7 +156,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             var wkbWriter = new WKBWriter();
             var buffer = new List<IFeature>(batchSize);
 
-            foreach (var feature in source)
+            await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (feature.Geometry is null)

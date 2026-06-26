@@ -1,0 +1,6 @@
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+*.user
+TestResults/

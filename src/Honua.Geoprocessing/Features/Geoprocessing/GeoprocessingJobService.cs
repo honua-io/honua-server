@@ -16,6 +16,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
@@ -63,7 +64,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
         IGeoprocessingResultPackageStore? resultPackageStore = null,
         IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
-        IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null)
+        IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
+        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -83,7 +85,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _customCodeOptions = customCodeOptions;
         _customCodeCoordinator = scopedJobTokenIssuer is null
             ? null
-            : new CustomCodeSubmitCoordinator(scopedJobTokenIssuer);
+            : new CustomCodeSubmitCoordinator(scopedJobTokenIssuer, customCodeSignatureVerifier);
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -401,9 +403,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (isCustomCode)
         {
             // Route a custom-code job to the workload that declares the custom-code
-            // runtime profile (image = the python custom-code image ref, the Batch
-            // tier/queue params, NO secretsmanager env refs — those are built into
-            // the job-def family by the iac). Falls back to null when not configured
+            // runtime profile (the Batch tier/queue params, NO secretsmanager env
+            // refs — those are built into the job-def family by the iac). The runtime
+            // selector (customcode.runtime = python|dotnet) flows through the spec
+            // parameters and the iac job-def family resolves it to the matching image;
+            // the routing fence itself is runtime-agnostic. Falls back to null when not configured
             // so submission fails cleanly rather than landing on the GP workload.
             return definitions.FirstOrDefault(d =>
                 d.Kind == ExecutionJobKind.Geoprocessing &&
@@ -460,9 +464,53 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             {
                 return profile;
             }
+
+            // Dynamic escalation: a few catalog processes are managed for their
+            // in-memory fast paths but require the native PROJ-backed worker for
+            // datum-shift inputs. The catalog RuntimeProfile is a STATIC per-process
+            // declaration that cannot express "managed for some inputs, native for
+            // others", so inspect the step inputs here. transform.reproject escalates
+            // to native when the from/to SRID pair is not a managed fast path (i.e. a
+            // datum/grid shift): the GDAL worker's GdalVectorReprojectJobExecutor
+            // handles the SAME transform.reproject process id under the native profile.
+            if (RequiresNativeRuntimeEscalation(step))
+            {
+                return RuntimeProfiles.Native;
+            }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when an otherwise-managed <paramref name="step"/> carries
+    /// inputs that force it onto the native worker profile. Currently this covers
+    /// <c>transform.reproject</c> jobs whose <c>fromSrid</c>/<c>toSrid</c> pair is a
+    /// datum/grid shift the lean executor cannot serve (see
+    /// <see cref="ManagedReprojectFastPath"/>). When the SRID inputs are missing or
+    /// unparseable, escalation is declined so the managed executor produces the
+    /// canonical input-validation error rather than silently routing native.
+    /// </summary>
+    private static bool RequiresNativeRuntimeEscalation(AnalysisPlanStep step)
+    {
+        if (!string.Equals(step.ProcessId, ReprojectTransformExecutor.HandledProcessId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!step.Inputs.TryGetValue("fromSrid", out var fromRaw)
+            || !step.Inputs.TryGetValue("toSrid", out var toRaw))
+        {
+            return false;
+        }
+
+        if (!ManagedReprojectFastPath.TryParseSrid(fromRaw, out var fromSrid)
+            || !ManagedReprojectFastPath.TryParseSrid(toRaw, out var toSrid))
+        {
+            return false;
+        }
+
+        return ManagedReprojectFastPath.RequiresNativeWorker(fromSrid, toSrid);
     }
 
     private static ExecutionJobSpec BuildSpec(
@@ -471,66 +519,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ExecutionJobDefinition? workload,
         string? requiredRuntimeProfile)
     {
-        specParams[ExecutionJobParameterKeys.GeoprocessingPlanId] = plan.PlanId;
-        var processDefinitions = plan.Steps
-            .Where(step => !string.IsNullOrWhiteSpace(step.ProcessId))
-            .Select(step => step.ProcessId!)
-            .ToArray();
-        if (processDefinitions.Length > 0)
-        {
-            specParams[ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = string.Join(
-                ExecutionJobParameterKeys.MetadataListSeparator,
-                processDefinitions);
-        }
-
-        var outputKinds = plan.Outputs.Select(output => output.ToString()).ToArray();
-        if (outputKinds.Length > 0)
-        {
-            specParams[ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds] = string.Join(
-                ExecutionJobParameterKeys.MetadataListSeparator,
-                outputKinds);
-        }
-
-        // Project plan step inputs onto the durable spec under a stable prefix so
-        // worker-side executors can read their parameters without reaching back into
-        // the analysis plan. Only `Geoprocess` steps carry semantic inputs in the
-        // first-slice catalog; other kinds are ignored here.
-        for (var stepIndex = 0; stepIndex < plan.Steps.Count; stepIndex++)
-        {
-            var step = plan.Steps[stepIndex];
-            if (step.Kind != AnalysisPlanStepKind.Geoprocess || step.Inputs.Count == 0)
-            {
-                continue;
-            }
-
-            foreach (var input in step.Inputs)
-            {
-                if (string.IsNullOrWhiteSpace(input.Key))
-                {
-                    continue;
-                }
-
-                var key = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}{stepIndex}.{input.Key}";
-                specParams[key] = input.Value ?? string.Empty;
-            }
-        }
-
         if (workload == null)
         {
-            return new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = LocalBatchComputeBackend.BackendId,
-                WorkloadName = $"geoprocessing:{plan.PlanId}",
-                // Data-driven native-profile stamping: a catalog process that
-                // requires a specialized worker (the gdal.* native family) forces
-                // this profile so the claim fence routes the job to the GDAL worker
-                // and away from the lean dispatcher. Null leaves the job managed/default.
-                RuntimeProfile = requiredRuntimeProfile,
-                Parameters = specParams
-            };
+            // The no-registered-workload case (the default) is built through the shared
+            // spec builder so the durable spec — parameter bag AND envelope — is
+            // identical to the one the GP Devkit local runner produces for the same
+            // plan (issue #2180).
+            return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(plan, specParams, requiredRuntimeProfile);
         }
+
+        // Project the plan's id / process-definitions / output kinds / step inputs onto
+        // the workload-supplied parameter bag through the same shared projection.
+        GeoprocessingSpecBuilder.ProjectPlanParameters(plan, specParams);
 
         foreach (var kv in workload.Parameters)
         {

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -15,7 +16,8 @@ namespace Honua.Geoprocessing.Execution;
 /// geometry satisfies a spatial predicate against a bounding box or an arbitrary
 /// WKT region, dropping the rest. Pure managed NetTopologySuite — no GEOS native
 /// dependency. Ported from the GeoETL baseline SpatialFilterTransform onto the
-/// #1185 process/executor contract.
+/// #1185 process/executor contract. Streams: a per-feature filter; the region is
+/// parsed once before the stream is consumed.
 /// </summary>
 internal sealed class SpatialFilterTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -25,16 +27,15 @@ internal sealed class SpatialFilterTransformExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
-        FeatureCollection source,
+    protected override async IAsyncEnumerable<IFeature> ApplyStream(
+        IAsyncEnumerable<IFeature> source,
         StepInputReader inputs,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var region = ReadRegion(inputs);
         var predicate = ReadPredicate(inputs);
 
-        var output = new List<IFeature>(source.Count);
-        foreach (var feature in source)
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -46,11 +47,9 @@ internal sealed class SpatialFilterTransformExecutor(
 
             if (Matches(geometry, region, predicate))
             {
-                output.Add(feature);
+                yield return feature;
             }
         }
-
-        return output;
     }
 
     private static bool Matches(NtsGeometry geometry, NtsGeometry region, SpatialPredicate predicate) =>

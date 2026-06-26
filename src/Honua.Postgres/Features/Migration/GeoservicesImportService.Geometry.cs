@@ -19,7 +19,7 @@ namespace Honua.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
-    private static string? ConvertEsriGeometryToGeoJson(JsonElement geometry)
+    internal static string? ConvertEsriGeometryToGeoJson(JsonElement geometry)
     {
         // Esri JSON geometry format is similar to GeoJSON but not identical
         // This converts common geometry types to GeoJSON

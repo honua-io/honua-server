@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <!--
+      AOT-published, self-contained custom-runtime Lambda. This mirrors the AOT
+      posture of the serving image (Honua.Server). The entrypoint is intentionally
+      thin: it parses the EventBridge "Batch Job State Change" event (and the
+      Scheduler backstop tick), then forwards a single reconcile/sweep request to
+      the in-process Honua.Server host (running under the AWS Lambda Web Adapter)
+      over loopback HTTP. It deliberately does NOT ProjectReference Honua.Server:
+      the reconcile dispatcher's typed reconcilers transitively need most of the
+      server's infrastructure graph, so the one faithful composition is the
+      server's own. Keeping this project graph-free keeps the AOT surface tiny and
+      the cold start fast.
+    -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <StripSymbols>true</StripSymbols>
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Honua.ControlPlane.Lambda</RootNamespace>
+    <AssemblyName>Honua.ControlPlane.Lambda</AssemblyName>
+    <!-- The Lambda custom-runtime bootstrap must be named "bootstrap" in the image. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.ControlPlane.Lambda.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Amazon.Lambda.Core" />
+    <PackageReference Include="Amazon.Lambda.RuntimeSupport" />
+    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" />
+  </ItemGroup>
+
+</Project>

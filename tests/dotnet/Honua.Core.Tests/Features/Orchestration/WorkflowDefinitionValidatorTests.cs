@@ -289,6 +289,100 @@ public sealed class WorkflowDefinitionValidatorTests
     }
 
     [Fact]
+    public void Validate_AcceptsChangeFeedTrigger_WithWatchedLayers()
+    {
+        var definition = BuildDefinition(("a", Empty)) with
+        {
+            Trigger = new WorkflowTrigger
+            {
+                Kind = WorkflowTriggerKind.ChangeFeed,
+                WatchedLayerIds = [1, 2]
+            }
+        };
+
+        Assert.Empty(WorkflowDefinitionValidator.Validate(definition));
+    }
+
+    [Fact]
+    public void Validate_RejectsChangeFeedTrigger_WithoutWatchedLayers()
+    {
+        var definition = BuildDefinition(("a", Empty)) with
+        {
+            Trigger = new WorkflowTrigger { Kind = WorkflowTriggerKind.ChangeFeed }
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("at least one watched layer", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RejectsChangeFeedTrigger_WithNegativeLayerId()
+    {
+        var definition = BuildDefinition(("a", Empty)) with
+        {
+            Trigger = new WorkflowTrigger
+            {
+                Kind = WorkflowTriggerKind.ChangeFeed,
+                WatchedLayerIds = [-1]
+            }
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("non-negative", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_AcceptsObjectStoreTrigger_WithStoreId()
+    {
+        var definition = BuildDefinition(("a", Empty)) with
+        {
+            Trigger = new WorkflowTrigger
+            {
+                Kind = WorkflowTriggerKind.ObjectStore,
+                ObjectStore = new ObjectStoreTriggerConfig { StoreId = "drop", Prefix = "in/" }
+            }
+        };
+
+        Assert.Empty(WorkflowDefinitionValidator.Validate(definition));
+    }
+
+    [Fact]
+    public void Validate_RejectsObjectStoreTrigger_WithoutConfig()
+    {
+        var definition = BuildDefinition(("a", Empty)) with
+        {
+            Trigger = new WorkflowTrigger { Kind = WorkflowTriggerKind.ObjectStore }
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("object-store configuration", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RejectsObjectStoreTrigger_WithNonPositivePollInterval()
+    {
+        var definition = BuildDefinition(("a", Empty)) with
+        {
+            Trigger = new WorkflowTrigger
+            {
+                Kind = WorkflowTriggerKind.ObjectStore,
+                ObjectStore = new ObjectStoreTriggerConfig
+                {
+                    StoreId = "drop",
+                    PollInterval = TimeSpan.Zero
+                }
+            }
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("poll interval must be positive", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_AcceptsWellFormedForEach()
     {
         var definition = BuildDefinition(("a", Empty));
