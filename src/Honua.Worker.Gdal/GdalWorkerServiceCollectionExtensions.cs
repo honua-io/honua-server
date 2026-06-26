@@ -86,6 +86,8 @@ public static class GdalWorkerServiceCollectionExtensions
         // GDAL CLI runner + native-profile executors.
         services.TryAddSingleton<IGdalCommandRunner, ProcessGdalCommandRunner>();
         services.TryAddSingleton<GdalVectorConvertJobExecutor>();
+        services.TryAddSingleton<GdalVectorReprojectJobExecutor>();
+        services.TryAddSingleton<GdalVectorSourceReadJobExecutor>();
         services.TryAddSingleton<GdalRasterReprojectJobExecutor>();
         services.TryAddSingleton<GdalSurfaceJobExecutor>();
         services.TryAddSingleton<GdalRasterClipJobExecutor>();

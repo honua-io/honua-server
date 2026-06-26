@@ -27,10 +27,12 @@ internal sealed class ReprojectTransformExecutor(
 {
     internal const string HandledProcessId = "transform.reproject";
 
-    private static readonly HashSet<int> WebMercatorAliases =
-        new() { 3857, 900913, 102100, 102113, 3785 };
-
     protected override string ProcessId => HandledProcessId;
+
+    // NOTE: managed accept-set vs. native-escalation are kept in lock-step by the
+    // shared ManagedReprojectFastPath predicate. This executor rejects any pair the
+    // submit path should have escalated to the native worker; the submit path
+    // escalates exactly the pairs this executor rejects.
 
     protected override List<IFeature> Apply(
         FeatureCollection source,
@@ -40,7 +42,7 @@ internal sealed class ReprojectTransformExecutor(
         var fromSrid = ReadSrid(inputs, "fromSrid");
         var toSrid = ReadSrid(inputs, "toSrid");
 
-        if (!IsTransformSupported(fromSrid, toSrid))
+        if (!ManagedReprojectFastPath.IsManagedFastPath(fromSrid, toSrid))
         {
             throw new TransformInputException(
                 $"reproject from SRID {fromSrid} to {toSrid} is not supported by the managed transform path. " +
@@ -48,8 +50,7 @@ internal sealed class ReprojectTransformExecutor(
                 "WGS 84 (4326) ↔ Web Mercator. Datum-shift pairs require the native worker profile.");
         }
 
-        var passthrough = fromSrid == toSrid
-            || (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid));
+        var passthrough = ManagedReprojectFastPath.IsPassthrough(fromSrid, toSrid);
 
         var output = new List<IFeature>(source.Count);
         foreach (var feature in source)
@@ -79,26 +80,6 @@ internal sealed class ReprojectTransformExecutor(
         }
 
         return output;
-    }
-
-    private static bool IsTransformSupported(int fromSrid, int toSrid)
-    {
-        if (fromSrid == toSrid)
-        {
-            return true;
-        }
-
-        if (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid))
-        {
-            return true;
-        }
-
-        if (fromSrid == 4326 && WebMercatorAliases.Contains(toSrid))
-        {
-            return true;
-        }
-
-        return WebMercatorAliases.Contains(fromSrid) && toSrid == 4326;
     }
 
     private static int ReadSrid(StepInputReader inputs, string key)

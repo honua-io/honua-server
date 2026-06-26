@@ -215,6 +215,73 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ManagedReprojectFastPath_LeavesRuntimeProfileUnstamped()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // 4326 -> 3857 is a managed in-memory fast path: no datum shift, so the job
+        // stays on the lean profile and the managed ReprojectTransformExecutor serves
+        // it. The submit path must NOT escalate this to native.
+        var plan = CreateReprojectPlan(fromSrid: "4326", toSrid: "3857");
+
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RuntimeProfile.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_DatumShiftReproject_EscalatesToNativeRuntimeProfile()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // NAD 27 (4267) -> WGS 84 (4326) is a datum shift the managed path rejects.
+        // Even though transform.reproject declares the managed catalog profile, the
+        // submit path inspects the SRID inputs and ESCALATES the job to native so the
+        // claim fence routes it to the PROJ-backed GdalVectorReprojectJobExecutor.
+        var plan = CreateReprojectPlan(fromSrid: "4267", toSrid: "4326");
+
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RuntimeProfile.Should().Be(RuntimeProfiles.Native);
+    }
+
+    private static AnalysisPlan CreateReprojectPlan(string fromSrid, string toSrid)
+    {
+        // A minimal canonical geo+json data URI satisfying transform.reproject's
+        // required 'input'. The submit path's escalation reads only the SRID inputs.
+        const string emptyFeatureCollection =
+            "data:application/geo+json;base64," +
+            "eyJ0eXBlIjoiRmVhdHVyZUNvbGxlY3Rpb24iLCJmZWF0dXJlcyI6W119"; // {"type":"FeatureCollection","features":[]}
+
+        return new AnalysisPlan
+        {
+            PlanId = "plan-reproject",
+            IntentId = "intent-reproject",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "transform.reproject",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["input"] = emptyFeatureCollection,
+                        ["fromSrid"] = fromSrid,
+                        ["toSrid"] = toSrid
+                    }
+                }
+            ]
+        };
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithValidPlan_EnqueuesJob()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())

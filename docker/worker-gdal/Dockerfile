@@ -19,7 +19,13 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
 # omits the NetCDF/HDF5 drivers required by the multidimensional coverage
 # reader (ADR-0039 Path B). Verified: gdalmdiminfo reports "not recognized as
 # being in a supported file format" against NetCDF4 on the small image.
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-latest
+#
+# PINNED to a concrete patch tag (not `-latest`) so the worker's driver universe —
+# PROJ datum-shift grids, native FileGDB (OpenFileGDB), GML app-schema, netCDF /
+# GRIB / HDF — is reproducible across builds. PROJ ships with this base; the
+# native vector reproject (transform.reproject on the native profile) and the OGR
+# import reader (source.ogr) depend on its transformation pipelines.
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
 # Pinned .NET runtime version installed onto the GDAL (Ubuntu) base.
 ARG DOTNET_RUNTIME_VERSION=10.0
 
@@ -100,7 +106,14 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
  && gdalinfo --formats | grep -qi GRIB \
  && command -v pdal \
  && pdal --drivers | grep -qi readers.las \
- && pdal --drivers | grep -qi filters.reprojection
+ && pdal --drivers | grep -qi filters.reprojection \
+ # PROJ datum-shift support for native vector reproject (transform.reproject on
+ # the native profile): projsync/proj.db must be present so PROJ can apply
+ # datum/grid shifts (e.g. NAD 27 -> WGS 84). The full base ships PROJ.
+ && command -v projinfo \
+ # OGR import-reader (source.ogr) format breadth the managed readers cannot serve.
+ && ogr2ogr --formats | grep -qi OpenFileGDB \
+ && ogr2ogr --formats | grep -qi GML
 
 # Non-root runtime user.
 RUN groupadd --gid 1001 --system honua \

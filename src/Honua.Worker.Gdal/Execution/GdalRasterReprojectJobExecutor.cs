@@ -68,7 +68,7 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
             return JobExecutionResult.Failed("Invalid reprojection inputs: missing required input 'targetSrs'.");
         }
 
-        if (!IsValidSrsToken(targetSrs))
+        if (!GdalSrsToken.IsValid(targetSrs))
         {
             return JobExecutionResult.Failed(
                 $"Invalid reprojection inputs: 'targetSrs' value '{targetSrs}' is not an accepted CRS token " +
@@ -94,14 +94,14 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
             await context.ReportProgressAsync(40, "Running gdalwarp reprojection", cancellationToken).ConfigureAwait(false);
 
             var args = new List<string> { "-overwrite", "-of", "GTiff" };
-            if (!string.IsNullOrWhiteSpace(sourceSrs) && IsValidSrsToken(sourceSrs))
+            if (!string.IsNullOrWhiteSpace(sourceSrs) && GdalSrsToken.IsValid(sourceSrs))
             {
                 args.Add("-s_srs");
-                args.Add(NormalizeSrs(sourceSrs));
+                args.Add(GdalSrsToken.Normalize(sourceSrs));
             }
 
             args.Add("-t_srs");
-            args.Add(NormalizeSrs(targetSrs));
+            args.Add(GdalSrsToken.Normalize(targetSrs));
             args.Add(inputPath);
             args.Add(outputPath);
 
@@ -160,47 +160,6 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
-    }
-
-    /// <summary>
-    /// Validates a CRS token to a conservative allow-shape before passing it to
-    /// the CLI. Accepts a bare positive integer (EPSG code) or an
-    /// <c>AUTHORITY:CODE</c> token. This blocks shell-influencing values and
-    /// arbitrary PROJ strings while covering the common reprojection cases.
-    /// </summary>
-    private static bool IsValidSrsToken(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var token = value.Trim();
-        if (int.TryParse(token, out var epsg) && epsg > 0)
-        {
-            return true;
-        }
-
-        var parts = token.Split(':', 2);
-        if (parts.Length != 2)
-        {
-            return false;
-        }
-
-        var authority = parts[0];
-        var code = parts[1];
-        if (authority.Length is 0 or > 16 || !authority.All(char.IsLetterOrDigit))
-        {
-            return false;
-        }
-
-        return code.Length is > 0 and <= 16 && code.All(char.IsLetterOrDigit);
-    }
-
-    private static string NormalizeSrs(string value)
-    {
-        var token = value.Trim();
-        return int.TryParse(token, out _) ? $"EPSG:{token}" : token;
     }
 
     private static partial class Log

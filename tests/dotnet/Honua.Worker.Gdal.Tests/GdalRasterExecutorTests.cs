@@ -675,6 +675,12 @@ public sealed class GdalRasterExecutorTests
             "pcloud.translate",
             // Existing native-routed ids must still be present.
             "gdal.gdalwarp", "gdal.ogr2ogr",
+            // Native vector reproject (datum/grid shift via ogr2ogr -s_srs/-t_srs):
+            // the heavyweight counterpart to the managed transform.reproject, routed
+            // here when the SRID pair is escalated to the native profile.
+            "transform.reproject",
+            // GDAL/OGR-backed import reader (broad format universe → GeoJSON).
+            "source.ogr",
         };
 
         dispatcher.SupportedProcessIds.Should().BeEquivalentTo(allIds);
@@ -720,6 +726,8 @@ public sealed class GdalRasterExecutorTests
         var options = GdalJobFactory.Options(Path.Combine(Path.GetTempPath(), "honua-gdal-dispatch-test"));
         return new GdalDispatchJobExecutor(
             new GdalVectorConvertJobExecutor(runner, options, NullLogger<GdalVectorConvertJobExecutor>.Instance),
+            new GdalVectorReprojectJobExecutor(runner, options, NullLogger<GdalVectorReprojectJobExecutor>.Instance),
+            new GdalVectorSourceReadJobExecutor(runner, options, NullLogger<GdalVectorSourceReadJobExecutor>.Instance),
             new GdalRasterReprojectJobExecutor(runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
             new GdalSurfaceJobExecutor(runner, options, NullLogger<GdalSurfaceJobExecutor>.Instance),
             new GdalRasterClipJobExecutor(runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),

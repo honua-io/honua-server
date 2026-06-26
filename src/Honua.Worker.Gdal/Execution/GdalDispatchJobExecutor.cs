@@ -34,6 +34,8 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     /// </summary>
     public GdalDispatchJobExecutor(
         GdalVectorConvertJobExecutor vectorConvert,
+        GdalVectorReprojectJobExecutor vectorReproject,
+        GdalVectorSourceReadJobExecutor vectorSourceRead,
         GdalRasterReprojectJobExecutor rasterReproject,
         GdalSurfaceJobExecutor surface,
         GdalRasterClipJobExecutor rasterClip,
@@ -45,6 +47,8 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         ILogger<GdalDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(vectorConvert);
+        ArgumentNullException.ThrowIfNull(vectorReproject);
+        ArgumentNullException.ThrowIfNull(vectorSourceRead);
         ArgumentNullException.ThrowIfNull(rasterReproject);
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentNullException.ThrowIfNull(rasterClip);
@@ -58,6 +62,8 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         var handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
         {
             [GdalVectorConvertJobExecutor.HandledProcessId] = vectorConvert,
+            [GdalVectorReprojectJobExecutor.HandledProcessId] = vectorReproject,
+            [GdalVectorSourceReadJobExecutor.HandledProcessId] = vectorSourceRead,
             [GdalRasterReprojectJobExecutor.HandledProcessId] = rasterReproject,
             [GdalRasterClipJobExecutor.HandledProcessId] = rasterClip,
             [GdalRasterReprojectCatalogJobExecutor.HandledProcessId] = rasterReprojectCatalog,
