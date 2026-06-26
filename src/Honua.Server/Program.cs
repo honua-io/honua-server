@@ -406,59 +406,14 @@ builder.Services.AddHonuaBatchAndDeployBackends();
 
 if (connectedRedis != null)
 {
-    builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
-    builder.Services.AddSingleton<IWorkflowOperationReconciler, DeployWorkflowReconciler>();
-    builder.Services.AddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
-
-    // Additive metadata-release layer-evolution lifecycle: create service, stage-action services,
-    // reconciler, and its background loop. Sibling to the deploy reconciler; processes only
-    // WorkflowOperationKind.MetadataRelease.
-    builder.Services.AddSingleton<Honua.ControlPlane.MetadataReleaseControlService>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleasePreflightGate,
-        Honua.ControlPlane.MetadataReleasePreflightGate>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseScriptExecutor,
-        Honua.ControlPlane.MetadataReleaseScriptExecutor>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseDataJobDispatcher,
-        Honua.ControlPlane.MetadataReleaseDataJobDispatcher>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseActivator,
-        Honua.ControlPlane.MetadataReleaseActivator>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseSmokeChecker,
-        Honua.ControlPlane.MetadataReleaseSmokeChecker>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseOperationReconciler,
-        Honua.ControlPlane.MetadataReleaseReconciler>();
-
-    // Coordinated platform-upgrade release lifecycle (Demo C): conducts a container rollout, an
-    // additive DB script migration, and a metadata-v2 activation as one ordered, gated,
-    // rollback-able operation. Composes the deploy and metadata-release services via thin step
-    // executors rather than a parallel lifecycle.
-    builder.Services.AddSingleton<Honua.ControlPlane.CoordinatedReleaseControlService>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedContainerStepExecutor,
-        Honua.ControlPlane.CoordinatedContainerStepExecutor>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedMetadataStepExecutor,
-        Honua.ControlPlane.CoordinatedMetadataStepExecutor>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedReleaseReconciler,
-        Honua.ControlPlane.CoordinatedReleaseReconciler>();
-
-    // Control-plane hybrid-trigger seam (design option C).
+    // Control-plane reconcile graph (stores, four typed reconcilers, dispatcher seam, event handler,
+    // trigger options). Shared with the cloud event entrypoint (Honua.ControlPlane.Lambda) via
+    // ControlPlaneReconcileRegistration so both wire the exact same graph from one source of truth.
     // Phase 0: one dispatcher routes a reconcile-once request to the typed reconciler that owns the
     // operation kind. Both the poll loops and the Phase 1 event handler call this single method.
     // Phase 1: the event handler is the cloud (EventBridge -> Lambda) entrypoint, and the backstop
     // sweep self-heals dropped events; the TriggerMode flag chooses poll (on-prem) vs event (cloud).
-    builder.Services.Configure<Honua.ControlPlane.ControlPlaneTriggerOptions>(
-        builder.Configuration.GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName));
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IOperationReconcileDispatcher,
-        Honua.ControlPlane.OperationReconcileDispatcher>();
-    builder.Services.AddSingleton<Honua.ControlPlane.ControlPlaneEventHandler>();
+    builder.Services.AddHonuaControlPlaneReconcilers(builder.Configuration);
 
     var controlPlaneTriggerMode = builder.Configuration
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
@@ -474,12 +429,15 @@ if (connectedRedis != null)
         if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
         {
             builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
-        }
 
-        // The backstop sweep ships with Phase 1 and runs in BOTH modes so a dropped/missed event
-        // (or, under poll, a wedged loop) self-heals. It is low-frequency and is a no-op when the
-        // active jobs are fresh.
-        builder.Services.AddHostedService<Honua.ControlPlane.ExecutionJobBackstopSweepService>();
+            // The in-process backstop timer self-heals a wedged poll loop. In Event mode the timer is
+            // NOT hosted: EventBridge Scheduler drives the same SweepOnceAsync via the internal HTTP
+            // entrypoint (ControlPlaneEventEndpoints), so the host has no always-on control-plane timer.
+            // The backstop service itself is registered as a resolvable singleton in both modes by
+            // AddHonuaControlPlaneReconcilers, so the endpoint can drive it on demand.
+            builder.Services.AddHostedService(
+                sp => sp.GetRequiredService<Honua.ControlPlane.ExecutionJobBackstopSweepService>());
+        }
 
         builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
         builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
@@ -1320,6 +1278,10 @@ app.MapMetadataReleaseControlEndpoints();
 app.MapCoordinatedReleaseControlEndpoints();
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
+
+// Cloud event-driven control-plane surface (TriggerMode=Event only): the EventBridge-invoked
+// reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).
+app.MapControlPlaneEventEndpoints();
 
 // Console approval surface for agent-proposed operations (#1694).
 app.MapProposalEndpoints();
