@@ -29,7 +29,7 @@ public sealed class ControlPlaneTriggerTests
         var job = CreateJob("op-1", ExecutionJobStatus.Running, providerOperationId: "batch-job-abc");
         var store = new VersionedJobStore(job);
         var dispatcher = Substitute.For<IOperationReconcileDispatcher>();
-        var sut = new ControlPlaneEventHandler(store, dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
+        var sut = new ControlPlaneEventHandler(store, Substitute.For<IWorkflowOperationStore>(), dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
 
         await sut.HandleExecutionJobEventAsync("batch-job-abc");
 
@@ -44,7 +44,7 @@ public sealed class ControlPlaneTriggerTests
         var job = CreateJob("op-1", ExecutionJobStatus.Running, providerOperationId: "batch-job-abc");
         var store = new VersionedJobStore(job);
         var dispatcher = Substitute.For<IOperationReconcileDispatcher>();
-        var sut = new ControlPlaneEventHandler(store, dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
+        var sut = new ControlPlaneEventHandler(store, Substitute.For<IWorkflowOperationStore>(), dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
 
         await sut.HandleExecutionJobEventAsync("not-a-known-job");
 
@@ -62,7 +62,7 @@ public sealed class ControlPlaneTriggerTests
         var progress = new RecordingProgressStore();
         var backend = new CountingBatchBackend(ExecutionJobStatus.Succeeded);
         var dispatcher = BuildDispatcher(store, progress, backend);
-        var sut = new ControlPlaneEventHandler(store, dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
+        var sut = new ControlPlaneEventHandler(store, Substitute.For<IWorkflowOperationStore>(), dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
 
         // Fire the same event three times (duplicate delivery) plus a stale "out-of-order" replay.
         await sut.HandleExecutionJobEventAsync("batch-job-dup");
@@ -131,7 +131,7 @@ public sealed class ControlPlaneTriggerTests
         var dispatcher = BuildDispatcher(store, progress, backend);
 
         // Simulate the missed-event self-heal: an event already drove it terminal...
-        var handler = new ControlPlaneEventHandler(store, dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
+        var handler = new ControlPlaneEventHandler(store, Substitute.For<IWorkflowOperationStore>(), dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
         await handler.HandleExecutionJobEventAsync("batch-heal");
         var afterEvent = store.WriteCount;
 
