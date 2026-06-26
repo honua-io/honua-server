@@ -311,17 +311,18 @@ public sealed class CustomCodeSubmitTests
     {
         var sut = CreateService();
         var metadata = CustomCodeMetadata();
-        // Drop the two optional params; they must not appear as env.CUSTOMCODE_*.
-        metadata.Remove(CustomCodeJobContract.DepsManifestParam);
+        // Drop the optional params_json; it must not appear as env.CUSTOMCODE_*.
+        // (deps_manifest became REQUIRED with the Round-4 dotnet-runtime hardening —
+        // the validator rejects a submit that omits it — so it stays supplied here.)
         metadata.Remove(CustomCodeJobContract.ParamsJsonParam);
 
         var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
 
         job.Spec.Parameters.Should().NotContainKey(
-            CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.DepsManifestEnvName));
-        job.Spec.Parameters.Should().NotContainKey(
             CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.ParamsJsonEnvName));
-        // Required params still project.
+        // Required params still project, including the now-required deps_manifest.
+        job.Spec.Parameters.Should().ContainKey(
+            CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.DepsManifestEnvName));
         job.Spec.Parameters.Should().ContainKey(
             CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.RepoUrlEnvName));
     }
