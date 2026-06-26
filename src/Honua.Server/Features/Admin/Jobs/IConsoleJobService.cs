@@ -34,6 +34,11 @@ internal interface IConsoleJobService
         string jobId,
         CancellationToken cancellationToken);
 
+    Task<ConsoleJobStepsResponse?> GetStepsAsync(
+        HttpContext context,
+        string jobId,
+        CancellationToken cancellationToken);
+
     Task<ConsoleJobControlResponse?> CancelAsync(
         HttpContext context,
         string jobId,
