@@ -958,6 +958,8 @@
         "src/Honua.Core/Features/Styling/",
         "src/Honua.Postgres/Features/Styling/",
         "src/Honua.Server/Features/Infrastructure/",
+        "src/Honua.Server/Features/ControlPlane/",
+        "src/Honua.Core/Features/ControlPlane/",
         "src/Honua.Protocols.GeoServices/Catalog/",
         "tests/dotnet/Honua.Server.Tests/Features/Authorization/",
         "tests/dotnet/Honua.Server.Tests/Features/Caching/",
