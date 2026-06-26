@@ -837,6 +837,11 @@ sql:
           remote_ip        VARCHAR(64),
           user_agent       VARCHAR(512),
           details          TEXT         NOT NULL DEFAULT '',
+          -- Tamper-evident hash-chain columns (migration 069_AddAuditLogHashChain.sql, #350).
+          -- PostgresAuditLog.RecordAsync INSERTs prev_hash/entry_hash on every write, so the
+          -- migration-skip seed must declare them or audit writes 42703 on "entry_hash".
+          prev_hash        CHAR(64),
+          entry_hash       CHAR(64),
           CONSTRAINT chk_audit_log_event_type CHECK (event_type IN (
               'Authentication','Authorization','AdminAction',
               'ConfigChange','DataExport','DataDelete')),
@@ -845,6 +850,8 @@ sql:
           CONSTRAINT chk_audit_log_outcome CHECK (outcome IN (
               'Success','Failure','Denied'))
       );
+  - "ALTER TABLE honua.audit_log ADD COLUMN IF NOT EXISTS prev_hash CHAR(64);"
+  - "ALTER TABLE honua.audit_log ADD COLUMN IF NOT EXISTS entry_hash CHAR(64);"
   - "CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON honua.audit_log(timestamp DESC);"
   - "CREATE INDEX IF NOT EXISTS idx_audit_log_actor_timestamp ON honua.audit_log(actor, timestamp DESC);"
   - "CREATE INDEX IF NOT EXISTS idx_audit_log_event_type_timestamp ON honua.audit_log(event_type, timestamp DESC);"

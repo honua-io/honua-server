@@ -24,8 +24,17 @@ internal sealed partial class JobExecutionService(
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
 
-    private readonly Dictionary<ExecutionJobKind, IJobExecutor> _executorMap =
-        executors.ToDictionary(e => e.Kind);
+    // Multiple executors can share a single ExecutionJobKind when they fence on
+    // different runtime profiles — e.g. for ExecutionJobKind.Geoprocessing the lean
+    // managed dispatcher (GeoprocessingDispatchJobExecutor), the custom-code dispatcher
+    // (CustomCodeDispatchJobExecutor, "custom-code" profile), and the native GDAL
+    // dispatcher (GdalDispatchJobExecutor, "native" profile) are all registered as
+    // IJobExecutor. Group by Kind (instead of ToDictionary, which throws on the
+    // duplicate Kind) and disambiguate by the job's runtime profile at dispatch time.
+    private readonly Dictionary<ExecutionJobKind, IJobExecutor[]> _executorsByKind =
+        executors
+            .GroupBy(e => e.Kind)
+            .ToDictionary(g => g.Key, g => g.ToArray());
 
     private readonly HashSet<ExecutionJobKind> _acceptedKinds =
         new(executors.Select(e => e.Kind));
@@ -51,6 +60,38 @@ internal sealed partial class JobExecutionService(
         }
 
         return profiles;
+    }
+
+    /// <summary>
+    /// Selects the executor for a claimed job by kind, disambiguating among
+    /// executors that share the kind via the runtime-profile claim fence. When a
+    /// single executor is registered for the kind it is returned directly (the
+    /// claim-side profile fence already guaranteed this worker accepts the job's
+    /// profile); when several share the kind, the one whose
+    /// <see cref="IJobExecutor.AcceptedRuntimeProfiles"/> can claim the job's
+    /// effective profile is chosen.
+    /// </summary>
+    private IJobExecutor? ResolveExecutor(ExecutionJobKind kind, string? runtimeProfile)
+    {
+        if (!_executorsByKind.TryGetValue(kind, out var candidates) || candidates.Length == 0)
+        {
+            return null;
+        }
+
+        if (candidates.Length == 1)
+        {
+            return candidates[0];
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (RuntimeProfiles.CanClaim(candidate.AcceptedRuntimeProfiles, runtimeProfile))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -146,7 +187,8 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
-        if (!_executorMap.TryGetValue(job.Spec.Kind, out var executor))
+        var executor = ResolveExecutor(job.Spec.Kind, job.Spec.RuntimeProfile);
+        if (executor is null)
         {
             Log.NoExecutorForKind(logger, operationId, job.Spec.Kind.ToString());
             await AbandonJobAsync(job, workerId, "No executor registered for job kind.", stoppingToken).ConfigureAwait(false);
