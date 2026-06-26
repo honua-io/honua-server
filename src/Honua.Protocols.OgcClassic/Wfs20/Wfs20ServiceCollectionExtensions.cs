@@ -5,6 +5,7 @@ using Honua.Core.Features.Edit;
 using Honua.Core.Features.Query;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using StackExchange.Redis;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20;
 
@@ -31,6 +32,22 @@ internal static class Wfs20ServiceCollectionExtensions
         services.TryAddScoped<Wfs20EditParameterAdapter>();
         services.AddScoped<Wfs20QueryServices>();
         services.AddScoped<Wfs20Handler>();
+
+        // Managed stored queries (CreateStoredQuery/DropStoredQuery): when Redis shared
+        // state is wired (multi-node profile) register the durable store so every replica
+        // observes the same set; otherwise fall back to the process-local in-memory store.
+        // TryAdd keeps both registrations override-friendly and the Redis one wins because
+        // it is registered first — mirrors the dual-registration pattern used by the
+        // geoprocessing execution job store.
+        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        {
+            services.TryAddSingleton<IWfsStoredQueryStore>(sp =>
+                new RedisWfsStoredQueryStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ILogger<RedisWfsStoredQueryStore>>()));
+        }
+
+        services.TryAddSingleton<IWfsStoredQueryStore, InMemoryWfsStoredQueryStore>();
 
         // Register additional WFS 2.0 services for comprehensive OGC compliance
         services.AddScoped<IGmlSerializer, GmlSerializer>();

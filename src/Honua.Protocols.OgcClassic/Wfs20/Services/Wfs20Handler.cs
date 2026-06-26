@@ -79,6 +79,7 @@ internal sealed partial class Wfs20Handler
     private readonly FeatureMutationValidator _mutationValidator;
     private readonly FeatureMutationEventService _mutationEventService;
     private readonly EditLimits _editLimits;
+    private readonly IWfsStoredQueryStore _storedQueryStore;
 
     public Wfs20Handler(
         ILogger<Wfs20Handler> logger,
@@ -101,6 +102,7 @@ internal sealed partial class Wfs20Handler
         _mutationValidator = queryServices.MutationValidator;
         _mutationEventService = queryServices.MutationEventService;
         _editLimits = queryServices.EditLimits;
+        _storedQueryStore = queryServices.StoredQueryStore;
     }
 
     private static IResult CreateStoredQueryFeatureNotFoundResult(HttpContext context, string featureId)

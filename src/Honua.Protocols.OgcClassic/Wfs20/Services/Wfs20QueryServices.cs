@@ -36,7 +36,8 @@ internal sealed class Wfs20QueryServices(
     ICoordinateTransformService coordinateTransformService,
     ICrsRegistry crsRegistry,
     IOptions<Wfs20Options> wfs20Options,
-    IOptions<LimitsOptions> limitsOptions)
+    IOptions<LimitsOptions> limitsOptions,
+    IWfsStoredQueryStore? storedQueryStore = null)
 {
     internal IFeatureReader FeatureReader { get; } = featureReader;
 
@@ -69,4 +70,11 @@ internal sealed class Wfs20QueryServices(
     internal Wfs20Options Wfs20Options { get; } = wfs20Options?.Value ?? throw new ArgumentNullException(nameof(wfs20Options));
 
     internal EditLimits EditLimits { get; } = limitsOptions?.Value?.Edits ?? throw new ArgumentNullException(nameof(limitsOptions));
+
+    /// <summary>
+    /// Store for managed WFS stored queries. Optional with a process-local fallback so
+    /// existing direct constructions (tests) keep working; DI always supplies the
+    /// registered singleton (Redis-backed in multi-node deployments).
+    /// </summary>
+    internal IWfsStoredQueryStore StoredQueryStore { get; } = storedQueryStore ?? new InMemoryWfsStoredQueryStore();
 }

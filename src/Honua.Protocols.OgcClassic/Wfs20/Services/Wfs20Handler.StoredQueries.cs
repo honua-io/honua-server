@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
@@ -43,14 +42,11 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 /// </summary>
 internal sealed partial class Wfs20Handler
 {
-    // Hard cap on managed stored queries to prevent unbounded memory growth.
-    // WFS 2.0 CITE Manage-Stored-Queries conformance requires mutation operations to
-    // succeed but does not mandate unlimited cardinality. Reject CreateStoredQuery once
-    // the process-wide count reaches this threshold and return OperationProcessingFailed.
-    private const int MaxManagedStoredQueryCount = 1000;
-
-    private static readonly ConcurrentDictionary<string, StoredQueryDefinition> ManagedStoredQueries =
-        new(StringComparer.OrdinalIgnoreCase);
+    // Managed stored queries live in IWfsStoredQueryStore (durability fix for #1593):
+    // process-local in-memory by default, Redis-backed in multi-node deployments so
+    // CreateStoredQuery/DropStoredQuery results are shared across replicas and survive
+    // restarts. The store enforces the IWfsStoredQueryStore.MaxManagedStoredQueryCount
+    // cap; CreateStoredQuery surfaces it as OperationProcessingFailed.
 
     public async Task<IResult> HandleListStoredQueriesAsync(
         HttpContext context,
@@ -60,9 +56,8 @@ internal sealed partial class Wfs20Handler
         // default headers. The response is always application/xml.
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
-        var xml = BuildListStoredQueriesXml(
-            descriptors,
-            ManagedStoredQueries.Values.OrderBy(query => query.Id, StringComparer.Ordinal).ToArray());
+        var managedQueries = await _storedQueryStore.ListAsync(cancellationToken).ConfigureAwait(false);
+        var xml = BuildListStoredQueriesXml(descriptors, managedQueries);
         return Results.Content(xml, "application/xml", Encoding.UTF8);
     }
 
@@ -74,11 +69,16 @@ internal sealed partial class Wfs20Handler
     {
         // Same story — DescribeStoredQueries is XML-only.
 
+        var managedQueries = await _storedQueryStore.ListAsync(cancellationToken).ConfigureAwait(false);
+        var managedQueriesById = managedQueries.ToDictionary(
+            query => query.Id,
+            StringComparer.OrdinalIgnoreCase);
+
         var requestedIds = ParseQualifiedList(storedQueryIds);
         foreach (var requestedId in requestedIds)
         {
             if (!IsGetFeatureByIdStoredQuery(requestedId) &&
-                !ManagedStoredQueries.ContainsKey(requestedId))
+                !managedQueriesById.ContainsKey(requestedId))
             {
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
@@ -90,10 +90,10 @@ internal sealed partial class Wfs20Handler
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var requestedDefinitions = requestedIds.Length == 0
-            ? ManagedStoredQueries.Values.OrderBy(query => query.Id, StringComparer.Ordinal).ToArray()
+            ? managedQueries
             : requestedIds
-                .Where(id => ManagedStoredQueries.TryGetValue(id, out _))
-                .Select(id => ManagedStoredQueries[id])
+                .Where(id => managedQueriesById.ContainsKey(id))
+                .Select(id => managedQueriesById[id])
                 .ToArray();
         var includeBuiltIn = requestedIds.Length == 0 || requestedIds.Any(IsGetFeatureByIdStoredQuery);
         var xml = BuildDescribeStoredQueriesXml(descriptors, requestedDefinitions, includeBuiltIn);
@@ -101,7 +101,9 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    public static IResult HandleCreateStoredQuery(HttpContext context)
+    public async Task<IResult> HandleCreateStoredQueryAsync(
+        HttpContext context,
+        CancellationToken cancellationToken = default)
     {
         var document = GetParsedStoredQueryRequestDocument(context);
         if (document?.Root is null ||
@@ -138,22 +140,19 @@ internal sealed partial class Wfs20Handler
                 "id");
         }
 
-        if (IsGetFeatureByIdStoredQuery(id) || ManagedStoredQueries.ContainsKey(id))
+        // Fast-fail pre-checks preserve the historical error precedence (duplicate before
+        // capacity before deeper request validation). The authoritative duplicate/capacity
+        // enforcement happens atomically in the store at TryCreateAsync below.
+        if (IsGetFeatureByIdStoredQuery(id) ||
+            await _storedQueryStore.GetAsync(id, cancellationToken).ConfigureAwait(false) is not null)
         {
-            return Wfs20ErrorResults.CreateBadRequest(
-                context,
-                "DuplicateStoredQueryIdValue",
-                $"Stored query '{id}' already exists.",
-                id);
+            return CreateDuplicateStoredQueryResult(context, id);
         }
 
-        if (ManagedStoredQueries.Count >= MaxManagedStoredQueryCount)
+        if (await _storedQueryStore.CountAsync(cancellationToken).ConfigureAwait(false) >=
+            IWfsStoredQueryStore.MaxManagedStoredQueryCount)
         {
-            return Wfs20ErrorResults.CreateBadRequest(
-                context,
-                "OperationProcessingFailed",
-                $"The maximum number of managed stored queries ({MaxManagedStoredQueryCount.ToString(CultureInfo.InvariantCulture)}) has been reached.",
-                "storedquery_id");
+            return CreateStoredQueryCapacityResult(context);
         }
 
         var queryExpressionText = definitionElement.Elements()
@@ -193,7 +192,7 @@ internal sealed partial class Wfs20Handler
 
         var parameters = definitionElement.Elements()
             .Where(element => string.Equals(element.Name.LocalName, "Parameter", StringComparison.OrdinalIgnoreCase))
-            .Select(element => new StoredQueryParameter(
+            .Select(element => new WfsStoredQueryParameter(
                 element.Attributes()
                     .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "name", StringComparison.OrdinalIgnoreCase))
                     ?.Value
@@ -226,7 +225,7 @@ internal sealed partial class Wfs20Handler
             .FirstOrDefault(element => string.Equals(element.Name.LocalName, "Filter", StringComparison.OrdinalIgnoreCase))
             ?.ToString(SaveOptions.DisableFormatting);
 
-        var definition = new StoredQueryDefinition(
+        var definition = new WfsStoredQueryDefinition(
             id,
             title,
             abstractText,
@@ -236,13 +235,13 @@ internal sealed partial class Wfs20Handler
             filterXml,
             parameters);
 
-        if (!ManagedStoredQueries.TryAdd(id, definition))
+        var createStatus = await _storedQueryStore.TryCreateAsync(definition, cancellationToken).ConfigureAwait(false);
+        switch (createStatus)
         {
-            return Wfs20ErrorResults.CreateBadRequest(
-                context,
-                "DuplicateStoredQueryIdValue",
-                $"Stored query '{id}' already exists.",
-                id);
+            case WfsStoredQueryCreateStatus.DuplicateId:
+                return CreateDuplicateStoredQueryResult(context, id);
+            case WfsStoredQueryCreateStatus.CapacityExceeded:
+                return CreateStoredQueryCapacityResult(context);
         }
 
         var xml = WriteXmlDocument(writer =>
@@ -257,9 +256,26 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    public static IResult HandleDropStoredQuery(
+    private static IResult CreateDuplicateStoredQueryResult(HttpContext context, string id)
+        => Wfs20ErrorResults.CreateBadRequest(
+            context,
+            "DuplicateStoredQueryIdValue",
+            $"Stored query '{id}' already exists.",
+            id);
+
+
+    private static IResult CreateStoredQueryCapacityResult(HttpContext context)
+        => Wfs20ErrorResults.CreateBadRequest(
+            context,
+            "OperationProcessingFailed",
+            $"The maximum number of managed stored queries ({IWfsStoredQueryStore.MaxManagedStoredQueryCount.ToString(CultureInfo.InvariantCulture)}) has been reached.",
+            "storedquery_id");
+
+
+    public async Task<IResult> HandleDropStoredQueryAsync(
         HttpContext context,
-        string? storedQueryId)
+        string? storedQueryId,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(storedQueryId))
         {
@@ -281,7 +297,7 @@ internal sealed partial class Wfs20Handler
         }
 
         if (IsGetFeatureByIdStoredQuery(storedQueryId) ||
-            !ManagedStoredQueries.TryRemove(storedQueryId, out _))
+            !await _storedQueryStore.TryRemoveAsync(storedQueryId, cancellationToken).ConfigureAwait(false))
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -313,7 +329,8 @@ internal sealed partial class Wfs20Handler
     {
         if (!IsGetFeatureByIdStoredQuery(storedQueryId))
         {
-            if (ManagedStoredQueries.TryGetValue(storedQueryId, out var definition))
+            var definition = await _storedQueryStore.GetAsync(storedQueryId, cancellationToken).ConfigureAwait(false);
+            if (definition is not null)
             {
                 return await HandleManagedStoredQueryGetFeatureAsync(
                     context,
@@ -401,7 +418,7 @@ internal sealed partial class Wfs20Handler
 
     private async Task<IResult> HandleManagedStoredQueryGetFeatureAsync(
         HttpContext context,
-        StoredQueryDefinition definition,
+        WfsStoredQueryDefinition definition,
         string? typeNames,
         string? outputFormat,
         string? count,
@@ -435,7 +452,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static string? ResolveManagedStoredQueryTypeNames(StoredQueryDefinition definition, string? typeNames)
+    private static string? ResolveManagedStoredQueryTypeNames(WfsStoredQueryDefinition definition, string? typeNames)
     {
         if (string.IsNullOrWhiteSpace(definition.QueryTypeNames))
         {
@@ -451,7 +468,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static string? ResolveManagedStoredQueryFilter(StoredQueryDefinition definition, HttpContext context)
+    private static string? ResolveManagedStoredQueryFilter(WfsStoredQueryDefinition definition, HttpContext context)
     {
         if (string.IsNullOrWhiteSpace(definition.FilterXml))
         {
@@ -474,7 +491,7 @@ internal sealed partial class Wfs20Handler
 
     private static string BuildListStoredQueriesXml(
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
-        IReadOnlyList<StoredQueryDefinition> managedQueries)
+        IReadOnlyList<WfsStoredQueryDefinition> managedQueries)
     {
         return WriteXmlDocument(writer =>
         {
@@ -514,7 +531,7 @@ internal sealed partial class Wfs20Handler
 
     private static string BuildDescribeStoredQueriesXml(
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
-        IReadOnlyList<StoredQueryDefinition> managedQueries,
+        IReadOnlyList<WfsStoredQueryDefinition> managedQueries,
         bool includeBuiltIn)
     {
         return WriteXmlDocument(writer =>
@@ -685,17 +702,5 @@ internal sealed partial class Wfs20Handler
             ? descriptors[0]
             : null;
     }
-
-    private sealed record StoredQueryDefinition(
-        string Id,
-        string? Title,
-        string? Abstract,
-        string ReturnFeatureTypes,
-        string Language,
-        string? QueryTypeNames,
-        string? FilterXml,
-        IReadOnlyList<StoredQueryParameter> Parameters);
-
-    private sealed record StoredQueryParameter(string Name, string Type);
 
 }

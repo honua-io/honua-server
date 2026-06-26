@@ -8,15 +8,17 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 namespace Honua.Server.Features.WorkflowPackages;
 
 /// <summary>
-/// Process-local, non-durable <see cref="IWorkflowPackageStore"/>. Packages,
-/// versions, and publications do NOT survive a restart, while schedule
-/// publications persist their compiled cron <c>WorkflowDefinition</c> into the
-/// durable (Redis-backed) workflow definition store. After a restart the
-/// scheduler therefore keeps firing runs for definitions whose owning
-/// publication no longer exists, and those orphans can only be stopped by
-/// deleting the definition from Redis. Production deployments need a durable
-/// package store (or scheduler-side orphan reaping) before schedule
-/// publications can be relied on across restarts.
+/// Process-local, non-durable <see cref="IWorkflowPackageStore"/> fallback used
+/// only when Redis is not configured. Packages, versions, and publications do
+/// NOT survive a restart. Redis-enabled deployments get
+/// <see cref="RedisWorkflowPackageStore"/> instead (see
+/// <see cref="WorkflowPackageServiceCollectionExtensions.AddWorkflowPackages"/>),
+/// which keeps publication records durable alongside the compiled cron
+/// <c>WorkflowDefinition</c>s that schedule publications write to the durable
+/// workflow definition store — without it, a restart would orphan those cron
+/// definitions with no surviving publication record to disable them. In the
+/// Redis-less mode this store covers, the orchestration engine and its durable
+/// definition store are not registered, so no such orphans can be created.
 /// </summary>
 internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
 {

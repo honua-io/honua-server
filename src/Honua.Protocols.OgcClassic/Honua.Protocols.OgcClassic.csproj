@@ -30,6 +30,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Backs RedisWfsStoredQueryStore (durable managed stored queries shared across
+         replicas). Centrally versioned via Directory.Packages.props; already flows in
+         transitively through Honua.Hosting / Honua.ServiceDefaults. -->
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.Tests" />

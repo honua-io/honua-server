@@ -785,7 +785,7 @@ internal static class Wfs20DispatcherEndpoint
         }
     }
 
-    private static Task<IResult> HandleCreateStoredQuery(
+    private static async Task<IResult> HandleCreateStoredQuery(
         HttpContext context,
         WfsRequestParameters parameters,
         Wfs20Handler handler,
@@ -798,19 +798,19 @@ internal static class Wfs20DispatcherEndpoint
 
             if (validationError is not null)
             {
-                return Task.FromResult(Wfs20ErrorResults.CreateBadRequest(
+                return Wfs20ErrorResults.CreateBadRequest(
                     context,
                     validationError.ExceptionCode,
                     validationError.Detail,
-                    validationError.Locator));
+                    validationError.Locator);
             }
 
             if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
             {
-                return Task.FromResult(Results.StatusCode(StatusCodes.Status406NotAcceptable));
+                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
             }
 
-            return Task.FromResult(Wfs20Handler.HandleCreateStoredQuery(context));
+            return await handler.HandleCreateStoredQueryAsync(context, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -819,11 +819,11 @@ internal static class Wfs20DispatcherEndpoint
         catch (Exception ex)
         {
             Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
-            return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(context, "Failed to process CreateStoredQuery request"));
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process CreateStoredQuery request");
         }
     }
 
-    private static Task<IResult> HandleDropStoredQuery(
+    private static async Task<IResult> HandleDropStoredQuery(
         HttpContext context,
         WfsRequestParameters parameters,
         Wfs20Handler handler,
@@ -836,20 +836,20 @@ internal static class Wfs20DispatcherEndpoint
 
             if (validationError is not null)
             {
-                return Task.FromResult(Wfs20ErrorResults.CreateBadRequest(
+                return Wfs20ErrorResults.CreateBadRequest(
                     context,
                     validationError.ExceptionCode,
                     validationError.Detail,
-                    validationError.Locator));
+                    validationError.Locator);
             }
 
             if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
             {
-                return Task.FromResult(Results.StatusCode(StatusCodes.Status406NotAcceptable));
+                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
             }
 
             var storedQueryId = parameters.Get(Wfs20Utilities.ParameterNames.StoredQueryId);
-            return Task.FromResult(Wfs20Handler.HandleDropStoredQuery(context, storedQueryId));
+            return await handler.HandleDropStoredQueryAsync(context, storedQueryId, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -858,7 +858,7 @@ internal static class Wfs20DispatcherEndpoint
         catch (Exception ex)
         {
             Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
-            return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(context, "Failed to process DropStoredQuery request"));
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process DropStoredQuery request");
         }
     }
 

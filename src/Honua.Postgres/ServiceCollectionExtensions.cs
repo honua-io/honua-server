@@ -210,10 +210,38 @@ internal static class ServiceCollectionExtensions
         // storage wins over the in-memory default registered in Program.cs, so
         // roles, per-operation grants, and memberships survive restart and are
         // shared across scaled nodes.
-        services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRoleStore>(serviceProvider =>
-            new Features.Authorization.PostgresRoleStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
+        //
+        // The store is wrapped in CachingRoleStore over a singleton
+        // RolePermissionCache (#1593): without it, every authorization decision
+        // (PermissionResolver.AuthorizeAsync on RBAC-enforced request paths)
+        // costs a connection lease + JOIN query because the scoped store cannot
+        // hold state across requests. Same-node role mutations invalidate the
+        // cache immediately; cross-node changes converge within the TTL
+        // (Authorization:RolePermissionCache:TtlSeconds, default 30; set 0 to
+        // disable caching and always hit Postgres).
+        var rolePermissionCacheTtlSeconds = configuration.GetValue<int?>("Authorization:RolePermissionCache:TtlSeconds") ?? 30;
+        if (rolePermissionCacheTtlSeconds > 0)
+        {
+            var rolePermissionCacheMaxEntries = configuration.GetValue<int?>("Authorization:RolePermissionCache:MaxEntries")
+                ?? Honua.Core.Features.Authorization.RolePermissionCache.DefaultMaxEntries;
+            services.TryAddSingleton(_ => new Honua.Core.Features.Authorization.RolePermissionCache(
+                TimeSpan.FromSeconds(rolePermissionCacheTtlSeconds),
+                rolePermissionCacheMaxEntries));
+            services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRoleStore>(serviceProvider =>
+                new Honua.Core.Features.Authorization.CachingRoleStore(
+                    new Features.Authorization.PostgresRoleStore(
+                        serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                        configuration["Database:Schema"]),
+                    serviceProvider.GetRequiredService<Honua.Core.Features.Authorization.RolePermissionCache>(),
+                    serviceProvider.GetService<ILogger<Honua.Core.Features.Authorization.CachingRoleStore>>()));
+        }
+        else
+        {
+            services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRoleStore>(serviceProvider =>
+                new Features.Authorization.PostgresRoleStore(
+                    serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                    configuration["Database:Schema"]));
+        }
 
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>

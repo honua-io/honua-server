@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.Protocols.Ogc.Classic.Wms;
 
 namespace Honua.Protocols.Ogc.Classic;
@@ -10,6 +11,8 @@ namespace Honua.Protocols.Ogc.Classic;
 /// <summary>
 /// AOT-compatible JSON serialization context for classic OGC response models.
 /// </summary>
+[JsonSerializable(typeof(WfsStoredQueryDefinition))]
+[JsonSerializable(typeof(WfsStoredQueryParameter))]
 [JsonSerializable(typeof(WmsFeatureInfoResponse))]
 [JsonSerializable(typeof(WmsFeatureInfoFeature))]
 [JsonSerializable(typeof(WmsFeatureInfoFeature[]))]

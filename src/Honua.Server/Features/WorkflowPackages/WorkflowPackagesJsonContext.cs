@@ -9,7 +9,8 @@ using Honua.Infrastructure.Models;
 namespace Honua.Server.Features.WorkflowPackages;
 
 /// <summary>
-/// Source-generated JSON context for Console workflow package endpoints.
+/// Source-generated JSON context for Console workflow package endpoints and the
+/// Redis-backed workflow package store payloads (<see cref="RedisWorkflowPackageStore"/>).
 /// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
