@@ -116,7 +116,7 @@
     <!-- Test-only: independent XML-DSig reference implementation used to generate signed SAML
          assertions in tests that validate the AOT-safe in-server verifier (#508). Not referenced
          by any shipped project. -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.0" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.6" />
     <PackageVersion Include="Testcontainers" Version="4.11.0" />
     <PackageVersion Include="Testcontainers.MySql" Version="4.11.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
