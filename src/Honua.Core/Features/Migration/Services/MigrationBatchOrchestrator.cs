@@ -102,6 +102,13 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
 
         Log.BatchStarted(_logger, created.BatchId, created.SourceKind, created.TotalChildren, applyRelationships);
 
+        // Record the run in the operator-facing run catalog and persist the manifest as
+        // ArcGIS migration evidence (#1598) so the admin run-list and evidence endpoints
+        // surface real data for this batch. Evidence persistence is best-effort and must
+        // never fail the batch itself.
+        await RecordRunStartedAsync(scope.ServiceProvider, created, cancellationToken).ConfigureAwait(false);
+        await SaveArcGisManifestEvidenceAsync(scope.ServiceProvider, created, request.ManifestBody, cancellationToken).ConfigureAwait(false);
+
         // Queue the first ready children immediately so callers see progress
         // without waiting for the background advance tick.
         var advanced = await AdvanceCoreAsync(scope.ServiceProvider, created.BatchId, cancellationToken).ConfigureAwait(false);
@@ -286,7 +293,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             completedAt = DateTimeOffset.UtcNow;
         }
 
-        return await catalog.UpdateBatchAsync(
+        var updated = await catalog.UpdateBatchAsync(
             batch.BatchId,
             status,
             succeeded,
@@ -296,6 +303,195 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             relationshipsApplied != batch.RelationshipsApplied ? relationshipsApplied : null,
             note,
             cancellationToken).ConfigureAwait(false);
+
+        if (isTerminal && completedAt is not null)
+        {
+            await RecordRunCompletedAsync(
+                services,
+                batch.BatchId,
+                status,
+                completedAt.Value,
+                BuildCompletionNote(children.Count, succeeded, failed, cancelled, needsReview, note),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return updated;
+    }
+
+    /// <summary>
+    /// Best-effort write of the operator-facing <see cref="MigrationRunRecord"/> for a
+    /// freshly started batch (#1598). Failures are logged and swallowed so evidence
+    /// bookkeeping never blocks the migration itself.
+    /// </summary>
+    private async Task RecordRunStartedAsync(
+        IServiceProvider services,
+        MigrationBatchRunRecord batch,
+        CancellationToken cancellationToken)
+    {
+        var runCatalog = services.GetService<IMigrationRunCatalog>();
+        if (runCatalog is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await runCatalog.RecordStartedAsync(
+                new MigrationRunRecord
+                {
+                    RunId = batch.BatchId,
+                    SourceKind = batch.SourceKind,
+                    SourceUrl = RedactUrl(batch.SourceUrl),
+                    SourceDisplayName = batch.SourceDisplayName,
+                    Status = MigrationRunStatus.Running,
+                    StartedAt = batch.StartedAt
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.RunRecordWriteFailed(_logger, batch.BatchId, ex);
+        }
+    }
+
+    /// <summary>
+    /// Best-effort terminal-state update of the run record once the batch rolls up to a
+    /// terminal status (#1598). <see cref="MigrationBatchRunStatus.NeedsReview"/> maps to
+    /// <see cref="MigrationRunStatus.Succeeded"/> — the data published — with the review
+    /// posture preserved in the status note.
+    /// </summary>
+    private async Task RecordRunCompletedAsync(
+        IServiceProvider services,
+        string batchId,
+        MigrationBatchRunStatus batchStatus,
+        DateTimeOffset completedAt,
+        string statusNote,
+        CancellationToken cancellationToken)
+    {
+        var runCatalog = services.GetService<IMigrationRunCatalog>();
+        if (runCatalog is null)
+        {
+            return;
+        }
+
+        var runStatus = batchStatus switch
+        {
+            MigrationBatchRunStatus.Failed => MigrationRunStatus.Failed,
+            MigrationBatchRunStatus.Cancelled => MigrationRunStatus.Cancelled,
+            _ => MigrationRunStatus.Succeeded
+        };
+
+        try
+        {
+            await runCatalog.RecordCompletedAsync(
+                batchId,
+                runStatus,
+                completedAt,
+                evidencePackRef: null,
+                evidencePackFingerprint: null,
+                evidencePackBody: null,
+                statusNote,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.RunRecordWriteFailed(_logger, batchId, ex);
+        }
+    }
+
+    /// <summary>
+    /// Best-effort persistence of the batch manifest as ArcGIS migration evidence (#1598)
+    /// so <c>GET /api/v1/admin/import/arcgis/migrations</c> lists the run. A missing or
+    /// unparseable manifest skips the write without failing the batch.
+    /// </summary>
+    private async Task SaveArcGisManifestEvidenceAsync(
+        IServiceProvider services,
+        MigrationBatchRunRecord batch,
+        string? manifestBody,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(manifestBody))
+        {
+            return;
+        }
+
+        var evidenceStore = services.GetService<IArcGisMigrationEvidenceStore>();
+        if (evidenceStore is null)
+        {
+            return;
+        }
+
+        MigrationManifestArtifact? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize(manifestBody, MigrationEvidencePackJsonContext.Default.MigrationManifestArtifact);
+        }
+        catch (JsonException ex)
+        {
+            Log.EvidenceManifestInvalid(_logger, batch.BatchId, ex);
+            return;
+        }
+
+        if (manifest is null)
+        {
+            return;
+        }
+
+        var sourceUrl = RedactUrl(string.IsNullOrWhiteSpace(manifest.Source.BaseUrl) ? batch.SourceUrl : manifest.Source.BaseUrl);
+        try
+        {
+            await evidenceStore.SaveManifestAsync(
+                new ArcGisMigrationRunRecord
+                {
+                    RunId = batch.BatchId,
+                    SourceUrl = sourceUrl,
+                    SourceDisplayName = string.IsNullOrWhiteSpace(manifest.Source.DisplayName)
+                        ? batch.SourceDisplayName
+                        : manifest.Source.DisplayName,
+                    SourceVersion = manifest.Source.Version,
+                    CreatedAt = batch.StartedAt
+                },
+                manifest,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.EvidenceWriteFailed(_logger, batch.BatchId, ex);
+        }
+    }
+
+    private static string BuildCompletionNote(
+        int total,
+        int succeeded,
+        int failed,
+        int cancelled,
+        int needsReview,
+        string? existingNote)
+    {
+        var summary = $"{succeeded}/{total} layer(s) succeeded, {failed} failed, {cancelled} cancelled, {needsReview} need(s) review.";
+        return string.IsNullOrWhiteSpace(existingNote) ? summary : $"{summary} {existingNote}";
+    }
+
+    /// <summary>
+    /// Strips userinfo, query, and fragment from a source URL before persistence, matching
+    /// the privacy posture documented on <see cref="MigrationRunRecord.SourceUrl"/>.
+    /// </summary>
+    private static string RedactUrl(string sourceUrl)
+    {
+        if (string.IsNullOrWhiteSpace(sourceUrl) || !Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri))
+        {
+            return sourceUrl;
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            UserName = string.Empty,
+            Password = string.Empty,
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        return builder.Uri.ToString();
     }
 
     private async Task<string?> ApplyRelationshipsAsync(
@@ -469,5 +665,17 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         [LoggerMessage(7983, LogLevel.Warning,
             "Migration batch {BatchId} manifest could not be parsed for relationship-apply")]
         public static partial void RelationshipManifestInvalid(ILogger logger, string batchId, Exception exception);
+
+        [LoggerMessage(7984, LogLevel.Warning,
+            "Migration batch {BatchId} failed to write its migration-run record; admin run list may be incomplete")]
+        public static partial void RunRecordWriteFailed(ILogger logger, string batchId, Exception exception);
+
+        [LoggerMessage(7985, LogLevel.Warning,
+            "Migration batch {BatchId} failed to persist ArcGIS migration evidence; evidence endpoints may be incomplete")]
+        public static partial void EvidenceWriteFailed(ILogger logger, string batchId, Exception exception);
+
+        [LoggerMessage(7986, LogLevel.Warning,
+            "Migration batch {BatchId} manifest could not be parsed for evidence persistence")]
+        public static partial void EvidenceManifestInvalid(ILogger logger, string batchId, Exception exception);
     }
 }

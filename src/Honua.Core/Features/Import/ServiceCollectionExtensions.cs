@@ -71,6 +71,11 @@ public static class ServiceCollectionExtensions
         // exercise the admin endpoints without a database (#1025 slice 6).
         services.TryAddSingleton<IArcGisMigrationEvidenceStore, InMemoryArcGisMigrationEvidenceStore>();
 
+        // Default in-memory migration-run catalog backing the admin run-list endpoints
+        // (#1598). The Postgres composition root replaces this with the durable
+        // honua.migration_runs-backed implementation.
+        services.TryAddSingleton<IMigrationRunCatalog, InMemoryMigrationRunCatalog>();
+
         return services;
     }
 }

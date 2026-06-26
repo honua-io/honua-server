@@ -105,6 +105,8 @@ namespace Honua.Import.FileImport;
 [JsonSerializable(typeof(ArcGisMigrationRunListResult))]
 [JsonSerializable(typeof(ArcGisMigrationRunSummary))]
 [JsonSerializable(typeof(ArcGisMigrationRunSummary[]))]
+[JsonSerializable(typeof(ArcGisMigrationManifestIngestRequest))]
+[JsonSerializable(typeof(ArcGisMigrationManifestIngestResponse))]
 [JsonSerializable(typeof(MigrationCutoverReadinessSummary))]
 [JsonSerializable(typeof(MigrationCutoverReadinessItem))]
 [JsonSerializable(typeof(MigrationCutoverReadinessItem[]))]

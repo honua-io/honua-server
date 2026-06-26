@@ -462,6 +462,15 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register migration-run catalog (#1015 slice 5 / #1598). Replaces the Core
+        // in-memory default so the /api/v1/admin/migration/runs endpoints serve durable
+        // run records written by the batch orchestrator across restarts and instances.
+        services.RemoveAll<IMigrationRunCatalog>();
+        services.AddScoped<IMigrationRunCatalog>(serviceProvider =>
+            new PostgresMigrationRunCatalog(
+                ResolveConnectionString(serviceProvider, configuration),
+                serviceProvider.GetRequiredService<ILogger<PostgresMigrationRunCatalog>>()));
+
         // Register migration performance evidence store (#1033 slice 5). Resolved alongside
         // the JsonTypeInfo<MigrationPerformanceEvidenceArtifact> the Server registers from
         // its source-generated context so persistence stays AOT-safe. TryAdd so a host that
