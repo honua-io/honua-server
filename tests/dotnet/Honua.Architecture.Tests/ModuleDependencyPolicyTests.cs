@@ -571,6 +571,23 @@ public sealed class ModuleDependencyPolicyTests
             return ModuleRole.Unclassified;
         }
 
+        // Dev-tool CLIs (e.g. the GP Devkit's `honua-gp`, project
+        // Honua.Geoprocessing.Cli) are tooling, not runtime topology. They are
+        // packaged as local dotnet tools (PackAsTool) and are DELIBERATELY kept
+        // out of the AOT-published server surface — nothing in Honua.Server
+        // references them, so the AOT publish never pulls them in. Like tests /
+        // samples / benchmarks, they may reference whatever runtime module they
+        // drive (the GP CLI re-uses the real Honua.Geoprocessing + Honua.Worker.Gdal
+        // executor set), so they fall through to the default tooling policy
+        // rather than the runtime dependency-direction matrix. This guard must
+        // precede the family-prefix checks below, otherwise "Honua.Geoprocessing.Cli"
+        // would match the "Honua.Geoprocessing." prefix and be misclassified as a
+        // runtime Geoprocessing consumer.
+        if (projectName.EndsWith(".Cli", StringComparison.Ordinal))
+        {
+            return ModuleRole.Unclassified;
+        }
+
         // Tier 1: Abstractions — must come before Core because of the prefix.
         if (projectName.Equals("Honua.Core.Abstractions", StringComparison.Ordinal))
         {

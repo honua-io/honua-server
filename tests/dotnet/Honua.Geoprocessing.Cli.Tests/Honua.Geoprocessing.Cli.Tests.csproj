@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <NoWarn>$(NoWarn);CS1591;CA1861</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CA1861;CA2007</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +14,7 @@
       P1 registration, the DI + catalog injectors, and that a generated fixture matches the
       P6 loader's expected shape. No Redis/job-store/control-plane and no real source-tree
       writes — pure string transforms and the in-memory fixture loader.
+      GP Devkit P9 (#2176): offline unit tests for the `honua gp publish` command.
     -->
     <ProjectReference Include="..\..\..\src\Honua.Geoprocessing.Cli\Honua.Geoprocessing.Cli.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Geoprocessing.Testing\Honua.Geoprocessing.Testing.csproj" />
@@ -24,6 +25,10 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>

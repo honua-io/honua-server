@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
+using Honua.Geoprocessing.Cli.Publish;
 using Honua.Geoprocessing.LocalRunner;
 using Honua.Geoprocessing.Testing;
 using Honua.Worker.Gdal;
@@ -53,6 +54,7 @@ public static class GpCli
                 "test" => await RunTest(rest).ConfigureAwait(false),
                 "plan" => await RunPlan(rest).ConfigureAwait(false),
                 "new" => await RunNew(rest).ConfigureAwait(false),
+                "publish" => await RunPublish(rest).ConfigureAwait(false),
                 "-h" or "--help" or "help" => PrintUsageAndOk(),
                 _ => Fail($"Unknown command '{verb}'."),
             };
@@ -701,6 +703,38 @@ public static class GpCli
         return 0;
     }
 
+    private static async Task<int> RunPublish(string[] args)
+    {
+        using var provider = BuildProvider();
+        var executors = provider.GetServices<IProcessExecutor>();
+        var runner = new GeoprocessingLocalRunner(executors);
+        var processIds = runner.AvailableProcessIds.ToHashSet(StringComparer.Ordinal);
+        var catalog = provider.GetService<IProcessCatalog>();
+
+        return await GpPublishCommand.RunAsync(
+            args,
+            processIds,
+            catalog,
+            CreatePublishClient,
+            Console.Out,
+            Console.Error).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Default REST-client factory for the publish verb: a real <see cref="HttpClient"/> rooted at
+    /// the <c>--server</c> base URL, authenticated with the admin API key (or a bearer token).
+    /// </summary>
+    private static WorkflowPackagePublishClient CreatePublishClient(GpPublishOptions options)
+    {
+        if (!Uri.TryCreate(options.Server, UriKind.Absolute, out var baseAddress))
+        {
+            throw new GpCliUsageException($"Invalid --server URL: '{options.Server}'.");
+        }
+
+        var http = new HttpClient { BaseAddress = baseAddress };
+        return new WorkflowPackagePublishClient(http, options.ApiKey, options.BearerToken);
+    }
+
     /// <summary>
     /// Injects the DI registration line and the catalog <c>ProcessDefinition</c> for the new
     /// process so it is registered + plannable. Reports (rather than fails) when an anchor is
@@ -895,8 +929,9 @@ public static class GpCli
         Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>] [--glass-box]");
         Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
         Console.WriteLine("  honua gp new <id> [--kind geometry|gdal] [--output <dir>]");
+        Console.WriteLine("  honua gp publish <id> [--server <url>] [--api-key <key>] [--message <m>] [--dry-run] [--publish]");
         Console.WriteLine();
-        Console.WriteLine("Options:");
+        Console.WriteLine("Run options:");
         Console.WriteLine("  --input, -i <file>  Read a file and bind it (base64) to the process's primary input.");
         Console.WriteLine("  --param, -p k=v     Set a step-0 input (repeatable). Overrides --input for the same key.");
         Console.WriteLine("  --out,   -o <file>  Write the first published artifact's bytes to <file> (run only).");
@@ -911,6 +946,17 @@ public static class GpCli
         Console.WriteLine("  plan  Dry-run: validate params + DAG and estimate output size/cost WITHOUT executing.");
         Console.WriteLine("  run   Execute the process and emit its artifact(s).");
         Console.WriteLine("  test  Run golden-file fixtures under samples/gp (or --root) and assert outputs.");
+        Console.WriteLine("  publish  Push an authored workflow to the WorkflowPackage store (GitOps approval-gated promotion).");
+        Console.WriteLine();
+        Console.WriteLine("Publish options:");
+        Console.WriteLine("  --server, -s <url>  Console REST server root. Default http://localhost:8080.");
+        Console.WriteLine("  --api-key, -k <key> Admin API key (X-API-Key). Defaults to $HONUA_ADMIN_PASSWORD.");
+        Console.WriteLine("  --bearer <token>    Bearer token instead of an API key.");
+        Console.WriteLine("  --message, -m <m>   Author message stamped on the package.");
+        Console.WriteLine("  --file, -f <json>   Publish an explicit WorkflowGraph JSON file.");
+        Console.WriteLine("  --as-process-node   Wrap a single registered process as a one-node workflow package.");
+        Console.WriteLine("  --dry-run           Validate + dry-run only; never create a publication.");
+        Console.WriteLine("  --publish           Also publish the created version to a process endpoint.");
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine("  honua gp plan geometry.buffer --param wkb=<base64> --param srid=4326 --param distance=10");
@@ -921,6 +967,8 @@ public static class GpCli
         Console.WriteLine("  honua gp test --update              # regenerate goldens after an intended change");
         Console.WriteLine("  honua gp new geometry.recenter      # scaffold a registered, runnable, golden-tested process");
         Console.WriteLine("  honua gp new gdal.warp-clip --kind gdal --output /tmp/preview  # preview only");
+        Console.WriteLine("  honua gp publish my-flow --file workflow.json --dry-run");
+        Console.WriteLine("  honua gp publish geometry.buffer --as-process-node --publish --api-key <key>");
     }
 }
 

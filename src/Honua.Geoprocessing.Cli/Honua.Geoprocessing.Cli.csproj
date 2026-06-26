@@ -42,4 +42,9 @@
     <ProjectReference Include="..\Honua.Geoprocessing.Testing\Honua.Geoprocessing.Testing.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The publish-command pipeline is internal; the offline unit tests exercise it directly. -->
+    <InternalsVisibleTo Include="Honua.Geoprocessing.Cli.Tests" />
+  </ItemGroup>
+
 </Project>
