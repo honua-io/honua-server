@@ -189,6 +189,15 @@ internal static class GeoprocessingServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        // Commit-signature verification seam for the signed-only repo-trust posture
+        // (Phase 3 supply-chain hardening). The default is the fail-closed verifier:
+        // a deployment that selects signed-only without registering a provider-backed
+        // verifier rejects every submission rather than admitting unsigned code. A
+        // real verifier (e.g. a GitHub commit-verification adapter) replaces this by
+        // registering ICustomCodeCommitSignatureVerifier before this call.
+        services.TryAddSingleton<ICustomCodeCommitSignatureVerifier>(
+            UnverifiableCommitSignatureVerifier.Instance);
+
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, CustomCodeDispatchJobExecutor>());
 

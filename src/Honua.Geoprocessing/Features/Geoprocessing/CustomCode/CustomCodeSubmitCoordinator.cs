@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -21,10 +22,18 @@ namespace Honua.Geoprocessing.CustomCode;
 /// <c>AwsBatchComputeBackend.BuildEnvironmentOverrides</c> surfaces it to the
 /// container as <c>HONUA_JOB_TOKEN</c> / <c>HONUA_BASE_URL</c>.
 /// </remarks>
-internal sealed class CustomCodeSubmitCoordinator(IScopedJobTokenIssuer tokenIssuer)
+internal sealed class CustomCodeSubmitCoordinator(
+    IScopedJobTokenIssuer tokenIssuer,
+    ICustomCodeCommitSignatureVerifier? signatureVerifier = null)
 {
     private readonly IScopedJobTokenIssuer _tokenIssuer = tokenIssuer
         ?? throw new ArgumentNullException(nameof(tokenIssuer));
+
+    // The commit-signature verifier consulted only under the signed-only posture.
+    // Defaults to the fail-closed verifier so signed-only without a configured
+    // verifier rejects every submission rather than admitting unsigned code.
+    private readonly ICustomCodeCommitSignatureVerifier _signatureVerifier =
+        signatureVerifier ?? UnverifiableCommitSignatureVerifier.Instance;
 
     /// <summary>Permission claim type the shared RBAC pipeline reads for scoped grants.</summary>
     private const string PermissionClaimType = "permission";
@@ -58,9 +67,27 @@ internal sealed class CustomCodeSubmitCoordinator(IScopedJobTokenIssuer tokenIss
         ArgumentNullException.ThrowIfNull(specParams);
         ArgumentNullException.ThrowIfNull(options);
 
-        if (!CustomCodeSubmitValidator.TryValidate(specParams, options, out var declaredScope, out var paramRejection))
+        var tenantId = principal.FindFirstValue(TenantClaimType);
+
+        if (!CustomCodeSubmitValidator.TryValidate(
+                specParams,
+                options,
+                tenantId,
+                out var declaredScope,
+                out var repoUri,
+                out var commitSha,
+                out var requiresSignatureVerification,
+                out var paramRejection))
         {
             throw new CustomCodeSubmitRejectedException(paramRejection!);
+        }
+
+        // Signed-only posture: the pinned commit must carry a valid signature by a
+        // trusted key. Run the verification seam and fail closed on anything that is
+        // not a verified, trusted signature. This is the supply-chain (T4) gate.
+        if (requiresSignatureVerification)
+        {
+            await EnsureCommitTrustedAsync(repoUri!, commitSha!, options, cancellationToken).ConfigureAwait(false);
         }
 
         if (string.IsNullOrWhiteSpace(options.ApiBaseUrl) ||
@@ -87,7 +114,6 @@ internal sealed class CustomCodeSubmitCoordinator(IScopedJobTokenIssuer tokenIss
                 $"Declared scope entry '{target}' exceeds the submitter's permissions and cannot be granted to custom code.");
         }
 
-        var tenantId = principal.FindFirstValue(TenantClaimType);
         var principalId = principal.Identity?.Name ?? string.Empty;
         var ownerScope = new CustomCodeOwnerScope(principalId, tenantId, roles, declaredScope);
 
@@ -114,6 +140,45 @@ internal sealed class CustomCodeSubmitCoordinator(IScopedJobTokenIssuer tokenIss
         specParams[CustomCodeJobContract.JobTokenEnvParam] = issuance.Token;
 
         return new CustomCodeSubmitResult(ownerScope, issuance.Token);
+    }
+
+    /// <summary>
+    /// Runs the commit-signature verification seam for the signed-only posture and
+    /// throws <see cref="CustomCodeSubmitRejectedException"/> unless the pinned commit
+    /// carries a cryptographically valid signature whose signer is on the configured
+    /// <see cref="CustomCodeOptions.TrustedSignerKeys"/>. Fails closed on an absent,
+    /// invalid, untrusted, or unverifiable signature.
+    /// </summary>
+    private async Task EnsureCommitTrustedAsync(
+        Uri repoUri,
+        string commitSha,
+        CustomCodeOptions options,
+        CancellationToken cancellationToken)
+    {
+        // No trusted key configured ⇒ nothing can be trusted ⇒ reject (fail closed).
+        if (options.TrustedSignerKeys is not { Count: > 0 })
+        {
+            throw new CustomCodeSubmitRejectedException(
+                "Custom-code signed-only policy is enabled but no trusted signer keys are configured; every submission is rejected.");
+        }
+
+        var result = await _signatureVerifier
+            .VerifyAsync(repoUri, commitSha, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!result.IsSignatureValid)
+        {
+            var detail = string.IsNullOrWhiteSpace(result.Detail) ? "the commit signature is missing or invalid" : result.Detail;
+            throw new CustomCodeSubmitRejectedException(
+                $"Custom-code commit '{commitSha}' was rejected by the signed-only policy: {detail}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.SignerKeyId) ||
+            !options.TrustedSignerKeys.Any(k => string.Equals(k, result.SignerKeyId, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new CustomCodeSubmitRejectedException(
+                $"Custom-code commit '{commitSha}' is signed by a key that is not on the configured trusted-signer list.");
+        }
     }
 
     private static TimeSpan ResolveJobTimeout(Dictionary<string, string> specParams, CustomCodeOptions options)

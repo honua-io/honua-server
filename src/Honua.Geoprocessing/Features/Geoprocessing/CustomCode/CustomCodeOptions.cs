@@ -29,6 +29,16 @@ public enum CustomCodeRepoPolicy
     /// deployments only — never combine with untrusted submitters.
     /// </summary>
     Open = 2,
+
+    /// <summary>
+    /// The strongest posture (Phase 3 supply-chain hardening). The repository must
+    /// satisfy the org-allowlist <em>and</em> the pinned commit must carry a verified
+    /// signature (GPG/sigstore) by a trusted key. A commit whose signature is absent,
+    /// invalid, by an untrusted key, or simply <em>unverifiable</em> (the configured
+    /// verifier cannot reach the provider) is rejected — the gate fails closed. The
+    /// per-tenant allowlist (when configured) is enforced in addition.
+    /// </summary>
+    SignedOnly = 3,
 }
 
 /// <summary>
@@ -45,18 +55,46 @@ internal sealed class CustomCodeOptions
     /// Repository-allowlist policy. Defaults to
     /// <see cref="CustomCodeRepoPolicy.OrgAllowlist"/> — the org-allowlist posture
     /// the contract specifies as the default; with an empty
-    /// <see cref="RepoAllowlist"/> this rejects every repository (fail-closed).
+    /// <see cref="RepoAllowlist"/> this rejects every repository (fail-closed). The
+    /// MVP default is unchanged; <see cref="CustomCodeRepoPolicy.SignedOnly"/> is the
+    /// opt-in Phase 3 supply-chain posture.
     /// </summary>
     public CustomCodeRepoPolicy RepoPolicy { get; set; } = CustomCodeRepoPolicy.OrgAllowlist;
 
     /// <summary>
     /// Allowed repository hosts (e.g. <c>github.com</c>,
     /// <c>git.internal.example</c>) honored when <see cref="RepoPolicy"/> is
-    /// <see cref="CustomCodeRepoPolicy.OrgAllowlist"/>. Matched case-insensitively
+    /// <see cref="CustomCodeRepoPolicy.OrgAllowlist"/> or
+    /// <see cref="CustomCodeRepoPolicy.SignedOnly"/>. Matched case-insensitively
     /// against the URL host; an entry of the form <c>host/org</c> additionally
     /// constrains the first path segment.
     /// </summary>
     public List<string> RepoAllowlist { get; set; } = [];
+
+    /// <summary>
+    /// Optional per-tenant repository allowlist (Phase 3). Keyed by the submitting
+    /// principal's <c>tenant_id</c>; the value is a list of allowlist entries in the
+    /// same <c>host</c> or <c>host/org</c> grammar as <see cref="RepoAllowlist"/>.
+    /// When a tenant has an entry here, the submitted repo_url must match the
+    /// tenant's list <em>in addition to</em> the org-wide allowlist — both gates must
+    /// pass, so a tenant list can only narrow what the org allows, never widen it.
+    /// A tenant absent from this map is unconstrained by the per-tenant gate and
+    /// falls through to the org allowlist alone (behavior-preserving default).
+    /// Enforced under <see cref="CustomCodeRepoPolicy.OrgAllowlist"/> and
+    /// <see cref="CustomCodeRepoPolicy.SignedOnly"/>.
+    /// </summary>
+    public Dictionary<string, List<string>> TenantRepoAllowlist { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Trusted signing-key identifiers (e.g. GPG long key-ids / fingerprints, or
+    /// sigstore identities) accepted when <see cref="RepoPolicy"/> is
+    /// <see cref="CustomCodeRepoPolicy.SignedOnly"/>. A verified commit signature
+    /// whose signer is not on this list is rejected. When empty under
+    /// <see cref="CustomCodeRepoPolicy.SignedOnly"/> the gate fails closed (no key is
+    /// trusted, so every submission is rejected) — configure at least one key to use
+    /// signed-only.
+    /// </summary>
+    public List<string> TrustedSignerKeys { get; set; } = [];
 
     /// <summary>
     /// The Honua API endpoint injected into the container as <c>HONUA_BASE_URL</c>
