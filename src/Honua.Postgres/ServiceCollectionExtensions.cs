@@ -105,6 +105,14 @@ internal static class ServiceCollectionExtensions
             return PostgresDataSourceFactory.Create(connectionString, schemaHeadersEnabled, connectionLimits, defaultSchema);
         });
 
+        // Catalog honua-layer DAG sink capability (#2210). Registered only here, with the
+        // Postgres provider, so the sink.honua-layer executor can load into a named catalog
+        // layer via the catalog NpgsqlDataSource. Absent in lean deployments, where the
+        // executor fails the node closed with a clear message.
+        services.TryAddSingleton<Honua.Core.Features.Geoprocessing.Abstractions.IHonuaLayerSink>(
+            serviceProvider => new Features.Geoprocessing.PostgresHonuaLayerSink(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>()));
+
         // Register refactored feature store implementation
         services.AddRefactoredFeatureStore(configuration["Database:Schema"]);
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>

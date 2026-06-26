@@ -910,19 +910,18 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // GeoETL sink operations (3)
-        // Terminate a workflow by writing the input FeatureCollection to an external
-        // target and emit a small result-descriptor artifact (the target location +
-        // row counts). Managed writers / Npgsql only — no GDAL.
-        // The catalog honua-layer sink (insert through honua.create_import_table /
-        // honua.insert_import_feature) is DEFERRED: unlike external-postgis (which
-        // targets a registered secure connection and therefore depends on resolver
-        // wiring outside this catalog. The catalog never accepts raw connection strings.
-        // It must reach the catalog NpgsqlDataSource. Injecting that into an executor
-        // would break the dispatcher's unconditional construction in lean
-        // deployments where Postgres is not registered, and a plan-parameter
-        // connection string would leak catalog credentials into the workflow DAG.
-        // Resolving that conditional-registration shape is a follow-on.
+        // GeoETL sink operations (4)
+        // Terminate a workflow by writing the input FeatureCollection to a target and
+        // emit a small result-descriptor artifact (the target location + row counts).
+        // Managed writers / Npgsql only — no GDAL.
+        // The catalog honua-layer sink (sink.honua-layer) loads into a named layer in the
+        // Honua catalog database. It reaches the catalog NpgsqlDataSource through the
+        // optional IHonuaLayerSink capability (#2210), which is registered only when the
+        // catalog database is present — so the geoprocessing dispatcher, constructed
+        // unconditionally including in lean Postgres-free deployments, never takes a
+        // Postgres dependency, and no catalog connection string is leaked through plan
+        // parameters. In a lean deployment the capability is absent and the node fails
+        // closed with a clear "unavailable in this deployment" message.
         // Native-format sinks (shapefile, geopackage) are deferred to the GDAL stream.
         // -----------------------------------------------------------------------
         new ProcessDefinition
@@ -969,6 +968,25 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("schema", "Schema", "Destination schema. Defaults to public. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "public"),
                 Param("geometryColumn", "Geometry Column", "Destination geometry column. Defaults to geom. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "geom"),
                 Param("batchSize", "Batch Size", "Insert batch size. Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("batchId", "Batch Id", "Run batch id tagged on every row. Defaults to the operation id.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "sink.honua-layer",
+            Title = "Honua Catalog Layer Sink",
+            Description = "Loads the input FeatureCollection into a named layer in the Honua catalog database via the catalog data source. Supports append/replace/upsert load modes; every row's attributes JSONB carries a reserved __pipeline_batch_id key for soft-delete rollback. Requires a configured catalog database — fails closed in lean, database-free deployments. Managed Npgsql + WKB — no GDAL.",
+            Category = "sink",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("layer", "Layer Name", "Destination layer/table name in the catalog (created if missing). Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, required: true),
+                Param("targetSrid", "Target SRID", "Geometry SRID for the destination column.", ProcessParameterValueType.Srid, required: true),
+                Param("loadMode", "Load Mode", "How incoming rows reconcile with existing rows: append, replace, or upsert. Defaults to append.", ProcessParameterValueType.Text, defaultValue: "append"),
+                Param("keyFields", "Key Fields", "Comma-separated attribute names identifying a row for upsert. Required when loadMode is upsert.", ProcessParameterValueType.Text),
+                Param("schema", "Schema", "Destination schema. Defaults to public. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "public"),
+                Param("geometryColumn", "Geometry Column", "Destination geometry column. Defaults to geom. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "geom"),
                 Param("batchId", "Batch Id", "Run batch id tagged on every row. Defaults to the operation id.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]

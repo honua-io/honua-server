@@ -194,6 +194,11 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<GeoJsonFileSinkExecutor>(services);
         Register<QuarantineSinkExecutor>(services);
         Register<ExternalPostgisSinkExecutor>(services);
+        // sink.honua-layer loads into a named catalog layer through the optional
+        // IHonuaLayerSink capability. The executor is always registered so the catalog
+        // advertises the node and can fail it closed with a clear message; the capability
+        // it depends on is registered only when the catalog database is present (#2210).
+        Register<HonuaLayerSinkExecutor>(services);
         Register<ImportDatasetJobExecutor>(services);
     }
 
