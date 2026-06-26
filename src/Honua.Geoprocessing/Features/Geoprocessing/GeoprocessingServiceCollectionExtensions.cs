@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing.Execution;
+using Honua.Geoprocessing.LocalRunner;
 using Honua.Infrastructure.Abstractions;
 using Honua.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -115,6 +116,12 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
+
+        // Headless single-process runner (GP Devkit, #2123): invokes one managed
+        // IProcessExecutor directly with no Redis/queue/job-store, reusing the same
+        // executor instances registered above. Consumed by the dev `honua gp` CLI.
+        services.TryAddSingleton(sp =>
+            new GeoprocessingLocalRunner(sp.GetServices<IProcessExecutor>()));
 
         // Job orchestration substrate (queue, log store — ticket #681) is wired
         // by the Honua.Server composition root via AddJobOrchestration, which

@@ -126,6 +126,8 @@ internal sealed partial class GdalVectorConvertJobExecutor(
                 inputPath,
             };
 
+            await GdalCommandLog.LogCommandAsync(context, "ogr2ogr", args, workspace, cancellationToken).ConfigureAwait(false);
+
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 

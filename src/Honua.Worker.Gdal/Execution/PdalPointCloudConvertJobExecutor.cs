@@ -138,6 +138,8 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
 
             var args = BuildTranslateArguments(inputPath, outputPath, reproject ? sourceSrs : null);
 
+            await GdalCommandLog.LogCommandAsync(context, "pdal", args, workspace, cancellationToken).ConfigureAwait(false);
+
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 

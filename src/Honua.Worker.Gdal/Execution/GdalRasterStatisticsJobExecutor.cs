@@ -100,6 +100,8 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
             }
             args.Add(inputPath);
 
+            await GdalCommandLog.LogCommandAsync(context, "gdalinfo", args, workspace, cancellationToken).ConfigureAwait(false);
+
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 

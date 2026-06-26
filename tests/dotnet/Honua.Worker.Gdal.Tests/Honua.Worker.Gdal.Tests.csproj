@@ -9,6 +9,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Worker.Gdal\Honua.Worker.Gdal.csproj" />
+    <!-- GP Devkit (#2123): the headless GeoprocessingLocalRunner lives in
+         Honua.Geoprocessing; the GDAL-op runner test drives it over the native
+         GDAL executor with a fake CLI runner. -->
+    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
   </ItemGroup>
 

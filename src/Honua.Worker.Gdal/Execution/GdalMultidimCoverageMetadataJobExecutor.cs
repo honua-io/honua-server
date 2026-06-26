@@ -110,6 +110,8 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
 
             var args = new List<string> { vsiPath };
 
+            await GdalCommandLog.LogCommandAsync(context, "gdalmdiminfo", args, workspace, cancellationToken).ConfigureAwait(false);
+
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 

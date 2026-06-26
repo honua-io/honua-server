@@ -133,6 +133,8 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
                 outputPath,
             };
 
+            await GdalCommandLog.LogCommandAsync(context, "gdalwarp", args, workspace, cancellationToken).ConfigureAwait(false);
+
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Honua.Geoprocessing.Cli</RootNamespace>
+    <AssemblyName>honua-gp</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!--
+      GP Devkit dev tool (#2123). Packaged as a local dotnet tool (`honua gp`) for
+      a sub-second, Redis-free geoprocessing dev loop. It is DELIBERATELY kept out
+      of the AOT-published server surface: nothing in Honua.Server references this
+      project, so the AOT publish (which targets only Honua.Server's transitive
+      ProjectReferences) never pulls it in. The tool itself is NOT AOT-published.
+    -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>honua-gp</ToolCommandName>
+    <IsPackable>false</IsPackable>
+    <PublishAot>false</PublishAot>
+
+    <!-- Console front-end intentionally writes to stdout/stderr. -->
+    <NoWarn>$(NoWarn);CA1303;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Reuses the SAME managed IProcessExecutor set the serving host registers
+      (via the internal AddGeoprocessing seam) plus the native GDAL executors
+      (via the Redis-free AddGdalProcessExecutors seam), so `gp run` drives the
+      real executor code path with no Redis/queue/job-store/control-plane.
+    -->
+    <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+    <ProjectReference Include="..\Honua.Worker.Gdal\Honua.Worker.Gdal.csproj" />
+  </ItemGroup>
+
+</Project>
