@@ -67,11 +67,15 @@ internal sealed partial class ScopedJobTokenIssuer(
 
         // Freeze the attenuation server-side: the effective grant is the
         // intersection of the pinned owner's reachable scope and the requested
-        // resource scope. The owner snapshot is the SOLE input — nothing the future
-        // job supplies participates here.
+        // resource scope. Reachability is derived from BOTH the owner's roles and
+        // their per-resource permission grants, so a submitter whose write authority
+        // comes purely from a write:{service}[/{layer}] grant (not a role) gets the
+        // write access they legitimately hold instead of an under-scoped token. The
+        // owner snapshot is the SOLE input — nothing the future job supplies
+        // participates here, so the result stays strictly ⊆ the submitter.
         var effectiveScope = ScopedJobAttenuation.Intersect(
             request.Roles,
-            ownerGrants: null,
+            request.Grants,
             globalDataEditorRoles: null,
             request.ResourceScope);
         var claims = ScopedJobAttenuation.ToClaims(effectiveScope);

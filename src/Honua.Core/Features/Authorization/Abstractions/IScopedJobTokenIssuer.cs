@@ -83,14 +83,23 @@ public interface IScopedJobTokenIssuer
 /// the hydrated principal's tenant — it is never widened by a callback-supplied
 /// value (invariant #2).
 /// </param>
-/// <param name="Roles">Snapshot of the submitter's roles, used to compute the owner's reachable grants.</param>
+/// <param name="Roles">Snapshot of the submitter's roles, used to compute the owner's reachable scope.</param>
+/// <param name="Grants">
+/// Snapshot of the submitter's per-resource <c>read:</c>/<c>write:{service}[/{layer}]</c>
+/// permission grants. The mint intersects <see cref="ResourceScope"/> against BOTH
+/// <see cref="Roles"/> and these grants, so a submitter whose write authority comes
+/// purely from a permission grant (not a role) is no longer under-scoped. Like
+/// <see cref="Roles"/> this is an owner-snapshot value — never callback-supplied — so
+/// the result stays strictly ⊆ the submitter (invariant #1). May be empty.
+/// </param>
 /// <param name="JobId">The job this token is bound to; the token is honored only inside that job's context (invariant #4).</param>
-/// <param name="ResourceScope">The requested resource scope; the effective grant is the intersection of this and the owner's reachable grants (invariant #1).</param>
+/// <param name="ResourceScope">The requested resource scope; the effective grant is the intersection of this and the owner's reachable roles and grants (invariant #1).</param>
 /// <param name="ExpiresAt">Absolute expiry; set to the job timeout plus a small grace (invariant #5).</param>
 public sealed record ScopedJobTokenRequest(
     string PrincipalId,
     string? TenantId,
     IReadOnlyList<string> Roles,
+    IReadOnlyList<string> Grants,
     string JobId,
     IReadOnlyList<JobResourceScopeEntry> ResourceScope,
     DateTimeOffset ExpiresAt);

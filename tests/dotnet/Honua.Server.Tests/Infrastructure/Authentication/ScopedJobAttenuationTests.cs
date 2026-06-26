@@ -172,4 +172,80 @@ public sealed class ScopedJobAttenuationTests
         claims.Roles.Should().BeEmpty();
         claims.Permissions.Should().ContainSingle().Which.Should().Be("read:zoning");
     }
+
+    [UnitTest]
+    public void Intersect_GrantBasedWriteSubmitter_RetainsWrite_NoRoleNeeded()
+    {
+        // #2192: the submitter's write authority comes purely from a layer-scoped
+        // write:{service}/{layer} permission GRANT — they hold no data-editor role.
+        // The intersection must retain that write (previously it was dropped because
+        // only roles were considered).
+        var effective = ScopedJobAttenuation.Intersect(
+            ownerRoles: [],
+            ownerGrants: ["write:parcels/lots"],
+            globalDataEditorRoles: null,
+            requestedScope: [new JobResourceScopeEntry("parcels", "lots", JobResourceAccess.Write)]);
+
+        effective.Should().ContainSingle();
+        effective[0].ServiceId.Should().Be("parcels");
+        effective[0].LayerId.Should().Be("lots");
+        effective[0].Access.Should().Be(JobResourceAccess.Write);
+    }
+
+    [UnitTest]
+    public void Intersect_GrantBasedSubmitterWithoutTheGrant_DropsResource()
+    {
+        // A submitter who holds a grant on 'parcels/lots' but NOT on the requested
+        // 'parcels/blocks' (and no role) cannot reach it — it is dropped (⊆ owner).
+        var effective = ScopedJobAttenuation.Intersect(
+            ownerRoles: [],
+            ownerGrants: ["write:parcels/lots"],
+            globalDataEditorRoles: null,
+            requestedScope: [new JobResourceScopeEntry("parcels", "blocks", JobResourceAccess.Write)]);
+
+        effective.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void Intersect_RolesAndGrantsUnion_BothContributeToReach()
+    {
+        // The reachable set is the UNION of role-derived and grant-derived authority:
+        // a data-editor:parcels role (service-wide write) PLUS a write:zoning/sites
+        // grant. A request spanning both is fully retained; an unheld third resource
+        // is dropped — the result is still strictly ⊆ the owner.
+        var effective = ScopedJobAttenuation.Intersect(
+            ownerRoles: ["data-editor:parcels"],
+            ownerGrants: ["write:zoning/sites"],
+            globalDataEditorRoles: null,
+            requestedScope:
+            [
+                new JobResourceScopeEntry("parcels", null, JobResourceAccess.Write),
+                new JobResourceScopeEntry("zoning", "sites", JobResourceAccess.Write),
+                new JobResourceScopeEntry("secret", null, JobResourceAccess.Write),
+            ]);
+
+        effective.Should().HaveCount(2);
+        effective.Should().Contain(e =>
+            e.ServiceId == "parcels" && e.LayerId == null && e.Access == JobResourceAccess.Write);
+        effective.Should().Contain(e =>
+            e.ServiceId == "zoning" && e.LayerId == "sites" && e.Access == JobResourceAccess.Write);
+        effective.Should().NotContain(e => e.ServiceId == "secret");
+    }
+
+    [UnitTest]
+    public void IsWithinOwner_GrantBasedWrite_IsWithin()
+    {
+        // The submit-time validation must accept a write declared purely on a held
+        // permission grant (no role), so a grant-based submitter is not falsely
+        // rejected.
+        var within = ScopedJobAttenuation.IsWithinOwner(
+            ownerRoles: [],
+            ownerGrants: ["write:parcels/lots"],
+            globalDataEditorRoles: null,
+            requestedScope: [new JobResourceScopeEntry("parcels", "lots", JobResourceAccess.Write)],
+            out var unreachable);
+
+        within.Should().BeTrue();
+        unreachable.Should().BeNull();
+    }
 }
