@@ -11,6 +11,7 @@ using Honua.Worker.Gdal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Cli;
 
@@ -50,6 +51,7 @@ public static class GpCli
                 "list" => RunList(),
                 "run" => await RunRun(rest).ConfigureAwait(false),
                 "test" => await RunTest(rest).ConfigureAwait(false),
+                "plan" => await RunPlan(rest).ConfigureAwait(false),
                 "-h" or "--help" or "help" => PrintUsageAndOk(),
                 _ => Fail($"Unknown command '{verb}'."),
             };
@@ -108,9 +110,187 @@ public static class GpCli
 
     private static async Task<int> RunRun(string[] args)
     {
+        var parsed = ParseProcessArgs(
+            args,
+            "honua gp run <id> --input <file> [--param k=v] [--out <file>]");
+
+        using var provider = BuildProvider();
+        var executors = provider.GetServices<IProcessExecutor>();
+        var runner = new GeoprocessingLocalRunner(executors);
+
+        if (!runner.AvailableProcessIds.Contains(parsed.ProcessId, StringComparer.Ordinal))
+        {
+            throw new GpCliUsageException(
+                $"Process id '{parsed.ProcessId}' is not registered. Run 'honua gp list' to see available processes.");
+        }
+
+        var inputs = new Dictionary<string, string>(parsed.Params, StringComparer.Ordinal);
+        var catalog = provider.GetService<IProcessCatalog>();
+        await BindFileInputAsync(parsed.ProcessId, parsed.InputPath, catalog, inputs).ConfigureAwait(false);
+
+        var result = await runner.RunAsync(parsed.ProcessId, inputs).ConfigureAwait(false);
+
+        Console.WriteLine($"process : {result.ProcessId}");
+        Console.WriteLine($"status  : {result.Status}");
+        Console.WriteLine($"elapsed : {result.Elapsed.TotalMilliseconds:F1} ms");
+
+        foreach (var log in result.Logs)
+        {
+            if (log.Metadata is not null
+                && log.Metadata.TryGetValue("gdal.command", out var command))
+            {
+                Console.WriteLine($"command : {command}");
+            }
+        }
+
+        foreach (var warning in result.Warnings)
+        {
+            Console.WriteLine($"warning : {warning}");
+        }
+
+        if (!result.Succeeded)
+        {
+            Console.Error.WriteLine($"error   : {result.ErrorMessage}");
+            return 1;
+        }
+
+        foreach (var artifact in result.Artifacts)
+        {
+            Console.WriteLine($"artifact: {Summarize(artifact)}");
+        }
+
+        if (parsed.OutPath is not null)
+        {
+            if (result.Artifacts.Count == 0)
+            {
+                Console.Error.WriteLine("error   : run succeeded but produced no artifact to write to --out.");
+                return 1;
+            }
+
+            var bytes = DecodeArtifact(result.Artifacts[0]);
+            await File.WriteAllBytesAsync(parsed.OutPath, bytes).ConfigureAwait(false);
+            Console.WriteLine($"wrote   : {parsed.OutPath} ({bytes.Length} bytes)");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> RunPlan(string[] args)
+    {
+        var parsed = ParseProcessArgs(
+            args,
+            "honua gp plan <id> --input <file> [--param k=v ...]");
+
+        if (parsed.OutPath is not null)
+        {
+            throw new GpCliUsageException("'plan' does not run the process, so --out is not supported.");
+        }
+
+        using var provider = BuildProvider();
+        var catalog = provider.GetService<IProcessCatalog>()
+            ?? throw new GpCliUsageException("Process catalog is unavailable.");
+        var maxArtifactBytes = provider
+            .GetRequiredService<IOptions<GeoprocessingExecutorOptions>>()
+            .Value.MaxArtifactBytes;
+
+        // Resolve the same inputs `run` would: merge --param then bind --input. We
+        // also capture the raw decoded input size so the estimate has an anchor.
+        var inputs = new Dictionary<string, string>(parsed.Params, StringComparer.Ordinal);
+        var callerInputBytes = await BindFileInputAsync(parsed.ProcessId, parsed.InputPath, catalog, inputs)
+            .ConfigureAwait(false);
+
+        var plan = GpPlanner.Build(parsed.ProcessId, inputs, catalog, maxArtifactBytes, callerInputBytes);
+        if (plan is null)
+        {
+            // Mirror `run`'s "unknown process" usage error rather than a crash.
+            throw new GpCliUsageException(
+                $"Process id '{parsed.ProcessId}' is not registered. Run 'honua gp list' to see available processes.");
+        }
+
+        PrintPlan(plan);
+
+        // Exit non-zero when the plan is invalid so scripts/CI can gate a submit on
+        // a clean plan; a valid plan with only size/cost warnings still exits 0.
+        return plan.IsValid ? 0 : 1;
+    }
+
+    private static void PrintPlan(GpPlan plan)
+    {
+        Console.WriteLine($"process      : {plan.ProcessId}  ({plan.Title})");
+        Console.WriteLine($"category     : {plan.Category}");
+        Console.WriteLine($"runtime      : {plan.RuntimeProfile}");
+        Console.WriteLine($"valid        : {(plan.IsValid ? "yes" : "NO")}");
+        Console.WriteLine();
+
+        Console.WriteLine("steps:");
+        foreach (var step in plan.Steps)
+        {
+            var deps = step.DependsOn.Count == 0 ? "-" : string.Join(", ", step.DependsOn);
+            Console.WriteLine($"  {step.StepId}  {step.ProcessId}  (depends on: {deps})");
+            foreach (var param in step.Parameters)
+            {
+                var req = param.Required ? "required" : "optional";
+                var value = param.DisplayValue ?? "(unset)";
+                var src = param.Source switch
+                {
+                    GpParamSource.Caller => "caller",
+                    GpParamSource.Default => "default",
+                    _ => "unset",
+                };
+                Console.WriteLine($"    - {param.Name} [{param.ValueType}, {req}] = {value}  ({src})");
+            }
+        }
+        Console.WriteLine();
+
+        var outputs = plan.Outputs.Count == 0 ? "-" : string.Join(", ", plan.Outputs);
+        Console.WriteLine($"outputs      : {outputs}");
+        Console.WriteLine();
+
+        var estimate = plan.Estimate;
+        Console.WriteLine("size/cost estimate (HEURISTIC — not a guarantee):");
+        Console.WriteLine($"  input bytes      : {GpPlanner.FormatBytes(estimate.InputBytes)}");
+        Console.WriteLine(estimate.EstimatedOutputBytes is { } outBytes
+            ? $"  est. output      : ~{GpPlanner.FormatBytes(outBytes)}"
+            : "  est. output      : (not estimable offline)");
+        Console.WriteLine($"  cap (MaxArtifactBytes) : {GpPlanner.FormatBytes(estimate.MaxArtifactBytes)}");
+        Console.WriteLine($"  basis            : {estimate.Basis}");
+        Console.WriteLine($"  resource hint    : profile={plan.RuntimeProfile}, long-running={(estimate.LongRunning ? "yes" : "no")}");
+        Console.WriteLine();
+
+        if (plan.Errors.Count > 0)
+        {
+            Console.WriteLine("errors (block submit):");
+            foreach (var error in plan.Errors)
+            {
+                Console.WriteLine($"  ✗ {error}");
+            }
+            Console.WriteLine();
+        }
+
+        if (plan.Warnings.Count > 0)
+        {
+            Console.WriteLine("warnings:");
+            foreach (var warning in plan.Warnings)
+            {
+                Console.WriteLine($"  ! {warning}");
+            }
+            Console.WriteLine();
+        }
+
+        Console.WriteLine(plan.IsValid
+            ? "Plan is valid. Submit with: honua gp run " + plan.ProcessId + " ..."
+            : "Plan is INVALID — fix the errors above before submitting.");
+    }
+
+    /// <summary>
+    /// Parses the shared <c>&lt;processId&gt; [--input f] [--param k=v ...] [--out f]</c>
+    /// argument shape used by both <c>run</c> and <c>plan</c>.
+    /// </summary>
+    private static ProcessArgs ParseProcessArgs(string[] args, string usage)
+    {
         if (args.Length == 0)
         {
-            throw new GpCliUsageException("Missing <processId>. Usage: honua gp run <id> --input <file> [--param k=v] [--out <file>]");
+            throw new GpCliUsageException($"Missing <processId>. Usage: {usage}");
         }
 
         var processId = args[0];
@@ -143,85 +323,46 @@ public static class GpCli
             }
         }
 
-        using var provider = BuildProvider();
-        var executors = provider.GetServices<IProcessExecutor>();
-        var runner = new GeoprocessingLocalRunner(executors);
+        return new ProcessArgs(processId, inputPath, outPath, inputs);
+    }
 
-        if (!runner.AvailableProcessIds.Contains(processId, StringComparer.Ordinal))
+    /// <summary>
+    /// Binds <c>--input &lt;file&gt;</c>: reads the file, base64-encodes its bytes, and
+    /// assigns it to the process's primary file-like input (unless the caller already
+    /// supplied that key via <c>--param</c>). Returns the raw (decoded) byte length of
+    /// the supplied input so the plan size estimate has an anchor — 0 when no file
+    /// input was bound.
+    /// </summary>
+    private static async Task<long> BindFileInputAsync(
+        string processId,
+        string? inputPath,
+        IProcessCatalog? catalog,
+        Dictionary<string, string> inputs)
+    {
+        if (inputPath is null)
+        {
+            return 0;
+        }
+
+        if (!File.Exists(inputPath))
+        {
+            throw new GpCliUsageException($"--input file not found: {inputPath}");
+        }
+
+        var inputKey = ResolveFileInputKey(catalog?.GetProcess(processId));
+        if (inputKey is null)
         {
             throw new GpCliUsageException(
-                $"Process id '{processId}' is not registered. Run 'honua gp list' to see available processes.");
+                $"Process '{processId}' has no file-like input to bind --input to; supply inputs with --param instead.");
         }
 
-        // Bind --input <file>: read the file, base64-encode its bytes, and assign it
-        // to the process's primary file-like input (the first required Wkb/Text/WkbArray
-        // parameter), unless the caller already supplied that input via --param.
-        if (inputPath is not null)
+        var bytes = await File.ReadAllBytesAsync(inputPath).ConfigureAwait(false);
+        if (!inputs.ContainsKey(inputKey))
         {
-            if (!File.Exists(inputPath))
-            {
-                throw new GpCliUsageException($"--input file not found: {inputPath}");
-            }
-
-            var catalog = provider.GetService<IProcessCatalog>();
-            var inputKey = ResolveFileInputKey(catalog?.GetProcess(processId));
-            if (inputKey is null)
-            {
-                throw new GpCliUsageException(
-                    $"Process '{processId}' has no file-like input to bind --input to; supply inputs with --param instead.");
-            }
-
-            if (!inputs.ContainsKey(inputKey))
-            {
-                inputs[inputKey] = Convert.ToBase64String(await File.ReadAllBytesAsync(inputPath).ConfigureAwait(false));
-            }
+            inputs[inputKey] = Convert.ToBase64String(bytes);
         }
 
-        var result = await runner.RunAsync(processId, inputs).ConfigureAwait(false);
-
-        Console.WriteLine($"process : {result.ProcessId}");
-        Console.WriteLine($"status  : {result.Status}");
-        Console.WriteLine($"elapsed : {result.Elapsed.TotalMilliseconds:F1} ms");
-
-        foreach (var log in result.Logs)
-        {
-            if (log.Metadata is not null
-                && log.Metadata.TryGetValue("gdal.command", out var command))
-            {
-                Console.WriteLine($"command : {command}");
-            }
-        }
-
-        foreach (var warning in result.Warnings)
-        {
-            Console.WriteLine($"warning : {warning}");
-        }
-
-        if (!result.Succeeded)
-        {
-            Console.Error.WriteLine($"error   : {result.ErrorMessage}");
-            return 1;
-        }
-
-        foreach (var artifact in result.Artifacts)
-        {
-            Console.WriteLine($"artifact: {Summarize(artifact)}");
-        }
-
-        if (outPath is not null)
-        {
-            if (result.Artifacts.Count == 0)
-            {
-                Console.Error.WriteLine("error   : run succeeded but produced no artifact to write to --out.");
-                return 1;
-            }
-
-            var bytes = DecodeArtifact(result.Artifacts[0]);
-            await File.WriteAllBytesAsync(outPath, bytes).ConfigureAwait(false);
-            Console.WriteLine($"wrote   : {outPath} ({bytes.Length} bytes)");
-        }
-
-        return 0;
+        return bytes.LongLength;
     }
 
     private static async Task<int> RunTest(string[] args)
@@ -351,6 +492,12 @@ public static class GpCli
         return null;
     }
 
+    private readonly record struct ProcessArgs(
+        string ProcessId,
+        string? InputPath,
+        string? OutPath,
+        Dictionary<string, string> Params);
+
     /// <summary>
     /// Resolves the parameter name that <c>--input &lt;file&gt;</c> binds to: the
     /// first required file-like (<c>Wkb</c>/<c>WkbArray</c>/<c>Text</c>) parameter the
@@ -430,17 +577,24 @@ public static class GpCli
         Console.WriteLine();
         Console.WriteLine("Usage:");
         Console.WriteLine("  honua gp list");
-        Console.WriteLine("  honua gp run <processId> [--input <file>] [--param k=v ...] [--out <file>]");
+        Console.WriteLine("  honua gp plan <processId> [--input <file>] [--param k=v ...]");
+        Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>]");
         Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --input, -i <file>  Read a file and bind it (base64) to the process's primary input.");
         Console.WriteLine("  --param, -p k=v     Set a step-0 input (repeatable). Overrides --input for the same key.");
-        Console.WriteLine("  --out,   -o <file>  Write the first published artifact's bytes to <file>.");
+        Console.WriteLine("  --out,   -o <file>  Write the first published artifact's bytes to <file> (run only).");
         Console.WriteLine("  --root,  -r <dir>   Golden fixtures directory (default: nearest samples/gp).");
         Console.WriteLine("  --update,-u         Regenerate goldens from the produced artifacts (also via HONUA_GP_UPDATE_GOLDENS).");
         Console.WriteLine();
+        Console.WriteLine("Commands:");
+        Console.WriteLine("  plan  Dry-run: validate params + DAG and estimate output size/cost WITHOUT executing.");
+        Console.WriteLine("  run   Execute the process and emit its artifact(s).");
+        Console.WriteLine("  test  Run golden-file fixtures under samples/gp (or --root) and assert outputs.");
+        Console.WriteLine();
         Console.WriteLine("Examples:");
+        Console.WriteLine("  honua gp plan geometry.buffer --param wkb=<base64> --param srid=4326 --param distance=10");
         Console.WriteLine("  honua gp run geometry.buffer --param wkb=<base64> --param srid=4326 --param distance=10");
         Console.WriteLine("  honua gp run gdal.ogr2ogr --input in.geojson --param sourceFormat=GeoJSON --param targetFormat=CSV --out out.csv");
         Console.WriteLine("  honua gp test                       # run every golden fixture under samples/gp");
