@@ -471,23 +471,25 @@ if (connectedRedis != null)
 
     if (!isTestEnvironment)
     {
-        builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
-
-        // Execution-job triggering is mode-selected. Poll (default, on-prem/portable): the 5s loop
-        // runs exactly as before. Event (cloud): the 5s loop is disabled; the event handler + the
-        // backstop sweep drive execution-job reconciliation instead.
+        // All reconcile families are mode-selected (Phase 1: execution jobs; Phase 2: deploy +
+        // staged metadata/coordinated releases). Poll (default, on-prem/portable): the 5s loops run
+        // exactly as before. Event (cloud): every 5s loop is disabled; the event handler (deploy
+        // provider events + staged self-continue signals) plus the two backstop sweeps drive
+        // reconciliation instead.
         if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
         {
+            builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
             builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
+            builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
+            builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
         }
 
-        // The backstop sweep ships with Phase 1 and runs in BOTH modes so a dropped/missed event
-        // (or, under poll, a wedged loop) self-heals. It is low-frequency and is a no-op when the
-        // active jobs are fresh.
+        // The backstop sweeps ship in BOTH modes so a dropped/missed event (or, under poll, a wedged
+        // loop) self-heals. They are low-frequency and are a no-op when the active operations are
+        // fresh. The execution-job backstop covers Batch jobs; the workflow backstop covers the
+        // deploy/metadata/coordinated operations and walks any wedged staged release forward.
         builder.Services.AddHostedService<Honua.ControlPlane.ExecutionJobBackstopSweepService>();
-
-        builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
-        builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
+        builder.Services.AddHostedService<Honua.ControlPlane.WorkflowOperationBackstopSweepService>();
     }
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +
