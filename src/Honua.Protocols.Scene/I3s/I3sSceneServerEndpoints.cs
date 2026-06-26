@@ -46,6 +46,15 @@ internal static partial class I3sSceneServerEndpoints
     /// </summary>
     private const string I3sGeometryContentType = "application/octet-stream";
 
+    /// <summary>
+    /// Content type for the I3S per-field attribute binary file
+    /// (<c>nodes/{id}/attributes/{fieldKey}/0</c>). Like the geometry buffer the
+    /// I3S spec leaves the attribute media type unspecified and ArcGIS serves it
+    /// as an opaque byte stream, so we follow the same
+    /// <c>application/octet-stream</c> convention.
+    /// </summary>
+    private const string I3sAttributeContentType = "application/octet-stream";
+
     public static IEndpointRouteBuilder MapI3sSceneServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -212,6 +221,41 @@ internal static partial class I3sSceneServerEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
+        // Node attribute binary resource (#1811): the per-field attribute file an
+        // ArcGIS SceneLayer client reads to satisfy identify. The OBJECTID field
+        // (f_0/Oid32) is materialised from the served node geometry's feature
+        // section so attribute order matches geometry order; user-attribute value
+        // decode (EXT_structural_metadata property tables) stays deferred and its
+        // fields answer a deterministic 404. Mapped at both the GeoServices and
+        // legacy /scenes paths for parity with the geometry route.
+        endpoints.MapGet(
+                "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
+                HandleGetNodeAttribute)
+            .WithName("GetGeoServicesSceneNodeAttribute")
+            .WithDisplayName("Get GeoServices SceneServer Node Attribute")
+            .WithSummary("Get the Esri I3S node attribute binary file at the GeoServices path")
+            .WithDescription("Returns the I3S per-field attribute binary file (count header + value array) for one attributeStorageInfo field of a served scene node, keyed on the node geometry's feature ids so an ArcGIS / I3S client can identify a picked feature. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces(StatusCodes.Status200OK, contentType: I3sAttributeContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
+        endpoints.MapGet(
+                "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
+                HandleGetNodeAttribute)
+            .WithName("GetI3sSceneNodeAttribute")
+            .WithDisplayName("Get I3S Scene Node Attribute")
+            .WithSummary("Get the Esri I3S node attribute binary file for a hosted scene")
+            .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}/nodes/{nodeId}/attributes/{fieldKey}/{attributeId}. Returns the I3S per-field attribute binary file used by ArcGIS identify. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces(StatusCodes.Status200OK, contentType: I3sAttributeContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
         return endpoints;
     }
 
@@ -327,6 +371,101 @@ internal static partial class I3sSceneServerEndpoints
         }
 
         return Results.Bytes(transcoded.Buffer, I3sGeometryContentType);
+    }
+
+    private static async Task<IResult> HandleGetNodeAttribute(
+        string sceneId,
+        int layerId,
+        int nodeId,
+        string fieldKey,
+        int attributeId,
+        HttpContext context,
+        [FromServices] ISceneDatasetRegistry registry,
+        [FromServices] ILicenseStatusProvider licenseStatusProvider,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sceneId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Scene identifier is required.");
+        }
+
+        var edition = licenseStatusProvider.GetCurrentStatus().Edition;
+        if (edition < HonuaEdition.Enterprise)
+        {
+            return StandardErrorHelpers.CreateForbidden(
+                context,
+                $"I3S scene serving requires the Enterprise edition. Current edition: {edition}.");
+        }
+
+        if (layerId != I3sSceneServiceBuilder.LayerId)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Scene layer was not found.");
+        }
+
+        // This slice serves the single attribute resource (id 0) of the single
+        // whole-scene node (id 0); any other index is an honest 404 (multi-node
+        // paging is the deferred #1809 lane).
+        if (attributeId != 0)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Node attribute was not found.");
+        }
+
+        var scene = await registry.FindAsync(sceneId, cancellationToken).ConfigureAwait(false);
+        if (scene is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
+        }
+
+        if (scene.AccessPolicy is { } accessPolicy)
+        {
+            var deniedResult = AccessPolicyHelpers.RequireAccess(
+                context,
+                layerPolicy: accessPolicy,
+                servicePolicy: null,
+                scope: AccessScope.Read);
+            if (deniedResult is not null)
+            {
+                return deniedResult;
+            }
+        }
+
+        // The served field set is the layer descriptor's attributeStorageInfo, so
+        // an attribute request can only resolve a field the descriptor advertises.
+        var extent = await ResolveExtentAsync(context, scene, cancellationToken).ConfigureAwait(false);
+        var datasetType = await ResolveDatasetTypeAsync(context, scene, cancellationToken).ConfigureAwait(false);
+        var layer = I3sSceneServiceBuilder.BuildLayer(scene, extent, datasetType, advertiseNodePages: false);
+        var field = layer.AttributeStorageInfo?
+            .FirstOrDefault(a => string.Equals(a.Key, fieldKey, StringComparison.Ordinal));
+        if (field is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Scene attribute field was not found.");
+        }
+
+        // The attribute file is keyed on the same feature section the served node
+        // geometry carries, so the geometry provider is the single source. A null
+        // provider/geometry surfaces as a 404 rather than an empty attribute file.
+        var provider = context.RequestServices.GetService<ISceneNodeGeometryProvider>();
+        if (provider is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Node attributes are not available for this scene.");
+        }
+
+        var geometry = await provider.GetNodeGeometryAsync(scene, nodeId, cancellationToken).ConfigureAwait(false);
+        if (geometry is not { } transcoded)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Node attributes are not available for this scene.");
+        }
+
+        var attributeBuffer = I3sAttributeBufferBuilder.Build(transcoded, field);
+        if (attributeBuffer is null)
+        {
+            // The field is advertised but not yet materialisable from the served
+            // geometry (a user-attribute field needing the deferred property-table
+            // decode), so the resource honestly 404s rather than fabricating values.
+            return StandardErrorHelpers.CreateNotFound(context, "Node attribute values are not available for this field.");
+        }
+
+        return Results.Bytes(attributeBuffer, I3sAttributeContentType);
     }
 
     private static async Task<IResult> HandleAsync(
