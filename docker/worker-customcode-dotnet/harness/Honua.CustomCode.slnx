@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/samples/">
     <Project Path="samples/BufferTool/BufferTool.csproj" />
+    <Project Path="samples/RasterTool/RasterTool.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Honua.CustomCode.Harness/Honua.CustomCode.Harness.csproj" />

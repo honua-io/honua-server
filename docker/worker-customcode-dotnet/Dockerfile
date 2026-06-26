@@ -38,7 +38,7 @@ RUN dotnet publish src/Honua.CustomCode.Harness/Honua.CustomCode.Harness.csproj 
       -p:NuGetAudit=false \
       --output /opt/harness
 
-# IN-BUILD SANITY CHECK (correct-by-construction): restore + build the sample tool.
+# IN-BUILD SANITY CHECK (correct-by-construction): restore + build the sample tools.
 # This proves the SDK contract resolves, the geometry stack restores, and a real
 # IGeoprocessingTool compiles — failing the image build early if anything regresses.
 RUN dotnet build samples/BufferTool/BufferTool.csproj \
@@ -46,6 +46,53 @@ RUN dotnet build samples/BufferTool/BufferTool.csproj \
       -p:NuGetAudit=false \
       --output /tmp/sample-build \
  && test -f /tmp/sample-build/BufferTool.dll
+
+# GDAL INTEROP SANITY CHECK: build the raster sample (which references the GDAL C#
+# bindings MaxRev.Gdal.Core + MaxRev.Gdal.LinuxRuntime.Minimal) AND execute a tiny
+# probe that calls GdalBase.ConfigureAll() and asserts a driver count > 0 — proving
+# the self-contained native GDAL loads and OSGeo.GDAL interop works in-process, not
+# just that it compiles. Fails the image build early on any binding/native regression.
+RUN dotnet build samples/RasterTool/RasterTool.csproj \
+      --configuration Release \
+      -p:NuGetAudit=false \
+      --output /tmp/raster-build \
+ && test -f /tmp/raster-build/RasterTool.dll
+RUN mkdir -p /tmp/gdalprobe \
+ && cat > /tmp/gdalprobe/Probe.csproj <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MaxRev.Gdal.Core" Version="3.12.4.520" />
+    <PackageReference Include="MaxRev.Gdal.LinuxRuntime.Minimal" Version="3.12.4.520" />
+  </ItemGroup>
+</Project>
+EOF
+RUN cat > /tmp/gdalprobe/Program.cs <<EOF
+using MaxRev.Gdal.Core;
+using OSGeo.GDAL;
+
+GdalBase.ConfigureAll();
+var drivers = Gdal.GetDriverCount();
+Console.WriteLine($"GDAL {Gdal.VersionInfo("RELEASE_NAME")} drivers={drivers}");
+if (drivers <= 0)
+{
+    Console.Error.WriteLine("FATAL: GDAL registered no drivers");
+    return 1;
+}
+if (Gdal.GetDriverByName("GTiff") is null)
+{
+    Console.Error.WriteLine("FATAL: GTiff driver missing");
+    return 1;
+}
+return 0;
+EOF
+RUN cd /tmp/gdalprobe && dotnet run -c Release -p:NuGetAudit=false
 
 # --- runtime stage: GDAL-full base + the .NET SDK + git + the warm cache --------------
 # Pinned GDAL "ubuntu-full" base (matches the python image's base family). It ships the
@@ -57,6 +104,10 @@ ARG DOTNET_SDK_CHANNEL=10.0
 # Pin the geo + SDK package versions so the warm cache matches the harness solution.
 ARG NETTOPOLOGYSUITE_VERSION=2.6.0
 ARG HONUA_SDK_DOTNET_VERSION=0.1.4
+# GDAL C# bindings (in-process raster/vector interop). MaxRev bundles its own
+# self-contained native GDAL (no ABI dependence on the base libgdal); 3.12.4.520
+# bundles native GDAL 3.12.4, matching the GDAL-full base image tag.
+ARG MAXREV_GDAL_VERSION=3.12.4.520
 
 ENV DEBIAN_FRONTEND=noninteractive \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \
@@ -91,17 +142,22 @@ COPY --from=build /opt/harness /opt/harness
 # tiny throwaway project that references the common packages into the shared global
 # packages folder, then deleting the project (the populated cache layer is what we keep).
 ENV NUGET_PACKAGES=/opt/nuget/packages
+# The RuntimeIdentifier pulls the linux-x64 native GDAL runtime asset into the warm
+# cache too, so a raster tool builds with NO network restore at job time.
 RUN mkdir -p /tmp/warm \
  && cat > /tmp/warm/warm.csproj <<EOF
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NetTopologySuite" Version="${NETTOPOLOGYSUITE_VERSION}" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
     <PackageReference Include="Honua.Sdk" Version="${HONUA_SDK_DOTNET_VERSION}" />
+    <PackageReference Include="MaxRev.Gdal.Core" Version="${MAXREV_GDAL_VERSION}" />
+    <PackageReference Include="MaxRev.Gdal.LinuxRuntime.Minimal" Version="${MAXREV_GDAL_VERSION}" />
   </ItemGroup>
 </Project>
 EOF

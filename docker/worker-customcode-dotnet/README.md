@@ -18,7 +18,42 @@ common .NET geo stack + the Honua .NET SDK baked into the NuGet cache.
   for tools that shell out to or P/Invoke GDAL.
 - Added: the **.NET 10 SDK** (pinned channel), `git`, `ca-certificates`.
 - Pre-warmed NuGet cache (no per-job restore for the common case): **NetTopologySuite**,
-  `NetTopologySuite.IO.GeoJSON`, and **`Honua.Sdk`** (the .NET SDK umbrella).
+  `NetTopologySuite.IO.GeoJSON`, **`Honua.Sdk`** (the .NET SDK umbrella), and the **GDAL
+  C# bindings** (`MaxRev.Gdal.Core` + `MaxRev.Gdal.LinuxRuntime.Minimal`).
+
+### First-class GDAL interop
+
+A raster/vector GP tool processes data **with GDAL directly, in-process** — the SDK is
+data-transport only, not a raster library. The base image ships the `gdal*` CLIs, but a
+.NET tool cannot do in-process raster/vector GDAL work without the **C# bindings**, so
+this image pre-warms them so a tool can simply:
+
+```csharp
+using MaxRev.Gdal.Core;
+using OSGeo.GDAL;   // raster
+using OSGeo.OGR;    // vector
+using OSGeo.OSR;    // CRS
+
+GdalBase.ConfigureAll();          // once, before using GDAL (registers all drivers)
+using var ds = Gdal.Open(path, Access.GA_ReadOnly);
+```
+
+- **Binding:** `MaxRev.Gdal.Core` + `MaxRev.Gdal.LinuxRuntime.Minimal`, pinned to
+  **`3.12.4.520`** (bundles native GDAL **3.12.4**). MaxRev bundles its **own
+  self-contained native GDAL**, so there is **no ABI dependence** on the base image's
+  `libgdal` — and the pinned version **matches** the base's GDAL (3.12.4) so the
+  in-process binding and the `gdal*` CLIs agree on driver behavior.
+- **Init:** a tool calls `GdalBase.ConfigureAll()` once (it wires the bundled native
+  GDAL + PROJ data and calls `Gdal.AllRegister()`). The `RasterTool` sample does this
+  behind a one-time guard; document this in your own tool if you copy the pattern.
+- **Sanity:** the image build compiles the `RasterTool` sample AND runs a probe that
+  calls `GdalBase.ConfigureAll()` and asserts `Gdal.GetDriverCount() > 0` (and that the
+  `GTiff` driver resolves) — so the image fails to build if the native binding ever
+  regresses.
+
+See the raster sample below and
+[`docs/customcode/raster-gp-pattern.md`](../../docs/customcode/raster-gp-pattern.md) for
+the SDK-as-transport / GDAL-as-engine pattern.
 - The harness host `Honua.CustomCode.Harness` is published to `/opt/harness`; the
   `ENTRYPOINT` runs `dotnet /opt/harness/Honua.CustomCode.Harness.dll`.
 - Runs as non-root `uid 1001` (matching `worker-gdal` + the python image). Scratch tree
@@ -120,9 +155,17 @@ typed as `object` so the SDK contract stays small/stable — cast to the client 
 `.Output.AddArtifact(name, path)`, `.Progress.Report(pct, phase)`, `.Log.Info/Warn(...)`,
 `.WorkDirectory`. Cancellation is the `CancellationToken` argument to `ExecuteAsync`.
 
-A trivial sample lives in [`harness/samples/BufferTool`](harness/samples/BufferTool/BufferTool.cs)
-(entrypoint `BufferTool::Honua.CustomCode.Samples.BufferTool`): buffers a WKT geometry
-with NetTopologySuite and writes GeoJSON.
+Two samples live under [`harness/samples/`](harness/samples/):
+
+- [`BufferTool`](harness/samples/BufferTool/BufferTool.cs) (entrypoint
+  `BufferTool::Honua.CustomCode.Samples.BufferTool`): buffers a WKT geometry with
+  NetTopologySuite and writes GeoJSON (vector).
+- [`RasterTool`](harness/samples/RasterTool/RasterTool.cs) (entrypoint
+  `RasterTool::Honua.CustomCode.Samples.RasterTool`): the **raster** sample, proving
+  in-process GDAL interop. It synthesizes a 2-band GeoTIFF with `OSGeo.GDAL`, reads the
+  bands, computes NDVI band math, and writes an LZW-compressed Float32 GeoTIFF — the
+  .NET mirror of the Python `raster_ndvi_tool.py` sample (GDAL is the engine, the SDK is
+  transport).
 
 The contract types live in the SDK-facing package
 [`Honua.CustomCode.Sdk`](harness/src/Honua.CustomCode.Sdk/) — the only package a tool
