@@ -69,7 +69,11 @@ public sealed class ODataChangesetEditionGateTests : IAsyncLifetime
         // should reach the shared edit pipeline instead of short-circuiting with 402.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseBody = await response.Content.ReadAsStringAsync();
-        responseBody.Should().NotContain("402");
+        // Assert the absence of the 402 status LINE, not a bare "402" substring: the
+        // multipart batch response boundary is a random GUID (e.g.
+        // "--batchresponse_e95a2abc2ef8402cb8c0...") that can incidentally contain
+        // "402" and flake an over-broad substring check.
+        responseBody.Should().NotContain("HTTP/1.1 402");
         responseBody.Should().Contain("HTTP/1.1 201");
     }
 }
