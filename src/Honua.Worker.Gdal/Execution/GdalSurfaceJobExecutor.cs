@@ -25,7 +25,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class GdalSurfaceJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalSurfaceJobExecutor> logger) : IJobExecutor
+    ILogger<GdalSurfaceJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>Process id for slope.</summary>
     public const string SlopeProcessId = "surface.slope";
@@ -62,6 +62,9 @@ internal sealed partial class GdalSurfaceJobExecutor(
 
     /// <summary>Process ids this executor routes.</summary>
     public static IReadOnlyCollection<string> SupportedProcessIds => HandledProcessIds;
+
+    /// <inheritdoc />
+    public IReadOnlySet<string> ProcessIds => HandledProcessIds;
 
     /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;

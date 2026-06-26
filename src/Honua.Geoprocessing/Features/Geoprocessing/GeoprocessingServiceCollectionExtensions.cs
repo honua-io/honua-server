@@ -93,82 +93,25 @@ internal static class GeoprocessingServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        // Built-in production executors (ticket #1031). Slice 1 introduced the
-        // first concrete executor (geometry.buffer); slice 2 added geometry.clip,
-        // geometry.intersect, and geometry.project; slice 3 added geometry.area
-        // (per-feature measure) and geometry.union (collection aggregation);
-        // slice 4 added geometry.centroid, geometry.length, and
-        // geometry.convex-hull — rounding out the deterministic single-feature
-        // vector set; slice 5 lands the migration-priority shape transforms
-        // geometry.dissolve (group-aware aggregate), geometry.simplify
-        // (Douglas-Peucker), and geometry.snap (vertex conditioning) so the
-        // workspace covers the common parity targets before later slices
-        // tackle the heavyweight raster / surface families. The worker host
-        // keys executors by ExecutionJobKind, so the per-process executors
-        // are composed behind GeoprocessingDispatchJobExecutor — the single
-        // IJobExecutor registered for ExecutionJobKind.Geoprocessing — which
-        // routes claimed jobs to the matching handler.
-        services.TryAddSingleton<GeometryBufferJobExecutor>();
-        services.TryAddSingleton<GeometryClipJobExecutor>();
-        services.TryAddSingleton<GeometryIntersectJobExecutor>();
-        services.TryAddSingleton<GeometryProjectJobExecutor>();
-        services.TryAddSingleton<GeometryAreaJobExecutor>();
-        services.TryAddSingleton<GeometryUnionJobExecutor>();
-        services.TryAddSingleton<GeometryCentroidJobExecutor>();
-        services.TryAddSingleton<GeometryLengthJobExecutor>();
-        services.TryAddSingleton<GeometryConvexHullJobExecutor>();
-        services.TryAddSingleton<GeometryDissolveJobExecutor>();
-        services.TryAddSingleton<GeometrySimplifyJobExecutor>();
-        services.TryAddSingleton<GeometrySnapJobExecutor>();
-
-        // Catalog-honesty reconciliation onto #1185: geometry.make-valid and
-        // geometry.difference were advertised in the catalog (and flagged
-        // synchronous / first-slice automated) on trunk but had no executor, so
-        // a job submission could never reach them. Add the managed NTS executors
-        // (GeometryFixer / Geometry.Difference) so the advertised set is honest.
-        services.TryAddSingleton<GeometryMakeValidJobExecutor>();
-        services.TryAddSingleton<GeometryDifferenceJobExecutor>();
-
-        // Managed spatial-join (analytics.spatial-join-managed) — a job-dispatchable
-        // counterpart to trunk's analytics.spatial-join, which runs only through the
-        // synchronous PostGIS SpatialAnalytics protocol and is not job-routed. NTS
-        // STRtree aggregate join over two inline FeatureCollections; no Postgres.
-        services.TryAddSingleton<ManagedSpatialJoinExecutor>();
-
-        // Managed analytics counterparts for cluster / buffer-aggregate / density
-        // (#1260). Each is the workflow/codemod-reachable counterpart to the
-        // matching analytics.* PostGIS-protocol path: NTS over an inline
-        // FeatureCollection, no Postgres dependency, so the lean dispatcher can
-        // construct them unconditionally.
-        services.TryAddSingleton<ManagedClusterExecutor>();
-        services.TryAddSingleton<ManagedBufferAggregateExecutor>();
-        services.TryAddSingleton<ManagedDensityExecutor>();
-
-        // GeoETL transform executors reconciled from feat/geoetl-baseline onto the
-        // #1185 add-a-capability contract. Each reads/writes a FeatureCollection
-        // data URI and is composed behind GeoprocessingDispatchJobExecutor.
-        services.TryAddSingleton<AttributeRenameTransformExecutor>();
-        services.TryAddSingleton<AttributeCastTransformExecutor>();
-        services.TryAddSingleton<ComputedFieldTransformExecutor>();
-        services.TryAddSingleton<AttributeFilterTransformExecutor>();
-        services.TryAddSingleton<SpatialFilterTransformExecutor>();
-        services.TryAddSingleton<ClipTransformExecutor>();
-        services.TryAddSingleton<DedupTransformExecutor>();
-        services.TryAddSingleton<ReprojectTransformExecutor>();
-        services.TryAddSingleton<GeoJsonSourceExecutor>();
-        services.TryAddSingleton<CsvSourceExecutor>();
-        services.TryAddSingleton<GeoJsonFileSinkExecutor>();
-        services.TryAddSingleton<QuarantineSinkExecutor>();
-        services.TryAddSingleton<ExternalPostgisSinkExecutor>();
-
-        // Import-dataset orchestration executor (#1630). Owns the full durable
-        // import pipeline (fetch -> validate+chunk -> import -> flatten -> tile ->
-        // extent+MVT refresh -> provenance) by composing the existing provider
-        // services, which it resolves at execution time through an
-        // IServiceScopeFactory scope (the provider implementations live in the
-        // active data-provider assembly, out of reach for this module — the same
-        // pattern ExternalPostgisSinkExecutor uses).
-        services.TryAddSingleton<ImportDatasetJobExecutor>();
+        // Built-in production executors (ticket #1031; GP Devkit authoring
+        // contract #2122). Each per-process executor implements IProcessExecutor
+        // and self-declares the process id(s) it handles, so they are registered
+        // through a single auto-registration scan rather than ~31 hand-maintained
+        // lines, and GeoprocessingDispatchJobExecutor — the single IJobExecutor
+        // registered for ExecutionJobKind.Geoprocessing — builds its routing table
+        // by enumerating IProcessExecutor and keying by ProcessIds.
+        //
+        // The executor families composed behind the dispatcher:
+        //  - geometry.* deterministic single-feature / aggregate vector ops
+        //    (buffer/clip/intersect/project/area/union/centroid/length/
+        //     convex-hull/dissolve/simplify/snap), plus the catalog-honesty
+        //    reconciliation of geometry.make-valid + geometry.difference (#1185);
+        //  - analytics.*-managed NTS counterparts to the PostGIS-protocol analytics
+        //    paths (spatial-join/cluster/buffer-aggregate/density, #1260);
+        //  - transform.* / source.* / sink.* GeoETL executors (feat/geoetl-baseline
+        //    reconciled onto the #1185 add-a-capability contract);
+        //  - import.dataset durable import orchestration (#1630).
+        AddProcessExecutors(services);
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
@@ -179,5 +122,70 @@ internal static class GeoprocessingServiceCollectionExtensions
         // Honua.Server.Features.Admin.Share (out of reach for this assembly).
 
         return services;
+    }
+
+    /// <summary>
+    /// Auto-registers every built-in <see cref="IProcessExecutor"/> (GP Devkit
+    /// authoring contract #2122). Each executor is registered as its concrete type
+    /// (so call sites that resolve a specific executor keep working) and is also
+    /// surfaced into the enumerable <see cref="IProcessExecutor"/> set the
+    /// <see cref="GeoprocessingDispatchJobExecutor"/> enumerates — both bound to the
+    /// SAME singleton instance via a resolving factory, so there is exactly one of
+    /// each. No reflection scan is used, keeping the registration AOT-safe; adding a
+    /// new managed process is a one-line <c>Register&lt;T&gt;</c> call here plus its
+    /// catalog entry.
+    /// </summary>
+    private static void AddProcessExecutors(IServiceCollection services)
+    {
+        Register<GeometryBufferJobExecutor>(services);
+        Register<GeometryClipJobExecutor>(services);
+        Register<GeometryIntersectJobExecutor>(services);
+        Register<GeometryProjectJobExecutor>(services);
+        Register<GeometryAreaJobExecutor>(services);
+        Register<GeometryUnionJobExecutor>(services);
+        Register<GeometryCentroidJobExecutor>(services);
+        Register<GeometryLengthJobExecutor>(services);
+        Register<GeometryConvexHullJobExecutor>(services);
+        Register<GeometryDissolveJobExecutor>(services);
+        Register<GeometrySimplifyJobExecutor>(services);
+        Register<GeometrySnapJobExecutor>(services);
+        Register<GeometryMakeValidJobExecutor>(services);
+        Register<GeometryDifferenceJobExecutor>(services);
+        Register<ManagedSpatialJoinExecutor>(services);
+        Register<ManagedClusterExecutor>(services);
+        Register<ManagedBufferAggregateExecutor>(services);
+        Register<ManagedDensityExecutor>(services);
+        Register<AttributeRenameTransformExecutor>(services);
+        Register<AttributeCastTransformExecutor>(services);
+        Register<ComputedFieldTransformExecutor>(services);
+        Register<AttributeFilterTransformExecutor>(services);
+        Register<SpatialFilterTransformExecutor>(services);
+        Register<ClipTransformExecutor>(services);
+        Register<DedupTransformExecutor>(services);
+        Register<ReprojectTransformExecutor>(services);
+        Register<GeoJsonSourceExecutor>(services);
+        Register<CsvSourceExecutor>(services);
+        Register<GeoJsonFileSinkExecutor>(services);
+        Register<QuarantineSinkExecutor>(services);
+        Register<ExternalPostgisSinkExecutor>(services);
+        Register<ImportDatasetJobExecutor>(services);
+    }
+
+    private static void Register<TExecutor>(IServiceCollection services)
+        where TExecutor : class, IProcessExecutor
+    {
+        services.TryAddSingleton<TExecutor>();
+
+        // Surface the same singleton into the IProcessExecutor enumerable the
+        // dispatcher consumes. Guard against a double-add so a repeated
+        // AddGeoprocessing call cannot register a duplicate id (which would trip
+        // the route-table duplicate-id guard at composition time).
+        if (!services.Any(d =>
+                d.ServiceType == typeof(IProcessExecutor)
+                && d.ImplementationFactory is not null
+                && d.ImplementationFactory.Method.ReturnType == typeof(TExecutor)))
+        {
+            services.AddSingleton<IProcessExecutor>(sp => sp.GetRequiredService<TExecutor>());
+        }
     }
 }

@@ -30,7 +30,7 @@ namespace Honua.Geoprocessing.Execution;
 /// through the dissolve artifact shape so downstream consumers can rely
 /// on the FeatureCollection envelope.
 /// </summary>
-internal sealed partial class GeometryDissolveJobExecutor : IJobExecutor
+internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
 {
     private const string FeatureCollectionDataUriPrefix = "data:application/geo+json;base64,";
     private const string DefaultGroupKey = "__all__";
@@ -51,6 +51,13 @@ internal sealed partial class GeometryDissolveJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

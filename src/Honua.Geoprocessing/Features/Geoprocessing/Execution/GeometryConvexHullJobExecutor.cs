@@ -27,7 +27,7 @@ namespace Honua.Geoprocessing.Execution;
 /// hull over all member vertices, which is the canonical "hull of the
 /// union" behavior used by PostGIS <c>ST_ConvexHull</c>.
 /// </summary>
-internal sealed partial class GeometryConvexHullJobExecutor : IJobExecutor
+internal sealed partial class GeometryConvexHullJobExecutor : IProcessExecutor
 {
     /// <summary>
     /// The single process id this executor handles. Matches the catalog
@@ -45,6 +45,13 @@ internal sealed partial class GeometryConvexHullJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

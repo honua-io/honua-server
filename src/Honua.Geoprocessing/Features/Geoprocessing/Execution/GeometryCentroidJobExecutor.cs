@@ -24,7 +24,7 @@ namespace Honua.Geoprocessing.Execution;
 /// of the input geometry type, matching the long-standing GeoServices and
 /// PostGIS <c>ST_Centroid</c> semantics.
 /// </summary>
-internal sealed partial class GeometryCentroidJobExecutor : IJobExecutor
+internal sealed partial class GeometryCentroidJobExecutor : IProcessExecutor
 {
     /// <summary>
     /// The single process id this executor handles. Matches the catalog
@@ -42,6 +42,13 @@ internal sealed partial class GeometryCentroidJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

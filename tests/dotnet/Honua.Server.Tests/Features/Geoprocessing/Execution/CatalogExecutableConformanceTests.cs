@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
@@ -313,7 +314,8 @@ public sealed class CatalogExecutableConformanceTests
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
         monitor.CurrentValue.Returns(options);
 
-        var dispatcher = new GeoprocessingDispatchJobExecutor(
+        IProcessExecutor[] executors =
+        {
             new GeometryBufferJobExecutor(monitor, NullLogger<GeometryBufferJobExecutor>.Instance),
             new GeometryClipJobExecutor(monitor, NullLogger<GeometryClipJobExecutor>.Instance),
             new GeometryIntersectJobExecutor(monitor, NullLogger<GeometryIntersectJobExecutor>.Instance),
@@ -348,6 +350,10 @@ public sealed class CatalogExecutableConformanceTests
             new ImportDatasetJobExecutor(
                 Substitute.For<IServiceScopeFactory>(),
                 NullLogger<ImportDatasetJobExecutor>.Instance),
+        };
+
+        var dispatcher = new GeoprocessingDispatchJobExecutor(
+            executors,
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
 
         return dispatcher.SupportedProcessIds;

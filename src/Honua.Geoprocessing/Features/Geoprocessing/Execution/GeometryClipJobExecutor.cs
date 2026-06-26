@@ -23,7 +23,7 @@ namespace Honua.Geoprocessing.Execution;
 /// is used (not the polygon itself), so this executor materializes the
 /// clip envelope and intersects the target with it.
 /// </summary>
-internal sealed partial class GeometryClipJobExecutor : IJobExecutor
+internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.clip";
 
@@ -37,6 +37,13 @@ internal sealed partial class GeometryClipJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
