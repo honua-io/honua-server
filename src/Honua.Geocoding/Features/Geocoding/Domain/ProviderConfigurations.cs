@@ -113,3 +113,46 @@ public sealed record AzureMapsProviderConfiguration : GeocodeProviderConfigurati
     /// </summary>
     public string? Language { get; init; }
 }
+
+/// <summary>
+/// Configuration for the local, self-hosted PostGIS-backed geocoder. The provider runs entirely
+/// offline against a locally-loaded reference dataset and makes no external service calls.
+/// </summary>
+public sealed record LocalGeocoderProviderConfiguration : GeocodeProviderConfiguration
+{
+    /// <summary>
+    /// PostgreSQL/PostGIS connection string for the reference dataset. When empty, the provider
+    /// falls back to the application's default connection (resolved at registration time).
+    /// </summary>
+    public string ConnectionString { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Schema containing the reference table. Defaults to <c>public</c>.
+    /// </summary>
+    public string Schema { get; init; } = "public";
+
+    /// <summary>
+    /// Name of the reference table holding geocodable records (see the documented schema:
+    /// <c>docs/reference/geocoding/local-postgis-geocoder.md</c>). Defaults to
+    /// <c>honua_geocode_reference</c>.
+    /// </summary>
+    public string Table { get; init; } = "honua_geocode_reference";
+
+    /// <summary>
+    /// Maximum candidate rows considered per forward/suggest query. Defaults to 50.
+    /// </summary>
+    public int MaxCandidates { get; init; } = 50;
+
+    /// <summary>
+    /// Maximum number of addresses accepted in a single batch (geocodeAddresses) request. The
+    /// local backend has no upstream usage policy, so this defaults higher than the public
+    /// hosted providers.
+    /// </summary>
+    public int MaxBatchSize { get; init; } = 1000;
+
+    /// <summary>
+    /// Default reverse-geocode search radius in meters when a request supplies none. Defaults to
+    /// 1000 m.
+    /// </summary>
+    public double DefaultReverseRadiusMeters { get; init; } = 1000.0;
+}

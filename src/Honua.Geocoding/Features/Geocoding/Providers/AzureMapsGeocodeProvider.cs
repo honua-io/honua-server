@@ -60,10 +60,11 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         SupportsReverseGeocode: true,
         SupportsSuggest: true,
         SupportsBatch: false, // Azure Maps doesn't have native batch support in Search API
-        SupportsStructuredInput: false,
+        SupportsStructuredInput: true, // Mapped to the Azure structured-address search endpoint (#2149)
         SupportsBiasing: true)
     {
         SupportedSpatialReferences = [4326], // Azure Maps returns WGS84 coordinates
+        SupportedStructuredFields = GeocodeStructuredFields.All(),
         MaxResultsPerRequest = 100,
         MaxBatchSize = 0,
         RequiresAuthentication = true,
@@ -344,6 +345,14 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
     private string BuildSearchUrl(ForwardGeocodeRequest request)
     {
+        // Structured input maps onto the Azure Maps structured-address search endpoint, which accepts
+        // discrete components (streetName, municipality, countrySubdivision, postalCode, countryCode)
+        // for higher-fidelity matching than a flattened single line (#2149).
+        if (request.StructuredAddress is { } structured && HasAnyStructuredField(structured))
+        {
+            return BuildStructuredSearchUrl(structured, request);
+        }
+
         var baseUrl = _configuration.BaseUrl.TrimEnd('/');
         var maxResults = ValidateMaxResults(request.MaxResults);
 
@@ -378,6 +387,59 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
         return url;
     }
+
+    private static bool HasAnyStructuredField(StructuredAddress structured)
+        => !string.IsNullOrWhiteSpace(structured.StreetName)
+            || !string.IsNullOrWhiteSpace(structured.AddressNumber)
+            || !string.IsNullOrWhiteSpace(structured.City)
+            || !string.IsNullOrWhiteSpace(structured.Region)
+            || !string.IsNullOrWhiteSpace(structured.PostalCode)
+            || !string.IsNullOrWhiteSpace(structured.Country)
+            || !string.IsNullOrWhiteSpace(structured.Neighborhood);
+
+    // Builds the Azure Maps structured-address search URL. Unsupported components are simply omitted
+    // (gracefully ignored) rather than producing a malformed request.
+    private string BuildStructuredSearchUrl(StructuredAddress structured, ForwardGeocodeRequest request)
+    {
+        var baseUrl = _configuration.BaseUrl.TrimEnd('/');
+        var maxResults = ValidateMaxResults(request.MaxResults);
+
+        var url = $"{baseUrl}/search/address/structured/json?" +
+                  $"api-version={_configuration.ApiVersion}" +
+                  $"&limit={maxResults}";
+
+        var streetLine = string.Join(' ', new[] { structured.AddressNumber, structured.StreetName }
+            .Where(static p => !string.IsNullOrWhiteSpace(p)));
+        url = AppendStructured(url, "streetName", streetLine);
+        url = AppendStructured(url, "municipality", structured.City);
+        url = AppendStructured(url, "municipalitySubdivision", structured.Neighborhood);
+        url = AppendStructured(url, "countrySubdivision", structured.Region);
+        url = AppendStructured(url, "postalCode", structured.PostalCode);
+
+        // Azure's structured endpoint requires a 2-letter ISO country code; pass through the request
+        // CountryCodes when the structured Country is absent or non-ISO so the request stays valid.
+        var countryCode = !string.IsNullOrWhiteSpace(structured.Country) && structured.Country.Length == 2
+            ? structured.Country
+            : request.CountryCodes?.Split(',', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+        url = AppendStructured(url, "countryCode", countryCode);
+
+        if (!string.IsNullOrWhiteSpace(_configuration.Language))
+        {
+            url += $"&language={Uri.EscapeDataString(_configuration.Language)}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(_configuration.View))
+        {
+            url += $"&view={Uri.EscapeDataString(_configuration.View)}";
+        }
+
+        return url;
+    }
+
+    private static string AppendStructured(string url, string parameterName, string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? url
+            : url + $"&{parameterName}={Uri.EscapeDataString(value)}";
 
     private string BuildReverseUrl(ReverseGeocodeRequest request)
     {

@@ -35,6 +35,14 @@ public sealed record GeocodeProviderCapabilities(
     public int? RateLimitPerMinute { get; init; }
 
     /// <summary>
+    /// Structured-address fields the provider can consume natively (mapped to its request shape).
+    /// Used to advertise structured-input fidelity in capability metadata so callers know which
+    /// components (e.g. <c>Address</c>, <c>City</c>, <c>Region</c>, <c>Postal</c>, <c>CountryCode</c>)
+    /// are honored rather than flattened. Empty when <see cref="SupportsStructuredInput"/> is false.
+    /// </summary>
+    public string[] SupportedStructuredFields { get; init; } = [];
+
+    /// <summary>
     /// Supported feature types for reverse geocoding
     /// </summary>
     public string[] SupportedFeatureTypes { get; init; } = [];
@@ -63,6 +71,42 @@ public sealed record GeocodeProviderCapabilities(
     /// Default timeout in seconds
     /// </summary>
     public int DefaultTimeoutSeconds { get; init; } = 30;
+}
+
+/// <summary>
+/// Canonical structured-address field tokens advertised in <see cref="GeocodeProviderCapabilities.SupportedStructuredFields"/>.
+/// These mirror the Esri GeocodeServer structured-input fields and map onto
+/// <see cref="StructuredAddress"/> components.
+/// </summary>
+public static class GeocodeStructuredFields
+{
+    /// <summary>Street address line (number + street name).</summary>
+    public const string Address = "Address";
+
+    /// <summary>Neighborhood or district.</summary>
+    public const string Neighborhood = "Neighborhood";
+
+    /// <summary>City or locality.</summary>
+    public const string City = "City";
+
+    /// <summary>Sub-region or county.</summary>
+    public const string Subregion = "Subregion";
+
+    /// <summary>State, province, or region.</summary>
+    public const string Region = "Region";
+
+    /// <summary>Postal or ZIP code.</summary>
+    public const string Postal = "Postal";
+
+    /// <summary>ISO country code or country name.</summary>
+    public const string CountryCode = "CountryCode";
+
+    /// <summary>
+    /// The full set of structured fields supported by providers that consume structured input
+    /// (Nominatim, Azure Maps, Amazon Location, and the local PostGIS backend) so structured-input
+    /// fidelity is advertised consistently across providers.
+    /// </summary>
+    public static string[] All() => [Address, Neighborhood, City, Subregion, Region, Postal, CountryCode];
 }
 
 /// <summary>

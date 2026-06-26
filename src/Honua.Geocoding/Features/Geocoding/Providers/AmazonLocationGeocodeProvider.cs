@@ -66,10 +66,11 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         SupportsReverseGeocode: true,
         SupportsSuggest: true,
         SupportsBatch: false, // AWS Location Service doesn't have native batch support
-        SupportsStructuredInput: false,
+        SupportsStructuredInput: true, // Mapped: AWS Location v1 has no structured fields, so structured components are composed into the Text query (#2149)
         SupportsBiasing: true)
     {
         SupportedSpatialReferences = [4326], // AWS Location returns WGS84 coordinates
+        SupportedStructuredFields = GeocodeStructuredFields.All(),
         MaxResultsPerRequest = 50,
         MaxBatchSize = 0,
         RequiresAuthentication = true,
@@ -100,10 +101,15 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
 
         try
         {
+            // AWS Location v1 SearchPlaceIndexForText accepts only a single Text field, so structured
+            // components are composed into a normalized, comma-delimited query (graceful mapping)
+            // rather than dropped or producing a malformed request (#2149).
+            var searchText = ComposeStructuredText(request.StructuredAddress) ?? request.Query;
+
             var searchRequest = new SearchPlaceIndexForTextRequest
             {
                 IndexName = _configuration.PlaceIndexName,
-                Text = request.Query,
+                Text = searchText,
                 MaxResults = ValidateMaxResults(request.MaxResults)
             };
 
@@ -351,6 +357,35 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         {
             _locationClient?.Dispose();
         }
+    }
+
+    // Composes the canonical structured-address components into a single comma-delimited query in a
+    // stable field order. Returns null when no structured component is present, so the caller falls
+    // back to the flattened single-line query.
+    internal static string? ComposeStructuredText(StructuredAddress? structured)
+    {
+        if (structured is null)
+        {
+            return null;
+        }
+
+        var streetLine = string.Join(' ', new[] { structured.AddressNumber, structured.StreetName }
+            .Where(static p => !string.IsNullOrWhiteSpace(p)));
+
+        var parts = new[]
+        {
+            streetLine,
+            structured.Neighborhood,
+            structured.City,
+            structured.Region,
+            structured.PostalCode,
+            structured.Country
+        }
+        .Where(static p => !string.IsNullOrWhiteSpace(p))
+        .Select(static p => p!.Trim());
+
+        var composed = string.Join(", ", parts);
+        return string.IsNullOrWhiteSpace(composed) ? null : composed;
     }
 
     private static AmazonLocationServiceClient CreateLocationClient(AmazonLocationProviderConfiguration configuration)

@@ -16,16 +16,60 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 {
     private readonly IGeocodeProviderRegistry _providerRegistry;
     private readonly GeocodingConfiguration _configuration;
+    private readonly IGeocodeLimitEnforcer _limitEnforcer;
     private readonly ILogger<GeocodeCoordinatorService> _logger;
 
     public GeocodeCoordinatorService(
         IGeocodeProviderRegistry providerRegistry,
         IOptions<GeocodingConfiguration> configuration,
+        IGeocodeLimitEnforcer limitEnforcer,
         ILogger<GeocodeCoordinatorService> logger)
     {
         _providerRegistry = providerRegistry ?? throw new ArgumentNullException(nameof(providerRegistry));
         _configuration = configuration?.Value ?? throw new ArgumentNullException(nameof(configuration));
+        _limitEnforcer = limitEnforcer ?? throw new ArgumentNullException(nameof(limitEnforcer));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Enforces the effective provider's advertised per-minute rate limit before any provider
+    /// attempt. Returns a throttling failure result when the limit is exceeded, otherwise
+    /// <see langword="null"/>. The effective provider is the first capability-compatible provider
+    /// in failover order so the limit reflects the provider that would actually serve the request.
+    /// </summary>
+    private GeocodeResult<T>? EnforceRateLimit<T>(
+        IReadOnlyList<IGeocodeProvider> providers,
+        Func<IGeocodeProvider, bool> supportsOperation)
+    {
+        var primary = providers.FirstOrDefault(supportsOperation);
+        if (primary is null)
+        {
+            return null;
+        }
+
+        var decision = _limitEnforcer.CheckRequestRate(primary.Name, primary.Capabilities);
+        if (decision.Allowed)
+        {
+            return null;
+        }
+
+        var retryAfterSeconds = (int)Math.Ceiling((decision.RetryAfter ?? TimeSpan.Zero).TotalSeconds);
+        GeocodeCoordinatorLog.RateLimitRejected(_logger, primary.Name, decision.EffectiveLimit ?? 0, retryAfterSeconds);
+
+        var metadata = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [GeocodeLimitMetadata.RetryAfterSecondsKey] = retryAfterSeconds
+        };
+
+        return new GeocodeResult<T>
+        {
+            Data = default!,
+            ProviderName = primary.Name,
+            IsSuccess = false,
+            ErrorMessage = decision.Reason ?? "Geocoding provider rate limit was exceeded.",
+            AttemptedProviders = [primary.Name],
+            Metadata = metadata
+        };
     }
 
     public async Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> ForwardGeocodeAsync(
@@ -40,6 +84,14 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         activity?.SetTag("honua.geocoding.preferred_provider", providerName);
 
         var providers = GetProvidersToTry(providerName);
+
+        var throttled = EnforceRateLimit<IReadOnlyList<GeocodeCandidate>>(providers, static p => p.Capabilities.SupportsForwardGeocode);
+        if (throttled is not null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, throttled.ErrorMessage);
+            return throttled;
+        }
+
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
 
@@ -134,6 +186,14 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         activity?.SetTag("honua.geocoding.preferred_provider", providerName);
 
         var providers = GetProvidersToTry(providerName);
+
+        var throttled = EnforceRateLimit<ReverseGeocodeMatch?>(providers, static p => p.Capabilities.SupportsReverseGeocode);
+        if (throttled is not null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, throttled.ErrorMessage);
+            return throttled;
+        }
+
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
 
@@ -223,6 +283,13 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         ArgumentNullException.ThrowIfNull(request);
 
         var providers = GetProvidersToTry(providerName);
+
+        var throttled = EnforceRateLimit<IReadOnlyList<GeocodeSuggestion>>(providers, static p => p.Capabilities.SupportsSuggest);
+        if (throttled is not null)
+        {
+            return throttled;
+        }
+
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
 
@@ -305,6 +372,30 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         ArgumentNullException.ThrowIfNull(request);
 
         var providers = GetProvidersToTry(providerName);
+
+        // Enforce the batch cap (provider + licensing) against the effective batch-capable provider
+        // before any work, then the per-minute request rate. Both reuse the shared limit enforcer so
+        // advertised limits stay consistent across protocol adapters and this canonical pipeline.
+        var batchPrimary = providers.FirstOrDefault(static p => p.Capabilities.SupportsBatch);
+        if (batchPrimary is not null)
+        {
+            var batchDecision = _limitEnforcer.CheckBatch(batchPrimary.Name, batchPrimary.Capabilities, request.Queries.Count);
+            if (!batchDecision.Allowed)
+            {
+                GeocodeCoordinatorLog.BatchSizeRejected(_logger, batchPrimary.Name, request.Queries.Count, batchDecision.EffectiveLimit ?? 0);
+                return GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
+                    batchDecision.Reason ?? "Batch size exceeds the maximum allowed batch size.",
+                    batchPrimary.Name,
+                    attemptedProviders: [batchPrimary.Name]);
+            }
+        }
+
+        var throttled = EnforceRateLimit<IReadOnlyList<GeocodeCandidate>>(providers, static p => p.Capabilities.SupportsBatch);
+        if (throttled is not null)
+        {
+            return throttled;
+        }
+
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
 

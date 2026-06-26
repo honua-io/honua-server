@@ -69,6 +69,22 @@ public sealed class GeocodingConfiguration
     public string LocatorName { get; set; } = "World";
 
     /// <summary>
+    /// Whether advertised per-provider rate limits (<see cref="GeocodeProviderCapabilities.RateLimitPerMinute"/>)
+    /// are enforced at request time. When enabled, requests beyond the effective provider's
+    /// per-minute allowance are rejected with a conformant throttling error. Defaults to true so
+    /// advertised limits are not silently unenforced.
+    /// </summary>
+    public bool EnforceRateLimits { get; set; } = true;
+
+    /// <summary>
+    /// Optional licensing/edition cap on the number of records accepted in a single batch geocode,
+    /// applied across all providers. The effective batch cap is the minimum of this value and the
+    /// active provider's <see cref="GeocodeProviderCapabilities.MaxBatchSize"/>. <see langword="null"/>
+    /// applies no additional license cap (the provider's advertised cap governs).
+    /// </summary>
+    public int? MaxBatchSizeLimit { get; set; }
+
+    /// <summary>
     /// Provider configurations
     /// </summary>
     public ProvidersConfiguration Providers { get; set; } = new();
@@ -94,6 +110,10 @@ public sealed class ProvidersConfiguration
     /// </summary>
     public AzureMapsProviderConfiguration AzureMaps { get; set; } = new();
 
+    /// <summary>
+    /// Local, self-hosted PostGIS-backed geocoder configuration
+    /// </summary>
+    public LocalGeocoderProviderConfiguration Local { get; set; } = new();
 }
 
 /// <summary>
@@ -117,10 +137,15 @@ public static class GeocodeProviderNames
     public const string AzureMaps = "azure-maps";
 
     /// <summary>
+    /// Local, self-hosted PostGIS-backed geocoder provider name
+    /// </summary>
+    public const string Local = "local";
+
+    /// <summary>
     /// Get all available provider names
     /// </summary>
     /// <returns>Array of provider names</returns>
-    public static string[] GetAll() => [Nominatim, AmazonLocation, AzureMaps];
+    public static string[] GetAll() => [Nominatim, AmazonLocation, AzureMaps, Local];
 }
 
 /// <summary>
