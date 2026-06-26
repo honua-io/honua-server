@@ -42,6 +42,7 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2ContingentValueGroup))]
 [JsonSerializable(typeof(MetadataV2ContingentValue))]
 [JsonSerializable(typeof(MetadataV2ContingentFieldValue))]
+[JsonSerializable(typeof(MetadataV2OwnerEditPolicy))]
 [JsonSerializable(typeof(MetadataV2Relationship))]
 [JsonSerializable(typeof(MetadataV2PublicationIdentifier))]
 [JsonSerializable(typeof(MetadataV2SpatialReference))]

@@ -178,6 +178,141 @@ public sealed class AttributeRuleEngineTests
         result.Attributes.ContainsKey("status").Should().BeFalse();
     }
 
+    [Fact]
+    public void Apply_ImmediatePass_SkipsBatchRules()
+    {
+        var resource = ResourceWithRules(new MetadataV2AttributeRule
+        {
+            Name = "BatchCalc",
+            Type = MetadataV2AttributeRuleType.Calculation,
+            FieldName = "total",
+            ScriptExpression = "$feature.qty * 2",
+            Batch = true
+        });
+
+        var result = AttributeRuleEngine.Apply(
+            resource,
+            Attributes(("qty", 4)),
+            AttributeRuleEditEvent.Insert);
+
+        // Batch rules are deferred, so the immediate pass must not write the target field.
+        result.IsValid.Should().BeTrue();
+        result.Attributes.ContainsKey("total").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_BatchPass_RunsBatchRulesOnly()
+    {
+        var resource = ResourceWithRules(
+            new MetadataV2AttributeRule
+            {
+                Name = "ImmediateCalc",
+                Type = MetadataV2AttributeRuleType.Calculation,
+                FieldName = "immediate",
+                ScriptExpression = "1"
+            },
+            new MetadataV2AttributeRule
+            {
+                Name = "BatchCalc",
+                Type = MetadataV2AttributeRuleType.Calculation,
+                FieldName = "total",
+                ScriptExpression = "$feature.qty * 2",
+                Batch = true
+            });
+
+        var result = AttributeRuleEngine.Apply(
+            resource,
+            Attributes(("qty", 4)),
+            AttributeRuleEditEvent.Insert,
+            unsupported: null,
+            pass: AttributeRulePass.Batch);
+
+        result.IsValid.Should().BeTrue();
+        result.Attributes["total"].Should().Be(8d);
+        // The immediate rule must not fire during a batch pass.
+        result.Attributes.ContainsKey("immediate").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("insert", true, false, false)]
+    [InlineData("update", false, true, false)]
+    [InlineData("delete", false, false, true)]
+    public void Apply_TriggeringEvents_FireOnlyOnConfiguredEvent(
+        string configuredEvent,
+        bool firesOnInsert,
+        bool firesOnUpdate,
+        bool firesOnDelete)
+    {
+        var resource = ResourceWithRules(new MetadataV2AttributeRule
+        {
+            Name = "EventGated",
+            Type = MetadataV2AttributeRuleType.Constraint,
+            ScriptExpression = "$feature.qty > 0",
+            TriggeringEvents = [configuredEvent]
+        });
+
+        AssertFires(resource, AttributeRuleEditEvent.Insert, firesOnInsert);
+        AssertFires(resource, AttributeRuleEditEvent.Update, firesOnUpdate);
+        AssertFires(resource, AttributeRuleEditEvent.Delete, firesOnDelete);
+
+        static void AssertFires(MetadataV2Resource resource, AttributeRuleEditEvent editEvent, bool shouldFire)
+        {
+            var result = AttributeRuleEngine.Apply(
+                resource,
+                new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase) { ["qty"] = -1 },
+                editEvent);
+
+            // A violating value reports a violation only when the rule fires for the event.
+            result.IsValid.Should().Be(!shouldFire);
+        }
+    }
+
+    [Fact]
+    public void Apply_ExclusionRuleMatches_AbortsEdit()
+    {
+        var resource = ResourceWithRules(new MetadataV2AttributeRule
+        {
+            Name = "ExcludeDrafts",
+            Type = MetadataV2AttributeRuleType.Exclusion,
+            // Exclusion fires (aborts) when the boolean condition is TRUE.
+            ScriptExpression = "$feature.status == 'draft'",
+            ErrorMessage = "Draft features cannot be edited"
+        });
+
+        var matched = AttributeRuleEngine.Apply(
+            resource,
+            Attributes(("status", "draft")),
+            AttributeRuleEditEvent.Update);
+        matched.IsValid.Should().BeFalse();
+        matched.Violations[0].Message.Should().Be("Draft features cannot be edited");
+
+        var notMatched = AttributeRuleEngine.Apply(
+            resource,
+            Attributes(("status", "published")),
+            AttributeRuleEditEvent.Update);
+        notMatched.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Apply_CalculationWithSafeArcadeFunction_ComputesValue()
+    {
+        var resource = ResourceWithRules(new MetadataV2AttributeRule
+        {
+            Name = "Normalize",
+            Type = MetadataV2AttributeRuleType.Calculation,
+            FieldName = "code",
+            ScriptExpression = "Upper(Trim($feature.code))"
+        });
+
+        var result = AttributeRuleEngine.Apply(
+            resource,
+            Attributes(("code", "  ab ")),
+            AttributeRuleEditEvent.Insert);
+
+        result.IsValid.Should().BeTrue();
+        result.Attributes["code"].Should().Be("AB");
+    }
+
     private static MetadataV2Resource ResourceWithRules(params MetadataV2AttributeRule[] rules)
         => new()
         {
