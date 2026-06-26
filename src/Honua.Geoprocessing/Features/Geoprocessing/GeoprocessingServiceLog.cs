@@ -181,4 +181,9 @@ internal static partial class GeoprocessingServiceLog
     public static partial void DeclaredScopeRejected(
         ILogger logger,
         string reason);
+
+    [LoggerMessage(8031, LogLevel.Warning, "Failed to revoke a custom-code scoped job token during submission rollback")]
+    public static partial void CustomCodeTokenRevokeFailed(
+        ILogger logger,
+        Exception exception);
 }

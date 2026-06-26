@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.LocalRunner;
 using Honua.Infrastructure.Abstractions;
@@ -122,6 +123,24 @@ internal static class GeoprocessingServiceCollectionExtensions
         // executor instances registered above. Consumed by the dev `honua gp` CLI.
         services.TryAddSingleton(sp =>
             new GeoprocessingLocalRunner(sp.GetServices<IProcessExecutor>()));
+
+        // Custom-code geoprocessing (Phase 1). Bind the policy/config and register
+        // the thin custom-code dispatch executor. The executor is fenced to the
+        // "custom-code" runtime profile so neither the lean dispatcher above nor the
+        // native GDAL worker can claim a custom-code job — and, if a custom-code job
+        // is ever claimed in-process (a deployment that forgot to configure the
+        // custom-code Batch workload), it fails closed rather than running untrusted
+        // user code in the server process. The scoped-job token issuer that the
+        // submit path and terminal callback consume is registered by
+        // AddPortalTokenAuthentication in the Honua.Server composition root.
+        services
+            .AddOptions<CustomCodeOptions>()
+            .Bind(configuration.GetSection(CustomCodeOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IJobExecutor, CustomCodeDispatchJobExecutor>());
 
         // Job orchestration substrate (queue, log store — ticket #681) is wired
         // by the Honua.Server composition root via AddJobOrchestration, which

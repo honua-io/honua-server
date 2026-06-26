@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.AnalysisContent;
@@ -10,6 +11,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Geoprocessing.CustomCode;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -26,7 +28,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
     IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
     IGeoprocessingResultPackageStore? resultPackageStore,
     IServiceScopeFactory serviceScopeFactory,
-    ILogger<GeoprocessingJobTerminalCallback> logger) : IJobTerminalCallback
+    ILogger<GeoprocessingJobTerminalCallback> logger,
+    IScopedJobTokenIssuer? scopedJobTokenIssuer = null) : IJobTerminalCallback
 {
     private TimeSpan ProgressRetention => executorOptions.CurrentValue.ResultRetention;
 
@@ -36,6 +39,14 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         {
             return;
         }
+
+        // Revoke the scoped callback token the moment the job reaches a terminal
+        // state so the credential cannot outlive the job (Phase-0 invariant #5).
+        // The token was injected as env.HONUA_JOB_TOKEN at submit; revoking is
+        // idempotent, so a job that minted no token (every non-custom-code job) is a
+        // no-op. Done first and best-effort so a revoke failure never blocks the
+        // terminal progress/result-package sync below.
+        await TryRevokeCustomCodeTokenAsync(job, cancellationToken).ConfigureAwait(false);
 
         // Tracks whether persisting analysis-content artifacts failed. A successful job
         // must not be reported as Completed when its referenced artifacts are missing from
@@ -141,6 +152,30 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         catch (Exception ex)
         {
             Log.ProgressSyncFailed(logger, job.OperationId, ex);
+        }
+    }
+
+    private async Task TryRevokeCustomCodeTokenAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        if (scopedJobTokenIssuer is null)
+        {
+            return;
+        }
+
+        if (!job.Spec.Parameters.TryGetValue(CustomCodeJobContract.JobTokenEnvParam, out var token) ||
+            string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
+
+        try
+        {
+            await scopedJobTokenIssuer.RevokeAsync(token, cancellationToken).ConfigureAwait(false);
+            Log.CustomCodeTokenRevoked(logger, job.OperationId);
+        }
+        catch (Exception ex)
+        {
+            Log.CustomCodeTokenRevokeFailed(logger, job.OperationId, ex);
         }
     }
 
@@ -262,5 +297,11 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 
         [LoggerMessage(8020, LogLevel.Warning, "Failed to synchronize admin progress for terminal job {OperationId}; admin view may be stale until TTL expiry")]
         public static partial void ProgressSyncFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(8022, LogLevel.Information, "Revoked custom-code scoped job token for terminal job {OperationId}")]
+        public static partial void CustomCodeTokenRevoked(ILogger logger, string operationId);
+
+        [LoggerMessage(8023, LogLevel.Warning, "Failed to revoke custom-code scoped job token for terminal job {OperationId}; it will expire at its absolute TTL")]
+        public static partial void CustomCodeTokenRevokeFailed(ILogger logger, string operationId, Exception exception);
     }
 }
