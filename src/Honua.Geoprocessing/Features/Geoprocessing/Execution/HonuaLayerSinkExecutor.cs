@@ -96,7 +96,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         string geometryColumn;
         int targetSrid;
         HonuaLayerLoadMode loadMode;
-        IReadOnlyList<string> keyFields;
+        List<string> keyFields;
         try
         {
             schema = Identifier(inputs.GetOrDefault("schema", "public"));
