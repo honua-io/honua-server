@@ -20,7 +20,6 @@ namespace Honua.CloudIntegration.Tests;
 /// the project still runs on boxes without a cluster.
 /// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CloudIntegration)]
-[Trait(CloudIntegrationTraits.Tier, CloudIntegrationTraits.Free)]
 public sealed class KubernetesJobLifecycleCloudIntegrationTests : IClassFixture<KindClusterFixture>
 {
     // A tiny worker image whose default entrypoint runs to completion and exits 0 — stands in
