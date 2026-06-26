@@ -87,7 +87,11 @@ internal static class CustomCodeOwnerScopeCapture
         var tenantId = principal.FindFirstValue(TenantClaimType);
         var principalId = principal.Identity?.Name ?? string.Empty;
 
-        return new CustomCodeOwnerScope(principalId, tenantId, roles, declared);
+        // Pin BOTH the role snapshot and the permission-grant snapshot. The mint
+        // intersects the requested scope against both, so a submitter whose write
+        // authority comes purely from a write:{service}[/{layer}] grant (not a role)
+        // gets a correctly-scoped token instead of an under-scoped one.
+        return new CustomCodeOwnerScope(principalId, tenantId, roles, grants, declared);
     }
 
     private static List<JobResourceScopeEntry> ParseDeclaredScope(string raw)
