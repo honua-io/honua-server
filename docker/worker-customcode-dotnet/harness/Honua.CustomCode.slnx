@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/BufferTool/BufferTool.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Honua.CustomCode.Harness/Honua.CustomCode.Harness.csproj" />
+    <Project Path="src/Honua.CustomCode.Sdk/Honua.CustomCode.Sdk.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Honua.CustomCode.Harness.Tests/Honua.CustomCode.Harness.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -24,11 +24,20 @@ internal static partial class CustomCodeSubmitValidator
     [GeneratedRegex("^[0-9a-f]{40}$", RegexOptions.CultureInvariant)]
     private static partial Regex FullShaRegex();
 
-    // module.path:function — dotted module path, a single ':' separator, then a
-    // python identifier. Deliberately strict so a shell-injection-shaped entrypoint
-    // is rejected at the door.
+    // PYTHON entrypoint: module.path:function — dotted module path, a single ':'
+    // separator, then a python identifier. Deliberately strict so a
+    // shell-injection-shaped entrypoint is rejected at the door.
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
-    private static partial Regex EntrypointRegex();
+    private static partial Regex PythonEntrypointRegex();
+
+    // .NET entrypoint: Assembly::Namespace.Type — an assembly simple name, a '::'
+    // separator, then a dotted CLR type name. The assembly and each type segment are
+    // CLR-style identifiers (letters/digits/underscore, may start with '_'); the
+    // strictness keeps a shell-injection-shaped entrypoint out just like the python
+    // form. The harness resolves "MyAsm::My.Namespace.MyTool" to a built assembly +
+    // type implementing IGeoprocessingTool.
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$", RegexOptions.CultureInvariant)]
+    private static partial Regex DotnetEntrypointRegex();
 
     /// <summary>
     /// Returns <see langword="true"/> when the submission carries the custom-code
@@ -61,11 +70,14 @@ internal static partial class CustomCodeSubmitValidator
         declaredScope = [];
         rejection = null;
 
-        // runtime — MVP is python-only.
+        // runtime — 'python' (Phase 1) or 'dotnet' (Phase 2). The runtime selects the
+        // per-job image; the controls below and the routing fence are runtime-agnostic.
         var runtime = Get(parameters, CustomCodeJobContract.RuntimeParam);
-        if (!string.Equals(runtime, CustomCodeJobContract.PythonRuntime, StringComparison.Ordinal))
+        if (runtime is null || !CustomCodeJobContract.SupportedRuntimes.Contains(runtime))
         {
-            rejection = $"Custom-code runtime must be '{CustomCodeJobContract.PythonRuntime}' (got '{runtime ?? "<none>"}').";
+            rejection =
+                $"Custom-code runtime must be '{CustomCodeJobContract.PythonRuntime}' or " +
+                $"'{CustomCodeJobContract.DotnetRuntime}' (got '{runtime ?? "<none>"}').";
             return false;
         }
 
@@ -85,19 +97,23 @@ internal static partial class CustomCodeSubmitValidator
             return false;
         }
 
-        // entrypoint — module.path:function.
+        // entrypoint — shape depends on the runtime: python wants 'module.path:function';
+        // .NET wants 'Assembly::Namespace.Type' (assembly::CLR-type).
         var entrypoint = Get(parameters, CustomCodeJobContract.EntrypointParam);
-        if (string.IsNullOrEmpty(entrypoint) || !EntrypointRegex().IsMatch(entrypoint))
+        if (!TryValidateEntrypoint(entrypoint, runtime, out rejection))
         {
-            rejection = "Custom-code entrypoint must be of the form 'module.path:function'.";
             return false;
         }
 
-        // deps_manifest — a relative path (no absolute paths, no traversal).
+        // deps_manifest — a relative path (no absolute paths, no traversal). For
+        // python this is a requirements file; for .NET it is the user's .csproj (both
+        // are repo-relative and resolved by the runtime's harness).
         var depsManifest = Get(parameters, CustomCodeJobContract.DepsManifestParam);
         if (string.IsNullOrEmpty(depsManifest) || !IsSafeRelativePath(depsManifest))
         {
-            rejection = "Custom-code deps_manifest must be a relative path within the repository (e.g. 'requirements.txt').";
+            rejection = string.Equals(runtime, CustomCodeJobContract.DotnetRuntime, StringComparison.Ordinal)
+                ? "Custom-code deps_manifest must be a relative path within the repository (e.g. 'tool/MyTool.csproj')."
+                : "Custom-code deps_manifest must be a relative path within the repository (e.g. 'requirements.txt').";
             return false;
         }
 
@@ -105,6 +121,31 @@ internal static partial class CustomCodeSubmitValidator
         var rawScope = Get(parameters, CustomCodeJobContract.DeclaredScopeParam);
         if (!TryParseDeclaredScope(rawScope, out declaredScope, out rejection))
         {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateEntrypoint(string? entrypoint, string runtime, out string? rejection)
+    {
+        rejection = null;
+
+        if (string.Equals(runtime, CustomCodeJobContract.DotnetRuntime, StringComparison.Ordinal))
+        {
+            if (string.IsNullOrEmpty(entrypoint) || !DotnetEntrypointRegex().IsMatch(entrypoint))
+            {
+                rejection = "Custom-code entrypoint for the 'dotnet' runtime must be of the form 'Assembly::Namespace.Type'.";
+                return false;
+            }
+
+            return true;
+        }
+
+        // Default to the python form.
+        if (string.IsNullOrEmpty(entrypoint) || !PythonEntrypointRegex().IsMatch(entrypoint))
+        {
+            rejection = "Custom-code entrypoint for the 'python' runtime must be of the form 'module.path:function'.";
             return false;
         }
 

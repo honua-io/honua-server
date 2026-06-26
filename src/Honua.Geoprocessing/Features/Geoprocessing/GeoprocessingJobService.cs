@@ -401,9 +401,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (isCustomCode)
         {
             // Route a custom-code job to the workload that declares the custom-code
-            // runtime profile (image = the python custom-code image ref, the Batch
-            // tier/queue params, NO secretsmanager env refs — those are built into
-            // the job-def family by the iac). Falls back to null when not configured
+            // runtime profile (the Batch tier/queue params, NO secretsmanager env
+            // refs — those are built into the job-def family by the iac). The runtime
+            // selector (customcode.runtime = python|dotnet) flows through the spec
+            // parameters and the iac job-def family resolves it to the matching image;
+            // the routing fence itself is runtime-agnostic. Falls back to null when not configured
             // so submission fails cleanly rather than landing on the GP workload.
             return definitions.FirstOrDefault(d =>
                 d.Kind == ExecutionJobKind.Geoprocessing &&
