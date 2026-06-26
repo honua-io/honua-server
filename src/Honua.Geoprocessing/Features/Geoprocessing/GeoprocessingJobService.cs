@@ -15,6 +15,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Geoprocessing.CustomCode;
 using Honua.Infrastructure;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
@@ -42,6 +43,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IGeoprocessingResultPackageStore? _resultPackageStore;
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
+    private readonly IScopedJobTokenIssuer? _scopedJobTokenIssuer;
+    private readonly IOptionsMonitor<CustomCodeOptions>? _customCodeOptions;
+    private readonly CustomCodeSubmitCoordinator? _customCodeCoordinator;
 
     public GeoprocessingJobService(
         IUniversalProgressStore progressStore,
@@ -57,7 +61,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
-        IGeoprocessingResultPackageStore? resultPackageStore = null)
+        IGeoprocessingResultPackageStore? resultPackageStore = null,
+        IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
+        IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -73,6 +79,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
         _admissionEvaluator = admissionEvaluator;
         _resultPackageStore = resultPackageStore;
+        _scopedJobTokenIssuer = scopedJobTokenIssuer;
+        _customCodeOptions = customCodeOptions;
+        _customCodeCoordinator = scopedJobTokenIssuer is null
+            ? null
+            : new CustomCodeSubmitCoordinator(scopedJobTokenIssuer);
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -179,25 +190,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
-        EnsurePlanCatalogValid(plan);
-        EnsureApproved(principal, plan);
 
-        // Phase 0 auth spine (Deliverable 1): pin the submitter's owner snapshot
-        // when the job declares a custom-code resource scope. The declared scope is
-        // validated to be ⊆ what the submitter can reach; anything beyond is
-        // rejected here, so the durable snapshot can only ever attenuate (never
-        // widen) a later scoped-job callback token. Behavior is unchanged for
-        // ordinary jobs, which declare no scope and pin no snapshot.
-        var ownerScope = CustomCodeOwnerScopeCapture.TryCapture(
-            principal,
-            protocolMetadata,
-            globalDataEditorRoles: null,
-            out var scopeRejection);
-        if (scopeRejection is not null)
+        // A custom-code job is param-driven (the user code runs in the Batch
+        // container, not against the built-in process catalog), so it carries no
+        // catalog process to validate; the customcode.* parameters are validated by
+        // the custom-code submit gate below instead. Ordinary jobs still go through
+        // the catalog validator.
+        var isCustomCode = CustomCodeSubmitValidator.IsCustomCodeSubmission(protocolMetadata);
+        if (!isCustomCode)
         {
-            GeoprocessingServiceLog.DeclaredScopeRejected(_logger, scopeRejection);
-            throw new GeoprocessingValidationException(scopeRejection);
+            EnsurePlanCatalogValid(plan);
         }
+
+        EnsureApproved(principal, plan);
 
         var jobStore = RequireJobStore();
         var now = DateTimeOffset.UtcNow;
@@ -208,6 +213,34 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)
             : new Dictionary<string, string>();
+
+        // Phase 0/1 auth spine: pin the submitter's owner snapshot when the job
+        // declares a custom-code resource scope. The declared scope is validated to
+        // be ⊆ what the submitter can reach; anything beyond is rejected, so the
+        // durable snapshot can only ever attenuate (never widen) the scoped-job
+        // callback token. Behavior is unchanged for ordinary jobs.
+        CustomCodeOwnerScope? ownerScope;
+        string? mintedCustomCodeToken = null;
+        if (isCustomCode)
+        {
+            (ownerScope, mintedCustomCodeToken) = await ValidateMintAndInjectCustomCodeAsync(
+                jobId, principal, specParams, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // Legacy string-format declared-scope capture (no custom-code runtime
+            // marker) — preserved for the Phase-0 metadata path.
+            ownerScope = CustomCodeOwnerScopeCapture.TryCapture(
+                principal,
+                protocolMetadata,
+                globalDataEditorRoles: null,
+                out var scopeRejection);
+            if (scopeRejection is not null)
+            {
+                GeoprocessingServiceLog.DeclaredScopeRejected(_logger, scopeRejection);
+                throw new GeoprocessingValidationException(scopeRejection);
+            }
+        }
 
         var partitionKey = ResolvePartitionKey(specParams);
         var costWeight = (double)Math.Max(plan.Steps.Count, 1);
@@ -226,8 +259,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        var workload = await ResolveWorkloadAsync(cancellationToken).ConfigureAwait(false);
-        var requiredRuntimeProfile = ResolveRequiredRuntimeProfile(plan);
+        var workload = await ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
+        // A custom-code job forces the custom-code runtime profile so the claim
+        // fence routes it to the custom-code Batch workload (and away from the lean
+        // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
+        var requiredRuntimeProfile = isCustomCode
+            ? CustomCodeJobContract.RuntimeProfile
+            : ResolveRequiredRuntimeProfile(plan);
         var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile);
 
         var jobRecord = new ExecutionJobRecord
@@ -280,6 +318,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
+            // Revoke the scoped callback token so a credential is never left valid
+            // for a job whose submission rolled back (the token must not outlive the
+            // job — Phase-0 invariant #5).
+            await TryRevokeCustomCodeTokenAsync(mintedCustomCodeToken).ConfigureAwait(false);
+
             await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                 jobStore,
                 jobId,
@@ -296,7 +339,57 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return jobRecord;
     }
 
-    private async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Runs the custom-code submit gate: validates the <c>customcode.*</c>
+    /// parameters, clamps the declared scope to ⊆ the submitter, mints the scoped
+    /// job-bound token, and injects it (plus the API base URL and the server-set
+    /// output prefix) into <paramref name="specParams"/>. Throws
+    /// <see cref="GeoprocessingValidationException"/> on rejection so the adapter
+    /// maps it onto the same validation channel ordinary plan failures use.
+    /// </summary>
+    private async Task<(CustomCodeOwnerScope OwnerScope, string Token)> ValidateMintAndInjectCustomCodeAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        Dictionary<string, string> specParams,
+        CancellationToken cancellationToken)
+    {
+        if (_customCodeCoordinator is null || _customCodeOptions is null)
+        {
+            throw new GeoprocessingValidationException(
+                "Custom-code geoprocessing is not enabled on this server (no scoped-job token issuer is configured).");
+        }
+
+        try
+        {
+            var result = await _customCodeCoordinator.ValidateMintAndInjectAsync(
+                jobId, principal, specParams, _customCodeOptions.CurrentValue, cancellationToken).ConfigureAwait(false);
+            return (result.OwnerScope, result.Token);
+        }
+        catch (CustomCodeSubmitRejectedException ex)
+        {
+            GeoprocessingServiceLog.DeclaredScopeRejected(_logger, ex.Message);
+            throw new GeoprocessingValidationException(ex.Message);
+        }
+    }
+
+    private async Task TryRevokeCustomCodeTokenAsync(string? token)
+    {
+        if (string.IsNullOrEmpty(token) || _scopedJobTokenIssuer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _scopedJobTokenIssuer.RevokeAsync(token, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            GeoprocessingServiceLog.CustomCodeTokenRevokeFailed(_logger, ex);
+        }
+    }
+
+    private async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(bool isCustomCode, CancellationToken cancellationToken)
     {
         if (_workloadRegistry == null)
         {
@@ -304,7 +397,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var definitions = await _workloadRegistry.ListAsync(cancellationToken).ConfigureAwait(false);
-        return definitions.FirstOrDefault(d => d.Kind == ExecutionJobKind.Geoprocessing);
+
+        if (isCustomCode)
+        {
+            // Route a custom-code job to the workload that declares the custom-code
+            // runtime profile (image = the python custom-code image ref, the Batch
+            // tier/queue params, NO secretsmanager env refs — those are built into
+            // the job-def family by the iac). Falls back to null when not configured
+            // so submission fails cleanly rather than landing on the GP workload.
+            return definitions.FirstOrDefault(d =>
+                d.Kind == ExecutionJobKind.Geoprocessing &&
+                string.Equals(d.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal));
+        }
+
+        // An ordinary geoprocessing job must NOT pick up the custom-code workload.
+        return definitions.FirstOrDefault(d =>
+            d.Kind == ExecutionJobKind.Geoprocessing &&
+            !string.Equals(d.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal));
     }
 
     /// <summary>
