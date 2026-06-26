@@ -226,6 +226,234 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("dependency cycle", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Validate_AcceptsConditionalBranch_WhenSourceInDependsOn()
+    {
+        var definition = BuildDefinition(("a", Empty), ("b", DependsOnA));
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0],
+                definition.Steps[1] with
+                {
+                    Condition = new WorkflowStepCondition("a", WorkflowStepConditionKind.UpstreamSucceeded)
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Empty(failures);
+    }
+
+    [Fact]
+    public void Validate_RejectsCondition_WhenSourceNotInDependsOn()
+    {
+        var definition = BuildDefinition(("a", Empty), ("b", Empty));
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0],
+                definition.Steps[1] with
+                {
+                    Condition = new WorkflowStepCondition("a", WorkflowStepConditionKind.UpstreamSucceeded)
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("condition references source step 'a' which is not declared in DependsOn", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RejectsCondition_WithUnknownSourceStep()
+    {
+        var definition = BuildDefinition(("a", Empty));
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0] with
+                {
+                    Condition = new WorkflowStepCondition("ghost", WorkflowStepConditionKind.UpstreamSucceeded)
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("condition references unknown source step 'ghost'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_AcceptsWellFormedForEach()
+    {
+        var definition = BuildDefinition(("a", Empty));
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0] with
+                {
+                    ForEach = new WorkflowForEachSpec(["x", "y"], MaxIterations: 5)
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Empty(failures);
+    }
+
+    [Fact]
+    public void Validate_RejectsForEach_WithNoItems()
+    {
+        var definition = BuildDefinition(("a", Empty));
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0] with
+                {
+                    ForEach = new WorkflowForEachSpec([])
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("ForEach must declare at least one item", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RejectsForEach_ExceedingMaxIterations()
+    {
+        var definition = BuildDefinition(("a", Empty));
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0] with
+                {
+                    ForEach = new WorkflowForEachSpec(["x", "y", "z"], MaxIterations: 2)
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("MaxIterations is 2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RejectsStepId_ContainingIterationSeparator()
+    {
+        var definition = BuildDefinition(("a::0", Empty));
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("reserved iteration separator", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RejectsBinding_FromForEachStep()
+    {
+        var definition = BuildDefinition(("a", Empty), ("b", DependsOnA));
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0] with { ForEach = new WorkflowForEachSpec(["x", "y"]) },
+                definition.Steps[1] with
+                {
+                    InputBindings =
+                    [
+                        new StepInputBinding
+                        {
+                            SourceStepId = "a",
+                            SourceArtifactSelector = "artifact:0",
+                            TargetInputKey = "in"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("may not read from ForEach step 'a'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Expand_UnrollsForEachIntoPerItemSteps_WithSubstitution()
+    {
+        var definition = BuildDefinition(("a", Empty));
+        var planStep = new AnalysisPlanStep
+        {
+            StepId = "ap",
+            Kind = AnalysisPlanStepKind.Geoprocess,
+            ProcessId = "noop",
+            Inputs = new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "${item}" }
+        };
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0] with
+                {
+                    Plan = new AnalysisPlan { PlanId = "p", IntentId = "i", Steps = [planStep] },
+                    ForEach = new WorkflowForEachSpec(["east", "west"])
+                }
+            ]
+        };
+
+        var expanded = WorkflowDefinitionExpander.Expand(definition);
+
+        Assert.Equal(new[] { "a::0", "a::1" }, expanded.Steps.Select(s => s.StepId).ToArray());
+        Assert.All(expanded.Steps, s => Assert.Null(s.ForEach));
+        Assert.Equal("east", expanded.Steps[0].Plan.Steps[0].Inputs["region"]);
+        Assert.Equal("west", expanded.Steps[1].Plan.Steps[0].Inputs["region"]);
+    }
+
+    [Fact]
+    public void Expand_FansInDependentsOnForEachStep()
+    {
+        var definition = BuildDefinition(("a", Empty), ("b", DependsOnA));
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0] with { ForEach = new WorkflowForEachSpec(["x", "y", "z"]) },
+                definition.Steps[1]
+            ]
+        };
+
+        var expanded = WorkflowDefinitionExpander.Expand(definition);
+
+        var b = expanded.Steps.Single(s => s.StepId == "b");
+        Assert.Equal(new[] { "a::0", "a::1", "a::2" }, b.DependsOn.ToArray());
+    }
+
+    [Fact]
+    public void Expand_IsDeterministic_AcrossRepeatedCalls()
+    {
+        var definition = BuildDefinition(("a", Empty));
+        definition = definition with
+        {
+            Steps = [definition.Steps[0] with { ForEach = new WorkflowForEachSpec(["x", "y"]) }]
+        };
+
+        var first = WorkflowDefinitionExpander.Expand(definition);
+        var second = WorkflowDefinitionExpander.Expand(definition);
+
+        Assert.Equal(
+            first.Steps.Select(s => s.StepId).ToArray(),
+            second.Steps.Select(s => s.StepId).ToArray());
+    }
+
     private static WorkflowDefinition BuildDefinition(params (string StepId, string[] DependsOn)[] steps)
     {
         var now = DateTimeOffset.UtcNow;

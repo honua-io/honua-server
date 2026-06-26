@@ -65,9 +65,13 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             throw new WorkflowDefinitionValidationException(failures);
         }
 
+        // Unroll ForEach steps deterministically so the run's durable step states match
+        // the flat DAG the reconciler will rebuild from the stored definition each tick.
+        var expanded = WorkflowDefinitionExpander.Expand(definition);
+
         var now = _clock.GetUtcNow();
         var runId = $"wf-{Guid.NewGuid():N}";
-        var stepStates = definition.Steps
+        var stepStates = expanded.Steps
             .Select(step => new WorkflowStepState
             {
                 StepId = step.StepId,
@@ -234,7 +238,11 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             activity?.SetTag(OrchestrationTelemetry.Tags.WorkflowId, run.WorkflowId);
             activity?.SetTag("honua.orchestration.step_count", run.StepStates.Count);
 
-            var definition = await _definitionStore.GetAsync(run.WorkflowId, reconciliationCancellation.Token).ConfigureAwait(false);
+            var rawDefinition = await _definitionStore.GetAsync(run.WorkflowId, reconciliationCancellation.Token).ConfigureAwait(false);
+            // Re-apply the deterministic ForEach unroll so the reconciler sees the same
+            // flat step-set the run's durable states were created from. The transform is
+            // pure, so both sides agree and the step-set consistency guard holds.
+            var definition = rawDefinition is null ? null : WorkflowDefinitionExpander.Expand(rawDefinition);
             if (definition is null)
             {
                 var now = _clock.GetUtcNow();
@@ -477,6 +485,24 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
 
                         if (state.NextAttemptAt is { } nextAttempt && nextAttempt > now)
                         {
+                            continue;
+                        }
+
+                        // Conditional branch: once dependencies are terminal, evaluate the
+                        // step's predicate over prior step outputs. A not-taken branch is
+                        // skipped (and reported as such); dependents that consume its output
+                        // cascade-skip through the existing skip machinery.
+                        if (definitionStep.Condition is { } condition &&
+                            !WorkflowStepConditionEvaluator.Evaluate(condition, states))
+                        {
+                            states[state.StepId] = state with
+                            {
+                                Status = WorkflowStepStatus.Skipped,
+                                CompletedAt = now,
+                                ErrorMessage = $"Branch condition over '{condition.SourceStepId}' was not met."
+                            };
+                            OrchestrationLog.WorkflowStepSkipped(_logger, run.RunId, state.StepId, "branch condition not met");
+                            changed = true;
                             continue;
                         }
 
