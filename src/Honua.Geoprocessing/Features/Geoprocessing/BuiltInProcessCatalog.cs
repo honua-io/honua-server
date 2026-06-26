@@ -977,6 +977,117 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
+        // GeoETL remote source connectors (5)
+        // First-class DAG sources that stream features from a remote source straight
+        // into the workflow, REUSING the one-shot Honua.Import readers' pagination /
+        // streaming (ArcGisRestClient, the OGC/WFS GeoJSON paging path, the catalog
+        // query pipeline, and the external-PostGIS secure-connection handling) so a
+        // pipeline no longer has to bounce through a one-shot import to read from a
+        // Honua layer, Esri FeatureServer, OGC API Features, WFS, or external PostGIS.
+        // Each emits the standard FeatureCollection artifact downstream transforms
+        // consume. An optional since/watermark is passed through for incremental
+        // extract (persistence owned by the incremental-extract orchestration).
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "source.honua-layer",
+            Title = "Honua Layer Source",
+            Description = "Streams features from a Honua catalog layer through the canonical query pipeline (the layer's permanent filters, paging, CRS handling, and field masking are inherited) into the standard FeatureCollection artifact. Supply a where clause and/or a bbox to narrow the extract.",
+            Category = "source",
+            Parameters =
+            [
+                Param("layerId", "Layer Id", "Honua catalog layer identifier to read from.", ProcessParameterValueType.WholeNumber, required: true),
+                Param("where", "Where", "Optional GeoServices-style SQL where clause filtering the features.", ProcessParameterValueType.Text),
+                Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' envelope filter in the output CRS.", ProcessParameterValueType.Text),
+                Param("outFields", "Output Fields", "Optional comma-separated output field allow-list. Defaults to all fields.", ProcessParameterValueType.Text),
+                Param("outSrid", "Output SRID", "Optional output spatial reference identifier for server-side reprojection.", ProcessParameterValueType.Srid),
+                Param("since", "Since Watermark", "Optional incremental-extract watermark (ISO-8601 instant). Pairs with watermarkField.", ProcessParameterValueType.Text),
+                Param("watermarkField", "Watermark Field", "Attribute the since watermark filters on (e.g. updated_at).", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.esri-featureserver",
+            Title = "Esri FeatureServer Source",
+            Description = "Streams features from an ArcGIS GeoServices FeatureServer/MapServer layer by reusing the migration ArcGIS REST reader (resultOffset/resultRecordCount paging terminated by exceededTransferLimit) and its Esri-JSON to GeoJSON geometry conversion. Reuses the import path's ArcGIS portal-token / HTTP Basic credential handling.",
+            Category = "source",
+            Parameters =
+            [
+                Param("serviceUrl", "Service URL", "ArcGIS FeatureServer/MapServer service root URL.", ProcessParameterValueType.Text, required: true),
+                Param("esriLayerId", "Layer Index", "Layer index within the FeatureServer. Defaults to 0.", ProcessParameterValueType.WholeNumber),
+                Param("where", "Where", "Optional GeoServices SQL where clause. Defaults to 1=1.", ProcessParameterValueType.Text),
+                Param("outFields", "Output Fields", "Optional comma-separated output field allow-list. Defaults to all (*).", ProcessParameterValueType.Text),
+                Param("outSrid", "Output SRID", "Optional output spatial reference (outSR).", ProcessParameterValueType.Srid),
+                Param("pageSize", "Page Size", "Records per page (resultRecordCount). Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("token", "ArcGIS Token", "Inline ArcGIS token for immediate use. Prefer tokenSecretReference.", ProcessParameterValueType.Text),
+                Param("tokenSecretReference", "Token Secret Reference", "Secret reference that resolves to an ArcGIS token at execution time.", ProcessParameterValueType.Text),
+                Param("username", "Username", "HTTP Basic username for secured ArcGIS endpoints.", ProcessParameterValueType.Text),
+                Param("passwordSecretReference", "Password Secret Reference", "Secret reference that resolves to the HTTP Basic password.", ProcessParameterValueType.Text),
+                Param("since", "Since Watermark", "Optional incremental-extract watermark (ISO-8601 instant). Pairs with watermarkField.", ProcessParameterValueType.Text),
+                Param("watermarkField", "Watermark Field", "Edit-date field the since watermark filters on (e.g. last_edited_date).", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.ogc-features",
+            Title = "OGC API Features Source",
+            Description = "Streams features from an OGC API Features collection using link-based pagination (an items request with limit/bbox/filter followed by the rel=next link chain), reusing the migration HTTP/paging path. The where clause is interpreted as a CQL2-text filter.",
+            Category = "source",
+            Parameters =
+            [
+                Param("serviceUrl", "Service URL", "OGC API Features landing/base URL (the part before /collections).", ProcessParameterValueType.Text, required: true),
+                Param("collectionId", "Collection Id", "OGC API Features collection identifier.", ProcessParameterValueType.Text, required: true),
+                Param("where", "CQL2 Filter", "Optional CQL2-text filter expression.", ProcessParameterValueType.Text),
+                Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' bbox filter.", ProcessParameterValueType.Text),
+                Param("pageSize", "Page Size", "Features per page (limit). Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("username", "Username", "Optional HTTP Basic username.", ProcessParameterValueType.Text),
+                Param("passwordSecretReference", "Password Secret Reference", "Secret reference that resolves to the HTTP Basic password.", ProcessParameterValueType.Text),
+                Param("since", "Since Watermark", "Optional incremental-extract watermark (ISO-8601 instant), mapped to a datetime open interval.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.wfs",
+            Title = "WFS Source",
+            Description = "Streams features from a WFS GetFeature endpoint using startIndex/count paging with GeoJSON output, terminating on an empty page or once advanced past numberMatched (with a repeated-first-feature guard for servers that ignore startIndex). Reuses the migration HTTP/paging path.",
+            Category = "source",
+            Parameters =
+            [
+                Param("serviceUrl", "Service URL", "WFS service endpoint URL.", ProcessParameterValueType.Text, required: true),
+                Param("typeName", "Type Name", "WFS feature type name (typeNames).", ProcessParameterValueType.Text, required: true),
+                Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' bbox filter.", ProcessParameterValueType.Text),
+                Param("pageSize", "Page Size", "Features per page (count). Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("username", "Username", "Optional HTTP Basic username.", ProcessParameterValueType.Text),
+                Param("passwordSecretReference", "Password Secret Reference", "Secret reference that resolves to the HTTP Basic password.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.postgis",
+            Title = "External PostGIS Source",
+            Description = "Streams features from a customer-owned PostGIS table/view identified by a registered secure connection — the read-side mirror of sink.external-postgis. Geometry is projected with ST_AsGeoJSON server-side and rows stream through a forward-only reader. Uses the same secure-connection secret handling as the sink; raw connection strings are never accepted.",
+            Category = "source",
+            Parameters =
+            [
+                Param("connectionName", "Secure Connection Name", "Registered secure connection name for the external PostGIS database. Either connectionName or connectionId is required.", ProcessParameterValueType.Text),
+                Param("connectionId", "Secure Connection Id", "Registered secure connection id for the external PostGIS database. Either connectionName or connectionId is required.", ProcessParameterValueType.Text),
+                Param("table", "Table", "Source table or view name. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, required: true),
+                Param("schema", "Schema", "Source schema. Defaults to public. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "public"),
+                Param("geometryColumn", "Geometry Column", "Source geometry column. Defaults to geom. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "geom"),
+                Param("where", "Where", "Optional SQL predicate appended after WHERE.", ProcessParameterValueType.Text),
+                Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' envelope filter (&& ST_MakeEnvelope).", ProcessParameterValueType.Text),
+                Param("outSrid", "Bbox SRID", "SRID of the bbox envelope. Defaults to 4326.", ProcessParameterValueType.Srid),
+                Param("since", "Since Watermark", "Optional incremental-extract watermark. Pairs with watermarkField.", ProcessParameterValueType.Text),
+                Param("watermarkField", "Watermark Field", "Column the since watermark filters on (e.g. updated_at).", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
         // GeoETL sink operations (3)
         // Terminate a workflow by writing the input FeatureCollection to an external
         // target and emit a small result-descriptor artifact (the target location +

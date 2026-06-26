@@ -390,6 +390,12 @@ internal static partial class ProcessPlanValidator
             case "sink.external-postgis":
                 ValidateExternalPostgisSinkSemantics(step, violations);
                 break;
+            case "source.postgis":
+                // The external-PostGIS source reuses the same secure-connection contract
+                // as the sink: a registered connectionName XOR connectionId, never an
+                // inline connection string.
+                ValidateExternalPostgisSinkSemantics(step, violations);
+                break;
         }
     }
 
