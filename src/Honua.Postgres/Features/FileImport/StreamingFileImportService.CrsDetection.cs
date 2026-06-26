@@ -34,6 +34,7 @@ internal sealed partial class StreamingFileImportService
                 SupportedFileFormat.Kml => 4326,
                 SupportedFileFormat.Gpx => 4326,
                 SupportedFileFormat.Csv => 4326,
+                SupportedFileFormat.Gml => await GmlFormatReader.TryDetectSridAsync(stream, cancellationToken),
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
                 SupportedFileFormat.FlatGeobuf => await DetectFlatGeobufCrsAsync(stream),
@@ -104,6 +105,7 @@ internal sealed partial class StreamingFileImportService
             SupportedFileFormat.Kml => 4326,
             SupportedFileFormat.Gpx => 4326,
             SupportedFileFormat.Csv => 4326,
+            SupportedFileFormat.Gml => await GmlFormatReader.TryDetectSridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
             // Defensive: currently unreachable — FlatGeobuf non-seekable paths spill to
             // a seekable temp file before reaching here (see the dedicated FlatGeobuf branch above).
