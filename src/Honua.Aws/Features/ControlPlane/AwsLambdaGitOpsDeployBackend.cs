@@ -378,7 +378,7 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
                 Status = operation.Status,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = operation.ObservedState,
-                Message = "Lambda alias rollback failed due to a transient AWS error. The reconciler will retry."
+                Message = "Lambda alias rollback failed due to a transient AWS error. The reconciler will retry on a bounded budget before escalating for manual intervention."
             };
         }
     }
