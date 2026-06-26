@@ -113,6 +113,20 @@ internal sealed class CustomCodeSubmitCoordinator(IScopedJobTokenIssuer tokenIss
         specParams[CustomCodeJobContract.BaseUrlEnvParam] = options.ApiBaseUrl;
         specParams[CustomCodeJobContract.JobTokenEnvParam] = issuance.Token;
 
+        // Project the customcode.* parameters to the env.CUSTOMCODE_* pass-through the
+        // user-code harness reads (docker/worker-customcode-python/harness/jobspec.py).
+        // AwsBatchComputeBackend.BuildEnvironmentOverrides strips the env. prefix and
+        // surfaces each as the matching CUSTOMCODE_* container env var. This is the
+        // SERVER half of the cross-piece param->env contract (#2191); only project
+        // keys that are actually present so optional parameters stay unset.
+        foreach (var (paramKey, envName) in CustomCodeJobContract.ParameterToEnvName)
+        {
+            if (specParams.TryGetValue(paramKey, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                specParams[CustomCodeJobContract.ToEnvParamKey(envName)] = value;
+            }
+        }
+
         return new CustomCodeSubmitResult(ownerScope, issuance.Token);
     }
 

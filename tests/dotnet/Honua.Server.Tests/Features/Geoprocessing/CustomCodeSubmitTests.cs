@@ -267,6 +267,92 @@ public sealed class CustomCodeSubmitTests
     }
 
     // -----------------------------------------------------------------------
+    // param -> env contract (#2191): the customcode.* spec params must reach the
+    // harness as env.CUSTOMCODE_* so AwsBatchComputeBackend surfaces them as the
+    // CUSTOMCODE_* container env the harness reads. Pins the key map end-to-end.
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_ProjectsParamsToCustomCodeEnvForHarness()
+    {
+        var sut = CreateService();
+        var metadata = CustomCodeMetadata(
+            declaredScope: """[{"serviceId":"parcels","access":"read"}]""");
+
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+
+        // Every present customcode.* parameter is projected to env.CUSTOMCODE_* with
+        // the same value (output_prefix is server-set, so it tracks the job id).
+        job.Spec.Parameters[CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.RuntimeEnvName)]
+            .Should().Be("python");
+        job.Spec.Parameters[CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.RepoUrlEnvName)]
+            .Should().Be(RepoUrl);
+        job.Spec.Parameters[CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.GitRefEnvName)]
+            .Should().Be(ValidSha);
+        job.Spec.Parameters[CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.EntrypointEnvName)]
+            .Should().Be("pkg.module:run");
+        job.Spec.Parameters[CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.DepsManifestEnvName)]
+            .Should().Be("requirements.txt");
+        job.Spec.Parameters[CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.ParamsJsonEnvName)]
+            .Should().Be("""{"k":"v"}""");
+        job.Spec.Parameters[CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.OutputPrefixEnvName)]
+            .Should().Be(job.Spec.Parameters[CustomCodeJobContract.OutputPrefixParam])
+            .And.Contain(job.OperationId);
+        job.Spec.Parameters[CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.DeclaredScopeEnvName)]
+            .Should().Be("""[{"serviceId":"parcels","access":"read"}]""");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_OmitsCustomCodeEnvForAbsentOptionalParams()
+    {
+        var sut = CreateService();
+        var metadata = CustomCodeMetadata();
+        // Drop the two optional params; they must not appear as env.CUSTOMCODE_*.
+        metadata.Remove(CustomCodeJobContract.DepsManifestParam);
+        metadata.Remove(CustomCodeJobContract.ParamsJsonParam);
+
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+
+        job.Spec.Parameters.Should().NotContainKey(
+            CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.DepsManifestEnvName));
+        job.Spec.Parameters.Should().NotContainKey(
+            CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.ParamsJsonEnvName));
+        // Required params still project.
+        job.Spec.Parameters.Should().ContainKey(
+            CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.RepoUrlEnvName));
+    }
+
+    [UnitTest]
+    [Operation(Operations.ContractTesting)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void CustomCodeJobContract_ParameterToEnvName_MatchesHarnessKeys()
+    {
+        // The harness (docker/worker-customcode-python/harness/jobspec.py) reads these
+        // exact CUSTOMCODE_* names. Pinning the map here catches parallel-build drift
+        // between the server and harness halves of the contract (#2191).
+        CustomCodeJobContract.ParameterToEnvName.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["customcode.runtime"] = "CUSTOMCODE_RUNTIME",
+            ["customcode.repo_url"] = "CUSTOMCODE_REPO_URL",
+            ["customcode.git_ref"] = "CUSTOMCODE_GIT_REF",
+            ["customcode.entrypoint"] = "CUSTOMCODE_ENTRYPOINT",
+            ["customcode.deps_manifest"] = "CUSTOMCODE_DEPS_MANIFEST",
+            ["customcode.params_json"] = "CUSTOMCODE_PARAMS_JSON",
+            ["customcode.output_prefix"] = "CUSTOMCODE_OUTPUT_PREFIX",
+            ["customcode.declared_scope"] = "CUSTOMCODE_DECLARED_SCOPE",
+        });
+
+        // Each projection produces an env. spec key the Batch backend strips to the
+        // bare CUSTOMCODE_* name.
+        CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.RepoUrlEnvName)
+            .Should().Be("env.CUSTOMCODE_REPO_URL");
+    }
+
+    // -----------------------------------------------------------------------
     // helpers
     // -----------------------------------------------------------------------
 
