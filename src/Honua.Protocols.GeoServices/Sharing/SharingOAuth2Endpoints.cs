@@ -73,6 +73,17 @@ internal static class SharingOAuth2Endpoints
             .Produces<OAuth2ErrorResponse>(StatusCodes.Status400BadRequest, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 
+        endpoints.MapPost(PortalOAuthRoutes.RevokePath, HandleRevokeAsync)
+            .WithDisplayName("ArcGIS Portal OAuth2 Token Revocation")
+            .WithName("SharingRestOAuth2Revoke")
+            .WithSummary("RFC 7009 per-token revocation for opaque and JWT access tokens and refresh tokens")
+            .WithDescription("Immediately invalidates the presented access or refresh token so it fails every subsequent authorization check. Per RFC 7009 §2.2 a revocation request always returns 200, even for an unknown or already-revoked token. The presented token value is the authorization to revoke it (#2155).")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound);
+
         endpoints.MapPost(PortalOAuthRoutes.IntrospectPath, HandleIntrospectAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Token Introspection")
             .WithName("SharingRestOAuth2Introspect")
@@ -86,6 +97,46 @@ internal static class SharingOAuth2Endpoints
             .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleRevokeAsync(
+        HttpContext context,
+        [FromServices] PortalOAuthRevocationService revocationService,
+        [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions,
+        [FromServices] ILogger<SharingRestLog> logger)
+    {
+        // Revocation shares the OAuth2 surface gate: when the portal-token surface is
+        // disabled the endpoint 404s so it is never a silent discovery surface.
+        if (!tokenOptions.Value.Enabled)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Portal OAuth2 is disabled.");
+        }
+
+        string? token;
+        string? tokenTypeHint;
+        if (HttpMethods.IsPost(context.Request.Method) && context.Request.HasFormContentType)
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+            token = ReadFirst(form["token"]);
+            tokenTypeHint = ReadFirst(form["token_type_hint"]);
+        }
+        else
+        {
+            token = ReadFirst(context.Request.Query["token"]);
+            tokenTypeHint = ReadFirst(context.Request.Query["token_type_hint"]);
+        }
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return OAuth2Error("invalid_request", "token is required.");
+        }
+
+        await revocationService.RevokeAsync(token, tokenTypeHint, context.RequestAborted).ConfigureAwait(false);
+
+        // RFC 7009 §2.2: the authorization server responds with HTTP 200 for a
+        // successful revocation as well as for an unknown/already-revoked token, so a
+        // caller can never probe token validity through this endpoint.
+        return Results.Ok();
     }
 
     private static async Task<IResult> HandleIntrospectAsync(

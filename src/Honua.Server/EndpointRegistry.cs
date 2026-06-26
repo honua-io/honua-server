@@ -701,6 +701,9 @@ public static class EndpointRegistry
         // OAuth2 RFC 7662 token introspection (#1890).
         new("POST", "/sharing/rest/oauth2/introspect"),
 
+        // OAuth2 RFC 7009 per-token revocation (#2155).
+        new("POST", "/sharing/rest/oauth2/revoke"),
+
         // ArcGIS Portal community group + item sharing surface (#1868).
         new("POST", "/sharing/rest/community/createGroup"),
         new("GET", "/sharing/rest/community/groups/{groupId}"),

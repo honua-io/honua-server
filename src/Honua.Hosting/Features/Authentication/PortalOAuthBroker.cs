@@ -434,4 +434,7 @@ internal static class PortalOAuthRoutes
 
     /// <summary>The RFC 7662 token introspection endpoint (ADR-0054, #1890).</summary>
     public const string IntrospectPath = "/sharing/rest/oauth2/introspect";
+
+    /// <summary>The RFC 7009 per-token revocation endpoint (#2155).</summary>
+    public const string RevokePath = "/sharing/rest/oauth2/revoke";
 }

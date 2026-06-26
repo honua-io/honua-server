@@ -78,11 +78,47 @@ internal static class SamlTestAssertions
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(tampered));
     }
 
+    /// <summary>
+    /// Produces a signed SAML Response whose <c>AttributeStatement</c> carries the supplied
+    /// attribute <c>Name</c>/values verbatim. This drives the per-IdP conformance matrix
+    /// (#2154): each IdP (Okta, Entra ID, Auth0, PingFederate) emits role/email/display-name
+    /// under different attribute <c>Name</c> URIs, and Honua maps them through the configured
+    /// <c>RoleAttribute</c>/<c>EmailAttribute</c>/<c>DisplayNameAttribute</c>. The signature is
+    /// produced by the in-box <see cref="SignedXml"/> oracle exactly as for the default builder.
+    /// </summary>
+    public static string CreateSignedResponseWithAttributes(
+        X509Certificate2 certificate,
+        string nameId,
+        IReadOnlyList<(string Name, IReadOnlyList<string> Values)> attributes,
+        DateTimeOffset? notOnOrAfter = null,
+        DateTimeOffset? notBefore = null)
+    {
+        var xml = BuildResponseXml(nameId, attributes, notBefore, notOnOrAfter);
+        var signed = SignAssertion(xml, certificate);
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
+    }
+
     private static string BuildResponseXml(
         string nameId,
         string email,
         string displayName,
         IReadOnlyList<string> roles,
+        DateTimeOffset? notBefore,
+        DateTimeOffset? notOnOrAfter)
+        => BuildResponseXml(
+            nameId,
+            new (string, IReadOnlyList<string>)[]
+            {
+                ("email", new[] { email }),
+                ("displayName", new[] { displayName }),
+                ("Role", roles),
+            },
+            notBefore,
+            notOnOrAfter);
+
+    private static string BuildResponseXml(
+        string nameId,
+        IReadOnlyList<(string Name, IReadOnlyList<string> Values)> attributes,
         DateTimeOffset? notBefore,
         DateTimeOffset? notOnOrAfter)
     {
@@ -94,10 +130,16 @@ internal static class SamlTestAssertions
         var noa = (notOnOrAfter ?? now.AddMinutes(5)).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
         var issueInstant = now.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 
-        var rolesXml = new StringBuilder();
-        foreach (var role in roles)
+        var attributesXml = new StringBuilder();
+        foreach (var (name, values) in attributes)
         {
-            rolesXml.Append(CultureInfo.InvariantCulture, $"<AttributeValue>{role}</AttributeValue>");
+            attributesXml.Append(CultureInfo.InvariantCulture, $"<Attribute Name=\"{name}\">");
+            foreach (var value in values)
+            {
+                attributesXml.Append(CultureInfo.InvariantCulture, $"<AttributeValue>{value}</AttributeValue>");
+            }
+
+            attributesXml.Append("</Attribute>");
         }
 
         return $"""
@@ -119,9 +161,7 @@ internal static class SamlTestAssertions
                   <AuthnContext><AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:Password</AuthnContextClassRef></AuthnContext>
                 </AuthnStatement>
                 <AttributeStatement>
-                  <Attribute Name="email"><AttributeValue>{email}</AttributeValue></Attribute>
-                  <Attribute Name="displayName"><AttributeValue>{displayName}</AttributeValue></Attribute>
-                  <Attribute Name="Role">{rolesXml}</Attribute>
+                  {attributesXml}
                 </AttributeStatement>
               </Assertion>
             </samlp:Response>

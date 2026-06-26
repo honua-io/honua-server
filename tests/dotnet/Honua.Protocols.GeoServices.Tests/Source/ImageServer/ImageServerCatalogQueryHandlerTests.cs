@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -45,9 +47,17 @@ public class ImageServerCatalogQueryHandlerTests
             _rasterStore,
             new ImageServerCatalogFilterEvaluator(),
             transformService);
+        // No field-mask policies apply in these tests, so the source returns an empty
+        // set and attribute output is byte-for-byte the pre-#2159 behavior.
+        var fieldMaskSource = Substitute.For<IFieldMaskSource>();
+        fieldMaskSource
+            .ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<string>.Empty);
+
         return new ImageServerCatalogQueryHandler(
             _graphProvider,
             catalogReader,
+            fieldMaskSource,
             NullLogger<ImageServerCatalogQueryHandler>.Instance);
     }
 
@@ -133,6 +143,77 @@ public class ImageServerCatalogQueryHandlerTests
         feature.Attributes["CreatedAt"].Should().Be(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
         feature.Geometry.Should().NotBeNull();
         feature.Geometry!.Rings.Should().HaveCount(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_WithFieldMask_DropsMaskedAttributesAndFields()
+    {
+        // RBAC field-level masking on the ImageServer read path (#2159): masked
+        // attributes must be absent from both the feature attributes AND the field
+        // schema, even though no outFields restriction was requested (fail-secure,
+        // matching the FeatureServer masking semantics from #2108).
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+        var handler = BuildHandlerWithMaskedFields("AcquisitionDate", "PixelType");
+
+        var context = CreateImageServerContext();
+        var result = await handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+
+        var feature = jsonResult!.Value!.Features[0];
+        feature.Attributes.Should().NotContainKey("AcquisitionDate");
+        feature.Attributes.Should().NotContainKey("PixelType");
+        feature.Attributes.Should().ContainKey("OBJECTID");
+        feature.Attributes.Should().ContainKey("Name");
+
+        var fieldNames = jsonResult.Value.Fields.Select(f => f.Name).ToList();
+        fieldNames.Should().NotContain("AcquisitionDate");
+        fieldNames.Should().NotContain("PixelType");
+        fieldNames.Should().Contain("OBJECTID");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_WithFieldMask_DropsMaskedFieldEvenWhenExplicitlyRequested()
+    {
+        // Fail-secure: a masked field requested via outFields is still dropped (#2159).
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+        var handler = BuildHandlerWithMaskedFields("PixelType");
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outFields"] = "Name,PixelType",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Features[0].Attributes.Should().NotContainKey("PixelType");
+        jsonResult.Value.Features[0].Attributes.Should().ContainKey("Name");
+        jsonResult.Value.Fields.Select(f => f.Name).Should().NotContain("PixelType");
+    }
+
+    private ImageServerCatalogQueryHandler BuildHandlerWithMaskedFields(params string[] maskedFields)
+    {
+        var catalogReader = new ImageServerCatalogReader(
+            _rasterStore,
+            new ImageServerCatalogFilterEvaluator(),
+            transformService: null);
+
+        var fieldMaskSource = Substitute.For<IFieldMaskSource>();
+        fieldMaskSource
+            .ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(maskedFields.ToImmutableArray());
+
+        return new ImageServerCatalogQueryHandler(
+            _graphProvider,
+            catalogReader,
+            fieldMaskSource,
+            NullLogger<ImageServerCatalogQueryHandler>.Instance);
     }
 
     [UnitTest]
