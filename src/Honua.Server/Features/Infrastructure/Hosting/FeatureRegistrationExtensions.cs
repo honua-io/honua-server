@@ -145,7 +145,7 @@ internal static class FeatureRegistrationExtensions
         // wired — i.e. under the same DevGrant/license Redis entitlement that enables GP
         // (honua-server#1827/#1787). On a Redis-less profile this is a no-op, so the lean
         // API-only and Community editions never start an unconditional worker.
-        services.AddJobWorker();
+        services.AddJobWorker(configuration);
         services.AddAnalysisContent(configuration);
         services.AddTemporalHistory();
         services.AddAnalysisReporting(configuration);
