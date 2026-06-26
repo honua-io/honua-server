@@ -344,6 +344,181 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
+
+        // -----------------------------------------------------------------------
+        // Layer-aware overlay operations (#2206, #2139)
+        // Managed (NetTopologySuite) overlay ops operating over TWO inline
+        // FeatureCollections addressed by data URI — the layer-aware counterparts
+        // of the single-WKB geometry.* primitives, so the high-frequency Esri
+        // overlay toolset (Clip/Intersect/Union/Erase) works end-to-end and the
+        // arcpy shim can promote those ops. Mirrors the managed analytics
+        // executors (spatial-join/buffer-aggregate): FeatureCollection in/out, no
+        // Postgres dependency, pure managed geometry.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "overlay.clip",
+            Title = "Clip (Layer-Aware)",
+            Description = "Truncates every input feature's geometry to the union of the clip layer, preserving input attributes; features outside the clip region are dropped. Layer-aware counterpart of geometry.clip and the Esri Clip_analysis parity op. Also serves as the layer-level Extract (clip-by-selection) tool. Both layers are supplied inline as data:application/geo+json;base64 data URIs.",
+            Category = "overlay",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("clip", "Clip Features", "Clip FeatureCollection as a data:application/geo+json;base64 data URI. Its union defines the clip region.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "overlay.intersect",
+            Title = "Intersect (Layer-Aware)",
+            Description = "Emits the pairwise geometric intersection of every input feature with every overlapping overlay feature, carrying input attributes and merging overlay attributes (colliding overlay keys prefixed OVERLAY_). Layer-aware counterpart of geometry.intersect and the Esri Intersect_analysis parity op. Both layers are supplied inline as data:application/geo+json;base64 data URIs.",
+            Category = "overlay",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("overlay", "Overlay Features", "Overlay FeatureCollection as a data:application/geo+json;base64 data URI, indexed in-memory via an STRtree.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "overlay.union",
+            Title = "Union (Layer-Aware)",
+            Description = "Computes the planar union of the input and overlay layers, emitting input-only pieces (input geometry minus the overlay union, input attributes), overlay-only pieces (overlay geometry minus the input union, overlay attributes), and pairwise intersection pieces (merged attributes, overlay collisions prefixed OVERLAY_). Layer-aware counterpart of geometry.union and the Esri Union_analysis parity op. Both layers are supplied inline as data:application/geo+json;base64 data URIs.",
+            Category = "overlay",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("overlay", "Overlay Features", "Overlay FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "overlay.erase",
+            Title = "Erase (Layer-Aware)",
+            Description = "Subtracts the union of the erase layer from every input feature's geometry, preserving input attributes; features fully covered by the erase layer are dropped. Layer-aware counterpart of geometry.difference and the Esri Erase_analysis parity op (the vector overlay/proximity pack's layer-level Erase). Both layers are supplied inline as data:application/geo+json;base64 data URIs.",
+            Category = "overlay",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("erase", "Erase Features", "Erase FeatureCollection as a data:application/geo+json;base64 data URI. Its union is subtracted from each input geometry.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "overlay.merge",
+            Title = "Merge",
+            Description = "Combines the input and merge FeatureCollections into a single new output, concatenating features and carrying each feature's own attributes through (Esri Merge union-schema behaviour). Use data-management.append to append into an existing target schema. Both layers are supplied inline as data:application/geo+json;base64 data URIs.",
+            Category = "overlay",
+            Parameters =
+            [
+                Param("input", "Input Features", "First FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("merge", "Merge Features", "Second FeatureCollection as a data:application/geo+json;base64 data URI to combine with the input.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "overlay.split",
+            Title = "Split",
+            Description = "Partitions the input layer, tagging every output feature with a SPLIT_TARGET attribute. When a 'split' polygon layer is supplied, each input feature is clipped to every overlapping split-zone and tagged with that zone's splitField value (geometric partition); otherwise input features are grouped by the input 'splitField' value and tagged unchanged. Esri Split parity in a single-artifact pipeline. Layers are supplied inline as data:application/geo+json;base64 data URIs.",
+            Category = "overlay",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("split", "Split Features", "Optional split-zone polygon FeatureCollection as a data:application/geo+json;base64 data URI. When supplied, input features are clipped per zone.", ProcessParameterValueType.Text),
+                Param("splitField", "Split Field", "Attribute whose value names each partition: the split-zone field when a split layer is supplied, otherwise the input field to group by. Required when no split layer is supplied.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
+        // Proximity operations (#2139)
+        // Managed nearest-feature distance tools. Distances are planar (CRS units);
+        // geodesic conversion is not performed.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "proximity.near",
+            Title = "Near",
+            Description = "Appends NEAR_FID and NEAR_DIST to every input feature describing the closest feature in the near layer (Esri Near semantics), preserving input geometry/attributes one-to-one. Distances are planar in CRS units. Inputs with no neighbour within the optional searchRadius receive NEAR_FID = -1 and NEAR_DIST = -1. Both layers are supplied inline as data:application/geo+json;base64 data URIs.",
+            Category = "proximity",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("near", "Near Features", "Near (reference) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("nearIdField", "Near ID Field", "Optional near-layer attribute used as NEAR_FID. When omitted, the near feature's 0-based ordinal is used.", ProcessParameterValueType.Text),
+                Param("searchRadius", "Search Radius", "Optional maximum distance (CRS units) to consider a neighbour. Non-positive or omitted means unbounded.", ProcessParameterValueType.FloatingPoint),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "proximity.near-table",
+            Title = "Generate Near Table",
+            Description = "Produces a table of nearest-feature rows (IN_FID, NEAR_FID, NEAR_DIST), one per input feature that has a neighbour within the optional searchRadius (Esri GenerateNearTable semantics). Table rows are emitted as null-geometry features. Distances are planar in CRS units. Both layers are supplied inline as data:application/geo+json;base64 data URIs.",
+            Category = "proximity",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("near", "Near Features", "Near (reference) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("inputIdField", "Input ID Field", "Optional input-layer attribute used as IN_FID. When omitted, the input feature's 0-based ordinal is used.", ProcessParameterValueType.Text),
+                Param("nearIdField", "Near ID Field", "Optional near-layer attribute used as NEAR_FID. When omitted, the near feature's 0-based ordinal is used.", ProcessParameterValueType.Text),
+                Param("searchRadius", "Search Radius", "Optional maximum distance (CRS units) to consider a neighbour. Non-positive or omitted means unbounded.", ProcessParameterValueType.FloatingPoint),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Table]
+        },
+
+        // -----------------------------------------------------------------------
+        // Statistics/summarization operations (#2140)
+        // Managed table-producing aggregates over a single inline FeatureCollection.
+        // Table outputs are null-geometry FeatureCollections (one feature per row).
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "statistics.summarize",
+            Title = "Summary Statistics",
+            Description = "Computes per-group summary statistics over one or more caseFields (Esri Summary Statistics), emitting a table with one row per distinct case-field combination carrying the case values, a FREQUENCY count, and every requested SUM/MEAN/MIN/MAX/STDDEV aggregate. Null/non-numeric values are skipped from numeric aggregates; a null case value forms its own group. The input layer is supplied inline as a data:application/geo+json;base64 data URI.",
+            Category = "statistics",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("caseFields", "Case Fields", "Comma-separated attribute columns to group by. When empty, a single all-rows summary row is produced.", ProcessParameterValueType.Text),
+                Param("statistics", "Statistics", "Semicolon-separated 'field:stat' aggregates. Supported stats: count, sum, mean, min, max, stddev (sample, n-1). Example: 'pop:sum;pop:mean;pop:stddev'.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Table]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "statistics.frequency",
+            Title = "Frequency",
+            Description = "Computes the count of each distinct combination of frequencyFields (Esri Frequency), emitting a table with one row per combination carrying the field values, a FREQUENCY count, and an optional SUM_<field> for each summaryFields field. A null value is its own distinct combination component. The input layer is supplied inline as a data:application/geo+json;base64 data URI.",
+            Category = "statistics",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("frequencyFields", "Frequency Fields", "Comma-separated attribute columns whose distinct combinations are counted. At least one is required.", ProcessParameterValueType.Text, required: true),
+                Param("summaryFields", "Summary Fields", "Optional comma-separated numeric attribute columns summed per combination as SUM_<field>.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Table]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "statistics.calculate",
+            Title = "Calculate Statistics",
+            Description = "Computes descriptive statistics (COUNT, MIN, MAX, MEAN, SUM, STDDEV) for each requested field across the whole input dataset, emitting a table with one row per field keyed by a FIELD column. Null/non-numeric values are excluded; STDDEV is the sample (n-1) standard deviation and is null for fewer than two numeric values. The input layer is supplied inline as a data:application/geo+json;base64 data URI.",
+            Category = "statistics",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("fields", "Fields", "Comma-separated numeric attribute columns to summarize. At least one is required.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Table]
+        },
+
         new ProcessDefinition
         {
             ProcessId = "analytics.buffer-aggregate",
@@ -596,29 +771,31 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "conversion.raster-format",
             Title = "Raster Format Conversion",
-            Description = "Exports a raster into another raster format such as GTiff, PNG, JPEG, or COG.",
+            Description = "Exports a raster into another raster format such as GTiff, PNG, JPEG, or COG. Executes the real GDAL gdal_translate path in the native worker (#2138).",
             Category = "conversion",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("targetFormat", "Target Format", "Target raster format. Allowed values: GTiff, PNG, JPEG, COG.", ProcessParameterValueType.Text, required: true),
-                Param("compression", "Compression", "Optional format-specific compression hint.", ProcessParameterValueType.Text),
+                Param("compression", "Compression", "Optional format-specific compression hint passed as gdal_translate -co COMPRESS=<value>.", ProcessParameterValueType.Text),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "conversion.raster-reproject",
             Title = "Raster CRS Conversion",
-            Description = "Exports a raster into another spatial reference as an explicit conversion workflow.",
+            Description = "Exports a raster into another spatial reference as an explicit conversion workflow. Executes the real GDAL gdalwarp path in the native worker (#2138).",
             Category = "conversion",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("targetSrid", "Target SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
                 Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear"),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
 
         // -----------------------------------------------------------------------
@@ -677,6 +854,20 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("targetLayerName", "Target Layer Name", "Name of the new layer that will hold the copied features.", ProcessParameterValueType.Text, required: true),
                 Param("where", "Where", "Optional ArcGIS SQL filter applied to the source layer.", ProcessParameterValueType.Text),
                 Param("objectIds", "Object IDs", "Optional comma-separated feature identifiers to limit the copy to.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "data-management.append",
+            Title = "Append",
+            Description = "Appends a source FeatureCollection into the schema of a target FeatureCollection (Esri Append). The target features are preserved and source features are projected onto the target's field set; an optional fieldMap remaps source field names. Both layers are supplied inline as data:application/geo+json;base64 data URIs. Use overlay.merge to produce a new union-schema output instead. Pure managed — no GDAL/GEOS dependency.",
+            Category = "data-management",
+            Parameters =
+            [
+                Param("input", "Target Features", "Target FeatureCollection as a data:application/geo+json;base64 data URI. Its features are preserved and define the output schema.", ProcessParameterValueType.Text, required: true),
+                Param("append", "Source Features", "Source FeatureCollection as a data:application/geo+json;base64 data URI to append into the target schema.", ProcessParameterValueType.Text, required: true),
+                Param("fieldMap", "Field Map", "Optional semicolon-separated 'source:target' field name pairs used to remap source attributes onto target fields.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -1088,22 +1279,18 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // GeoETL sink operations (3)
-        // Terminate a workflow by writing the input FeatureCollection to an external
-        // target and emit a small result-descriptor artifact (the target location +
-        // row counts). Managed writers / Npgsql only — no GDAL.
-        // The catalog honua-layer sink (load into a named Honua layer through the
-        // honua.* import functions, honoring the ImportLoadMode replace/append/upsert
-        // load modes and the __pipeline_batch_id soft-delete rollback pattern from
-        // sink.external-postgis) is DEFERRED. Unlike external-postgis — which targets a
-        // registered secure connection and never accepts a raw connection string — the
-        // catalog sink must reach the catalog's own NpgsqlDataSource. Injecting that
-        // data source into the executor would break the dispatcher's unconditional
-        // executor construction in lean deployments where Postgres is not registered,
-        // and threading a connection string through a plan parameter would leak catalog
-        // credentials into the workflow DAG. Resolving that conditional-registration
-        // shape is a follow-on (the load-mode SQL + service wiring this depends on now
-        // exists; only the catalog-data-source plumbing remains).
+        // GeoETL sink operations (4)
+        // Terminate a workflow by writing the input FeatureCollection to a target and
+        // emit a small result-descriptor artifact (the target location + row counts).
+        // Managed writers / Npgsql only — no GDAL.
+        // The catalog honua-layer sink (sink.honua-layer) loads into a named layer in the
+        // Honua catalog database. It reaches the catalog NpgsqlDataSource through the
+        // optional IHonuaLayerSink capability (#2210), which is registered only when the
+        // catalog database is present — so the geoprocessing dispatcher, constructed
+        // unconditionally including in lean Postgres-free deployments, never takes a
+        // Postgres dependency, and no catalog connection string is leaked through plan
+        // parameters. In a lean deployment the capability is absent and the node fails
+        // closed with a clear "unavailable in this deployment" message.
         // Native-format sinks (shapefile, geopackage) are deferred to the GDAL stream.
         // -----------------------------------------------------------------------
         new ProcessDefinition
@@ -1150,6 +1337,25 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("schema", "Schema", "Destination schema. Defaults to public. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "public"),
                 Param("geometryColumn", "Geometry Column", "Destination geometry column. Defaults to geom. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "geom"),
                 Param("batchSize", "Batch Size", "Insert batch size. Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("batchId", "Batch Id", "Run batch id tagged on every row. Defaults to the operation id.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "sink.honua-layer",
+            Title = "Honua Catalog Layer Sink",
+            Description = "Loads the input FeatureCollection into a named layer in the Honua catalog database via the catalog data source. Supports append/replace/upsert load modes; every row's attributes JSONB carries a reserved __pipeline_batch_id key for soft-delete rollback. Requires a configured catalog database — fails closed in lean, database-free deployments. Managed Npgsql + WKB — no GDAL.",
+            Category = "sink",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("layer", "Layer Name", "Destination layer/table name in the catalog (created if missing). Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, required: true),
+                Param("targetSrid", "Target SRID", "Geometry SRID for the destination column.", ProcessParameterValueType.Srid, required: true),
+                Param("loadMode", "Load Mode", "How incoming rows reconcile with existing rows: append, replace, or upsert. Defaults to append.", ProcessParameterValueType.Text, defaultValue: "append"),
+                Param("keyFields", "Key Fields", "Comma-separated attribute names identifying a row for upsert. Required when loadMode is upsert.", ProcessParameterValueType.Text),
+                Param("schema", "Schema", "Destination schema. Defaults to public. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "public"),
+                Param("geometryColumn", "Geometry Column", "Destination geometry column. Defaults to geom. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "geom"),
                 Param("batchId", "Batch Id", "Run batch id tagged on every row. Defaults to the operation id.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -1262,17 +1468,6 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         Param("spatialRel", "Spatial Relationship", "GeoServices spatial relationship (e.g. esriSpatialRelIntersects). Distance-based relationships are rejected here; use the operation-specific 'distance' or the 'where' clause instead.", ProcessParameterValueType.Text),
         Param("time", "Time Filter", "Temporal filter (instant or extent) following the FeatureServer time convention.", ProcessParameterValueType.Text),
         Param("timeRelation", "Time Relation", "Temporal predicate paired with the 'time' filter.", ProcessParameterValueType.Text),
-    ];
-
-    // Shared layer/raster selector used by the validation-only raster-conversion
-    // family (conversion.raster-*) where layerId still carries the eventual
-    // execution intent even though no executor is wired yet. `rasterId` is
-    // modeled as Text rather than WholeNumber so the validator can admit full
-    // 64-bit ids instead of truncating to Int32.
-    private static readonly ProcessParameterSpec[] SharedRasterSourceParameters =
-    [
-        Param("layerId", "Layer", "Target raster layer identifier.", ProcessParameterValueType.LayerId, required: true),
-        Param("rasterId", "Raster", "Optional raster identifier. When omitted, the primary raster for the layer is used. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
     ];
 
     // Native worker raster source selector for surface.* and raster.* entries.

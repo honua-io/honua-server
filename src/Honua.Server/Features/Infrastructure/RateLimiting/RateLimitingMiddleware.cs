@@ -3,12 +3,14 @@
 
 using System.Collections.Concurrent;
 using System.Net;
+using System.Security.Claims;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
+using Honua.Core.Features.RateLimiting.Domain;
 
 namespace Honua.Infrastructure.RateLimiting;
 
@@ -170,14 +172,20 @@ internal sealed partial class RateLimitingMiddleware
     {
         try
         {
+            // Resolve the applicable limit and window once: an explicit per-endpoint override,
+            // else the most specific matching tier policy (api-key > tenant > plan), else the
+            // global default. Tier resolution feeds the same distributed counter so the limit is
+            // enforced consistently across instances.
+            var resolved = await ResolveLimitAsync(context);
+
             // Use Redis-based sliding window if available, otherwise fall back to fixed window
             if (_redis != null)
             {
-                return await CheckRateLimitRedisAsync(rateLimitKey, context);
+                return await CheckRateLimitRedisAsync(rateLimitKey, resolved);
             }
             else
             {
-                return CheckRateLimitMemory(rateLimitKey, context);
+                return CheckRateLimitMemory(rateLimitKey, resolved);
             }
         }
         catch (Exception ex)
@@ -199,13 +207,14 @@ internal sealed partial class RateLimitingMiddleware
     /// Checks rate limit using Redis sliding window algorithm.
     /// </summary>
     /// <param name="rateLimitKey">The rate limit key.</param>
-    /// <param name="context">The HTTP context.</param>
+    /// <param name="resolved">The resolved limit and window for this request.</param>
     /// <returns>Rate limit check result.</returns>
-    private async Task<RateLimitResult> CheckRateLimitRedisAsync(string rateLimitKey, HttpContext context)
+    private async Task<RateLimitResult> CheckRateLimitRedisAsync(string rateLimitKey, ResolvedRateLimit resolved)
     {
         var database = _redis!.GetDatabase();
         var now = DateTimeOffset.UtcNow;
-        var windowStart = now.AddMinutes(-1);
+        var window = resolved.Window;
+        var windowStart = now - window;
 
         var cacheKey = $"rate_limit:{rateLimitKey}";
         var windowKey = $"{cacheKey}:window";
@@ -228,19 +237,19 @@ internal sealed partial class RateLimitingMiddleware
         // Count requests in window
         var countTask = pipeline.SortedSetLengthAsync(windowKey);
 
-        // Set expiration
-        var expireTask = pipeline.KeyExpireAsync(windowKey, TimeSpan.FromMinutes(2));
+        // Set expiration to twice the window so stale entries self-evict.
+        var expireTask = pipeline.KeyExpireAsync(windowKey, window + window);
 
         await pipeline.ExecuteAsync();
 
         var requestCount = await countTask;
-        var limit = GetRateLimit(context);
+        var limit = resolved.Limit;
 
         return new RateLimitResult
         {
             IsAllowed = requestCount <= limit,
             RequestsRemaining = Math.Max(0, limit - (int)requestCount),
-            WindowReset = now.AddMinutes(1),
+            WindowReset = now + window,
             RequestCount = (int)requestCount,
             Limit = limit
         };
@@ -253,12 +262,19 @@ internal sealed partial class RateLimitingMiddleware
     /// updates under concurrency, letting clients exceed the limit).
     /// </summary>
     /// <param name="rateLimitKey">The rate limit key.</param>
-    /// <param name="context">The HTTP context.</param>
+    /// <param name="resolved">The resolved limit and window for this request.</param>
     /// <returns>Rate limit check result.</returns>
-    private RateLimitResult CheckRateLimitMemory(string rateLimitKey, HttpContext context)
+    private static RateLimitResult CheckRateLimitMemory(string rateLimitKey, ResolvedRateLimit resolved)
     {
         var now = DateTimeOffset.UtcNow;
-        var windowStart = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, now.Offset);
+        var window = resolved.Window;
+
+        // Align the fixed window to epoch-anchored buckets so an arbitrary policy window
+        // (not just one minute) is deterministic and shared across instances backed by the
+        // same store.
+        var windowTicks = Math.Max(TimeSpan.TicksPerSecond, window.Ticks);
+        var bucketStartTicks = now.UtcTicks / windowTicks * windowTicks;
+        var windowStart = new DateTimeOffset(bucketStartTicks, TimeSpan.Zero);
 
         var counter = _memoryCounters.GetOrAdd(rateLimitKey, static _ => new FixedWindowCounter());
         int currentCount;
@@ -275,13 +291,13 @@ internal sealed partial class RateLimitingMiddleware
 
         PruneExpiredMemoryCounters(windowStart);
 
-        var limit = GetRateLimit(context);
+        var limit = resolved.Limit;
 
         return new RateLimitResult
         {
             IsAllowed = currentCount <= limit,
             RequestsRemaining = Math.Max(0, limit - currentCount),
-            WindowReset = windowStart.AddMinutes(1),
+            WindowReset = windowStart + window,
             RequestCount = currentCount,
             Limit = limit
         };
@@ -323,22 +339,72 @@ internal sealed partial class RateLimitingMiddleware
     }
 
     /// <summary>
-    /// Gets the rate limit for the current request.
+    /// Resolves the limit and window for the current request using the documented precedence:
+    /// an explicit per-endpoint <see cref="RateLimitAttribute"/> override, then the most specific
+    /// matching tier policy (api-key &gt; tenant &gt; plan) from the policy store, then the global
+    /// default. Tier policies carry their own <see cref="RateLimitPolicy.WindowDuration"/>; the
+    /// endpoint and global fallbacks use a one-minute window.
     /// </summary>
     /// <param name="context">The HTTP context.</param>
-    /// <returns>Rate limit value.</returns>
-    private int GetRateLimit(HttpContext context)
+    /// <returns>The resolved limit and window.</returns>
+    private async Task<ResolvedRateLimit> ResolveLimitAsync(HttpContext context)
     {
-        // Check for endpoint-specific rate limits
+        // A per-endpoint override is the most explicit operator intent and wins outright.
         var endpoint = context.GetEndpoint();
         var endpointRateLimit = endpoint?.Metadata.GetMetadata<RateLimitAttribute>();
         if (endpointRateLimit != null)
         {
-            return endpointRateLimit.RequestsPerMinute;
+            return new ResolvedRateLimit(endpointRateLimit.RequestsPerMinute, TimeSpan.FromMinutes(1));
         }
 
-        // Use global rate limit
-        return _options.GlobalRequestsPerMinute;
+        // Subject-tier policies (per-plan / per-tenant / per-api-key) drive the limit when one
+        // matches. Resolution order is centralized in RateLimitPolicyResolver so the precedence is
+        // identical everywhere it is applied.
+        var policies = await _policyStore.ListPoliciesAsync(context.RequestAborted);
+        if (policies is { Count: > 0 })
+        {
+            var descriptor = BuildRequestDescriptor(context);
+            var policy = RateLimitPolicyResolver.Resolve(policies, descriptor);
+            if (policy is not null && policy.RequestsPerWindow > 0 && policy.WindowDuration > TimeSpan.Zero)
+            {
+                return new ResolvedRateLimit(policy.RequestsPerWindow, policy.WindowDuration);
+            }
+        }
+
+        // Global default (one-minute window).
+        return new ResolvedRateLimit(_options.GlobalRequestsPerMinute, TimeSpan.FromMinutes(1));
+    }
+
+    /// <summary>
+    /// Builds the subject-tier descriptor (api-key identity, tenant, plan) for the current request
+    /// so the policy resolver can select the applicable tier. Values are stable opaque identifiers,
+    /// never raw secrets.
+    /// </summary>
+    private static RateLimitRequestDescriptor BuildRequestDescriptor(HttpContext context)
+    {
+        var identity = context.User?.Identity;
+        var apiKey = identity?.IsAuthenticated == true && !string.IsNullOrEmpty(identity.Name)
+            ? identity.Name
+            : null;
+
+        var tenantContext = context.RequestServices?.GetService(typeof(ITenantContext)) as ITenantContext;
+        var tenantId = string.IsNullOrEmpty(tenantContext?.TenantId) ? null : tenantContext.TenantId;
+
+        // The billing plan is carried as a claim when present (added by the auth provider or a
+        // downstream enrichment step); absent for anonymous traffic.
+        var plan = (context.User as ClaimsPrincipal)?.FindFirst("plan")?.Value
+            ?? (context.User as ClaimsPrincipal)?.FindFirst("honua_plan")?.Value;
+        if (string.IsNullOrEmpty(plan))
+        {
+            plan = null;
+        }
+
+        return new RateLimitRequestDescriptor
+        {
+            ApiKey = apiKey,
+            TenantId = tenantId,
+            Plan = plan,
+        };
     }
 
     /// <summary>
@@ -454,6 +520,14 @@ internal sealed partial class RateLimitingMiddleware
         return (resolvedFamily, LogValueRedactor.Hash(rateLimitKey));
     }
 }
+
+/// <summary>
+/// The limit and window resolved for a request after applying endpoint, tier, and global
+/// precedence.
+/// </summary>
+/// <param name="Limit">Maximum requests permitted within <paramref name="Window"/>.</param>
+/// <param name="Window">The rolling/fixed window the limit applies over.</param>
+internal readonly record struct ResolvedRateLimit(int Limit, TimeSpan Window);
 
 /// <summary>
 /// Result of a rate limit check.

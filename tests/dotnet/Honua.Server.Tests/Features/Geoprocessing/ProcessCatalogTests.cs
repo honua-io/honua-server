@@ -49,7 +49,14 @@ public sealed class ProcessCatalogTests
         // gdal.ogr2ogr) reconciled from feat/gdal-heavy-worker + 1 durable
         // import pipeline (import.dataset) added by #1630 + 1 native-profile
         // point-cloud translate (pcloud.translate, LAZ/COPC decompress +
-        // projected-CRS reproject) added by #1854 + 4 relational transforms
+        // projected-CRS reproject) added by #1854
+        // + 13 Round-5 managed ops: 12 GP tool-pack ops
+        // (overlay.clip/intersect/union/erase/merge/split, proximity.near,
+        // proximity.near-table, statistics.summarize/frequency/calculate,
+        // data-management.append) added by the GP tool packs (#2206/#2139/#2140)
+        // + 1 managed honua-layer sink (sink.honua-layer) added by the GeoETL
+        // honua-layer sink path
+        // + 10 Round-4 ops merged from trunk: 4 relational transforms
         // (transform.attribute-join, transform.aggregate, transform.pivot,
         // transform.unpivot) added alongside the safe expression engine + the
         // first-class remote DAG source connectors (source.honua-layer,
@@ -57,7 +64,8 @@ public sealed class ProcessCatalogTests
         // + 1 native-profile GDAL/OGR import reader (source.ogr, broad-format
         // FeatureCollection canonicalization) added for the honua-worker-etl format
         // breadth (ADR-0038 roadmap F).
-        all.Should().HaveCount(69);
+        // Round-5 (72) ∪ Round-4 (69) = 82 distinct processes (59 shared).
+        all.Should().HaveCount(82);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
@@ -104,16 +112,17 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_DataManagementCategory_Returns3Processes()
+    public void Catalog_DataManagementCategory_ReturnsExpectedProcesses()
     {
         var dataManagement = _catalog.GetProcessesByCategory("data-management");
 
-        dataManagement.Should().HaveCount(3);
+        dataManagement.Should().HaveCount(4);
         dataManagement.Should().AllSatisfy(p => p.Category.Should().Be("data-management"));
         dataManagement.Select(p => p.ProcessId).Should().BeEquivalentTo(
             "data-management.copy-features",
             "data-management.delete-features",
-            "data-management.calculate-field");
+            "data-management.calculate-field",
+            "data-management.append");
     }
 
     [UnitTest]
@@ -249,7 +258,12 @@ public sealed class ProcessCatalogTests
             "conversion.raster-format", "conversion.raster-reproject",
             "generalization.simplify-layer", "generalization.dissolve",
             "data-management.copy-features", "data-management.delete-features",
-            "data-management.calculate-field",
+            "data-management.calculate-field", "data-management.append",
+            // Layer-aware overlay/proximity/statistics tool packs (#2206, #2139, #2140).
+            "overlay.clip", "overlay.intersect", "overlay.union", "overlay.erase",
+            "overlay.merge", "overlay.split",
+            "proximity.near", "proximity.near-table",
+            "statistics.summarize", "statistics.frequency", "statistics.calculate",
             // GeoETL transform/source/sink processes reconciled from feat/geoetl-baseline.
             "transform.attribute-rename", "transform.attribute-cast",
             "transform.computed-field", "transform.attribute-filter",

@@ -162,8 +162,10 @@ internal static class I3sSceneServiceBuilder
 
     /// <summary>
     /// Per-attribute storage layout describing the default <c>OBJECTID</c> key
-    /// every served 3D Object node carries. Descriptive only — no attribute
-    /// resource is fetchable on this slice.
+    /// (<c>f_0</c>, <c>Oid32</c>) every served 3D Object node carries. The
+    /// <c>f_0</c> attribute file is fetchable at
+    /// <c>nodes/{id}/attributes/f_0/0</c> (#1811, identify parity); user-attribute
+    /// fields are descriptive only until the deferred property-table decode lands.
     /// </summary>
     private static readonly IReadOnlyList<I3sAttributeStorageInfo> DefaultAttributeStorageInfo =
     [

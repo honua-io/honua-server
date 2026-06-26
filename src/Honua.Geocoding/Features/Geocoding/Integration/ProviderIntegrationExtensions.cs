@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Geocoding.Features.Geocoding.Integration;
 
@@ -136,6 +137,52 @@ public static class ProviderIntegrationExtensions
     }
 
     /// <summary>
+    /// Add the local, self-hosted PostGIS-backed geocoding provider. The provider runs entirely
+    /// offline against a locally-loaded reference dataset and makes no external service calls (#2151).
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Configuration</param>
+    /// <returns>Service collection for chaining</returns>
+    public static IServiceCollection AddLocalGeocodeProvider(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddOptions<LocalGeocoderProviderConfiguration>()
+            .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:Local"));
+
+        // A single pooled data source backs the provider. Registered as a singleton so the pool is
+        // shared across requests; the provider owns and disposes it on shutdown.
+        services.AddGeocodeProvider(
+            LocalPostgisGeocodeProvider.ProviderName,
+            serviceProvider =>
+            {
+                var config = serviceProvider.GetRequiredService<IOptionsMonitor<LocalGeocoderProviderConfiguration>>().CurrentValue;
+                var connectionString = !string.IsNullOrWhiteSpace(config.ConnectionString)
+                    ? config.ConnectionString
+                    : configuration.GetConnectionString("DefaultConnection");
+
+                if (string.IsNullOrWhiteSpace(connectionString))
+                {
+                    throw new GeocodeProviderException(
+                        "The local PostGIS geocoder requires a connection string (Geocoding:Providers:Local:ConnectionString or ConnectionStrings:DefaultConnection).")
+                    {
+                        ProviderName = LocalPostgisGeocodeProvider.ProviderName,
+                        ErrorCode = GeocodeErrorCodes.InvalidConfiguration
+                    };
+                }
+
+                var dataSource = NpgsqlDataSource.Create(connectionString);
+                return new LocalPostgisGeocodeProvider(dataSource, config, ownsDataSource: true);
+            },
+            ServiceLifetime.Singleton);
+
+        return services;
+    }
+
+    /// <summary>
     /// Add all available geocoding providers based on configuration
     /// </summary>
     /// <param name="services">Service collection</param>
@@ -164,6 +211,11 @@ public static class ProviderIntegrationExtensions
         if (geocodingConfig.GetValue<bool>("Providers:AzureMaps:Enabled"))
         {
             services.AddAzureMapsGeocodeProvider(configuration);
+        }
+
+        if (geocodingConfig.GetValue<bool>("Providers:Local:Enabled"))
+        {
+            services.AddLocalGeocodeProvider(configuration);
         }
 
         // Always add mock provider for testing/fallback if enabled

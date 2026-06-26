@@ -60,6 +60,25 @@ public interface IPortalTokenIssuer
     Task<PortalTokenIntrospection?> IntrospectAsync(
         string tokenReference,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Revokes a single issued access token by removing its backing cache entry so
+    /// every subsequent <see cref="ValidateAsync"/> and <see cref="IntrospectAsync"/>
+    /// call for that token fails immediately (RFC 7009). Because the issued value
+    /// carries no claims of its own, dropping the cache entry is the single,
+    /// authoritative revocation point for both the opaque and JWT token formats
+    /// (the JWT's <c>jti</c> keys the same entry). The operation is idempotent:
+    /// revoking an unknown, already-revoked, or expired reference is a no-op.
+    /// </summary>
+    /// <param name="tokenReference">
+    /// The opaque token value (for the opaque format) or the JWT <c>jti</c> (for the
+    /// JWT format) that keys the cache entry.
+    /// </param>
+    /// <param name="cancellationToken">Token used to abort the removal.</param>
+    /// <returns>A task that completes when the revocation has been applied.</returns>
+    Task RevokeAsync(
+        string tokenReference,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>

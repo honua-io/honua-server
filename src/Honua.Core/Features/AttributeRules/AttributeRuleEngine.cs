@@ -22,6 +22,26 @@ public enum AttributeRuleEditEvent
 }
 
 /// <summary>
+/// Which set of rules a single <see cref="AttributeRuleEngine.Apply"/> invocation evaluates.
+/// Mirrors Esri's immediate-vs-batch evaluation modes.
+/// </summary>
+public enum AttributeRulePass
+{
+    /// <summary>
+    /// Run only <em>immediate</em> rules (<see cref="MetadataV2AttributeRule.Batch"/> is
+    /// <see langword="false"/>) inline on the triggering edit. Batch rules are skipped.
+    /// </summary>
+    Immediate,
+
+    /// <summary>
+    /// Run only <em>batch</em> rules (<see cref="MetadataV2AttributeRule.Batch"/> is
+    /// <see langword="true"/>), as part of an explicit deferred batch pass. Immediate rules
+    /// are skipped.
+    /// </summary>
+    Batch
+}
+
+/// <summary>
 /// A single constraint/validation violation produced while applying attribute rules to
 /// a feature on the edit path.
 /// </summary>
@@ -76,12 +96,18 @@ public static class AttributeRuleEngine
     /// Optional sink notified when a rule's expression is outside the supported subset
     /// (routed out of scope). May be <c>null</c> to silently skip.
     /// </param>
+    /// <param name="pass">
+    /// Which rule set to evaluate. <see cref="AttributeRulePass.Immediate"/> (the default)
+    /// runs only immediate rules inline on the edit; <see cref="AttributeRulePass.Batch"/>
+    /// runs only the deferred batch rules and is invoked by an explicit batch pass.
+    /// </param>
     /// <returns>The application result carrying updated attributes and any violations.</returns>
     public static AttributeRuleApplicationResult Apply(
         MetadataV2Resource resource,
         IReadOnlyDictionary<string, object?> attributes,
         AttributeRuleEditEvent editEvent,
-        IUnsupportedExpressionSink? unsupported = null)
+        IUnsupportedExpressionSink? unsupported = null,
+        AttributeRulePass pass = AttributeRulePass.Immediate)
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(attributes);
@@ -101,7 +127,11 @@ public static class AttributeRuleEngine
 
         foreach (var rule in rules)
         {
-            if (!rule.IsEnabled || !AppliesTo(rule, editEvent))
+            // Batch rules are deferred to the explicit batch pass; immediate rules run inline.
+            // A rule whose triggering event does not match the current edit operation is skipped.
+            if (!rule.IsEnabled ||
+                rule.Batch != (pass == AttributeRulePass.Batch) ||
+                !AppliesTo(rule, editEvent))
             {
                 continue;
             }
@@ -137,14 +167,31 @@ public static class AttributeRuleEngine
                                 unsupported?.OnUnsupported(resource, rule);
                                 break;
                             case AttributeRuleExpressionStatus.Violated:
-                                violations ??= new List<AttributeRuleViolation>();
-                                violations.Add(new AttributeRuleViolation(
-                                    rule.Name,
-                                    string.IsNullOrWhiteSpace(rule.ErrorMessage)
-                                        ? $"Attribute rule '{rule.Name}' was violated."
-                                        : rule.ErrorMessage!));
+                                AddViolation(ref violations, rule);
                                 break;
                             case AttributeRuleExpressionStatus.Satisfied:
+                            case AttributeRuleExpressionStatus.Computed:
+                            default:
+                                break;
+                        }
+
+                        break;
+                    }
+
+                case MetadataV2AttributeRuleType.Exclusion:
+                    {
+                        // Exclusion is the inverse of a constraint: a satisfied (true) boolean
+                        // means the edit matches the exclusion condition and must be aborted.
+                        var result = AttributeRuleExpression.Evaluate(rule.ScriptExpression, Current(), expectBoolean: true);
+                        switch (result.Status)
+                        {
+                            case AttributeRuleExpressionStatus.Unsupported:
+                                unsupported?.OnUnsupported(resource, rule);
+                                break;
+                            case AttributeRuleExpressionStatus.Satisfied:
+                                AddViolation(ref violations, rule);
+                                break;
+                            case AttributeRuleExpressionStatus.Violated:
                             case AttributeRuleExpressionStatus.Computed:
                             default:
                                 break;
@@ -161,6 +208,16 @@ public static class AttributeRuleEngine
         return new AttributeRuleApplicationResult(
             working ?? attributes,
             (IReadOnlyList<AttributeRuleViolation>?)violations ?? Array.Empty<AttributeRuleViolation>());
+    }
+
+    private static void AddViolation(ref List<AttributeRuleViolation>? violations, MetadataV2AttributeRule rule)
+    {
+        violations ??= new List<AttributeRuleViolation>();
+        violations.Add(new AttributeRuleViolation(
+            rule.Name,
+            string.IsNullOrWhiteSpace(rule.ErrorMessage)
+                ? $"Attribute rule '{rule.Name}' was violated."
+                : rule.ErrorMessage!));
     }
 
     private static bool AppliesTo(MetadataV2AttributeRule rule, AttributeRuleEditEvent editEvent)

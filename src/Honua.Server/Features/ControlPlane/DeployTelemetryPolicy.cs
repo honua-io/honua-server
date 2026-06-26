@@ -38,6 +38,34 @@ internal sealed record DeployTelemetryPolicy
 
     public TimeSpan WarmupDuration { get; init; } = TimeSpan.FromMinutes(2);
 
+    /// <summary>
+    /// Optional synthetic health-probe URL (typically <c>/healthz/ready</c>). When set, a failing
+    /// probe during the bake window is a first-class rollback trigger inherited by every deploy
+    /// backend and change class, independent of the metrics provider.
+    /// </summary>
+    public string? HealthProbeUrl { get; init; }
+
+    /// <summary>Number of failing synthetic health checks (within a single scrape) that triggers rollback.</summary>
+    public int HealthProbeFailureThreshold { get; init; } = 1;
+
+    /// <summary>Number of sequential synthetic health checks issued per scrape.</summary>
+    public int HealthProbeSamples { get; init; } = 3;
+
+    /// <summary>HTTP status code a healthy synthetic health check returns.</summary>
+    public int HealthProbeExpectedStatusCode { get; init; } = 200;
+
+    /// <summary>Per-request timeout (seconds) for each synthetic health check.</summary>
+    public int HealthProbeTimeoutSeconds { get; init; } = 5;
+
+    /// <summary>Indicates a synthetic health-probe signal is configured.</summary>
+    public bool HasHealthProbe => !string.IsNullOrWhiteSpace(HealthProbeUrl);
+
+    /// <summary>Indicates at least one queryable metric signal (error-rate / latency / sample-count) is configured.</summary>
+    public bool HasMetricSignals =>
+        !string.IsNullOrWhiteSpace(ErrorRateQuery) ||
+        !string.IsNullOrWhiteSpace(LatencyP95Query) ||
+        !string.IsNullOrWhiteSpace(MinimumSampleQuery);
+
     public string? ValidationError { get; init; }
 
     public bool IsValid => string.IsNullOrWhiteSpace(ValidationError);
@@ -82,9 +110,14 @@ internal sealed record DeployTelemetryPolicy
         var latencyQuery = explicitLatencyQuery ?? preset?.LatencyP95Query;
         var sampleQuery = explicitSampleQuery ?? preset?.MinimumSampleQuery;
 
+        // The synthetic health probe is a provider-independent signal: an operator can gate purely on
+        // /healthz/ready with no metrics backend at all, so a configured probe alone yields a policy.
+        var healthProbeUrl = Get(parameters, "telemetry.healthz.url");
+
         if (string.IsNullOrWhiteSpace(errorRateQuery) &&
             string.IsNullOrWhiteSpace(latencyQuery) &&
-            string.IsNullOrWhiteSpace(sampleQuery))
+            string.IsNullOrWhiteSpace(sampleQuery) &&
+            string.IsNullOrWhiteSpace(healthProbeUrl))
         {
             return null;
         }
@@ -93,6 +126,10 @@ internal sealed record DeployTelemetryPolicy
         var latencyThreshold = ParseOptionalDouble(parameters, "telemetry.latency_p95.threshold_ms") ?? preset?.LatencyP95ThresholdMs;
         var sampleMinimum = ParseOptionalDouble(parameters, "telemetry.sample_count.minimum") ?? preset?.MinimumSampleCount;
         var warmupSeconds = ParseOptionalDouble(parameters, "telemetry.warmup_seconds");
+        var healthFailureThreshold = ParseOptionalPositiveInt(parameters, "telemetry.healthz.failure_threshold") ?? 1;
+        var healthSamples = ParseOptionalPositiveInt(parameters, "telemetry.healthz.samples") ?? 3;
+        var healthExpectedStatus = ParseOptionalPositiveInt(parameters, "telemetry.healthz.expected_status") ?? 200;
+        var healthTimeoutSeconds = ParseOptionalPositiveInt(parameters, "telemetry.healthz.timeout_seconds") ?? 5;
 
         // When the operator supplied explicit query overrides, the preset's input
         // requirement (e.g. canary selector / job) no longer applies — the per-query
@@ -127,6 +164,11 @@ internal sealed record DeployTelemetryPolicy
             WarmupDuration = warmupSeconds.HasValue && warmupSeconds.Value > 0
                 ? TimeSpan.FromSeconds(warmupSeconds.Value)
                 : preset?.WarmupDuration ?? TimeSpan.FromMinutes(2),
+            HealthProbeUrl = healthProbeUrl,
+            HealthProbeFailureThreshold = healthFailureThreshold,
+            HealthProbeSamples = healthSamples,
+            HealthProbeExpectedStatusCode = healthExpectedStatus,
+            HealthProbeTimeoutSeconds = healthTimeoutSeconds,
             ValidationError = validationError,
             HasExplicitQueryOverride = hasExplicitQueryOverride
         };
@@ -308,6 +350,18 @@ internal sealed record DeployTelemetryPolicy
         }
 
         return double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static int? ParseOptionalPositiveInt(IReadOnlyDictionary<string, string> parameters, string key)
+    {
+        if (!parameters.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
             ? parsed
             : null;
     }

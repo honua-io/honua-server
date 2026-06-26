@@ -133,6 +133,12 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
 
     private sealed class ArtifactBackedJobService : IGeoprocessingJobService
     {
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
         private static readonly AnalysisResultPackage Results = AnalysisResultPackage.CreateCompleted(
             resultPackageId: "ogc-gp-result-job:v1",
             summary: new ResultSummary

@@ -200,6 +200,15 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/rate-limits/{id}"),
         new("GET", "/api/v1/admin/rate-limits/status"),
 
+        // v1 admin tenant lifecycle endpoints (#2156)
+        new("GET", "/api/v1/admin/tenants"),
+        new("POST", "/api/v1/admin/tenants"),
+        new("GET", "/api/v1/admin/tenants/usage"),
+        new("GET", "/api/v1/admin/tenants/{tenantId}"),
+        new("POST", "/api/v1/admin/tenants/{tenantId}/suspend"),
+        new("POST", "/api/v1/admin/tenants/{tenantId}/resume"),
+        new("DELETE", "/api/v1/admin/tenants/{tenantId}"),
+
         // v1 admin compliance endpoints (#352)
         new("GET", "/api/v1/admin/compliance/dashboard"),
         new("GET", "/api/v1/admin/compliance/report"),
@@ -701,6 +710,9 @@ public static class EndpointRegistry
 
         // OAuth2 RFC 7662 token introspection (#1890).
         new("POST", "/sharing/rest/oauth2/introspect"),
+
+        // OAuth2 RFC 7009 per-token revocation (#2155).
+        new("POST", "/sharing/rest/oauth2/revoke"),
 
         // ArcGIS Portal community group + item sharing surface (#1868).
         new("POST", "/sharing/rest/community/createGroup"),
@@ -1279,6 +1291,7 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel"),

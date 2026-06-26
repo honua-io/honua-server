@@ -585,6 +585,12 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
 
     private sealed class FakeGeoprocessingJobService : IGeoprocessingJobService
     {
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
         private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
         private int _sequence;
 

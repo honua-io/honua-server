@@ -140,18 +140,18 @@ internal sealed class CustomCodeSubmitCoordinator(
         specParams[CustomCodeJobContract.BaseUrlEnvParam] = options.ApiBaseUrl;
         specParams[CustomCodeJobContract.JobTokenEnvParam] = issuance.Token;
 
-        // Re-emit every customcode.* job input as an env.CUSTOMCODE_* parameter so the
-        // Batch pass-through (AwsBatchComputeBackend.BuildEnvironmentOverrides) surfaces
-        // it to the container under the exact name the harness reads. Without this the
-        // customcode.* keys stay on the durable spec but never reach the container — the
-        // pass-through only forwards env.* keys — and the harness would fail closed with
-        // "Required job input is missing". The server-set output_prefix is already in
-        // specParams at this point, so it is forwarded with the clamped value.
-        foreach (var (paramKey, envName) in CustomCodeJobContract.ParameterToEnv)
+        // Project the customcode.* parameters to the env.CUSTOMCODE_* pass-through the
+        // user-code harness reads (docker/worker-customcode-python/harness/jobspec.py).
+        // AwsBatchComputeBackend.BuildEnvironmentOverrides strips the env. prefix and
+        // surfaces each as the matching CUSTOMCODE_* container env var. This is the
+        // SERVER half of the cross-piece param->env contract (#2191); only project
+        // keys that are actually present so optional parameters stay unset. The
+        // Round-4 harness drift guard pins the same map via ParameterToEnv.
+        foreach (var (paramKey, envName) in CustomCodeJobContract.ParameterToEnvName)
         {
             if (specParams.TryGetValue(paramKey, out var value) && !string.IsNullOrWhiteSpace(value))
             {
-                specParams["env." + envName] = value;
+                specParams[CustomCodeJobContract.ToEnvParamKey(envName)] = value;
             }
         }
 

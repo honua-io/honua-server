@@ -45,4 +45,23 @@ public sealed record WorkflowStepDefinition
     /// Optional wall-clock timeout for the step's underlying job, in seconds.
     /// </summary>
     public int? TimeoutSeconds { get; init; }
+
+    /// <summary>
+    /// Optional conditional-branch predicate evaluated over a prior step's output once
+    /// this step's dependencies are satisfied. When the predicate evaluates to
+    /// <see langword="false"/> the step is not submitted and is reported as
+    /// <see cref="WorkflowStepStatus.Skipped"/>; downstream steps that consume its
+    /// output cascade-skip exactly as they do for a skip-policy upstream. A
+    /// <see langword="null"/> condition is always taken (the existing behavior).
+    /// </summary>
+    public WorkflowStepCondition? Condition { get; init; }
+
+    /// <summary>
+    /// Optional ForEach/iteration spec. When set, this step is a template that the
+    /// engine deterministically unrolls into one concrete sub-step per item in
+    /// <see cref="WorkflowForEachSpec.Items"/> before reconciliation, substituting the
+    /// item value into the step's plan inputs. A <see langword="null"/> spec leaves the
+    /// step as an ordinary single step.
+    /// </summary>
+    public WorkflowForEachSpec? ForEach { get; init; }
 }

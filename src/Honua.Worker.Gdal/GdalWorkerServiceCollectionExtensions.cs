@@ -167,6 +167,7 @@ public static class GdalWorkerServiceCollectionExtensions
         RegisterGdalExecutor<GdalSurfaceJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterClipJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterReprojectCatalogJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterFormatConvertJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterStatisticsJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterZonalStatisticsJobExecutor>(services);
         RegisterGdalExecutor<GdalMultidimCoverageMetadataJobExecutor>(services);

@@ -168,6 +168,7 @@ public static class PortalTokenAuthenticationExtensions
         services.TryAddSingleton<PortalJwtAccessTokenService>();
         services.TryAddSingleton<ClientCredentialsFederationService>();
         services.AddScoped<PortalTokenIntrospectionService>();
+        services.AddScoped<PortalOAuthRevocationService>();
 
         services.AddScoped<PortalOAuthBroker>();
         services.AddScoped<PortalOAuthTokenService>();

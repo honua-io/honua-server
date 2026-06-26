@@ -53,6 +53,11 @@ public sealed class GeocodingConfigurationValidator : ConfigurationValidator<Geo
             errors.Add("Geocoding:CacheExpirationMinutes must be greater than 0.");
         }
 
+        if (options.MaxBatchSizeLimit is <= 0)
+        {
+            errors.Add("Geocoding:MaxBatchSizeLimit must be greater than 0 when specified.");
+        }
+
         // Validate provider configurations
         ValidateNominatimConfiguration(options.Providers.Nominatim, errors);
         ValidateAmazonLocationConfiguration(options.Providers.AmazonLocation, errors);

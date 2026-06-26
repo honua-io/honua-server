@@ -20,6 +20,12 @@ namespace Honua.Server.Tests.Features.Admin.Scene;
 /// </summary>
 internal sealed class FakeGeoprocessingJobService : IGeoprocessingJobService
 {
+
+    public Task<GeoprocessingJobListPage> ListJobsAsync(
+        GeoprocessingJobListFilter filter,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
     private readonly Queue<ExecutionJobStatus> _statuses;
     private readonly string? _artifactUri;
     private string _jobId = string.Empty;

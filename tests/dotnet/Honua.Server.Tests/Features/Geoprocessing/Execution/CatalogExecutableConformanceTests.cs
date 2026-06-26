@@ -73,6 +73,22 @@ public sealed class CatalogExecutableConformanceTests
         "analytics.cluster-managed",
         "analytics.buffer-aggregate-managed",
         "analytics.density-managed",
+        // Layer-aware overlay tool pack (#2206, #2139): managed NTS, two
+        // FeatureCollections in, one FeatureCollection/table out.
+        "overlay.clip",
+        "overlay.intersect",
+        "overlay.union",
+        "overlay.erase",
+        "overlay.merge",
+        "overlay.split",
+        "data-management.append",
+        // Proximity tool pack (#2139).
+        "proximity.near",
+        "proximity.near-table",
+        // Statistics/summarization tool pack (#2140): table-producing aggregates.
+        "statistics.summarize",
+        "statistics.frequency",
+        "statistics.calculate",
         // GeoETL transforms (managed NTS, FeatureCollection in/out).
         "transform.attribute-rename",
         "transform.attribute-cast",
@@ -100,6 +116,10 @@ public sealed class CatalogExecutableConformanceTests
         "sink.geojson-file",
         "sink.quarantine",
         "sink.external-postgis",
+        // Managed honua-layer sink: loads a FeatureCollection into a named catalog
+        // layer via the optional IHonuaLayerSink capability. The executor is always
+        // registered (the capability is optional), so it is dispatcher-routable.
+        "sink.honua-layer",
         // Durable import pipeline (#1630): managed orchestration job that composes
         // the import / publishing / raster services through an IServiceScopeFactory.
         "import.dataset",
@@ -351,6 +371,18 @@ public sealed class CatalogExecutableConformanceTests
             new ManagedClusterExecutor(monitor),
             new ManagedBufferAggregateExecutor(monitor),
             new ManagedDensityExecutor(monitor),
+            new OverlayClipExecutor(monitor),
+            new OverlayIntersectExecutor(monitor),
+            new OverlayUnionExecutor(monitor),
+            new OverlayEraseExecutor(monitor),
+            new OverlayMergeExecutor(monitor),
+            new OverlaySplitExecutor(monitor),
+            new DataManagementAppendExecutor(monitor),
+            new ProximityNearExecutor(monitor),
+            new ProximityNearTableExecutor(monitor),
+            new StatisticsSummarizeExecutor(monitor),
+            new StatisticsFrequencyExecutor(monitor),
+            new StatisticsCalculateExecutor(monitor),
             new AttributeRenameTransformExecutor(monitor),
             new AttributeCastTransformExecutor(monitor),
             new ComputedFieldTransformExecutor(monitor),
@@ -368,6 +400,7 @@ public sealed class CatalogExecutableConformanceTests
             new GeoJsonFileSinkExecutor(monitor),
             new QuarantineSinkExecutor(monitor),
             new ExternalPostgisSinkExecutor(monitor),
+            new HonuaLayerSinkExecutor(monitor, NullLogger<HonuaLayerSinkExecutor>.Instance),
             new ImportDatasetJobExecutor(
                 Substitute.For<IServiceScopeFactory>(),
                 NullLogger<ImportDatasetJobExecutor>.Instance),

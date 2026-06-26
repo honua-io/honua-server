@@ -255,6 +255,12 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
 
     private sealed class CompletedJobService(string serviceId, string taskName) : IGeoprocessingJobService
     {
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
         private readonly ExecutionJobRecord _completedJob = new()
         {
             OperationId = "gp-client-job",

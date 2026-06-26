@@ -81,6 +81,10 @@ internal static class GeoprocessingServiceCollectionExtensions
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
 
+        // Usage-ranked GP tool tiering telemetry (#2144). Real, queryable,
+        // process-local store the dispatcher records into and an admin view ranks.
+        services.TryAddSingleton<IProcessUsageTelemetry, InMemoryProcessUsageTelemetry>();
+
         // Execution job store (ticket #722)
         if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
         {
@@ -237,6 +241,21 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<ManagedClusterExecutor>(services);
         Register<ManagedBufferAggregateExecutor>(services);
         Register<ManagedDensityExecutor>(services);
+        // Layer-aware overlay tool pack (#2206, #2139).
+        Register<OverlayClipExecutor>(services);
+        Register<OverlayIntersectExecutor>(services);
+        Register<OverlayUnionExecutor>(services);
+        Register<OverlayEraseExecutor>(services);
+        Register<OverlayMergeExecutor>(services);
+        Register<OverlaySplitExecutor>(services);
+        Register<DataManagementAppendExecutor>(services);
+        // Proximity tool pack (#2139).
+        Register<ProximityNearExecutor>(services);
+        Register<ProximityNearTableExecutor>(services);
+        // Statistics/summarization tool pack (#2140).
+        Register<StatisticsSummarizeExecutor>(services);
+        Register<StatisticsFrequencyExecutor>(services);
+        Register<StatisticsCalculateExecutor>(services);
         Register<AttributeRenameTransformExecutor>(services);
         Register<AttributeCastTransformExecutor>(services);
         Register<ComputedFieldTransformExecutor>(services);
@@ -258,6 +277,11 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<GeoJsonFileSinkExecutor>(services);
         Register<QuarantineSinkExecutor>(services);
         Register<ExternalPostgisSinkExecutor>(services);
+        // sink.honua-layer loads into a named catalog layer through the optional
+        // IHonuaLayerSink capability. The executor is always registered so the catalog
+        // advertises the node and can fail it closed with a clear message; the capability
+        // it depends on is registered only when the catalog database is present (#2210).
+        Register<HonuaLayerSinkExecutor>(services);
         Register<ImportDatasetJobExecutor>(services);
     }
 

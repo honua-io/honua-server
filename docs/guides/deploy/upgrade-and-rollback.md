@@ -56,6 +56,20 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 
 Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), `honua-azure-container-apps-revision` (revision traffic split), `honua-gitops-azure-functions` (slot swap), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository (Honua's Terraform modules are available to customers through support).
 
+### Synthetic health-probe gate
+
+Beyond metric thresholds, a deploy target can declare a synthetic `/healthz/ready` probe so an *unhealthy* canary is a first-class rollback trigger during the bake window — inherited by every backend and change class, independent of the metrics provider. Set these parameters on the deploy target (alongside or instead of the metric queries):
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| `telemetry.healthz.url` | — | Absolute HTTPS URL of the canary health endpoint (e.g. `https://canary.example.com/healthz/ready`). Enables the gate. |
+| `telemetry.healthz.failure_threshold` | `1` | Failing checks (within one scrape) that trigger rollback. |
+| `telemetry.healthz.samples` | `3` | Sequential checks issued per scrape. |
+| `telemetry.healthz.expected_status` | `200` | HTTP status a healthy check returns. |
+| `telemetry.healthz.timeout_seconds` | `5` | Per-check timeout. |
+
+A failing probe drives the **same** automatic-rollback path as an error-rate/latency breach and respects the anti-flap debounce (`telemetry.rollback.consecutive_breaches`). The probe URL is validated (HTTPS-only, no private/loopback destinations). A target may gate purely on health (`telemetry.healthz.url` with no metric queries) or combine the probe with the metric gate.
+
 ## Rollback
 
 Application rollback first — whenever readiness fails, errors or latency regress, and migrations were additive:

@@ -77,10 +77,16 @@ public enum AttributeRuleExpressionStatus
 ///   <item>Boolean combination: <c>&amp;&amp;</c> and <c>||</c>.</item>
 ///   <item>Parentheses for grouping.</item>
 ///   <item>Optional trailing semicolon and a leading <c>return</c> keyword (Esri wraps calc scripts as <c>return &lt;expr&gt;;</c>).</item>
+///   <item>String concatenation via <c>+</c> when either operand is a string.</item>
+///   <item>
+///     A documented allow-list of pure Arcade functions (case-insensitive):
+///     <c>Upper</c>, <c>Lower</c>, <c>Trim</c>, <c>Text</c>, <c>Concatenate</c>,
+///     <c>Round</c>, <c>Floor</c>, <c>Ceil</c>, <c>Abs</c>, <c>IsEmpty</c>.
+///   </item>
 /// </list>
-/// Anything else — function calls, <c>if</c>/<c>var</c>/multi-statement scripts, member
-/// access beyond <c>$feature</c>, string concatenation semantics, etc. — is treated as
-/// unsupported.
+/// Anything else — functions outside the allow-list, <c>if</c>/<c>var</c>/multi-statement
+/// scripts, member access beyond <c>$feature</c>, etc. — is treated as unsupported and the
+/// caller routes it out of scope rather than failing the edit.
 /// </para>
 /// </summary>
 public static class AttributeRuleExpression
@@ -319,13 +325,13 @@ public static class AttributeRuleExpression
 
             if (char.IsLetter(c))
             {
-                return ParseKeyword();
+                return ParseIdentifierOrCall();
             }
 
             return Fail();
         }
 
-        private object? ParseKeyword()
+        private object? ParseIdentifierOrCall()
         {
             var start = _pos;
             while (_pos < _text.Length && (char.IsLetterOrDigit(_text[_pos]) || _text[_pos] == '_'))
@@ -334,6 +340,15 @@ public static class AttributeRuleExpression
             }
 
             var word = _text[start.._pos];
+
+            // A bare identifier is only a literal keyword; anything else is a function call
+            // (handled below) or unsupported.
+            SkipWhitespace();
+            if (_pos < _text.Length && _text[_pos] == '(')
+            {
+                return ParseCall(word);
+            }
+
             return word switch
             {
                 "true" => true,
@@ -342,6 +357,121 @@ public static class AttributeRuleExpression
                 _ => Fail()
             };
         }
+
+        private object? ParseCall(string name)
+        {
+            // Consume '('
+            _pos++;
+            var args = new List<object?>();
+            SkipWhitespace();
+            if (_pos < _text.Length && _text[_pos] == ')')
+            {
+                _pos++;
+            }
+            else
+            {
+                while (true)
+                {
+                    var arg = ParseOr();
+                    if (_failed)
+                    {
+                        return null;
+                    }
+
+                    args.Add(arg);
+                    SkipWhitespace();
+                    if (Match(","))
+                    {
+                        continue;
+                    }
+
+                    if (Match(")"))
+                    {
+                        break;
+                    }
+
+                    return Fail();
+                }
+            }
+
+            return InvokeFunction(name, args);
+        }
+
+        // Pure, allocation-light function allow-list. Unknown names or wrong argument shapes
+        // route the whole expression out of scope (Fail) rather than throwing.
+        private object? InvokeFunction(string name, List<object?> args)
+        {
+            switch (name.ToLowerInvariant())
+            {
+                case "upper":
+                    return args.Count == 1 ? AsString(args[0]).ToUpperInvariant() : Fail();
+                case "lower":
+                    return args.Count == 1 ? AsString(args[0]).ToLowerInvariant() : Fail();
+                case "trim":
+                    return args.Count == 1 ? AsString(args[0]).Trim() : Fail();
+                case "text":
+                    return args.Count == 1 ? AsString(args[0]) : Fail();
+                case "concatenate":
+                    {
+                        if (args.Count == 0)
+                        {
+                            return Fail();
+                        }
+
+                        var sb = new System.Text.StringBuilder();
+                        foreach (var arg in args)
+                        {
+                            sb.Append(AsString(arg));
+                        }
+
+                        return sb.ToString();
+                    }
+
+                case "isempty":
+                    return args.Count == 1
+                        ? args[0] is null || (args[0] is string s && s.Length == 0)
+                        : Fail();
+                case "abs":
+                    return args.Count == 1 && TryToDouble(args[0], out var a) ? Math.Abs(a) : Fail();
+                case "floor":
+                    return args.Count == 1 && TryToDouble(args[0], out var f) ? Math.Floor(f) : Fail();
+                case "ceil":
+                    return args.Count == 1 && TryToDouble(args[0], out var c) ? Math.Ceiling(c) : Fail();
+                case "round":
+                    {
+                        if (args.Count == 1 && TryToDouble(args[0], out var r1))
+                        {
+                            return Math.Round(r1, MidpointRounding.AwayFromZero);
+                        }
+
+                        if (args.Count == 2 && TryToDouble(args[0], out var r2) && TryToDouble(args[1], out var digits))
+                        {
+                            var d = (int)digits;
+                            if (d is < 0 or > 15)
+                            {
+                                return Fail();
+                            }
+
+                            return Math.Round(r2, d, MidpointRounding.AwayFromZero);
+                        }
+
+                        return Fail();
+                    }
+
+                default:
+                    return Fail();
+            }
+        }
+
+        private static string AsString(object? value)
+            => value switch
+            {
+                null => string.Empty,
+                string s => s,
+                bool b => b ? "true" : "false",
+                double d => d.ToString(CultureInfo.InvariantCulture),
+                _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
+            };
 
         private object? ParseFeatureReference()
         {
@@ -502,6 +632,13 @@ public static class AttributeRuleExpression
             if (_failed)
             {
                 return null;
+            }
+
+            // String concatenation: '+' with a string operand joins their textual forms,
+            // matching Arcade's overloaded '+'. Other operators require numeric operands.
+            if (op == '+' && (left is string || right is string))
+            {
+                return AsString(left) + AsString(right);
             }
 
             if (!TryToDouble(left, out var l) || !TryToDouble(right, out var r))

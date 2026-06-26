@@ -604,6 +604,157 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         decision.UpdatedDeployParameters.Should().BeNull("no debounce configured means no streak bookkeeping");
     }
 
+    // ---- synthetic /healthz/ready gate (#1849) ---------------------------
+
+    [Fact]
+    public async Task EvaluateAsync_HealthProbeUnhealthy_RecommendsRollback_WithoutQueryingMetrics()
+    {
+        // A synthetic probe that fails the configured threshold must roll back exactly like an
+        // error-rate/latency breach — short-circuiting before (and so without needing) a metrics
+        // provider to read.
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 3 });
+        var evaluator = CreateHealthProbeEvaluator(probe);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("health probe is unhealthy");
+        probe.Invocations.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_HealthProbeHealthy_FallsThroughToMetricGate_AndPasses()
+    {
+        // A healthy synthetic probe does not promote on its own: it falls through to the metric gate,
+        // which is also queried and must pass before the deploy settles.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            healthProbe: probe,
+            responses: CreateSuccessfulResponses("25", "0.01", "150"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeFalse();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        probe.Invocations.Should().Be(1);
+        capturedQueries.Should().HaveCount(3, "a healthy probe still defers to the metric gate");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_HealthProbeUnhealthy_ShortCircuitsBeforeMetrics()
+    {
+        // When both a probe and metric queries are configured, an unhealthy probe is a first-class
+        // trigger that short-circuits before any metrics provider read.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 2 });
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            healthProbe: probe,
+            responses: CreateSuccessfulResponses("50", "0.01", "100"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+                ["telemetry.healthz.failure_threshold"] = "2"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue();
+        capturedQueries.Should().BeEmpty("an unhealthy probe rolls back before the metrics gate is read");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_HealthProbeConfigured_ButNoProbeService_Waits()
+    {
+        // A configured health gate with no probe service available must not silently promote past an
+        // unverified health check — it holds (waits) instead.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: null);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_HealthProbeUnhealthy_WithDebounce_SuppressesFirstBreach()
+    {
+        // The anti-flap debounce applies to the synthetic health gate too: a single failing scrape with
+        // a debounce of 2 holds rather than rolling back, and records a breach streak of 1.
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 3 });
+        var evaluator = CreateHealthProbeEvaluator(probe);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+                ["telemetry.rollback.consecutive_breaches"] = "2"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeFalse();
+        decision.WaitForMoreTelemetry.Should().BeTrue();
+        decision.UpdatedDeployParameters!["telemetry.rollback.breach_streak"].Should().Be("1");
+    }
+
+    private static DeployTelemetrySignalEvaluator CreateHealthProbeEvaluator(FakeHealthProbe probe)
+        => new(
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions
+                    {
+                        ConnectionId = "prod-prom",
+                        Provider = "prometheus",
+                        BaseUrl = "https://example.com",
+                        TimeoutSeconds = 2
+                    }
+                ]
+            }),
+            [],
+            NullLogger<DeployTelemetrySignalEvaluator>.Instance,
+            probe);
+
     // ---- invalid-policy bounded wait (#2161) -----------------------------
 
     [Fact]
@@ -692,6 +843,7 @@ public sealed class DeployTelemetrySignalEvaluatorTests
     private static DeployTelemetrySignalEvaluator CreateEvaluator(
         ConcurrentQueue<string> capturedQueries,
         DeployTelemetryConnectionOptions? connection = null,
+        IDeployHealthProbe? healthProbe = null,
         params string[] responses)
     {
         var responseQueue = new ConcurrentQueue<string>(responses);
@@ -730,7 +882,8 @@ public sealed class DeployTelemetrySignalEvaluatorTests
                 ]
             }),
             [prometheusProvider],
-            NullLogger<DeployTelemetrySignalEvaluator>.Instance);
+            NullLogger<DeployTelemetrySignalEvaluator>.Instance,
+            healthProbe);
     }
 
     private static string[] CreateSuccessfulResponses(string sampleCount, string errorRate, string latencyP95)
@@ -813,6 +966,17 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         {
             WasInvoked = true;
             return Task.FromResult(readings);
+        }
+    }
+
+    private sealed class FakeHealthProbe(DeployHealthProbeResult result) : IDeployHealthProbe
+    {
+        public int Invocations { get; private set; }
+
+        public Task<DeployHealthProbeResult> ProbeAsync(DeployHealthProbeRequest request, CancellationToken cancellationToken)
+        {
+            Invocations++;
+            return Task.FromResult(result);
         }
     }
 }

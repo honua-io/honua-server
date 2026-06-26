@@ -157,8 +157,13 @@ internal sealed class FeatureServerEditsHandler(
                     contentType: "application/json");
             }
 
+            // Resolve the authenticated principal once so owner-based edit policies
+            // (ownership-based access control, #2132) are enforced consistently in the
+            // shared edit pipeline rather than by caller discipline.
+            var editPrincipal = ResolveEditPrincipal(httpContext);
+
             // Process edit operations
-            var editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, cancellationToken);
+            var editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, cancellationToken);
 
             // Run Enterprise plugin validators + before-edit hooks over the resolved features (#347).
             // Rejected features are removed from the write set and marked failed in their response
@@ -246,6 +251,7 @@ internal sealed class FeatureServerEditsHandler(
         ApplyEditsRequest request,
         MetadataV2Resource resource,
         int storageLayerId,
+        EditPrincipal principal,
         CancellationToken cancellationToken)
     {
         var context = new EditOperationContext
@@ -255,11 +261,30 @@ internal sealed class FeatureServerEditsHandler(
             DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null
         };
 
-        await ProcessAddOperationsAsync(request, context, resource, cancellationToken);
-        await ProcessUpdateOperationsAsync(request, context, resource, storageLayerId, cancellationToken);
-        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, cancellationToken);
+        await ProcessAddOperationsAsync(request, context, resource, principal, cancellationToken);
+        await ProcessUpdateOperationsAsync(request, context, resource, storageLayerId, principal, cancellationToken);
+        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, principal, cancellationToken);
 
         return context;
+    }
+
+    /// <summary>
+    /// Resolves the authenticated <see cref="EditPrincipal"/> for owner-based edit policies
+    /// from the request's auth context: the principal name, whether the caller is
+    /// authenticated, and whether it holds the administrative override role.
+    /// </summary>
+    private static EditPrincipal ResolveEditPrincipal(HttpContext httpContext)
+    {
+        var isAuthenticated = httpContext.User?.Identity?.IsAuthenticated == true;
+        if (!isAuthenticated)
+        {
+            return EditPrincipal.Anonymous;
+        }
+
+        return new EditPrincipal(
+            httpContext.User!.Identity!.Name,
+            IsAuthenticated: true,
+            IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(httpContext));
     }
 
     /// <summary>
@@ -269,6 +294,7 @@ internal sealed class FeatureServerEditsHandler(
         ApplyEditsRequest request,
         EditOperationContext context,
         MetadataV2Resource resource,
+        EditPrincipal principal,
         CancellationToken cancellationToken)
     {
         if (request.Adds == null)
@@ -283,7 +309,7 @@ internal sealed class FeatureServerEditsHandler(
                 // request's, but using request.Adds[i].Geometry directly keeps the rule
                 // identical to the update path.
                 var requestHasGeometry = request.Adds[i].Geometry != null;
-                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, AttributeRuleEditEvent.Insert, cancellationToken);
+                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, AttributeRuleEditEvent.Insert, principal, cancellationToken);
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
                 context.CreateGeometryChanged.Add(requestHasGeometry);
@@ -317,6 +343,7 @@ internal sealed class FeatureServerEditsHandler(
         EditOperationContext context,
         MetadataV2Resource resource,
         int storageLayerId,
+        EditPrincipal principal,
         CancellationToken cancellationToken)
     {
         if (request.Updates == null)
@@ -406,6 +433,7 @@ internal sealed class FeatureServerEditsHandler(
                     internalObjectId,
                     resource,
                     AttributeRuleEditEvent.Update,
+                    principal,
                     cancellationToken,
                     existingFeature).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
@@ -441,6 +469,7 @@ internal sealed class FeatureServerEditsHandler(
         MetadataV2Resource resource,
         int storageLayerId,
         EditOperationContext context,
+        EditPrincipal principal,
         CancellationToken cancellationToken)
     {
         if (request.Deletes == null)
@@ -488,6 +517,24 @@ internal sealed class FeatureServerEditsHandler(
                 context.DeleteResults![i] = CreateFailureResult(
                     code: 1003,
                     description: "Feature not found",
+                    objectId: objectId);
+                continue;
+            }
+
+            // Owner-based edit policy (#2132): a non-owning, non-admin principal may not
+            // delete a row owned by another principal. Surfaces an Esri-shaped per-edit error
+            // rather than a 500 or silent success.
+            var ownerDecision = EvaluateOwnerPolicy(
+                resource,
+                AttributeRuleEditEvent.Delete,
+                existingFeature.Value.Attributes,
+                principal);
+            if (!ownerDecision.IsAllowed)
+            {
+                context.HasValidationErrors = true;
+                context.DeleteResults![i] = CreateFailureResult(
+                    code: 1003,
+                    description: SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."),
                     objectId: objectId);
                 continue;
             }
@@ -1105,6 +1152,7 @@ internal sealed class FeatureServerEditsHandler(
         long objectId,
         MetadataV2Resource resource,
         AttributeRuleEditEvent editEvent,
+        EditPrincipal principal,
         CancellationToken cancellationToken,
         Feature? existingFeature = null)
     {
@@ -1218,7 +1266,63 @@ internal sealed class FeatureServerEditsHandler(
             }
         }
 
+        // Owner-based edit policy (#2132): authorize update against the existing row's owner
+        // and stamp the owner on insert. Anonymous edits are rejected while the policy is
+        // active; admins bypass the ownership check. A denial throws ArgumentException so the
+        // per-feature try/catch converts it into a clean Esri-shaped edit failure, not a 500.
+        if (resource.OwnerEditPolicy is { Enabled: true } ownerPolicy)
+        {
+            var existingOwner = existingFeature is { } existing &&
+                existing.Attributes.TryGetValue(ownerPolicy.OwnerField, out var existingOwnerValue)
+                ? existingOwnerValue
+                : null;
+            var ownerDecision = OwnerEditPolicyEvaluator.Evaluate(
+                ownerPolicy, editEvent, existingOwner, principal);
+            if (!ownerDecision.IsAllowed)
+            {
+                throw new ArgumentException(SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."));
+            }
+
+            if (editEvent == AttributeRuleEditEvent.Insert &&
+                OwnerEditPolicyEvaluator.ShouldStampOwnerOnInsert(ownerPolicy))
+            {
+                attributes[ownerPolicy.OwnerField] = principal.Name;
+            }
+        }
+
+        // Contingent-value enforcement (#2133): the effective merged attribute row (existing
+        // values + this edit) must satisfy the resource's restrictive contingent-value groups.
+        // An invalid cross-field combination is rejected per-feature naming the offending group.
+        var contingentResult = ContingentValueValidator.Validate(resource, attributes);
+        if (!contingentResult.IsValid)
+        {
+            throw new ArgumentException(
+                SanitizeEditErrorMessage(contingentResult.Violations[0].Message, "Invalid attribute combination."));
+        }
+
         return Feature.Create(objectId, geometry, attributes.ToImmutable());
+    }
+
+    /// <summary>
+    /// Evaluates the resource's owner-based edit policy for a delete (which does not flow
+    /// through <see cref="BuildFeatureFromGeoServicesAsync"/>) against the existing row's
+    /// owner-field value.
+    /// </summary>
+    private static OwnerEditDecision EvaluateOwnerPolicy(
+        MetadataV2Resource resource,
+        AttributeRuleEditEvent editEvent,
+        ImmutableDictionary<string, object?> existingAttributes,
+        EditPrincipal principal)
+    {
+        if (resource.OwnerEditPolicy is not { Enabled: true } ownerPolicy)
+        {
+            return OwnerEditDecision.Allow;
+        }
+
+        var existingOwner = existingAttributes.TryGetValue(ownerPolicy.OwnerField, out var ownerValue)
+            ? ownerValue
+            : null;
+        return OwnerEditPolicyEvaluator.Evaluate(ownerPolicy, editEvent, existingOwner, principal);
     }
 
     /// <summary>

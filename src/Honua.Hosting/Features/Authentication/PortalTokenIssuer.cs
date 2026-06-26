@@ -129,6 +129,21 @@ internal sealed partial class PortalTokenIssuer(
             record.ExpiresAt);
     }
 
+    /// <inheritdoc />
+    public async Task RevokeAsync(string tokenReference, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(tokenReference))
+        {
+            // RFC 7009 §2.2: revoking an invalid/unknown token is a no-op success.
+            return;
+        }
+
+        // Removing the cache entry is the single authoritative revocation point: the
+        // request-path validator and introspection both resolve to this entry, so a
+        // revoked token is rejected on the very next request across every replica.
+        await RemoveAsync(TokenKeyPrefix + tokenReference, cancellationToken).ConfigureAwait(false);
+    }
+
     private static string CreateTokenValue()
     {
         // 256 bits of entropy matches AdminAuthSessionStore. Hex output keeps the

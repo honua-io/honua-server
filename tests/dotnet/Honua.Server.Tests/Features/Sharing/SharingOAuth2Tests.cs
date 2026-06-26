@@ -523,6 +523,149 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/revoke")]
+    public async Task Revoke_AccessToken_SubsequentValidationFails()
+    {
+        // Per-token revocation (#2155): an access token that validates today must fail
+        // the very next authorization check after it is revoked. The opaque token is
+        // bound to the redirect host, so validation is checked through the real
+        // IPortalTokenIssuer with a matching referer binding before and after revoke.
+        var verifier = "revoke-access-verifier-value-abcdefghijklmnopqrstuvwxyz";
+        var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        var code = await SeedAuthorizationCodeAsync(challenge, "S256");
+
+        using var client = _fixture.CreateClient();
+        using var issued = await PostFormAsync(
+            client,
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", RedirectUri),
+            ("client_id", ClientId),
+            ("code_verifier", verifier));
+        issued.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadTokenAsync(issued);
+        payload.AccessToken.Should().NotBeNullOrWhiteSpace();
+
+        var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var binding = new PortalTokenBinding(RedirectUri, null);
+
+        var before = await issuer.ValidateAsync(payload.AccessToken, binding, CancellationToken.None);
+        before.Should().NotBeNull("the freshly issued access token must validate before revocation");
+
+        using var revoke = await PostRevokeAsync(client, ("token", payload.AccessToken));
+        revoke.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var after = await issuer.ValidateAsync(payload.AccessToken, binding, CancellationToken.None);
+        after.Should().BeNull("a revoked access token must fail every subsequent authorization check");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/revoke")]
+    public async Task Revoke_RefreshToken_SubsequentRefreshFails()
+    {
+        // Revoking a refresh token closes the silent re-issuance path end-to-end: the
+        // refresh_token grant must fail once the token is revoked (#2155).
+        var verifier = "revoke-refresh-verifier-value-abcdefghijklmnopqrstuvwxyz";
+        var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        var code = await SeedAuthorizationCodeAsync(challenge, "S256");
+
+        using var client = _fixture.CreateClient();
+        using var issued = await PostFormAsync(
+            client,
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", RedirectUri),
+            ("client_id", ClientId),
+            ("code_verifier", verifier));
+        issued.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadTokenAsync(issued);
+        payload.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        using var revoke = await PostRevokeAsync(
+            client,
+            ("token", payload.RefreshToken!),
+            ("token_type_hint", "refresh_token"));
+        revoke.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var refresh = await PostFormAsync(
+            client,
+            ("grant_type", "refresh_token"),
+            ("refresh_token", payload.RefreshToken!),
+            ("client_id", ClientId));
+        refresh.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await ReadErrorAsync(refresh);
+        error.Error.Should().Be("invalid_grant");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/revoke")]
+    public async Task Revoke_UnknownToken_Returns200()
+    {
+        // RFC 7009 §2.2: a revocation request for an unknown/already-revoked token still
+        // returns 200, so the endpoint can never be used to probe token validity.
+        using var client = _fixture.CreateClient();
+        using var response = await PostRevokeAsync(client, ("token", "00000000000000000000000000000000"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/revoke")]
+    public async Task Revoke_MissingToken_ReturnsInvalidRequest()
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await PostRevokeAsync(client, ("token_type_hint", "access_token"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await ReadErrorAsync(response);
+        error.Error.Should().Be("invalid_request");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/revoke")]
+    public async Task Revoke_WhenPortalTokenDisabled_Returns404()
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Authentication:PortalToken:Enabled", "false");
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var response = await client.PostAsync(
+                "/sharing/rest/oauth2/revoke",
+                new FormUrlEncodedContent(new[]
+                {
+                    new KeyValuePair<string, string>("token", "x"),
+                }));
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<HttpResponseMessage> PostRevokeAsync(HttpClient client, params (string Key, string Value)[] pairs)
+    {
+        var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
+        // Use the literal route path so the endpoint-registry governance scanner
+        // recognises this as a same-method (POST) request backing POST
+        // /sharing/rest/oauth2/revoke.
+        return await client.PostAsync("/sharing/rest/oauth2/revoke", content);
+    }
+
     private async Task<string> SeedAuthorizationCodeAsync(string? codeChallenge, string? method)
     {
         // PortalOAuthStore is the shared singleton the endpoint resolves, so a code

@@ -283,6 +283,15 @@ public sealed record MetadataV2Resource
     }
 
     /// <summary>
+    /// Optional owner-based edit policy (ownership-based access control). When enabled,
+    /// update/delete of a feature is authorized only when the requesting principal owns the
+    /// row, administrators bypass the check, inserts stamp the owner from the principal, and
+    /// anonymous edits are rejected. Unset (the default) preserves full-edit behavior.
+    /// </summary>
+    [JsonPropertyName("ownerEditPolicy")]
+    public MetadataV2OwnerEditPolicy? OwnerEditPolicy { get; init; }
+
+    /// <summary>
     /// Optional extrusion metadata used by FeatureServer layer metadata and 3D Tiles generation.
     /// </summary>
     [JsonPropertyName("extrusion")]

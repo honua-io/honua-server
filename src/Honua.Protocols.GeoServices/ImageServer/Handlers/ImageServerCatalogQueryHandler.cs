@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
@@ -30,15 +32,18 @@ internal sealed class ImageServerCatalogQueryHandler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IImageServerCatalogReader _catalogReader;
+    private readonly IFieldMaskSource _fieldMaskSource;
     private readonly ILogger<ImageServerCatalogQueryHandler> _logger;
 
     public ImageServerCatalogQueryHandler(
         IMetadataV2GraphProvider graphProvider,
         IImageServerCatalogReader catalogReader,
+        IFieldMaskSource fieldMaskSource,
         ILogger<ImageServerCatalogQueryHandler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _catalogReader = catalogReader ?? throw new ArgumentNullException(nameof(catalogReader));
+        _fieldMaskSource = fieldMaskSource ?? throw new ArgumentNullException(nameof(fieldMaskSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -60,7 +65,7 @@ internal sealed class ImageServerCatalogQueryHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is null)
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -91,10 +96,20 @@ internal sealed class ImageServerCatalogQueryHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid ImageServer catalog query filter.");
             }
 
+            // RBAC field-level masking (#2159): drop attribute (field) names the
+            // principal's role is not permitted to see. This is the ImageServer
+            // companion to the FeatureServer column masking (#2108): the same policy
+            // source (IFieldMaskSource) and the same masked representation (the field
+            // is absent), enforced server-side before serialization so a masked column
+            // never leaks — even when the caller explicitly requests it via outFields.
+            var maskedFields = resolved.Resource is { } maskResource
+                ? await _fieldMaskSource.ResolveAsync(maskResource, cancellationToken).ConfigureAwait(false)
+                : ImmutableArray<string>.Empty;
+
             ImageServerLog.CatalogQueryCompleted(_logger, layerId, page.Items.Count, page.TotalCount);
             scope.SetSuccess(page.Items.Count);
 
-            return BuildResponse(page, query);
+            return BuildResponse(page, query, maskedFields);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -433,7 +448,10 @@ internal sealed class ImageServerCatalogQueryHandler
         return true;
     }
 
-    private static IResult BuildResponse(ImageServerCatalogPage page, ImageServerCatalogQuery query)
+    private static IResult BuildResponse(
+        ImageServerCatalogPage page,
+        ImageServerCatalogQuery query,
+        ImmutableArray<string> maskedFields)
     {
         if (query.ReturnCountOnly)
         {
@@ -492,15 +510,18 @@ internal sealed class ImageServerCatalogQueryHandler
                 Wkid = responseSrid,
                 LatestWkid = responseSrid,
             },
-            Fields = BuildCatalogFields(query.OutFields),
-            Features = page.Items.Select(item => BuildFeature(item, query)).ToArray(),
+            Fields = BuildCatalogFields(query.OutFields, maskedFields),
+            Features = page.Items.Select(item => BuildFeature(item, query, maskedFields)).ToArray(),
             ExceededTransferLimit = page.ExceededTransferLimit,
         };
 
         return Results.Json(response, ImageServerJsonContext.Default.CatalogQueryResponse);
     }
 
-    private static CatalogQueryFeature BuildFeature(ImageServerCatalogItem item, ImageServerCatalogQuery query)
+    private static CatalogQueryFeature BuildFeature(
+        ImageServerCatalogItem item,
+        ImageServerCatalogQuery query,
+        ImmutableArray<string> maskedFields)
     {
         var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
@@ -531,6 +552,18 @@ internal sealed class ImageServerCatalogQueryHandler
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         }
 
+        // Fail-secure field masking (#2159): drop masked attributes AFTER the
+        // outFields projection so a masked column is absent regardless of whether the
+        // caller explicitly requested it (matching the FeatureServer jsonb-key masking
+        // semantics from #2108).
+        if (!maskedFields.IsDefaultOrEmpty)
+        {
+            foreach (var masked in maskedFields)
+            {
+                attributes.Remove(masked);
+            }
+        }
+
         CatalogQueryGeometry? geometry = null;
         if (query.ReturnGeometry && item.FootprintRings is { Length: > 0 })
         {
@@ -556,7 +589,9 @@ internal sealed class ImageServerCatalogQueryHandler
         };
     }
 
-    internal static Field[] BuildCatalogFields(IReadOnlyList<string>? outFields = null)
+    internal static Field[] BuildCatalogFields(
+        IReadOnlyList<string>? outFields = null,
+        ImmutableArray<string> maskedFields = default)
     {
         Field[] allFields =
         [
@@ -577,15 +612,25 @@ internal sealed class ImageServerCatalogQueryHandler
             new Field { Name = "CreatedAt", Type = "esriFieldTypeDate", Alias = "CreatedAt" },
         ];
 
+        var masked = maskedFields.IsDefaultOrEmpty
+            ? null
+            : new HashSet<string>(maskedFields, StringComparer.OrdinalIgnoreCase);
+
         if (outFields is not { Count: > 0 })
         {
-            return allFields;
+            // Drop masked fields from the advertised schema so the response field set
+            // matches the masked attribute set (#2159).
+            return masked is null
+                ? allFields
+                : allFields.Where(field => !masked.Contains(field.Name)).ToArray();
         }
 
         // Preserve the canonical field order rather than the caller's order so the
         // schema stays stable and matches the attribute emit order.
         var allowed = new HashSet<string>(outFields, StringComparer.OrdinalIgnoreCase);
-        return allFields.Where(field => allowed.Contains(field.Name)).ToArray();
+        return allFields
+            .Where(field => allowed.Contains(field.Name) && (masked is null || !masked.Contains(field.Name)))
+            .ToArray();
     }
 
     private static List<long>? ParseObjectIds(string? raw)

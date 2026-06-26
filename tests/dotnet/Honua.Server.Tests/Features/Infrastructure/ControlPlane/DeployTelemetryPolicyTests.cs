@@ -156,6 +156,72 @@ public sealed class DeployTelemetryPolicyTests
         policyNegative!.WarmupDuration.Should().BeGreaterThan(TimeSpan.Zero);
     }
 
+    [Fact]
+    public void Parse_HealthProbe_AugmentsMetricGate_WithDefaults()
+    {
+        // The synthetic /healthz/ready gate (#1849) is provider-independent and layers onto the metric
+        // gate. With a Kubernetes target the default honua-http preset still synthesizes the metric
+        // queries; the probe URL is parsed alongside them with its documented defaults.
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod",
+            ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeTrue();
+        policy.HasHealthProbe.Should().BeTrue();
+        policy.HasMetricSignals.Should().BeTrue("the preset synthesizes metric queries alongside the probe");
+        policy.HealthProbeUrl.Should().Be("https://example.com/healthz/ready");
+        policy.HealthProbeFailureThreshold.Should().Be(1, "defaults to a single failure when unset");
+        policy.HealthProbeSamples.Should().Be(3);
+        policy.HealthProbeExpectedStatusCode.Should().Be(200);
+    }
+
+    [Fact]
+    public void Parse_HealthProbeOverrides_AreHonoured()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.policy"] = "kubernetes-honua-http",
+            ["telemetry.prometheus.job"] = "honua-prod",
+            ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+            ["telemetry.healthz.failure_threshold"] = "2",
+            ["telemetry.healthz.samples"] = "5",
+            ["telemetry.healthz.expected_status"] = "204",
+            ["telemetry.healthz.timeout_seconds"] = "8"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeTrue();
+        policy.HasHealthProbe.Should().BeTrue();
+        policy.HasMetricSignals.Should().BeTrue("the preset still synthesizes metric queries alongside the probe");
+        policy.HealthProbeFailureThreshold.Should().Be(2);
+        policy.HealthProbeSamples.Should().Be(5);
+        policy.HealthProbeExpectedStatusCode.Should().Be(204);
+        policy.HealthProbeTimeoutSeconds.Should().Be(8);
+    }
+
+    [Fact]
+    public void Parse_HealthProbeNonPositiveOverrides_FallBackToDefaults()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+            ["telemetry.healthz.failure_threshold"] = "0",
+            ["telemetry.healthz.samples"] = "-3",
+            ["telemetry.healthz.timeout_seconds"] = "not-a-number"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.HealthProbeFailureThreshold.Should().Be(1, "a non-positive threshold falls back to the default");
+        policy.HealthProbeSamples.Should().Be(3);
+        policy.HealthProbeTimeoutSeconds.Should().Be(5);
+    }
+
     // Each invalid case pins an EXPLICIT per-signal query override (so HasExplicitQueryOverride is true)
     // with no threshold, alongside an unsupported preset name. Using an unsupported preset is deliberate:
     // the built-in Kubernetes/honua-http presets always synthesize ALL three queries AND thresholds from
