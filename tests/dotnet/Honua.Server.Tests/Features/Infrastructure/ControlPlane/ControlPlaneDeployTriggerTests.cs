@@ -185,9 +185,9 @@ public sealed class ControlPlaneDeployTriggerTests
         var stale = DateTimeOffset.UtcNow.AddMinutes(-10);
         var release = CreateMetadata("op-staged", WorkflowOperationStatus.Reconciling, updatedAt: stale)
             with
-            {
-                MetadataRelease = MetadataContextAt(MetadataReleaseStage.ScriptMigration)
-            };
+        {
+            MetadataRelease = MetadataContextAt(MetadataReleaseStage.ScriptMigration)
+        };
         var store = new FakeWorkflowStore(release);
         var reconciler = BuildMetadataReconciler(store);
         var dispatcher = new OperationReconcileDispatcher(
