@@ -41,17 +41,42 @@ internal sealed partial class StreamingFileImportService
         // Validate and prepare table
         var allowedTableName = GetAllowedTableName(request.TableName);
         var targetSchema = ResolveTargetSchema(request.TargetSchema);
+        var loadMode = request.EffectiveLoadMode;
 
-        // Always create the staging table before the load. The load batches open a
-        // RepeatableRead transaction whose snapshot is taken on the first statement;
-        // creating the table here (autocommit, on the SAME connection) guarantees it
-        // is committed and visible before that snapshot. Previously this only ran when
-        // OverwriteExisting was set, so a default upload streamed into a table that was
-        // never created and the very first batch failed with Npgsql 42P01
-        // ("relation \"...imported_<table>\" does not exist"). honua.create_import_table
-        // already performs DROP TABLE IF EXISTS + CREATE TABLE, so it is safe to run
-        // unconditionally for the freshly-named staging table.
-        await CreateTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+        // The load mode determines which physical table the batches stream into and how
+        // the target is prepared:
+        //
+        //   * Replace — load into a fresh, empty <table>__staging sibling, then atomically
+        //     rename it over the live table after a fully successful load. This keeps replace
+        //     transactional: a failed/cancelled load never leaves a half-dropped target, which
+        //     the previous unconditional DROP+CREATE could not guarantee.
+        //   * Append  — create the live table only if missing (never drop) and stream into it,
+        //     so existing rows are retained.
+        //   * Upsert  — create the live table if missing, ensure a unique key index over the
+        //     requested property keys, and stream through honua.upsert_import_feature so
+        //     colliding rows UPDATE in place and the rest insert, with no full drop.
+        //
+        // The batch load opens a RepeatableRead transaction whose snapshot is taken on the
+        // first statement; preparing the table here (autocommit, on the SAME connection)
+        // guarantees it is committed and visible before that snapshot.
+        string loadTableName;
+        switch (loadMode)
+        {
+            case ImportLoadMode.Append:
+                await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+                loadTableName = allowedTableName;
+                break;
+            case ImportLoadMode.Upsert:
+                await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+                await EnsureUpsertKeyAsync(connection, targetSchema, allowedTableName, request.KeyColumns, cancellationToken);
+                loadTableName = allowedTableName;
+                break;
+            default:
+                // Replace via transactional staging-table swap.
+                loadTableName = await CreateStagingTableAsync(
+                    connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+                break;
+        }
 
         // 2-D default writer. CreateWkb upgrades to an emitZ and/or emitM writer per
         // geometry when the source geometry actually carries Z and/or M ordinates
@@ -112,11 +137,13 @@ internal sealed partial class StreamingFileImportService
                 var (imported, failed) = await InsertBatchAsync(
                     connection,
                     targetSchema,
-                    allowedTableName,
+                    loadTableName,
                     batch,
                     sourceSrid,
                     request.TargetSrid,
                     wkbWriter,
+                    loadMode,
+                    request.KeyColumns,
                     cancellationToken);
 
                 totalImported += imported;
@@ -157,16 +184,26 @@ internal sealed partial class StreamingFileImportService
             var (imported, failed) = await InsertBatchAsync(
                 connection,
                 targetSchema,
-                allowedTableName,
+                loadTableName,
                 batch,
                 sourceSrid,
                 request.TargetSrid,
                 wkbWriter,
+                loadMode,
+                request.KeyColumns,
                 cancellationToken);
 
             totalImported += imported;
             totalFailed += failed;
             batchesCommitted++;
+        }
+
+        // For a replace, the load streamed into the staging sibling; atomically rename it
+        // over the live target now that every batch committed successfully. A failure or
+        // cancellation before this point left the live table untouched.
+        if (loadMode == ImportLoadMode.Replace)
+        {
+            await SwapStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
         }
 
         await AnalyzeTableAsync(connection, targetSchema, allowedTableName, cancellationToken);

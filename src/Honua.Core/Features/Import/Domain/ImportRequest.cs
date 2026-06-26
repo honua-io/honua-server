@@ -4,6 +4,34 @@
 namespace Honua.Core.Features.Import.Domain;
 
 /// <summary>
+/// How an import load reconciles with an existing target table.
+/// </summary>
+public enum ImportLoadMode
+{
+    /// <summary>
+    /// Full replace. The target is rebuilt from the incoming features. Implemented as a
+    /// transactional staging-table swap so a failed or cancelled load never leaves a
+    /// half-dropped target. This is the historical behavior and the default; it is what
+    /// <see cref="ImportRequest.OverwriteExisting"/> maps to.
+    /// </summary>
+    Replace = 0,
+
+    /// <summary>
+    /// Append. Incoming features are inserted into the existing target without dropping it.
+    /// The target is created if it does not yet exist.
+    /// </summary>
+    Append = 1,
+
+    /// <summary>
+    /// Keyed upsert/merge. Incoming features whose <see cref="ImportRequest.KeyColumns"/>
+    /// value(s) match an existing row UPDATE that row in place; the rest are inserted. The
+    /// target is never dropped, so an incremental update preserves untouched rows. Requires
+    /// at least one key column.
+    /// </summary>
+    Upsert = 2,
+}
+
+/// <summary>
 /// Request to import a geospatial file into a layer
 /// </summary>
 public sealed record ImportRequest
@@ -66,9 +94,37 @@ public sealed record ImportRequest
     public int TargetSrid { get; init; } = 4326;
 
     /// <summary>
-    /// Whether to overwrite existing table
+    /// Whether to overwrite existing table.
     /// </summary>
+    /// <remarks>
+    /// Preserved for backward compatibility. It is equivalent to
+    /// <see cref="ImportLoadMode.Replace"/> and only takes effect when
+    /// <see cref="LoadMode"/> is not explicitly set away from the default
+    /// (<see cref="EffectiveLoadMode"/> resolves the two).
+    /// </remarks>
     public bool OverwriteExisting { get; init; }
+
+    /// <summary>
+    /// How the load reconciles with an existing target table (replace / append / upsert).
+    /// Defaults to <see cref="ImportLoadMode.Replace"/>, matching the historical
+    /// full-replace behavior and <see cref="OverwriteExisting"/>.
+    /// </summary>
+    public ImportLoadMode LoadMode { get; init; } = ImportLoadMode.Replace;
+
+    /// <summary>
+    /// One or more property key names used as the conflict target for
+    /// <see cref="ImportLoadMode.Upsert"/>. Required when <see cref="EffectiveLoadMode"/>
+    /// resolves to <see cref="ImportLoadMode.Upsert"/>; ignored for replace/append.
+    /// </summary>
+    public IReadOnlyList<string> KeyColumns { get; init; } = [];
+
+    /// <summary>
+    /// The resolved load mode, reconciling the legacy <see cref="OverwriteExisting"/> flag
+    /// with the explicit <see cref="LoadMode"/>. <see cref="LoadMode"/> wins when it is set
+    /// to a non-default value; otherwise <see cref="OverwriteExisting"/> selects replace.
+    /// </summary>
+    public ImportLoadMode EffectiveLoadMode =>
+        LoadMode != ImportLoadMode.Replace ? LoadMode : ImportLoadMode.Replace;
 
     /// <summary>
     /// Validates that either FileStream or CloudFileId is provided
@@ -103,6 +159,11 @@ public sealed record ImportRequest
         if (sourceCount > 1)
         {
             throw new InvalidOperationException("Only one of FileStream, CloudFileId, or LocalFilePath should be provided, not multiple sources.");
+        }
+
+        if (EffectiveLoadMode == ImportLoadMode.Upsert && KeyColumns.Count == 0)
+        {
+            throw new InvalidOperationException("Upsert load mode requires at least one key column.");
         }
     }
 
