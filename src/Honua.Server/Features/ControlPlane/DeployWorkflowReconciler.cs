@@ -278,16 +278,78 @@ internal sealed partial class DeployWorkflowReconciler(
         var rollbackObservation = await backend.RollbackAsync(current, cancellationToken).ConfigureAwait(false);
         var updatedAt = DateTimeOffset.UtcNow;
 
-        // Failure-of-failure escalation (#2161): a rollback that itself fails must not silently park
-        // the deploy. The Lambda/ECS/Argo backends return Failed — or echo the operation's current
-        // status (e.g. RollbackRequested) — on a transient provider error. If the gate just decided a
-        // rollback is required but the backend could not honour it, escalate to manual intervention so
-        // an operator is paged, rather than leaving a degraded revision live in a never-terminal
-        // RollbackRequested/Failed loop the reconciler can never re-drive (the RollbackRequested guard
-        // above short-circuits subsequent cycles before reaching RollbackAsync again).
-        var rollbackFailed = rollbackObservation.Status == WorkflowOperationStatus.Failed ||
-            rollbackObservation.Status is not (WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack);
-        if (rollbackFailed)
+        // Failure-of-failure handling (#2161): a rollback that itself fails must not silently park the
+        // deploy, but it must also not page an operator on the FIRST transient provider blip. The
+        // backends signal two distinct failure shapes from RollbackAsync, and they require different
+        // responses:
+        //
+        //   * TERMINAL/HARD failure — the backend returns Failed (ECS/Argo/GitOps SanitizedFailure) or
+        //     ManualInterventionRequired (e.g. Lambda when no prior version was captured). These are
+        //     deterministic; retrying cannot help. Escalate immediately so an operator is paged.
+        //
+        //   * TRANSIENT failure — the Lambda backend (and any backend that mirrors it) echoes the
+        //     operation's pre-rollback status (e.g. Reconciling/Submitted/Succeeded) with a "will
+        //     retry" message on a throttle or other transient AWS error. The rollback did not take,
+        //     but the next reconcile cycle can re-drive it. A single throttle must NOT abort self-
+        //     healing. Retry on a bounded budget (RollbackRetryBudget attempts), then escalate so a
+        //     persistently-failing rollback still pages loudly rather than looping forever (the
+        //     original #2161 bug).
+        //
+        // Progress statuses (RollbackRequested/RolledBack) fall through to the success path below.
+        var rollbackTerminallyFailed = rollbackObservation.Status
+            is WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired;
+        var rollbackInProgress = rollbackObservation.Status
+            is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack;
+        var rollbackTransientlyFailed = !rollbackTerminallyFailed && !rollbackInProgress;
+
+        if (rollbackTransientlyFailed)
+        {
+            // Count this cycle's transient failure. The attempt budget is carried in the deploy spec
+            // parameters (mirroring the telemetry breach-streak pattern) so it survives to the next
+            // reconcile without a separate store. While there is retry budget remaining we keep the
+            // operation in a re-drivable non-terminal status (Reconciling) — the RollbackRequested
+            // guard above only short-circuits RollbackRequested/RolledBack, so Reconciling re-enters
+            // RollbackAsync next cycle and the transient blip self-heals.
+            var attempts = ReadRollbackAttempts(deploySpec) + 1;
+            var budget = ResolveRollbackRetryBudget(deploySpec);
+            var transientDetail = rollbackObservation.Message ?? rollbackReason;
+
+            if (attempts < budget)
+            {
+                return current with
+                {
+                    Status = WorkflowOperationStatus.Reconciling,
+                    UpdatedAt = updatedAt,
+                    CompletedAt = null,
+                    ProviderOperationId = rollbackObservation.ProviderOperationId ?? current.ProviderOperationId,
+                    CurrentPhase = $"Automatic rollback did not take on attempt {attempts} of {budget} and will be retried. {transientDetail}",
+                    ObservedState = rollbackObservation.ObservedRevision ?? current.ObservedState,
+                    ErrorMessage = null,
+                    Deploy = WithRollbackAttempts(deploySpec, attempts)
+                };
+            }
+
+            // Budget exhausted: a rollback that never settles after the bounded retries is treated as
+            // genuinely stuck. Escalate to manual intervention so an operator is paged.
+            return current with
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                UpdatedAt = updatedAt,
+                CompletedAt = updatedAt,
+                ProviderOperationId = rollbackObservation.ProviderOperationId ?? current.ProviderOperationId,
+                CurrentPhase = $"Automatic rollback could not be completed after {attempts} attempts and requires manual intervention. {transientDetail}",
+                ObservedState = rollbackObservation.ObservedRevision ?? current.ObservedState,
+                ErrorMessage = $"Automatic rollback failed after {attempts} attempts: {transientDetail}",
+                Deploy = WithRollbackAttempts(deploySpec, attempts) with
+                {
+                    CurrentRevision = string.IsNullOrWhiteSpace(deploySpec.CurrentRevision)
+                        ? rollbackObservation.ObservedRevision ?? deploySpec.CurrentRevision
+                        : deploySpec.CurrentRevision
+                }
+            };
+        }
+
+        if (rollbackTerminallyFailed)
         {
             var rollbackFailureDetail = rollbackObservation.Message ?? rollbackReason;
             return current with
@@ -317,13 +379,74 @@ internal sealed partial class DeployWorkflowReconciler(
             CurrentPhase = rollbackReason,
             ObservedState = rollbackObservation.ObservedRevision ?? current.ObservedState,
             ErrorMessage = rollbackReason,
-            Deploy = deploySpec with
+            // The rollback took (RollbackRequested/RolledBack): clear any transient-retry attempt
+            // counter so the recorded spec reflects a clean settle rather than the in-flight budget.
+            Deploy = WithoutRollbackAttempts(deploySpec) with
             {
                 CurrentRevision = string.IsNullOrWhiteSpace(deploySpec.CurrentRevision)
                     ? rollbackObservation.ObservedRevision ?? deploySpec.CurrentRevision
                     : deploySpec.CurrentRevision
             }
         };
+    }
+
+    /// <summary>
+    /// Reserved deploy-spec parameter key carrying the count of consecutive transient rollback
+    /// failures between reconcile cycles. The reconciler persists the updated spec parameters, so the
+    /// attempt budget survives without a separate store (mirroring the telemetry breach-streak key).
+    /// </summary>
+    internal const string RollbackTransientAttemptsParameterKey = "deployment.rollback.transient_attempts";
+
+    /// <summary>
+    /// Reserved deploy-spec parameter key bounding how many consecutive transient rollback failures
+    /// are retried before the reconciler escalates to manual intervention. Defaults to
+    /// <see cref="DefaultRollbackRetryBudget"/>; clamped to <see cref="MaximumRollbackRetryBudget"/>.
+    /// </summary>
+    internal const string RollbackRetryBudgetParameterKey = "deployment.rollback.retry_budget";
+
+    private const int DefaultRollbackRetryBudget = 3;
+    private const int MaximumRollbackRetryBudget = 10;
+
+    private static int ReadRollbackAttempts(DeployOperationSpec spec)
+        => spec.Parameters.TryGetValue(RollbackTransientAttemptsParameterKey, out var raw) &&
+           int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var attempts) &&
+           attempts > 0
+            ? attempts
+            : 0;
+
+    private static int ResolveRollbackRetryBudget(DeployOperationSpec spec)
+    {
+        if (spec.Parameters.TryGetValue(RollbackRetryBudgetParameterKey, out var raw) &&
+            int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var budget) &&
+            budget > 0)
+        {
+            // Clamp so a misconfiguration can never re-create the unbounded-retry loop the original
+            // #2161 escalation fixed — a persistently-failing rollback always escalates eventually.
+            return Math.Min(budget, MaximumRollbackRetryBudget);
+        }
+
+        return DefaultRollbackRetryBudget;
+    }
+
+    private static DeployOperationSpec WithRollbackAttempts(DeployOperationSpec spec, int attempts)
+        => spec with
+        {
+            Parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal)
+            {
+                [RollbackTransientAttemptsParameterKey] = attempts.ToString(CultureInfo.InvariantCulture)
+            }
+        };
+
+    private static DeployOperationSpec WithoutRollbackAttempts(DeployOperationSpec spec)
+    {
+        if (!spec.Parameters.ContainsKey(RollbackTransientAttemptsParameterKey))
+        {
+            return spec;
+        }
+
+        var parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal);
+        parameters.Remove(RollbackTransientAttemptsParameterKey);
+        return spec with { Parameters = parameters };
     }
 
     /// <summary>

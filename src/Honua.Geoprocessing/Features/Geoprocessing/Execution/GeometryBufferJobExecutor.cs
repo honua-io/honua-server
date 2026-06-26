@@ -26,7 +26,7 @@ namespace Honua.Geoprocessing.Execution;
 /// terminally with a clean classification — the dispatcher is intentionally
 /// narrow until additional executors land.
 /// </summary>
-internal sealed partial class GeometryBufferJobExecutor : IJobExecutor
+internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
 {
     /// <summary>
     /// The single process id this executor handles. Matches the catalog entry in
@@ -44,6 +44,13 @@ internal sealed partial class GeometryBufferJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

@@ -43,7 +43,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class PdalPointCloudConvertJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<PdalPointCloudConvertJobExecutor> logger) : IJobExecutor
+    ILogger<PdalPointCloudConvertJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "pcloud.translate";
@@ -61,6 +61,13 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
     /// <inheritdoc />
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
     /// <inheritdoc />
@@ -130,6 +137,8 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
                 cancellationToken).ConfigureAwait(false);
 
             var args = BuildTranslateArguments(inputPath, outputPath, reproject ? sourceSrs : null);
+
+            await GdalCommandLog.LogCommandAsync(context, "pdal", args, workspace, cancellationToken).ConfigureAwait(false);
 
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);

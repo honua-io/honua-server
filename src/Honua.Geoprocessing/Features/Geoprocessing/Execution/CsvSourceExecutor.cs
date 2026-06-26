@@ -29,7 +29,7 @@ namespace Honua.Geoprocessing.Execution;
 /// delimiter auto-detection and file-path streaming belong to a later streaming-source
 /// stream.
 /// </remarks>
-internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options) : IJobExecutor
+internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options) : IProcessExecutor
 {
     internal const string HandledProcessId = "source.csv";
 
@@ -44,6 +44,13 @@ internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOpt
         new[] { "lat", "latitude", "y" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options = options;
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

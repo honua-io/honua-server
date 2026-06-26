@@ -1,6 +1,6 @@
 # Geoprocessing operations
 
-Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). The same catalog is exposed through three surfaces: OGC API Processes (`/ogc/processes/processes`), the ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`), and gRPC `geospatial.v1.ProcessService`. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md).
+Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). The same catalog is exposed through three surfaces: OGC API Processes (`/ogc/processes/processes`), the ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`), and gRPC `geospatial.v1.ProcessService`. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).
 
 Execution notes that apply across families:
 

@@ -25,7 +25,7 @@ namespace Honua.Geoprocessing.Execution;
 /// <see cref="GeometryIntersectJobExecutor"/>: both geometries must share the
 /// supplied SRID; reprojection is handled by <see cref="GeometryProjectJobExecutor"/>.
 /// </summary>
-internal sealed partial class GeometryDifferenceJobExecutor : IJobExecutor
+internal sealed partial class GeometryDifferenceJobExecutor : IProcessExecutor
 {
     /// <summary>
     /// The single process id this executor handles. Matches the catalog
@@ -43,6 +43,13 @@ internal sealed partial class GeometryDifferenceJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

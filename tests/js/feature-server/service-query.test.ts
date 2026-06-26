@@ -25,7 +25,9 @@ describe('Service Query', () => {
     expect(typeof data.layers?.[0]?.id).toBe('number');
   });
 
-  it('should reject POST requests with 405', async () => {
+  it('should support POST requests on the service query route', async () => {
+    // POST is intentionally supported (#1847/#1825) so Esri clients can submit large
+    // layerDefs/layers arrays that exceed URL length limits — it returns 200, not 405.
     const response = await fetch(
       `${config.baseUrl}/rest/services/${config.serviceId}/FeatureServer/query`,
       {
@@ -38,7 +40,6 @@ describe('Service Query', () => {
       },
     );
 
-    expect(response.status).toBe(405);
-    expect(response.headers.get('allow') ?? '').toContain('GET');
+    expect(response.status).toBe(200);
   });
 });

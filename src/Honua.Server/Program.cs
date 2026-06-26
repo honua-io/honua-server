@@ -453,12 +453,43 @@ if (connectedRedis != null)
         Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedReleaseReconciler,
         Honua.ControlPlane.CoordinatedReleaseReconciler>();
 
+    // Control-plane hybrid-trigger seam (design option C).
+    // Phase 0: one dispatcher routes a reconcile-once request to the typed reconciler that owns the
+    // operation kind. Both the poll loops and the Phase 1 event handler call this single method.
+    // Phase 1: the event handler is the cloud (EventBridge -> Lambda) entrypoint, and the backstop
+    // sweep self-heals dropped events; the TriggerMode flag chooses poll (on-prem) vs event (cloud).
+    builder.Services.Configure<Honua.ControlPlane.ControlPlaneTriggerOptions>(
+        builder.Configuration.GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName));
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IOperationReconcileDispatcher,
+        Honua.ControlPlane.OperationReconcileDispatcher>();
+    builder.Services.AddSingleton<Honua.ControlPlane.ControlPlaneEventHandler>();
+
+    var controlPlaneTriggerMode = builder.Configuration
+        .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
+        .GetValue<Honua.ControlPlane.ControlPlaneTriggerMode>("TriggerMode", Honua.ControlPlane.ControlPlaneTriggerMode.Poll);
+
     if (!isTestEnvironment)
     {
-        builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
-        builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
-        builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
-        builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
+        // All reconcile families are mode-selected (Phase 1: execution jobs; Phase 2: deploy +
+        // staged metadata/coordinated releases). Poll (default, on-prem/portable): the 5s loops run
+        // exactly as before. Event (cloud): every 5s loop is disabled; the event handler (deploy
+        // provider events + staged self-continue signals) plus the two backstop sweeps drive
+        // reconciliation instead.
+        if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
+        {
+            builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
+            builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
+            builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
+            builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
+        }
+
+        // The backstop sweeps ship in BOTH modes so a dropped/missed event (or, under poll, a wedged
+        // loop) self-heals. They are low-frequency and are a no-op when the active operations are
+        // fresh. The execution-job backstop covers Batch jobs; the workflow backstop covers the
+        // deploy/metadata/coordinated operations and walks any wedged staged release forward.
+        builder.Services.AddHostedService<Honua.ControlPlane.ExecutionJobBackstopSweepService>();
+        builder.Services.AddHostedService<Honua.ControlPlane.WorkflowOperationBackstopSweepService>();
     }
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +

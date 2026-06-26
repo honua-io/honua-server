@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.WorkflowPackages.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Server.Features.Orchestration;
@@ -30,7 +31,8 @@ internal static class WorkflowPackageServiceCollectionExtensions
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<WorkflowPackageService>>(),
             sp.GetService<IWorkflowDefinitionStore>(),
-            sp.GetService<WorkflowOrchestrationEngine>()));
+            sp.GetService<WorkflowOrchestrationEngine>(),
+            sp.GetService<IMetadataReleaseService>()));
 
         return services;
     }

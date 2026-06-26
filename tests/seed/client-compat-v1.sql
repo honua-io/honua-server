@@ -916,7 +916,12 @@ VALUES
     (0, 'event_time', 'Time', 10, NULL, true, NULL, 'Event time'),
     (0, 'uid', 'Uuid', 11, NULL, true, NULL, 'Unique identifier'),
     (0, 'tags', 'Json', 12, NULL, true, NULL, 'Tag array'),
-    (0, 'numbers', 'Json', 13, NULL, true, NULL, 'Number array')
+    (0, 'numbers', 'Json', 13, NULL, true, NULL, 'Number array'),
+    -- STAC EO extension cloud-cover queryable. stac-api-validator's Filter Extension
+    -- conformance matrix hard-codes `eo:cloud_cover` as the numeric property it filters on,
+    -- so the seeded collection must expose it as a real, queryable numeric field for the
+    -- Item Search Filter Ext class to pass.
+    (0, 'eo:cloud_cover', 'Double', 14, NULL, true, NULL, 'Cloud cover percentage')
 ON CONFLICT (layer_id, field_name) DO NOTHING;
 
 INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
@@ -927,16 +932,16 @@ WITH seeded_features AS (
     SELECT *
     FROM (
         VALUES
-            ('alpha',   'active',   1,  1.25, true,  '2024-01-01T12:00:00Z', '2024-02-01', '12:34:56', '00000000-0000-0000-0000-000000000001', '["red","blue"]'::jsonb, '[0,1,2]'::jsonb, NULL::text,          'POINT(-122.4900 37.7100)'),
-            ('beta',    'inactive', 2,  2.50, false, '2024-01-02T12:00:00Z', '2024-02-02', '12:34:56', '00000000-0000-0000-0000-000000000002', '["green"]'::jsonb,      '[1,2,3]'::jsonb, 'description_1',   'POINT(-122.4750 37.7200)'),
-            ('gamma',   'active',   3,  3.75, true,  '2024-01-03T12:00:00Z', '2024-02-03', '12:34:56', '00000000-0000-0000-0000-000000000003', '["red","blue"]'::jsonb, '[2,3,4]'::jsonb, 'description_2',   'POINT(-122.4600 37.7300)'),
-            ('delta',   'inactive', 4,  5.00, false, '2024-01-04T12:00:00Z', '2024-02-04', '12:34:56', '00000000-0000-0000-0000-000000000004', '["green"]'::jsonb,      '[3,4,5]'::jsonb, NULL::text,          'POINT(-122.4450 37.7400)'),
-            ('epsilon', 'active',   5,  6.25, true,  '2024-01-05T12:00:00Z', '2024-02-05', '12:34:56', '00000000-0000-0000-0000-000000000005', '["red","blue"]'::jsonb, '[4,5,6]'::jsonb, 'description_4',   'POINT(-122.4300 37.7500)'),
-            ('zeta',    'inactive', 6,  7.50, false, '2024-01-06T12:00:00Z', '2024-02-06', '12:34:56', '00000000-0000-0000-0000-000000000006', '["green"]'::jsonb,      '[5,6,7]'::jsonb, 'description_5',   'POINT(-122.4150 37.7600)'),
-            ('eta',     'active',   7,  8.75, true,  '2024-01-07T12:00:00Z', '2024-02-07', '12:34:56', '00000000-0000-0000-0000-000000000007', '["red","blue"]'::jsonb, '[6,7,8]'::jsonb, NULL::text,          'POINT(-122.4000 37.7700)'),
-            ('theta',   'inactive', 8, 10.00, false, '2024-01-08T12:00:00Z', '2024-02-08', '12:34:56', '00000000-0000-0000-0000-000000000008', '["green"]'::jsonb,      '[7,8,9]'::jsonb, 'description_7',   'POINT(-122.3850 37.7800)'),
-            ('iota',    'active',   9, 11.25, true,  '2024-01-09T12:00:00Z', '2024-02-09', '12:34:56', '00000000-0000-0000-0000-000000000009', '["red","blue"]'::jsonb, '[8,9,10]'::jsonb, 'description_8',  'POINT(-122.3700 37.7900)'),
-            ('lambda',  'inactive',10, 12.50, false, '2024-01-10T12:00:00Z', '2024-02-10', '12:34:56', '00000000-0000-0000-0000-000000000010', '["green"]'::jsonb,      '[9,10,11]'::jsonb, NULL::text,        NULL::text)
+            ('alpha',   'active',   1,  1.25, true,  '2024-01-01T12:00:00Z', '2024-02-01', '12:34:56', '00000000-0000-0000-0000-000000000001', '["red","blue"]'::jsonb, '[0,1,2]'::jsonb, NULL::text,          'POINT(-122.4900 37.7100)',  5.0::double precision),
+            ('beta',    'inactive', 2,  2.50, false, '2024-01-02T12:00:00Z', '2024-02-02', '12:34:56', '00000000-0000-0000-0000-000000000002', '["green"]'::jsonb,      '[1,2,3]'::jsonb, 'description_1',   'POINT(-122.4750 37.7200)',  8.0::double precision),
+            ('gamma',   'active',   3,  3.75, true,  '2024-01-03T12:00:00Z', '2024-02-03', '12:34:56', '00000000-0000-0000-0000-000000000003', '["red","blue"]'::jsonb, '[2,3,4]'::jsonb, 'description_2',   'POINT(-122.4600 37.7300)', 25.0::double precision),
+            ('delta',   'inactive', 4,  5.00, false, '2024-01-04T12:00:00Z', '2024-02-04', '12:34:56', '00000000-0000-0000-0000-000000000004', '["green"]'::jsonb,      '[3,4,5]'::jsonb, NULL::text,          'POINT(-122.4450 37.7400)', 60.0::double precision),
+            ('epsilon', 'active',   5,  6.25, true,  '2024-01-05T12:00:00Z', '2024-02-05', '12:34:56', '00000000-0000-0000-0000-000000000005', '["red","blue"]'::jsonb, '[4,5,6]'::jsonb, 'description_4',   'POINT(-122.4300 37.7500)',  9.0::double precision),
+            ('zeta',    'inactive', 6,  7.50, false, '2024-01-06T12:00:00Z', '2024-02-06', '12:34:56', '00000000-0000-0000-0000-000000000006', '["green"]'::jsonb,      '[5,6,7]'::jsonb, 'description_5',   'POINT(-122.4150 37.7600)', 75.0::double precision),
+            ('eta',     'active',   7,  8.75, true,  '2024-01-07T12:00:00Z', '2024-02-07', '12:34:56', '00000000-0000-0000-0000-000000000007', '["red","blue"]'::jsonb, '[6,7,8]'::jsonb, NULL::text,          'POINT(-122.4000 37.7700)',  2.0::double precision),
+            ('theta',   'inactive', 8, 10.00, false, '2024-01-08T12:00:00Z', '2024-02-08', '12:34:56', '00000000-0000-0000-0000-000000000008', '["green"]'::jsonb,      '[7,8,9]'::jsonb, 'description_7',   'POINT(-122.3850 37.7800)', 95.0::double precision),
+            ('iota',    'active',   9, 11.25, true,  '2024-01-09T12:00:00Z', '2024-02-09', '12:34:56', '00000000-0000-0000-0000-000000000009', '["red","blue"]'::jsonb, '[8,9,10]'::jsonb, 'description_8',  'POINT(-122.3700 37.7900)',  7.0::double precision),
+            ('lambda',  'inactive',10, 12.50, false, '2024-01-10T12:00:00Z', '2024-02-10', '12:34:56', '00000000-0000-0000-0000-000000000010', '["green"]'::jsonb,      '[9,10,11]'::jsonb, NULL::text,        NULL::text,                 NULL::double precision)
     ) AS seed(
         name,
         status,
@@ -950,7 +955,8 @@ WITH seeded_features AS (
         tags,
         numbers,
         description,
-        wkt
+        wkt,
+        cloud_cover
     )
 )
 INSERT INTO features (layer_id, geometry, attributes)
@@ -972,7 +978,8 @@ SELECT
         'uid', uid,
         'tags', tags,
         'numbers', numbers,
-        'description', description
+        'description', description,
+        'eo:cloud_cover', cloud_cover
     )
 FROM seeded_features
 WHERE NOT EXISTS (

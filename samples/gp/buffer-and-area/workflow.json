@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "workflow-package.v1",
+  "workerProfile": "managed",
+  "nodes": [
+    {
+      "nodeId": "buffer",
+      "nodeTypeId": "process:geometry.buffer",
+      "parameters": {
+        "distance": "100",
+        "srid": "4326"
+      }
+    },
+    {
+      "nodeId": "area",
+      "nodeTypeId": "process:geometry.area",
+      "parameters": {
+        "srid": "4326"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "sourceNodeId": "buffer",
+      "targetNodeId": "area",
+      "kind": "Data"
+    }
+  ],
+  "editorMetadata": {
+    "authoredVia": "honua-gp-devkit",
+    "summary": "Buffer an input geometry by 100m, then compute the buffered area. A locally-authored workflow fixture that 'honua gp publish buffer-and-area' pushes to the WorkflowPackage store."
+  }
+}

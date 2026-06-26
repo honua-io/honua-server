@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Honua.Geoprocessing.Testing</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!--
+      GP Devkit P6 (#2127): the golden-file GP test SDK. It wraps the headless
+      GeoprocessingLocalRunner (#2123) with xUnit-friendly golden-file assertion
+      helpers (NTS coordinate-tolerance geometry diff for vector outputs, a
+      numeric/structural diff for raster/scalar outputs) plus an UPDATE mode.
+
+      Like the dev CLI it is a DEV/TEST tool: it is deliberately NOT packed for
+      distribution and NOT AOT-published — nothing in Honua.Server references it,
+      so it never enters the server's AOT publish graph.
+    -->
+    <IsPackable>false</IsPackable>
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The runner + result are the P2 headless single-process runner; NTS supplies
+      the coordinate-tolerance geometry diff; the GeoJSON IO reads vector artifacts.
+      NetTopologySuite + its GeoJSON IO arrive transitively through
+      Honua.Geoprocessing (via Honua.Geometry), so no extra package refs are needed.
+    -->
+    <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+  </ItemGroup>
+
+</Project>

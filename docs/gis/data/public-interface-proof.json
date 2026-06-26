@@ -3862,7 +3862,9 @@
         "Mcp::tools/call",
         "Mcp::resources/list",
         "Mcp::resources/templates/list",
-        "Mcp::resources/read"
+        "Mcp::resources/read",
+        "Mcp::prompts/list",
+        "Mcp::prompts/get"
       ],
       "proofs": [
         {

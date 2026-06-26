@@ -25,7 +25,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class GdalRasterClipJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalRasterClipJobExecutor> logger) : IJobExecutor
+    ILogger<GdalRasterClipJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.clip";
@@ -36,6 +36,13 @@ internal sealed partial class GdalRasterClipJobExecutor(
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
     /// <inheritdoc />
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
     /// <inheritdoc />
@@ -138,6 +145,8 @@ internal sealed partial class GdalRasterClipJobExecutor(
                 inputPath,
                 outputPath,
             };
+
+            await GdalCommandLog.LogCommandAsync(context, "gdalwarp", args, workspace, cancellationToken).ConfigureAwait(false);
 
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);

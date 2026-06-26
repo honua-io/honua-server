@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591;CA1861;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      GP Devkit P4 (#2125): offline unit tests for the `honua gp new` scaffolder. They
+      assert the executor/fixture template rendering, collision detection against the live
+      P1 registration, the DI + catalog injectors, and that a generated fixture matches the
+      P6 loader's expected shape. No Redis/job-store/control-plane and no real source-tree
+      writes — pure string transforms and the in-memory fixture loader.
+      GP Devkit P9 (#2176): offline unit tests for the `honua gp publish` command.
+    -->
+    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing.Cli\Honua.Geoprocessing.Cli.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing.Testing\Honua.Geoprocessing.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

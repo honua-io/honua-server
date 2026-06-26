@@ -53,7 +53,8 @@ internal sealed class Cql2FilterProcessor(
         string? filterLang,
         string? filterCrs,
         bool defaultFilterLangIsText,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? collectionId = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -106,6 +107,14 @@ internal sealed class Cql2FilterProcessor(
             return ProcessingResult.Failure("Invalid filter expression.");
         }
 
+        // STAC Item Search Filter Extension exposes the STAC core queryables (id, collection,
+        // datetime) and nests item attributes under a "properties." prefix, none of which are
+        // physical storage fields. Rewrite those references to the resource's storage columns
+        // before translation so a spec-compliant CQL2 filter (e.g. `collection = '0'`,
+        // `id = '1'`, `datetime < TIMESTAMP(...)`, `properties.count > 0`) resolves to 200
+        // instead of being rejected as an unknown field (honua-server STAC filter conformance).
+        parsedExpression = RewriteStacCoreQueryables(parsedExpression, resource, collectionId);
+
         if (hasFilterCrs)
         {
             var filterCrsDefinition = await _crsRegistry.ResolveAsync(filterCrs, cancellationToken).ConfigureAwait(false);
@@ -131,6 +140,293 @@ internal sealed class Cql2FilterProcessor(
             ? ProcessingResult.Success(translationResult.SqlFilter)
             : ProcessingResult.Failure(translationResult.ErrorMessage ?? "Invalid filter expression.");
     }
+
+    /// <summary>
+    /// Rewrites STAC core queryable property references (<c>id</c>, <c>collection</c>,
+    /// <c>datetime</c>) and the STAC <c>properties.</c> attribute prefix in a parsed CQL2
+    /// expression to the resource's storage fields, so the shared filter translator can resolve
+    /// them. <c>collection</c> comparisons are evaluated against the target collection id and
+    /// folded to an always-true/always-false predicate (the search is already scoped to the
+    /// target collection). This is STAC-only: <see cref="ProcessFilterAsync"/> is consumed
+    /// exclusively by the STAC search endpoints.
+    /// </summary>
+    internal static FilterExpression RewriteStacCoreQueryables(
+        FilterExpression expression,
+        MetadataV2Resource resource,
+        string? collectionId)
+    {
+        var idField = resource.FindPrimaryIdField();
+        var idFieldName = idField?.Name ?? "objectid";
+        var idFieldIsNumeric = idField?.Type is MetadataV2FieldType.Integer
+            or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Float
+            or null; // default objectid is integer-keyed
+        var temporalFieldName = ResolveTemporalFieldName(resource);
+        return RewriteNode(expression, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId);
+    }
+
+    // STAC populates an Item's `datetime` from the configured temporal StartTimeField, or—when no
+    // temporal role is configured—from the first matching well-known date/time schema field. The
+    // `datetime` queryable must resolve to that same column. This mirrors the fallback list used
+    // by the STAC mapping/search layer so the filter targets the field the Item actually exposes.
+    private static readonly string[] TemporalFallbackFieldNames =
+    [
+        "datetime", "created_at", "updated_at", "start_datetime",
+        "end_datetime", "timestamp", "event_date", "date"
+    ];
+
+    private static string? ResolveTemporalFieldName(MetadataV2Resource resource)
+    {
+        var configured = resource.ReadTemporalFields().StartTimeField;
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        foreach (var candidate in TemporalFallbackFieldNames)
+        {
+            foreach (var field in resource.SchemaFields)
+            {
+                if (string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase) &&
+                    field.Type is MetadataV2FieldType.Date
+                        or MetadataV2FieldType.DateTime
+                        or MetadataV2FieldType.Time)
+                {
+                    return field.Name;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static FilterExpression RewriteNode(
+        FilterExpression expression,
+        string idFieldName,
+        bool idFieldIsNumeric,
+        string? temporalFieldName,
+        string? collectionId)
+    {
+        switch (expression)
+        {
+            case BinaryExpression binary:
+                // Fold a `collection <op> '<literal>'` comparison against the known target
+                // collection id, since `collection` is not a per-row storage column.
+                if (TryFoldCollectionComparison(binary, collectionId, out var folded))
+                {
+                    return folded;
+                }
+
+                // STAC item `id` is always a string, but it maps to a numeric storage column
+                // (objectid) by default; coerce the comparison's string literal to a number so
+                // `id = '1'` resolves against the integer key instead of failing type validation.
+                if (idFieldIsNumeric && TryCoerceIdComparison(binary, idFieldName, out var coerced))
+                {
+                    return coerced;
+                }
+
+                return binary with
+                {
+                    Left = RewriteNode(binary.Left, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId),
+                    Right = RewriteNode(binary.Right, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId)
+                };
+            case UnaryExpression unary:
+                return unary with { Operand = RewriteNode(unary.Operand, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId) };
+            case SpatialPredicate spatial:
+                return spatial with
+                {
+                    Left = RewriteNode(spatial.Left, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId),
+                    Right = RewriteNode(spatial.Right, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId)
+                };
+            case SpatialDistancePredicate spatialDistance:
+                return spatialDistance with
+                {
+                    Left = RewriteNode(spatialDistance.Left, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId),
+                    Right = RewriteNode(spatialDistance.Right, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId),
+                    Distance = RewriteNode(spatialDistance.Distance, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId)
+                };
+            case TemporalPredicate temporal:
+                return temporal with
+                {
+                    Left = RewriteNode(temporal.Left, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId),
+                    Right = RewriteNode(temporal.Right, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId)
+                };
+            case ArrayPredicate array:
+                return array with
+                {
+                    Left = RewriteNode(array.Left, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId),
+                    Right = RewriteNode(array.Right, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId)
+                };
+            case FunctionCall functionCall:
+                return functionCall with
+                {
+                    Arguments = functionCall.Arguments
+                        .Select(argument => RewriteNode(argument, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId))
+                        .ToArray()
+                };
+            case ArrayLiteral arrayLiteral:
+                return arrayLiteral with
+                {
+                    Elements = arrayLiteral.Elements
+                        .Select(element => RewriteNode(element, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId))
+                        .ToArray()
+                };
+            case ValueList valueList:
+                return valueList with
+                {
+                    Values = valueList.Values
+                        .Select(value => RewriteNode(value, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId))
+                        .ToArray()
+                };
+            case PropertyReference property:
+                return new PropertyReference(MapStacProperty(property.PropertyName, idFieldName, temporalFieldName));
+            default:
+                return expression;
+        }
+    }
+
+    private static string MapStacProperty(string propertyName, string idFieldName, string? temporalFieldName)
+    {
+        if (string.Equals(propertyName, "id", StringComparison.OrdinalIgnoreCase))
+        {
+            return idFieldName;
+        }
+
+        if (string.Equals(propertyName, "datetime", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(temporalFieldName))
+        {
+            return temporalFieldName;
+        }
+
+        // STAC nests item attributes under "properties."; the storage column is the bare name.
+        if (propertyName.StartsWith("properties.", StringComparison.OrdinalIgnoreCase))
+        {
+            return propertyName["properties.".Length..];
+        }
+
+        return propertyName;
+    }
+
+    private static bool TryCoerceIdComparison(BinaryExpression binary, string idFieldName, out FilterExpression coerced)
+    {
+        coerced = binary;
+
+        var isComparison = binary.Operator is BinaryOperator.Equal
+            or BinaryOperator.NotEqual
+            or BinaryOperator.LessThan
+            or BinaryOperator.LessThanOrEqual
+            or BinaryOperator.GreaterThan
+            or BinaryOperator.GreaterThanOrEqual;
+        if (!isComparison)
+        {
+            return false;
+        }
+
+        if (IsIdReference(binary.Left) && binary.Right is Literal rightLiteral)
+        {
+            if (!TryCoerceLiteralToNumber(rightLiteral, out var numericRight))
+            {
+                return false;
+            }
+
+            coerced = binary with { Left = new PropertyReference(idFieldName), Right = numericRight };
+            return true;
+        }
+
+        if (IsIdReference(binary.Right) && binary.Left is Literal leftLiteral)
+        {
+            if (!TryCoerceLiteralToNumber(leftLiteral, out var numericLeft))
+            {
+                return false;
+            }
+
+            coerced = binary with { Left = numericLeft, Right = new PropertyReference(idFieldName) };
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryCoerceLiteralToNumber(Literal literal, out Literal numeric)
+    {
+        numeric = literal;
+        if (literal.Type == LiteralType.Number)
+        {
+            return true;
+        }
+
+        if (literal.Value is string text &&
+            long.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+        {
+            numeric = new Literal(parsed, LiteralType.Number);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsIdReference(FilterExpression expression)
+        => expression is PropertyReference property
+           && string.Equals(property.PropertyName, "id", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryFoldCollectionComparison(
+        BinaryExpression binary,
+        string? collectionId,
+        out FilterExpression folded)
+    {
+        folded = binary;
+
+        // Only fold direct comparison operators that pair the `collection` queryable with a
+        // string literal. Logical AND/OR keep recursing through their operands.
+        var isComparison = binary.Operator is BinaryOperator.Equal
+            or BinaryOperator.NotEqual
+            or BinaryOperator.LessThan
+            or BinaryOperator.LessThanOrEqual
+            or BinaryOperator.GreaterThan
+            or BinaryOperator.GreaterThanOrEqual;
+        if (!isComparison)
+        {
+            return false;
+        }
+
+        string? literalValue = null;
+        if (IsCollectionReference(binary.Left) && binary.Right is Literal { Value: { } rightValue })
+        {
+            literalValue = Convert.ToString(rightValue, System.Globalization.CultureInfo.InvariantCulture);
+        }
+        else if (IsCollectionReference(binary.Right) && binary.Left is Literal { Value: { } leftValue })
+        {
+            literalValue = Convert.ToString(leftValue, System.Globalization.CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            return false;
+        }
+
+        var comparison = string.CompareOrdinal(collectionId ?? string.Empty, literalValue ?? string.Empty);
+        var result = binary.Operator switch
+        {
+            BinaryOperator.Equal => comparison == 0,
+            BinaryOperator.NotEqual => comparison != 0,
+            BinaryOperator.LessThan => comparison < 0,
+            BinaryOperator.LessThanOrEqual => comparison <= 0,
+            BinaryOperator.GreaterThan => comparison > 0,
+            BinaryOperator.GreaterThanOrEqual => comparison >= 0,
+            _ => true
+        };
+
+        // Fold to a constant predicate the translator can emit (1=1 / 1=0).
+        folded = new BinaryExpression(
+            new Literal(1L, LiteralType.Number),
+            BinaryOperator.Equal,
+            new Literal(result ? 1L : 0L, LiteralType.Number));
+        return true;
+    }
+
+    private static bool IsCollectionReference(FilterExpression expression)
+        => expression is PropertyReference property
+           && string.Equals(property.PropertyName, "collection", StringComparison.OrdinalIgnoreCase);
 
     internal static FilterLanguage? ResolveFilterLanguage(
         string? filterLang,

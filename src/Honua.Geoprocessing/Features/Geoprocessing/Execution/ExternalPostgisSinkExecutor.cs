@@ -26,7 +26,7 @@ namespace Honua.Geoprocessing.Execution;
 /// interpolation since they cannot be parameterized in DDL/DML. Every row's attributes JSONB
 /// carries a reserved <c>__pipeline_batch_id</c> key for soft-delete rollback.
 /// </summary>
-internal sealed partial class ExternalPostgisSinkExecutor : IJobExecutor
+internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "sink.external-postgis";
 
@@ -63,6 +63,13 @@ internal sealed partial class ExternalPostgisSinkExecutor : IJobExecutor
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ExternalPostgisSinkExecutor>.Instance;
         _secureConnectionResolver = secureConnectionResolver;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

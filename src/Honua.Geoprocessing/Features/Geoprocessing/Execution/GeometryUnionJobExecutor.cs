@@ -28,7 +28,7 @@ namespace Honua.Geoprocessing.Execution;
 /// All inputs must share the supplied SRID; reprojection is handled by
 /// <see cref="GeometryProjectJobExecutor"/>.
 /// </summary>
-internal sealed partial class GeometryUnionJobExecutor : IJobExecutor
+internal sealed partial class GeometryUnionJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.union";
 
@@ -42,6 +42,13 @@ internal sealed partial class GeometryUnionJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

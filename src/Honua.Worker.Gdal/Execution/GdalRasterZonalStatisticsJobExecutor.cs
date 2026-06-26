@@ -27,7 +27,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalRasterZonalStatisticsJobExecutor> logger) : IJobExecutor
+    ILogger<GdalRasterZonalStatisticsJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.zonal-statistics";
@@ -46,6 +46,13 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
     /// <inheritdoc />
@@ -203,6 +210,8 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 // Each gdalwarp/gdalinfo call gets its own CTS so a multi-zone
                 // job whose cumulative runtime exceeds the per-tool ceiling is
                 // not aborted unless an individual invocation actually hangs.
+                await GdalCommandLog.LogCommandAsync(context, "gdalwarp", clipArgs, workspace, cancellationToken).ConfigureAwait(false);
+
                 GdalCommandResult clipResult;
                 using (var clipTimeoutCts = new CancellationTokenSource(opts.ToolTimeout))
                 using (var clipLinked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, clipTimeoutCts.Token))
@@ -226,6 +235,8 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 }
 
                 var infoArgs = new List<string> { "-json", "-stats", clippedPath };
+                await GdalCommandLog.LogCommandAsync(context, "gdalinfo", infoArgs, workspace, cancellationToken).ConfigureAwait(false);
+
                 GdalCommandResult infoResult;
                 using (var infoTimeoutCts = new CancellationTokenSource(opts.ToolTimeout))
                 using (var infoLinked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, infoTimeoutCts.Token))

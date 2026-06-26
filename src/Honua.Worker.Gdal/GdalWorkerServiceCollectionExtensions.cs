@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.ControlPlane;
 using Honua.Worker.Gdal.Execution;
@@ -76,24 +77,12 @@ public static class GdalWorkerServiceCollectionExtensions
         // ships; the worker does not introduce its own BackgroundService.
         services.AddGdalWorkerExecutionLoop();
 
-        // GDAL executor options.
-        services
-            .AddOptions<GdalWorkerOptions>()
-            .Bind(configuration.GetSection(GdalWorkerOptions.SectionName))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        // GDAL CLI runner + native-profile executors.
-        services.TryAddSingleton<IGdalCommandRunner, ProcessGdalCommandRunner>();
-        services.TryAddSingleton<GdalVectorConvertJobExecutor>();
-        services.TryAddSingleton<GdalRasterReprojectJobExecutor>();
-        services.TryAddSingleton<GdalSurfaceJobExecutor>();
-        services.TryAddSingleton<GdalRasterClipJobExecutor>();
-        services.TryAddSingleton<GdalRasterReprojectCatalogJobExecutor>();
-        services.TryAddSingleton<GdalRasterStatisticsJobExecutor>();
-        services.TryAddSingleton<GdalRasterZonalStatisticsJobExecutor>();
-        services.TryAddSingleton<GdalMultidimCoverageMetadataJobExecutor>();
-        services.TryAddSingleton<PdalPointCloudConvertJobExecutor>();
+        // GDAL executor options, CLI runner, and the native-profile executor set.
+        // The per-process executors implement IProcessExecutor and self-declare their
+        // process id(s) (GP Devkit authoring contract #2122), so GdalDispatchJobExecutor
+        // builds its routing table by enumerating IProcessExecutor instead of a
+        // hand-maintained ctor. Shared with the Redis-free AddGdalProcessExecutors seam.
+        services.AddGdalProcessExecutors(configuration);
 
         // Register the native dispatcher as the single IJobExecutor for the
         // Geoprocessing kind in this host. It declares AcceptedRuntimeProfiles =
@@ -103,6 +92,95 @@ public static class GdalWorkerServiceCollectionExtensions
             ServiceDescriptor.Singleton<IJobExecutor, GdalDispatchJobExecutor>());
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers ONLY the native GDAL <see cref="IProcessExecutor"/> set plus its
+    /// dependencies — the <c>GdalWorkerOptions</c>, the <see cref="IGdalCommandRunner"/>
+    /// CLI runner, and each per-process executor — with NO Redis connection, queue,
+    /// job store, or hosted execution loop. This is the Redis-free seam the GP Devkit
+    /// headless runner / <c>honua gp</c> dev CLI consume (issue #2123) so a developer
+    /// can run a single native op directly without the durable substrate
+    /// <see cref="AddGdalWorker"/> wires for the worker host.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="configuration">Host configuration; binds the <c>GdalWorker</c> section.</param>
+    public static IServiceCollection AddGdalProcessExecutors(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services
+            .AddOptions<GdalWorkerOptions>()
+            .Bind(configuration.GetSection(GdalWorkerOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.TryAddSingleton<IGdalCommandRunner, ProcessGdalCommandRunner>();
+        RegisterGdalExecutor<GdalVectorConvertJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterReprojectJobExecutor>(services);
+        RegisterGdalExecutor<GdalSurfaceJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterClipJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterReprojectCatalogJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterStatisticsJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterZonalStatisticsJobExecutor>(services);
+        RegisterGdalExecutor<GdalMultidimCoverageMetadataJobExecutor>(services);
+        RegisterGdalExecutor<PdalPointCloudConvertJobExecutor>(services);
+
+        return services;
+    }
+
+    /// <summary>
+    /// DEV-ONLY: decorates the registered native <see cref="IGdalCommandRunner"/> with the
+    /// glass-box capturing runner so the supplied <see cref="GlassBoxCapture"/> collects the
+    /// fully unsanitized command line, real scratch working directory, and complete
+    /// stdout/stderr of every native invocation (GP Devkit, issue #2128).
+    /// </summary>
+    /// <remarks>
+    /// This MUST be called only by the dev <c>honua gp</c> CLI under its explicit glass-box
+    /// flag/env. The production worker host (<see cref="AddGdalWorker"/>) never calls it, so
+    /// the sanitized <see cref="GdalErrorSanitizer"/> / <see cref="GdalCommandLog"/> path
+    /// stays the default and no raw paths or untruncated output ever reach a client. Call it
+    /// after <see cref="AddGdalProcessExecutors"/> so the bare runner is already registered.
+    /// </remarks>
+    /// <param name="services">Service collection that has the GDAL executors registered.</param>
+    /// <param name="capture">The sink the decorator records unsanitized invocations into.</param>
+    public static IServiceCollection AddGlassBoxGdalCapture(
+        this IServiceCollection services,
+        GlassBoxCapture capture)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(capture);
+
+        var inner = services.LastOrDefault(d => d.ServiceType == typeof(IGdalCommandRunner))
+            ?? throw new InvalidOperationException(
+                "AddGlassBoxGdalCapture requires AddGdalProcessExecutors to have registered an IGdalCommandRunner first.");
+
+        services.Remove(inner);
+        services.AddSingleton(capture);
+        services.AddSingleton<IGdalCommandRunner>(sp =>
+            new GlassBoxGdalCommandRunner(MaterializeInner(sp, inner), capture));
+
+        return services;
+    }
+
+    private static IGdalCommandRunner MaterializeInner(IServiceProvider sp, ServiceDescriptor inner)
+    {
+        if (inner.ImplementationInstance is IGdalCommandRunner instance)
+        {
+            return instance;
+        }
+
+        if (inner.ImplementationFactory is not null)
+        {
+            return (IGdalCommandRunner)inner.ImplementationFactory(sp);
+        }
+
+        var implementationType = inner.ImplementationType
+            ?? throw new InvalidOperationException("The registered IGdalCommandRunner has no resolvable implementation.");
+        return (IGdalCommandRunner)ActivatorUtilities.CreateInstance(sp, implementationType);
     }
 
     /// <summary>
@@ -122,5 +200,25 @@ public static class GdalWorkerServiceCollectionExtensions
         services.AddHostedService<JobReconciliationService>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers a GDAL <see cref="IProcessExecutor"/> as its concrete type and
+    /// surfaces the same singleton into the enumerable <see cref="IProcessExecutor"/>
+    /// set <see cref="GdalDispatchJobExecutor"/> consumes — both bound to one
+    /// instance via a resolving factory (GP Devkit authoring contract #2122).
+    /// </summary>
+    private static void RegisterGdalExecutor<TExecutor>(IServiceCollection services)
+        where TExecutor : class, IProcessExecutor
+    {
+        services.TryAddSingleton<TExecutor>();
+
+        if (!services.Any(d =>
+                d.ServiceType == typeof(IProcessExecutor)
+                && d.ImplementationFactory is not null
+                && d.ImplementationFactory.Method.ReturnType == typeof(TExecutor)))
+        {
+            services.AddSingleton<IProcessExecutor>(sp => sp.GetRequiredService<TExecutor>());
+        }
     }
 }

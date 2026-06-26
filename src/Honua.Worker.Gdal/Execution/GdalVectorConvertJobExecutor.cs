@@ -24,7 +24,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class GdalVectorConvertJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalVectorConvertJobExecutor> logger) : IJobExecutor
+    ILogger<GdalVectorConvertJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "gdal.ogr2ogr";
@@ -43,6 +43,13 @@ internal sealed partial class GdalVectorConvertJobExecutor(
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
     /// <inheritdoc />
@@ -118,6 +125,8 @@ internal sealed partial class GdalVectorConvertJobExecutor(
                 outputPath,
                 inputPath,
             };
+
+            await GdalCommandLog.LogCommandAsync(context, "ogr2ogr", args, workspace, cancellationToken).ConfigureAwait(false);
 
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);

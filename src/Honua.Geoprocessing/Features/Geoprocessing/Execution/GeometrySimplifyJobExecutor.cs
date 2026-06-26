@@ -29,7 +29,7 @@ namespace Honua.Geoprocessing.Execution;
 /// <c>ST_Simplify</c> and can produce invalid geometries on near-tolerance
 /// vertices, which is why preservation is the default.
 /// </summary>
-internal sealed partial class GeometrySimplifyJobExecutor : IJobExecutor
+internal sealed partial class GeometrySimplifyJobExecutor : IProcessExecutor
 {
     /// <summary>
     /// The single process id this executor handles. Matches the catalog
@@ -47,6 +47,13 @@ internal sealed partial class GeometrySimplifyJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

@@ -256,6 +256,16 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Geoprocessing, ModuleRole.Hosting),
         (ModuleRole.Geoprocessing, ModuleRole.Jobs),
         (ModuleRole.Geoprocessing, ModuleRole.ServiceDefaults),
+        // Intra-module self-edge: the GP Devkit golden-file test SDK
+        // (Honua.Geoprocessing.Testing, #2127) is a dev/test-support library
+        // under src/ that wraps the runtime Honua.Geoprocessing it tests
+        // (the headless GeoprocessingLocalRunner). It is deliberately NOT
+        // packed or AOT-published — nothing in Honua.Server references it, so
+        // it never enters the server's publish graph. The arch test classifies
+        // it by the "Honua.Geoprocessing." prefix as a Geoprocessing-role
+        // consumer, so this self-cell is permitted (mirrors the Postgres family
+        // self-edge above). The no-cross-module rule is unaffected.
+        (ModuleRole.Geoprocessing, ModuleRole.Geoprocessing),
 
         // Scene: the carved-out 3D scene capability (3D Tiles generation,
         // scene registry, publishing executor, and the gRPC scene/tile/
@@ -567,6 +577,23 @@ public sealed class ModuleDependencyPolicyTests
         // the matrix). Unclassified consumers may reference anything.
         if (projectName.EndsWith(".Tests", StringComparison.Ordinal) ||
             projectName.Equals("Honua.TestKit", StringComparison.Ordinal))
+        {
+            return ModuleRole.Unclassified;
+        }
+
+        // Dev-tool CLIs (e.g. the GP Devkit's `honua-gp`, project
+        // Honua.Geoprocessing.Cli) are tooling, not runtime topology. They are
+        // packaged as local dotnet tools (PackAsTool) and are DELIBERATELY kept
+        // out of the AOT-published server surface — nothing in Honua.Server
+        // references them, so the AOT publish never pulls them in. Like tests /
+        // samples / benchmarks, they may reference whatever runtime module they
+        // drive (the GP CLI re-uses the real Honua.Geoprocessing + Honua.Worker.Gdal
+        // executor set), so they fall through to the default tooling policy
+        // rather than the runtime dependency-direction matrix. This guard must
+        // precede the family-prefix checks below, otherwise "Honua.Geoprocessing.Cli"
+        // would match the "Honua.Geoprocessing." prefix and be misclassified as a
+        // runtime Geoprocessing consumer.
+        if (projectName.EndsWith(".Cli", StringComparison.Ordinal))
         {
             return ModuleRole.Unclassified;
         }

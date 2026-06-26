@@ -82,6 +82,7 @@ Expected (trimmed):
 ## Next steps
 
 - [Run geoprocessing locally and prototype your own GP process](gp-local-dev-quickstart.md)
+- [Author a geoprocessing process](gp-devkit-authoring.md) — write your own process with the GP Devkit
 - [Automate workflows](automate-workflows.md)
 - [Geoprocessing operations reference](../../reference/geoprocessing-operations.md)
 - [Connect AI agents over MCP](../connect/ai-agents-mcp.md)

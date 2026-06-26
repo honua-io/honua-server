@@ -68,7 +68,7 @@ internal static class McpEndpointExtensions
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpOperatorSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
-            .WithDescription("Accepts JSON-RPC 2.0 requests over the Streamable-HTTP transport. Issues an Mcp-Session-Id on initialize and validates it on subsequent requests. Responds with application/json or, when the client accepts text/event-stream, a single SSE message frame. Single-request-only: initialize (MCP lifecycle forbids batching). Single or batched: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, and resources/read.")
+            .WithDescription("Accepts JSON-RPC 2.0 requests over the Streamable-HTTP transport. Issues an Mcp-Session-Id on initialize and validates it on subsequent requests. Responds with application/json or, when the client accepts text/event-stream, a single SSE message frame. Single-request-only: initialize (MCP lifecycle forbids batching). Single or batched: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, resources/read, prompts/list, and prompts/get.")
             .WithTags("Mcp");
 
         endpoints.MapGet(RoutePath,

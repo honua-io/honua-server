@@ -28,7 +28,7 @@ namespace Honua.Geoprocessing.Execution;
 /// polygons. The reference geometry is consumed for vertex
 /// reference only; only the input geometry's coordinates are mutated.
 /// </summary>
-internal sealed partial class GeometrySnapJobExecutor : IJobExecutor
+internal sealed partial class GeometrySnapJobExecutor : IProcessExecutor
 {
     /// <summary>
     /// The single process id this executor handles. Matches the catalog
@@ -46,6 +46,13 @@ internal sealed partial class GeometrySnapJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

@@ -53,6 +53,13 @@
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
+    <!-- GP Devkit P6 (#2127): the golden-SDK self-tests drive the internal managed
+         executors (geometry.buffer / geometry.clip) through the public test SDK. -->
+    <InternalsVisibleTo Include="Honua.Geoprocessing.Testing.Tests" />
+    <!-- GP Devkit dev CLI (#2123): consumes the internal AddGeoprocessing
+         registration to resolve the managed IProcessExecutor set Redis-free.
+         Grant matches the CLI's AssemblyName (honua-gp), not its project name. -->
+    <InternalsVisibleTo Include="honua-gp" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

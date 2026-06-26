@@ -7,6 +7,8 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
@@ -23,8 +25,22 @@ internal sealed class WorkflowPackageService(
     TimeProvider clock,
     ILogger<WorkflowPackageService> logger,
     IWorkflowDefinitionStore? workflowDefinitionStore = null,
-    WorkflowOrchestrationEngine? orchestrationEngine = null)
+    WorkflowOrchestrationEngine? orchestrationEngine = null,
+    IMetadataReleaseService? metadataReleaseService = null)
 {
+    /// <summary>
+    /// Default source environment recorded on the metadata release package emitted when a
+    /// workflow version is published. Workflow packages are environment-agnostic at authoring
+    /// time; the GitOps changeset builder promotes the artifact into concrete environments.
+    /// </summary>
+    private const string WorkflowReleaseSourceEnvironment = "console";
+
+    /// <summary>
+    /// Default target environment for the emitted release package. Promotion to additional
+    /// environments is governed downstream by the GitOps release/approval path.
+    /// </summary>
+    private const string WorkflowReleaseTargetEnvironment = "production";
+
     public Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken)
         => store.ListPackagesAsync(cancellationToken);
 
@@ -293,7 +309,66 @@ internal sealed class WorkflowPackageService(
 
         var saved = await store.SavePublicationAsync(publication, cancellationToken).ConfigureAwait(false);
         WorkflowPackageLog.PackagePublished(logger, packageId, version, publicationId, request.Target.ToString());
+
+        await EmitMetadataReleaseArtifactAsync(saved, principal, cancellationToken).ConfigureAwait(false);
         return saved;
+    }
+
+    /// <summary>
+    /// Bridges a published workflow version into the metadata-release lifecycle by recording a
+    /// Workflow-kind release-package entry. This is the publish→metadata-release→GitOps bridge:
+    /// the emitted package becomes a real release-package entry that the release lifecycle and the
+    /// downstream GitOps changeset builder can promote. The emission is best-effort — a workflow
+    /// publication is already durably saved, so a metadata-release failure must not fail the publish
+    /// (the artifact can be re-emitted), and the dependency is optional so existing wiring/tests that
+    /// do not supply <see cref="IMetadataReleaseService"/> keep working.
+    /// </summary>
+    private async Task EmitMetadataReleaseArtifactAsync(
+        WorkflowPublication publication,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        if (metadataReleaseService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var releaseRequest = new CreateWorkflowReleasePackageRequest
+            {
+                SemanticId = $"workflow.{Slug(publication.PackageId)}",
+                PackageId = publication.PackageId,
+                PackageVersion = publication.PackageVersion,
+                PackageHash = publication.PackageHash,
+                PublicationId = publication.PublicationId,
+                SourceEnvironment = WorkflowReleaseSourceEnvironment,
+                TargetEnvironments = [WorkflowReleaseTargetEnvironment],
+                Title = $"Workflow {publication.PackageId} v{publication.PackageVersion.ToString(CultureInfo.InvariantCulture)}",
+            };
+
+            var releasePackage = await metadataReleaseService
+                .CreateWorkflowReleasePackageAsync(releaseRequest, ResolveActor(principal) ?? "system", cancellationToken)
+                .ConfigureAwait(false);
+
+            WorkflowPackageLog.WorkflowReleaseArtifactEmitted(
+                logger,
+                publication.PackageId,
+                publication.PackageVersion,
+                publication.PublicationId,
+                releasePackage.PackageId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The publication is already persisted; surface the failure for observability but do
+            // not roll the publish back. The release artifact can be re-emitted out of band.
+            WorkflowPackageLog.WorkflowReleaseArtifactFailed(
+                logger,
+                publication.PackageId,
+                publication.PackageVersion,
+                publication.PublicationId,
+                ex);
+        }
     }
 
     public Task<IReadOnlyList<WorkflowPublication>> ListPublicationsAsync(

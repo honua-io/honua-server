@@ -38,6 +38,15 @@ public enum MetadataSemanticArtifactKind
     /// <summary>A Metadata v2 role.</summary>
     [JsonStringEnumMemberName("role")]
     Role,
+
+    /// <summary>
+    /// A published workflow / geoprocessing package version. Workflow artifacts are not
+    /// nodes in the Metadata v2 environment graph; they are emitted directly onto a release
+    /// package by the workflow-package publish path so the GitOps changeset builder can promote
+    /// them. Publishing a workflow is additive and never resolves against a v2 graph snapshot.
+    /// </summary>
+    [JsonStringEnumMemberName("workflow")]
+    Workflow,
 }
 
 /// <summary>

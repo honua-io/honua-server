@@ -24,7 +24,7 @@ namespace Honua.Geoprocessing.Execution;
 /// first-slice executor remains deterministic without a PostGIS round-trip;
 /// those pairs are tracked as a follow-on.
 /// </summary>
-internal sealed partial class GeometryProjectJobExecutor : IJobExecutor
+internal sealed partial class GeometryProjectJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.project";
 
@@ -41,6 +41,13 @@ internal sealed partial class GeometryProjectJobExecutor : IJobExecutor
         _options = options;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

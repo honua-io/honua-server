@@ -13510,6 +13510,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.DataWiredWorkflow_ValidatesAndPublishesToScheduleButRejectsSingleJobTargets",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_EmitsWorkflowMetadataReleaseArtifact",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_WithDuplicatePublicationId_ReturnsConflict",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowLifecycle_ValidatesDryRunsPublishesTargetsAndStampsJobProvenance"
       ],
@@ -14020,6 +14021,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.EmptyBatch_ReturnsInvalidRequestWithNullId",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.EmptyBody_ReturnsParseErrorWithNullId",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.FractionalId_IsRejectedAsInvalidRequest",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_AdvertisesPromptsCapability",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_Failure_DoesNotIssueSessionHeader",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_MissingClientInfo_ReturnsInvalidArgumentJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_Success_IssuesMcpSessionIdHeader",
@@ -14035,6 +14037,11 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.NullId_IsRejectedAsInvalidRequest",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ObjectId_IsRejectedAsInvalidRequest",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.PrimitiveBody_ReturnsInvalidRequestWithNullId",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.PromptsGet_MissingRequiredArgument_ReturnsInvalidParamsJsonRpcError",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.PromptsGet_RendersMessagesWithSubstitutedArguments",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.PromptsGet_UnknownPromptName_ReturnsInvalidParamsJsonRpcError",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.PromptsGet_WithoutName_ReturnsInvalidArgumentJsonRpcError",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.PromptsList_AdvertisesCuratedCatalog",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithEventStreamAccept_ReturnsSseMessageFrame",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithIssuedSessionId_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithUnknownSessionId_Returns404",

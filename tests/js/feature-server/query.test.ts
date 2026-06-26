@@ -601,12 +601,14 @@ describe('Edge Cases', () => {
     expect([200, 400]).toContain(response.status);
   });
 
-  it('should reject very large resultRecordCount', async () => {
+  it('should clamp a very large resultRecordCount to maxRecordCount', async () => {
+    // A resultRecordCount beyond the layer maxRecordCount is clamped (OGC fc-limit-response-1
+    // / Esri maxRecordCount semantics) — the server returns 200 with a capped page, not 400.
     const response = await client.query({
       where: '1=1',
       resultRecordCount: 1000000,
     });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(200);
   });
 
   it('should handle negative resultOffset', async () => {

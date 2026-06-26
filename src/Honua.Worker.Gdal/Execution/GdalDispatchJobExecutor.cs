@@ -26,60 +26,26 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    private readonly FrozenDictionary<string, IJobExecutor> _handlers;
+    private readonly FrozenDictionary<string, IProcessExecutor> _handlers;
     private readonly ILogger<GdalDispatchJobExecutor> _logger;
 
     /// <summary>
-    /// Composes the dispatcher over the registered GDAL-backed executors.
+    /// Composes the dispatcher over the auto-registered GDAL-backed executors
+    /// (issue #2122). Each <see cref="IProcessExecutor"/> self-declares the process
+    /// ids it handles through <see cref="IProcessExecutor.ProcessIds"/> — including
+    /// the <c>surface.*</c> and <c>raster.statistics/histogram</c> families that fan
+    /// a single executor over several ids — so the O(1) routing table is built from
+    /// a single DI scan via <see cref="ProcessExecutorRouteTable.Build"/> instead of
+    /// a hand-maintained constructor naming every executor and its id set.
     /// </summary>
     public GdalDispatchJobExecutor(
-        GdalVectorConvertJobExecutor vectorConvert,
-        GdalRasterReprojectJobExecutor rasterReproject,
-        GdalSurfaceJobExecutor surface,
-        GdalRasterClipJobExecutor rasterClip,
-        GdalRasterReprojectCatalogJobExecutor rasterReprojectCatalog,
-        GdalRasterStatisticsJobExecutor rasterStatistics,
-        GdalRasterZonalStatisticsJobExecutor rasterZonalStatistics,
-        GdalMultidimCoverageMetadataJobExecutor multidimCoverageMetadata,
-        PdalPointCloudConvertJobExecutor pointCloudConvert,
+        IEnumerable<IProcessExecutor> executors,
         ILogger<GdalDispatchJobExecutor> logger)
     {
-        ArgumentNullException.ThrowIfNull(vectorConvert);
-        ArgumentNullException.ThrowIfNull(rasterReproject);
-        ArgumentNullException.ThrowIfNull(surface);
-        ArgumentNullException.ThrowIfNull(rasterClip);
-        ArgumentNullException.ThrowIfNull(rasterReprojectCatalog);
-        ArgumentNullException.ThrowIfNull(rasterStatistics);
-        ArgumentNullException.ThrowIfNull(rasterZonalStatistics);
-        ArgumentNullException.ThrowIfNull(multidimCoverageMetadata);
-        ArgumentNullException.ThrowIfNull(pointCloudConvert);
+        ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
 
-        var handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
-        {
-            [GdalVectorConvertJobExecutor.HandledProcessId] = vectorConvert,
-            [GdalRasterReprojectJobExecutor.HandledProcessId] = rasterReproject,
-            [GdalRasterClipJobExecutor.HandledProcessId] = rasterClip,
-            [GdalRasterReprojectCatalogJobExecutor.HandledProcessId] = rasterReprojectCatalog,
-            [GdalRasterZonalStatisticsJobExecutor.HandledProcessId] = rasterZonalStatistics,
-            [GdalMultidimCoverageMetadataJobExecutor.HandledProcessId] = multidimCoverageMetadata,
-            [PdalPointCloudConvertJobExecutor.HandledProcessId] = pointCloudConvert,
-        };
-
-        // surface.* and raster.statistics/histogram each fan out a single executor
-        // over several process ids; copy them into the dispatcher's flat handler map
-        // so the routing decision stays O(1) per call.
-        foreach (var processId in GdalSurfaceJobExecutor.SupportedProcessIds)
-        {
-            handlers[processId] = surface;
-        }
-        foreach (var processId in GdalRasterStatisticsJobExecutor.SupportedProcessIds)
-        {
-            handlers[processId] = rasterStatistics;
-        }
-
-        _handlers = handlers.ToFrozenDictionary(StringComparer.Ordinal);
-
+        _handlers = ProcessExecutorRouteTable.Build(executors);
         _logger = logger;
     }
 

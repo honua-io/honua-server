@@ -22,7 +22,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class GdalRasterStatisticsJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalRasterStatisticsJobExecutor> logger) : IJobExecutor
+    ILogger<GdalRasterStatisticsJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>Process id for per-band statistics.</summary>
     public const string StatisticsProcessId = "raster.statistics";
@@ -38,6 +38,9 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
 
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
+
+    /// <inheritdoc />
+    public IReadOnlySet<string> ProcessIds => SupportedProcessIds;
 
     /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
@@ -96,6 +99,8 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
                 args.Add("-hist");
             }
             args.Add(inputPath);
+
+            await GdalCommandLog.LogCommandAsync(context, "gdalinfo", args, workspace, cancellationToken).ConfigureAwait(false);
 
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);

@@ -32,114 +32,25 @@ namespace Honua.Geoprocessing.Execution;
 /// </summary>
 internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 {
-    private readonly FrozenDictionary<string, IJobExecutor> _handlers;
+    private readonly FrozenDictionary<string, IProcessExecutor> _handlers;
     private readonly ILogger<GeoprocessingDispatchJobExecutor> _logger;
 
+    /// <summary>
+    /// Composes the dispatcher over the auto-registered per-process executors
+    /// (issue #2122). Each <see cref="IProcessExecutor"/> self-declares the process
+    /// ids it handles through <see cref="IProcessExecutor.ProcessIds"/>, so the
+    /// routing table is built from a single DI scan instead of a hand-maintained
+    /// constructor naming every executor. Duplicate or empty ids fail fast at
+    /// composition time via <see cref="ProcessExecutorRouteTable.Build"/>.
+    /// </summary>
     public GeoprocessingDispatchJobExecutor(
-        GeometryBufferJobExecutor buffer,
-        GeometryClipJobExecutor clip,
-        GeometryIntersectJobExecutor intersect,
-        GeometryProjectJobExecutor project,
-        GeometryAreaJobExecutor area,
-        GeometryUnionJobExecutor union,
-        GeometryCentroidJobExecutor centroid,
-        GeometryLengthJobExecutor length,
-        GeometryConvexHullJobExecutor convexHull,
-        GeometryDissolveJobExecutor dissolve,
-        GeometrySimplifyJobExecutor simplify,
-        GeometrySnapJobExecutor snap,
-        GeometryMakeValidJobExecutor makeValid,
-        GeometryDifferenceJobExecutor difference,
-        ManagedSpatialJoinExecutor spatialJoinManaged,
-        ManagedClusterExecutor clusterManaged,
-        ManagedBufferAggregateExecutor bufferAggregateManaged,
-        ManagedDensityExecutor densityManaged,
-        AttributeRenameTransformExecutor attributeRename,
-        AttributeCastTransformExecutor attributeCast,
-        ComputedFieldTransformExecutor computedField,
-        AttributeFilterTransformExecutor attributeFilter,
-        SpatialFilterTransformExecutor spatialFilter,
-        ClipTransformExecutor clip2,
-        DedupTransformExecutor dedup,
-        ReprojectTransformExecutor reproject,
-        GeoJsonSourceExecutor geoJsonSource,
-        CsvSourceExecutor csvSource,
-        GeoJsonFileSinkExecutor geoJsonFileSink,
-        QuarantineSinkExecutor quarantineSink,
-        ExternalPostgisSinkExecutor externalPostgisSink,
-        ImportDatasetJobExecutor importDataset,
+        IEnumerable<IProcessExecutor> executors,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
-        ArgumentNullException.ThrowIfNull(buffer);
-        ArgumentNullException.ThrowIfNull(clip);
-        ArgumentNullException.ThrowIfNull(intersect);
-        ArgumentNullException.ThrowIfNull(project);
-        ArgumentNullException.ThrowIfNull(area);
-        ArgumentNullException.ThrowIfNull(union);
-        ArgumentNullException.ThrowIfNull(centroid);
-        ArgumentNullException.ThrowIfNull(length);
-        ArgumentNullException.ThrowIfNull(convexHull);
-        ArgumentNullException.ThrowIfNull(dissolve);
-        ArgumentNullException.ThrowIfNull(simplify);
-        ArgumentNullException.ThrowIfNull(snap);
-        ArgumentNullException.ThrowIfNull(makeValid);
-        ArgumentNullException.ThrowIfNull(difference);
-        ArgumentNullException.ThrowIfNull(spatialJoinManaged);
-        ArgumentNullException.ThrowIfNull(clusterManaged);
-        ArgumentNullException.ThrowIfNull(bufferAggregateManaged);
-        ArgumentNullException.ThrowIfNull(densityManaged);
-        ArgumentNullException.ThrowIfNull(attributeRename);
-        ArgumentNullException.ThrowIfNull(attributeCast);
-        ArgumentNullException.ThrowIfNull(computedField);
-        ArgumentNullException.ThrowIfNull(attributeFilter);
-        ArgumentNullException.ThrowIfNull(spatialFilter);
-        ArgumentNullException.ThrowIfNull(clip2);
-        ArgumentNullException.ThrowIfNull(dedup);
-        ArgumentNullException.ThrowIfNull(reproject);
-        ArgumentNullException.ThrowIfNull(geoJsonSource);
-        ArgumentNullException.ThrowIfNull(csvSource);
-        ArgumentNullException.ThrowIfNull(geoJsonFileSink);
-        ArgumentNullException.ThrowIfNull(quarantineSink);
-        ArgumentNullException.ThrowIfNull(externalPostgisSink);
-        ArgumentNullException.ThrowIfNull(importDataset);
+        ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
-        {
-            [GeometryBufferJobExecutor.HandledProcessId] = buffer,
-            [GeometryClipJobExecutor.HandledProcessId] = clip,
-            [GeometryIntersectJobExecutor.HandledProcessId] = intersect,
-            [GeometryProjectJobExecutor.HandledProcessId] = project,
-            [GeometryAreaJobExecutor.HandledProcessId] = area,
-            [GeometryUnionJobExecutor.HandledProcessId] = union,
-            [GeometryCentroidJobExecutor.HandledProcessId] = centroid,
-            [GeometryLengthJobExecutor.HandledProcessId] = length,
-            [GeometryConvexHullJobExecutor.HandledProcessId] = convexHull,
-            [GeometryDissolveJobExecutor.HandledProcessId] = dissolve,
-            [GeometrySimplifyJobExecutor.HandledProcessId] = simplify,
-            [GeometrySnapJobExecutor.HandledProcessId] = snap,
-            [GeometryMakeValidJobExecutor.HandledProcessId] = makeValid,
-            [GeometryDifferenceJobExecutor.HandledProcessId] = difference,
-            [ManagedSpatialJoinExecutor.HandledProcessId] = spatialJoinManaged,
-            [ManagedClusterExecutor.HandledProcessId] = clusterManaged,
-            [ManagedBufferAggregateExecutor.HandledProcessId] = bufferAggregateManaged,
-            [ManagedDensityExecutor.HandledProcessId] = densityManaged,
-            [AttributeRenameTransformExecutor.HandledProcessId] = attributeRename,
-            [AttributeCastTransformExecutor.HandledProcessId] = attributeCast,
-            [ComputedFieldTransformExecutor.HandledProcessId] = computedField,
-            [AttributeFilterTransformExecutor.HandledProcessId] = attributeFilter,
-            [SpatialFilterTransformExecutor.HandledProcessId] = spatialFilter,
-            [ClipTransformExecutor.HandledProcessId] = clip2,
-            [DedupTransformExecutor.HandledProcessId] = dedup,
-            [ReprojectTransformExecutor.HandledProcessId] = reproject,
-            [GeoJsonSourceExecutor.HandledProcessId] = geoJsonSource,
-            [CsvSourceExecutor.HandledProcessId] = csvSource,
-            [GeoJsonFileSinkExecutor.HandledProcessId] = geoJsonFileSink,
-            [QuarantineSinkExecutor.HandledProcessId] = quarantineSink,
-            [ExternalPostgisSinkExecutor.HandledProcessId] = externalPostgisSink,
-            [ImportDatasetJobExecutor.HandledProcessId] = importDataset,
-        }.ToFrozenDictionary(StringComparer.Ordinal);
-
+        _handlers = ProcessExecutorRouteTable.Build(executors);
         _logger = logger;
     }
 

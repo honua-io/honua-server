@@ -348,6 +348,7 @@ internal static class SearchEndpoints
                     geometryService,
                     filterProcessor,
                     defaultFilterLangIsText,
+                    target.LayerIndex.ToString(CultureInfo.InvariantCulture),
                     cancellationToken);
                 if (!layerQueryResult.IsSuccess)
                 {
@@ -478,6 +479,7 @@ internal static class SearchEndpoints
         IGeometryService geometryService,
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
+        string collectionId,
         CancellationToken cancellationToken)
     {
         var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
@@ -551,6 +553,7 @@ internal static class SearchEndpoints
             resource,
             filterProcessor,
             defaultFilterLangIsText,
+            collectionId,
             cancellationToken);
         if (!filterQueryResult.IsSuccess)
         {
@@ -598,6 +601,7 @@ internal static class SearchEndpoints
         MetadataV2Resource resource,
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
+        string collectionId,
         CancellationToken cancellationToken)
     {
         var result = await filterProcessor.ProcessFilterAsync(
@@ -606,7 +610,8 @@ internal static class SearchEndpoints
             request.FilterLang,
             request.FilterCrs,
             defaultFilterLangIsText,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            collectionId).ConfigureAwait(false);
 
         return result.IsSuccess
             ? (true, result.SqlFilter, null)

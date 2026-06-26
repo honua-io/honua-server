@@ -26,13 +26,22 @@ class TestServiceQuery:
 
     @pytest.mark.integration
     @pytest.mark.featureserver
-    def test_service_query_post_returns_405(
+    def test_service_query_post_returns_layer_results(
         self, http_client: httpx.Client, test_service_id: str
     ):
+        # Esri FeatureServer service-level query accepts BOTH GET and POST; clients POST
+        # large layerDefs/layers arrays that exceed URL length limits (honua-server#1825,
+        # implemented in #1847). The POST companion shares the read-only GET handler and
+        # returns the same per-layer result shape.
         response = http_client.post(
             f"/rest/services/{test_service_id}/FeatureServer/query",
             data={"where": "1=1", "f": "json"},
         )
 
-        assert response.status_code == 405
-        assert "GET" in response.headers.get("allow", "")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "layers" in data
+        assert isinstance(data["layers"], list)
+        assert len(data["layers"]) >= 1
+        assert "id" in data["layers"][0]

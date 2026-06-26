@@ -25,7 +25,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class GdalSurfaceJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
-    ILogger<GdalSurfaceJobExecutor> logger) : IJobExecutor
+    ILogger<GdalSurfaceJobExecutor> logger) : IProcessExecutor
 {
     /// <summary>Process id for slope.</summary>
     public const string SlopeProcessId = "surface.slope";
@@ -62,6 +62,9 @@ internal sealed partial class GdalSurfaceJobExecutor(
 
     /// <summary>Process ids this executor routes.</summary>
     public static IReadOnlyCollection<string> SupportedProcessIds => HandledProcessIds;
+
+    /// <inheritdoc />
+    public IReadOnlySet<string> ProcessIds => HandledProcessIds;
 
     /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
@@ -126,6 +129,8 @@ internal sealed partial class GdalSurfaceJobExecutor(
             args.AddRange(modeArgs);
             args.Add(inputPath);
             args.Add(outputPath);
+
+            await GdalCommandLog.LogCommandAsync(context, "gdaldem", args, workspace, cancellationToken).ConfigureAwait(false);
 
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);

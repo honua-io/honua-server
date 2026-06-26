@@ -18,10 +18,11 @@ namespace Honua.Geoprocessing.Execution;
 /// shape: the executor is the sole worker-side behavior for a single dotted
 /// process id and surfaces automatically as a <c>process:&lt;id&gt;</c> workflow node.
 /// </summary>
-internal abstract partial class FeatureCollectionTransformExecutor : IJobExecutor
+internal abstract partial class FeatureCollectionTransformExecutor : IProcessExecutor
 {
     private protected readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger _logger;
+    private IReadOnlySet<string>? _processIds;
 
     protected FeatureCollectionTransformExecutor(
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
@@ -43,6 +44,10 @@ internal abstract partial class FeatureCollectionTransformExecutor : IJobExecuto
     /// The single dotted process id this executor handles (e.g. <c>transform.reproject</c>).
     /// </summary>
     protected abstract string ProcessId { get; }
+
+    /// <inheritdoc />
+    public IReadOnlySet<string> ProcessIds =>
+        _processIds ??= new HashSet<string>(StringComparer.Ordinal) { ProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 

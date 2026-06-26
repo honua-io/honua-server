@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
+
 namespace Honua.Core.Features.ControlPlane.Domain;
 
 /// <summary>
@@ -374,6 +376,16 @@ public sealed record OperationAuditInfo
     /// Machine-readable reason codes from the approval evaluation.
     /// </summary>
     public IReadOnlyList<string> ApprovalReasonCodes { get; init; } = [];
+
+    /// <summary>
+    /// Durable owner snapshot pinned at submit time for custom-code geoprocessing
+    /// jobs (Phase 0 auth spine). Captures the submitter's tenant, role snapshot,
+    /// and the already-validated (⊆ submitter) declared resource scope so a
+    /// scoped-job callback token can be attenuated to ≤ the submitter's
+    /// permissions. <see langword="null"/> for ordinary (non-custom-code) jobs,
+    /// which carry no declared scope — preserving existing behavior.
+    /// </summary>
+    public CustomCodeOwnerScope? CustomCodeOwnerScope { get; init; }
 }
 
 /// <summary>

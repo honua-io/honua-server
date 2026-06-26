@@ -22,11 +22,18 @@ namespace Honua.Geoprocessing.Execution;
 /// this executor accepts an <c>inline</c> GeoJSON document or an <c>input</c> data URI.
 /// File-path streaming for very large inputs belongs to a later streaming-source stream.
 /// </remarks>
-internal sealed class GeoJsonSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options) : IJobExecutor
+internal sealed class GeoJsonSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOptions> options) : IProcessExecutor
 {
     internal const string HandledProcessId = "source.geojson";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options = options;
+
+    /// <summary>
+    /// The single process id this executor handles, surfaced through
+    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
+    /// </summary>
+    public IReadOnlySet<string> ProcessIds { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
