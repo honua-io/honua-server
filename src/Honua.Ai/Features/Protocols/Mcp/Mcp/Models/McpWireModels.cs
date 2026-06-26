@@ -159,6 +159,16 @@ internal sealed class McpServerCapabilities
 
     [JsonPropertyName("resources")]
     public McpCapabilityFlag Resources { get; set; } = new();
+
+    /// <summary>
+    /// Advertises the MCP <c>prompts</c> capability (<c>prompts/list</c> /
+    /// <c>prompts/get</c>). Present so schema-driven clients discover the curated
+    /// workflow-prompt catalog during <c>initialize</c>. The Honua catalog is
+    /// static, so <c>listChanged</c> is always false.
+    /// See https://modelcontextprotocol.io/specification/2025-03-26/server/prompts.
+    /// </summary>
+    [JsonPropertyName("prompts")]
+    public McpCapabilityFlag Prompts { get; set; } = new();
 }
 
 internal sealed class McpCapabilityFlag
@@ -412,4 +422,98 @@ internal sealed class McpResourceContent
 
     [JsonPropertyName("text")]
     public string Text { get; set; } = string.Empty;
+}
+
+// -----------------------------------------------------------------------
+// MCP prompts (prompts/list, prompts/get)
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// Response payload for <c>prompts/list</c>. Advertises the curated catalog of
+/// reusable geospatial workflow prompts (site selection, hazard assessment,
+/// permit review, dashboard scaffolding) so a client LLM can offer them as
+/// first-class entrypoints. See
+/// https://modelcontextprotocol.io/specification/2025-03-26/server/prompts.
+/// </summary>
+internal sealed class McpPromptsListResult
+{
+    [JsonPropertyName("prompts")]
+    public IReadOnlyList<McpPromptDescriptor> Prompts { get; set; } = [];
+}
+
+/// <summary>
+/// Describes a single prompt in <c>prompts/list</c>: its stable name, a
+/// human-readable display title and description, and the templated arguments a
+/// client substitutes before <c>prompts/get</c>.
+/// </summary>
+internal sealed class McpPromptDescriptor
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Human-readable display title for the prompt.</summary>
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("arguments")]
+    public IReadOnlyList<McpPromptArgument> Arguments { get; set; } = [];
+}
+
+/// <summary>
+/// A templated argument a prompt accepts. <see cref="Required"/> marks whether a
+/// client must supply the value before <c>prompts/get</c> can render the prompt.
+/// </summary>
+internal sealed class McpPromptArgument
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("required")]
+    public bool Required { get; set; }
+}
+
+/// <summary>
+/// Request payload for <c>prompts/get</c>: the prompt name and the
+/// argument-value map the server substitutes into the prompt template.
+/// </summary>
+internal sealed class McpPromptsGetParams
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("arguments")]
+    public Dictionary<string, string>? Arguments { get; set; }
+}
+
+/// <summary>
+/// Response payload for <c>prompts/get</c>: the rendered prompt as an ordered
+/// list of conversation messages plus an optional description.
+/// </summary>
+internal sealed class McpPromptGetResult
+{
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("messages")]
+    public IReadOnlyList<McpPromptMessage> Messages { get; set; } = [];
+}
+
+/// <summary>
+/// A single message in a rendered prompt. Mirrors the MCP 2025-03-26 prompt
+/// message shape: a <c>role</c> (<c>user</c> | <c>assistant</c>) and a single
+/// content block.
+/// </summary>
+internal sealed class McpPromptMessage
+{
+    [JsonPropertyName("role")]
+    public string Role { get; set; } = "user";
+
+    [JsonPropertyName("content")]
+    public McpContentBlock Content { get; set; } = new();
 }
