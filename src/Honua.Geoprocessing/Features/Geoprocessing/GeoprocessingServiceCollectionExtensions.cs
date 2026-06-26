@@ -122,7 +122,9 @@ internal static class GeoprocessingServiceCollectionExtensions
         //  - analytics.*-managed NTS counterparts to the PostGIS-protocol analytics
         //    paths (spatial-join/cluster/buffer-aggregate/density, #1260);
         //  - transform.* / source.* / sink.* GeoETL executors (feat/geoetl-baseline
-        //    reconciled onto the #1185 add-a-capability contract);
+        //    reconciled onto the #1185 add-a-capability contract), including the
+        //    relational attribute-join / aggregate / pivot / unpivot transforms and
+        //    transform.computed-field op=expression (feat/etl-expression-and-joins);
         //  - import.dataset durable import orchestration (#1630).
         AddProcessExecutors(services);
 
@@ -205,6 +207,14 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<AttributeCastTransformExecutor>(services);
         Register<ComputedFieldTransformExecutor>(services);
         Register<AttributeFilterTransformExecutor>(services);
+        // Relational transforms (feat/etl-expression-and-joins): attribute-join /
+        // aggregate / pivot / unpivot close the join/group-by/pivot gap in the DAG
+        // transform set; transform.computed-field op=expression is backed by the AOT
+        // expression engine inside ComputedFieldTransformExecutor (already registered).
+        Register<AttributeJoinTransformExecutor>(services);
+        Register<AggregateTransformExecutor>(services);
+        Register<PivotTransformExecutor>(services);
+        Register<UnpivotTransformExecutor>(services);
         Register<SpatialFilterTransformExecutor>(services);
         Register<ClipTransformExecutor>(services);
         Register<DedupTransformExecutor>(services);

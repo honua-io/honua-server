@@ -787,13 +787,14 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "transform.computed-field",
             Title = "Computed Field",
-            Description = "Adds a new attribute derived from existing attributes via a small AOT-safe operation set (no expression engine). Supported ops: concat, add, subtract, multiply, divide, const. Rows with non-numeric arithmetic operands are dropped as row-level data errors.",
+            Description = "Adds a new attribute derived from existing attributes. Two AOT-safe modes (no reflection, no runtime code generation): the legacy fixed op set (concat, add, subtract, multiply, divide, const), and a sandboxed expression engine (op=expression, or simply supply 'expression') that evaluates a whitelisted, parsed AST — arithmetic, string (concat/substr/upper/lower/trim/replace/length), conditional (if/coalesce/ternary ?:), comparison/logical, math (abs/round/floor/ceil/sqrt/pow/min/max), date (now/year/month/day/parsedate), cast/number/string, and field references. Example: upper(trim(name)) + \"-\" + cast(year, string). Rows whose arithmetic/expression evaluation fails (e.g. a non-numeric operand) are dropped as row-level data errors.",
             Category = "transform",
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
                 Param("target", "Target Field", "Attribute name to write the computed value to.", ProcessParameterValueType.Text, required: true),
-                Param("op", "Operation", "Computation. Allowed values: concat, add, subtract, multiply, divide, const.", ProcessParameterValueType.Text, required: true),
+                Param("op", "Operation", "Computation. Allowed values: concat, add, subtract, multiply, divide, const, expression. Optional when 'expression' is supplied (defaults to expression mode).", ProcessParameterValueType.Text),
+                Param("expression", "Expression", "Whitelisted expression evaluated per feature when op=expression. Bare identifiers reference source attributes; supports arithmetic, string/conditional/math/date functions, comparison and logical operators, and a ternary. AOT-safe parsed AST — no reflection, no arbitrary code. Example: upper(trim(name)) + \"-\" + cast(year, string).", ProcessParameterValueType.Text),
                 Param("fields", "Fields", "Comma-separated source field names for the concat op.", ProcessParameterValueType.Text),
                 Param("separator", "Separator", "Join separator for the concat op.", ProcessParameterValueType.Text),
                 Param("left", "Left Operand", "Left operand for arithmetic ops: a source field name, or a numeric literal prefixed with '='.", ProcessParameterValueType.Text),
@@ -814,6 +815,72 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("field", "Field", "Attribute name to test.", ProcessParameterValueType.Text, required: true),
                 Param("op", "Operator", "Comparison operator. Allowed values: eq, neq, gt, gte, lt, lte, contains, exists. Defaults to eq.", ProcessParameterValueType.Text, defaultValue: "eq"),
                 Param("value", "Value", "Comparison operand. Omitted for the 'exists' op.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.attribute-join",
+            Title = "Attribute Join",
+            Description = "Joins the input FeatureCollection to a second 'right' FeatureCollection (a second DAG input, a Honua layer materialized to GeoJSON, or a lookup table) on key columns, bringing selected right-side fields onto each output feature. Inner or left join. Managed in-memory hash join: the RIGHT (build) side is fully materialized — bounded by the configured MaxArtifactBytes ceiling (no spill); the LEFT side streams. When an input row matches multiple right rows the join fans out one output per match.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input (left/probe) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("right", "Right Features", "Join (right/build) FeatureCollection as a data:application/geo+json;base64 data URI. Materialized into an in-memory hash table keyed by rightKeys.", ProcessParameterValueType.Text, required: true),
+                Param("leftKeys", "Left Keys", "Comma-separated input attribute names forming the join key.", ProcessParameterValueType.Text, required: true),
+                Param("rightKeys", "Right Keys", "Comma-separated right attribute names forming the join key. Defaults to leftKeys. Must match the leftKeys column count.", ProcessParameterValueType.Text),
+                Param("fields", "Carry Fields", "Comma-separated right-side fields to bring onto the output. When omitted, all right attributes are carried.", ProcessParameterValueType.Text),
+                Param("type", "Join Type", "Join type. Allowed values: inner (default), left. Left preserves unmatched input features with null carried fields.", ProcessParameterValueType.Text, defaultValue: "inner"),
+                Param("prefix", "Field Prefix", "Optional prefix prepended to every carried right-side field name to avoid collisions with input attributes.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.aggregate",
+            Title = "Aggregate",
+            Description = "Group-by aggregate over the input FeatureCollection. Groups by zero or more attributes (groupBy) and emits one feature per group carrying the group-key attributes plus aggregate columns. Aggregate functions (semicolon-separated 'field:function[:alias]'): count, sum, min, max, mean, stddev, first, collect. An optional geometry aggregate (union/centroid/extent) reduces each group's geometries to a single representative geometry. Managed NetTopologySuite — running scalar accumulators bound memory to the grouped output.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("groupBy", "Group By", "Comma-separated attribute names to group by. When empty the whole stream collapses into a single group.", ProcessParameterValueType.Text),
+                Param("aggregates", "Aggregates", "Semicolon-separated 'field:function[:alias]' aggregate specs. Functions: count, sum, min, max, mean, stddev, first, collect. When omitted a plain group COUNT is emitted. Example: 'pop:sum;pop:mean;name:collect'.", ProcessParameterValueType.Text),
+                Param("geometry", "Geometry Aggregate", "Optional per-group geometry reduction. Allowed values: none (default), union, centroid, extent.", ProcessParameterValueType.Text, defaultValue: "none"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.pivot",
+            Title = "Pivot",
+            Description = "Reshapes a long (tall) FeatureCollection into a wide one: rows sharing a groupBy key collapse into one feature, and the distinct values of the pivotField column become new attribute columns taking their value from valueField. Last-write-wins on cell collisions. The first row's geometry per group is carried. Managed — no native dependency.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input (long) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("groupBy", "Group By", "Comma-separated attribute names identifying each output row. When empty all input rows pivot into a single feature.", ProcessParameterValueType.Text),
+                Param("pivotField", "Pivot Field", "Attribute whose distinct values become new output columns.", ProcessParameterValueType.Text, required: true),
+                Param("valueField", "Value Field", "Attribute whose value fills each pivoted cell.", ProcessParameterValueType.Text, required: true),
+                Param("prefix", "Column Prefix", "Optional prefix prepended to each pivoted column name.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.unpivot",
+            Title = "Unpivot",
+            Description = "Melts a wide FeatureCollection into a long one: for each input feature and each column in 'fields', emits one output feature carrying the 'keep' columns plus a nameField (source column name) and valueField (its value), reusing the input geometry. The inverse of transform.pivot. Managed — no native dependency.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input (wide) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("fields", "Fields", "Comma-separated attribute columns to unpivot; one output feature is emitted per column per input feature.", ProcessParameterValueType.Text, required: true),
+                Param("keep", "Keep Fields", "Comma-separated attribute columns carried unchanged onto every output feature.", ProcessParameterValueType.Text),
+                Param("nameField", "Name Field", "Output column receiving the source column name. Defaults to 'name'.", ProcessParameterValueType.Text, defaultValue: "name"),
+                Param("valueField", "Value Field", "Output column receiving the source column value. Defaults to 'value'.", ProcessParameterValueType.Text, defaultValue: "value"),
+                Param("dropNulls", "Drop Nulls", "Skip output rows whose unpivoted value is null. Defaults to false.", ProcessParameterValueType.Flag, defaultValue: "false"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
