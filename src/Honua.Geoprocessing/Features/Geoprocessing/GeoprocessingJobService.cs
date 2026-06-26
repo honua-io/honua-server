@@ -286,7 +286,20 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var definitions = await _workloadRegistry.ListAsync(cancellationToken).ConfigureAwait(false);
-        return definitions.FirstOrDefault(d => d.Kind == ExecutionJobKind.Geoprocessing);
+        var geoprocessingWorkloads = definitions
+            .Where(d => d.Kind == ExecutionJobKind.Geoprocessing)
+            .ToArray();
+
+        // When the operator has supplied a remote (e.g. AWS Batch) GP workload
+        // alongside the always-present local/Kubernetes baseline, prefer the remote
+        // one so a fully-configured substrate routes GP execution off-box. The
+        // registry already drops remote workloads that are missing their required
+        // ARNs (see ExecutionWorkloadGate), so a surviving non-local workload is one
+        // the operator deliberately activated. Falling back to FirstOrDefault keeps
+        // the local-only default behavior when no remote workload is configured.
+        return geoprocessingWorkloads.FirstOrDefault(d =>
+                   !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+               ?? geoprocessingWorkloads.FirstOrDefault();
     }
 
     /// <summary>
