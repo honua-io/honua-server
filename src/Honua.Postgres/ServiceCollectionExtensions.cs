@@ -190,6 +190,14 @@ internal static class ServiceCollectionExtensions
                 configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default",
                 configuration["Database:Schema"]));
         services.AddScoped<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<IMetadataV2GraphStore>());
+        // Legacy V1 catalog -> Metadata v2 graph projector (honua-server#2081). Lets compat
+        // seeding paths (cloud-demo reset/startup) project freshly-seeded legacy services
+        // into the active graph store so the v2 read paths resolve them.
+        services.AddScoped<IMetadataV2LegacyCatalogProjector>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataV2LegacyCatalogProjector(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default",
+                configuration["Database:Schema"]));
         services.AddScoped<IMetadataV2EnvironmentSnapshotReader>(serviceProvider =>
             new Features.Metadata.PostgresMetadataV2EnvironmentSnapshotReader(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
