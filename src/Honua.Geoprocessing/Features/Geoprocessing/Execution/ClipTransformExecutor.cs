@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -15,7 +16,8 @@ namespace Honua.Geoprocessing.Execution;
 /// GEOS native dependency. A feature whose clipped geometry is empty is dropped;
 /// the clipped geometry keeps the source feature's SRID and attributes are
 /// preserved. Ported from the GeoETL baseline ClipTransform onto the #1185
-/// process/executor contract.
+/// process/executor contract. Streams: a per-feature map; the region is parsed once
+/// before the stream is consumed.
 /// </summary>
 internal sealed class ClipTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -25,50 +27,56 @@ internal sealed class ClipTransformExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
-        FeatureCollection source,
+    protected override async IAsyncEnumerable<IFeature> ApplyStream(
+        IAsyncEnumerable<IFeature> source,
         StepInputReader inputs,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var region = SpatialFilterTransformExecutor.ReadRegion(inputs);
 
-        var output = new List<IFeature>(source.Count);
-        foreach (var feature in source)
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var geometry = feature.Geometry;
-            if (geometry is null || geometry.IsEmpty)
+            var clipped = ClipFeature(feature, region);
+            if (clipped is not null)
             {
-                continue;
+                yield return clipped;
             }
+        }
+    }
 
-            // Cheap envelope reject before the overlay for features clearly outside the region.
-            if (!geometry.EnvelopeInternal.Intersects(region.EnvelopeInternal))
-            {
-                continue;
-            }
-
-            NtsGeometry clipped;
-            try
-            {
-                clipped = geometry.Intersection(region);
-            }
-            catch (TopologyException)
-            {
-                // Row-level geometry error: drop the row rather than aborting the run.
-                continue;
-            }
-
-            if (clipped.IsEmpty)
-            {
-                continue;
-            }
-
-            clipped.SRID = geometry.SRID;
-            output.Add(new Feature(clipped, feature.Attributes));
+    private static Feature? ClipFeature(IFeature feature, NtsGeometry region)
+    {
+        var geometry = feature.Geometry;
+        if (geometry is null || geometry.IsEmpty)
+        {
+            return null;
         }
 
-        return output;
+        // Cheap envelope reject before the overlay for features clearly outside the region.
+        if (!geometry.EnvelopeInternal.Intersects(region.EnvelopeInternal))
+        {
+            return null;
+        }
+
+        NtsGeometry clipped;
+        try
+        {
+            clipped = geometry.Intersection(region);
+        }
+        catch (TopologyException)
+        {
+            // Row-level geometry error: drop the row rather than aborting the run.
+            return null;
+        }
+
+        if (clipped.IsEmpty)
+        {
+            return null;
+        }
+
+        clipped.SRID = geometry.SRID;
+        return new Feature(clipped, feature.Attributes);
     }
 }
