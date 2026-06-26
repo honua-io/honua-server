@@ -343,6 +343,31 @@ internal static class CollectionEndpoints
         var geometryField = resource.FindPrimaryGeometryField();
         var geometryFieldName = geometryField?.Name;
 
+        // STAC core queryables (id, collection, datetime) are filterable on every collection per
+        // the STAC API Filter Extension, independent of the resource schema. They are not physical
+        // storage columns, so the search filter pipeline rewrites them to storage fields
+        // (Cql2FilterProcessor.RewriteStacCoreQueryables); advertise them here so the document does
+        // not declare them away under additionalProperties:false.
+        properties["id"] = new JsonSchemaProperty
+        {
+            Type = "string",
+            Title = "Item ID",
+            Description = "Unique provider-assigned identifier for the item"
+        };
+        properties["collection"] = new JsonSchemaProperty
+        {
+            Type = "string",
+            Title = "Collection",
+            Description = "The identifier of the STAC collection this item belongs to"
+        };
+        properties["datetime"] = new JsonSchemaProperty
+        {
+            Type = "string",
+            Format = "date-time",
+            Title = "Date and Time",
+            Description = "The searchable date and time of the item in UTC (RFC 3339)"
+        };
+
         foreach (var field in resource.SchemaFields ?? Array.Empty<MetadataV2Field>())
         {
             if (geometryFieldName is not null &&
