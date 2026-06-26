@@ -914,15 +914,18 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         // Terminate a workflow by writing the input FeatureCollection to an external
         // target and emit a small result-descriptor artifact (the target location +
         // row counts). Managed writers / Npgsql only — no GDAL.
-        // The catalog honua-layer sink (insert through honua.create_import_table /
-        // honua.insert_import_feature) is DEFERRED: unlike external-postgis (which
-        // targets a registered secure connection and therefore depends on resolver
-        // wiring outside this catalog. The catalog never accepts raw connection strings.
-        // It must reach the catalog NpgsqlDataSource. Injecting that into an executor
-        // would break the dispatcher's unconditional construction in lean
-        // deployments where Postgres is not registered, and a plan-parameter
-        // connection string would leak catalog credentials into the workflow DAG.
-        // Resolving that conditional-registration shape is a follow-on.
+        // The catalog honua-layer sink (load into a named Honua layer through the
+        // honua.* import functions, honoring the ImportLoadMode replace/append/upsert
+        // load modes and the __pipeline_batch_id soft-delete rollback pattern from
+        // sink.external-postgis) is DEFERRED. Unlike external-postgis — which targets a
+        // registered secure connection and never accepts a raw connection string — the
+        // catalog sink must reach the catalog's own NpgsqlDataSource. Injecting that
+        // data source into the executor would break the dispatcher's unconditional
+        // executor construction in lean deployments where Postgres is not registered,
+        // and threading a connection string through a plan parameter would leak catalog
+        // credentials into the workflow DAG. Resolving that conditional-registration
+        // shape is a follow-on (the load-mode SQL + service wiring this depends on now
+        // exists; only the catalog-data-source plumbing remains).
         // Native-format sinks (shapefile, geopackage) are deferred to the GDAL stream.
         // -----------------------------------------------------------------------
         new ProcessDefinition

@@ -33,6 +33,8 @@ internal sealed partial class StreamingFileImportService
         int sourceSrid,
         int targetSrid,
         WKBWriter wkbWriter,
+        ImportLoadMode loadMode,
+        IReadOnlyList<string> keyColumns,
         CancellationToken cancellationToken)
     {
         var imported = 0;
@@ -57,6 +59,8 @@ internal sealed partial class StreamingFileImportService
                     sourceSrid,
                     targetSrid,
                     wkbWriter,
+                    loadMode,
+                    keyColumns,
                     cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -74,6 +78,8 @@ internal sealed partial class StreamingFileImportService
                     sourceSrid,
                     targetSrid,
                     wkbWriter,
+                    loadMode,
+                    keyColumns,
                     cancellationToken);
             }
 
@@ -103,6 +109,8 @@ internal sealed partial class StreamingFileImportService
         int sourceSrid,
         int targetSrid,
         WKBWriter wkbWriter,
+        ImportLoadMode loadMode,
+        IReadOnlyList<string> keyColumns,
         CancellationToken cancellationToken)
     {
         var wkbs = new byte[]?[features.Count];
@@ -127,6 +135,27 @@ internal sealed partial class StreamingFileImportService
         // whose source SRID matches the resolved pair; rows carrying a different per-feature
         // SRID (e.g. mixed-CRS FileGDB layers) keep PROJ's default pipeline via a NULL.
         var datumPipeline = ResolveImportDatumPipeline(sourceSrid, targetSrid);
+
+        // Keyed upsert routes the whole batch through a single unnest-driven
+        // INSERT ... ON CONFLICT DO UPDATE (honua.bulk_upsert_import_features) so colliding
+        // rows merge in place without dropping the target. It honors the same datum pipeline
+        // CASE as the insert path via the optional datum_source_srid/datum_pipeline params.
+        if (loadMode == ImportLoadMode.Upsert)
+        {
+            return await UpsertBatchFastAsync(
+                connection,
+                transaction,
+                schemaName,
+                tableName,
+                wkbs,
+                sourceSrids,
+                properties,
+                sourceSrid,
+                targetSrid,
+                datumPipeline,
+                keyColumns,
+                cancellationToken);
+        }
 
         var sql = datumPipeline is null
             ? """
@@ -177,6 +206,46 @@ internal sealed partial class StreamingFileImportService
         return imported;
     }
 
+    /// <summary>
+    /// Keyed-upsert fast path: merge a whole batch through a single
+    /// <c>honua.bulk_upsert_import_features</c> call (unnest + <c>ON CONFLICT DO UPDATE</c>)
+    /// so colliding rows update in place and the rest insert, without dropping the target.
+    /// Returns the number of rows processed by the merge.
+    /// </summary>
+    private static async Task<int> UpsertBatchFastAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string schemaName,
+        string tableName,
+        byte[]?[] wkbs,
+        int[] sourceSrids,
+        string[] properties,
+        int sourceSrid,
+        int targetSrid,
+        string? datumPipeline,
+        IReadOnlyList<string> keyColumns,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(BulkUpsertImportFeaturesSql, connection)
+        {
+            Transaction = transaction
+        };
+        command.Parameters.Add("schema_name", NpgsqlDbType.Text).Value = schemaName;
+        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
+        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
+        command.Parameters.Add("wkbs", NpgsqlDbType.Array | NpgsqlDbType.Bytea).Value = wkbs;
+        command.Parameters.Add("source_srids", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = sourceSrids;
+        command.Parameters.Add("properties", NpgsqlDbType.Array | NpgsqlDbType.Jsonb).Value = properties;
+        command.Parameters.Add("key_columns", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = keyColumns.ToArray();
+        command.Parameters.Add("datum_source_srid", NpgsqlDbType.Integer).Value =
+            datumPipeline is null ? DBNull.Value : sourceSrid;
+        command.Parameters.Add("datum_pipeline", NpgsqlDbType.Text).Value =
+            datumPipeline ?? (object)DBNull.Value;
+
+        var processed = await command.ExecuteScalarAsync(cancellationToken);
+        return processed is int count ? count : wkbs.Length;
+    }
+
     private async Task<(int imported, int failed)> InsertBatchIndividuallyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -186,19 +255,26 @@ internal sealed partial class StreamingFileImportService
         int sourceSrid,
         int targetSrid,
         WKBWriter wkbWriter,
+        ImportLoadMode loadMode,
+        IReadOnlyList<string> keyColumns,
         CancellationToken cancellationToken)
     {
         var imported = 0;
         var failed = 0;
+        var isUpsert = loadMode == ImportLoadMode.Upsert;
 
         // Honor the auditable Esri-default datum pipeline for the request-level
         // (sourceSrid -> targetSrid) pair (#1501), applied per feature only when the
-        // feature's source SRID matches the resolved pair.
-        var datumPipeline = ResolveImportDatumPipeline(sourceSrid, targetSrid);
+        // feature's source SRID matches the resolved pair. The single-row keyed upsert
+        // path (this continue-on-error fallback) uses PROJ's default reprojection; the
+        // datum-pipelined upsert is covered by the batch fast path.
+        var datumPipeline = isUpsert ? null : ResolveImportDatumPipeline(sourceSrid, targetSrid);
 
-        await using var command = new NpgsqlCommand(
-            datumPipeline is null ? InsertImportFeatureSql : InsertImportFeatureWithDatumSql,
-            connection)
+        var commandText = isUpsert
+            ? UpsertImportFeatureSql
+            : (datumPipeline is null ? InsertImportFeatureSql : InsertImportFeatureWithDatumSql);
+
+        await using var command = new NpgsqlCommand(commandText, connection)
         {
             Transaction = transaction
         };
@@ -209,6 +285,10 @@ internal sealed partial class StreamingFileImportService
         sourceSridParameter.Value = sourceSrid;
         command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
         var propertiesParameter = command.Parameters.Add("properties", NpgsqlDbType.Jsonb);
+        if (isUpsert)
+        {
+            command.Parameters.Add("key_columns", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = keyColumns.ToArray();
+        }
         var datumPipelineParameter = datumPipeline is null
             ? null
             : command.Parameters.Add("datum_pipeline", NpgsqlDbType.Text);
