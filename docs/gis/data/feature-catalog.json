@@ -523,6 +523,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "delete-api-v1-admin-tenants-tenantid",
+      "route": "/api/v1/admin/tenants/{tenantId}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "delete-api-v1-admin-users-id",
       "route": "/api/v1/admin/users/{id}",
       "method": "DELETE",
@@ -3377,6 +3390,45 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ListSessions_AfterConnect_ReturnsSessionInfo",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ListSessions_WhenNone_ReturnsEmptyList",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ListSessions_WithFilter_ReturnsSessionFilterInfo"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-tenants",
+      "route": "/api/v1/admin/tenants",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-tenants-usage",
+      "route": "/api/v1/admin/tenants/usage",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantUsage_ReturnsBillingUsageEnvelope"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-tenants-tenantid",
+      "route": "/api/v1/admin/tenants/{tenantId}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -13058,6 +13110,46 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-admin-tenants",
+      "route": "/api/v1/admin/tenants",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.CreateTenant_Duplicate_ReturnsConflict",
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-tenants-tenantid-resume",
+      "route": "/api/v1/admin/tenants/{tenantId}/resume",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-tenants-tenantid-suspend",
+      "route": "/api/v1/admin/tenants/{tenantId}/suspend",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-admin-tile-operations-evict",
       "route": "/api/v1/admin/tile-operations/evict",
       "method": "POST",
@@ -16889,6 +16981,23 @@
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_WhenDisabled_Returns404",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Introspect_WhenDisabled_Returns404",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Introspect_WhenEnabledForUnknownToken_ReturnsActiveFalse"
+      ],
+      "proof_ledger_surface": "arcgis-portal-sharing",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-sharing-rest-oauth2-revoke",
+      "route": "/sharing/rest/oauth2/revoke",
+      "method": "POST",
+      "family": "ArcGIS Portal Sharing",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Revoke_AccessToken_SubsequentValidationFails",
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Revoke_MissingToken_ReturnsInvalidRequest",
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Revoke_RefreshToken_SubsequentRefreshFails",
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Revoke_UnknownToken_Returns200",
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Revoke_WhenPortalTokenDisabled_Returns404"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
       "maturity": "implemented"

@@ -304,7 +304,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
 
     // Builds the Nominatim structured search URL. Components the provider does not model are omitted
     // rather than producing a malformed request.
-    private string BuildStructuredSearchUrl(StructuredAddress structured, ForwardGeocodeRequest request, string baseUrl, int maxResults)
+    private static string BuildStructuredSearchUrl(StructuredAddress structured, ForwardGeocodeRequest request, string baseUrl, int maxResults)
     {
         var url = $"{baseUrl}/search?format=json&addressdetails=1&limit={maxResults}";
 

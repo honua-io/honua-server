@@ -59,22 +59,22 @@ public sealed class GeocodeServerParityMatrixTests
         switch (providerName)
         {
             case GeocodeProviderNames.Nominatim:
-            {
-                var http = NewHttpClient();
-                return new ProviderHarness(
-                    new NominatimGeocodeProvider(new NominatimProviderConfiguration(), http),
-                    httpClient: http);
-            }
+                {
+                    var http = NewHttpClient();
+                    return new ProviderHarness(
+                        new NominatimGeocodeProvider(new NominatimProviderConfiguration(), http),
+                        httpClient: http);
+                }
 
             case GeocodeProviderNames.AzureMaps:
-            {
-                var http = NewHttpClient();
-                return new ProviderHarness(
-                    new AzureMapsGeocodeProvider(
-                        new AzureMapsProviderConfiguration { SubscriptionKey = "test-key", BaseUrl = "https://example.com" },
-                        http),
-                    httpClient: http);
-            }
+                {
+                    var http = NewHttpClient();
+                    return new ProviderHarness(
+                        new AzureMapsGeocodeProvider(
+                            new AzureMapsProviderConfiguration { SubscriptionKey = "test-key", BaseUrl = "https://example.com" },
+                            http),
+                        httpClient: http);
+                }
 
             default:
                 return CreateClientProvider(providerName);

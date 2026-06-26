@@ -105,6 +105,10 @@ public sealed class CatalogExecutableConformanceTests
         "sink.geojson-file",
         "sink.quarantine",
         "sink.external-postgis",
+        // Managed honua-layer sink: loads a FeatureCollection into a named catalog
+        // layer via the optional IHonuaLayerSink capability. The executor is always
+        // registered (the capability is optional), so it is dispatcher-routable.
+        "sink.honua-layer",
         // Durable import pipeline (#1630): managed orchestration job that composes
         // the import / publishing / raster services through an IServiceScopeFactory.
         "import.dataset",
@@ -375,6 +379,7 @@ public sealed class CatalogExecutableConformanceTests
             new GeoJsonFileSinkExecutor(monitor),
             new QuarantineSinkExecutor(monitor),
             new ExternalPostgisSinkExecutor(monitor),
+            new HonuaLayerSinkExecutor(monitor, NullLogger<HonuaLayerSinkExecutor>.Instance),
             new ImportDatasetJobExecutor(
                 Substitute.For<IServiceScopeFactory>(),
                 NullLogger<ImportDatasetJobExecutor>.Instance),

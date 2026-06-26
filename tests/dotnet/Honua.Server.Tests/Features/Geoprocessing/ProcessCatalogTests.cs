@@ -52,8 +52,10 @@ public sealed class ProcessCatalogTests
         // projected-CRS reproject) added by #1854 + 12 managed tool-pack ops
         // (overlay.clip/intersect/union/erase/merge/split, proximity.near,
         // proximity.near-table, statistics.summarize/frequency/calculate,
-        // data-management.append) added by the GP tool packs (#2206/#2139/#2140).
-        all.Should().HaveCount(71);
+        // data-management.append) added by the GP tool packs (#2206/#2139/#2140)
+        // + 1 managed honua-layer sink (sink.honua-layer) added by the GeoETL
+        // honua-layer sink path.
+        all.Should().HaveCount(72);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 

@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Net;
+using System.Security.Claims;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
@@ -263,7 +264,7 @@ internal sealed partial class RateLimitingMiddleware
     /// <param name="rateLimitKey">The rate limit key.</param>
     /// <param name="resolved">The resolved limit and window for this request.</param>
     /// <returns>Rate limit check result.</returns>
-    private RateLimitResult CheckRateLimitMemory(string rateLimitKey, ResolvedRateLimit resolved)
+    private static RateLimitResult CheckRateLimitMemory(string rateLimitKey, ResolvedRateLimit resolved)
     {
         var now = DateTimeOffset.UtcNow;
         var window = resolved.Window;
