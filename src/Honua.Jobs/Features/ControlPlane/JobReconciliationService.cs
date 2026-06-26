@@ -7,6 +7,22 @@ using Honua.Core.Features.ControlPlane.Domain;
 namespace Honua.ControlPlane;
 
 /// <summary>
+/// Adapts the execution-job heartbeat/timeout reaping sweep to the control-plane scheduled-tick
+/// dispatcher so EventBridge Scheduler can drive one sweep under <c>TriggerMode=Event</c> without
+/// hosting the in-process timer. The sweep re-reads each candidate and mutates only via optimistic
+/// CAS, so a single invocation is safe and a duplicate is a no-op.
+/// </summary>
+internal sealed class JobReconciliationScheduledTickHandler(JobReconciliationService service)
+    : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
+{
+    public Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind Kind
+        => Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind.JobReconciliation;
+
+    public Task RunTickAsync(CancellationToken cancellationToken = default)
+        => service.SweepActiveJobsAsync(cancellationToken);
+}
+
+/// <summary>
 /// Background service that sweeps active execution jobs for expired heartbeats
 /// and timed-out executions, applying retry or terminal-failure policies.
 /// </summary>
@@ -55,7 +71,7 @@ internal sealed partial class JobReconciliationService(
         Log.ReconciliationStopped(logger);
     }
 
-    private async Task SweepActiveJobsAsync(CancellationToken cancellationToken)
+    internal async Task SweepActiveJobsAsync(CancellationToken cancellationToken)
     {
         var activeJobs = await jobStore.ListActiveAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;

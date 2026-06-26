@@ -9,6 +9,7 @@ using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.LocalRunner;
 using Honua.Infrastructure.Abstractions;
 using Honua.ControlPlane;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -50,7 +51,17 @@ internal static class GeoprocessingServiceCollectionExtensions
             && services.Any(d => d.ServiceType == typeof(IArtifactStore)))
         {
             services.AddScoped<IWorkspaceLifecycleService, WorkspaceLifecycleService>();
-            services.AddHostedService<WorkspaceCleanupService>();
+
+            // Workspace cleanup is a PERIODIC tick (bucket-b). Its sweep is idempotent (acts on
+            // TTL/expiry state via a fresh scope), so the scheduled-tick handler is registered in
+            // BOTH modes; the in-process timer is hosted only under TriggerMode=Poll (default,
+            // on-prem), keeping that path byte-for-byte unchanged.
+            services.TryAddSingleton<WorkspaceCleanupService>();
+            services.AddSingleton<IScheduledTickHandler, WorkspaceCleanupScheduledTickHandler>();
+            if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+            {
+                services.AddHostedService(sp => sp.GetRequiredService<WorkspaceCleanupService>());
+            }
         }
 
         // Built-in process catalog (ticket #735)

@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
@@ -41,9 +43,12 @@ internal static class OrchestrationServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddOrchestrationBackgroundServices(this IServiceCollection services)
+    public static IServiceCollection AddOrchestrationBackgroundServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
 
         // Background services depend on the same Redis-backed stores the engine needs.
         // Only start them when AddOrchestration actually registered the engine — otherwise
@@ -54,7 +59,19 @@ internal static class OrchestrationServiceCollectionExtensions
         }
 
         services.AddHostedService<WorkflowOrchestrationBackgroundService>();
-        services.AddHostedService<WorkflowSchedulerBackgroundService>();
+
+        // Cron scheduler tick: a single shared singleton instance so the in-memory compiled-cron
+        // cache survives across ticks whether the in-process timer or the scheduled-tick dispatcher
+        // drives it. The IScheduledTickHandler is registered in BOTH trigger modes so EventBridge
+        // Scheduler can drive the tick under TriggerMode=Event; the in-process timer is hosted only
+        // under TriggerMode=Poll (default, on-prem), keeping that path byte-for-byte unchanged.
+        services.TryAddSingleton<WorkflowSchedulerBackgroundService>();
+        services.AddSingleton<IScheduledTickHandler, WorkflowSchedulerScheduledTickHandler>();
+        if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<WorkflowSchedulerBackgroundService>());
+        }
+
         return services;
     }
 }

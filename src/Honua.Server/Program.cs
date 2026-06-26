@@ -420,6 +420,15 @@ if (connectedRedis != null)
     // sweep self-heals dropped events; the TriggerMode flag chooses poll (on-prem) vs event (cloud).
     builder.Services.AddHonuaControlPlaneReconcilers(builder.Configuration);
 
+    // Phase 3: the PERIODIC (bucket-b) scheduled-tick dispatcher routes a tick kind to the handler
+    // that owns the matching background service's idempotent tick body. Handlers are contributed by
+    // the owning assemblies (registered alongside each service above). Under TriggerMode=Poll the
+    // in-process timers drive the ticks; under Event the timers are not hosted and EventBridge
+    // Scheduler -> the scheduled-tick endpoint drives them through this dispatcher.
+    builder.Services.AddSingleton<
+        Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickDispatcher,
+        Honua.ControlPlane.ScheduledTickDispatcher>();
+
     var controlPlaneTriggerMode = builder.Configuration
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
         .GetValue<Honua.ControlPlane.ControlPlaneTriggerMode>("TriggerMode", Honua.ControlPlane.ControlPlaneTriggerMode.Poll);
@@ -616,7 +625,21 @@ builder.Services.Configure<Honua.Infrastructure.Services.TemporaryFileOptions>(
 builder.Services.AddSingleton<Honua.Infrastructure.Services.FileSystemTemporaryFileService>();
 builder.Services.AddSingleton<Honua.Infrastructure.Services.ITemporaryFileService,
     Honua.Infrastructure.Services.CloudBackedTemporaryFileService>();
-builder.Services.AddHostedService<Honua.Infrastructure.Services.TemporaryFileCleanupService>();
+
+// Temporary-file cleanup is a PERIODIC tick (bucket-b). Its cleanup deletes expired temp files via a
+// fresh scope and is idempotent, so the scheduled-tick handler is registered in BOTH trigger modes;
+// the in-process 30-minute timer is hosted only under TriggerMode=Poll (default, on-prem), keeping
+// that path byte-for-byte unchanged.
+builder.Services.TryAddSingleton<Honua.Infrastructure.Services.TemporaryFileCleanupService>();
+builder.Services.AddSingleton<
+    Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler,
+    Honua.Infrastructure.Services.TemporaryFileCleanupScheduledTickHandler>();
+if (Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolver
+    .ShouldHostInProcessTimers(builder.Configuration))
+{
+    builder.Services.AddHostedService(sp =>
+        sp.GetRequiredService<Honua.Infrastructure.Services.TemporaryFileCleanupService>());
+}
 
 // Register shared validation services
 builder.Services.AddValidationServices();
@@ -629,7 +652,7 @@ builder.Services.AddOperationsToolset();
 builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
-    builder.Services.AddOrchestrationBackgroundServices();
+    builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
 }
 
 builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
@@ -1298,6 +1321,10 @@ app.MapMetadataReleaseEndpoints();
 app.MapMetadataReleaseOperationEndpoints();
 app.MapMetadataReleaseControlEndpoints();
 app.MapCoordinatedReleaseControlEndpoints();
+
+// Phase 3: internal, token-guarded scheduled-tick endpoint for EventBridge Scheduler. Mapped only
+// when ControlPlane:TriggerMode=Event; a no-op (route absent) under Poll (default, on-prem).
+app.MapScheduledTickEndpoints(builder.Configuration);
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
 

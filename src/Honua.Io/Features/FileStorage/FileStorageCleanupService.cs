@@ -8,6 +8,23 @@ using Microsoft.Extensions.Options;
 namespace Honua.FileStorage;
 
 /// <summary>
+/// Adapts the cloud file-storage expired-file cleanup to the control-plane scheduled-tick dispatcher
+/// so EventBridge Scheduler can drive one cleanup under <c>TriggerMode=Event</c> without hosting the
+/// in-process timer. Deletes already-expired files via a fresh scope, so a single invocation is safe.
+/// <para>On AWS this tick can alternatively be replaced by an S3 lifecycle policy (cheaper, no
+/// compute); the tick is retained for on-prem/portability and other storage backends.</para>
+/// </summary>
+internal sealed class FileStorageCleanupScheduledTickHandler(FileStorageCleanupService service)
+    : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
+{
+    public Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind Kind
+        => Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind.FileStorageCleanup;
+
+    public Task RunTickAsync(CancellationToken cancellationToken = default)
+        => service.RunCleanupAsync(cancellationToken);
+}
+
+/// <summary>
 /// Background service that periodically cleans up expired temporary files
 /// </summary>
 internal sealed class FileStorageCleanupService : BackgroundService
@@ -64,7 +81,7 @@ internal sealed class FileStorageCleanupService : BackgroundService
         FileStorageLog.CleanupServiceStopped(_logger);
     }
 
-    private async Task RunCleanupAsync(CancellationToken cancellationToken)
+    internal async Task RunCleanupAsync(CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
         var fileStorage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();

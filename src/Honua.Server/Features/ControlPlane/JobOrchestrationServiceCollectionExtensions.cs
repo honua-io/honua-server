@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.Share;
 using Honua.Geoprocessing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
@@ -14,7 +15,7 @@ namespace Honua.ControlPlane;
 /// Registers durable job orchestration services, separated into API-side and
 /// worker-side concerns to preserve a lean serving runtime. The API image
 /// registers only <see cref="AddJobOrchestration"/>; the worker image
-/// additionally registers <see cref="AddJobWorker"/>.
+/// additionally registers <see cref="AddJobWorker(IServiceCollection, IConfiguration)"/>.
 /// </summary>
 internal static class JobOrchestrationServiceCollectionExtensions
 {
@@ -80,9 +81,19 @@ internal static class JobOrchestrationServiceCollectionExtensions
     /// cancel); the geoprocessing terminal callback stays here because of its
     /// Redis-gated dependency.
     /// </remarks>
+    /// <summary>
+    /// Poll-mode convenience overload (no configuration): hosts the in-process timers, matching the
+    /// pre-Phase-3 behavior. Used by composition tests that drive the worker loop directly. The
+    /// production composition root calls the <see cref="IConfiguration"/> overload so it can honor
+    /// <c>TriggerMode=Event</c>.
+    /// </summary>
     public static IServiceCollection AddJobWorker(this IServiceCollection services)
+        => services.AddJobWorker(new ConfigurationBuilder().Build());
+
+    public static IServiceCollection AddJobWorker(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
 
         // Requires orchestration services to be registered first.
         if (!services.Any(d => d.ServiceType == typeof(IJobQueue)))
@@ -99,8 +110,20 @@ internal static class JobOrchestrationServiceCollectionExtensions
         // AddJobOrchestration because it must also fire on API-side operator cancel.)
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>());
 
+        // JobExecutionService is the always-on queue drainer, not a periodic tick; it stays hosted
+        // in both trigger modes.
         services.AddHostedService<JobExecutionService>();
-        services.AddHostedService<JobReconciliationService>();
+
+        // JobReconciliationService is the PERIODIC heartbeat/timeout reaping sweep (bucket-b). Its
+        // sweep body is idempotent (per-candidate re-read + optimistic CAS), so the scheduled-tick
+        // handler is registered in BOTH modes; the in-process 30s timer is hosted only under
+        // TriggerMode=Poll (default, on-prem), keeping that path byte-for-byte unchanged.
+        services.TryAddSingleton<JobReconciliationService>();
+        services.AddSingleton<IScheduledTickHandler, JobReconciliationScheduledTickHandler>();
+        if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<JobReconciliationService>());
+        }
 
         return services;
     }
