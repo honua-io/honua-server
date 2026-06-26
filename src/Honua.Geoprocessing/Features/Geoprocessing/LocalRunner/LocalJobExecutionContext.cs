@@ -17,6 +17,7 @@ internal sealed class LocalJobExecutionContext(string operationId) : IJobExecuti
 {
     private readonly List<ExecutionLogEntry> _logs = [];
     private readonly List<string> _artifacts = [];
+    private readonly List<LocalRunPhase> _phases = [];
 
     /// <inheritdoc />
     public string OperationId { get; } = operationId;
@@ -27,12 +28,33 @@ internal sealed class LocalJobExecutionContext(string operationId) : IJobExecuti
     /// <summary>Artifact references published during execution, in order.</summary>
     public IReadOnlyList<string> Artifacts => _artifacts;
 
+    /// <summary>
+    /// Progress phases the executor reported, in order, each stamped with the elapsed
+    /// time since the context was created. Surfaced as the glass-box timeline (#2128).
+    /// </summary>
+    public IReadOnlyList<LocalRunPhase> Phases => _phases;
+
+    /// <summary>Wall-clock elapsed since this context (and thus the run) was created.</summary>
+    private readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
     /// <inheritdoc />
     public Task ReportProgressAsync(
         double? percentComplete,
         string? phase,
         CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
+    {
+        if (!string.IsNullOrWhiteSpace(phase))
+        {
+            _phases.Add(new LocalRunPhase
+            {
+                Phase = phase,
+                PercentComplete = percentComplete,
+                Elapsed = _stopwatch.Elapsed,
+            });
+        }
+
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc />
     public Task AppendLogAsync(ExecutionLogEntry entry, CancellationToken cancellationToken = default)

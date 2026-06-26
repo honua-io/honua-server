@@ -63,7 +63,7 @@ public static class GpCli
         }
     }
 
-    private static ServiceProvider BuildProvider()
+    private static ServiceProvider BuildProvider(GlassBoxCapture? glassBox = null)
     {
         // Empty in-memory configuration: AddGeoprocessing binds its option sections
         // from configuration but every option has a valid default, and the
@@ -81,6 +81,15 @@ public static class GpCli
         services.AddGeoprocessing(configuration);
         // Native GDAL executors (Redis-free seam: options + CLI runner + executors only).
         services.AddGdalProcessExecutors(configuration);
+
+        // DEV-ONLY: when the caller opted into glass-box mode, decorate the native GDAL
+        // command runner so the unsanitized command + full stdout/stderr are captured.
+        // This is the ONLY place that decorator is wired; the production worker host
+        // (AddGdalWorker) never installs it, so the sanitized path stays the default.
+        if (glassBox is not null)
+        {
+            services.AddGlassBoxGdalCapture(glassBox);
+        }
 
         return services.BuildServiceProvider();
     }
@@ -115,7 +124,14 @@ public static class GpCli
             args,
             "honua gp run <id> --input <file> [--param k=v] [--out <file>]");
 
-        using var provider = BuildProvider();
+        // Glass-box (dev-only) is gated behind an EXPLICIT opt-in: the --glass-box/--debug
+        // flag OR the HONUA_GP_GLASSBOX env truthy. Absent both, the run takes the default
+        // sanitized path (no raw scratch paths / no untruncated stderr) — the same output a
+        // production-equivalent caller sees.
+        var glassBoxEnabled = parsed.GlassBoxRequested || IsEnvTruthy("HONUA_GP_GLASSBOX");
+        var capture = glassBoxEnabled ? new GlassBoxCapture() : null;
+
+        using var provider = BuildProvider(capture);
         var executors = provider.GetServices<IProcessExecutor>();
         var runner = new GeoprocessingLocalRunner(executors);
 
@@ -129,7 +145,7 @@ public static class GpCli
         var catalog = provider.GetService<IProcessCatalog>();
         await BindFileInputAsync(parsed.ProcessId, parsed.InputPath, catalog, inputs).ConfigureAwait(false);
 
-        var result = await runner.RunAsync(parsed.ProcessId, inputs).ConfigureAwait(false);
+        var result = await runner.RunAsync(parsed.ProcessId, inputs, capture).ConfigureAwait(false);
 
         Console.WriteLine($"process : {result.ProcessId}");
         Console.WriteLine($"status  : {result.Status}");
@@ -140,6 +156,7 @@ public static class GpCli
             if (log.Metadata is not null
                 && log.Metadata.TryGetValue("gdal.command", out var command))
             {
+                // Default path prints the SANITIZED command (scratch redacted to <scratch>).
                 Console.WriteLine($"command : {command}");
             }
         }
@@ -147,6 +164,11 @@ public static class GpCli
         foreach (var warning in result.Warnings)
         {
             Console.WriteLine($"warning : {warning}");
+        }
+
+        if (result.GlassBox is not null)
+        {
+            PrintGlassBox(result.GlassBox);
         }
 
         if (!result.Succeeded)
@@ -174,6 +196,103 @@ public static class GpCli
         }
 
         return 0;
+    }
+
+    private static bool IsEnvTruthy(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return value is "1" or "true" or "TRUE" or "True" or "yes" or "on";
+    }
+
+    /// <summary>
+    /// Renders the DEV-ONLY glass-box section (issue #2128): the phase/timeline, the
+    /// UNSANITIZED native command(s) with their real scratch paths and FULL stdout/stderr,
+    /// the scratch directories, an artifact preview, and a "repro locally" hint. This block
+    /// only ever prints when the run was driven under the explicit glass-box opt-in.
+    /// </summary>
+    private static void PrintGlassBox(GlassBoxReport glassBox)
+    {
+        Console.WriteLine();
+        Console.WriteLine("──── glass box (dev) ────────────────────────────────────────");
+
+        Console.WriteLine("timeline:");
+        if (glassBox.Timeline.Count == 0)
+        {
+            Console.WriteLine("  (no phases reported)");
+        }
+        else
+        {
+            foreach (var phase in glassBox.Timeline)
+            {
+                var pct = phase.PercentComplete is { } p ? $"{p,5:F0}%" : "     ";
+                Console.WriteLine($"  +{phase.Elapsed.TotalMilliseconds,7:F1} ms  {pct}  {phase.Phase}");
+            }
+        }
+
+        if (glassBox.Commands.Count == 0)
+        {
+            Console.WriteLine("native commands: (none — managed op, no GDAL subprocess)");
+        }
+        else
+        {
+            Console.WriteLine("native commands (UNSANITIZED — real scratch paths):");
+            foreach (var command in glassBox.Commands)
+            {
+                Console.WriteLine($"  $ {command.CommandLine}");
+                Console.WriteLine($"    cwd      : {command.WorkingDirectory}");
+                Console.WriteLine($"    exit     : {command.ExitCode}");
+                if (!string.IsNullOrWhiteSpace(command.StandardOutput))
+                {
+                    Console.WriteLine("    stdout   :");
+                    PrintIndented(command.StandardOutput, "      ");
+                }
+
+                if (!string.IsNullOrWhiteSpace(command.StandardError))
+                {
+                    Console.WriteLine("    stderr   :");
+                    PrintIndented(command.StandardError, "      ");
+                }
+            }
+        }
+
+        if (glassBox.ScratchDirectories.Count > 0)
+        {
+            Console.WriteLine("scratch dirs (inspect intermediate files here):");
+            foreach (var dir in glassBox.ScratchDirectories)
+            {
+                Console.WriteLine($"  {dir}");
+            }
+
+            Console.WriteLine("repro locally:");
+            foreach (var command in glassBox.Commands)
+            {
+                Console.WriteLine($"  cd {command.WorkingDirectory} && {command.CommandLine}");
+            }
+        }
+
+        if (glassBox.ArtifactPreviews.Count == 0)
+        {
+            Console.WriteLine("artifact preview: (no artifact published)");
+        }
+        else
+        {
+            Console.WriteLine("artifact preview:");
+            foreach (var preview in glassBox.ArtifactPreviews)
+            {
+                Console.WriteLine($"  type={preview.MediaType} size={preview.SizeBytes}B");
+                PrintIndented(preview.Summary, "    ");
+            }
+        }
+
+        Console.WriteLine("─────────────────────────────────────────────────────────────");
+    }
+
+    private static void PrintIndented(string text, string indent)
+    {
+        foreach (var line in text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            Console.WriteLine(indent + line);
+        }
     }
 
     private static async Task<int> RunPlan(string[] args)
@@ -297,6 +416,7 @@ public static class GpCli
         var processId = args[0];
         string? inputPath = null;
         string? outPath = null;
+        var glassBoxRequested = false;
         var inputs = new Dictionary<string, string>(StringComparer.Ordinal);
 
         for (var i = 1; i < args.Length; i++)
@@ -308,6 +428,9 @@ public static class GpCli
                     break;
                 case "--out" or "-o":
                     outPath = NextValue(args, ref i, "--out");
+                    break;
+                case "--glass-box" or "--debug" or "-d":
+                    glassBoxRequested = true;
                     break;
                 case "--param" or "-p":
                     var kv = NextValue(args, ref i, "--param");
@@ -324,7 +447,7 @@ public static class GpCli
             }
         }
 
-        return new ProcessArgs(processId, inputPath, outPath, inputs);
+        return new ProcessArgs(processId, inputPath, outPath, glassBoxRequested, inputs);
     }
 
     /// <summary>
@@ -686,6 +809,7 @@ public static class GpCli
         string ProcessId,
         string? InputPath,
         string? OutPath,
+        bool GlassBoxRequested,
         Dictionary<string, string> Params);
 
     /// <summary>
@@ -768,7 +892,7 @@ public static class GpCli
         Console.WriteLine("Usage:");
         Console.WriteLine("  honua gp list");
         Console.WriteLine("  honua gp plan <processId> [--input <file>] [--param k=v ...]");
-        Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>]");
+        Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>] [--glass-box]");
         Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
         Console.WriteLine("  honua gp new <id> [--kind geometry|gdal] [--output <dir>]");
         Console.WriteLine();
@@ -780,6 +904,8 @@ public static class GpCli
         Console.WriteLine("  --update,-u         Regenerate goldens from the produced artifacts (also via HONUA_GP_UPDATE_GOLDENS).");
         Console.WriteLine("  --kind,  -k <k>     'geometry' (managed, default) or 'gdal' (native) scaffold for `new`.");
         Console.WriteLine("  --output,-o <dir>   Preview the scaffold under <dir> instead of writing into the checkout.");
+        Console.WriteLine("  --glass-box, --debug, -d  DEV-ONLY (run): show the unsanitized native command(s),");
+        Console.WriteLine("                      full stdout/stderr, scratch dirs, and a repro hint (also HONUA_GP_GLASSBOX).");
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  plan  Dry-run: validate params + DAG and estimate output size/cost WITHOUT executing.");

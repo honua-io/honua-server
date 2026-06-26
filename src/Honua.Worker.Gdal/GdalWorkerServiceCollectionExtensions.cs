@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.ControlPlane;
 using Honua.Worker.Gdal.Execution;
@@ -129,6 +130,57 @@ public static class GdalWorkerServiceCollectionExtensions
         RegisterGdalExecutor<PdalPointCloudConvertJobExecutor>(services);
 
         return services;
+    }
+
+    /// <summary>
+    /// DEV-ONLY: decorates the registered native <see cref="IGdalCommandRunner"/> with the
+    /// glass-box capturing runner so the supplied <see cref="GlassBoxCapture"/> collects the
+    /// fully unsanitized command line, real scratch working directory, and complete
+    /// stdout/stderr of every native invocation (GP Devkit, issue #2128).
+    /// </summary>
+    /// <remarks>
+    /// This MUST be called only by the dev <c>honua gp</c> CLI under its explicit glass-box
+    /// flag/env. The production worker host (<see cref="AddGdalWorker"/>) never calls it, so
+    /// the sanitized <see cref="GdalErrorSanitizer"/> / <see cref="GdalCommandLog"/> path
+    /// stays the default and no raw paths or untruncated output ever reach a client. Call it
+    /// after <see cref="AddGdalProcessExecutors"/> so the bare runner is already registered.
+    /// </remarks>
+    /// <param name="services">Service collection that has the GDAL executors registered.</param>
+    /// <param name="capture">The sink the decorator records unsanitized invocations into.</param>
+    public static IServiceCollection AddGlassBoxGdalCapture(
+        this IServiceCollection services,
+        GlassBoxCapture capture)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(capture);
+
+        var inner = services.LastOrDefault(d => d.ServiceType == typeof(IGdalCommandRunner))
+            ?? throw new InvalidOperationException(
+                "AddGlassBoxGdalCapture requires AddGdalProcessExecutors to have registered an IGdalCommandRunner first.");
+
+        services.Remove(inner);
+        services.AddSingleton(capture);
+        services.AddSingleton<IGdalCommandRunner>(sp =>
+            new GlassBoxGdalCommandRunner(MaterializeInner(sp, inner), capture));
+
+        return services;
+    }
+
+    private static IGdalCommandRunner MaterializeInner(IServiceProvider sp, ServiceDescriptor inner)
+    {
+        if (inner.ImplementationInstance is IGdalCommandRunner instance)
+        {
+            return instance;
+        }
+
+        if (inner.ImplementationFactory is not null)
+        {
+            return (IGdalCommandRunner)inner.ImplementationFactory(sp);
+        }
+
+        var implementationType = inner.ImplementationType
+            ?? throw new InvalidOperationException("The registered IGdalCommandRunner has no resolvable implementation.");
+        return (IGdalCommandRunner)ActivatorUtilities.CreateInstance(sp, implementationType);
     }
 
     /// <summary>
