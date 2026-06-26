@@ -128,7 +128,7 @@ internal sealed partial class ConsoleJobService(
             ParentJobId = GetParameter(job, ExecutionJobParameterKeys.ParentId),
             ChildJobIds = SplitList(GetParameter(job, ExecutionJobParameterKeys.ChildIds)),
             SelectedMetadata = SelectMetadata(job),
-            Stages = BuildStages(job),
+            Stages = await BuildStagesAsync(job, cancellationToken).ConfigureAwait(false),
             Actions = await BuildActionsAsync(context, job, cancellationToken).ConfigureAwait(false)
         };
     }
@@ -859,6 +859,7 @@ internal sealed partial class ConsoleJobService(
             Logs = $"{basePath}/logs",
             Artifacts = $"{basePath}/artifacts",
             Actions = $"{basePath}/actions",
+            Steps = $"{basePath}/steps",
             Cancel = $"{basePath}/cancel",
             Retry = $"{basePath}/retry",
             EventsByJob = $"{pathBase}/api/v1/admin/observability/events?kind=job&operationId={Uri.EscapeDataString(job.OperationId)}",
@@ -868,20 +869,133 @@ internal sealed partial class ConsoleJobService(
         };
     }
 
-    private static ConsoleJobStage[] BuildStages(ExecutionJobRecord job)
+    // Emits a genuine multi-stage stage list from the durable job's phase/progress history.
+    // The job records progress phases over its lifecycle via the execution log store
+    // (each entry carries the active Phase + timestamp); we group those entries into
+    // ordered stages — one per distinct contiguous phase — with derived start/end/status,
+    // mirroring the depth the dev CLI shows. When no durable phase history exists (no log
+    // store, or a job that never emitted phased entries) we fall back to the single
+    // synthesized stage derived from CurrentPhase/Status, preserving prior behaviour.
+    private async Task<ConsoleJobStage[]> BuildStagesAsync(
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        var entries = await GetOrderedLogEntriesAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+        var phases = GroupPhases(job, entries);
+        if (phases.Count == 0)
+        {
+            return [SynthesizeSingleStage(job)];
+        }
+
+        var stages = new ConsoleJobStage[phases.Count];
+        for (var i = 0; i < phases.Count; i++)
+        {
+            var phase = phases[i];
+            var isLast = i == phases.Count - 1;
+            stages[i] = new ConsoleJobStage
+            {
+                Name = phase.Name,
+                Status = ResolveStageStatus(job, phase, isLast),
+                StartedAt = phase.StartedAt,
+                CompletedAt = ResolveStageCompletedAt(job, phase, isLast),
+                PercentComplete = isLast ? job.PercentComplete : 100
+            };
+        }
+
+        return stages;
+    }
+
+    private static ConsoleJobStage SynthesizeSingleStage(ExecutionJobRecord job)
     {
         var status = job.Status.ToString();
-        return
-        [
-            new ConsoleJobStage
+        return new ConsoleJobStage
+        {
+            Name = string.IsNullOrWhiteSpace(job.CurrentPhase) ? status : job.CurrentPhase,
+            Status = status,
+            StartedAt = job.ClaimedAt ?? job.CreatedAt,
+            CompletedAt = job.CompletedAt,
+            PercentComplete = job.PercentComplete
+        };
+    }
+
+    private async Task<IReadOnlyList<ExecutionLogEntry>> GetOrderedLogEntriesAsync(
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        var logStore = serviceProvider.GetService<IExecutionLogStore>();
+        if (logStore == null)
+        {
+            return Array.Empty<ExecutionLogEntry>();
+        }
+
+        var entries = await logStore.GetLogsAsync(operationId, cancellationToken).ConfigureAwait(false);
+        return entries
+            .Where(static e => e is not null)
+            .OrderBy(static e => e.Timestamp)
+            .ToArray();
+    }
+
+    // Collapses chronological log entries into ordered phase groups. A new group starts
+    // whenever the active Phase label changes, so re-entering a phase later in the lifecycle
+    // surfaces as a distinct stage (consistent with the append-only timeline).
+    private static List<PhaseGroup> GroupPhases(ExecutionJobRecord job, IReadOnlyList<ExecutionLogEntry> entries)
+    {
+        var groups = new List<PhaseGroup>();
+        PhaseGroup? current = null;
+
+        foreach (var entry in entries)
+        {
+            var label = string.IsNullOrWhiteSpace(entry.Phase)
+                ? (string.IsNullOrWhiteSpace(job.CurrentPhase) ? job.Status.ToString() : job.CurrentPhase)
+                : entry.Phase;
+
+            if (current == null || !string.Equals(current.Name, label, StringComparison.Ordinal))
             {
-                Name = string.IsNullOrWhiteSpace(job.CurrentPhase) ? status : job.CurrentPhase,
-                Status = status,
-                StartedAt = job.ClaimedAt ?? job.CreatedAt,
-                CompletedAt = job.CompletedAt,
-                PercentComplete = job.PercentComplete
+                current = new PhaseGroup(label, entry.Timestamp);
+                groups.Add(current);
             }
-        ];
+
+            current.LastTimestamp = entry.Timestamp;
+            if (entry.Level == ExecutionLogLevel.Error)
+            {
+                current.HasError = true;
+            }
+        }
+
+        return groups;
+    }
+
+    private static string ResolveStageStatus(ExecutionJobRecord job, PhaseGroup phase, bool isLast)
+    {
+        if (phase.HasError)
+        {
+            return ExecutionJobStatus.Failed.ToString();
+        }
+
+        if (!isLast)
+        {
+            return "Completed";
+        }
+
+        return job.Status.ToString();
+    }
+
+    private static DateTimeOffset? ResolveStageCompletedAt(ExecutionJobRecord job, PhaseGroup phase, bool isLast)
+    {
+        if (!isLast)
+        {
+            return phase.LastTimestamp;
+        }
+
+        return job.CompletedAt;
+    }
+
+    private sealed class PhaseGroup(string name, DateTimeOffset startedAt)
+    {
+        public string Name { get; } = name;
+        public DateTimeOffset StartedAt { get; } = startedAt;
+        public DateTimeOffset LastTimestamp { get; set; } = startedAt;
+        public bool HasError { get; set; }
     }
 
     private static ConsoleJobRetryPolicy MapRetryPolicy(JobRetryPolicy policy)

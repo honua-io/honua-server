@@ -164,6 +164,112 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}")]
+    public async Task GetJobDetail_WithPhaseHistory_EmitsOrderedMultiStageList()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _logStore.SetLogs("job-running",
+            new ExecutionLogEntry { Timestamp = now.AddMinutes(-5), Level = ExecutionLogLevel.Info, Message = "queued", Phase = "Queued" },
+            new ExecutionLogEntry { Timestamp = now.AddMinutes(-4), Level = ExecutionLogLevel.Info, Message = "provisioning workers", Phase = "Provisioning" },
+            new ExecutionLogEntry { Timestamp = now.AddMinutes(-3), Level = ExecutionLogLevel.Info, Message = "step 1/2", Phase = "Reproject" },
+            new ExecutionLogEntry { Timestamp = now.AddMinutes(-1), Level = ExecutionLogLevel.Info, Message = "step 2/2", Phase = "Reproject" });
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-running");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = await ReadJsonAsync(response);
+        var stages = doc.RootElement.GetProperty("stages");
+
+        // One stage per distinct contiguous phase (the two Reproject entries collapse into one).
+        stages.GetArrayLength().Should().Be(3);
+        stages[0].GetProperty("name").GetString().Should().Be("Queued");
+        stages[0].GetProperty("status").GetString().Should().Be("Completed");
+        stages[1].GetProperty("name").GetString().Should().Be("Provisioning");
+        stages[1].GetProperty("status").GetString().Should().Be("Completed");
+        // Last stage reflects the live job status (Running) rather than Completed.
+        stages[2].GetProperty("name").GetString().Should().Be("Reproject");
+        stages[2].GetProperty("status").GetString().Should().Be("Running");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    public async Task GetJobSteps_ProjectsSanitizedPerStepGlassBox()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _logStore.SetLogs("job-running",
+            new ExecutionLogEntry
+            {
+                Timestamp = now.AddMinutes(-2),
+                Level = ExecutionLogLevel.Info,
+                Message = "Running gdalwarp on /tmp/honua-gdal-worker/job-running/input.tif",
+                Phase = "Reproject",
+                Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["command"] = "gdalwarp -t_srs EPSG:3857 /tmp/honua-gdal-worker/job-running/input.tif /tmp/honua-gdal-worker/job-running/out.tif",
+                    ["targetSrs"] = "EPSG:3857"
+                }
+            },
+            new ExecutionLogEntry
+            {
+                Timestamp = now.AddMinutes(-1),
+                Level = ExecutionLogLevel.Info,
+                Message = "Reproject complete",
+                Phase = "Reproject"
+            });
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-running/steps");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        response.Headers.GetValues("X-Correlation-Id").Should().Contain("corr-running");
+
+        var rawBody = await response.Content.ReadAsStringAsync();
+        // The unsanitized worker filesystem path must NEVER leak over HTTP.
+        rawBody.Should().NotContain("honua-gdal-worker");
+        rawBody.Should().NotContain("/tmp/");
+
+        using var doc = JsonDocument.Parse(rawBody);
+        var root = doc.RootElement;
+        root.GetProperty("state").GetString().Should().Be("available");
+
+        var steps = root.GetProperty("steps");
+        steps.GetArrayLength().Should().Be(2);
+
+        var first = steps[0];
+        first.GetProperty("ordinal").GetInt32().Should().Be(0);
+        first.GetProperty("phase").GetString().Should().Be("Reproject");
+        first.GetProperty("message").GetString().Should().Contain("<path>");
+        // Command is surfaced (sanitized) on its dedicated field.
+        var command = first.GetProperty("command").GetString();
+        command.Should().NotBeNull();
+        command!.Should().Contain("gdalwarp");
+        command.Should().Contain("<path>");
+        command.Should().NotContain("honua-gdal-worker");
+        // Command keys are not duplicated into the generic metadata bag.
+        first.GetProperty("metadata").GetProperty("targetSrs").GetString().Should().Be("EPSG:3857");
+        first.GetProperty("metadata").TryGetProperty("command", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    public async Task GetJobSteps_RequiresAdminAuthorization()
+    {
+        using var anonymous = _fixture.CreateClient();
+
+        var response = await anonymous.GetAsync("/api/v1/admin/jobs/job-running/steps");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    public async Task GetJobSteps_ForUnknownJob_Returns404()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/jobs/does-not-exist/steps");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
     public async Task GetArtifacts_MapsAvailabilityStates()
     {

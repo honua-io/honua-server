@@ -539,6 +539,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/jobs/{jobId}/logs"),
         new("GET", "/api/v1/admin/jobs/{jobId}/artifacts"),
         new("GET", "/api/v1/admin/jobs/{jobId}/actions"),
+        new("GET", "/api/v1/admin/jobs/{jobId}/steps"),
         new("POST", "/api/v1/admin/jobs/{jobId}/cancel"),
         new("POST", "/api/v1/admin/jobs/{jobId}/retry"),
 
