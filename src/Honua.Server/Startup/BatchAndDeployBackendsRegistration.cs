@@ -43,6 +43,8 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<ICloudWatchMetricClient, AwsSdkCloudWatchMetricClient>();
         services.AddSingleton<IDeployTelemetryProviderEvaluator, CloudWatchDeployTelemetryProviderEvaluator>();
 #endif
+        // Provider-independent synthetic /healthz/ready gate inherited by every deploy backend.
+        services.AddSingleton<IDeployHealthProbe, HttpDeployHealthProbe>();
         services.AddSingleton<IDeployTelemetrySignalEvaluator, DeployTelemetrySignalEvaluator>();
 
         // Shared Kubernetes API request factory (in-cluster / out-of-cluster auth) consumed
