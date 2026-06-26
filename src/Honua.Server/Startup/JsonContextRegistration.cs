@@ -78,6 +78,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
                 Honua.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
                 Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
+                Honua.Server.Features.Admin.Models.TenantJsonContext.Default,
                 Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
                 Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
                 Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,

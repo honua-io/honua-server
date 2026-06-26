@@ -783,6 +783,12 @@ builder.Services.AddEnterpriseIdentity(builder.Configuration);
 builder.Services.AddSecurityHeaders(builder.Configuration);
 // Configure security audit log sink (#1144)
 builder.Services.AddHonuaAuditLog();
+// SIEM export connectors (Splunk HEC / Microsoft Sentinel / S3 / syslog) + audit retention and
+// data-residency controls (issue #2157). Off by default (AuditLog:Export:Enabled=false); registers
+// the dispatcher (retry/backoff + dead-letter), residency guard, retention pruner, and any enabled
+// push sinks. Pull-based export + tamper-evidence (#2112) remain the baseline.
+Honua.Server.Features.Infrastructure.AuditLog.Export.AuditExportServiceCollectionExtensions
+    .AddHonuaAuditExport(builder.Services, builder.Configuration);
 // Configure tenant context resolution rail (#1144). Defaults are bound from
 // the MultiTenancy configuration section; the inline callback is the wiring
 // point for environment-specific overrides.
@@ -791,6 +797,10 @@ builder.Services.AddHonuaTenantContext(builder.Configuration, _ => { });
 // default (MultiTenancy:SchemaRouting:Enabled=false) so single-tenant deployments
 // retain byte-identical behavior; registration only adds the resolver/meter seam.
 builder.Services.AddHonuaTenantSchemaRouting(builder.Configuration);
+// Tenant lifecycle/provisioning + billing wiring (issue #2156). Provisioning is opt-in: the
+// catalog starts empty so single-tenant deployments are unchanged until tenants are created
+// through the admin surface. Registers the catalog, lifecycle service, billing sink, and exporter.
+builder.Services.AddHonuaTenantLifecycle();
 // Configure CORS policies
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddInputValidation(builder.Configuration);
@@ -878,6 +888,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.ScenePointCloudIngestJsonContext.Default,
         Honua.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
+        Honua.Server.Features.Admin.Models.TenantJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
@@ -1280,6 +1291,11 @@ app.UseHonuaTenantContext();
 // resolution and before any feature handler that reads the database.
 app.UseHonuaTenantSchemaRouting();
 
+// Block requests for a suspended/deleted tenant (issue #2156). Runs after tenant context
+// resolution. A no-op for tenants not present in the catalog, so the default pipeline is
+// unchanged until tenants are provisioned through the admin surface.
+app.UseHonuaTenantStatusEnforcement();
+
 // Audit-log middleware records security-relevant request outcomes. It runs after
 // auth so the audit actor is the authenticated principal, and before endpoint
 // execution so 401/403/5xx responses are still observed (#1144).
@@ -1381,6 +1397,10 @@ app.MapFeatureOverviewEndpoints();
 // quota policies. Admin-authorized; the policies are consumed by the rate limiting
 // middleware registered above.
 app.MapRateLimitEndpoints();
+
+// Tenant lifecycle/provisioning administration (issue #2156): create/suspend/resume/delete plus
+// the per-tenant billing usage export. Admin-authorized.
+app.MapTenantAdminEndpoints();
 
 // Configure compliance admin endpoints (SOC 2 / FedRAMP readiness, key rotation, report export) (#352)
 app.MapComplianceAdminEndpoints();

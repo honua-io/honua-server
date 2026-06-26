@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
+using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Infrastructure.RateLimiting;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -160,9 +161,60 @@ public sealed class RateLimitingMiddlewareTests
         tenantBFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 
-    private static RateLimitingMiddleware CreateMiddleware(bool enabled = true, int limit = 1)
+    [UnitTest]
+    public async Task InvokeAsync_AcrossTwoInstancesSharingTheCounterStore_EnforcesASingleLimit()
     {
-        var policyStore = Substitute.For<IRateLimitPolicyStore>();
+        // Two distinct middleware instances stand in for two server nodes coordinating through a
+        // shared counter store (the process-global counter table here; Redis in production). A
+        // client must not exceed its limit by hopping between instances (issue #2158).
+        var nodeA = CreateMiddleware(limit: 2);
+        var nodeB = CreateMiddleware(limit: 2);
+        const string clientIp = "198.51.100.111";
+
+        var first = CreateContext(clientIp);
+        await nodeA.InvokeAsync(first);
+        var second = CreateContext(clientIp);
+        await nodeB.InvokeAsync(second);
+        var third = CreateContext(clientIp);
+        await nodeA.InvokeAsync(third);
+
+        first.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        second.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        third.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests,
+            "the shared counter must aggregate requests across instances so a third request trips the limit of 2");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_WithMatchingTenantTierPolicy_AppliesPolicyLimitOverGlobalDefault()
+    {
+        // A per-tenant tier policy (limit 1) is more specific than the generous global default and
+        // must drive the enforced limit (issue #2158 tier precedence applied at runtime).
+        var store = new TestRateLimitPolicyStore(new RateLimitPolicy
+        {
+            Name = "tenant-tier",
+            Scope = RateLimitScopes.Tenant,
+            Key = "tier-tenant",
+            RequestsPerWindow = 1,
+            WindowDuration = TimeSpan.FromMinutes(1),
+        });
+        var middleware = CreateMiddleware(limit: 10_000, policyStore: store);
+
+        var first = CreateContext("198.51.100.121", user: "svc", tenantId: "tier-tenant");
+        await middleware.InvokeAsync(first);
+        var second = CreateContext("198.51.100.121", user: "svc", tenantId: "tier-tenant");
+        await middleware.InvokeAsync(second);
+
+        first.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        second.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        first.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("1");
+    }
+
+    private static RateLimitingMiddleware CreateMiddleware(
+        bool enabled = true,
+        int limit = 1,
+        IRateLimitPolicyStore? policyStore = null)
+    {
+        policyStore ??= Substitute.For<IRateLimitPolicyStore>();
 
         return new RateLimitingMiddleware(
             next: context =>
@@ -230,5 +282,28 @@ public sealed class RateLimitingMiddlewareTests
             reason = null;
             return true;
         }
+    }
+
+    private sealed class TestRateLimitPolicyStore(params RateLimitPolicy[] policies) : IRateLimitPolicyStore
+    {
+        private readonly IReadOnlyList<RateLimitPolicy> _policies = policies;
+
+        public Task<IReadOnlyList<RateLimitPolicy>> ListPoliciesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(_policies);
+
+        public Task<RateLimitPolicy?> GetPolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_policies.FirstOrDefault(p => p.PolicyId == policyId));
+
+        public Task<RateLimitPolicy> CreatePolicyAsync(RateLimitPolicy policy, CancellationToken cancellationToken = default)
+            => Task.FromResult(policy);
+
+        public Task<RateLimitPolicy?> UpdatePolicyAsync(RateLimitPolicy policy, CancellationToken cancellationToken = default)
+            => Task.FromResult<RateLimitPolicy?>(policy);
+
+        public Task<bool> DeletePolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<RateLimitStatus?> GetStatusAsync(string key, CancellationToken cancellationToken = default)
+            => Task.FromResult<RateLimitStatus?>(null);
     }
 }

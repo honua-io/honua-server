@@ -126,6 +126,12 @@ internal static partial class RateLimitEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
             }
 
+            if (!RateLimitScopes.IsKnown(request.Scope))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    $"Unknown scope '{request.Scope}'. Valid tiers: '{RateLimitScopes.Plan}', '{RateLimitScopes.Tenant}', '{RateLimitScopes.ApiKey}', '{RateLimitScopes.Endpoint}'."));
+            }
+
             var policy = new RateLimitPolicy
             {
                 Name = request.Name,
