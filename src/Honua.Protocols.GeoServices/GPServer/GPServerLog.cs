@@ -50,4 +50,7 @@ internal static partial class GPServerLog
 
     [LoggerMessage(8113, LogLevel.Warning, "GPServer failed to cancel orphaned sync execute job: JobId={JobId}")]
     public static partial void OrphanedExecuteJobCancelFailed(ILogger logger, string jobId, Exception exception);
+
+    [LoggerMessage(8114, LogLevel.Debug, "GPServer jobs listed: ServiceId={ServiceId}, TaskName={TaskName}, Count={Count}")]
+    public static partial void JobsListed(ILogger logger, string serviceId, string taskName, int count);
 }

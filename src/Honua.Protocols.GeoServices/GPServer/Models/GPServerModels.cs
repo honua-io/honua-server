@@ -163,6 +163,38 @@ internal sealed class GPResultResponse
 }
 
 /// <summary>
+/// Jobs listing/history response for a GP task: the submitted/running/completed/
+/// failed jobs bound to the service and task, newest first, with an opaque paging
+/// cursor.
+/// </summary>
+internal sealed class GPJobsListResponse
+{
+    /// <summary>The jobs in this page, ordered newest first.</summary>
+    public List<GPJobListItem> Jobs { get; set; } = [];
+
+    /// <summary>Opaque cursor for the next page, or null when no more jobs remain.</summary>
+    public string? NextCursor { get; set; }
+}
+
+/// <summary>
+/// A single entry in a GP task jobs listing.
+/// </summary>
+internal sealed class GPJobListItem
+{
+    /// <summary>Job identifier.</summary>
+    public string? JobId { get; set; }
+
+    /// <summary>Esri job status string (e.g. esriJobSucceeded).</summary>
+    public string? JobStatus { get; set; }
+
+    /// <summary>Submission time in milliseconds since the Unix epoch.</summary>
+    public long SubmissionTime { get; set; }
+
+    /// <summary>Last-updated (or completion) time in milliseconds since the Unix epoch.</summary>
+    public long LastUpdatedTime { get; set; }
+}
+
+/// <summary>
 /// Synchronous execute response envelope.
 /// </summary>
 internal sealed class GPExecuteResponse

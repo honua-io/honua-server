@@ -51,7 +51,10 @@ public sealed class AwsBatchComputeBackendTests
             [AwsBatchParameterKeys.TimeoutSeconds] = "3600",
             [AwsBatchParameterKeys.RetryAttempts] = "2",
             [AwsBatchParameterKeys.ShareIdentifier] = "tenant-a",
-            ["env.EXTRA_FLAG"] = "value"
+            ["env.EXTRA_FLAG"] = "value",
+            // Custom-code param->env contract (#2191): env.CUSTOMCODE_* keys the
+            // submit coordinator projects must surface to the container verbatim.
+            ["env.CUSTOMCODE_REPO_URL"] = "https://github.com/honua-io/example.git"
         });
 
         var result = await backend.StartAsync(job);
@@ -73,6 +76,9 @@ public sealed class AwsBatchComputeBackendTests
             .Contain(entry => entry.Name == "HONUA_RUNTIME_PROFILE" && entry.Value == "heavy-gdal");
         client.LastSubmission.EnvironmentOverrides.Should()
             .Contain(entry => entry.Name == "EXTRA_FLAG" && entry.Value == "value");
+        client.LastSubmission.EnvironmentOverrides.Should()
+            .Contain(entry => entry.Name == "CUSTOMCODE_REPO_URL"
+                && entry.Value == "https://github.com/honua-io/example.git");
     }
 
     [Fact]

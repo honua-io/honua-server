@@ -66,6 +66,18 @@ internal interface IGeoprocessingJobService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists the caller-visible geoprocessing jobs matching the supplied filter,
+    /// newest first, with cursor paging. Applies the same per-job ownership check as
+    /// <see cref="GetJobAsync"/>; jobs the caller cannot read are omitted from the
+    /// page. Adapters supply protocol binding constraints (e.g. GPServer
+    /// service/task) through <see cref="GeoprocessingJobListFilter.RequiredParameters"/>.
+    /// </summary>
+    Task<GeoprocessingJobListPage> ListJobsAsync(
+        GeoprocessingJobListFilter filter,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Retrieves the result package for a completed job.
     /// </summary>
     Task<AnalysisResultPackage> GetJobResultsAsync(
@@ -80,4 +92,42 @@ internal interface IGeoprocessingJobService
         string jobId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Filter and paging criteria for <see cref="IGeoprocessingJobService.ListJobsAsync"/>.
+/// </summary>
+internal sealed record GeoprocessingJobListFilter
+{
+    /// <summary>
+    /// Spec parameters that a job must carry (case-insensitive value match) to be
+    /// included. Used by protocol adapters to constrain the listing to jobs they own
+    /// (e.g. GPServer service/task binding metadata).
+    /// </summary>
+    public IReadOnlyDictionary<string, string> RequiredParameters { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Optional status filter. When empty, jobs of any status (including terminal
+    /// history) are returned.
+    /// </summary>
+    public IReadOnlyList<ExecutionJobStatus> Statuses { get; init; } = Array.Empty<ExecutionJobStatus>();
+
+    /// <summary>Opaque cursor returned by a previous page.</summary>
+    public string? Cursor { get; init; }
+
+    /// <summary>Requested page size; clamped to the service's supported range.</summary>
+    public int Limit { get; init; } = 50;
+}
+
+/// <summary>
+/// A cursor page of geoprocessing job records visible to the caller.
+/// </summary>
+internal sealed record GeoprocessingJobListPage
+{
+    /// <summary>Jobs in this page, ordered newest first.</summary>
+    public required IReadOnlyList<ExecutionJobRecord> Items { get; init; }
+
+    /// <summary>Opaque cursor for the next page, or null when no more items remain.</summary>
+    public string? NextCursor { get; init; }
 }

@@ -605,6 +605,85 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return job;
     }
 
+    public async Task<GeoprocessingJobListPage> ListJobsAsync(
+        GeoprocessingJobListFilter filter,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentNullException.ThrowIfNull(principal);
+
+        await EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Job,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
+
+        var jobStore = RequireJobStore();
+        var limit = Math.Clamp(filter.Limit, 1, MaxJobListPageSize);
+
+        // Page the canonical store (newest first, status-filtered there), then apply
+        // the adapter binding constraint and per-job ownership in the shared service so
+        // no protocol surface can list jobs the caller cannot read. The store cursor is
+        // returned verbatim so the client walks the full history without dupes; a page
+        // may carry fewer than `limit` items after post-filtering.
+        var page = await jobStore.QueryAsync(
+            new ExecutionJobQuery
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                Statuses = filter.Statuses,
+                Cursor = filter.Cursor,
+                Limit = limit
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var items = new List<ExecutionJobRecord>(page.Items.Count);
+        foreach (var job in page.Items)
+        {
+            if (MatchesRequiredParameters(job, filter.RequiredParameters) && IsJobReadable(job, principal))
+            {
+                items.Add(job);
+            }
+        }
+
+        GeoprocessingServiceLog.JobsListed(_logger, items.Count);
+        return new GeoprocessingJobListPage
+        {
+            Items = items,
+            NextCursor = page.NextCursor
+        };
+    }
+
+    private const int MaxJobListPageSize = 200;
+
+    private static bool MatchesRequiredParameters(
+        ExecutionJobRecord job,
+        IReadOnlyDictionary<string, string> required)
+    {
+        foreach (var (key, value) in required)
+        {
+            if (!job.Spec.Parameters.TryGetValue(key, out var actual) ||
+                !string.Equals(actual, value, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
+    {
+        var owner = job.Audit.RequestedBy;
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            return true;
+        }
+
+        return string.Equals(owner, principal.Identity?.Name, StringComparison.Ordinal)
+            || principal.IsInRole("admin");
+    }
+
     public async Task<AnalysisResultPackage> GetJobResultsAsync(
         string jobId,
         ClaimsPrincipal principal,
