@@ -83,7 +83,7 @@ cells are forbidden and are caught by `ModuleDependencyPolicyTests`.
 | **Hosting**              |   ✓   |  ✓   |  ✓  |      |     |       |         |      |    |       |       |       |          |        |       |           |        |             |        |   ✓    |
 | **Jobs**                 |   ✓   |  ✓   |     |      |     |       |    ✓    |      |    |       |       |       |          |        |       |           |        |             |        |   ✓    |
 | **Ai**                   |   ✓   |  ✓   |     |  ✓   |     |       |    ✓    |  ✓   |    |   ✓   |       |       |          |        |       |           |        |             |        |   ✓    |
-| **Geoprocessing**        |   ✓   |  ✓   |  ✓  |      |     |       |    ✓    |  ✓   |    |       |       |       |          |        |       |           |        |             |        |   ✓    |
+| **Geoprocessing**        |   ✓   |  ✓   |  ✓  |      |     |       |    ✓    |  ✓   |    |   ✓   |       |       |          |        |       |           |        |             |        |   ✓    |
 | **Scene**                |   ✓   |   ✓   |   ✓   |       |       |       |   ✓   |       |       |       |       |       |       |       |       |       |       |       |       |   ✓   |
 | **Io**                   |   ✓   |   ✓   |   ✓   |       |       |       |   ✓   |       |       |       |       |       |       |       |       |       |       |       |       |   ✓   |
 | **Import**               |   ✓   |   ✓   |   ✓   |       |       |       |   ✓   |       |       |       |       |       |       |       |       |       |       |       |       |   ✓   |
@@ -115,6 +115,15 @@ Reading the matrix:
 - **The two "future" columns (Geocoding / Azure) only have ✓s from Server
   today.** Until a satellite is created, the matrix permission is dormant; the
   arch test ignores it because there is no `.csproj` for it yet.
+- **Geoprocessing has an intra-module self-edge (Gproc → Gproc).** The GP
+  Devkit's golden-file test SDK (`Honua.Geoprocessing.Testing`, #2127) is a
+  dev/test-support library that lives under `src/` and references the runtime
+  `Honua.Geoprocessing` it wraps (the headless `GeoprocessingLocalRunner`). It
+  is deliberately NOT packed or AOT-published — nothing in `Honua.Server`
+  references it, so it never enters the server's publish graph. Because the
+  arch test classifies it by the `Honua.Geoprocessing.` prefix it is treated as
+  a Geoprocessing-role consumer, so the self-cell is permitted. The no-cross-
+  module rule is unaffected (Geoprocessing still references no peer satellite).
 - **Ai reaches the Geocoding and Routing satellites (#1597).** The MCP
   geocode/route operator tools are thin adapters over the canonical
   `IGeocodeCoordinatorService` / `IRoutingProvider` pipelines - the same shape
