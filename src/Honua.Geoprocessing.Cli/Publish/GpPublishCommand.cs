@@ -55,8 +55,9 @@ internal sealed record GpPublishOptions
 /// </summary>
 /// <remarks>
 /// This bridges the devkit's local loop to the GitOps cross-env path: publishing creates an
-/// immutable, versioned package in the store. It does NOT deploy across environments — the
-/// publish → metadata-release → GitOps release path promotes the package between environments.
+/// immutable, versioned package in the store and emits a metadata release package for promotion
+/// through the GitOps approval path. It does NOT deploy across environments and does NOT auto-promote
+/// — promotion is governed/approval-gated (honua-devops is plan + PR-first, submitImmediately=false).
 /// </remarks>
 internal static class GpPublishCommand
 {
@@ -238,16 +239,17 @@ internal static class GpPublishCommand
         else if (result.Publication is not null)
         {
             output.WriteLine(
-                "result    : package version published. Next: a metadata release picks up the "
-                + "published package and the GitOps release path promotes it across environments "
-                + "(this command only published the package; it does NOT deploy across envs).");
+                "result    : package version published. Next: it emits a metadata release package "
+                + "for promotion through the GitOps approval path (governed/approval-gated, not "
+                + "auto-promoted) (this command only published the package; it does NOT deploy across envs).");
         }
         else
         {
             output.WriteLine(
                 "result    : immutable package version created and ready to publish. Next: publish it "
-                + "(re-run with --publish, or use the Console), then a metadata release + the GitOps "
-                + "cross-env path promotes it across environments (publishing does NOT deploy across envs).");
+                + "(re-run with --publish, or use the Console) to emit a metadata release package for "
+                + "promotion through the GitOps approval path (governed/approval-gated, not auto-promoted) "
+                + "(publishing does NOT deploy across envs).");
         }
     }
 
