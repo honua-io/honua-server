@@ -685,6 +685,21 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+      - name: Run .NET Tests (Core Security)
+        # Security-focused unit tests for DataConnection SSL/TLS enforcement.
+        # Tier=Fast — no external dependencies, runs alongside Core and Architecture.
+        timeout-minutes: 5
+        run: |
+          dotnet test tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=core-security-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            --collect:"XPlat Code Coverage" \
+            --settings coverlet.runsettings
+
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
         run: |

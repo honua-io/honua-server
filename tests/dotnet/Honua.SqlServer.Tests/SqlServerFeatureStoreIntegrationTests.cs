@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.SqlServer;
 using Honua.SqlServer.Features.FeatureStore;
 using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -230,17 +231,11 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
 }
 
 /// <summary>
-/// A <see cref="FactAttribute"/> that marks the test as skipped (rather than executed) when the
+/// A <see cref="FactAttribute"/> that marks the test as skipped when the
 /// <c>HONUA_SQLSERVER_TEST_CONNECTION</c> environment variable is not set, so the SQL Server
 /// integration suite is opt-in without silently passing.
 /// </summary>
-internal sealed class SkippableFactAttribute : FactAttribute
-{
-    public SkippableFactAttribute()
-    {
-        if (!SqlServerFeatureStoreIntegrationTests.ShouldRun)
-        {
-            Skip = $"Set {SqlServerFeatureStoreIntegrationTests.ConnectionEnvVar} to run SQL Server integration tests.";
-        }
-    }
-}
+internal sealed class SkippableFactAttribute()
+    : EnvGatedFactAttribute(
+        SqlServerFeatureStoreIntegrationTests.ConnectionEnvVar,
+        $"Set {SqlServerFeatureStoreIntegrationTests.ConnectionEnvVar} to run SQL Server integration tests.");

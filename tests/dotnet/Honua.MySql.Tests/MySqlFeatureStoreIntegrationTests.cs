@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.MySql.Features.FeatureStore;
 using Honua.MySql.Features.FeatureStore.Services;
 using Honua.MySql.Features.Infrastructure;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using MySqlConnector;
 using Testcontainers.MySql;
@@ -211,13 +212,5 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
     }
 }
 
-internal sealed class MySqlIntegrationFactAttribute : FactAttribute
-{
-    public MySqlIntegrationFactAttribute()
-    {
-        if (!string.Equals(Environment.GetEnvironmentVariable("HONUA_TEST_MYSQL"), "1", StringComparison.Ordinal))
-        {
-            Skip = "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.";
-        }
-    }
-}
+internal sealed class MySqlIntegrationFactAttribute()
+    : EnvGatedFactAttribute("HONUA_TEST_MYSQL", "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.");
