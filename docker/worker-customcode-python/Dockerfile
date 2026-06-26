@@ -72,7 +72,12 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
 
 # Correctness check: the SDK + geo bindings + the harness must import, and the
 # console script must be on PATH. Fails the build early if a wheel didn't link.
-RUN python3 -c "import honua_sdk, rasterio, geopandas, shapely, pyproj, fiona, boto3; import osgeo.gdal" \
+# The GDAL interop check imports the FULL osgeo binding set (gdal/ogr/osr) AND
+# rasterio, and asserts a driver count > 0 — proving in-process raster/vector GDAL
+# is available to user tools (not just the gdal* CLIs). rasterio/osgeo link against
+# the GDAL-full base, so this fails fast on any ABI/wheel mismatch.
+RUN python3 -c "import honua_sdk, rasterio, geopandas, shapely, pyproj, fiona, boto3" \
+ && python3 -c "from osgeo import gdal, ogr, osr; gdal.AllRegister(); assert gdal.GetDriverCount() > 0, 'no GDAL raster drivers'; assert ogr.GetDriverCount() > 0, 'no OGR vector drivers'; import rasterio; assert len(rasterio.drivers.raster_driver_extensions()) > 0" \
  && python3 -c "import honua_customcode_harness as h; assert hasattr(h, 'run')" \
  && command -v honua-customcode-harness
 
