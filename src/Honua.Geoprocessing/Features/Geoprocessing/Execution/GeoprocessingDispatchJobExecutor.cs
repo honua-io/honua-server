@@ -58,6 +58,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         AttributeCastTransformExecutor attributeCast,
         ComputedFieldTransformExecutor computedField,
         AttributeFilterTransformExecutor attributeFilter,
+        AttributeJoinTransformExecutor attributeJoin,
+        AggregateTransformExecutor aggregate,
+        PivotTransformExecutor pivot,
+        UnpivotTransformExecutor unpivot,
         SpatialFilterTransformExecutor spatialFilter,
         ClipTransformExecutor clip2,
         DedupTransformExecutor dedup,
@@ -92,6 +96,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(attributeCast);
         ArgumentNullException.ThrowIfNull(computedField);
         ArgumentNullException.ThrowIfNull(attributeFilter);
+        ArgumentNullException.ThrowIfNull(attributeJoin);
+        ArgumentNullException.ThrowIfNull(aggregate);
+        ArgumentNullException.ThrowIfNull(pivot);
+        ArgumentNullException.ThrowIfNull(unpivot);
         ArgumentNullException.ThrowIfNull(spatialFilter);
         ArgumentNullException.ThrowIfNull(clip2);
         ArgumentNullException.ThrowIfNull(dedup);
@@ -128,6 +136,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [AttributeCastTransformExecutor.HandledProcessId] = attributeCast,
             [ComputedFieldTransformExecutor.HandledProcessId] = computedField,
             [AttributeFilterTransformExecutor.HandledProcessId] = attributeFilter,
+            [AttributeJoinTransformExecutor.HandledProcessId] = attributeJoin,
+            [AggregateTransformExecutor.HandledProcessId] = aggregate,
+            [PivotTransformExecutor.HandledProcessId] = pivot,
+            [UnpivotTransformExecutor.HandledProcessId] = unpivot,
             [SpatialFilterTransformExecutor.HandledProcessId] = spatialFilter,
             [ClipTransformExecutor.HandledProcessId] = clip2,
             [DedupTransformExecutor.HandledProcessId] = dedup,

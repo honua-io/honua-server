@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Geoprocessing.Execution.Expressions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
@@ -9,10 +10,24 @@ namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>transform.computed-field</c> executor. Adds a new attribute derived from the
-/// existing attributes via a small, AOT-safe operation set — no expression engine,
-/// no reflection. Supported <c>op</c> values: <c>concat</c>, <c>add</c>,
-/// <c>subtract</c>, <c>multiply</c>, <c>divide</c>, <c>const</c>. Rows whose
-/// arithmetic operands are non-numeric are dropped as row-level data errors.
+/// existing attributes. Two modes are supported and both are fully AOT-safe (no
+/// reflection, no runtime code generation):
+/// <list type="bullet">
+/// <item>
+/// The legacy fixed operation set selected via <c>op</c>: <c>concat</c>,
+/// <c>add</c>, <c>subtract</c>, <c>multiply</c>, <c>divide</c>, <c>const</c>.
+/// Rows whose arithmetic operands are non-numeric are dropped as row-level data
+/// errors. This path is unchanged for back-compatibility.
+/// </item>
+/// <item>
+/// The <c>op=expression</c> mode (or supplying the <c>expression</c> parameter)
+/// evaluates a whitelisted expression such as
+/// <c>upper(trim(name)) + "-" + cast(year, string)</c> through the
+/// <see cref="ExpressionEngine"/>: a parsed AST over arithmetic, string,
+/// conditional, comparison/logical, math, date, and field-reference primitives.
+/// The expression is parsed once and evaluated per feature.
+/// </item>
+/// </list>
 /// Ported from the GeoETL baseline ComputedFieldTransform onto the #1185
 /// process/executor contract.
 /// </summary>
@@ -30,7 +45,27 @@ internal sealed class ComputedFieldTransformExecutor(
         CancellationToken cancellationToken)
     {
         var target = inputs.Require("target");
-        var op = inputs.Require("op").ToLowerInvariant();
+
+        // Expression mode: triggered by op=expression or by supplying 'expression'
+        // directly (so a caller can omit 'op' entirely for the new engine). The
+        // expression is parsed once up front so a syntax error fails the job before
+        // any feature is processed and the AST is reused across the whole stream.
+        var hasExpression = inputs.TryGet("expression", out var expressionSource)
+            && !string.IsNullOrWhiteSpace(expressionSource);
+        var op = inputs.TryGet("op", out var opRaw) && !string.IsNullOrWhiteSpace(opRaw)
+            ? opRaw!.ToLowerInvariant()
+            : hasExpression ? "expression" : throw new TransformInputException("missing required input 'op'");
+
+        if (op == "expression")
+        {
+            if (!hasExpression)
+            {
+                throw new TransformInputException(
+                    "op 'expression' requires the 'expression' input (e.g. upper(trim(name)) + \"-\" + cast(year, string)).");
+            }
+
+            return ApplyExpression(source, target, expressionSource!, cancellationToken);
+        }
 
         var output = new List<IFeature>(source.Count);
         foreach (var feature in source)
@@ -56,6 +91,75 @@ internal sealed class ComputedFieldTransformExecutor(
         }
 
         return output;
+    }
+
+    private static List<IFeature> ApplyExpression(
+        FeatureCollection source,
+        string target,
+        string expressionSource,
+        CancellationToken cancellationToken)
+    {
+        ExpressionNode tree;
+        try
+        {
+            tree = ExpressionEngine.Parse(expressionSource);
+        }
+        catch (ExpressionParseException ex)
+        {
+            throw new TransformInputException($"invalid expression: {ex.PublicMessage}");
+        }
+
+        var output = new List<IFeature>(source.Count);
+        foreach (var feature in source)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var attributes = feature.Attributes ?? new AttributesTable();
+            object? value;
+            try
+            {
+                value = tree.Evaluate(new AttributesExpressionContext(attributes));
+            }
+            catch (ExpressionEvaluationException)
+            {
+                // Row-level data error (e.g. a non-numeric operand for this row) —
+                // drop the row, matching the legacy arithmetic-op behavior.
+                continue;
+            }
+
+            if (attributes.Exists(target))
+            {
+                attributes[target] = value!;
+            }
+            else
+            {
+                attributes.Add(target, value);
+            }
+
+            output.Add(new Feature(feature.Geometry, attributes));
+        }
+
+        return output;
+    }
+
+    /// <summary>
+    /// Adapts a NetTopologySuite <see cref="IAttributesTable"/> to the expression
+    /// engine's field-reference context. Only named-attribute lookups are exposed —
+    /// the grammar has no path to arbitrary members.
+    /// </summary>
+    private sealed class AttributesExpressionContext(IAttributesTable attributes) : IExpressionContext
+    {
+        public bool TryGetField(string name, out object? value)
+        {
+            if (attributes.Exists(name))
+            {
+                value = attributes.GetOptionalValue(name);
+                return true;
+            }
+
+            value = null;
+            return false;
+        }
     }
 
     private static bool TryCompute(

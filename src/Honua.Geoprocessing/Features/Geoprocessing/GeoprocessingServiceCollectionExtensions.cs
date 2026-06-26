@@ -151,6 +151,14 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<AttributeCastTransformExecutor>();
         services.TryAddSingleton<ComputedFieldTransformExecutor>();
         services.TryAddSingleton<AttributeFilterTransformExecutor>();
+        // Relational transforms (#ETL expression/joins): a safe AOT expression
+        // engine backs transform.computed-field's op=expression mode, and the
+        // attribute-join / aggregate / pivot / unpivot executors close the
+        // long-standing join/group-by/pivot gap in the DAG transform set.
+        services.TryAddSingleton<AttributeJoinTransformExecutor>();
+        services.TryAddSingleton<AggregateTransformExecutor>();
+        services.TryAddSingleton<PivotTransformExecutor>();
+        services.TryAddSingleton<UnpivotTransformExecutor>();
         services.TryAddSingleton<SpatialFilterTransformExecutor>();
         services.TryAddSingleton<ClipTransformExecutor>();
         services.TryAddSingleton<DedupTransformExecutor>();
