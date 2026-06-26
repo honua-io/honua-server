@@ -25,12 +25,28 @@ public static class CustomCodeJobContract
     /// </summary>
     public const string RuntimeProfile = "custom-code";
 
-    /// <summary>The only runtime supported by the MVP.</summary>
+    /// <summary>The Python custom-code runtime (Phase 1).</summary>
     public const string PythonRuntime = "python";
+
+    /// <summary>The .NET custom-code runtime (Phase 2).</summary>
+    public const string DotnetRuntime = "dotnet";
+
+    /// <summary>
+    /// The runtimes the custom-code submit gate accepts. The runtime selects only
+    /// the per-job container image (resolved by the iac job-definition family — the
+    /// runtime value flows through the spec parameters to the Batch container); every
+    /// security control (SHA-only pin, repo allowlist, scope ⊆ owner, scoped-token
+    /// mint/inject/revoke) and the routing fence are runtime-agnostic.
+    /// </summary>
+    public static readonly IReadOnlySet<string> SupportedRuntimes =
+        new HashSet<string>(StringComparer.Ordinal) { PythonRuntime, DotnetRuntime };
 
     // --- caller-supplied customcode.* parameters --------------------------------
 
-    /// <summary>Runtime selector; MVP accepts only <see cref="PythonRuntime"/>.</summary>
+    /// <summary>
+    /// Runtime selector; accepts <see cref="PythonRuntime"/> or
+    /// <see cref="DotnetRuntime"/> (see <see cref="SupportedRuntimes"/>).
+    /// </summary>
     public const string RuntimeParam = "customcode.runtime";
 
     /// <summary>HTTPS git repository URL holding the user code (allowlist-checked).</summary>

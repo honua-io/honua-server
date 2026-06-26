@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The .NET custom-code GP harness — the image ENTRYPOINT. A small console host
+    that clones user code at a pinned git SHA, builds the user's .csproj against a
+    warm NuGet cache, strips the IMDS/token environment, activates the user's
+    IGeoprocessingTool, runs it under a scoped Honua client, uploads artifacts,
+    and exits with a terminal code.
+
+    This host is its OWN process — it is NOT the AOT serving host. It loads a
+    user-built assembly via AssemblyLoadContext (reflection), so it is
+    deliberately NOT compiled AOT.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <RootNamespace>Honua.CustomCode.Harness</RootNamespace>
+    <AssemblyName>Honua.CustomCode.Harness</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+    <!-- The harness loads user assemblies dynamically; AOT/trimming do not apply. -->
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.CustomCode.Sdk\Honua.CustomCode.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>
