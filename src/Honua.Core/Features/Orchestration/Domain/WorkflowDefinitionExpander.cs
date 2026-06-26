@@ -117,7 +117,7 @@ public static class WorkflowDefinitionExpander
     private static string IterationStepId(string baseStepId, int index)
         => string.Concat(baseStepId, IterationSeparator, index.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-    private static IReadOnlyList<string> RemapDependencies(
+    private static List<string> RemapDependencies(
         IReadOnlyList<string> dependsOn,
         IReadOnlyDictionary<string, List<string>> expandedIds)
     {
@@ -142,7 +142,7 @@ public static class WorkflowDefinitionExpander
         return remapped;
     }
 
-    private static IReadOnlyList<StepInputBinding> RemapBindings(
+    private static List<StepInputBinding> RemapBindings(
         IReadOnlyList<StepInputBinding> bindings,
         IReadOnlyDictionary<string, List<string>> expandedIds)
     {
