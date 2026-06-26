@@ -50,9 +50,16 @@ internal static class ControlPlaneEventEndpoints
             return;
         }
 
+        // HANDLER-AUTHORIZED (#1144): these internal event/backstop routes enforce their own
+        // authorization in-handler via the shared-secret X-Honua-ControlPlane-Token check
+        // (see IsAuthorized) and are reachable only from the EventBridge-invoked Lambda inside
+        // the deployment trust boundary — they are not a framework-policy surface. Marked
+        // AllowAnonymous on the group so the audit architecture guard records the explicit,
+        // intentional decision for both child mutation routes.
         var group = endpoints.MapGroup("/internal/control-plane")
             .WithTags("ControlPlane", "Internal")
-            .ExcludeFromDescription();
+            .ExcludeFromDescription()
+            .AllowAnonymous();
 
         group.MapPost("/events/batch-job-state-change", HandleBatchJobStateChangeAsync)
             .WithDisplayName("Control-plane Batch job state-change reconcile");
