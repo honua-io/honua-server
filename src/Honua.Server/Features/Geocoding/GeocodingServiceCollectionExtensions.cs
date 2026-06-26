@@ -39,6 +39,11 @@ internal static class GeocodingServiceCollectionExtensions
             services.AddAzureMapsGeocodeProvider(configuration);
         }
 
+        if (geocodingConfig.GetValue<bool>("Providers:Local:Enabled"))
+        {
+            services.AddLocalGeocodeProvider(configuration);
+        }
+
         // Register the handler for GeoServices-compatible geocoding endpoints
         services.AddScoped<GeocodingHandler>();
 

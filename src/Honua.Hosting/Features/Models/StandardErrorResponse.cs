@@ -187,6 +187,29 @@ internal sealed record StandardErrorResponse(
     }
 
     /// <summary>
+    /// Creates a TooManyRequests (429) StandardErrorResponse for rate-limit/quota rejection.
+    /// </summary>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="retryAfterSeconds">Optional retry-after seconds.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A TooManyRequests StandardErrorResponse.</returns>
+    public static StandardErrorResponse TooManyRequests(string detail, int? retryAfterSeconds = null, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var details = additionalDetails?.ToList() ?? [];
+        if (retryAfterSeconds.HasValue)
+        {
+            details.Add($"Retry-After: {retryAfterSeconds}s");
+        }
+
+        return new StandardErrorResponse(
+            StatusCode: StatusCodes.Status429TooManyRequests,
+            Title: "Too Many Requests",
+            Detail: detail,
+            AdditionalDetails: details.Count > 0 ? details : null
+        );
+    }
+
+    /// <summary>
     /// Creates a RequestTimeout StandardErrorResponse.
     /// </summary>
     /// <param name="detail">The error detail message.</param>

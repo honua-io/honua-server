@@ -57,6 +57,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         SupportsBiasing: true)
     {
         SupportedSpatialReferences = [4326], // Nominatim returns WGS84 coordinates
+        SupportedStructuredFields = GeocodeStructuredFields.All(),
         MaxResultsPerRequest = 50,
         // Kept conservative because batch is fanned out to sequential single-address requests
         // against the public Nominatim usage policy (max ~1 req/sec).
@@ -293,10 +294,53 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         Volatile.Write(ref _validatedBaseUrl, 1);
     }
 
+    private static bool HasAnyStructuredField(StructuredAddress structured)
+        => !string.IsNullOrWhiteSpace(structured.StreetName)
+            || !string.IsNullOrWhiteSpace(structured.AddressNumber)
+            || !string.IsNullOrWhiteSpace(structured.City)
+            || !string.IsNullOrWhiteSpace(structured.Region)
+            || !string.IsNullOrWhiteSpace(structured.PostalCode)
+            || !string.IsNullOrWhiteSpace(structured.Country);
+
+    // Builds the Nominatim structured search URL. Components the provider does not model are omitted
+    // rather than producing a malformed request.
+    private string BuildStructuredSearchUrl(StructuredAddress structured, ForwardGeocodeRequest request, string baseUrl, int maxResults)
+    {
+        var url = $"{baseUrl}/search?format=json&addressdetails=1&limit={maxResults}";
+
+        var streetLine = string.Join(' ', new[] { structured.AddressNumber, structured.StreetName }
+            .Where(static p => !string.IsNullOrWhiteSpace(p)));
+        url = AppendStructured(url, "street", streetLine);
+        url = AppendStructured(url, "city", structured.City);
+        url = AppendStructured(url, "state", structured.Region);
+        url = AppendStructured(url, "postalcode", structured.PostalCode);
+        url = AppendStructured(url, "country", structured.Country);
+
+        if (!string.IsNullOrWhiteSpace(request.CountryCodes))
+        {
+            url += $"&countrycodes={Uri.EscapeDataString(request.CountryCodes)}";
+        }
+
+        return url;
+    }
+
+    private static string AppendStructured(string url, string parameterName, string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? url
+            : url + $"&{parameterName}={Uri.EscapeDataString(value)}";
+
     private string BuildSearchUrl(ForwardGeocodeRequest request)
     {
         var baseUrl = _configuration.BaseUrl.TrimEnd('/');
         var maxResults = ValidateMaxResults(request.MaxResults);
+
+        // Structured input uses Nominatim's discrete structured-query parameters (street, city,
+        // county, state, postalcode, country) which yield higher-fidelity matches than the free-form
+        // q= search and cannot be combined with it (#2149). Unsupported components are omitted.
+        if (request.StructuredAddress is { } structured && HasAnyStructuredField(structured))
+        {
+            return BuildStructuredSearchUrl(structured, request, baseUrl, maxResults);
+        }
 
         var url = $"{baseUrl}/search?format=json&addressdetails=1&limit={maxResults}&q={Uri.EscapeDataString(request.Query)}";
 

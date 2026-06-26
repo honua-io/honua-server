@@ -233,6 +233,37 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates a Too Many Requests (429) error response with an optional Retry-After header,
+    /// used to reject requests that exceed an advertised rate limit or quota.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="retryAfterSeconds">Optional retry-after seconds emitted as a Retry-After header.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Too Many Requests response.</returns>
+    public static IResult CreateTooManyRequests(HttpContext context, string detail, int? retryAfterSeconds = null, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = StandardErrorResponse.TooManyRequests(detail, retryAfterSeconds, additionalDetails);
+
+        var options = new ErrorResponseFormatterOptions();
+        if (retryAfterSeconds.HasValue)
+        {
+            options = new ErrorResponseFormatterOptions
+            {
+                IncludeAdditionalDetails = options.IncludeAdditionalDetails,
+                IncludeDebugInfo = options.IncludeDebugInfo,
+                ContentType = options.ContentType,
+                AdditionalHeaders = new Dictionary<string, string>
+                {
+                    ["Retry-After"] = retryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                }
+            };
+        }
+
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
+    }
+
+    /// <summary>
     /// Creates a Request Timeout error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>

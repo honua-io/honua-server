@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Infrastructure.Models;
@@ -179,13 +180,22 @@ internal sealed class GeocodingHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, biasError ?? "Invalid location/distance parameter.");
             }
 
+            // Structured fields (when no singleLine/magicKey) are carried alongside the flattened
+            // query so structured-capable providers build a true structured request while single-line
+            // providers still receive a usable query (#2149).
+            var structuredAddress = decodedMagicKey is null ? BuildStructuredAddress(values) : null;
+
             var providerRequest = new Honua.Geocoding.Features.Geocoding.Domain.ForwardGeocodeRequest(
                 Query: query,
                 MaxResults: maxLocations,
                 SpatialReferenceWkid: _options.DefaultSpatialReferenceWkid,
                 CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"),
+                InputType: structuredAddress is not null
+                    ? Honua.Geocoding.Features.Geocoding.Domain.GeocodeInputType.Structured
+                    : Honua.Geocoding.Features.Geocoding.Domain.GeocodeInputType.SingleLine,
                 SearchBounds: searchBounds)
             {
+                StructuredAddress = structuredAddress,
                 CategoryFilter = requestedCategories is null ? null : string.Join(',', requestedCategories),
                 MagicKey = string.IsNullOrWhiteSpace(rawMagicKey) ? null : rawMagicKey,
                 BiasLocation = biasLocation,
@@ -200,7 +210,7 @@ internal sealed class GeocodingHandler(
             {
                 var errorMessage = result.ErrorMessage ?? "Geocoding request failed";
                 GeocodingLog.OperationFailed(_logger, "findAddressCandidates", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
-                return MapCoordinatorErrorToResult(context, errorMessage, "Geocoding service error");
+                return MapCoordinatorErrorToResult(context, errorMessage, "Geocoding service error", retryAfterSeconds: GetRetryAfterSeconds(result));
             }
 
             var candidates = result.Data ?? [];
@@ -348,7 +358,8 @@ internal sealed class GeocodingHandler(
                 var errorMessage = result.ErrorMessage ?? "Reverse geocoding request failed";
                 GeocodingLog.OperationFailed(_logger, "reverseGeocode", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
                 return MapCoordinatorErrorToResult(context, errorMessage, "Reverse geocoding service error",
-                    notFoundMessage: "No matching address was found for the supplied location");
+                    notFoundMessage: "No matching address was found for the supplied location",
+                    retryAfterSeconds: GetRetryAfterSeconds(result));
             }
 
             var match = result.Data;
@@ -488,7 +499,7 @@ internal sealed class GeocodingHandler(
             {
                 var errorMessage = result.ErrorMessage ?? "Suggest request failed";
                 GeocodingLog.OperationFailed(_logger, "suggest", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
-                return MapCoordinatorErrorToResult(context, errorMessage, "Suggest service error");
+                return MapCoordinatorErrorToResult(context, errorMessage, "Suggest service error", retryAfterSeconds: GetRetryAfterSeconds(result));
             }
 
             var suggestions = result.Data ?? [];
@@ -581,16 +592,18 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "records parameter is required and must contain at least one address.");
         }
 
-        // Use the explicit provider's limit when one was requested; otherwise use a
-        // default cap since the coordinator may route to a different provider via failover.
-        var maxBatchSize = !string.IsNullOrWhiteSpace(requestedProviderName)
-            ? (provider?.Capabilities.MaxBatchSize ?? 100)
-            : 100;
+        // Resolve the effective provider's advertised batch cap so the up-front 400 reflects the
+        // provider that will actually serve the batch — the explicitly requested one, or the default
+        // provider when none was named (rather than an unrelated hard-coded constant). The coordinator
+        // re-checks this and the configured licensing cap as defense-in-depth before any provider work.
+        var effectiveBatchProvider = provider ?? _providerRegistry.GetProvider(resolvedProviderName);
+        var providerBatchCap = effectiveBatchProvider?.Capabilities.MaxBatchSize ?? 0;
+        var maxBatchSize = providerBatchCap > 0 ? providerBatchCap : 100;
         if (queries.Count > maxBatchSize)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
-                $"Batch size {queries.Count} exceeds the maximum allowed batch size of {maxBatchSize}.");
+                $"Batch size {queries.Count} {GeocodeLimitMetadata.BatchSizeMarker} of {maxBatchSize}.");
         }
 
         if (!TryParseSpatialReference(GetValue(values, "outSR"), _options.DefaultSpatialReferenceWkid, out var outSrid))
@@ -618,7 +631,7 @@ internal sealed class GeocodingHandler(
             {
                 var errorMessage = result.ErrorMessage ?? "Batch geocoding request failed";
                 GeocodingLog.OperationFailed(_logger, "geocodeAddresses", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
-                return MapCoordinatorErrorToResult(context, errorMessage, "Batch geocoding service error");
+                return MapCoordinatorErrorToResult(context, errorMessage, "Batch geocoding service error", retryAfterSeconds: GetRetryAfterSeconds(result));
             }
 
             // The coordinator returns one candidate slot per submitted record, in request order,
@@ -829,7 +842,8 @@ internal sealed class GeocodingHandler(
         HttpContext context,
         string errorMessage,
         string fallbackMessage,
-        string? notFoundMessage = null)
+        string? notFoundMessage = null,
+        int? retryAfterSeconds = null)
     {
         if (errorMessage.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
             errorMessage.Contains("unauthorized", StringComparison.OrdinalIgnoreCase))
@@ -837,10 +851,19 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication failed for geocoding service");
         }
 
-        if (errorMessage.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
+        // An over-cap batch is a client error: reject with 400 carrying the advertised cap so callers
+        // can chunk to a compliant size (consistent with the GeocodeServer SuggestedBatchSize hint).
+        if (errorMessage.Contains(GeocodeLimitMetadata.BatchSizeMarker, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
+        }
+
+        // An exceeded rate limit is a throttling condition: reject with 429 and a Retry-After hint so
+        // clients back off and retry once the window resets (advertised RateLimitPerMinute, #2150).
+        if (errorMessage.Contains(GeocodeLimitMetadata.RateLimitMarker, StringComparison.OrdinalIgnoreCase) ||
             errorMessage.Contains("too many requests", StringComparison.OrdinalIgnoreCase))
         {
-            return StandardErrorHelpers.CreateServiceUnavailable(context, "Rate limit exceeded");
+            return StandardErrorHelpers.CreateTooManyRequests(context, "Geocoding rate limit exceeded.", retryAfterSeconds);
         }
 
         if (errorMessage.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
@@ -870,6 +893,20 @@ internal sealed class GeocodingHandler(
         return string.IsNullOrWhiteSpace(providerName)
             ? null
             : providerName.Trim();
+    }
+
+    // Extracts the seconds-until-reset hint the coordinator attaches to a rate-limit rejection so a
+    // throttled response carries an accurate Retry-After header.
+    private static int? GetRetryAfterSeconds<T>(GeocodeResult<T> result)
+    {
+        if (result.Metadata is { } metadata &&
+            metadata.TryGetValue(GeocodeLimitMetadata.RetryAfterSecondsKey, out var value) &&
+            value is int seconds)
+        {
+            return seconds;
+        }
+
+        return null;
     }
 
     private string ResolveProviderName(string? providerName)
@@ -919,6 +956,46 @@ internal sealed class GeocodingHandler(
         var joined = string.Join(", ", structuredParts);
         return string.IsNullOrWhiteSpace(joined) ? null : joined;
     }
+
+    // Maps the Esri GeocodeServer structured-input fields onto the canonical StructuredAddress so
+    // structured-capable providers (Nominatim, Azure Maps, Amazon Location, local PostGIS) can build
+    // a true structured provider request rather than receiving a flattened single line (#2149).
+    // Returns null when a singleLine query is present (singleLine takes precedence) or when no
+    // structured field was supplied, so single-line behavior is unchanged.
+    private static Honua.Geocoding.Features.Geocoding.Domain.StructuredAddress? BuildStructuredAddress(
+        IReadOnlyDictionary<string, StringValues> values)
+    {
+        var singleLine = GetValue(values, "singleLine") ?? GetValue(values, "SingleLine");
+        if (!string.IsNullOrWhiteSpace(singleLine))
+        {
+            return null;
+        }
+
+        var address = Trimmed(GetValue(values, "address") ?? GetValue(values, "Address"));
+        var neighborhood = Trimmed(GetValue(values, "neighborhood") ?? GetValue(values, "Neighborhood"));
+        var city = Trimmed(GetValue(values, "city") ?? GetValue(values, "City"));
+        var region = Trimmed(GetValue(values, "region") ?? GetValue(values, "Region"));
+        var postal = Trimmed(GetValue(values, "postal") ?? GetValue(values, "Postal"));
+        var country = Trimmed(GetValue(values, "countryCode") ?? GetValue(values, "CountryCode"));
+
+        if (address is null && neighborhood is null && city is null && region is null && postal is null && country is null)
+        {
+            return null;
+        }
+
+        return new Honua.Geocoding.Features.Geocoding.Domain.StructuredAddress
+        {
+            StreetName = address,
+            Neighborhood = neighborhood,
+            City = city,
+            Region = region,
+            PostalCode = postal,
+            Country = country
+        };
+    }
+
+    private static string? Trimmed(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     // Builds the GeocodeServer locatorProperties from the ACTIVE provider's capabilities so the
     // metadata is fidelity-accurate per provider (#2147): SuggestedBatchSize reflects the provider's

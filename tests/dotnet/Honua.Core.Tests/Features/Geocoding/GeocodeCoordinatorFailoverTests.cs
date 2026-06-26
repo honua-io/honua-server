@@ -49,6 +49,41 @@ public sealed class GeocodeCoordinatorFailoverTests
     }
 
     [Fact]
+    public async Task ForwardGeocodeAsync_ExceedsAdvertisedRateLimit_ThrottlesWithRetryAfter()
+    {
+        // The provider advertises one request per minute; the second request in the window must be
+        // throttled before it reaches the provider, carrying a Retry-After hint (#2150).
+        var provider = new FakeGeocodeProvider(
+            "capable",
+            new GeocodeProviderCapabilities(SupportsForwardGeocode: true) { RateLimitPerMinute = 1 })
+        {
+            ForwardResult =
+            [
+                new GeocodeCandidate("1 Test St", 1.0, 2.0, 99.0, new Dictionary<string, string?>())
+            ]
+        };
+
+        var coordinator = CreateCoordinator(
+            providers: [provider],
+            defaultProvider: "capable",
+            maxFailoverAttempts: 1);
+
+        var request = new ForwardGeocodeRequest("1 Test St", 1, 4326, null);
+
+        var first = await coordinator.ForwardGeocodeAsync(request, providerName: null, CancellationToken.None);
+        var second = await coordinator.ForwardGeocodeAsync(request, providerName: null, CancellationToken.None);
+
+        Assert.True(first.IsSuccess);
+        Assert.False(second.IsSuccess);
+        Assert.Contains(GeocodeLimitMetadata.RateLimitMarker, second.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(second.Metadata);
+        Assert.True(second.Metadata!.ContainsKey(GeocodeLimitMetadata.RetryAfterSecondsKey));
+
+        // The throttled request must never reach the provider.
+        Assert.Equal(1, provider.ForwardCallCount);
+    }
+
+    [Fact]
     public async Task ForwardGeocodeAsync_AllProvidersLackCapability_FailsWithNoProviderSupportsMessage()
     {
         var incapableA = new FakeGeocodeProvider(
@@ -153,9 +188,12 @@ public sealed class GeocodeCoordinatorFailoverTests
             providers,
             Options.Create(configuration));
 
+        var limitEnforcer = new GeocodeLimitEnforcer(Options.Create(configuration));
+
         return new GeocodeCoordinatorService(
             registry,
             Options.Create(configuration),
+            limitEnforcer,
             NullLogger<GeocodeCoordinatorService>.Instance);
     }
 

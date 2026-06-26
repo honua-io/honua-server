@@ -21,6 +21,8 @@
       Honua.Core / Honua.Core.Abstractions; Honua.Core MUST NOT reference back.
     -->
     <PackageReference Include="AWSSDK.LocationService" />
+    <!-- Npgsql backs the self-hosted, PostGIS-based local geocoder provider (#2151). -->
+    <PackageReference Include="Npgsql" />
   </ItemGroup>
 
   <ItemGroup>

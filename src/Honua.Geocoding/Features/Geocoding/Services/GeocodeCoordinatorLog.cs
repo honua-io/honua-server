@@ -61,4 +61,16 @@ internal static partial class GeocodeCoordinatorLog
         Level = LogLevel.Warning,
         Message = "Preferred provider {ProviderName} is not available.")]
     public static partial void PreferredProviderUnavailable(ILogger logger, string providerName);
+
+    [LoggerMessage(
+        EventId = 9856,
+        Level = LogLevel.Warning,
+        Message = "Geocoding request throttled for provider {ProviderName}: exceeded {Limit} requests/minute. Retry after {RetryAfterSeconds}s.")]
+    public static partial void RateLimitRejected(ILogger logger, string providerName, int limit, int retryAfterSeconds);
+
+    [LoggerMessage(
+        EventId = 9857,
+        Level = LogLevel.Warning,
+        Message = "Geocoding batch rejected for provider {ProviderName}: {RequestedSize} records exceeds the maximum allowed batch size of {EffectiveLimit}.")]
+    public static partial void BatchSizeRejected(ILogger logger, string providerName, int requestedSize, int effectiveLimit);
 }

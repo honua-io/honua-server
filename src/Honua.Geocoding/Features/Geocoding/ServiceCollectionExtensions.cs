@@ -6,6 +6,7 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using System.Diagnostics.CodeAnalysis;
 
@@ -33,6 +34,11 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(GeocodingConfiguration.SectionName))
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<GeocodingConfiguration>, GeocodingConfigurationValidator>();
+
+        // The limit enforcer holds fixed-window rate counters, so it is a singleton that survives
+        // across scoped requests; TimeProvider is resolved from DI (registered if not already present).
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IGeocodeLimitEnforcer, GeocodeLimitEnforcer>();
 
         services.AddScoped<IGeocodeProviderRegistry, GeocodeProviderRegistry>();
         services.AddScoped<IGeocodeProviderFactory>(sp => (GeocodeProviderRegistry)sp.GetRequiredService<IGeocodeProviderRegistry>());
