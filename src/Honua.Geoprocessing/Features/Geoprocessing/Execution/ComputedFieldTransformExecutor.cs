@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
@@ -14,7 +15,7 @@ namespace Honua.Geoprocessing.Execution;
 /// <c>subtract</c>, <c>multiply</c>, <c>divide</c>, <c>const</c>. Rows whose
 /// arithmetic operands are non-numeric are dropped as row-level data errors.
 /// Ported from the GeoETL baseline ComputedFieldTransform onto the #1185
-/// process/executor contract.
+/// process/executor contract. Streams: a per-feature map with no cross-feature state.
 /// </summary>
 internal sealed class ComputedFieldTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -24,16 +25,15 @@ internal sealed class ComputedFieldTransformExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
-        FeatureCollection source,
+    protected override async IAsyncEnumerable<IFeature> ApplyStream(
+        IAsyncEnumerable<IFeature> source,
         StepInputReader inputs,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var target = inputs.Require("target");
         var op = inputs.Require("op").ToLowerInvariant();
 
-        var output = new List<IFeature>(source.Count);
-        foreach (var feature in source)
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -49,13 +49,11 @@ internal sealed class ComputedFieldTransformExecutor(
                     attributes.Add(target, value);
                 }
 
-                output.Add(new Feature(feature.Geometry, attributes));
+                yield return new Feature(feature.Geometry, attributes);
             }
 
             // else: row-level data error (non-numeric operand) — drop the row.
         }
-
-        return output;
     }
 
     private static bool TryCompute(

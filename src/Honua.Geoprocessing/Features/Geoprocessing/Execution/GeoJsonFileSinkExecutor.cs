@@ -81,7 +81,10 @@ internal sealed partial class GeoJsonFileSinkExecutor : IJobExecutor
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathResolutionError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
+        // Stream the input so a >50 MiB sink writes incrementally to the output file
+        // without buffering the whole collection. Spilled NDJSON streams are unbounded.
+        if (!FeatureStreamArtifact.TryOpenRead(
+                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -111,7 +114,7 @@ internal sealed partial class GeoJsonFileSinkExecutor : IJobExecutor
                 await jsonWriter.WritePropertyNameAsync("features", cancellationToken).ConfigureAwait(false);
                 await jsonWriter.WriteStartArrayAsync(cancellationToken).ConfigureAwait(false);
 
-                foreach (var feature in source)
+                await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var concrete = feature as Feature ?? new Feature(feature.Geometry, feature.Attributes);

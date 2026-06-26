@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
@@ -13,7 +14,8 @@ namespace Honua.Geoprocessing.Execution;
 /// values: <c>eq</c>, <c>neq</c>, <c>gt</c>, <c>gte</c>, <c>lt</c>, <c>lte</c>,
 /// <c>contains</c>, <c>exists</c>. Numeric operators parse both operands as doubles;
 /// string operators compare ordinally. Ported from the GeoETL baseline
-/// AttributeFilterTransform onto the #1185 process/executor contract.
+/// AttributeFilterTransform onto the #1185 process/executor contract. Streams: a
+/// per-feature filter with no cross-feature state.
 /// </summary>
 internal sealed class AttributeFilterTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -23,26 +25,23 @@ internal sealed class AttributeFilterTransformExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
-        FeatureCollection source,
+    protected override async IAsyncEnumerable<IFeature> ApplyStream(
+        IAsyncEnumerable<IFeature> source,
         StepInputReader inputs,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var field = inputs.Require("field");
         var op = inputs.GetOrDefault("op", "eq");
         inputs.TryGet("value", out var value);
 
-        var output = new List<IFeature>(source.Count);
-        foreach (var feature in source)
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (Matches(feature, field, op, value))
             {
-                output.Add(feature);
+                yield return feature;
             }
         }
-
-        return output;
     }
 
     private static bool Matches(IFeature feature, string field, string op, string? value)

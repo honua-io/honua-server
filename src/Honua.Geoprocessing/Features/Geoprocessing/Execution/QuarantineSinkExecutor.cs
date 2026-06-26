@@ -82,7 +82,10 @@ internal sealed partial class QuarantineSinkExecutor : IJobExecutor
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathResolutionError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
+        // Stream the input so a large dead-letter set writes incrementally without
+        // buffering the whole collection. Spilled NDJSON streams are unbounded.
+        if (!FeatureStreamArtifact.TryOpenRead(
+                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -114,7 +117,7 @@ internal sealed partial class QuarantineSinkExecutor : IJobExecutor
                 await jsonWriter.WritePropertyNameAsync("features", cancellationToken).ConfigureAwait(false);
                 await jsonWriter.WriteStartArrayAsync(cancellationToken).ConfigureAwait(false);
 
-                foreach (var feature in source)
+                await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var tagged = Tag(feature, batchId, reasonField);

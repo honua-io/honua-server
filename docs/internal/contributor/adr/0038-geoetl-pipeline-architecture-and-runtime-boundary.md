@@ -79,6 +79,49 @@ child ticket.
   pre-execution. Generic REST/JSON sources with dynamic schemas use a
   documented permissive passthrough mode.
 
+### Streaming feature-artifact contract (ETL scale)
+
+The artifact that flows between DAG steps is a streamed, spillable feature
+contract rather than a whole-collection blob, so pipelines scale past toy
+volumes:
+
+- **Two artifact shapes, both opaque references** stored verbatim on the
+  `ExecutionJobRecord` and projected into the downstream step's `input`:
+  - *Inline* — the legacy `data:application/geo+json;base64,<...>`
+    FeatureCollection data URI, emitted for small outputs (under
+    `FeatureStreamArtifact.DefaultInlineThresholdBytes`, ~1 MiB) so tiny
+    pipelines and OGC API Processes surfaces keep the exact same document.
+  - *Spill* — a `honua-feature-stream:v1;ndjson;path=<abs>;count=<n>;bytes=<n>`
+    reference to a newline-delimited GeoJSON (NDJSON) file under the executor
+    output root, one `Feature` per line. SRID is preserved across the spill
+    boundary via a reserved `__honua_srid` foreign member (GeoJSON has no
+    native SRID), so reproject output keeps its target SRID.
+- **Reads accept either shape** (`FeatureStreamArtifact.TryOpenRead`) and
+  surface an `IAsyncEnumerable<IFeature>`, so a streaming step transparently
+  consumes either an inline or a spilled producer.
+- **Per-feature transforms stream** (`ApplyStream`): attribute-rename,
+  attribute-cast, computed-field, attribute-filter, spatial-filter, clip,
+  reproject — input is processed lazily and output is published incrementally
+  via `FeatureStreamPublisher`, which buffers only up to the inline threshold
+  and then spills, so peak memory is bounded regardless of feature count.
+- **Stateful transforms** (dedup) keep the buffered `Apply` shape but use a
+  `SpillableKeySet` for the seen-key set: each key is reduced to a 128-bit
+  digest and spills to a temp file past an in-memory cap, so dedup stays
+  bounded too. The documented bound is digest-level exactness (collision
+  probability negligible at realistic volumes), output stays first-wins and
+  deterministic. The 4 managed aggregates (cluster/density/spatial-join/
+  buffer-aggregate) inherently buffer the full set and are unchanged.
+- **Sinks stream their input** (external-postgis batched COPY/insert,
+  geojson-file, quarantine) so a large load lands without materializing the
+  collection. The legacy hard `MaxArtifactBytes` (~50 MiB) failure
+  ("Reduce the input feature set") no longer applies to streamable
+  transforms; the cap remains only as the bound on *inline* data-URI inputs.
+- **Boundary**: spill files live under the executor output root, which is the
+  same-node temp directory the file-sink path already uses. Cross-node
+  pipelines (separate worker pods per step) need an object-store-backed spill,
+  tracked as the next streaming-source stream; the current contract matches the
+  existing file-sink/`import.dataset` file-path semantics.
+
 ### Substrate consumption
 
 - GeoETL is a job kind on top of `IJobQueue`. It uses the existing

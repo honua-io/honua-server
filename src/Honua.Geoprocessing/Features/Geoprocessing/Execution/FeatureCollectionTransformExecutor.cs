@@ -11,12 +11,33 @@ namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// Shared base for the GeoETL <c>transform.*</c> executors. Each transform reads
-/// a <see cref="FeatureCollection"/> from the canonical <c>input</c> data URI
-/// (<see cref="FeatureCollectionArtifact.DataUriPrefix"/>), applies an in-memory
-/// NetTopologySuite transformation that carries feature attributes through, and
-/// publishes a new FeatureCollection data URI. This is the #1185 add-a-capability
-/// shape: the executor is the sole worker-side behavior for a single dotted
-/// process id and surfaces automatically as a <c>process:&lt;id&gt;</c> workflow node.
+/// features from the canonical <c>input</c> artifact, applies a NetTopologySuite
+/// transformation that carries feature attributes through, and publishes a new
+/// feature artifact. This is the #1185 add-a-capability shape: the executor is the
+/// sole worker-side behavior for a single dotted process id and surfaces
+/// automatically as a <c>process:&lt;id&gt;</c> workflow node.
+///
+/// <para>
+/// <b>Streaming (ETL scale).</b> The base now runs a streamed execution path: the
+/// input is opened as a lazy <see cref="IAsyncEnumerable{IFeature}"/> over the
+/// upstream artifact (an inline base64 FeatureCollection <i>or</i> a spilled NDJSON
+/// stream — see <see cref="FeatureStreamArtifact"/>), the transform processes it
+/// chunk-by-chunk, and the output is published through
+/// <see cref="FeatureStreamPublisher"/>, which keeps small results inline (back-compat)
+/// but spills large results to an NDJSON file so peak memory stays bounded and the
+/// legacy 50 MiB artifact cap no longer fails streamable transforms.
+/// </para>
+///
+/// <para>
+/// Transforms that <b>can</b> stream (per-feature maps/filters: attribute-rename,
+/// attribute-cast, computed-field, attribute-filter, spatial-filter, clip, reproject)
+/// override <see cref="ApplyStream"/>. Stateful transforms that need the full set in
+/// memory (e.g. dedup with an in-memory key set) keep the buffered
+/// <see cref="Apply(FeatureCollection, StepInputReader, CancellationToken)"/> path; the
+/// base detects which is implemented and routes accordingly. Both paths publish through
+/// the same spillable publisher, so even buffered transforms emit a streamed artifact
+/// for large outputs rather than failing the cap.
+/// </para>
 /// </summary>
 internal abstract partial class FeatureCollectionTransformExecutor : IJobExecutor
 {
@@ -71,7 +92,10 @@ internal abstract partial class FeatureCollectionTransformExecutor : IJobExecuto
             return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {inputError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
+        // Open the input as a lazy feature stream. Spilled NDJSON streams are unbounded;
+        // inline base64 data URIs remain bounded by MaxArtifactBytes for back-compat.
+        if (!FeatureStreamArtifact.TryOpenRead(
+                inputUri, out var parseError, out var inputStream, _options.CurrentValue.MaxArtifactBytes))
         {
             return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: 'input' {parseError}");
         }
@@ -79,10 +103,10 @@ internal abstract partial class FeatureCollectionTransformExecutor : IJobExecuto
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(40, $"Applying {ProcessId}", cancellationToken).ConfigureAwait(false);
 
-        List<IFeature> output;
+        FeatureStreamPublisher.PublishResult published;
         try
         {
-            output = Apply(source, inputs, cancellationToken);
+            published = await RunAsync(job, context, inputStream, inputs, cancellationToken).ConfigureAwait(false);
         }
         catch (TransformInputException ex)
         {
@@ -95,40 +119,98 @@ internal abstract partial class FeatureCollectionTransformExecutor : IJobExecuto
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        await context.ReportProgressAsync(75, $"Encoding {ProcessId} artifact", cancellationToken).ConfigureAwait(false);
-
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(
-            output,
-            ProcessId,
-            new[] { ("inputCount", (object)source.Count) });
-
-        var maxBytes = _options.CurrentValue.MaxArtifactBytes;
-        if (payload.Length > maxBytes)
-        {
-            return JobExecutionResult.Failed(
-                $"{ProcessId} artifact size {payload.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}. " +
-                "Reduce the input feature set before transforming.");
-        }
-
-        var artifactUri = FeatureCollectionArtifact.BuildDataUri(payload);
-
-        cancellationToken.ThrowIfCancellationRequested();
-        await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
+        await context.PublishArtifactAsync(published.ArtifactReference, cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{ProcessId} completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
     }
 
+    private async Task<FeatureStreamPublisher.PublishResult> RunAsync(
+        ExecutionJobRecord job,
+        IJobExecutionContext context,
+        IAsyncEnumerable<IFeature> inputStream,
+        StepInputReader inputs,
+        CancellationToken cancellationToken)
+    {
+        var outputRoot = _options.CurrentValue.OutputRootDirectory;
+
+        // Streaming path: per-feature transforms process the input chunk-by-chunk and the
+        // publisher spills large outputs. The full set is never held in memory.
+        var streamed = ApplyStream(inputStream, inputs, cancellationToken);
+        if (streamed is not null)
+        {
+            return await FeatureStreamPublisher.PublishAsync(
+                streamed,
+                ProcessId,
+                inputCount: -1,
+                outputRoot,
+                job.OperationId,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        // Buffered path: stateful transforms (dedup) need the full collection. We still
+        // drain the input incrementally and publish through the spillable publisher, so
+        // large outputs stream out rather than failing the legacy artifact cap.
+        var source = new FeatureCollection();
+        await foreach (var feature in inputStream.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            source.Add(feature);
+        }
+
+        await context.ReportProgressAsync(60, $"Encoding {ProcessId} artifact", cancellationToken).ConfigureAwait(false);
+
+        var output = Apply(source, inputs, cancellationToken);
+        return await FeatureStreamPublisher.PublishAsync(
+            ToAsync(output, cancellationToken),
+            ProcessId,
+            inputCount: source.Count,
+            outputRoot,
+            job.OperationId,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async IAsyncEnumerable<IFeature> ToAsync(
+        IReadOnlyList<IFeature> features,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var feature in features)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return feature;
+            await Task.CompletedTask.ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
-    /// Applies the transform's algorithm to the parsed input feature set.
-    /// Implementations return the output features, preserving attributes. Throw
-    /// <see cref="TransformInputException"/> for caller-supplied parameter errors
-    /// so they surface as a classified <c>Invalid ... inputs</c> failure.
+    /// Streaming transform entry point. Per-feature transforms (maps/filters) override this
+    /// to process the input <see cref="IAsyncEnumerable{IFeature}"/> lazily and yield output
+    /// features one at a time, so the full feature set is never materialized. The default
+    /// returns <c>null</c>, signalling the base to fall back to the buffered
+    /// <see cref="Apply(FeatureCollection, StepInputReader, CancellationToken)"/> path
+    /// (for stateful transforms that genuinely need the whole collection). Throw
+    /// <see cref="TransformInputException"/> for caller-supplied parameter errors.
     /// </summary>
-    protected abstract List<IFeature> Apply(
+    protected virtual IAsyncEnumerable<IFeature>? ApplyStream(
+        IAsyncEnumerable<IFeature> source,
+        StepInputReader inputs,
+        CancellationToken cancellationToken) => null;
+
+    /// <summary>
+    /// Applies the transform's algorithm to the fully buffered input feature set.
+    /// Implementations return the output features, preserving attributes. Used by stateful
+    /// transforms that cannot stream; per-feature transforms should override
+    /// <see cref="ApplyStream"/> instead. The default throws — a concrete executor must
+    /// implement at least one of the two paths. Throw <see cref="TransformInputException"/>
+    /// for caller-supplied parameter errors so they surface as a classified
+    /// <c>Invalid ... inputs</c> failure.
+    /// </summary>
+    protected virtual List<IFeature> Apply(
         FeatureCollection source,
         StepInputReader inputs,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken)
+        => throw new NotSupportedException(
+            $"{ProcessId} implements neither {nameof(ApplyStream)} nor {nameof(Apply)}.");
 
     private static partial class Log
     {

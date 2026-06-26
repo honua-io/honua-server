@@ -91,22 +91,33 @@ internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOpt
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(70, "Encoding source artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(features, HandledProcessId);
-
-        var maxBytes = _options.CurrentValue.MaxArtifactBytes;
-        if (payload.Length > maxBytes)
-        {
-            return JobExecutionResult.Failed(
-                $"{HandledProcessId} artifact size {payload.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}.");
-        }
-
-        var artifactUri = FeatureCollectionArtifact.BuildDataUri(payload);
+        // Publish through the spillable publisher: small results stay inline (back-compat),
+        // large results spill to an NDJSON stream so the legacy 50 MiB cap no longer applies.
+        var published = await FeatureStreamPublisher.PublishAsync(
+            ToAsync(features, cancellationToken),
+            HandledProcessId,
+            inputCount: features.Count,
+            _options.CurrentValue.OutputRootDirectory,
+            job.OperationId,
+            cancellationToken).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
-        await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
+        await context.PublishArtifactAsync(published.ArtifactReference, cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
+    }
+
+    private static async IAsyncEnumerable<IFeature> ToAsync(
+        IReadOnlyList<IFeature> features,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var feature in features)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return feature;
+            await Task.CompletedTask.ConfigureAwait(false);
+        }
     }
 
     private static List<IFeature> ParseCsv(string body, char delimiter, CancellationToken cancellationToken)

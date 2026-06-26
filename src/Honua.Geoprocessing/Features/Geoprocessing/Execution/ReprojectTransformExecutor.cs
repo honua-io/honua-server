@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Honua.Infrastructure.Rendering;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -19,7 +20,9 @@ namespace Honua.Geoprocessing.Execution;
 /// matching <c>geometry.project</c>. Attributes are carried through. Reconciled from
 /// the GeoETL baseline ReprojectTransform onto the #1185 process/executor contract;
 /// the managed math is replaced by the shared CoordinateTransformer so this transform
-/// and geometry.project stay bit-for-bit aligned.
+/// and geometry.project stay bit-for-bit aligned. Streams: a per-feature map; SRIDs
+/// are validated once before the stream is consumed (the validation surfaces on the
+/// first pull as a classified <c>Invalid ... inputs</c> failure).
 /// </summary>
 internal sealed class ReprojectTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -32,10 +35,10 @@ internal sealed class ReprojectTransformExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
-        FeatureCollection source,
+    protected override async IAsyncEnumerable<IFeature> ApplyStream(
+        IAsyncEnumerable<IFeature> source,
         StepInputReader inputs,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var fromSrid = ReadSrid(inputs, "fromSrid");
         var toSrid = ReadSrid(inputs, "toSrid");
@@ -51,15 +54,14 @@ internal sealed class ReprojectTransformExecutor(
         var passthrough = fromSrid == toSrid
             || (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid));
 
-        var output = new List<IFeature>(source.Count);
-        foreach (var feature in source)
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var geometry = feature.Geometry;
             if (geometry is null || geometry.IsEmpty)
             {
-                output.Add(feature);
+                yield return feature;
                 continue;
             }
 
@@ -75,10 +77,8 @@ internal sealed class ReprojectTransformExecutor(
             }
 
             projected.SRID = toSrid;
-            output.Add(new Feature(projected, feature.Attributes));
+            yield return new Feature(projected, feature.Attributes);
         }
-
-        return output;
     }
 
     private static bool IsTransformSupported(int fromSrid, int toSrid)
