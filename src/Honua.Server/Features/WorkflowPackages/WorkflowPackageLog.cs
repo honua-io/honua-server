@@ -39,4 +39,20 @@ internal static partial class WorkflowPackageLog
         int version,
         string publicationId,
         string runId);
+
+    [LoggerMessage(118507, LogLevel.Information, "Workflow package {PackageId} version {Version} publication {PublicationId} emitted metadata release package {ReleasePackageId}")]
+    public static partial void WorkflowReleaseArtifactEmitted(
+        ILogger logger,
+        string packageId,
+        int version,
+        string publicationId,
+        Guid releasePackageId);
+
+    [LoggerMessage(118508, LogLevel.Warning, "Workflow package {PackageId} version {Version} publication {PublicationId} failed to emit a metadata release package; the publication is saved and the artifact can be re-emitted")]
+    public static partial void WorkflowReleaseArtifactFailed(
+        ILogger logger,
+        string packageId,
+        int version,
+        string publicationId,
+        Exception exception);
 }

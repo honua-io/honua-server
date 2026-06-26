@@ -289,6 +289,7 @@ internal static class MetadataReleaseEndpoints
             "catalog" => MetadataSemanticArtifactKind.Catalog,
             "policy" => MetadataSemanticArtifactKind.Policy,
             "role" => MetadataSemanticArtifactKind.Role,
+            "workflow" => MetadataSemanticArtifactKind.Workflow,
             _ => null,
         };
 

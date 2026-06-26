@@ -11,6 +11,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -37,6 +39,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
     private readonly InMemoryExecutionJobStore _jobStore = new();
     private readonly InMemoryProgressStore _progressStore = new();
     private readonly RecordingJobQueue _jobQueue = new();
+    private readonly RecordingMetadataReleaseService _releaseService = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -49,9 +52,13 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IExecutionJobStore>();
                 services.RemoveAll<IJobQueue>();
                 services.RemoveAll<IUniversalProgressStore>();
+                services.RemoveAll<IMetadataReleaseService>();
                 services.AddSingleton<IExecutionJobStore>(_jobStore);
                 services.AddSingleton<IUniversalProgressStore>(_progressStore);
                 services.AddSingleton<IJobQueue>(_jobQueue);
+                // Capture the publish→metadata-release bridge deterministically without requiring an
+                // active Metadata v2 snapshot in the test environment (#2176).
+                services.AddSingleton<IMetadataReleaseService>(_releaseService);
             })
             .ConfigureWebHost(builder =>
             {
@@ -390,6 +397,38 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish")]
+    public async Task PublishVersion_EmitsWorkflowMetadataReleaseArtifact()
+    {
+        var packageId = await CreatePackageAsync("release-bridge", CreateAreaGraph());
+        var version = await CreateVersionAsync(packageId);
+
+        await PublishAsync(packageId, version.Version, new
+        {
+            publicationId = "pub-release-bridge",
+            target = "Job",
+            enabled = true
+        });
+
+        // The publish path must bridge into the metadata-release lifecycle by emitting a
+        // Workflow-kind release-package entry that the GitOps changeset builder can promote (#2176).
+        _releaseService.Requests.Should().ContainSingle();
+        var emitted = _releaseService.Requests[0];
+        emitted.PackageId.Should().Be(packageId);
+        emitted.PackageVersion.Should().Be(version.Version);
+        emitted.PackageHash.Should().Be(version.PackageHash);
+        emitted.PublicationId.Should().Be("pub-release-bridge");
+        emitted.SemanticId.Should().StartWith("workflow.");
+        emitted.TargetEnvironments.Should().NotBeEmpty();
+
+        var package = _releaseService.LastPackage;
+        package.Should().NotBeNull();
+        package!.Entries.Should().ContainSingle()
+            .Which.ArtifactKind.Should().Be(MetadataSemanticArtifactKind.Workflow);
+        package.Entries[0].ChangeClass.Should().Be(MetadataReleaseChangeClass.Content);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/console/workflow-publications/{publicationId}/runs")]
     public async Task RunPublication_WithReservedProvenanceOverride_PreservesStampedProvenance()
     {
@@ -588,6 +627,90 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
 
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+    /// <summary>
+    /// Records workflow release-package emissions from the publish path so the publish→
+    /// metadata-release bridge can be asserted without an active Metadata v2 snapshot (#2176).
+    /// All other release-service operations are unused by these tests.
+    /// </summary>
+    private sealed class RecordingMetadataReleaseService : IMetadataReleaseService
+    {
+        public List<CreateWorkflowReleasePackageRequest> Requests { get; } = new();
+
+        public MetadataReleasePackage? LastPackage { get; private set; }
+
+        public Task<MetadataReleasePackage> CreateWorkflowReleasePackageAsync(
+            CreateWorkflowReleasePackageRequest request,
+            string createdBy,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            var now = DateTimeOffset.UtcNow;
+            var package = new MetadataReleasePackage
+            {
+                PackageId = Guid.NewGuid(),
+                Metadata = new MetadataV2ObjectMetadata
+                {
+                    Id = Guid.NewGuid().ToString("D"),
+                    Name = $"workflow-{request.PackageId}",
+                },
+                SourceEnvironment = request.SourceEnvironment,
+                SourceRevision = request.PackageVersion,
+                SourceEtag = request.PackageHash,
+                TargetEnvironments = request.TargetEnvironments,
+                Entries =
+                [
+                    new MetadataReleaseEntry
+                    {
+                        SemanticId = request.SemanticId,
+                        ArtifactKind = MetadataSemanticArtifactKind.Workflow,
+                        DesiredMetadataRevision = request.PackageVersion,
+                        DesiredContentVersionId = request.PackageHash,
+                        ChangeClass = MetadataReleaseChangeClass.Content,
+                        Status = MetadataReleaseEntryStatus.Ready,
+                    },
+                ],
+                Status = MetadataReleasePackageStatus.Ready,
+                CreatedBy = createdBy,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            LastPackage = package;
+            return Task.FromResult(package);
+        }
+
+        public Task<MetadataSemanticInventoryResponse?> GetSemanticInventoryAsync(
+            string environment,
+            MetadataSemanticInventoryFilter filter,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<MetadataEnvironmentBindingsResponse> GetEnvironmentBindingsAsync(
+            MetadataEnvironmentBindingsRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<MetadataReleasePackage> CreateReleasePackageAsync(
+            CreateMetadataReleasePackageRequest request,
+            string createdBy,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<MetadataReleasePackage?> GetReleasePackageAsync(
+            Guid packageId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<MetadataReleasePackageListResponse> ListReleasePackagesAsync(
+            MetadataReleasePackageListFilter filter,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<GitOpsMetadataReleaseManifest?> GetGitOpsManifestAsync(
+            Guid packageId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
 
     private sealed class InMemoryExecutionJobStore : IExecutionJobStore
     {
