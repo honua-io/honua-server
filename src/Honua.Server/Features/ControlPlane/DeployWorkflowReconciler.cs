@@ -219,6 +219,16 @@ internal sealed partial class DeployWorkflowReconciler(
             var telemetryDecision = await telemetrySignalEvaluator.EvaluateAsync(current, cancellationToken).ConfigureAwait(false);
             if (telemetryDecision != null)
             {
+                // Persist any parameter updates the evaluator carried back (e.g. the anti-flap
+                // consecutive-breach streak) so they survive to the next reconcile cycle.
+                if (telemetryDecision.UpdatedDeployParameters != null && current.Deploy != null)
+                {
+                    current = current with
+                    {
+                        Deploy = current.Deploy with { Parameters = telemetryDecision.UpdatedDeployParameters }
+                    };
+                }
+
                 if (telemetryDecision.RollbackRecommended)
                 {
                     rollbackReason = telemetryDecision.Message;
@@ -267,6 +277,37 @@ internal sealed partial class DeployWorkflowReconciler(
 
         var rollbackObservation = await backend.RollbackAsync(current, cancellationToken).ConfigureAwait(false);
         var updatedAt = DateTimeOffset.UtcNow;
+
+        // Failure-of-failure escalation (#2161): a rollback that itself fails must not silently park
+        // the deploy. The Lambda/ECS/Argo backends return Failed — or echo the operation's current
+        // status (e.g. RollbackRequested) — on a transient provider error. If the gate just decided a
+        // rollback is required but the backend could not honour it, escalate to manual intervention so
+        // an operator is paged, rather than leaving a degraded revision live in a never-terminal
+        // RollbackRequested/Failed loop the reconciler can never re-drive (the RollbackRequested guard
+        // above short-circuits subsequent cycles before reaching RollbackAsync again).
+        var rollbackFailed = rollbackObservation.Status == WorkflowOperationStatus.Failed ||
+            rollbackObservation.Status is not (WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack);
+        if (rollbackFailed)
+        {
+            var rollbackFailureDetail = rollbackObservation.Message ?? rollbackReason;
+            return current with
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                UpdatedAt = updatedAt,
+                CompletedAt = updatedAt,
+                ProviderOperationId = rollbackObservation.ProviderOperationId ?? current.ProviderOperationId,
+                CurrentPhase = $"Automatic rollback could not be completed and requires manual intervention. {rollbackFailureDetail}",
+                ObservedState = rollbackObservation.ObservedRevision ?? current.ObservedState,
+                ErrorMessage = $"Automatic rollback failed: {rollbackFailureDetail}",
+                Deploy = deploySpec with
+                {
+                    CurrentRevision = string.IsNullOrWhiteSpace(deploySpec.CurrentRevision)
+                        ? rollbackObservation.ObservedRevision ?? deploySpec.CurrentRevision
+                        : deploySpec.CurrentRevision
+                }
+            };
+        }
+
         return current with
         {
             Status = rollbackObservation.Status,

@@ -24,6 +24,7 @@ using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Admin.Federation;
 using Honua.Server.Features.Admin.Jobs;
 using Honua.Server.Features.Admin.OperateFixtures;
 using Honua.Server.Features.Admin.Share;
@@ -40,10 +41,14 @@ using Honua.Server.Features.Provisioner;
 using Honua.ControlPlane;
 using Honua.FileStorage;
 using Honua.Server.Features.HealthCheck;
+using Honua.Server.Features.Identity;
+using Honua.Server.Features.Identity.Saml;
+using Honua.Server.Features.Identity.Scim;
 using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Honua.Import.TileCachePackage;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.AuditLog;
@@ -488,6 +493,9 @@ builder.Services.AddCloudFileStorage(builder.Configuration);
 builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
 
+// Federated-query planning and source configuration (#341).
+builder.Services.AddFederationServices(builder.Configuration);
+
 // Register configuration validators to ensure application fails fast on invalid configuration
 StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
 
@@ -559,6 +567,15 @@ builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IRl
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource,
     Honua.Infrastructure.Authentication.RowLevelSecurityFilterSource>();
+// Field-level security (column masking) (#1940), the field-level companion to RLS.
+// In-memory policy store as the TryAdd default (PostgresFieldMaskPolicyStore wins when
+// durable storage is active), plus the request-scoped source that resolves the caller's
+// roles + per-layer policies into the set of attributes masked from query output across
+// every protocol and output format.
+builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IFieldMaskPolicyStore,
+    Honua.Server.Features.Admin.Services.InMemoryFieldMaskPolicyStore>();
+builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource,
+    Honua.Infrastructure.Authentication.FieldMaskSource>();
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
     new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
@@ -726,6 +743,11 @@ builder.Services.AddCollaborationSessionTransport();
 // ---- Extracted: authentication & authorization options (Startup/AuthenticationOptionsRegistration.cs)
 builder.Services.AddHonuaAuthenticationOptions(builder.Configuration, builder.Environment);
 // ---- End extracted block
+
+// Enterprise identity: SCIM 2.0 provisioning (#510) and SAML 2.0 SP-initiated SSO (#508).
+// Both adapt into the existing identity/role model: SCIM provisions users + maps groups to
+// roles; SAML consumes a signed assertion and establishes a Honua session.
+builder.Services.AddEnterpriseIdentity(builder.Configuration);
 // Configure security headers
 builder.Services.AddSecurityHeaders(builder.Configuration);
 // Configure security audit log sink (#1144)
@@ -806,6 +828,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
         Honua.Server.Features.Admin.Models.RlsPolicyJsonContext.Default,
+        Honua.Server.Features.Admin.Models.FieldMaskPolicyJsonContext.Default,
         Honua.Server.Features.Admin.Models.ProposalJsonContext.Default,
         Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
         Honua.Server.Features.Console.Collaboration.Models.StudioMapCollaborationJsonContext.Default,
@@ -1333,6 +1356,7 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+app.MapFederationEndpoints();
 app.MapClientCertificateAdminEndpoints();
 
 // Configure control plane IAM endpoints (#511)
@@ -1341,6 +1365,11 @@ app.MapOidcProviderEndpoints();
 app.MapUserManagementEndpoints();
 app.MapRoleEndpoints();
 app.MapRlsPolicyEndpoints();
+app.MapFieldMaskPolicyEndpoints();
+
+// Enterprise identity provisioning + SSO (#510 SCIM 2.0, #508 SAML 2.0)
+app.MapScimEndpoints();
+app.MapSamlEndpoints();
 
 // Configure Console metadata v2 content + RBAC endpoints (#1162)
 app.MapConsoleSessionEndpoints();
@@ -1426,6 +1455,9 @@ app.MapMigrationRunAdminEndpoints();
 
 // Configure OGC WMTS tile-cache export endpoints (#1016 slice 4)
 app.MapOgcTileCacheExportEndpoints();
+
+// Configure Esri tile/vector-tile cache package import + serving endpoints (#1269)
+app.MapTileCachePackageEndpoints();
 
 if (isTestEnvironment)
 {

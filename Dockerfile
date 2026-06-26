@@ -29,6 +29,7 @@ COPY eng/Honua.BuildProfiles.props eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/ src/
 COPY docs/developer/api-specs/admin-api.json docs/developer/api-specs/
+COPY docs/gis/data/feature-catalog.json docs/gis/data/
 COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
 ARG TARGETARCH

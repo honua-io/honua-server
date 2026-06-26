@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Amazon;
 using Amazon.Batch;
 using Amazon.Batch.Model;
@@ -72,48 +71,48 @@ internal interface IAwsBatchJobClient
     Task<AwsBatchSubmitResult> SubmitJobAsync(
         AwsBatchJobSubmission submission,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default);
 
     Task<AwsBatchJobState?> DescribeJobAsync(
         string jobId,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<AwsBatchJobState>> ListJobsByNameAsync(
         string jobQueue,
         string jobName,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default);
 
     Task CancelJobAsync(
         string jobId,
         string reason,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default);
 
     Task TerminateJobAsync(
         string jobId,
         string reason,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient, IDisposable
+internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
 {
-    // AWS SDK clients are thread-safe and intended to be reused for the process lifetime. This
-    // client is registered as a singleton, but its construction varies by region, so cache one
-    // AmazonBatchClient per resolved region rather than building (and discarding) one per call.
-    private readonly ConcurrentDictionary<string, AmazonBatchClient> _clients =
-        new(StringComparer.Ordinal);
-
     public async Task<AwsBatchSubmitResult> SubmitJobAsync(
         AwsBatchJobSubmission submission,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(submission);
 
-        var client = GetClient(region);
+        using var client = CreateClient(region, serviceUrl);
         var request = new SubmitJobRequest
         {
             JobName = submission.JobName,
@@ -155,11 +154,12 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient, IDisposable
     public async Task<AwsBatchJobState?> DescribeJobAsync(
         string jobId,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
 
-        var client = GetClient(region);
+        using var client = CreateClient(region, serviceUrl);
         var response = await client.DescribeJobsAsync(
             new DescribeJobsRequest { Jobs = [jobId] },
             cancellationToken).ConfigureAwait(false);
@@ -189,12 +189,13 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient, IDisposable
         string jobQueue,
         string jobName,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobQueue);
         ArgumentException.ThrowIfNullOrWhiteSpace(jobName);
 
-        var client = GetClient(region);
+        using var client = CreateClient(region, serviceUrl);
         var states = new List<AwsBatchJobState>();
         string? nextToken = null;
 
@@ -244,11 +245,12 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient, IDisposable
         string jobId,
         string reason,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
 
-        var client = GetClient(region);
+        using var client = CreateClient(region, serviceUrl);
         await client.CancelJobAsync(
             new CancelJobRequest
             {
@@ -262,11 +264,12 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient, IDisposable
         string jobId,
         string reason,
         string? region,
+        string? serviceUrl = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
 
-        var client = GetClient(region);
+        using var client = CreateClient(region, serviceUrl);
         await client.TerminateJobAsync(
             new TerminateJobRequest
             {
@@ -323,22 +326,27 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient, IDisposable
         return overrides;
     }
 
-    private AmazonBatchClient GetClient(string? region)
+    // Visible for testing. Applies an opt-in, config-driven ServiceURL override (for example a
+    // LocalStack Pro Batch endpoint, or a real-cloud test endpoint) when supplied; when unset the
+    // client uses the default regional endpoint, keeping production behaviour unchanged. AWS Batch
+    // emulation is a LocalStack Pro feature, so this override is primarily for paid/real coverage.
+    internal static AmazonBatchClient CreateClient(string? region, string? serviceUrl)
     {
-        var key = string.IsNullOrWhiteSpace(region) ? string.Empty : region;
-        return _clients.GetOrAdd(key, static k => string.IsNullOrEmpty(k)
-            ? new AmazonBatchClient()
-            : new AmazonBatchClient(RegionEndpoint.GetBySystemName(k)));
-    }
+        var config = new AmazonBatchConfig();
 
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        foreach (var client in _clients.Values)
+        if (!string.IsNullOrWhiteSpace(region))
         {
-            client.Dispose();
+            config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
         }
 
-        _clients.Clear();
+        // Mirrors AwsS3FileStorage.CreateClient: when an explicit endpoint is supplied it takes
+        // precedence for the actual request URL while the region (when set) still provides the
+        // SigV4 signing region. Unset = default regional endpoint, keeping production behaviour.
+        if (!string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            config.ServiceURL = serviceUrl;
+        }
+
+        return new AmazonBatchClient(config);
     }
 }

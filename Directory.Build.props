@@ -113,11 +113,21 @@
         the advisory is acknowledged here and tracked for re-evaluation when a
         patched e_sqlite3 ships, at which point this suppression is removed.
 
+      GHSA-37gx-xxp4-5rgx / GHSA-w3x6-4m5h-cxqf — System.Security.Cryptography.Xml
+        10.0.0 (high). TEST-ONLY: referenced solely by Honua.Server.Tests to SIGN
+        synthetic SAML assertions for the SP-SSO fixtures. Production SAML signature
+        VERIFICATION is hand-rolled (Exclusive C14N + RSA/ECDSA via System.Security.
+        Cryptography, no SignedXml), so the vulnerable code path never ships. Tracked
+        as a follow-up to drop this test dependency by signing fixtures with the same
+        hand-rolled path; suppression removed at that point.
+
     Genuinely transient restore failures (feed timeouts / 5xx) are handled
     separately by scripts/ci/dotnet-restore-retry.sh, which bounded-retries
     restore but deliberately does NOT retry NU190x audit errors.
   -->
   <ItemGroup>
     <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-2m69-gcr7-jv3q" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-37gx-xxp4-5rgx" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-w3x6-4m5h-cxqf" />
   </ItemGroup>
 </Project>

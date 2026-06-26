@@ -236,6 +236,30 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/rls-policies/{id}"),
         new("DELETE", "/api/v1/admin/rls-policies/{id}"),
 
+        // v1 admin field-level security (column masking) policy endpoints (#1940)
+        new("GET", "/api/v1/admin/field-mask-policies"),
+        new("POST", "/api/v1/admin/field-mask-policies"),
+        new("GET", "/api/v1/admin/field-mask-policies/{id}"),
+        new("DELETE", "/api/v1/admin/field-mask-policies/{id}"),
+
+        // SCIM 2.0 provisioning endpoints (#510)
+        new("GET", "/scim/v2/Users"),
+        new("POST", "/scim/v2/Users"),
+        new("GET", "/scim/v2/Users/{id}"),
+        new("PUT", "/scim/v2/Users/{id}"),
+        new("PATCH", "/scim/v2/Users/{id}"),
+        new("DELETE", "/scim/v2/Users/{id}"),
+        new("GET", "/scim/v2/Groups"),
+        new("POST", "/scim/v2/Groups"),
+        new("GET", "/scim/v2/Groups/{id}"),
+        new("PUT", "/scim/v2/Groups/{id}"),
+        new("PATCH", "/scim/v2/Groups/{id}"),
+        new("DELETE", "/scim/v2/Groups/{id}"),
+
+        // SAML 2.0 Service Provider endpoints (#508)
+        new("GET", "/saml/metadata"),
+        new("POST", "/saml/acs"),
+
         // v1 console metadata v2 content + RBAC baseline (#1162)
         new("GET", "/api/v1/console/session"),
         new("GET", "/api/v1/console/content"),
@@ -507,6 +531,11 @@ public static class EndpointRegistry
 
         // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
         new("POST", "/api/v1/admin/import/ogc-tiles/export"),
+
+        // Esri tile/vector-tile cache package import + serving binding (#1269)
+        new("POST", "/api/v1/admin/import/tile-package"),
+        new("GET", "/tiles/imported/{tileCacheId}"),
+        new("GET", "/tiles/imported/{tileCacheId}/{z}/{x}/{y}"),
 
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
@@ -834,6 +863,11 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0"),
+
+        // I3S node geometry binary resource (#1810): transcoded renderable
+        // geometry served at the node/geometries path (GeoServices + /scenes alias).
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
 
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
@@ -1366,6 +1400,10 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/multidim-coverages/{id}"),
         new("POST", "/api/v1/admin/multidim-coverages/{id}/refresh"),
         new("GET", "/api/v1/admin/multidim-coverages/jobs/{jobId}"),
+
+        // Federated-query source configuration and query-plan inspection (#341).
+        new("GET", "/api/v1/admin/federation/sources"),
+        new("GET", "/api/v1/admin/federation/sources/{id}/plan"),
     ];
 }
 

@@ -14,6 +14,7 @@ using CoreReverseGeocodeRequest = Honua.Geocoding.Features.Geocoding.Domain.Reve
 using CoreSuggestGeocodeRequest = Honua.Geocoding.Features.Geocoding.Domain.SuggestGeocodeRequest;
 using CoreBatchGeocodeRequest = Honua.Geocoding.Features.Geocoding.Domain.BatchGeocodeRequest;
 using CoreGeocodeSuggestion = Honua.Geocoding.Features.Geocoding.Domain.GeocodeSuggestion;
+using CoreGeocodePoint = Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint;
 using CoreGeocodeProviderException = Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderException;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -1251,6 +1252,225 @@ public sealed class GeocodingEndpointTests
         Assert.Contains("Address", values);
     }
 
+    // #2147: SuggestedBatchSize is derived from the ACTIVE provider's MaxBatchSize, not a constant.
+    // A provider with a non-default batch size advertises that exact value.
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_SuggestedBatchSize_ReflectsProviderMaxBatchSize()
+    {
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)
+        { MaxBatchSize = 37 }));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
+
+        Assert.Equal("37", locatorProperties.GetProperty("SuggestedBatchSize").GetString());
+        Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
+    }
+
+    // #2147: SuggestedBatchSize differs across providers with differing MaxBatchSize, proving the
+    // metadata is per-provider rather than a hard-coded 100.
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_SuggestedBatchSize_VariesByProvider()
+    {
+        using var smallFactory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)
+        { MaxBatchSize = 10 }));
+        using var smallClient = smallFactory.CreateClient();
+
+        using var largeFactory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)
+        { MaxBatchSize = 250 }));
+        using var largeClient = largeFactory.CreateClient();
+
+        using var smallResponse = await smallClient.GetAsync("/rest/services/World/GeocodeServer?f=json");
+        using var largeResponse = await largeClient.GetAsync("/rest/services/World/GeocodeServer?f=json");
+
+        using var smallPayload = JsonDocument.Parse(await smallResponse.Content.ReadAsStringAsync());
+        using var largePayload = JsonDocument.Parse(await largeResponse.Content.ReadAsStringAsync());
+
+        Assert.Equal(
+            "10",
+            smallPayload.RootElement.GetProperty("locatorProperties").GetProperty("SuggestedBatchSize").GetString());
+        Assert.Equal(
+            "250",
+            largePayload.RootElement.GetProperty("locatorProperties").GetProperty("SuggestedBatchSize").GetString());
+    }
+
+    // #2147: when the active provider does not support batch, SuggestedBatchSize is ABSENT rather
+    // than falsely advertised, keeping clients from attempting an unsupported batch call.
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_SuggestedBatchSize_AbsentWhenBatchUnsupported()
+    {
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: false,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
+
+        Assert.False(locatorProperties.TryGetProperty("SuggestedBatchSize", out _));
+        Assert.Equal("false", locatorProperties.GetProperty("SupportsBatch").GetString());
+        Assert.DoesNotContain("BatchGeocode", payload.RootElement.GetProperty("capabilities").GetString()!, StringComparison.Ordinal);
+    }
+
+    // #2148: findAddressCandidates accepts location/distance and passes them to the canonical
+    // forward request so a proximity-aware provider can bias results.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithLocationAndDistance_PassesBiasToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Pennsylvania&location=-77.0,38.9&distance=500&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(fakeProvider.LastForwardRequest);
+        Assert.NotNull(fakeProvider.LastForwardRequest!.BiasLocation);
+        Assert.Equal(-77.0, fakeProvider.LastForwardRequest.BiasLocation!.X, precision: 5);
+        Assert.Equal(38.9, fakeProvider.LastForwardRequest.BiasLocation.Y, precision: 5);
+        Assert.Equal(500.0, fakeProvider.LastForwardRequest.BiasDistanceMeters);
+    }
+
+    // #2148: a proximity bias re-ranks equally-matching candidates so the nearest is returned first.
+    // The fixture's POI candidate (-77.03361, 38.89466) is nearer the bias point than the address
+    // candidate (-77.03655, 38.89768), so biasing flips the default ordering deterministically.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithProximityBias_RanksNearbyCandidateFirst()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        // Unbiased: the address candidate (higher score) is first.
+        using var unbiased = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Pennsylvania&f=json");
+        using var unbiasedPayload = JsonDocument.Parse(await unbiased.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "1600 Pennsylvania Ave NW",
+            unbiasedPayload.RootElement.GetProperty("candidates")[0].GetProperty("address").GetString());
+
+        // Biased toward the POI's coordinates: the nearer POI candidate ranks first.
+        using var biased = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Pennsylvania&location=-77.03361,38.89466&f=json");
+        using var biasedPayload = JsonDocument.Parse(await biased.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "White House Visitor Center",
+            biasedPayload.RootElement.GetProperty("candidates")[0].GetProperty("address").GetString());
+    }
+
+    // #2148: a provider WITHOUT proximity support ignores the bias gracefully (no error, default
+    // ordering preserved). The bias still reaches the canonical request; the provider chooses to
+    // ignore it because SupportsBiasing is false.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithBias_IgnoredGracefully_WhenProviderUnsupported()
+    {
+        var fakeProvider = new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: false,
+            SupportsStructuredInput: false,
+            SupportsBiasing: false));
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Pennsylvania&location=-77.03361,38.89466&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // No error and default ordering is preserved (bias gracefully ignored by the provider).
+        Assert.Equal(
+            "1600 Pennsylvania Ave NW",
+            payload.RootElement.GetProperty("candidates")[0].GetProperty("address").GetString());
+    }
+
+    // #2148: an invalid bias location is rejected with a clear error.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithInvalidLocation_Returns400()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&location=not-a-point&f=json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("location", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // #2148: an invalid bias distance is rejected with a clear error.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithInvalidDistance_Returns400()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&location=-77.0,38.9&distance=-5&f=json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("distance", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // #2148: suggest passes a bias distance through alongside the existing bias location.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
+    public async Task Suggest_WithLocationAndDistance_PassesBiasDistanceToProvider()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/suggest?text=Vic&location=-0.12,51.5&distance=1000&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(fakeProvider.LastSuggestRequest);
+        Assert.NotNull(fakeProvider.LastSuggestRequest!.BiasLocation);
+        Assert.Equal(1000.0, fakeProvider.LastSuggestRequest.BiasDistanceMeters);
+    }
+
     private static string? GetLastForwardCategory(WebApplicationFactory<Program> factory)
     {
         var provider = (FakeGeocodeProvider)factory.Services
@@ -1379,7 +1599,27 @@ public sealed class GeocodingEndpointTests
                 AddressType = "POI"
             };
 
-            return Task.FromResult<IReadOnlyList<CoreGeocodeCandidate>>([addressCandidate, poiCandidate]);
+            IReadOnlyList<CoreGeocodeCandidate> ordered = [addressCandidate, poiCandidate];
+
+            // Proximity bias (#2148): when the provider advertises biasing and a bias location is
+            // supplied, rank candidates nearest the bias point first. This proves the location/
+            // distance bias flows through to the provider and changes ordering for a deterministic
+            // fixture. A provider without biasing (SupportsBiasing=false) leaves ordering untouched.
+            if (capabilities.SupportsBiasing && request.BiasLocation is not null)
+            {
+                ordered = ordered
+                    .OrderBy(c => SquaredDistance(c, request.BiasLocation))
+                    .ToArray();
+            }
+
+            return Task.FromResult(ordered);
+
+            static double SquaredDistance(CoreGeocodeCandidate candidate, CoreGeocodePoint bias)
+            {
+                var dx = candidate.X - bias.X;
+                var dy = candidate.Y - bias.Y;
+                return (dx * dx) + (dy * dy);
+            }
         }
 
         public Task<CoreReverseGeocodeMatch?> ReverseGeocodeAsync(CoreReverseGeocodeRequest request, CancellationToken cancellationToken)

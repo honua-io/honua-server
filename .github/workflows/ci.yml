@@ -1841,7 +1841,7 @@ jobs:
       # already has a fix available upstream.
       - name: Trivy image scan (full CI, HIGH/CRITICAL, fixed only)
         id: trivy_image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: honua-server:test
@@ -1857,7 +1857,7 @@ jobs:
       - name: Trivy filesystem scan (full CI, HIGH/CRITICAL, fixed only)
         id: trivy_fs
         if: always()
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .

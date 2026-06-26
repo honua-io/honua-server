@@ -117,6 +117,24 @@ sql:
               UNIQUE (role, service, layer, attribute, claim_type)
       );
   - "CREATE INDEX IF NOT EXISTS idx_rbac_rls_policies_scope ON honua.rbac_rls_policies (service, layer);"
+  # Field-level security (column masking) policy store (#1940). Mirrors migration
+  # 068_CreateFieldMaskPolicies.sql so the migration-skipping integration fixture has
+  # the table; PostgresFieldMaskPolicyStore persists per-layer attribute-masking policies
+  # here, dropped from query output at the shared projection seam.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.rbac_field_mask_policies (
+          policy_id     UUID         PRIMARY KEY,
+          role          VARCHAR(128) NOT NULL,
+          service       VARCHAR(256) NOT NULL,
+          layer         VARCHAR(256) NOT NULL,
+          attribute     VARCHAR(256) NOT NULL,
+          description   TEXT,
+          created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          CONSTRAINT rbac_field_mask_policies_scope_unique
+              UNIQUE (role, service, layer, attribute)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_rbac_field_mask_policies_scope ON honua.rbac_field_mask_policies (service, layer);"
   # Persistent RBAC role/permission store (#1374). Mirrors migration
   # 041_CreateRbacRoleStore.sql so the migration-skipping integration fixture has
   # the honua.rbac_roles / rbac_role_permissions / rbac_role_memberships tables.
@@ -2422,3 +2440,41 @@ sql:
       INSERT INTO honua.network_datasets (id, name, edge_table, vertex_table, srid, status)
       VALUES ('default', 'Default network dataset', 'public.ways', 'public.ways_vertices_pgr', 4326, 'active')
       ON CONFLICT (id) DO NOTHING;
+  # Tile-cache catalog (#1016 slice 4) + package-import serving columns (#1269).
+  # Mirrors migrations 033_CreateTileCacheCatalog + 067_AddTileCachePackageImport so
+  # the WMTS exporter sink and the .tpk/.tpkx/.vtpk import + serving binding have their
+  # tables when HONUA_SKIP_MIGRATIONS bypasses the migration runner.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.tile_caches (
+          tile_cache_id      TEXT PRIMARY KEY,
+          layer_identifier   TEXT NOT NULL,
+          tile_matrix_set    TEXT NOT NULL,
+          source_service_url TEXT NOT NULL,
+          tile_format        TEXT NOT NULL DEFAULT 'image/png',
+          style_identifier   TEXT NOT NULL DEFAULT 'default',
+          min_zoom           INTEGER NOT NULL,
+          max_zoom           INTEGER NOT NULL,
+          data_type          TEXT NOT NULL DEFAULT 'raster',
+          tileset_title      TEXT,
+          created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (layer_identifier, tile_matrix_set, style_identifier, tile_format, source_service_url)
+      );
+  - "ALTER TABLE IF EXISTS honua.tile_caches ADD COLUMN IF NOT EXISTS data_type TEXT NOT NULL DEFAULT 'raster';"
+  - "ALTER TABLE IF EXISTS honua.tile_caches ADD COLUMN IF NOT EXISTS tileset_title TEXT;"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.tile_cache_entries (
+          tile_cache_id  TEXT NOT NULL REFERENCES honua.tile_caches (tile_cache_id) ON DELETE CASCADE,
+          zoom_level     INTEGER NOT NULL,
+          tile_column    INTEGER NOT NULL,
+          tile_row       INTEGER NOT NULL,
+          content_type   TEXT NOT NULL,
+          content        BYTEA NOT NULL,
+          source_url     TEXT NOT NULL,
+          created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (tile_cache_id, zoom_level, tile_column, tile_row),
+          CHECK (zoom_level >= 0),
+          CHECK (tile_column >= 0),
+          CHECK (tile_row >= 0)
+      );
+  - "CREATE INDEX IF NOT EXISTS tile_cache_entries_cache_zoom_idx ON honua.tile_cache_entries (tile_cache_id, zoom_level);"

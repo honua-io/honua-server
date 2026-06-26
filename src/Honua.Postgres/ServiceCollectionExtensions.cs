@@ -238,6 +238,15 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register Postgres-backed field-level security (column masking) policy store
+        // (#1940). Backs IFieldMaskPolicyStore so per-layer attribute-masking policies are
+        // durable and shared across scaled nodes; resolved per-request and dropped from
+        // query output at the shared projection seam.
+        services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IFieldMaskPolicyStore>(serviceProvider =>
+            new Features.Authorization.PostgresFieldMaskPolicyStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>
             new PostgresLayerStyleCatalog(
@@ -586,6 +595,17 @@ internal static class ServiceCollectionExtensions
             },
             configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
         services.AddScoped<IOgcTileCacheSink, PostgresOgcTileCacheSink>();
+
+        // Esri tile/vector-tile cache package importer + serving binding (#1269).
+        // The reader and import orchestrator are provider-agnostic; the serving read
+        // path is Postgres-backed (reads the tile catalog populated by the importer).
+        services.AddSingleton<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageReader,
+            Honua.Core.Features.TileCachePackage.Services.EsriTileCachePackageReader>();
+        services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageImportService,
+            Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
+        services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
+            Honua.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
+
         services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
         {
             var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();

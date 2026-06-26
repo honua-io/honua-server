@@ -182,7 +182,20 @@ internal static class SeedRunner
     }
 
     private static bool IsConcurrencyFailure(PostgresException ex)
-        => ex.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected;
+        => ex.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected
+           || IsConcurrentSchemaCreationRace(ex);
+
+    // honua-server#1568 (CREATE SCHEMA race variant): under parallel collection seeding,
+    // two setups racing `CREATE SCHEMA IF NOT EXISTS honua` can both pass the catalog
+    // existence check and then collide on the `pg_namespace` unique index, surfacing as
+    // 23505 (unique_violation) on pg_namespace_nspname_index rather than 40001/40P01.
+    // `IF NOT EXISTS` is not race-safe against the catalog index, so PostgreSQL itself
+    // raises this transient; the loser's transaction rolls back and a retry finds the
+    // schema already present. Scope the retry tightly to the pg_namespace index so a
+    // genuine seed-data unique violation is never silently retried.
+    private static bool IsConcurrentSchemaCreationRace(PostgresException ex)
+        => ex.SqlState == PostgresErrorCodes.UniqueViolation
+           && string.Equals(ex.ConstraintName, "pg_namespace_nspname_index", StringComparison.Ordinal);
 
     private static TimeSpan GetRetryDelay(int attempt)
         => TimeSpan.FromMilliseconds(50 * Math.Pow(2, attempt - 1));

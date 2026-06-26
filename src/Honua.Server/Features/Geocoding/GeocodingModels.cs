@@ -123,11 +123,13 @@ internal sealed record GeocodeServerInfoResponse
     [JsonPropertyName("categories")]
     public string[] Categories { get; init; } = GeocodeSupportedCategories.All;
 
+    // Populated per active provider by the handler (#2147): SuggestedBatchSize is derived from the
+    // provider's MaxBatchSize and is present only when batch is supported. The default carries just
+    // the locator name so an unconfigured response never falsely advertises a batch capability.
     [JsonPropertyName("locatorProperties")]
     public Dictionary<string, string> LocatorProperties { get; init; } = new(StringComparer.Ordinal)
     {
-        ["LocatorName"] = "World",
-        ["SuggestedBatchSize"] = "100"
+        ["LocatorName"] = "World"
     };
 
     [JsonPropertyName("spatialReference")]

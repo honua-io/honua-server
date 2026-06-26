@@ -127,6 +127,44 @@ public sealed class CoordinatedReleaseReconcilerTests
             .Should().Be(CoordinatedReleaseStepStatus.RolledBack);
     }
 
+    [Fact]
+    public async Task Reconcile_MidUnwind_ContainerRollbackThrowsAfterMetadataReverted_SplitBrainEscalatesToManualIntervention()
+    {
+        // Failure-of-failure (#2161): the unwind order is metadata-first, container-second. If the
+        // METADATA unwind succeeds (prior revision + inverse script applied) but the subsequent
+        // CONTAINER rollback THROWS, the coordinated release is split-brained — metadata is reverted
+        // but the new container image is still live. The conductor must escalate to
+        // ManualInterventionRequired and the ledger must reflect the split state (metadata RolledBack,
+        // container NOT RolledBack) so an operator can finish the unwind by hand.
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = await CreateAsync(store);
+
+        var container = new FakeContainerStep { ThrowOnRollback = true };
+        var metadata = new FakeMetadataStep { ObserveOutcome = CoordinatedStepOutcome.Failed };
+        var reconciler = CreateReconciler(store, container, metadata);
+
+        // Drive manually: the container rollback throws mid-unwind. The conductor persists a terminal
+        // ManualInterventionRequired (mirroring the background service's catch) and then rethrows, so
+        // the throw is expected on the cycle that attempts the container rollback. The store still
+        // reflects the escalated, split-brain state.
+        var final = await DriveUntilTerminalToleratingThrowAsync(store, operation.OperationId, reconciler);
+
+        final.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        final.CoordinatedRelease!.CurrentStep.Should().Be(CoordinatedReleaseStep.Failed);
+
+        // Metadata was unwound; the container rollback was attempted but threw.
+        metadata.RollbackCalls.Should().Be(1, "the metadata step unwinds first and succeeds");
+        container.RollbackCalls.Should().Be(1, "the container rollback is attempted second and throws");
+
+        // Ledger reflects the split: metadata reverted, container still live (not rolled back).
+        var metadataState = final.CoordinatedRelease.Steps.Single(s => s.Step == CoordinatedReleaseStep.MetadataAndSchema);
+        var containerState = final.CoordinatedRelease.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout);
+        metadataState.Status.Should().Be(CoordinatedReleaseStepStatus.RolledBack);
+        containerState.Status.Should().NotBe(
+            CoordinatedReleaseStepStatus.RolledBack,
+            "the container rollback threw, so it must not be recorded as rolled back");
+    }
+
     // ---- helpers ---------------------------------------------------------
 
     private static CoordinatedReleaseReconciler CreateReconciler(
@@ -213,6 +251,48 @@ public sealed class CoordinatedReleaseReconcilerTests
         return (await store.GetAsync(operationId))!;
     }
 
+    private static async Task<WorkflowOperationRecord> DriveUntilTerminalToleratingThrowAsync(
+        InMemoryWorkflowOperationStore store,
+        string operationId,
+        CoordinatedReleaseReconciler reconciler)
+    {
+        var service = new CoordinatedReleaseControlService(new[] { (IWorkflowOperationStore)store });
+        for (var i = 0; i < 40; i++)
+        {
+            try
+            {
+                await reconciler.ReconcileCoordinatedReleaseAsync(operationId);
+            }
+            catch (InvalidOperationException)
+            {
+                // The conductor persists the terminal escalation before rethrowing the unwind fault;
+                // mirror the background service which logs and continues.
+            }
+
+            var op = await store.GetAsync(operationId);
+            if (op is null)
+            {
+                break;
+            }
+
+            if (op.Status == WorkflowOperationStatus.AwaitingApproval)
+            {
+                await service.ApproveGateAsync(operationId, op.CoordinatedRelease!.CurrentStep, "operator", "approved", default);
+                continue;
+            }
+
+            if (op.Status is WorkflowOperationStatus.Succeeded
+                or WorkflowOperationStatus.Failed
+                or WorkflowOperationStatus.RolledBack
+                or WorkflowOperationStatus.ManualInterventionRequired)
+            {
+                return op;
+            }
+        }
+
+        return (await store.GetAsync(operationId))!;
+    }
+
     // ---- fakes -----------------------------------------------------------
 
     private sealed class FakeContainerStep : ICoordinatedContainerStepExecutor
@@ -222,6 +302,7 @@ public sealed class CoordinatedReleaseReconcilerTests
         public long StartedAtTicks { get; private set; }
         public long RolledBackAtTicks { get; private set; }
         public CoordinatedStepOutcome ObserveOutcome { get; init; } = CoordinatedStepOutcome.Succeeded;
+        public bool ThrowOnRollback { get; init; }
 
         public Task<CoordinatedStepResult> StartAsync(CoordinatedReleaseContext context, WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {
@@ -242,6 +323,11 @@ public sealed class CoordinatedReleaseReconcilerTests
         {
             RollbackCalls++;
             RolledBackAtTicks = DateTime.UtcNow.Ticks + RollbackCalls;
+            if (ThrowOnRollback)
+            {
+                throw new InvalidOperationException("Container rollback failed: provider deploy-rollback call errored.");
+            }
+
             return Task.CompletedTask;
         }
     }

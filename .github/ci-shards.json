@@ -309,7 +309,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.EmulatorCloudStorage",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.EmulatorCloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage",
       "paths": [
         "src/Honua.Core/Features/FileImport/",
         "src/Honua.Core/Features/Import/",
@@ -944,7 +944,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling",
-      "_paths_comment": "src-dir->shard map (#1897 follow-up to #2035): claims the SOURCE trees whose tests this shard's filter runs (Features.Infrastructure, Caching, Security, Styling, GeoServices.Catalog, FileStorage). src/Honua.Server/Features/Infrastructure/ is claimed here so an Infrastructure-feature change (ControlPlane/Errors/Helpers/Compression/etc.) targets this shard instead of tripping the unmapped-source net; the shared host-wiring subdirs (Hosting/Middleware/Services/Monitoring) still escalate to run_all because they are listed in infrastructure_paths, which short-circuits (step 3) BEFORE this path match (step 4). Core/Postgres Caching/Security/Styling slices map here too so a provider-side change to those features targets this shard.",
+      "_paths_comment": "src-dir->shard map (#1897 follow-up to #2035): claims the SOURCE trees whose tests this shard's filter runs (Features.Infrastructure, Caching, Security, Styling, GeoServices.Catalog, FileStorage). src/Honua.Server/Features/Infrastructure/ AND the sibling src/Honua.Server/Features/ControlPlane/ are claimed here so an Infrastructure-feature or ControlPlane (deploy/coordinated-release/telemetry) change targets this shard instead of tripping the unmapped-source net (the deploy reconciler/telemetry tests live under tests/.../Features/Infrastructure/ControlPlane/, which this shard's Features.Infrastructure filter selects); the shared host-wiring subdirs (Hosting/Middleware/Services/Monitoring) still escalate to run_all because they are listed in infrastructure_paths, which short-circuits (step 3) BEFORE this path match (step 4). Core/Postgres Caching/Security/Styling slices map here too so a provider-side change to those features targets this shard.",
       "paths": [
         "src/Honua.Server/Features/Caching/",
         "src/Honua.Core/Features/Caching/",
@@ -958,6 +958,7 @@
         "src/Honua.Core/Features/Styling/",
         "src/Honua.Postgres/Features/Styling/",
         "src/Honua.Server/Features/Infrastructure/",
+        "src/Honua.Server/Features/ControlPlane/",
         "src/Honua.Protocols.GeoServices/Catalog/",
         "tests/dotnet/Honua.Server.Tests/Features/Authorization/",
         "tests/dotnet/Honua.Server.Tests/Features/Caching/",

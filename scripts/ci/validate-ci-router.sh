@@ -503,6 +503,17 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Infra and Security"
+# The deploy/coordinated-release/telemetry ControlPlane source actually lives at
+# src/Honua.Server/Features/ControlPlane/ (sibling of Features/Infrastructure/),
+# while its tests live under tests/.../Features/Infrastructure/ControlPlane/. That
+# path is claimed by the Infra and Security shard so a reconciler/telemetry change
+# targets it instead of tripping the unmapped-source run_all net.
+assert_descriptor \
+  "controlplane-source-targeted" \
+  "src/Honua.Server/Features/ControlPlane/DeployWorkflowReconciler.cs" \
+  "targeted" \
+  "false" \
+  "Infra and Security"
 assert_descriptor \
   "infra-hosting-wiring-still-run-all" \
   "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs" \

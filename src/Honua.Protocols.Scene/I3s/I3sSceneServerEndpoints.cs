@@ -37,6 +37,15 @@ internal static partial class I3sSceneServerEndpoints
     private const string ScenesTag = "Scenes";
     private const string I3sContentType = "application/json";
 
+    /// <summary>
+    /// Content type for the I3S Default geometry binary buffer
+    /// (<c>nodes/{id}/geometries/0</c>). The I3S spec leaves the binary geometry
+    /// media type unspecified; ArcGIS serves it as an opaque byte stream, so we
+    /// follow the same <c>application/octet-stream</c> convention the 3D Tiles
+    /// container payloads use (<see cref="Honua.Scene.Assets.SceneContentTypes"/>).
+    /// </summary>
+    private const string I3sGeometryContentType = "application/octet-stream";
+
     public static IEndpointRouteBuilder MapI3sSceneServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -168,6 +177,41 @@ internal static partial class I3sSceneServerEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
+        // Node geometry binary resource (#1810): the first slice that serves
+        // RENDERABLE geometry (not just the descriptor). The transcoder
+        // (I3sGeometryTranscoder) converts the scene's polygon/extruded geometry
+        // into an I3S Default interleaved buffer; this route streams it so an
+        // ArcGIS SceneLayer / I3S client can draw the layer. Mapped at both the
+        // GeoServices and the legacy /scenes alias for path parity with the
+        // descriptor routes above.
+        endpoints.MapGet(
+                "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
+                HandleGetNodeGeometry)
+            .WithName("GetGeoServicesSceneNodeGeometry")
+            .WithDisplayName("Get GeoServices SceneServer Node Geometry")
+            .WithSummary("Get the Esri I3S node geometry buffer at the GeoServices path")
+            .WithDescription("Returns the I3S Default interleaved node geometry binary (position/normal/uv0/color + feature section) transcoded from the scene's geometry so an ArcGIS / I3S client can render the layer. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces(StatusCodes.Status200OK, contentType: I3sGeometryContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
+        endpoints.MapGet(
+                "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
+                HandleGetNodeGeometry)
+            .WithName("GetI3sSceneNodeGeometry")
+            .WithDisplayName("Get I3S Scene Node Geometry")
+            .WithSummary("Get the Esri I3S node geometry buffer for a hosted scene")
+            .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}/nodes/{nodeId}/geometries/{geometryId}. Returns the transcoded I3S Default node geometry binary. Enterprise edition.")
+            .WithTags(ScenesTag)
+            .Produces(StatusCodes.Status200OK, contentType: I3sGeometryContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
         return endpoints;
     }
 
@@ -207,6 +251,83 @@ internal static partial class I3sSceneServerEndpoints
         [FromServices] ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
         => HandleStatisticsAsync(sceneId, layerId, fieldKey, context, registry, licenseStatusProvider, cancellationToken);
+
+    private static async Task<IResult> HandleGetNodeGeometry(
+        string sceneId,
+        int layerId,
+        int nodeId,
+        int geometryId,
+        HttpContext context,
+        [FromServices] ISceneDatasetRegistry registry,
+        [FromServices] ILicenseStatusProvider licenseStatusProvider,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sceneId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Scene identifier is required.");
+        }
+
+        var edition = licenseStatusProvider.GetCurrentStatus().Edition;
+        if (edition < HonuaEdition.Enterprise)
+        {
+            return StandardErrorHelpers.CreateForbidden(
+                context,
+                $"I3S scene serving requires the Enterprise edition. Current edition: {edition}.");
+        }
+
+        if (layerId != I3sSceneServiceBuilder.LayerId)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Scene layer was not found.");
+        }
+
+        // This slice serves the single Default geometry (id 0) of the single
+        // whole-scene node (id 0). Any other index is a deterministic 404 rather
+        // than the node-0 body so a client probing the node tree gets honest
+        // misses (multi-node paging is the deferred #1809 lane).
+        if (geometryId != 0)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Node geometry was not found.");
+        }
+
+        var scene = await registry.FindAsync(sceneId, cancellationToken).ConfigureAwait(false);
+        if (scene is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
+        }
+
+        if (scene.AccessPolicy is { } accessPolicy)
+        {
+            var deniedResult = AccessPolicyHelpers.RequireAccess(
+                context,
+                layerPolicy: accessPolicy,
+                servicePolicy: null,
+                scope: AccessScope.Read);
+            if (deniedResult is not null)
+            {
+                return deniedResult;
+            }
+        }
+
+        // The geometry provider is the serving seam (#1810): it transcodes the
+        // scene's renderable geometry with I3sGeometryTranscoder, or returns null
+        // when the scene carries no transcodable node geometry (e.g. a
+        // hosted-tiles-only scene whose glTF re-transcode is not yet wired). A
+        // null provider OR a null geometry both surface as a 404 so the route
+        // never fabricates an empty buffer.
+        var provider = context.RequestServices.GetService<ISceneNodeGeometryProvider>();
+        if (provider is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Node geometry is not available for this scene.");
+        }
+
+        var geometry = await provider.GetNodeGeometryAsync(scene, nodeId, cancellationToken).ConfigureAwait(false);
+        if (geometry is not { } transcoded)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Node geometry is not available for this scene.");
+        }
+
+        return Results.Bytes(transcoded.Buffer, I3sGeometryContentType);
+    }
 
     private static async Task<IResult> HandleAsync(
         string sceneId,

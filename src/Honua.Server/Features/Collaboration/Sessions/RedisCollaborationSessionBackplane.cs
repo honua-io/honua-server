@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
@@ -25,21 +26,31 @@ internal sealed partial class RedisCollaborationSessionBackplane
         new("collaboration:session:broadcast", RedisChannel.PatternMode.Literal);
 
     private readonly IConnectionMultiplexer _redis;
-    private readonly InMemoryCollaborationSessionService _sessions;
+    private readonly IServiceProvider _services;
     private readonly ILogger<RedisCollaborationSessionBackplane> _logger;
     private readonly string _instanceId = Guid.NewGuid().ToString("N");
+    private InMemoryCollaborationSessionService? _sessions;
     private ISubscriber? _subscriber;
     private volatile bool _enabled;
     private int _publishFailureLogged;
     private int _receiveFailureLogged;
 
+    // The session service and this backplane are mutually dependent — the service
+    // publishes locally-originated events through the backplane, and the backplane
+    // re-injects peer broadcasts into the service. Taking InMemoryCollaborationSessionService
+    // directly in the constructor closes that loop into a DI construction cycle that, in
+    // the Redis-configured topology, recurses through the singleton-cache lock until the
+    // host hangs (honua-server#1841 regression surfaced via the Operator-Eval shard).
+    // Resolving the service lazily from IServiceProvider here breaks the construction cycle:
+    // the backplane only needs the service inside HandleBroadcast, which never runs before
+    // the graph is fully built.
     public RedisCollaborationSessionBackplane(
         IConnectionMultiplexer redis,
-        InMemoryCollaborationSessionService sessions,
+        IServiceProvider services,
         ILogger<RedisCollaborationSessionBackplane> logger)
     {
         _redis = redis ?? throw new ArgumentNullException(nameof(redis));
-        _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
+        _services = services ?? throw new ArgumentNullException(nameof(services));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -48,6 +59,9 @@ internal sealed partial class RedisCollaborationSessionBackplane
     {
         try
         {
+            // Resolve the session service now that the DI graph is fully built; taking it
+            // in the constructor would close a backplane <-> session-service dependency cycle.
+            _sessions = _services.GetRequiredService<InMemoryCollaborationSessionService>();
             _subscriber = _redis.GetSubscriber();
             _subscriber.Subscribe(BroadcastChannel, HandleBroadcast);
             _enabled = true;
@@ -107,7 +121,8 @@ internal sealed partial class RedisCollaborationSessionBackplane
 
     private void HandleBroadcast(RedisChannel channel, RedisValue value)
     {
-        if (!_enabled || value.IsNullOrEmpty)
+        var sessions = _sessions;
+        if (!_enabled || sessions is null || value.IsNullOrEmpty)
         {
             return;
         }
@@ -125,7 +140,7 @@ internal sealed partial class RedisCollaborationSessionBackplane
                 return;
             }
 
-            _sessions.ApplyRemoteEvent(message.Event);
+            sessions.ApplyRemoteEvent(message.Event);
         }
         catch (Exception ex)
         {

@@ -31,6 +31,7 @@ public sealed class VerticalSliceIsolationTests
         "Geocoding",
         "Geoprocessing",
         "Grounding",
+        "Identity", // Enterprise identity slice (honua-server#508/#510): SCIM 2.0 provisioning + SAML 2.0 SP SSO bridge over the shared user/role model.
         "Orchestration",
         "PackageReview",
         "Plugins", // Plugin/extension SDK host slice (honua-server#1562): maps plugin-contributed ICustomEndpoint routes.
