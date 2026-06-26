@@ -47,6 +47,9 @@ docs/
 !docs/developer/
 !docs/developer/api-specs/
 !docs/developer/api-specs/admin-api.json
+!docs/gis/
+!docs/gis/data/
+!docs/gis/data/feature-catalog.json
 
 # CI/CD
 .github/
