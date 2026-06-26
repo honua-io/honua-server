@@ -65,7 +65,9 @@ public static class GpCli
         }
     }
 
-    private static ServiceProvider BuildProvider(GlassBoxCapture? glassBox = null)
+    private static ServiceProvider BuildProvider(
+        GdalProcessExecutorMode gdalMode = GdalProcessExecutorMode.InProcess,
+        GlassBoxCapture? glassBox = null)
     {
         // Empty in-memory configuration: AddGeoprocessing binds its option sections
         // from configuration but every option has a valid default, and the
@@ -82,7 +84,11 @@ public static class GpCli
         // Managed geometry/analytics/transform/source/sink executors.
         services.AddGeoprocessing(configuration);
         // Native GDAL executors (Redis-free seam: options + CLI runner + executors only).
-        services.AddGdalProcessExecutors(configuration);
+        // In container mode (--real-worker, #2180) each native gdal.* step runs inside
+        // the real honua-worker-etl image so gp run/plan is a true dry-run of the
+        // native submit path; the managed executor set and the durable spec are
+        // unchanged — only the GDAL command runner differs.
+        services.AddGdalProcessExecutors(configuration, gdalMode);
 
         // DEV-ONLY: when the caller opted into glass-box mode, decorate the native GDAL
         // command runner so the unsanitized command + full stdout/stderr are captured.
@@ -133,7 +139,8 @@ public static class GpCli
         var glassBoxEnabled = parsed.GlassBoxRequested || IsEnvTruthy("HONUA_GP_GLASSBOX");
         var capture = glassBoxEnabled ? new GlassBoxCapture() : null;
 
-        using var provider = BuildProvider(capture);
+        var gdalMode = await ResolveGdalModeAsync(parsed.ForceContainer).ConfigureAwait(false);
+        using var provider = BuildProvider(gdalMode, capture);
         var executors = provider.GetServices<IProcessExecutor>();
         var runner = new GeoprocessingLocalRunner(executors);
 
@@ -150,6 +157,7 @@ public static class GpCli
         var result = await runner.RunAsync(parsed.ProcessId, inputs, capture).ConfigureAwait(false);
 
         Console.WriteLine($"process : {result.ProcessId}");
+        Console.WriteLine($"runner  : {(gdalMode == GdalProcessExecutorMode.Container ? "container (honua-worker-etl image)" : "in-process")}");
         Console.WriteLine($"status  : {result.Status}");
         Console.WriteLine($"elapsed : {result.Elapsed.TotalMilliseconds:F1} ms");
 
@@ -204,6 +212,46 @@ public static class GpCli
     {
         var value = Environment.GetEnvironmentVariable(name);
         return value is "1" or "true" or "TRUE" or "True" or "yes" or "on";
+    }
+
+    /// <summary>
+    /// Resolves which GDAL command-runner mode <c>gp run</c> uses for native ops
+    /// (issue #2180), honoring an explicit <c>--real-worker</c>/<c>--in-process</c>
+    /// override and otherwise auto-selecting the container path only when the worker
+    /// image is already present locally (so the managed sub-second loop is never
+    /// blocked on a pull).
+    /// <list type="bullet">
+    /// <item><c>--real-worker</c> (force container): fails fast when the worker image is
+    /// absent so a developer who asked for full fidelity is not silently downgraded.</item>
+    /// <item><c>--in-process</c> (force fast): always the host CLIs.</item>
+    /// <item>default (auto): container when the image is available, else in-process.</item>
+    /// </list>
+    /// </summary>
+    private static async Task<GdalProcessExecutorMode> ResolveGdalModeAsync(bool? forceContainer)
+    {
+        if (forceContainer == false)
+        {
+            return GdalProcessExecutorMode.InProcess;
+        }
+
+        var imageAvailable = await GdalContainerProbe.IsImageAvailableAsync().ConfigureAwait(false);
+
+        if (forceContainer == true)
+        {
+            if (!imageAvailable)
+            {
+                throw new GpCliUsageException(
+                    $"--real-worker requires the '{GdalContainerProbe.DefaultImage}' worker image, which is not " +
+                    "available in the local container runtime. Build it with "
+                    + "'docker build -f docker/worker-gdal/Dockerfile -t honua-worker-etl .', or drop "
+                    + "--real-worker to use the fast in-process path.");
+            }
+
+            return GdalProcessExecutorMode.Container;
+        }
+
+        // Auto: prefer the real-worker fidelity path when the image is already present.
+        return imageAvailable ? GdalProcessExecutorMode.Container : GdalProcessExecutorMode.InProcess;
     }
 
     /// <summary>
@@ -419,6 +467,9 @@ public static class GpCli
         string? inputPath = null;
         string? outPath = null;
         var glassBoxRequested = false;
+        // null = auto: use the container path when the worker image is present locally,
+        // else the fast in-process path. true = force container, false = force in-process.
+        bool? forceContainer = null;
         var inputs = new Dictionary<string, string>(StringComparer.Ordinal);
 
         for (var i = 1; i < args.Length; i++)
@@ -433,6 +484,12 @@ public static class GpCli
                     break;
                 case "--glass-box" or "--debug" or "-d":
                     glassBoxRequested = true;
+                    break;
+                case "--container" or "--real-worker":
+                    forceContainer = true;
+                    break;
+                case "--in-process":
+                    forceContainer = false;
                     break;
                 case "--param" or "-p":
                     var kv = NextValue(args, ref i, "--param");
@@ -449,7 +506,7 @@ public static class GpCli
             }
         }
 
-        return new ProcessArgs(processId, inputPath, outPath, glassBoxRequested, inputs);
+        return new ProcessArgs(processId, inputPath, outPath, glassBoxRequested, forceContainer, inputs);
     }
 
     /// <summary>
@@ -844,6 +901,7 @@ public static class GpCli
         string? InputPath,
         string? OutPath,
         bool GlassBoxRequested,
+        bool? ForceContainer,
         Dictionary<string, string> Params);
 
     /// <summary>
@@ -926,7 +984,7 @@ public static class GpCli
         Console.WriteLine("Usage:");
         Console.WriteLine("  honua gp list");
         Console.WriteLine("  honua gp plan <processId> [--input <file>] [--param k=v ...]");
-        Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>] [--glass-box]");
+        Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>] [--glass-box] [--real-worker]");
         Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
         Console.WriteLine("  honua gp new <id> [--kind geometry|gdal] [--output <dir>]");
         Console.WriteLine("  honua gp publish <id> [--server <url>] [--api-key <key>] [--message <m>] [--dry-run] [--publish]");
@@ -941,6 +999,11 @@ public static class GpCli
         Console.WriteLine("  --output,-o <dir>   Preview the scaffold under <dir> instead of writing into the checkout.");
         Console.WriteLine("  --glass-box, --debug, -d  DEV-ONLY (run): show the unsanitized native command(s),");
         Console.WriteLine("                      full stdout/stderr, scratch dirs, and a repro hint (also HONUA_GP_GLASSBOX).");
+        Console.WriteLine("  --real-worker       Run native gdal.* steps inside the real honua-worker-etl");
+        Console.WriteLine("  (--container)       image (docker run) instead of the host GDAL CLIs, so the run");
+        Console.WriteLine("                      crosses the same image/CRS/arg boundary a native submit does.");
+        Console.WriteLine("                      Default: auto (container when the image is present, else in-process).");
+        Console.WriteLine("  --in-process        Force the fast host-CLI path even when the worker image is present.");
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  plan  Dry-run: validate params + DAG and estimate output size/cost WITHOUT executing.");

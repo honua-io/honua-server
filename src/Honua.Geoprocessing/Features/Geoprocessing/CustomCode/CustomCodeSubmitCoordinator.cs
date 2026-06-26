@@ -89,7 +89,7 @@ internal sealed class CustomCodeSubmitCoordinator(IScopedJobTokenIssuer tokenIss
 
         var tenantId = principal.FindFirstValue(TenantClaimType);
         var principalId = principal.Identity?.Name ?? string.Empty;
-        var ownerScope = new CustomCodeOwnerScope(principalId, tenantId, roles, declaredScope);
+        var ownerScope = new CustomCodeOwnerScope(principalId, tenantId, roles, grants, declaredScope);
 
         // Server-set the per-job output prefix; never honor a caller-supplied value
         // so user code cannot redirect its outputs outside its isolated prefix.
@@ -104,6 +104,7 @@ internal sealed class CustomCodeSubmitCoordinator(IScopedJobTokenIssuer tokenIss
                 PrincipalId: principalId,
                 TenantId: tenantId,
                 Roles: roles,
+                Grants: grants,
                 JobId: jobId,
                 ResourceScope: declaredScope,
                 ExpiresAt: expiresAt),
