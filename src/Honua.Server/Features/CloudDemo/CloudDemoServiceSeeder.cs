@@ -4,16 +4,20 @@
 using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 
 namespace Honua.Server.Features.CloudDemo;
 
-internal sealed class CloudDemoServiceSeeder(IAdoNetDatabaseConnectionProvider connectionProvider)
+internal sealed class CloudDemoServiceSeeder(
+    IAdoNetDatabaseConnectionProvider connectionProvider,
+    IMetadataV2LegacyCatalogProjector legacyCatalogProjector,
+    IMetadataV2GraphStore graphStore)
 {
     private const int CommandTimeoutSeconds = 60;
 
-    public Task EnsureSeededAsync(CancellationToken cancellationToken = default)
+    public async Task EnsureSeededAsync(CancellationToken cancellationToken = default)
     {
-        return connectionProvider.ExecuteWithDeadlockRetryAsync(
+        await connectionProvider.ExecuteWithDeadlockRetryAsync(
             () => ExecuteInTransactionAsync(
                 [
                     SeedCatalogSql,
@@ -22,12 +26,14 @@ internal sealed class CloudDemoServiceSeeder(IAdoNetDatabaseConnectionProvider c
                     UpdateObjectIdSequenceSql
                 ],
                 cancellationToken),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+
+        await ProjectLegacyCatalogIntoGraphAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public Task ResetWritableAsync(CancellationToken cancellationToken = default)
+    public async Task ResetWritableAsync(CancellationToken cancellationToken = default)
     {
-        return connectionProvider.ExecuteWithDeadlockRetryAsync(
+        await connectionProvider.ExecuteWithDeadlockRetryAsync(
             () => ExecuteInTransactionAsync(
                 [
                     SeedCatalogSql,
@@ -36,7 +42,33 @@ internal sealed class CloudDemoServiceSeeder(IAdoNetDatabaseConnectionProvider c
                     UpdateObjectIdSequenceSql
                 ],
                 cancellationToken),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+
+        await ProjectLegacyCatalogIntoGraphAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Projects the freshly-seeded legacy catalog into the active Metadata v2 graph so the
+    /// demo services, layers, fields, and collections are visible to the v2-graph-backed read
+    /// paths (FeatureServer query, OGC API Features items). The legacy <c>SeedCatalogSql</c>
+    /// writes only the V1 catalog (<c>honua.services</c>/<c>honua.layers</c>/...); after the
+    /// Metadata v2 cutover those reads resolve through the graph, so without this projection a
+    /// post-reset query/items returns 404. (honua-server#2081.)
+    /// </summary>
+    private async Task ProjectLegacyCatalogIntoGraphAsync(CancellationToken cancellationToken)
+    {
+        var graph = await legacyCatalogProjector
+            .BuildFromLegacyCatalogAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (graph is null)
+        {
+            return;
+        }
+
+        // Force-write (expectedEtag: null): the cloud-demo reset is a deliberate, destructive
+        // "seeded-clean" operation, so it activates the projected snapshot rather than failing
+        // on optimistic concurrency against whatever revision is currently active.
+        await graphStore.SaveAsync(graph, expectedEtag: null, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ExecuteInTransactionAsync(
