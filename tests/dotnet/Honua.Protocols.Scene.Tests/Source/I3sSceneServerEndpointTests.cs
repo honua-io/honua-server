@@ -584,6 +584,105 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    public async Task GetNodeAttribute_EnterpriseEdition_ReturnsObjectIdAttributeFile()
+    {
+        // #1811: the attributes route serves the per-field OBJECTID binary file an
+        // ArcGIS SceneLayer client reads for identify. The values are the served
+        // geometry's feature ids (the stub transcodes one feature with Id=1).
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/octet-stream");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        var count = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4));
+        count.Should().Be(1u); // single fixture feature
+        var objectId = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(8, 4));
+        objectId.Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    public async Task GetNodeAttribute_AtScenesAlias_ReturnsObjectIdAttributeFile()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/scenes/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/octet-stream");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    public async Task GetNodeAttribute_CommunityEdition_Returns403()
+    {
+        var response = await _communityFixture.Client.GetAsync(
+            $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    public async Task GetNodeAttribute_UnknownField_Returns404()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_99/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    public async Task GetNodeAttribute_UnknownAttributeId_Returns404()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/7");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    public async Task GetNodeAttribute_UnknownLayerId_Returns404()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{SceneId}/SceneServer/layers/7/nodes/0/attributes/f_0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    public async Task GetNodeAttribute_SceneWithNoTranscodableGeometry_Returns404()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{NoGeometrySceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    public async Task GetNodeAttribute_ProtectedScene_WithoutAuth_ReturnsUnauthorized()
+    {
+        var response = await _enterpriseFixture.Client.GetAsync(
+            $"/rest/services/{ProtectedSceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     /// <summary>
     /// In-memory <see cref="ISceneNodeGeometryProvider"/> that transcodes a
     /// single fixture square with the real <see cref="I3sGeometryTranscoder"/>,
