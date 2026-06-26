@@ -4,7 +4,6 @@
 using System.Diagnostics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing.LocalRunner;
 
@@ -125,52 +124,52 @@ public sealed class GeoprocessingLocalRunner
         };
     }
 
-    private static ExecutionJobRecord BuildJobRecord(
+    /// <summary>
+    /// Builds the execution-job record the executor runs against. The durable
+    /// <see cref="ExecutionJobSpec"/> is constructed through the SAME
+    /// <see cref="GeoprocessingSpecBuilder"/> the production submit path
+    /// (<c>GeoprocessingJobService.BuildSpec</c>) uses for the no-registered-workload
+    /// case, from an equivalent single-step <c>AnalysisPlan</c> — so the spec a
+    /// <c>gp run</c>/<c>gp plan</c> dry-run carries is byte-for-byte the spec a real
+    /// single-step submit would produce for the same <c>(processId, inputs)</c>
+    /// (issue #2180): same parameter bag (process-definitions, step-0 inputs, plan id),
+    /// same Kind / TargetKind / Backend / WorkloadName, and the same data-driven
+    /// <see cref="ExecutionJobSpec.RuntimeProfile"/> — <c>native</c> for a gdal.*
+    /// executor, <c>null</c> (managed/default) otherwise. This makes "plan" a true dry
+    /// run of the real spec, not a parallel representation.
+    /// </summary>
+    internal static ExecutionJobRecord BuildJobRecord(
         string processId,
         IReadOnlyDictionary<string, string> inputs,
         IProcessExecutor executor)
     {
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            // The canonical process-id key the dispatch helper / executors resolve.
-            [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = processId,
-            // protocolProcessId is the fallback key several executors also accept.
-            ["protocolProcessId"] = processId,
-        };
-
-        var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
-        foreach (var (name, value) in inputs)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                continue;
-            }
-
-            parameters[prefix + name] = value ?? string.Empty;
-        }
-
-        // Stamp the runtime profile the executor accepts so a native (GDAL) executor's
-        // own profile guard, if any, is satisfied; managed executors ignore it.
-        var runtimeProfile = executor.AcceptedRuntimeProfiles.Contains(RuntimeProfiles.Native)
+        // The local runner has no process catalog to consult, so the required runtime
+        // profile is derived from the resolved executor's accepted set instead — a
+        // native (GDAL) executor accepts the native profile, which the submit path's
+        // catalog lookup would stamp as the same `native` value; a managed executor
+        // leaves the profile null/default, exactly as the submit path does.
+        var requiredRuntimeProfile = executor.AcceptedRuntimeProfiles.Contains(RuntimeProfiles.Native)
             ? RuntimeProfiles.Native
-            : RuntimeProfiles.Managed;
+            : null;
+
+        var operationId = "local-" + Guid.NewGuid().ToString("N");
+
+        // The local runner is a single-step (processId + step-0 inputs) invocation;
+        // model it as the canonical single-step plan the shared spec builder consumes.
+        var plan = GeoprocessingSpecBuilder.SingleStepPlan(processId, inputs, planId: operationId);
+        var spec = GeoprocessingSpecBuilder.BuildNoWorkloadSpec(
+            plan,
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            requiredRuntimeProfile);
 
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
         {
-            OperationId = "local-" + Guid.NewGuid().ToString("N"),
+            OperationId = operationId,
             Status = ExecutionJobStatus.Running,
             CreatedAt = now,
             UpdatedAt = now,
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local",
-                WorkloadName = "gp-local:" + processId,
-                RuntimeProfile = runtimeProfile,
-                Parameters = parameters,
-            },
+            Spec = spec,
         };
     }
 }

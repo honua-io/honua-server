@@ -332,66 +332,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ExecutionJobDefinition? workload,
         string? requiredRuntimeProfile)
     {
-        specParams[ExecutionJobParameterKeys.GeoprocessingPlanId] = plan.PlanId;
-        var processDefinitions = plan.Steps
-            .Where(step => !string.IsNullOrWhiteSpace(step.ProcessId))
-            .Select(step => step.ProcessId!)
-            .ToArray();
-        if (processDefinitions.Length > 0)
-        {
-            specParams[ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = string.Join(
-                ExecutionJobParameterKeys.MetadataListSeparator,
-                processDefinitions);
-        }
-
-        var outputKinds = plan.Outputs.Select(output => output.ToString()).ToArray();
-        if (outputKinds.Length > 0)
-        {
-            specParams[ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds] = string.Join(
-                ExecutionJobParameterKeys.MetadataListSeparator,
-                outputKinds);
-        }
-
-        // Project plan step inputs onto the durable spec under a stable prefix so
-        // worker-side executors can read their parameters without reaching back into
-        // the analysis plan. Only `Geoprocess` steps carry semantic inputs in the
-        // first-slice catalog; other kinds are ignored here.
-        for (var stepIndex = 0; stepIndex < plan.Steps.Count; stepIndex++)
-        {
-            var step = plan.Steps[stepIndex];
-            if (step.Kind != AnalysisPlanStepKind.Geoprocess || step.Inputs.Count == 0)
-            {
-                continue;
-            }
-
-            foreach (var input in step.Inputs)
-            {
-                if (string.IsNullOrWhiteSpace(input.Key))
-                {
-                    continue;
-                }
-
-                var key = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}{stepIndex}.{input.Key}";
-                specParams[key] = input.Value ?? string.Empty;
-            }
-        }
-
         if (workload == null)
         {
-            return new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = LocalBatchComputeBackend.BackendId,
-                WorkloadName = $"geoprocessing:{plan.PlanId}",
-                // Data-driven native-profile stamping: a catalog process that
-                // requires a specialized worker (the gdal.* native family) forces
-                // this profile so the claim fence routes the job to the GDAL worker
-                // and away from the lean dispatcher. Null leaves the job managed/default.
-                RuntimeProfile = requiredRuntimeProfile,
-                Parameters = specParams
-            };
+            // The no-registered-workload case (the default) is built through the shared
+            // spec builder so the durable spec — parameter bag AND envelope — is
+            // identical to the one the GP Devkit local runner produces for the same
+            // plan (issue #2180).
+            return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(plan, specParams, requiredRuntimeProfile);
         }
+
+        // Project the plan's id / process-definitions / output kinds / step inputs onto
+        // the workload-supplied parameter bag through the same shared projection.
+        GeoprocessingSpecBuilder.ProjectPlanParameters(plan, specParams);
 
         foreach (var kv in workload.Parameters)
         {
