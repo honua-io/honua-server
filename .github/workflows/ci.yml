@@ -774,6 +774,21 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+      - name: Run .NET Tests (GP Devkit scaffolder)
+        # GP Devkit P4 (#2125): `honua gp new` scaffolder self-tests. Fast, offline
+        # unit tests (pure string-transform template/injector rendering + collision
+        # detection against the registered set) in their own standalone assembly, so
+        # they run here in the foundation job alongside the golden-harness self-tests.
+        timeout-minutes: 5
+        run: |
+          dotnet test tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=gp-scaffolder-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
       - name: Upload foundation test results
         uses: actions/upload-artifact@v7
         if: always()

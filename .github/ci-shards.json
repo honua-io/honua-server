@@ -998,6 +998,7 @@
         "tests/dotnet/Honua.Server.Tests/Features/Eval/",
         "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/",
         "tests/dotnet/Honua.Geoprocessing.Testing.Tests/",
+        "tests/dotnet/Honua.Geoprocessing.Cli.Tests/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/",
