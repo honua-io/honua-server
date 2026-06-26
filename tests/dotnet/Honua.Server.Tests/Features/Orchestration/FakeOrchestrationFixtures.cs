@@ -86,6 +86,8 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
     private readonly ConcurrentDictionary<string, byte> _scheduleClaims = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _scheduleCursors = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _pendingScheduleCursors = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _triggerCursors = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _triggerClaims = new(StringComparer.Ordinal);
 
     public Task<WorkflowDefinition?> GetAsync(string workflowId, CancellationToken cancellationToken = default)
         => Task.FromResult(_definitions.TryGetValue(workflowId, out var d) ? d : null);
@@ -208,6 +210,43 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
     /// </summary>
     public void SeedScheduleCursor(string workflowId, DateTimeOffset cursor)
         => _scheduleCursors[workflowId] = cursor.ToUniversalTime();
+
+    public Task<IReadOnlyList<WorkflowDefinition>> ListEventTriggeredAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<WorkflowDefinition>>(
+            _definitions.Values
+                .Where(def => def.Trigger is { Enabled: true } trigger
+                              && trigger.Kind is WorkflowTriggerKind.ChangeFeed or WorkflowTriggerKind.ObjectStore)
+                .ToArray());
+
+    public Task<string?> GetTriggerCursorAsync(string workflowId, string cursorKind, CancellationToken cancellationToken = default)
+        => Task.FromResult(_triggerCursors.TryGetValue(TriggerKey(workflowId, cursorKind), out var marker) ? marker : null);
+
+    public Task SetTriggerCursorAsync(string workflowId, string cursorKind, string marker, CancellationToken cancellationToken = default)
+    {
+        _triggerCursors.AddOrUpdate(
+            TriggerKey(workflowId, cursorKind),
+            _ => marker,
+            (_, existing) => string.CompareOrdinal(existing, marker) >= 0 ? existing : marker);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> TryClaimTriggerFireAsync(string workflowId, string cursorKind, string marker, TimeSpan retention, CancellationToken cancellationToken = default)
+    {
+        _ = retention;
+        return Task.FromResult(_triggerClaims.TryAdd(TriggerClaimKey(workflowId, cursorKind, marker), 0));
+    }
+
+    public Task ReleaseTriggerClaimAsync(string workflowId, string cursorKind, string marker, CancellationToken cancellationToken = default)
+    {
+        _triggerClaims.TryRemove(TriggerClaimKey(workflowId, cursorKind, marker), out _);
+        return Task.CompletedTask;
+    }
+
+    private static string TriggerKey(string workflowId, string cursorKind)
+        => string.Concat(cursorKind, ":", workflowId);
+
+    private static string TriggerClaimKey(string workflowId, string cursorKind, string marker)
+        => string.Concat(cursorKind, ":", workflowId, ":", marker);
 }
 
 internal sealed class FakeProgressStore : IUniversalProgressStore

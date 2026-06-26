@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Migration.Watermark;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -40,7 +41,40 @@ internal static class OrchestrationServiceCollectionExtensions
         services.TryAddSingleton<IWorkflowCancellationCoordinator>(sp =>
             sp.GetRequiredService<WorkflowOrchestrationEngine>());
 
+        // Durable per-pipeline+source high-water marks for incremental ("changed-since") extract.
+        services.TryAddSingleton<ISourceWatermarkStore>(sp =>
+            new RedisSourceWatermarkStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+
+        // Event/CDC trigger probes. The change-feed probe adapts the scoped IChangeTracker; the
+        // object-store probe is a poll-based file-system baseline whose StoreId->root bindings come
+        // from configuration (Orchestration:ObjectStoreTriggers:Roots:<storeId> = <path>). Bindings
+        // are read manually (no reflection binder) to stay AOT-safe.
+        services.TryAddSingleton<IChangeFeedGenerationProbe, ChangeTrackerGenerationProbe>();
+        services.TryAddSingleton<IObjectStoreTriggerProbe>(sp =>
+            new FileSystemObjectStoreTriggerProbe(
+                ReadObjectStoreRoots(sp.GetService<IConfiguration>())));
+
         return services;
+    }
+
+    private static Dictionary<string, string> ReadObjectStoreRoots(IConfiguration? configuration)
+    {
+        var roots = new Dictionary<string, string>(StringComparer.Ordinal);
+        var section = configuration?.GetSection("Orchestration:ObjectStoreTriggers:Roots");
+        if (section is null || !section.Exists())
+        {
+            return roots;
+        }
+
+        foreach (var child in section.GetChildren())
+        {
+            if (!string.IsNullOrWhiteSpace(child.Key) && !string.IsNullOrWhiteSpace(child.Value))
+            {
+                roots[child.Key] = child.Value!;
+            }
+        }
+
+        return roots;
     }
 
     public static IServiceCollection AddOrchestrationBackgroundServices(
@@ -71,6 +105,11 @@ internal static class OrchestrationServiceCollectionExtensions
         {
             services.AddHostedService(sp => sp.GetRequiredService<WorkflowSchedulerBackgroundService>());
         }
+
+        // Event/CDC trigger reconciler (object-store + change-feed probes). Additive to the
+        // scheduler; hosted in both modes so configured event triggers fire regardless of the
+        // cron-timer hosting decision above.
+        services.AddHostedService<WorkflowEventTriggerBackgroundService>();
 
         return services;
     }

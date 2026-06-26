@@ -151,4 +151,16 @@ internal static partial class OrchestrationLog
         ILogger logger,
         string runId,
         Exception exception);
+
+    [LoggerMessage(8123, LogLevel.Information, "Started orchestration event-trigger background service")]
+    public static partial void EventTriggerBackgroundServiceStarted(ILogger logger);
+
+    [LoggerMessage(8124, LogLevel.Warning, "Orchestration event-trigger tick failed")]
+    public static partial void EventTriggerTickFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(8125, LogLevel.Information, "Change-feed trigger fired workflow {WorkflowId} at generation {Generation}")]
+    public static partial void ChangeFeedTriggerFired(ILogger logger, string workflowId, long generation);
+
+    [LoggerMessage(8126, LogLevel.Information, "Object-store trigger fired workflow {WorkflowId} for object {ObjectKey}")]
+    public static partial void ObjectStoreTriggerFired(ILogger logger, string workflowId, string objectKey);
 }

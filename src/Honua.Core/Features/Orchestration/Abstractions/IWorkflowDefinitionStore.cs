@@ -94,4 +94,57 @@ public interface IWorkflowDefinitionStore
         string workflowId,
         DateTimeOffset fireTime,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns event-triggered workflow definitions whose trigger is enabled and is of a kind
+    /// the scheduler evaluates per tick (change-feed, object-store). Cron definitions are
+    /// returned by <see cref="ListScheduledAsync"/> instead.
+    /// </summary>
+    Task<IReadOnlyList<WorkflowDefinition>> ListEventTriggeredAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the durable string-valued trigger cursor for the workflow under the given
+    /// <paramref name="cursorKind"/> (e.g. the last-fired change-feed generation or the last
+    /// object-store marker). Returns <c>null</c> when the workflow has never fired for that kind.
+    /// </summary>
+    Task<string?> GetTriggerCursorAsync(
+        string workflowId,
+        string cursorKind,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets the durable string-valued trigger cursor for the workflow. Unlike the cron cursor
+    /// (which is a monotonic timestamp), the event-trigger cursor stores an opaque comparable
+    /// marker so generation numbers and object-store markers share one mechanism. Callers must
+    /// only set a marker that sorts strictly after the previous one to preserve at-most-once
+    /// semantics across replicas.
+    /// </summary>
+    Task SetTriggerCursorAsync(
+        string workflowId,
+        string cursorKind,
+        string marker,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims a single event-trigger firing identified by an opaque marker so only
+    /// one replica creates the corresponding run. Reuses the same distributed fire-claim
+    /// semantics as <see cref="TryClaimScheduleFireAsync"/>.
+    /// </summary>
+    /// <returns>True when this caller claimed the firing; false when another replica already has.</returns>
+    Task<bool> TryClaimTriggerFireAsync(
+        string workflowId,
+        string cursorKind,
+        string marker,
+        TimeSpan retention,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Releases a previously-won event-trigger firing claim so another tick can retry it after a
+    /// transient run-creation failure.
+    /// </summary>
+    Task ReleaseTriggerClaimAsync(
+        string workflowId,
+        string cursorKind,
+        string marker,
+        CancellationToken cancellationToken = default);
 }

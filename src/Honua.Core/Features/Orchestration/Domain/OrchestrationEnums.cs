@@ -104,7 +104,20 @@ public enum WorkflowTriggerKind
     /// <summary>
     /// Run was created by the cron scheduler.
     /// </summary>
-    Cron
+    Cron,
+
+    /// <summary>
+    /// Run was created because a watched Honua layer's change-feed generation advanced
+    /// (event/CDC trigger). The changed-feature delta is surfaced to the run as input
+    /// metadata where the pipeline can consume it.
+    /// </summary>
+    ChangeFeed,
+
+    /// <summary>
+    /// Run was created because a new object landed under a watched object-store prefix
+    /// ("drop a file → pipeline runs" ETL).
+    /// </summary>
+    ObjectStore
 }
 
 /// <summary>
