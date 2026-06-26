@@ -19,6 +19,20 @@ namespace Honua.Geoprocessing;
 internal static class GeoprocessingServiceCollectionExtensions
 {
     /// <summary>
+    /// Source process ids served by a per-process <see cref="RemoteSourceExecutor"/>.
+    /// Must match the catalog ProcessDefinitions and the registered
+    /// <c>IDagFeatureSource.SourceId</c> values.
+    /// </summary>
+    private static readonly string[] RemoteSourceProcessIds =
+    [
+        "source.honua-layer",
+        "source.esri-featureserver",
+        "source.ogc-features",
+        "source.wfs",
+        "source.postgis",
+    ];
+
+    /// <summary>
     /// Registers geoprocessing service dependencies including workspace lifecycle,
     /// the execution job store, and built-in process catalog.
     /// </summary>
@@ -169,6 +183,23 @@ internal static class GeoprocessingServiceCollectionExtensions
         // active data-provider assembly, out of reach for this module — the same
         // pattern ExternalPostgisSinkExecutor uses).
         services.TryAddSingleton<ImportDatasetJobExecutor>();
+
+        // First-class remote DAG source connectors (source.honua-layer,
+        // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis).
+        // One RemoteSourceExecutor is registered per source process id; each resolves
+        // its matching IDagFeatureSource (which reuses the existing import readers'
+        // pagination/streaming) at execution time through an IServiceScopeFactory
+        // scope, mirroring the ImportDatasetJobExecutor / ExternalPostgisSinkExecutor
+        // provider-resolution pattern. The dispatcher routes by HandledProcessId.
+        foreach (var sourceProcessId in RemoteSourceProcessIds)
+        {
+            var capturedProcessId = sourceProcessId;
+            services.AddSingleton(sp => RemoteSourceExecutor.ForProcess(
+                capturedProcessId,
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
+                sp.GetRequiredService<ILogger<RemoteSourceExecutor>>()));
+        }
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());

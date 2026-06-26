@@ -68,6 +68,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         QuarantineSinkExecutor quarantineSink,
         ExternalPostgisSinkExecutor externalPostgisSink,
         ImportDatasetJobExecutor importDataset,
+        IEnumerable<RemoteSourceExecutor> remoteSources,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -102,9 +103,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(quarantineSink);
         ArgumentNullException.ThrowIfNull(externalPostgisSink);
         ArgumentNullException.ThrowIfNull(importDataset);
+        ArgumentNullException.ThrowIfNull(remoteSources);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
+        var handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
         {
             [GeometryBufferJobExecutor.HandledProcessId] = buffer,
             [GeometryClipJobExecutor.HandledProcessId] = clip,
@@ -138,7 +140,17 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [QuarantineSinkExecutor.HandledProcessId] = quarantineSink,
             [ExternalPostgisSinkExecutor.HandledProcessId] = externalPostgisSink,
             [ImportDatasetJobExecutor.HandledProcessId] = importDataset,
-        }.ToFrozenDictionary(StringComparer.Ordinal);
+        };
+
+        // First-class remote DAG source connectors (source.honua-layer,
+        // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis).
+        // Each RemoteSourceExecutor is bound to a single source process id; route by it.
+        foreach (var remoteSource in remoteSources)
+        {
+            handlers[remoteSource.HandledProcessId] = remoteSource;
+        }
+
+        _handlers = handlers.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;
     }

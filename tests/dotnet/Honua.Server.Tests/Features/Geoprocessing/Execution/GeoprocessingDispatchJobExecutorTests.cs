@@ -171,6 +171,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new ImportDatasetJobExecutor(
                 Substitute.For<IServiceScopeFactory>(),
                 NullLogger<ImportDatasetJobExecutor>.Instance),
+            Array.Empty<RemoteSourceExecutor>(),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
     }
 

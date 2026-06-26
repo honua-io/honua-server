@@ -84,6 +84,13 @@ public sealed class CatalogExecutableConformanceTests
         // GeoETL sources.
         "source.geojson",
         "source.csv",
+        // First-class remote DAG source connectors: each runs through the dispatcher
+        // via a per-process RemoteSourceExecutor that reuses an existing import reader.
+        "source.honua-layer",
+        "source.esri-featureserver",
+        "source.ogc-features",
+        "source.wfs",
+        "source.postgis",
         // GeoETL sinks.
         "sink.geojson-file",
         "sink.quarantine",
@@ -348,8 +355,31 @@ public sealed class CatalogExecutableConformanceTests
             new ImportDatasetJobExecutor(
                 Substitute.For<IServiceScopeFactory>(),
                 NullLogger<ImportDatasetJobExecutor>.Instance),
+            BuildRemoteSourceExecutors(monitor),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
 
         return dispatcher.SupportedProcessIds;
+    }
+
+    private static RemoteSourceExecutor[] BuildRemoteSourceExecutors(
+        IOptionsMonitor<GeoprocessingExecutorOptions> monitor)
+    {
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        string[] sourceIds =
+        [
+            "source.honua-layer",
+            "source.esri-featureserver",
+            "source.ogc-features",
+            "source.wfs",
+            "source.postgis",
+        ];
+
+        return sourceIds
+            .Select(id => RemoteSourceExecutor.ForProcess(
+                id,
+                scopeFactory,
+                monitor,
+                NullLogger<RemoteSourceExecutor>.Instance))
+            .ToArray();
     }
 }
