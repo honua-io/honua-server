@@ -1,0 +1,15 @@
+{
+  "id": "gdal-convert-geojson-to-csv",
+  "process": "gdal.ogr2ogr",
+  "description": "Convert a 2-point GeoJSON FeatureCollection to CSV via GDAL ogr2ogr. A non-vector/scalar op: the golden is the CSV text compared structurally (numeric tolerance on parseable cells, normalized line diff otherwise), not byte-for-byte. Requires the GDAL ogr2ogr binary on PATH; `honua gp test` reports a clear failure when it is absent.",
+  "mode": "scalarStructural",
+  "tolerance": { "coordinate": 1e-6, "numeric": 1e-6 },
+  "inputFiles": {
+    "source": "input.geojson"
+  },
+  "inputs": {
+    "sourceFormat": "GeoJSON",
+    "targetFormat": "CSV"
+  },
+  "golden": "golden.csv"
+}

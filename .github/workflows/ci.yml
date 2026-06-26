@@ -759,6 +759,21 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+      - name: Run .NET Tests (GP Devkit golden harness)
+        # GP Devkit P6 (#2127): the golden-file GP test SDK self-tests. They are
+        # fast, offline unit tests (managed/stub executors, no Redis/job-store) in
+        # their own standalone assembly, so they run here in the foundation job
+        # rather than the Server.Tests-scoped server-test shard matrix.
+        timeout-minutes: 5
+        run: |
+          dotnet test tests/dotnet/Honua.Geoprocessing.Testing.Tests/Honua.Geoprocessing.Testing.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=gp-golden-harness-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
       - name: Upload foundation test results
         uses: actions/upload-artifact@v7
         if: always()

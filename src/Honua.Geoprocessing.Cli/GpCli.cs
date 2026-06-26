@@ -6,6 +6,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.LocalRunner;
+using Honua.Geoprocessing.Testing;
 using Honua.Worker.Gdal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,6 +49,7 @@ public static class GpCli
             {
                 "list" => RunList(),
                 "run" => await RunRun(rest).ConfigureAwait(false),
+                "test" => await RunTest(rest).ConfigureAwait(false),
                 "-h" or "--help" or "help" => PrintUsageAndOk(),
                 _ => Fail($"Unknown command '{verb}'."),
             };
@@ -222,6 +224,133 @@ public static class GpCli
         return 0;
     }
 
+    private static async Task<int> RunTest(string[] args)
+    {
+        string? root = null;
+        string? onlyId = null;
+        var update = false;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--root" or "-r":
+                    root = NextValue(args, ref i, "--root");
+                    break;
+                case "--update" or "-u":
+                    update = true;
+                    break;
+                default:
+                    if (args[i].StartsWith('-'))
+                    {
+                        throw new GpCliUsageException($"Unknown option '{args[i]}'.");
+                    }
+
+                    if (onlyId is not null)
+                    {
+                        throw new GpCliUsageException("Specify at most one fixture id.");
+                    }
+
+                    onlyId = args[i];
+                    break;
+            }
+        }
+
+        var fixtureRoot = ResolveFixtureRoot(root);
+        if (fixtureRoot is null)
+        {
+            throw new GpCliUsageException(
+                "Could not locate a GP fixtures directory. Pass --root <dir> (e.g. --root samples/gp).");
+        }
+
+        IReadOnlyList<GoldenFixture> fixtures;
+        try
+        {
+            fixtures = GoldenFixtureLoader.Discover(fixtureRoot);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"error   : failed to load fixtures from {fixtureRoot}: {ex.Message}");
+            return 1;
+        }
+
+        if (onlyId is not null)
+        {
+            fixtures = fixtures.Where(f => string.Equals(f.Id, onlyId, StringComparison.Ordinal)).ToArray();
+            if (fixtures.Count == 0)
+            {
+                throw new GpCliUsageException($"No GP fixture with id '{onlyId}' under {fixtureRoot}.");
+            }
+        }
+
+        // Update mode is opt-in here too: --update sets the same env var the SDK reads, so
+        // a normal `gp test` can never silently overwrite a golden.
+        var updateMode = update || GpGoldenAssert.UpdateModeEnabled
+            ? GoldenUpdateMode.Update
+            : GoldenUpdateMode.Assert;
+
+        using var provider = BuildProvider();
+        var executors = provider.GetServices<IProcessExecutor>();
+        var runner = new GpProcessTestRunner(executors);
+
+        Console.WriteLine($"GP golden tests : {fixtures.Count} fixture(s) under {fixtureRoot}");
+        Console.WriteLine($"mode            : {(updateMode == GoldenUpdateMode.Update ? "UPDATE (regenerating goldens)" : "assert")}");
+        Console.WriteLine();
+
+        var passed = 0;
+        var failed = 0;
+        foreach (var fixture in fixtures)
+        {
+            var result = await runner.RunAsync(fixture, updateMode).ConfigureAwait(false);
+            if (result.Passed)
+            {
+                passed++;
+                Console.WriteLine($"PASS  {fixture.Id,-28} {fixture.ProcessId,-18} {result.Reason}");
+            }
+            else
+            {
+                failed++;
+                Console.WriteLine($"FAIL  {fixture.Id,-28} {fixture.ProcessId,-18} {result.Reason}");
+                foreach (var line in (result.Comparison?.Format() ?? result.FormatFailure())
+                             .Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    Console.WriteLine($"      {line.TrimEnd()}");
+                }
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"summary : {passed} passed, {failed} failed, {fixtures.Count} total");
+        return failed == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Resolves the GP fixtures root: the explicit <c>--root</c> when supplied, else the
+    /// first <c>samples/gp</c> found by walking up from the current directory (so the tool
+    /// works from anywhere in a checkout).
+    /// </summary>
+    private static string? ResolveFixtureRoot(string? explicitRoot)
+    {
+        if (explicitRoot is not null)
+        {
+            return Directory.Exists(explicitRoot) ? Path.GetFullPath(explicitRoot) : null;
+        }
+
+        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "samples", "gp");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// Resolves the parameter name that <c>--input &lt;file&gt;</c> binds to: the
     /// first required file-like (<c>Wkb</c>/<c>WkbArray</c>/<c>Text</c>) parameter the
@@ -302,15 +431,21 @@ public static class GpCli
         Console.WriteLine("Usage:");
         Console.WriteLine("  honua gp list");
         Console.WriteLine("  honua gp run <processId> [--input <file>] [--param k=v ...] [--out <file>]");
+        Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --input, -i <file>  Read a file and bind it (base64) to the process's primary input.");
         Console.WriteLine("  --param, -p k=v     Set a step-0 input (repeatable). Overrides --input for the same key.");
         Console.WriteLine("  --out,   -o <file>  Write the first published artifact's bytes to <file>.");
+        Console.WriteLine("  --root,  -r <dir>   Golden fixtures directory (default: nearest samples/gp).");
+        Console.WriteLine("  --update,-u         Regenerate goldens from the produced artifacts (also via HONUA_GP_UPDATE_GOLDENS).");
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine("  honua gp run geometry.buffer --param wkb=<base64> --param srid=4326 --param distance=10");
         Console.WriteLine("  honua gp run gdal.ogr2ogr --input in.geojson --param sourceFormat=GeoJSON --param targetFormat=CSV --out out.csv");
+        Console.WriteLine("  honua gp test                       # run every golden fixture under samples/gp");
+        Console.WriteLine("  honua gp test geometry-buffer-point # run one fixture by id");
+        Console.WriteLine("  honua gp test --update              # regenerate goldens after an intended change");
     }
 }
 

@@ -34,6 +34,12 @@
     -->
     <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
     <ProjectReference Include="..\Honua.Worker.Gdal\Honua.Worker.Gdal.csproj" />
+    <!--
+      GP Devkit P6 (#2127): the golden-file GP test SDK powers `honua gp test`,
+      which discovers + runs the golden fixtures under samples/gp/ through the
+      same headless runner `gp run` uses.
+    -->
+    <ProjectReference Include="..\Honua.Geoprocessing.Testing\Honua.Geoprocessing.Testing.csproj" />
   </ItemGroup>
 
 </Project>

@@ -155,6 +155,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.CloudIntegration.Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Geoprocessing.Cli", "src\Honua.Geoprocessing.Cli\Honua.Geoprocessing.Cli.csproj", "{EA6AA0CA-B050-4A9D-BCB6-3BADC64F02BC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Geoprocessing.Testing", "src\Honua.Geoprocessing.Testing\Honua.Geoprocessing.Testing.csproj", "{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Geoprocessing.Testing.Tests", "tests\dotnet\Honua.Geoprocessing.Testing.Tests\Honua.Geoprocessing.Testing.Tests.csproj", "{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -1005,6 +1009,30 @@ Global
 		{EA6AA0CA-B050-4A9D-BCB6-3BADC64F02BC}.Release|x64.Build.0 = Release|Any CPU
 		{EA6AA0CA-B050-4A9D-BCB6-3BADC64F02BC}.Release|x86.ActiveCfg = Release|Any CPU
 		{EA6AA0CA-B050-4A9D-BCB6-3BADC64F02BC}.Release|x86.Build.0 = Release|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Debug|x64.Build.0 = Debug|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Debug|x86.Build.0 = Debug|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Release|x64.ActiveCfg = Release|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Release|x64.Build.0 = Release|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Release|x86.ActiveCfg = Release|Any CPU
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5}.Release|x86.Build.0 = Release|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Debug|x64.Build.0 = Debug|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Debug|x86.Build.0 = Debug|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Release|x64.ActiveCfg = Release|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Release|x64.Build.0 = Release|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Release|x86.ActiveCfg = Release|Any CPU
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -1075,5 +1103,7 @@ Global
 		{09A157E7-67AD-46E1-9495-BD499000592D} = {35C501C9-8590-3B46-F622-E1ABED50CEA9}
 		{37AA4C31-08CB-4D43-994B-DA77173DE12E} = {35C501C9-8590-3B46-F622-E1ABED50CEA9}
 		{EA6AA0CA-B050-4A9D-BCB6-3BADC64F02BC} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{57066A50-8FA2-4331-8C7A-27E4E98CB0D5} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{2F708C8A-DEB8-4D6E-A894-5D36CF6202BA} = {35C501C9-8590-3B46-F622-E1ABED50CEA9}
 	EndGlobalSection
 EndGlobal
