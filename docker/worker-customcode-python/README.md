@@ -16,6 +16,23 @@ on a GDAL-full base with the geospatial stack + `honua-sdk` baked in.
 - Added: `git`, `python3-pip`, `ca-certificates`, build toolchain.
 - Pre-installed (no per-job restore for the common case): `rasterio`,
   `geopandas`, `shapely`, `pyproj`, `fiona`, `boto3`, and **`honua-sdk==0.1.4`**.
+
+### First-class GDAL interop
+
+A raster/vector GP tool processes data **with GDAL directly, in-process** — the
+SDK is data-transport only, not a raster library. This image gives user code the
+full GDAL Python interop surface:
+
+- `osgeo.gdal` / `osgeo.ogr` / `osgeo.osr` — the GDAL/OGR/OSR Python C-bindings
+  (from the GDAL-full base), for direct dataset/driver/CRS work.
+- `rasterio` (+ `fiona`, `geopandas`, `pyproj`, `shapely`) — the higher-level geo
+  stack, linking against the **same** base `libgdal`.
+
+The in-build sanity check imports the full binding set and asserts
+`gdal.GetDriverCount() > 0` / `ogr.GetDriverCount() > 0`, so the image fails to
+build if the raster/vector interop ever regresses. See the raster sample below
+and [`docs/customcode/raster-gp-pattern.md`](../../docs/customcode/raster-gp-pattern.md)
+for the SDK-as-transport / GDAL-as-engine pattern.
 - The harness package `honua_customcode_harness` is installed; the
   `honua-customcode-harness` console script is the `ENTRYPOINT`.
 - Runs as non-root `uid 1001` (matching `worker-gdal`). Scratch tree `/work`.
@@ -102,8 +119,15 @@ def execute(context: GpContext) -> GpResult:
 `.output.add_artifact(name, path)`, `.progress.report(pct, phase)`,
 `.log.info/warn(...)`, `.cancellation`, `.workdir`.
 
-A trivial sample lives in [`harness/samples/buffer_tool.py`](harness/samples/buffer_tool.py)
-(entrypoint `buffer_tool:execute`): buffers a WKT geometry and writes GeoJSON.
+Two samples live under [`harness/samples/`](harness/samples/):
+
+- [`buffer_tool.py`](harness/samples/buffer_tool.py) (entrypoint
+  `buffer_tool:execute`): buffers a WKT geometry and writes GeoJSON (vector).
+- [`raster_ndvi_tool.py`](harness/samples/raster_ndvi_tool.py) (entrypoint
+  `raster_ndvi_tool:execute`): the **raster** sample — synthesizes a 2-band
+  GeoTIFF with `osgeo.gdal`, reads it with `rasterio`, computes NDVI band math,
+  and writes an LZW-compressed Float32 GeoTIFF. This proves the in-image
+  raster-processing path (GDAL is the engine, the SDK is transport).
 
 ## Tests (offline)
 

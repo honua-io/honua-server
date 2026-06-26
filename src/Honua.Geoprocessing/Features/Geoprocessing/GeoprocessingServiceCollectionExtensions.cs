@@ -9,6 +9,7 @@ using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.LocalRunner;
 using Honua.Infrastructure.Abstractions;
 using Honua.ControlPlane;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -20,6 +21,20 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal static class GeoprocessingServiceCollectionExtensions
 {
+    /// <summary>
+    /// Source process ids served by a per-process <see cref="RemoteSourceExecutor"/>.
+    /// Must match the catalog ProcessDefinitions and the registered
+    /// <c>IDagFeatureSource.SourceId</c> values.
+    /// </summary>
+    private static readonly string[] RemoteSourceProcessIds =
+    [
+        "source.honua-layer",
+        "source.esri-featureserver",
+        "source.ogc-features",
+        "source.wfs",
+        "source.postgis",
+    ];
+
     /// <summary>
     /// Registers geoprocessing service dependencies including workspace lifecycle,
     /// the execution job store, and built-in process catalog.
@@ -50,7 +65,17 @@ internal static class GeoprocessingServiceCollectionExtensions
             && services.Any(d => d.ServiceType == typeof(IArtifactStore)))
         {
             services.AddScoped<IWorkspaceLifecycleService, WorkspaceLifecycleService>();
-            services.AddHostedService<WorkspaceCleanupService>();
+
+            // Workspace cleanup is a PERIODIC tick (bucket-b). Its sweep is idempotent (acts on
+            // TTL/expiry state via a fresh scope), so the scheduled-tick handler is registered in
+            // BOTH modes; the in-process timer is hosted only under TriggerMode=Poll (default,
+            // on-prem), keeping that path byte-for-byte unchanged.
+            services.TryAddSingleton<WorkspaceCleanupService>();
+            services.AddSingleton<IScheduledTickHandler, WorkspaceCleanupScheduledTickHandler>();
+            if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+            {
+                services.AddHostedService(sp => sp.GetRequiredService<WorkspaceCleanupService>());
+            }
         }
 
         // Built-in process catalog (ticket #735)
@@ -111,9 +136,31 @@ internal static class GeoprocessingServiceCollectionExtensions
         //  - analytics.*-managed NTS counterparts to the PostGIS-protocol analytics
         //    paths (spatial-join/cluster/buffer-aggregate/density, #1260);
         //  - transform.* / source.* / sink.* GeoETL executors (feat/geoetl-baseline
-        //    reconciled onto the #1185 add-a-capability contract);
+        //    reconciled onto the #1185 add-a-capability contract), including the
+        //    relational attribute-join / aggregate / pivot / unpivot transforms and
+        //    transform.computed-field op=expression (feat/etl-expression-and-joins);
         //  - import.dataset durable import orchestration (#1630).
         AddProcessExecutors(services);
+
+        // First-class remote DAG source connectors (source.honua-layer,
+        // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis).
+        // One RemoteSourceExecutor is registered per source process id; each resolves
+        // its matching IDagFeatureSource (which reuses the existing import readers'
+        // pagination/streaming) at execution time through an IServiceScopeFactory
+        // scope, mirroring the ImportDatasetJobExecutor / ExternalPostgisSinkExecutor
+        // provider-resolution pattern. The dispatcher routes by HandledProcessId.
+        foreach (var sourceProcessId in RemoteSourceProcessIds)
+        {
+            var capturedProcessId = sourceProcessId;
+            // Surface each per-source executor into the IProcessExecutor enumerable the
+            // dispatcher's route-table scan consumes, so remote sources route through the
+            // same single auto-registration path as every other per-process executor.
+            services.AddSingleton<IProcessExecutor>(sp => RemoteSourceExecutor.ForProcess(
+                capturedProcessId,
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
+                sp.GetRequiredService<ILogger<RemoteSourceExecutor>>()));
+        }
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
@@ -138,6 +185,15 @@ internal static class GeoprocessingServiceCollectionExtensions
             .Bind(configuration.GetSection(CustomCodeOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+
+        // Commit-signature verification seam for the signed-only repo-trust posture
+        // (Phase 3 supply-chain hardening). The default is the fail-closed verifier:
+        // a deployment that selects signed-only without registering a provider-backed
+        // verifier rejects every submission rather than admitting unsigned code. A
+        // real verifier (e.g. a GitHub commit-verification adapter) replaces this by
+        // registering ICustomCodeCommitSignatureVerifier before this call.
+        services.TryAddSingleton<ICustomCodeCommitSignatureVerifier>(
+            UnverifiableCommitSignatureVerifier.Instance);
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, CustomCodeDispatchJobExecutor>());
@@ -185,6 +241,14 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<AttributeCastTransformExecutor>(services);
         Register<ComputedFieldTransformExecutor>(services);
         Register<AttributeFilterTransformExecutor>(services);
+        // Relational transforms (feat/etl-expression-and-joins): attribute-join /
+        // aggregate / pivot / unpivot close the join/group-by/pivot gap in the DAG
+        // transform set; transform.computed-field op=expression is backed by the AOT
+        // expression engine inside ComputedFieldTransformExecutor (already registered).
+        Register<AttributeJoinTransformExecutor>(services);
+        Register<AggregateTransformExecutor>(services);
+        Register<PivotTransformExecutor>(services);
+        Register<UnpivotTransformExecutor>(services);
         Register<SpatialFilterTransformExecutor>(services);
         Register<ClipTransformExecutor>(services);
         Register<DedupTransformExecutor>(services);

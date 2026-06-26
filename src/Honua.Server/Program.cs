@@ -411,59 +411,23 @@ builder.Services.AddHonuaBatchAndDeployBackends();
 
 if (connectedRedis != null)
 {
-    builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
-    builder.Services.AddSingleton<IWorkflowOperationReconciler, DeployWorkflowReconciler>();
-    builder.Services.AddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
-
-    // Additive metadata-release layer-evolution lifecycle: create service, stage-action services,
-    // reconciler, and its background loop. Sibling to the deploy reconciler; processes only
-    // WorkflowOperationKind.MetadataRelease.
-    builder.Services.AddSingleton<Honua.ControlPlane.MetadataReleaseControlService>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleasePreflightGate,
-        Honua.ControlPlane.MetadataReleasePreflightGate>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseScriptExecutor,
-        Honua.ControlPlane.MetadataReleaseScriptExecutor>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseDataJobDispatcher,
-        Honua.ControlPlane.MetadataReleaseDataJobDispatcher>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseActivator,
-        Honua.ControlPlane.MetadataReleaseActivator>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseSmokeChecker,
-        Honua.ControlPlane.MetadataReleaseSmokeChecker>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IMetadataReleaseOperationReconciler,
-        Honua.ControlPlane.MetadataReleaseReconciler>();
-
-    // Coordinated platform-upgrade release lifecycle (Demo C): conducts a container rollout, an
-    // additive DB script migration, and a metadata-v2 activation as one ordered, gated,
-    // rollback-able operation. Composes the deploy and metadata-release services via thin step
-    // executors rather than a parallel lifecycle.
-    builder.Services.AddSingleton<Honua.ControlPlane.CoordinatedReleaseControlService>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedContainerStepExecutor,
-        Honua.ControlPlane.CoordinatedContainerStepExecutor>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedMetadataStepExecutor,
-        Honua.ControlPlane.CoordinatedMetadataStepExecutor>();
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.ICoordinatedReleaseReconciler,
-        Honua.ControlPlane.CoordinatedReleaseReconciler>();
-
-    // Control-plane hybrid-trigger seam (design option C).
+    // Control-plane reconcile graph (stores, four typed reconcilers, dispatcher seam, event handler,
+    // trigger options). Shared with the cloud event entrypoint (Honua.ControlPlane.Lambda) via
+    // ControlPlaneReconcileRegistration so both wire the exact same graph from one source of truth.
     // Phase 0: one dispatcher routes a reconcile-once request to the typed reconciler that owns the
     // operation kind. Both the poll loops and the Phase 1 event handler call this single method.
     // Phase 1: the event handler is the cloud (EventBridge -> Lambda) entrypoint, and the backstop
     // sweep self-heals dropped events; the TriggerMode flag chooses poll (on-prem) vs event (cloud).
-    builder.Services.Configure<Honua.ControlPlane.ControlPlaneTriggerOptions>(
-        builder.Configuration.GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName));
+    builder.Services.AddHonuaControlPlaneReconcilers(builder.Configuration);
+
+    // Phase 3: the PERIODIC (bucket-b) scheduled-tick dispatcher routes a tick kind to the handler
+    // that owns the matching background service's idempotent tick body. Handlers are contributed by
+    // the owning assemblies (registered alongside each service above). Under TriggerMode=Poll the
+    // in-process timers drive the ticks; under Event the timers are not hosted and EventBridge
+    // Scheduler -> the scheduled-tick endpoint drives them through this dispatcher.
     builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IOperationReconcileDispatcher,
-        Honua.ControlPlane.OperationReconcileDispatcher>();
-    builder.Services.AddSingleton<Honua.ControlPlane.ControlPlaneEventHandler>();
+        Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickDispatcher,
+        Honua.ControlPlane.ScheduledTickDispatcher>();
 
     var controlPlaneTriggerMode = builder.Configuration
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
@@ -661,7 +625,21 @@ builder.Services.Configure<Honua.Infrastructure.Services.TemporaryFileOptions>(
 builder.Services.AddSingleton<Honua.Infrastructure.Services.FileSystemTemporaryFileService>();
 builder.Services.AddSingleton<Honua.Infrastructure.Services.ITemporaryFileService,
     Honua.Infrastructure.Services.CloudBackedTemporaryFileService>();
-builder.Services.AddHostedService<Honua.Infrastructure.Services.TemporaryFileCleanupService>();
+
+// Temporary-file cleanup is a PERIODIC tick (bucket-b). Its cleanup deletes expired temp files via a
+// fresh scope and is idempotent, so the scheduled-tick handler is registered in BOTH trigger modes;
+// the in-process 30-minute timer is hosted only under TriggerMode=Poll (default, on-prem), keeping
+// that path byte-for-byte unchanged.
+builder.Services.TryAddSingleton<Honua.Infrastructure.Services.TemporaryFileCleanupService>();
+builder.Services.AddSingleton<
+    Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler,
+    Honua.Infrastructure.Services.TemporaryFileCleanupScheduledTickHandler>();
+if (Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolver
+    .ShouldHostInProcessTimers(builder.Configuration))
+{
+    builder.Services.AddHostedService(sp =>
+        sp.GetRequiredService<Honua.Infrastructure.Services.TemporaryFileCleanupService>());
+}
 
 // Register shared validation services
 builder.Services.AddValidationServices();
@@ -674,7 +652,7 @@ builder.Services.AddOperationsToolset();
 builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
-    builder.Services.AddOrchestrationBackgroundServices();
+    builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
 }
 
 builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
@@ -1343,8 +1321,16 @@ app.MapMetadataReleaseEndpoints();
 app.MapMetadataReleaseOperationEndpoints();
 app.MapMetadataReleaseControlEndpoints();
 app.MapCoordinatedReleaseControlEndpoints();
+
+// Phase 3: internal, token-guarded scheduled-tick endpoint for EventBridge Scheduler. Mapped only
+// when ControlPlane:TriggerMode=Event; a no-op (route absent) under Poll (default, on-prem).
+app.MapScheduledTickEndpoints(builder.Configuration);
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
+
+// Cloud event-driven control-plane surface (TriggerMode=Event only): the EventBridge-invoked
+// reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).
+app.MapControlPlaneEventEndpoints();
 
 // Console approval surface for agent-proposed operations (#1694).
 app.MapProposalEndpoints();

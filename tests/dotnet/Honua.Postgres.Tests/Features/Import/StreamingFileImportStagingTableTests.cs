@@ -42,6 +42,45 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         END;
         $$;
 
+        -- The default import path is Replace, which streams into a fresh
+        -- <table>__staging sibling (honua.create_import_staging_table) and then
+        -- atomically renames it over the live table (honua.swap_import_table).
+        -- Mirrors src/Honua.Server/Migrations/070_AddImportLoadModes.sql so the
+        -- skip-migration compat fixture has the staging-swap functions the
+        -- StreamingFileImportService replace path now requires.
+        CREATE OR REPLACE FUNCTION honua.create_import_staging_table(schema_name text, table_name text, target_srid integer DEFAULT 4326)
+        RETURNS text
+        LANGUAGE plpgsql
+        AS $$
+        DECLARE
+            staging_name text;
+        BEGIN
+            staging_name := table_name || '__staging';
+            EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
+            EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
+            EXECUTE format(
+                'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+                schema_name, staging_name, target_srid);
+            EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || staging_name || '_geometry', schema_name, staging_name);
+            RETURN staging_name;
+        END;
+        $$;
+
+        CREATE OR REPLACE FUNCTION honua.swap_import_table(schema_name text, table_name text)
+        RETURNS void
+        LANGUAGE plpgsql
+        AS $$
+        DECLARE
+            staging_name text;
+        BEGIN
+            staging_name := table_name || '__staging';
+            EXECUTE format('DROP TABLE IF EXISTS %I.%I CASCADE', schema_name, table_name);
+            EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', schema_name, staging_name, table_name);
+            EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
+                schema_name, 'idx_' || staging_name || '_geometry', 'idx_' || table_name || '_geometry');
+        END;
+        $$;
+
         CREATE OR REPLACE FUNCTION honua.insert_import_feature(
             schema_name text,
             table_name text,
@@ -178,7 +217,12 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
     {
         await using var conn = await fixture.DataSource.OpenConnectionAsync();
         await using var cmd = conn.CreateCommand();
+        // Drop the staging-swap functions too: the default import path is Replace,
+        // which calls honua.create_import_staging_table FIRST, so the missing-function
+        // assertion only fires if the staging creator is also absent.
         cmd.CommandText = """
+            DROP FUNCTION IF EXISTS honua.create_import_staging_table(text, text, integer);
+            DROP FUNCTION IF EXISTS honua.swap_import_table(text, text);
             DROP FUNCTION IF EXISTS honua.create_import_table(text, text, integer);
             DROP FUNCTION IF EXISTS honua.insert_import_feature(text, text, bytea, integer, integer, jsonb);
             """;

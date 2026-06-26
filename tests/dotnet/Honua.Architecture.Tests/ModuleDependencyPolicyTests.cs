@@ -569,13 +569,18 @@ public sealed class ModuleDependencyPolicyTests
     /// </summary>
     private static ModuleRole ClassifyByCsprojName(string projectName)
     {
-        // Tooling first: test projects and the test-kit are not part of the
-        // runtime topology. This guard must precede the family-prefix checks
-        // below, otherwise e.g. "Honua.Protocols.GeoServices.Tests" would match
-        // the "Honua.Protocols." prefix and be misclassified as a runtime
-        // Protocols consumer (and its test-only Postgres reference would trip
-        // the matrix). Unclassified consumers may reference anything.
+        // Tooling first: test projects, the test-kit, and packaged dev-tool CLIs are
+        // not part of the runtime topology. This guard must precede the family-prefix
+        // checks below, otherwise e.g. "Honua.Protocols.GeoServices.Tests" would match
+        // the "Honua.Protocols." prefix and be misclassified as a runtime Protocols
+        // consumer (and its test-only Postgres reference would trip the matrix), and
+        // the GP Devkit dev tool "Honua.Geoprocessing.Cli" would match the
+        // "Honua.Geoprocessing." prefix and be wrongly held to the runtime matrix even
+        // though it is a `dotnet tool`-packaged, AOT-excluded developer convenience
+        // (issues #2123 / #2180) that the lean server never references. Unclassified
+        // consumers may reference anything.
         if (projectName.EndsWith(".Tests", StringComparison.Ordinal) ||
+            projectName.EndsWith(".Cli", StringComparison.Ordinal) ||
             projectName.Equals("Honua.TestKit", StringComparison.Ordinal))
         {
             return ModuleRole.Unclassified;

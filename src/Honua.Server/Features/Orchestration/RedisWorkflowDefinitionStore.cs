@@ -18,6 +18,8 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
     private const string ScheduleClaimKeyPrefix = "orchestration:schedule:claim:";
     private const string ScheduleCursorKeyPrefix = "orchestration:schedule:cursor:";
     private const string SchedulePendingCursorKeyPrefix = "orchestration:schedule:pending-cursor:";
+    private const string TriggerCursorKeyPrefix = "orchestration:trigger:cursor:";
+    private const string TriggerClaimKeyPrefix = "orchestration:trigger:claim:";
 
     private readonly IDatabase _database = redis.GetDatabase();
 
@@ -122,7 +124,120 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
         // scan-based cleanup is required.
         await _database.KeyDeleteAsync(GetScheduleCursorKey(workflowId)).ConfigureAwait(false);
         await _database.KeyDeleteAsync(GetSchedulePendingCursorKey(workflowId)).ConfigureAwait(false);
+
+        // Clear event-trigger cursors (change-feed generation, object-store marker) so a
+        // recreate of the same id does not inherit a stale firing position. Per-firing claim
+        // keys carry a short TTL and key off the marker, so they cannot suppress fresh firings.
+        await _database.KeyDeleteAsync(GetTriggerCursorKey(workflowId, ChangeFeedCursorKind)).ConfigureAwait(false);
+        await _database.KeyDeleteAsync(GetTriggerCursorKey(workflowId, ObjectStoreCursorKind)).ConfigureAwait(false);
         return removed;
+    }
+
+    /// <summary>Cursor kind discriminator for the change-feed trigger.</summary>
+    internal const string ChangeFeedCursorKind = "change-feed";
+
+    /// <summary>Cursor kind discriminator for the object-store trigger.</summary>
+    internal const string ObjectStoreCursorKind = "object-store";
+
+    public async Task<IReadOnlyList<WorkflowDefinition>> ListEventTriggeredAsync(CancellationToken cancellationToken = default)
+    {
+        var all = await ListAsync(cancellationToken).ConfigureAwait(false);
+        return all
+            .Where(def => def.Trigger is { Enabled: true } trigger
+                          && trigger.Kind is WorkflowTriggerKind.ChangeFeed or WorkflowTriggerKind.ObjectStore)
+            .ToArray();
+    }
+
+    public async Task<string?> GetTriggerCursorAsync(
+        string workflowId,
+        string cursorKind,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(cursorKind);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var payload = await _database.StringGetAsync(GetTriggerCursorKey(workflowId, cursorKind)).ConfigureAwait(false);
+        return payload.HasValue ? payload.ToString() : null;
+    }
+
+    public async Task SetTriggerCursorAsync(
+        string workflowId,
+        string cursorKind,
+        string marker,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(cursorKind);
+        ArgumentException.ThrowIfNullOrWhiteSpace(marker);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var key = GetTriggerCursorKey(workflowId, cursorKind);
+
+        // Move forward only: a late/competing replica must never rewind the cursor past a
+        // firing already enumerated locally. Ordinal compare matches the marker contract
+        // (round-trip timestamps and zero-padded generations both sort lexicographically).
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var current = await _database.StringGetAsync(key).ConfigureAwait(false);
+            if (!current.HasValue)
+            {
+                if (await _database.StringSetAsync(key, marker, when: When.NotExists).ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                continue;
+            }
+
+            if (string.CompareOrdinal(current.ToString(), marker) >= 0)
+            {
+                return;
+            }
+
+            var transaction = _database.CreateTransaction();
+            transaction.AddCondition(Condition.StringEqual(key, current));
+            _ = transaction.StringSetAsync(key, marker);
+            if (await transaction.ExecuteAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+        }
+    }
+
+    public async Task<bool> TryClaimTriggerFireAsync(
+        string workflowId,
+        string cursorKind,
+        string marker,
+        TimeSpan retention,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(cursorKind);
+        ArgumentException.ThrowIfNullOrWhiteSpace(marker);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var ttl = retention > TimeSpan.Zero ? retention : TimeSpan.FromHours(24);
+        return await _database.StringSetAsync(
+            GetTriggerClaimKey(workflowId, cursorKind, marker),
+            Environment.MachineName,
+            ttl,
+            when: When.NotExists).ConfigureAwait(false);
+    }
+
+    public async Task ReleaseTriggerClaimAsync(
+        string workflowId,
+        string cursorKind,
+        string marker,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(cursorKind);
+        ArgumentException.ThrowIfNullOrWhiteSpace(marker);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await _database.KeyDeleteAsync(GetTriggerClaimKey(workflowId, cursorKind, marker)).ConfigureAwait(false);
     }
 
     public async Task<bool> TryClaimScheduleFireAsync(
@@ -298,4 +413,18 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
 
     private static string GetSchedulePendingCursorKey(string workflowId)
         => SchedulePendingCursorKeyPrefix + workflowId;
+
+    private static string GetTriggerCursorKey(string workflowId, string cursorKind)
+        => string.Concat(TriggerCursorKeyPrefix, cursorKind, ":", workflowId);
+
+    private static string GetTriggerClaimKey(string workflowId, string cursorKind, string marker)
+    {
+        // Hash the marker so arbitrarily long object-store keys never produce an oversized
+        // Redis key. The marker is also stored as the cursor for ordering; the claim key only
+        // needs to be unique per (workflow, kind, marker).
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(marker));
+        var encoded = Convert.ToHexStringLower(hash);
+        return string.Concat(TriggerClaimKeyPrefix, cursorKind, ":", workflowId, ":", encoded);
+    }
 }

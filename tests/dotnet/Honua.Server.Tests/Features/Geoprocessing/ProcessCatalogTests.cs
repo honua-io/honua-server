@@ -36,7 +36,7 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_ListProcesses_ReturnsExactly57BuiltIns()
+    public void Catalog_ListProcesses_ReturnsExactlyAllBuiltIns()
     {
         var all = _catalog.ListProcesses();
 
@@ -49,8 +49,15 @@ public sealed class ProcessCatalogTests
         // gdal.ogr2ogr) reconciled from feat/gdal-heavy-worker + 1 durable
         // import pipeline (import.dataset) added by #1630 + 1 native-profile
         // point-cloud translate (pcloud.translate, LAZ/COPC decompress +
-        // projected-CRS reproject) added by #1854.
-        all.Should().HaveCount(59);
+        // projected-CRS reproject) added by #1854 + 4 relational transforms
+        // (transform.attribute-join, transform.aggregate, transform.pivot,
+        // transform.unpivot) added alongside the safe expression engine + the
+        // first-class remote DAG source connectors (source.honua-layer,
+        // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis)
+        // + 1 native-profile GDAL/OGR import reader (source.ogr, broad-format
+        // FeatureCollection canonicalization) added for the honua-worker-etl format
+        // breadth (ADR-0038 roadmap F).
+        all.Should().HaveCount(69);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 

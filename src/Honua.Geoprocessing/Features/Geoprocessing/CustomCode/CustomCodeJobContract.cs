@@ -25,12 +25,28 @@ public static class CustomCodeJobContract
     /// </summary>
     public const string RuntimeProfile = "custom-code";
 
-    /// <summary>The only runtime supported by the MVP.</summary>
+    /// <summary>The Python custom-code runtime (Phase 1).</summary>
     public const string PythonRuntime = "python";
+
+    /// <summary>The .NET custom-code runtime (Phase 2).</summary>
+    public const string DotnetRuntime = "dotnet";
+
+    /// <summary>
+    /// The runtimes the custom-code submit gate accepts. The runtime selects only
+    /// the per-job container image (resolved by the iac job-definition family — the
+    /// runtime value flows through the spec parameters to the Batch container); every
+    /// security control (SHA-only pin, repo allowlist, scope ⊆ owner, scoped-token
+    /// mint/inject/revoke) and the routing fence are runtime-agnostic.
+    /// </summary>
+    public static readonly IReadOnlySet<string> SupportedRuntimes =
+        new HashSet<string>(StringComparer.Ordinal) { PythonRuntime, DotnetRuntime };
 
     // --- caller-supplied customcode.* parameters --------------------------------
 
-    /// <summary>Runtime selector; MVP accepts only <see cref="PythonRuntime"/>.</summary>
+    /// <summary>
+    /// Runtime selector; accepts <see cref="PythonRuntime"/> or
+    /// <see cref="DotnetRuntime"/> (see <see cref="SupportedRuntimes"/>).
+    /// </summary>
     public const string RuntimeParam = "customcode.runtime";
 
     /// <summary>HTTPS git repository URL holding the user code (allowlist-checked).</summary>
@@ -83,4 +99,62 @@ public static class CustomCodeJobContract
 
     /// <summary>The container environment variable name for the scoped job token.</summary>
     public const string JobTokenEnvName = "HONUA_JOB_TOKEN";
+
+    // --- customcode.* -> env.CUSTOMCODE_* job-input pass-through ----------------
+    //
+    // The harness (docker/worker-customcode-python/harness, built on the
+    // feat/customcode-python-image branch) reads each job input from a discrete
+    // CUSTOMCODE_<UPPER> environment variable (the spec key uppercased). The
+    // server therefore re-emits every caller/server-set customcode.* parameter as
+    // an env.CUSTOMCODE_<UPPER> key so AwsBatchComputeBackend.BuildEnvironmentOverrides
+    // surfaces it to the Batch container under the exact name the harness reads.
+    // The auth spine (HONUA_BASE_URL/HONUA_JOB_TOKEN) is injected separately and is
+    // intentionally NOT part of this body map — it follows the standard secret path.
+    //
+    // CONTRACT GUARD: CustomCodeJobContractDriftTests pins ParameterToEnv against the
+    // harness's checked-in jobspec field map so this seam cannot silently drift.
+
+    /// <summary>Container env var carrying <see cref="RuntimeParam"/> (<c>customcode.runtime</c>).</summary>
+    public const string RuntimeEnvName = "CUSTOMCODE_RUNTIME";
+
+    /// <summary>Container env var carrying <see cref="RepoUrlParam"/> (<c>customcode.repo_url</c>).</summary>
+    public const string RepoUrlEnvName = "CUSTOMCODE_REPO_URL";
+
+    /// <summary>Container env var carrying <see cref="GitRefParam"/> (<c>customcode.git_ref</c>).</summary>
+    public const string GitRefEnvName = "CUSTOMCODE_GIT_REF";
+
+    /// <summary>Container env var carrying <see cref="EntrypointParam"/> (<c>customcode.entrypoint</c>).</summary>
+    public const string EntrypointEnvName = "CUSTOMCODE_ENTRYPOINT";
+
+    /// <summary>Container env var carrying <see cref="DepsManifestParam"/> (<c>customcode.deps_manifest</c>).</summary>
+    public const string DepsManifestEnvName = "CUSTOMCODE_DEPS_MANIFEST";
+
+    /// <summary>Container env var carrying <see cref="ParamsJsonParam"/> (<c>customcode.params_json</c>).</summary>
+    public const string ParamsJsonEnvName = "CUSTOMCODE_PARAMS_JSON";
+
+    /// <summary>Container env var carrying <see cref="OutputPrefixParam"/> (<c>customcode.output_prefix</c>).</summary>
+    public const string OutputPrefixEnvName = "CUSTOMCODE_OUTPUT_PREFIX";
+
+    /// <summary>Container env var carrying <see cref="DeclaredScopeParam"/> (<c>customcode.declared_scope</c>).</summary>
+    public const string DeclaredScopeEnvName = "CUSTOMCODE_DECLARED_SCOPE";
+
+    /// <summary>
+    /// The pinned, ordered <c>customcode.*</c> spec-parameter to container
+    /// environment-variable name map. Every entry here is re-emitted as an
+    /// <c>env.&lt;value&gt;</c> spec parameter at submit so the Batch pass-through
+    /// surfaces it to the harness. Keep this in lockstep with the harness's
+    /// jobspec field mapping; the drift test enforces it.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ParameterToEnv { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [RuntimeParam] = RuntimeEnvName,
+            [RepoUrlParam] = RepoUrlEnvName,
+            [GitRefParam] = GitRefEnvName,
+            [EntrypointParam] = EntrypointEnvName,
+            [DepsManifestParam] = DepsManifestEnvName,
+            [ParamsJsonParam] = ParamsJsonEnvName,
+            [OutputPrefixParam] = OutputPrefixEnvName,
+            [DeclaredScopeParam] = DeclaredScopeEnvName,
+        };
 }

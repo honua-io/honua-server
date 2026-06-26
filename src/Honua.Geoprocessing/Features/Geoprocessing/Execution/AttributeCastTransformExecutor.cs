@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
@@ -12,7 +13,8 @@ namespace Honua.Geoprocessing.Execution;
 /// type (<c>int</c>, <c>long</c>, <c>double</c>, <c>bool</c>, or <c>string</c>).
 /// A value that cannot be coerced is a row-level data error: per the <c>onError</c>
 /// policy it is dropped (default), set to null, or kept. Ported from the GeoETL
-/// baseline AttributeCastTransform onto the #1185 process/executor contract.
+/// baseline AttributeCastTransform onto the #1185 process/executor contract. Streams:
+/// a per-feature map with no cross-feature state.
 /// </summary>
 internal sealed class AttributeCastTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -22,24 +24,23 @@ internal sealed class AttributeCastTransformExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
-        FeatureCollection source,
+    protected override async IAsyncEnumerable<IFeature> ApplyStream(
+        IAsyncEnumerable<IFeature> source,
         StepInputReader inputs,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var field = inputs.Require("field");
         var to = inputs.Require("to").ToLowerInvariant();
         var onError = inputs.GetOrDefault("onError", "drop").ToLowerInvariant();
 
-        var output = new List<IFeature>(source.Count);
-        foreach (var feature in source)
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var attributes = feature.Attributes;
             if (attributes is null || !attributes.Exists(field))
             {
-                output.Add(feature);
+                yield return feature;
                 continue;
             }
 
@@ -47,7 +48,7 @@ internal sealed class AttributeCastTransformExecutor(
             if (TryCoerce(raw, to, out var coerced))
             {
                 attributes[field] = coerced!;
-                output.Add(feature);
+                yield return feature;
                 continue;
             }
 
@@ -55,18 +56,16 @@ internal sealed class AttributeCastTransformExecutor(
             {
                 case "null":
                     attributes[field] = null!;
-                    output.Add(feature);
+                    yield return feature;
                     break;
                 case "keep":
-                    output.Add(feature);
+                    yield return feature;
                     break;
                 default:
                     // drop: row-level error, omit the feature from the output.
                     break;
             }
         }
-
-        return output;
     }
 
     private static bool TryCoerce(object? value, string to, out object? result)

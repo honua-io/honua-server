@@ -60,6 +60,14 @@ public sealed record JobResourceScopeEntry(
 /// <param name="PrincipalId">Stable identifier of the submitting principal.</param>
 /// <param name="TenantId">Tenant the submitter belonged to, or <see langword="null"/> for the tenant-less default.</param>
 /// <param name="Roles">Snapshot of the submitter's roles at submit time.</param>
+/// <param name="Grants">
+/// Snapshot of the submitter's per-resource <c>read:</c>/<c>write:{service}[/{layer}]</c>
+/// permission grants at submit time. These carry the write authority a submitter
+/// holds purely via a permission grant rather than a role; capturing them lets the
+/// mint intersect the requested scope against BOTH the owner's roles and grants, so a
+/// grant-based submitter's custom-code job is no longer under-scoped. Empty/absent
+/// when the submitter carries no fine-grained grants.
+/// </param>
 /// <param name="DeclaredScope">
 /// The resource scope the job declared it needs, already clamped to ⊆ what the
 /// submitter could reach at submit time. Empty when the job declared no scope
@@ -69,4 +77,5 @@ public sealed record CustomCodeOwnerScope(
     string PrincipalId,
     string? TenantId,
     IReadOnlyList<string> Roles,
+    IReadOnlyList<string> Grants,
     IReadOnlyList<JobResourceScopeEntry> DeclaredScope);

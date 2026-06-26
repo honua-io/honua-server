@@ -44,8 +44,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private readonly IDatumTransformationCatalog? _datumTransformationCatalog;
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@schema_name, @table_name, @target_srid)";
+    private const string EnsureImportTableSql = "SELECT honua.ensure_import_table(@schema_name, @table_name, @target_srid)";
+    private const string CreateImportStagingTableSql = "SELECT honua.create_import_staging_table(@schema_name, @table_name, @target_srid)";
+    private const string SwapImportTableSql = "SELECT honua.swap_import_table(@schema_name, @table_name)";
+    private const string EnsureImportUpsertKeySql = "SELECT honua.ensure_import_upsert_key(@schema_name, @table_name, @key_columns)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties)";
     private const string InsertImportFeatureWithDatumSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties, @datum_pipeline)";
+    private const string UpsertImportFeatureSql = "SELECT honua.upsert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties, @key_columns)";
+    private const string BulkUpsertImportFeaturesSql = "SELECT processed_count FROM honua.bulk_upsert_import_features(@schema_name, @table_name, @wkbs, @source_srids, @target_srid, @properties, @key_columns, @datum_source_srid, @datum_pipeline)";
     private const int CrsDetectionHeaderSize = 8192;
     private const long DefaultMaxArchiveEntryBytes = 500L * 1024 * 1024;
     private const long DefaultMaxArchiveExtractedBytes = 1024L * 1024 * 1024;

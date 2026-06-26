@@ -6,6 +6,24 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Features.Admin.TileOperations;
 
 /// <summary>
+/// Adapts the live LRU tile-cache eviction sweep to the control-plane scheduled-tick dispatcher so
+/// EventBridge Scheduler can drive one sweep under <c>TriggerMode=Event</c> without hosting the
+/// in-process timer. Routes to <see cref="TileCacheEvictionService.SweepAsync" /> (the same body the
+/// timer calls), no-op when eviction is disabled. Re-running just re-evaluates current state.
+/// </summary>
+internal sealed class TileCacheEvictionScheduledTickHandler(TileCacheEvictionService evictionService)
+    : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
+{
+    public Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind Kind
+        => Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind.TileCacheEviction;
+
+    public Task RunTickAsync(CancellationToken cancellationToken = default)
+        => evictionService.IsEnabled
+            ? evictionService.SweepAsync(cancellationToken)
+            : Task.CompletedTask;
+}
+
+/// <summary>
 /// Background service that periodically runs the live size-quota / LRU tile-cache evictor (#1917).
 /// On each tick it asks <see cref="TileCacheEvictionService" /> to snapshot the Redis tile-key index
 /// and evict the least-recently-used tiles that exceed the configured quotas. This is the live

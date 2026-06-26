@@ -63,4 +63,14 @@ internal sealed class ControlPlaneTriggerOptions
     /// releases this is also the per-stage advance interval when only the backstop is driving them.
     /// </summary>
     public TimeSpan StaleThreshold { get; set; } = TimeSpan.FromSeconds(90);
+
+    /// <summary>
+    /// Shared-secret token guarding the internal scheduled-tick endpoint
+    /// (<c>POST /internal/control-plane/scheduled-tick</c>). Under <c>TriggerMode=Event</c> EventBridge
+    /// Scheduler (via the control-plane Lambda) presents this token to drive a PERIODIC tick on
+    /// demand. Bound from <c>ControlPlane:ScheduledTickToken</c> (or the environment); when empty the
+    /// endpoint refuses every request with 503, so an unconfigured deployment can never be driven by
+    /// an unauthenticated caller. Only consulted in Event mode — the endpoint is not mapped under Poll.
+    /// </summary>
+    public string? ScheduledTickToken { get; set; }
 }

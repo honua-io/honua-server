@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Sample .NET custom-code RASTER GP tool. The raster counterpart of the vector
+    BufferTool: it processes a GeoTIFF IN-PROCESS with the GDAL C# bindings
+    (OSGeo.GDAL / OSGeo.OGR / OSGeo.OSR) — proving first-class GDAL interop in the
+    .NET runtime, on par with the Python rasterio sample. The Honua SDK is
+    data-transport only (a real tool fetches the input coverage to a local file
+    and uploads the output GeoTIFF); GDAL is the raster engine.
+
+    Entrypoint for this tool: "RasterTool::Honua.CustomCode.Samples.RasterTool".
+
+    MaxRev.Gdal.* bundles its own self-contained native GDAL (no ABI dependence on
+    the base image's libgdal); the pinned version matches the base GDAL (3.12.4).
+    Both packages are pre-warmed in the image NuGet cache so this builds with no
+    network restore.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <AssemblyName>RasterTool</AssemblyName>
+    <RootNamespace>Honua.CustomCode.Samples</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+    <!-- Pull the native runtime asset for the build/run RID. -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and '$(OS)' != 'Windows_NT'">linux-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The tool references only the SDK contract. -->
+    <ProjectReference Include="..\..\src\Honua.CustomCode.Sdk\Honua.CustomCode.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GDAL C# bindings + the self-contained linux-x64 native runtime, pre-warmed. -->
+    <PackageReference Include="MaxRev.Gdal.Core" />
+    <PackageReference Include="MaxRev.Gdal.LinuxRuntime.Minimal" />
+  </ItemGroup>
+
+</Project>

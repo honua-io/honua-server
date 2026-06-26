@@ -108,6 +108,32 @@ public static class GdalWorkerServiceCollectionExtensions
     public static IServiceCollection AddGdalProcessExecutors(
         this IServiceCollection services,
         IConfiguration configuration)
+        => services.AddGdalProcessExecutors(configuration, GdalProcessExecutorMode.InProcess);
+
+    /// <summary>
+    /// Registers the native GDAL <see cref="IProcessExecutor"/> set with an explicit
+    /// command-runner mode (issue #2180).
+    /// <list type="bullet">
+    /// <item><see cref="GdalProcessExecutorMode.InProcess"/> — the default fast path:
+    /// each GDAL tool is shelled out via <see cref="ProcessGdalCommandRunner"/> against
+    /// the host's GDAL CLIs, keeping the GP Devkit sub-second loop on managed ops.</item>
+    /// <item><see cref="GdalProcessExecutorMode.Container"/> — the opt-in
+    /// <c>--real-worker</c> fidelity path: each GDAL tool runs inside the real
+    /// <c>honua-worker-etl</c> image via <see cref="DockerGdalCommandRunner"/>, so the
+    /// image / CRS data / driver-set / arg-handling boundary a production native submit
+    /// crosses is actually exercised locally.</item>
+    /// </list>
+    /// Both modes register the IDENTICAL executor set and read the IDENTICAL durable
+    /// spec — only the <see cref="IGdalCommandRunner"/> implementation differs, so the
+    /// managed fast path is unaffected and the spec a job carries is the same.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="configuration">Host configuration; binds the <c>GdalWorker</c> section.</param>
+    /// <param name="mode">Which command-runner implementation to register.</param>
+    public static IServiceCollection AddGdalProcessExecutors(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        GdalProcessExecutorMode mode)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -118,8 +144,25 @@ public static class GdalWorkerServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.TryAddSingleton<IGdalCommandRunner, ProcessGdalCommandRunner>();
+        if (mode == GdalProcessExecutorMode.Container)
+        {
+            // Container-exec fidelity path: bind the GdalContainer options and run each
+            // GDAL tool inside the real worker image. The in-process runner is NOT
+            // registered, so the same executor code path shells out via docker instead.
+            services
+                .AddOptions<GdalContainerExecutionOptions>()
+                .Bind(configuration.GetSection("GdalContainer"));
+            services.TryAddSingleton<IDockerCommandInvoker, ProcessDockerCommandInvoker>();
+            services.TryAddSingleton<IGdalCommandRunner, DockerGdalCommandRunner>();
+        }
+        else
+        {
+            services.TryAddSingleton<IGdalCommandRunner, ProcessGdalCommandRunner>();
+        }
+
         RegisterGdalExecutor<GdalVectorConvertJobExecutor>(services);
+        RegisterGdalExecutor<GdalVectorReprojectJobExecutor>(services);
+        RegisterGdalExecutor<GdalVectorSourceReadJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterReprojectJobExecutor>(services);
         RegisterGdalExecutor<GdalSurfaceJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterClipJobExecutor>(services);
@@ -143,7 +186,7 @@ public static class GdalWorkerServiceCollectionExtensions
     /// flag/env. The production worker host (<see cref="AddGdalWorker"/>) never calls it, so
     /// the sanitized <see cref="GdalErrorSanitizer"/> / <see cref="GdalCommandLog"/> path
     /// stays the default and no raw paths or untruncated output ever reach a client. Call it
-    /// after <see cref="AddGdalProcessExecutors"/> so the bare runner is already registered.
+    /// after <see cref="AddGdalProcessExecutors(IServiceCollection, IConfiguration)"/> so the bare runner is already registered.
     /// </remarks>
     /// <param name="services">Service collection that has the GDAL executors registered.</param>
     /// <param name="capture">The sink the decorator records unsanitized invocations into.</param>

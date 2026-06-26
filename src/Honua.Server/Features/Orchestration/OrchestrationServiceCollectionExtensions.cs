@@ -1,7 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Migration.Watermark;
 using Honua.Core.Features.Orchestration.Abstractions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
@@ -38,12 +41,48 @@ internal static class OrchestrationServiceCollectionExtensions
         services.TryAddSingleton<IWorkflowCancellationCoordinator>(sp =>
             sp.GetRequiredService<WorkflowOrchestrationEngine>());
 
+        // Durable per-pipeline+source high-water marks for incremental ("changed-since") extract.
+        services.TryAddSingleton<ISourceWatermarkStore>(sp =>
+            new RedisSourceWatermarkStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+
+        // Event/CDC trigger probes. The change-feed probe adapts the scoped IChangeTracker; the
+        // object-store probe is a poll-based file-system baseline whose StoreId->root bindings come
+        // from configuration (Orchestration:ObjectStoreTriggers:Roots:<storeId> = <path>). Bindings
+        // are read manually (no reflection binder) to stay AOT-safe.
+        services.TryAddSingleton<IChangeFeedGenerationProbe, ChangeTrackerGenerationProbe>();
+        services.TryAddSingleton<IObjectStoreTriggerProbe>(sp =>
+            new FileSystemObjectStoreTriggerProbe(
+                ReadObjectStoreRoots(sp.GetService<IConfiguration>())));
+
         return services;
     }
 
-    public static IServiceCollection AddOrchestrationBackgroundServices(this IServiceCollection services)
+    private static Dictionary<string, string> ReadObjectStoreRoots(IConfiguration? configuration)
+    {
+        var roots = new Dictionary<string, string>(StringComparer.Ordinal);
+        var section = configuration?.GetSection("Orchestration:ObjectStoreTriggers:Roots");
+        if (section is null || !section.Exists())
+        {
+            return roots;
+        }
+
+        foreach (var child in section.GetChildren())
+        {
+            if (!string.IsNullOrWhiteSpace(child.Key) && !string.IsNullOrWhiteSpace(child.Value))
+            {
+                roots[child.Key] = child.Value!;
+            }
+        }
+
+        return roots;
+    }
+
+    public static IServiceCollection AddOrchestrationBackgroundServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
 
         // Background services depend on the same Redis-backed stores the engine needs.
         // Only start them when AddOrchestration actually registered the engine — otherwise
@@ -54,7 +93,24 @@ internal static class OrchestrationServiceCollectionExtensions
         }
 
         services.AddHostedService<WorkflowOrchestrationBackgroundService>();
-        services.AddHostedService<WorkflowSchedulerBackgroundService>();
+
+        // Cron scheduler tick: a single shared singleton instance so the in-memory compiled-cron
+        // cache survives across ticks whether the in-process timer or the scheduled-tick dispatcher
+        // drives it. The IScheduledTickHandler is registered in BOTH trigger modes so EventBridge
+        // Scheduler can drive the tick under TriggerMode=Event; the in-process timer is hosted only
+        // under TriggerMode=Poll (default, on-prem), keeping that path byte-for-byte unchanged.
+        services.TryAddSingleton<WorkflowSchedulerBackgroundService>();
+        services.AddSingleton<IScheduledTickHandler, WorkflowSchedulerScheduledTickHandler>();
+        if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<WorkflowSchedulerBackgroundService>());
+        }
+
+        // Event/CDC trigger reconciler (object-store + change-feed probes). Additive to the
+        // scheduler; hosted in both modes so configured event triggers fire regardless of the
+        // cron-timer hosting decision above.
+        services.AddHostedService<WorkflowEventTriggerBackgroundService>();
+
         return services;
     }
 }

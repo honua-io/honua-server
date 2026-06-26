@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -14,6 +15,17 @@ namespace Honua.Geoprocessing.Execution;
 /// the geometry (normalized WKT), or both. Pure managed — no native dependency.
 /// Ported from the GeoETL baseline DedupTransform onto the #1185 process/executor
 /// contract.
+///
+/// <para>
+/// <b>Streaming (stateful).</b> Dedup is the one stateful transform: it must remember
+/// which keys it has already emitted. It streams the input and output one feature at a
+/// time, but keeps a "seen keys" set whose memory would otherwise grow with cardinality.
+/// To stay bounded it uses a <see cref="SpillableKeySet"/>, which reduces each key to a
+/// fixed 128-bit digest and spills to a temp file once the in-memory digest count crosses
+/// a cap. Output stays first-wins and deterministic; the documented bound is digest-level
+/// exactness rather than byte-for-byte (collision probability is negligible at any realistic
+/// volume — see <see cref="SpillableKeySet"/>).
+/// </para>
 /// </summary>
 internal sealed class DedupTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -28,27 +40,24 @@ internal sealed class DedupTransformExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
-        FeatureCollection source,
+    protected override async IAsyncEnumerable<IFeature> ApplyStream(
+        IAsyncEnumerable<IFeature> source,
         StepInputReader inputs,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var (keys, useGeometry) = ReadKeySpec(inputs);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        using var seen = new SpillableKeySet();
 
-        var output = new List<IFeature>(source.Count);
-        foreach (var feature in source)
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var key = BuildKey(feature, keys, useGeometry);
             if (seen.Add(key))
             {
-                output.Add(feature);
+                yield return feature;
             }
         }
-
-        return output;
     }
 
     private static string BuildKey(IFeature feature, IReadOnlyList<string> keys, bool useGeometry)

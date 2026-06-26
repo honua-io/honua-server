@@ -267,13 +267,302 @@ public sealed class CustomCodeSubmitTests
     }
 
     // -----------------------------------------------------------------------
+    // runtime = dotnet (Phase 2)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_DotnetRuntime_Accepted()
+    {
+        var sut = CreateService();
+        var metadata = DotnetCustomCodeMetadata();
+
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+
+        // dotnet routes through the same custom-code runtime profile as python; the
+        // runtime selector flows through verbatim for the iac to resolve to an image.
+        job.Spec.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+        job.Spec.Parameters.Should().ContainKey(CustomCodeJobContract.RuntimeParam)
+            .WhoseValue.Should().Be(CustomCodeJobContract.DotnetRuntime);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_DotnetRuntime_RoutesToCustomCodeWorkload()
+    {
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "gp-remote",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "GP remote",
+                RuntimeProfile = "py311"
+            },
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "customcode-remote",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Custom-code remote",
+                ArtifactReference = "ecr/honua-customcode:latest",
+                RuntimeProfile = CustomCodeJobContract.RuntimeProfile,
+                Parameters = new Dictionary<string, string>
+                {
+                    ["batch.job_definition_arn"] = "arn:aws:batch:us-east-1:1:job-definition/customcode:1",
+                    ["batch.job_queue_arn"] = "arn:aws:batch:us-east-1:1:job-queue/customcode"
+                }
+            }
+        });
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "job-cc-dotnet-1",
+                Message = "Submitted"
+            });
+
+        var sut = CreateService(workloadRegistry: workloadRegistry, backends: [backend]);
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), DotnetCustomCodeMetadata());
+
+        job.Spec.WorkloadId.Should().Be("customcode-remote");
+        job.Spec.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+        job.Spec.Parameters.Should().ContainKey(CustomCodeJobContract.RuntimeParam)
+            .WhoseValue.Should().Be(CustomCodeJobContract.DotnetRuntime);
+        job.Spec.Parameters.Should().ContainKey(CustomCodeJobContract.JobTokenEnvParam);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_DotnetRuntime_PythonStyleEntrypoint_Rejected()
+    {
+        var sut = CreateService();
+        // A 'module:func' (python) entrypoint is invalid for the dotnet runtime.
+        var metadata = DotnetCustomCodeMetadata(entrypoint: "pkg.module:run");
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+
+        await act.Should().ThrowAsync<Exception>()
+            .Where(e => e.Message.Contains("Assembly::Namespace.Type"));
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_UnknownRuntime_Rejected()
+    {
+        var sut = CreateService();
+        var metadata = DotnetCustomCodeMetadata();
+        metadata[CustomCodeJobContract.RuntimeParam] = "ruby";
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+
+        await act.Should().ThrowAsync<Exception>()
+            .Where(e => e.Message.Contains("runtime must be"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_DotnetRuntime_BranchRef_RejectedAtSubmit()
+    {
+        var sut = CreateService();
+        var metadata = DotnetCustomCodeMetadata(gitRef: "main");
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+
+        await act.Should().ThrowAsync<Exception>()
+            .Where(e => e.Message.Contains("40-character commit SHA"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3: per-tenant repository allowlist
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_RepoOnOrgButNotTenantAllowlist_Rejected()
+    {
+        // Org allows github.com; tenant-A is additionally constrained to a specific
+        // org path, so a bare github.com/honua-io repo for tenant-A is rejected.
+        var sut = CreateService(options =>
+        {
+            options.RepoAllowlist = ["github.com"];
+            options.TenantRepoAllowlist["tenant-A"] = ["github.com/trusted-org"];
+        });
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        await act.Should().ThrowAsync<Exception>()
+            .Where(e => e.Message.Contains("tenant 'tenant-A'"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_RepoOnTenantAllowlist_Accepted()
+    {
+        var sut = CreateService(options =>
+        {
+            options.RepoAllowlist = ["github.com"];
+            options.TenantRepoAllowlist["tenant-A"] = ["github.com/honua-io"];
+        });
+
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        job.Spec.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_TenantWithoutListFallsThroughToOrgAllowlist()
+    {
+        // A tenant absent from the per-tenant map is constrained by the org list
+        // alone — behavior-preserving for tenants the operator has not scoped.
+        var sut = CreateService(options =>
+        {
+            options.RepoAllowlist = ["github.com"];
+            options.TenantRepoAllowlist["tenant-OTHER"] = ["github.com/nobody"];
+        });
+
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        job.Spec.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3: signed-only commit-signature policy
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_SignedOnly_UnsignedCommit_Rejected()
+    {
+        var verifier = new StubSignatureVerifier(CommitSignatureResult.Unverifiable("commit is not signed"));
+        var sut = CreateService(
+            options =>
+            {
+                options.RepoPolicy = CustomCodeRepoPolicy.SignedOnly;
+                options.TrustedSignerKeys = ["ABCD1234"];
+            },
+            signatureVerifier: verifier);
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        await act.Should().ThrowAsync<Exception>()
+            .Where(e => e.Message.Contains("signed-only policy") && e.Message.Contains("not signed"));
+        verifier.LastSha.Should().Be(ValidSha);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_SignedOnly_WronglySignedCommit_Rejected()
+    {
+        // Valid signature, but by an untrusted key.
+        var verifier = new StubSignatureVerifier(new CommitSignatureResult(IsSignatureValid: true, SignerKeyId: "DEADBEEF", Detail: null));
+        var sut = CreateService(
+            options =>
+            {
+                options.RepoPolicy = CustomCodeRepoPolicy.SignedOnly;
+                options.TrustedSignerKeys = ["ABCD1234"];
+            },
+            signatureVerifier: verifier);
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        await act.Should().ThrowAsync<Exception>()
+            .Where(e => e.Message.Contains("not on the configured trusted-signer list"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_SignedOnly_TrustedSignedCommit_Accepted()
+    {
+        var verifier = new StubSignatureVerifier(new CommitSignatureResult(IsSignatureValid: true, SignerKeyId: "abcd1234", Detail: null));
+        var sut = CreateService(
+            options =>
+            {
+                options.RepoPolicy = CustomCodeRepoPolicy.SignedOnly;
+                options.RepoAllowlist = ["github.com"];
+                options.TrustedSignerKeys = ["ABCD1234"]; // case-insensitive match
+            },
+            signatureVerifier: verifier);
+
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        job.Spec.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+        verifier.LastRepo!.Host.Should().Be("github.com");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_SignedOnly_NoTrustedKeysConfigured_FailsClosed()
+    {
+        // Signed-only with an empty trusted-key list rejects everything, regardless of
+        // verifier outcome — the verifier is never consulted.
+        var verifier = new StubSignatureVerifier(new CommitSignatureResult(IsSignatureValid: true, SignerKeyId: "ABCD1234", Detail: null));
+        var sut = CreateService(
+            options =>
+            {
+                options.RepoPolicy = CustomCodeRepoPolicy.SignedOnly;
+                options.TrustedSignerKeys = [];
+            },
+            signatureVerifier: verifier);
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        await act.Should().ThrowAsync<Exception>()
+            .Where(e => e.Message.Contains("no trusted signer keys are configured"));
+        verifier.LastSha.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_SignedOnly_DefaultVerifier_FailsClosed()
+    {
+        // No verifier registered (the DI default is the fail-closed verifier): even
+        // with trusted keys configured, every signed-only submission is rejected
+        // because the default verifier reports the commit unverifiable.
+        var sut = CreateService(options =>
+        {
+            options.RepoPolicy = CustomCodeRepoPolicy.SignedOnly;
+            options.TrustedSignerKeys = ["ABCD1234"];
+        });
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        await act.Should().ThrowAsync<Exception>()
+            .Where(e => e.Message.Contains("no commit-signature verifier is configured"));
+    }
+
+    // -----------------------------------------------------------------------
     // helpers
     // -----------------------------------------------------------------------
 
     private GeoprocessingJobService CreateService(
         Action<CustomCodeOptions>? configure = null,
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
-        IEnumerable<IBatchComputeBackend>? backends = null)
+        IEnumerable<IBatchComputeBackend>? backends = null,
+        ICustomCodeCommitSignatureVerifier? signatureVerifier = null)
     {
         var options = new CustomCodeOptions
         {
@@ -294,7 +583,22 @@ public sealed class CustomCodeSubmitTests
             workloadRegistry: workloadRegistry,
             backends: backends,
             scopedJobTokenIssuer: _issuer,
-            customCodeOptions: new StaticOptionsMonitor<CustomCodeOptions>(options));
+            customCodeOptions: new StaticOptionsMonitor<CustomCodeOptions>(options),
+            customCodeSignatureVerifier: signatureVerifier);
+    }
+
+    /// <summary>A test verifier that returns a fixed signature outcome.</summary>
+    private sealed class StubSignatureVerifier(CommitSignatureResult result) : ICustomCodeCommitSignatureVerifier
+    {
+        public Uri? LastRepo { get; private set; }
+        public string? LastSha { get; private set; }
+
+        public ValueTask<CommitSignatureResult> VerifyAsync(Uri repoUrl, string commitSha, CancellationToken cancellationToken)
+        {
+            LastRepo = repoUrl;
+            LastSha = commitSha;
+            return ValueTask.FromResult(result);
+        }
     }
 
     private static Dictionary<string, string> CustomCodeMetadata(
@@ -309,6 +613,29 @@ public sealed class CustomCodeSubmitTests
             [CustomCodeJobContract.GitRefParam] = gitRef,
             [CustomCodeJobContract.EntrypointParam] = "pkg.module:run",
             [CustomCodeJobContract.DepsManifestParam] = "requirements.txt",
+            [CustomCodeJobContract.ParamsJsonParam] = """{"k":"v"}"""
+        };
+        if (declaredScope is not null)
+        {
+            metadata[CustomCodeJobContract.DeclaredScopeParam] = declaredScope;
+        }
+
+        return metadata;
+    }
+
+    private static Dictionary<string, string> DotnetCustomCodeMetadata(
+        string gitRef = ValidSha,
+        string repoUrl = RepoUrl,
+        string entrypoint = "MyTool::My.Namespace.BufferTool",
+        string? declaredScope = null)
+    {
+        var metadata = new Dictionary<string, string>
+        {
+            [CustomCodeJobContract.RuntimeParam] = CustomCodeJobContract.DotnetRuntime,
+            [CustomCodeJobContract.RepoUrlParam] = repoUrl,
+            [CustomCodeJobContract.GitRefParam] = gitRef,
+            [CustomCodeJobContract.EntrypointParam] = entrypoint,
+            [CustomCodeJobContract.DepsManifestParam] = "tool/MyTool.csproj",
             [CustomCodeJobContract.ParamsJsonParam] = """{"k":"v"}"""
         };
         if (declaredScope is not null)

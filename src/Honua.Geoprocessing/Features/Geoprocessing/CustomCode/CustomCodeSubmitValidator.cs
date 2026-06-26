@@ -24,11 +24,20 @@ internal static partial class CustomCodeSubmitValidator
     [GeneratedRegex("^[0-9a-f]{40}$", RegexOptions.CultureInvariant)]
     private static partial Regex FullShaRegex();
 
-    // module.path:function — dotted module path, a single ':' separator, then a
-    // python identifier. Deliberately strict so a shell-injection-shaped entrypoint
-    // is rejected at the door.
+    // PYTHON entrypoint: module.path:function — dotted module path, a single ':'
+    // separator, then a python identifier. Deliberately strict so a
+    // shell-injection-shaped entrypoint is rejected at the door.
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
-    private static partial Regex EntrypointRegex();
+    private static partial Regex PythonEntrypointRegex();
+
+    // .NET entrypoint: Assembly::Namespace.Type — an assembly simple name, a '::'
+    // separator, then a dotted CLR type name. The assembly and each type segment are
+    // CLR-style identifiers (letters/digits/underscore, may start with '_'); the
+    // strictness keeps a shell-injection-shaped entrypoint out just like the python
+    // form. The harness resolves "MyAsm::My.Namespace.MyTool" to a built assembly +
+    // type implementing IGeoprocessingTool.
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$", RegexOptions.CultureInvariant)]
+    private static partial Regex DotnetEntrypointRegex();
 
     /// <summary>
     /// Returns <see langword="true"/> when the submission carries the custom-code
@@ -45,27 +54,51 @@ internal static partial class CustomCodeSubmitValidator
     /// scope. Returns the parsed declared scope on success; on failure sets
     /// <paramref name="rejection"/> and returns <see langword="null"/>.
     /// </summary>
+    /// <remarks>
+    /// This is the <em>pure</em>, I/O-free half of the submit gate: runtime, SHA-pin,
+    /// repo URL + org/per-tenant allowlist, entrypoint, manifest, and declared scope.
+    /// The <see cref="CustomCodeRepoPolicy.SignedOnly"/> posture additionally requires
+    /// an out-of-band commit-signature check; that check is asynchronous (it may call
+    /// the git provider) and is performed by the caller against
+    /// <see cref="ICustomCodeCommitSignatureVerifier"/>. <paramref name="requiresSignatureVerification"/>
+    /// reports whether the caller must run it; the validated URL and SHA are returned
+    /// so the caller need not re-parse them.
+    /// </remarks>
     /// <param name="parameters">The submission parameters (the <c>customcode.*</c> keys).</param>
-    /// <param name="options">The configured repository-allowlist policy.</param>
+    /// <param name="options">The configured repository-allowlist/signing policy.</param>
+    /// <param name="tenantId">The submitting principal's tenant id, for the per-tenant allowlist (may be null).</param>
     /// <param name="declaredScope">The parsed declared scope when validation succeeds.</param>
+    /// <param name="repoUri">The validated repository URI when validation succeeds.</param>
+    /// <param name="commitSha">The validated full commit SHA when validation succeeds.</param>
+    /// <param name="requiresSignatureVerification"><see langword="true"/> when the caller must run the commit-signature verifier (signed-only).</param>
     /// <param name="rejection">A human-readable rejection reason when validation fails.</param>
     /// <returns><see langword="true"/> when every custom-code parameter is valid.</returns>
     public static bool TryValidate(
         IReadOnlyDictionary<string, string> parameters,
         CustomCodeOptions options,
+        string? tenantId,
         out IReadOnlyList<JobResourceScopeEntry> declaredScope,
+        out Uri? repoUri,
+        out string? commitSha,
+        out bool requiresSignatureVerification,
         out string? rejection)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         ArgumentNullException.ThrowIfNull(options);
         declaredScope = [];
+        repoUri = null;
+        commitSha = null;
+        requiresSignatureVerification = false;
         rejection = null;
 
-        // runtime — MVP is python-only.
+        // runtime — 'python' (Phase 1) or 'dotnet' (Phase 2). The runtime selects the
+        // per-job image; the controls below and the routing fence are runtime-agnostic.
         var runtime = Get(parameters, CustomCodeJobContract.RuntimeParam);
-        if (!string.Equals(runtime, CustomCodeJobContract.PythonRuntime, StringComparison.Ordinal))
+        if (runtime is null || !CustomCodeJobContract.SupportedRuntimes.Contains(runtime))
         {
-            rejection = $"Custom-code runtime must be '{CustomCodeJobContract.PythonRuntime}' (got '{runtime ?? "<none>"}').";
+            rejection =
+                $"Custom-code runtime must be '{CustomCodeJobContract.PythonRuntime}' or " +
+                $"'{CustomCodeJobContract.DotnetRuntime}' (got '{runtime ?? "<none>"}').";
             return false;
         }
 
@@ -78,26 +111,32 @@ internal static partial class CustomCodeSubmitValidator
             return false;
         }
 
-        // repo_url — HTTPS + allowlist policy.
+        commitSha = gitRef;
+
+        // repo_url — HTTPS + org/per-tenant allowlist + signing policy.
         var repoUrl = Get(parameters, CustomCodeJobContract.RepoUrlParam);
-        if (!TryValidateRepoUrl(repoUrl, options, out rejection))
+        if (!TryValidateRepoUrl(repoUrl, options, tenantId, out repoUri, out requiresSignatureVerification, out rejection))
         {
             return false;
         }
 
-        // entrypoint — module.path:function.
+        // entrypoint — shape depends on the runtime: python wants 'module.path:function';
+        // .NET wants 'Assembly::Namespace.Type' (assembly::CLR-type).
         var entrypoint = Get(parameters, CustomCodeJobContract.EntrypointParam);
-        if (string.IsNullOrEmpty(entrypoint) || !EntrypointRegex().IsMatch(entrypoint))
+        if (!TryValidateEntrypoint(entrypoint, runtime, out rejection))
         {
-            rejection = "Custom-code entrypoint must be of the form 'module.path:function'.";
             return false;
         }
 
-        // deps_manifest — a relative path (no absolute paths, no traversal).
+        // deps_manifest — a relative path (no absolute paths, no traversal). For
+        // python this is a requirements file; for .NET it is the user's .csproj (both
+        // are repo-relative and resolved by the runtime's harness).
         var depsManifest = Get(parameters, CustomCodeJobContract.DepsManifestParam);
         if (string.IsNullOrEmpty(depsManifest) || !IsSafeRelativePath(depsManifest))
         {
-            rejection = "Custom-code deps_manifest must be a relative path within the repository (e.g. 'requirements.txt').";
+            rejection = string.Equals(runtime, CustomCodeJobContract.DotnetRuntime, StringComparison.Ordinal)
+                ? "Custom-code deps_manifest must be a relative path within the repository (e.g. 'tool/MyTool.csproj')."
+                : "Custom-code deps_manifest must be a relative path within the repository (e.g. 'requirements.txt').";
             return false;
         }
 
@@ -111,9 +150,42 @@ internal static partial class CustomCodeSubmitValidator
         return true;
     }
 
-    private static bool TryValidateRepoUrl(string? repoUrl, CustomCodeOptions options, out string? rejection)
+    private static bool TryValidateEntrypoint(string? entrypoint, string runtime, out string? rejection)
     {
         rejection = null;
+
+        if (string.Equals(runtime, CustomCodeJobContract.DotnetRuntime, StringComparison.Ordinal))
+        {
+            if (string.IsNullOrEmpty(entrypoint) || !DotnetEntrypointRegex().IsMatch(entrypoint))
+            {
+                rejection = "Custom-code entrypoint for the 'dotnet' runtime must be of the form 'Assembly::Namespace.Type'.";
+                return false;
+            }
+
+            return true;
+        }
+
+        // Default to the python form.
+        if (string.IsNullOrEmpty(entrypoint) || !PythonEntrypointRegex().IsMatch(entrypoint))
+        {
+            rejection = "Custom-code entrypoint for the 'python' runtime must be of the form 'module.path:function'.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateRepoUrl(
+        string? repoUrl,
+        CustomCodeOptions options,
+        string? tenantId,
+        out Uri? repoUri,
+        out bool requiresSignatureVerification,
+        out string? rejection)
+    {
+        rejection = null;
+        repoUri = null;
+        requiresSignatureVerification = false;
 
         if (string.IsNullOrWhiteSpace(repoUrl) ||
             !Uri.TryCreate(repoUrl, UriKind.Absolute, out var uri) ||
@@ -123,6 +195,8 @@ internal static partial class CustomCodeSubmitValidator
             return false;
         }
 
+        repoUri = uri;
+
         switch (options.RepoPolicy)
         {
             case CustomCodeRepoPolicy.Disabled:
@@ -130,21 +204,57 @@ internal static partial class CustomCodeSubmitValidator
                 return false;
 
             case CustomCodeRepoPolicy.Open:
+                // Open accepts any host and does not consult the per-tenant allowlist;
+                // it is the trusted-single-tenant escape hatch.
                 return true;
 
             case CustomCodeRepoPolicy.OrgAllowlist:
-                if (IsAllowlisted(uri, options.RepoAllowlist))
+                return TryEnforceAllowlists(uri, options, tenantId, out rejection);
+
+            case CustomCodeRepoPolicy.SignedOnly:
+                // Signed-only is org-allowlist PLUS a commit-signature requirement. The
+                // allowlist gate runs here (pure); the caller runs the async signature
+                // check against the verifier when this flag is set.
+                if (!TryEnforceAllowlists(uri, options, tenantId, out rejection))
                 {
-                    return true;
+                    return false;
                 }
 
-                rejection = $"Custom-code repo_url host '{uri.Host}' is not on the configured repository allowlist.";
-                return false;
+                requiresSignatureVerification = true;
+                return true;
 
             default:
                 rejection = "Custom-code repository policy is misconfigured.";
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Enforces the org-wide allowlist and, when the tenant has a per-tenant list, that
+    /// list <em>in addition</em> (both must pass). A tenant absent from the per-tenant
+    /// map is constrained by the org list alone.
+    /// </summary>
+    private static bool TryEnforceAllowlists(Uri uri, CustomCodeOptions options, string? tenantId, out string? rejection)
+    {
+        rejection = null;
+
+        if (!IsAllowlisted(uri, options.RepoAllowlist))
+        {
+            rejection = $"Custom-code repo_url host '{uri.Host}' is not on the configured repository allowlist.";
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tenantId) &&
+            options.TenantRepoAllowlist is { Count: > 0 } &&
+            options.TenantRepoAllowlist.TryGetValue(tenantId, out var tenantList) &&
+            tenantList is { Count: > 0 } &&
+            !IsAllowlisted(uri, tenantList))
+        {
+            rejection = $"Custom-code repo_url host '{uri.Host}' is not on tenant '{tenantId}''s repository allowlist.";
+            return false;
+        }
+
+        return true;
     }
 
     private static bool IsAllowlisted(Uri uri, List<string> allowlist)

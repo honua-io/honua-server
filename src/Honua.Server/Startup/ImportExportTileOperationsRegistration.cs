@@ -10,6 +10,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Io.Export;
@@ -121,7 +122,17 @@ internal static class ImportExportTileOperationsRegistration
         // per-tileset Cache-Control TTL (#1794). Disabled unless TileCacheExpiry:Enabled is set.
         services.Configure<TileCacheExpiryOptions>(
             configuration.GetSection(TileCacheExpiryOptions.SectionName));
-        services.AddHostedService<TileCacheExpiryHostedService>();
+
+        // Scheduled tile-cache expiry is a PERIODIC tick (bucket-b). The sweep re-queues invalidate
+        // jobs whose own pipeline is idempotent, so the scheduled-tick handler is registered in BOTH
+        // trigger modes; the in-process timer is hosted only under TriggerMode=Poll (default,
+        // on-prem), keeping that path byte-for-byte unchanged.
+        services.TryAddSingleton<TileCacheExpiryHostedService>();
+        services.AddSingleton<IScheduledTickHandler, TileCacheExpiryScheduledTickHandler>();
+        if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+        {
+            services.AddHostedService(sp => sp.GetRequiredService<TileCacheExpiryHostedService>());
+        }
 
         // Live size-quota / LRU tile-cache evictor (#1917). The pure LRU policy and quota options
         // landed in #1837; this binds them to a live Redis tile-key index on the hot serve path.
@@ -150,7 +161,17 @@ internal static class ImportExportTileOperationsRegistration
         services.Configure<TileCacheEvictionSweepOptions>(
             configuration.GetSection(TileCacheEvictionSweepOptions.SectionName));
         services.AddSingleton<TileCacheEvictionService>();
-        services.AddHostedService<TileCacheEvictionHostedService>();
+
+        // Live LRU tile-cache eviction is a PERIODIC tick (bucket-b). The sweep re-evaluates the
+        // current key index against the quota (no-op when nothing exceeds it), so the scheduled-tick
+        // handler is registered in BOTH trigger modes; the in-process timer is hosted only under
+        // TriggerMode=Poll (default, on-prem), keeping that path byte-for-byte unchanged. The handler
+        // routes to TileCacheEvictionService.SweepAsync (the same body the timer calls).
+        services.AddSingleton<IScheduledTickHandler, TileCacheEvictionScheduledTickHandler>();
+        if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+        {
+            services.AddHostedService<TileCacheEvictionHostedService>();
+        }
 
         // Batch-dispatched tile-cache / PMTiles execution jobs (issue #1697).
         // The worker-side executor is registered unconditionally so any worker host

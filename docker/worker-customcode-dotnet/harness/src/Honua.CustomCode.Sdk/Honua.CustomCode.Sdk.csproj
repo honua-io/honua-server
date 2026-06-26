@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The SDK-facing contract for .NET custom-code GP tools. This is the ONLY
+    package a tool author references: it defines IGeoprocessingTool, GpContext,
+    GpResult, and the sink/progress/log surfaces. Keep it additive — renaming or
+    removing members breaks tools pinned to an image.
+
+    It is deliberately dependency-light (it does NOT reference the Honua SDK):
+    GpContext.Client is exposed as object so a tool can be authored and tested
+    without dragging the whole SDK graph through this contract, and so this
+    package stays small and stable. The harness sets Client to a real, scoped
+    Honua client at runtime; the sample casts as needed.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <PackageId>Honua.CustomCode.Sdk</PackageId>
+    <Description>Honua custom-code GP .NET SDK — the IGeoprocessingTool contract a user tool implements.</Description>
+    <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+
+</Project>

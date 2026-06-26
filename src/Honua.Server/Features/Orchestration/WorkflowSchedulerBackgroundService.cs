@@ -9,6 +9,23 @@ using Microsoft.Extensions.Hosting;
 namespace Honua.Server.Features.Orchestration;
 
 /// <summary>
+/// Adapts the cron workflow-scheduler tick to the control-plane scheduled-tick dispatcher so
+/// EventBridge Scheduler can drive one evaluation under <c>TriggerMode=Event</c> without hosting the
+/// in-process timer. Wraps the SAME singleton <see cref="WorkflowSchedulerBackgroundService" /> the
+/// timer would host, so the in-memory compiled-cron cache survives across ticks. The tick is
+/// idempotent via a durable per-occurrence claim plus a durable schedule cursor.
+/// </summary>
+internal sealed class WorkflowSchedulerScheduledTickHandler(WorkflowSchedulerBackgroundService service)
+    : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
+{
+    public Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind Kind
+        => Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind.WorkflowSchedule;
+
+    public Task RunTickAsync(CancellationToken cancellationToken = default)
+        => service.TickAsync(cancellationToken);
+}
+
+/// <summary>
 /// Background worker that evaluates cron-triggered workflow definitions and creates
 /// workflow runs when their schedule fires. Runs one tick per minute, producing at most
 /// one run per definition per tick.

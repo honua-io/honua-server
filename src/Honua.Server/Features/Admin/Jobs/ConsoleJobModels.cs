@@ -94,6 +94,7 @@ internal sealed record ConsoleJobLinks
     public required string Logs { get; init; }
     public required string Artifacts { get; init; }
     public required string Actions { get; init; }
+    public required string Steps { get; init; }
     public string? Cancel { get; init; }
     public string? Retry { get; init; }
     public string? EventsByJob { get; init; }
@@ -121,6 +122,35 @@ internal sealed record ConsoleJobStage
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public double? PercentComplete { get; init; }
+}
+
+internal sealed record ConsoleJobStepsResponse
+{
+    public required string JobId { get; init; }
+    public string? CorrelationId { get; init; }
+    public required string State { get; init; }
+    public required ConsoleJobStep[] Steps { get; init; }
+}
+
+internal sealed record ConsoleJobStep
+{
+    public required int Ordinal { get; init; }
+    public required string Phase { get; init; }
+    public required string Status { get; init; }
+    public required DateTimeOffset StartedAt { get; init; }
+    public DateTimeOffset? CompletedAt { get; init; }
+    public long? DurationMs { get; init; }
+    public required string Message { get; init; }
+    public string? Command { get; init; }
+    public ConsoleJobStepArtifact[]? Artifacts { get; init; }
+    public Dictionary<string, string>? Metadata { get; init; }
+}
+
+internal sealed record ConsoleJobStepArtifact
+{
+    public required string Label { get; init; }
+    public string? Kind { get; init; }
+    public long? SizeBytes { get; init; }
 }
 
 internal sealed record ConsoleJobActionDescriptor

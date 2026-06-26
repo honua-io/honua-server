@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Sample .NET custom-code GP tool. A trivial transform that demonstrates the
+    IGeoprocessingTool contract: it buffers a WKT geometry with NetTopologySuite
+    and writes the result as GeoJSON. A real tool would pull features via
+    context.Client and/or read staged context.Inputs.
+
+    Entrypoint for this tool: "BufferTool::Honua.CustomCode.Samples.BufferTool".
+
+    In the image the common deps (NetTopologySuite + the Honua .NET SDK) are
+    pre-warmed in the NuGet cache so this builds with no network restore.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <AssemblyName>BufferTool</AssemblyName>
+    <RootNamespace>Honua.CustomCode.Samples</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The tool references only the SDK contract. -->
+    <ProjectReference Include="..\..\src\Honua.CustomCode.Sdk\Honua.CustomCode.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NetTopologySuite (+ GeoJSON IO) is pre-warmed in the image cache. -->
+    <PackageReference Include="NetTopologySuite" />
+    <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
+  </ItemGroup>
+
+</Project>

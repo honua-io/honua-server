@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Honua.Infrastructure.Rendering;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -19,7 +20,9 @@ namespace Honua.Geoprocessing.Execution;
 /// matching <c>geometry.project</c>. Attributes are carried through. Reconciled from
 /// the GeoETL baseline ReprojectTransform onto the #1185 process/executor contract;
 /// the managed math is replaced by the shared CoordinateTransformer so this transform
-/// and geometry.project stay bit-for-bit aligned.
+/// and geometry.project stay bit-for-bit aligned. Streams: a per-feature map; SRIDs
+/// are validated once before the stream is consumed (the validation surfaces on the
+/// first pull as a classified <c>Invalid ... inputs</c> failure).
 /// </summary>
 internal sealed class ReprojectTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -27,20 +30,21 @@ internal sealed class ReprojectTransformExecutor(
 {
     internal const string HandledProcessId = "transform.reproject";
 
-    private static readonly HashSet<int> WebMercatorAliases =
-        new() { 3857, 900913, 102100, 102113, 3785 };
-
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
-        FeatureCollection source,
+    // NOTE: managed accept-set vs. native-escalation are kept in lock-step by the
+    // shared ManagedReprojectFastPath predicate. This executor rejects any pair the
+    // submit path should have escalated to the native worker; the submit path
+    // escalates exactly the pairs this executor rejects.
+    protected override async IAsyncEnumerable<IFeature> ApplyStream(
+        IAsyncEnumerable<IFeature> source,
         StepInputReader inputs,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var fromSrid = ReadSrid(inputs, "fromSrid");
         var toSrid = ReadSrid(inputs, "toSrid");
 
-        if (!IsTransformSupported(fromSrid, toSrid))
+        if (!ManagedReprojectFastPath.IsManagedFastPath(fromSrid, toSrid))
         {
             throw new TransformInputException(
                 $"reproject from SRID {fromSrid} to {toSrid} is not supported by the managed transform path. " +
@@ -48,18 +52,16 @@ internal sealed class ReprojectTransformExecutor(
                 "WGS 84 (4326) ↔ Web Mercator. Datum-shift pairs require the native worker profile.");
         }
 
-        var passthrough = fromSrid == toSrid
-            || (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid));
+        var passthrough = ManagedReprojectFastPath.IsPassthrough(fromSrid, toSrid);
 
-        var output = new List<IFeature>(source.Count);
-        foreach (var feature in source)
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var geometry = feature.Geometry;
             if (geometry is null || geometry.IsEmpty)
             {
-                output.Add(feature);
+                yield return feature;
                 continue;
             }
 
@@ -75,30 +77,8 @@ internal sealed class ReprojectTransformExecutor(
             }
 
             projected.SRID = toSrid;
-            output.Add(new Feature(projected, feature.Attributes));
+            yield return new Feature(projected, feature.Attributes);
         }
-
-        return output;
-    }
-
-    private static bool IsTransformSupported(int fromSrid, int toSrid)
-    {
-        if (fromSrid == toSrid)
-        {
-            return true;
-        }
-
-        if (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid))
-        {
-            return true;
-        }
-
-        if (fromSrid == 4326 && WebMercatorAliases.Contains(toSrid))
-        {
-            return true;
-        }
-
-        return WebMercatorAliases.Contains(fromSrid) && toSrid == 4326;
     }
 
     private static int ReadSrid(StepInputReader inputs, string key)

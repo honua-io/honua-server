@@ -6,6 +6,21 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Features.Admin.TileOperations;
 
 /// <summary>
+/// Adapts the scheduled tile-cache expiry sweep to the control-plane scheduled-tick dispatcher so
+/// EventBridge Scheduler can drive one sweep under <c>TriggerMode=Event</c> without hosting the
+/// in-process timer. The sweep re-queues invalidate jobs whose own pipeline is idempotent.
+/// </summary>
+internal sealed class TileCacheExpiryScheduledTickHandler(TileCacheExpiryHostedService service)
+    : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
+{
+    public Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind Kind
+        => Honua.Core.Features.ControlPlane.Abstractions.ScheduledTickKind.TileCacheExpiry;
+
+    public Task RunTickAsync(CancellationToken cancellationToken = default)
+        => service.SweepAsync(cancellationToken);
+}
+
+/// <summary>
 /// Scheduled tile-cache expiry/invalidation service (#1837). On a configured cadence it dispatches
 /// an <c>invalidate</c> tile operation for each configured target, so cached tiles for a tileset are
 /// periodically refreshed. This is the time-based complement to the per-tileset <c>Cache-Control</c>

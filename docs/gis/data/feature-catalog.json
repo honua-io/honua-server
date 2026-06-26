@@ -1904,7 +1904,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDetail_ForFailedJob_ReturnsFailureMetadataAndRetryAction"
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDetail_ForFailedJob_ReturnsFailureMetadataAndRetryAction",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDetail_WithPhaseHistory_EmitsOrderedMultiStageList"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -1947,6 +1948,21 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobLogs_PaginatesAndRejectsInvalidCursor"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-jobs-jobid-steps",
+      "route": "/api/v1/admin/jobs/{jobId}/steps",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_ForUnknownJob_Returns404",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_ProjectsSanitizedPerStepGlassBox",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_RequiresAdminAuthorization"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
