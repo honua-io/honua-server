@@ -18,6 +18,7 @@ internal static class OrchestrationTelemetry
         public const string ExecuteStep = "honua.orchestration.execute_step";
         public const string ResolveBindings = "honua.orchestration.resolve_bindings";
         public const string SchedulerTick = "honua.orchestration.scheduler_tick";
+        public const string EventTriggerTick = "honua.orchestration.event_trigger_tick";
     }
 
     internal static class Tags
