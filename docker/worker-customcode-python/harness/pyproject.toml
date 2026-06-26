@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "honua-customcode-harness"
+version = "0.1.0"
+description = "Honua custom-code GP harness — runs user tools at a pinned git SHA under a scoped Honua SDK client inside a per-job Batch container."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Elastic-2.0" }
+authors = [{ name = "Honua", email = "mike@honua.io" }]
+
+# The harness itself is dependency-light: git/pip are invoked as subprocesses,
+# the SDK + geo stack + boto3 are pre-installed in the image (see Dockerfile).
+# honua-sdk is pinned here so a standalone install matches the image, but the
+# image installs it as a baked layer rather than as a transitive resolve.
+dependencies = [
+  "honua-sdk==0.1.4",
+]
+
+[project.optional-dependencies]
+# S3 upload path. In the image boto3 is pre-installed; for a standalone install
+# pull it via this extra.
+s3 = ["boto3>=1.34"]
+test = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+honua-customcode-harness = "honua_customcode_harness.harness:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["honua_customcode_harness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
