@@ -54,20 +54,41 @@ internal static partial class CustomCodeSubmitValidator
     /// scope. Returns the parsed declared scope on success; on failure sets
     /// <paramref name="rejection"/> and returns <see langword="null"/>.
     /// </summary>
+    /// <remarks>
+    /// This is the <em>pure</em>, I/O-free half of the submit gate: runtime, SHA-pin,
+    /// repo URL + org/per-tenant allowlist, entrypoint, manifest, and declared scope.
+    /// The <see cref="CustomCodeRepoPolicy.SignedOnly"/> posture additionally requires
+    /// an out-of-band commit-signature check; that check is asynchronous (it may call
+    /// the git provider) and is performed by the caller against
+    /// <see cref="ICustomCodeCommitSignatureVerifier"/>. <paramref name="requiresSignatureVerification"/>
+    /// reports whether the caller must run it; the validated URL and SHA are returned
+    /// so the caller need not re-parse them.
+    /// </remarks>
     /// <param name="parameters">The submission parameters (the <c>customcode.*</c> keys).</param>
-    /// <param name="options">The configured repository-allowlist policy.</param>
+    /// <param name="options">The configured repository-allowlist/signing policy.</param>
+    /// <param name="tenantId">The submitting principal's tenant id, for the per-tenant allowlist (may be null).</param>
     /// <param name="declaredScope">The parsed declared scope when validation succeeds.</param>
+    /// <param name="repoUri">The validated repository URI when validation succeeds.</param>
+    /// <param name="commitSha">The validated full commit SHA when validation succeeds.</param>
+    /// <param name="requiresSignatureVerification"><see langword="true"/> when the caller must run the commit-signature verifier (signed-only).</param>
     /// <param name="rejection">A human-readable rejection reason when validation fails.</param>
     /// <returns><see langword="true"/> when every custom-code parameter is valid.</returns>
     public static bool TryValidate(
         IReadOnlyDictionary<string, string> parameters,
         CustomCodeOptions options,
+        string? tenantId,
         out IReadOnlyList<JobResourceScopeEntry> declaredScope,
+        out Uri? repoUri,
+        out string? commitSha,
+        out bool requiresSignatureVerification,
         out string? rejection)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         ArgumentNullException.ThrowIfNull(options);
         declaredScope = [];
+        repoUri = null;
+        commitSha = null;
+        requiresSignatureVerification = false;
         rejection = null;
 
         // runtime — 'python' (Phase 1) or 'dotnet' (Phase 2). The runtime selects the
@@ -90,9 +111,11 @@ internal static partial class CustomCodeSubmitValidator
             return false;
         }
 
-        // repo_url — HTTPS + allowlist policy.
+        commitSha = gitRef;
+
+        // repo_url — HTTPS + org/per-tenant allowlist + signing policy.
         var repoUrl = Get(parameters, CustomCodeJobContract.RepoUrlParam);
-        if (!TryValidateRepoUrl(repoUrl, options, out rejection))
+        if (!TryValidateRepoUrl(repoUrl, options, tenantId, out repoUri, out requiresSignatureVerification, out rejection))
         {
             return false;
         }
@@ -152,9 +175,17 @@ internal static partial class CustomCodeSubmitValidator
         return true;
     }
 
-    private static bool TryValidateRepoUrl(string? repoUrl, CustomCodeOptions options, out string? rejection)
+    private static bool TryValidateRepoUrl(
+        string? repoUrl,
+        CustomCodeOptions options,
+        string? tenantId,
+        out Uri? repoUri,
+        out bool requiresSignatureVerification,
+        out string? rejection)
     {
         rejection = null;
+        repoUri = null;
+        requiresSignatureVerification = false;
 
         if (string.IsNullOrWhiteSpace(repoUrl) ||
             !Uri.TryCreate(repoUrl, UriKind.Absolute, out var uri) ||
@@ -164,6 +195,8 @@ internal static partial class CustomCodeSubmitValidator
             return false;
         }
 
+        repoUri = uri;
+
         switch (options.RepoPolicy)
         {
             case CustomCodeRepoPolicy.Disabled:
@@ -171,21 +204,57 @@ internal static partial class CustomCodeSubmitValidator
                 return false;
 
             case CustomCodeRepoPolicy.Open:
+                // Open accepts any host and does not consult the per-tenant allowlist;
+                // it is the trusted-single-tenant escape hatch.
                 return true;
 
             case CustomCodeRepoPolicy.OrgAllowlist:
-                if (IsAllowlisted(uri, options.RepoAllowlist))
+                return TryEnforceAllowlists(uri, options, tenantId, out rejection);
+
+            case CustomCodeRepoPolicy.SignedOnly:
+                // Signed-only is org-allowlist PLUS a commit-signature requirement. The
+                // allowlist gate runs here (pure); the caller runs the async signature
+                // check against the verifier when this flag is set.
+                if (!TryEnforceAllowlists(uri, options, tenantId, out rejection))
                 {
-                    return true;
+                    return false;
                 }
 
-                rejection = $"Custom-code repo_url host '{uri.Host}' is not on the configured repository allowlist.";
-                return false;
+                requiresSignatureVerification = true;
+                return true;
 
             default:
                 rejection = "Custom-code repository policy is misconfigured.";
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Enforces the org-wide allowlist and, when the tenant has a per-tenant list, that
+    /// list <em>in addition</em> (both must pass). A tenant absent from the per-tenant
+    /// map is constrained by the org list alone.
+    /// </summary>
+    private static bool TryEnforceAllowlists(Uri uri, CustomCodeOptions options, string? tenantId, out string? rejection)
+    {
+        rejection = null;
+
+        if (!IsAllowlisted(uri, options.RepoAllowlist))
+        {
+            rejection = $"Custom-code repo_url host '{uri.Host}' is not on the configured repository allowlist.";
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tenantId) &&
+            options.TenantRepoAllowlist is { Count: > 0 } &&
+            options.TenantRepoAllowlist.TryGetValue(tenantId, out var tenantList) &&
+            tenantList is { Count: > 0 } &&
+            !IsAllowlisted(uri, tenantList))
+        {
+            rejection = $"Custom-code repo_url host '{uri.Host}' is not on tenant '{tenantId}''s repository allowlist.";
+            return false;
+        }
+
+        return true;
     }
 
     private static bool IsAllowlisted(Uri uri, List<string> allowlist)

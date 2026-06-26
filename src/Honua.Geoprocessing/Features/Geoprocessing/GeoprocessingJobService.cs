@@ -63,7 +63,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
         IGeoprocessingResultPackageStore? resultPackageStore = null,
         IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
-        IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null)
+        IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
+        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -83,7 +84,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _customCodeOptions = customCodeOptions;
         _customCodeCoordinator = scopedJobTokenIssuer is null
             ? null
-            : new CustomCodeSubmitCoordinator(scopedJobTokenIssuer);
+            : new CustomCodeSubmitCoordinator(scopedJobTokenIssuer, customCodeSignatureVerifier);
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
