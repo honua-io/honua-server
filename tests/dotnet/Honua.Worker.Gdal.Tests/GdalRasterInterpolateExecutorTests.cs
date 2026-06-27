@@ -120,6 +120,30 @@ public sealed class GdalRasterInterpolateExecutorTests
     }
 
     [UnitTest]
+    public async Task Idw_InvalidZField_FailsBeforeReachingTheCli()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.IdwProcessId,
+                ("points", Base64("points")),
+                ("zField", "elev; rm -rf /"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("zField");
+            runner.Invocations.Should().BeEmpty("an invalid attribute name must never reach the CLI");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
     public async Task Idw_MissingPoints_FailsWithClearMessage()
     {
         var runner = FakeGdalCommandRunner.Failing(1, "n/a");

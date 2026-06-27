@@ -116,6 +116,12 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         }
 
         GdalJobInputReader.TryGetInput(parameters, "zField", out var zField);
+        if (!string.IsNullOrWhiteSpace(zField) && !GdalFieldName.IsValid(zField))
+        {
+            Log.InvalidInputs(logger, job.OperationId, $"'zField' value '{zField}' is not a valid attribute name");
+            return JobExecutionResult.Failed(
+                "Invalid interpolation inputs: 'zField' must match ^[A-Za-z_][A-Za-z0-9_]*$.");
+        }
 
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "points", opts.MaxArtifactBytes, out var pointsBytes, out var pointsError))
         {
