@@ -573,6 +573,13 @@ builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IField
     Honua.Infrastructure.Authentication.FieldMaskSource>();
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
     new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+// Embed governance (#1191): authoritative embed key issuance/scoping, policy
+// evaluation, rate accounting, and redacted analytics ingestion. In-memory
+// defaults; durable providers can replace these via TryAdd later.
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedKeyStore>(sp =>
+    new Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore(sp.GetService<TimeProvider>()));
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedAnalyticsStore>(
+    new Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore());
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
 
@@ -858,6 +865,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.WorkflowPackages.WorkflowPackagesJsonContext.Default,
         Honua.Server.Features.Operations.OperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
+        Honua.Server.Features.Admin.EmbedGovernance.Models.EmbedGovernanceJsonContext.Default,
         Honua.Server.Features.Admin.Models.OAuthClientJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.NetworkDatasetAdminJsonContext.Default,
@@ -1426,6 +1434,8 @@ app.MapOperationsEndpoints();
 Honua.Server.Features.Console.Publications.ContentPublicationEndpoints.MapContentPublicationEndpoints(app);
 Honua.Server.Features.Console.Publications.PublishedRouteEndpoints.MapPublishedRouteEndpoints(app);
 app.MapAdminApiKeyEndpoints();
+Honua.Server.Features.Admin.EmbedGovernance.EmbedGovernanceEndpoints.MapEmbedGovernanceEndpoints(app);
+Honua.Server.Features.Admin.EmbedGovernance.EmbedPolicyEndpoints.MapEmbedPolicyEndpoints(app);
 app.MapOAuthClientEndpoints();
 app.MapPackageReviewEndpoints();
 
