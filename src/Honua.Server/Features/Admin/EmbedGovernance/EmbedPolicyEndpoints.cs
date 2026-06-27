@@ -7,6 +7,7 @@ using Honua.Core.Features.EmbedGovernance.Domain;
 using Honua.Server.Features.Admin.EmbedGovernance.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -35,7 +36,12 @@ internal static partial class EmbedPolicyEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Embed Governance")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            // Embed widgets load on arbitrary ISV origins, so the browser CORS preflight
+            // must be permitted from any origin; the per-embed-key origin allow-list is the
+            // authoritative gate enforced inside the handlers. Without this dedicated policy
+            // the global ProductionCors rejects the preflight before the handler runs (#1191).
+            .RequireCors(CorsConfiguration.EmbedPolicy);
 
         group.MapGet("/policy", HandlePolicy)
             .WithDisplayName("Fetch Embed Policy")
@@ -118,8 +124,11 @@ internal static partial class EmbedPolicyEndpoints
 
         var key = validation.Record;
         var now = DateTimeOffset.UtcNow;
-        var accepted = 0;
 
+        // Validate the ENTIRE batch before persisting anything. Persisting per-event while
+        // a later event can still reject with 400 double-counts the earlier events when the
+        // client retries the whole batch; the ingest must be all-or-nothing (#1191).
+        var mapped = new List<EmbedAnalyticsEvent>(request.Events.Count);
         foreach (var dto in request.Events)
         {
             if (!TryMapEvent(dto, key, now, out var analyticsEvent, out var mapError))
@@ -133,11 +142,15 @@ internal static partial class EmbedPolicyEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(result.Error ?? "invalid analytics event"));
             }
 
-            await analytics.IngestAsync(analyticsEvent, context.RequestAborted);
-            accepted++;
+            mapped.Add(analyticsEvent);
         }
 
-        var response = new EmbedAnalyticsIngestResponse { Accepted = accepted };
+        foreach (var analyticsEvent in mapped)
+        {
+            await analytics.IngestAsync(analyticsEvent, context.RequestAborted);
+        }
+
+        var response = new EmbedAnalyticsIngestResponse { Accepted = mapped.Count };
         return TypedResults.Ok(ApiResponse<EmbedAnalyticsIngestResponse>.CreateSuccess(response));
     }
 

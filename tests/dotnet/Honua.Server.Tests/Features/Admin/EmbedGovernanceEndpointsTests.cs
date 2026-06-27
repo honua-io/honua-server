@@ -208,6 +208,77 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/embed/policy")]
+    public async Task FetchPolicy_CrossOriginPreflightFromArbitraryOrigin_IsAllowed()
+    {
+        var created = await CreateKeyAsync("policy-cors-key", ["https://isv.example.com"], integrationId: "site-cors");
+
+        using var anonymous = _fixture.CreateClient();
+
+        // A browser CORS preflight from an arbitrary ISV origin must be permitted; the
+        // per-embed-key origin allow-list is enforced by the handler, not by CORS.
+        using var preflight = new HttpRequestMessage(HttpMethod.Options, "/api/v1/embed/policy");
+        preflight.Headers.Add("Origin", "https://isv.example.com");
+        preflight.Headers.Add("Access-Control-Request-Method", "GET");
+        preflight.Headers.Add("Access-Control-Request-Headers", "x-honua-embed-key");
+        var preflightResponse = await anonymous.SendAsync(preflight);
+
+        Assert.True(
+            preflightResponse.StatusCode is HttpStatusCode.OK or HttpStatusCode.NoContent,
+            $"preflight returned {(int)preflightResponse.StatusCode}");
+        Assert.True(
+            preflightResponse.Headers.Contains("Access-Control-Allow-Origin"),
+            "preflight response missing Access-Control-Allow-Origin");
+
+        var allowedHeaders = preflightResponse.Headers.TryGetValues("Access-Control-Allow-Headers", out var values)
+            ? string.Join(",", values)
+            : string.Empty;
+        Assert.Contains("x-honua-embed-key", allowedHeaders, StringComparison.OrdinalIgnoreCase);
+
+        // The subsequent cross-origin GET succeeds and echoes the approved origin.
+        using var get = new HttpRequestMessage(HttpMethod.Get, "/api/v1/embed/policy");
+        get.Headers.Add(EmbedKeyHeader, created.Key);
+        get.Headers.Add("Origin", "https://isv.example.com");
+        var getResponse = await anonymous.SendAsync(get);
+
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        Assert.Equal(
+            "https://isv.example.com",
+            getResponse.Headers.GetValues("Access-Control-Allow-Origin").Single());
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/embed/analytics")]
+    [Endpoint("GET /api/v1/admin/embed/usage")]
+    public async Task IngestAnalytics_BatchWithOneInvalidEvent_PersistsZeroEvents()
+    {
+        var created = await CreateKeyAsync("analytics-atomic-key", ["https://app.example.com"], integrationId: "site-atomic");
+
+        var payload = new IngestEmbedAnalyticsRequest
+        {
+            Events =
+            [
+                // Valid event first: under the old per-event persistence this would commit
+                // before the second event rejects, double-counting on client retry.
+                new EmbedAnalyticsEventDto { EventType = "view", Origin = "https://app.example.com", ServiceId = "services/Roads" },
+                // Invalid: a raw embed key in the payload is rejected by the validator, so the
+                // entire batch must be rejected and nothing persisted.
+                new EmbedAnalyticsEventDto { EventType = "search", IntegrationId = created.Key },
+            ],
+        };
+
+        var response = await PostAnalyticsAsync(created.Key, payload);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var usage = await _client.GetAsync("/api/v1/admin/embed/usage?groupBy=eventType&integrationId=site-atomic");
+        Assert.Equal(HttpStatusCode.OK, usage.StatusCode);
+        var report = JsonSerializer.Deserialize<ApiResponse<EmbedUsageResponse>>(
+            await usage.Content.ReadAsStringAsync(), _jsonOptions);
+        Assert.NotNull(report?.Data);
+        Assert.Equal(0L, report!.Data.Total);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/embed/analytics")]
     public async Task IngestAnalytics_WithRawKeyInPayload_ReturnsBadRequest()
     {
