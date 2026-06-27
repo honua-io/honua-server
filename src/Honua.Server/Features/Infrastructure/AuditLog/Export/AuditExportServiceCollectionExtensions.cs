@@ -62,7 +62,8 @@ internal static class AuditExportServiceCollectionExtensions
         // no-op pruner keeps the sweep inert (tests / non-database hosts).
         if (options.ToRetentionPolicy().IsBounded)
         {
-            services.TryAddScoped<IAuditRetentionPruner>(static sp =>
+            var pruneBatchSize = options.RetentionPruneBatchSize;
+            services.TryAddScoped<IAuditRetentionPruner>(sp =>
             {
                 var connectionProvider = sp.GetService<IAdoNetDatabaseConnectionProvider>();
                 if (connectionProvider is null)
@@ -72,7 +73,9 @@ internal static class AuditExportServiceCollectionExtensions
 
                 return new PostgresAuditLogRetentionPruner(
                     connectionProvider,
-                    sp.GetRequiredService<ILogger<PostgresAuditLogRetentionPruner>>());
+                    sp.GetRequiredService<ILogger<PostgresAuditLogRetentionPruner>>(),
+                    schemaName: null,
+                    batchSize: pruneBatchSize);
             });
 
             services.AddHostedService<AuditRetentionPruneService>();

@@ -67,6 +67,56 @@ public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task PruneAsync_SmallBatchSize_DeletesExpiredPrefixAcrossMultipleBatches_AndRestoresGuard()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogRetentionPrunerTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+
+            var now = DateTimeOffset.UtcNow;
+            // Five expired rows force several passes when the batch size is 2.
+            for (var i = 0; i < 5; i++)
+            {
+                await sink.RecordAsync(Event($"old-{i}") with { Timestamp = now.AddDays(-200 + i) });
+            }
+
+            await sink.RecordAsync(Event("recent-0") with { Timestamp = now.AddDays(-5) });
+            await sink.RecordAsync(Event("recent-1") with { Timestamp = now.AddDays(-1) });
+
+            // batchSize = 2 -> the 5 expired rows are removed over three short
+            // transactions (2 + 2 + 1) rather than one table-locking sweep.
+            var pruner = new PostgresAuditLogRetentionPruner(
+                Provider(schema), NullLogger<PostgresAuditLogRetentionPruner>.Instance, schema, batchSize: 2);
+
+            var removed = await pruner.PruneAsync(
+                new AuditRetentionPolicy { RetentionWindow = TimeSpan.FromDays(90) },
+                CancellationToken.None);
+
+            removed.Should().Be(5, "all five records older than 90 days are expired");
+
+            var survivors = await ReadCorrelationIdsAsync(schema);
+            survivors.Should().ContainInOrder("recent-0", "recent-1");
+            survivors.Should().HaveCount(2);
+
+            // Chunked head-prefix pruning still leaves the surviving chain verifiable.
+            var report = await new PostgresAuditLogIntegrityVerifier(Provider(schema), schema).VerifyAsync();
+            report.Verified.Should().BeTrue("a chunked head-prefix prune preserves chain integrity");
+            report.RowsChecked.Should().Be(2);
+
+            // The append-only DELETE guard must be re-enabled after every batch, so
+            // an ordinary delete is once again a no-op once pruning completes.
+            await ExecuteAsync(schema, $"""DELETE FROM "{schema}".audit_log;""");
+            (await ReadCorrelationIdsAsync(schema)).Should().HaveCount(2, "the append-only guard is restored after chunked pruning");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task PruneAsync_UnboundedPolicy_RemovesNothing()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogRetentionPrunerTests));
