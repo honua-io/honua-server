@@ -98,6 +98,43 @@ internal static class SamlTestAssertions
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
 
+    /// <summary>
+    /// Produces a signed SAML 2.0 <c>LogoutRequest</c> (base64-encoded, HTTP-POST binding) as an
+    /// IdP emits for IdP-initiated Single Logout (#2154). The <c>LogoutRequest</c> element is
+    /// signed with the in-box <see cref="SignedXml"/> oracle so the server's hand-rolled verifier
+    /// must accept it.
+    /// </summary>
+    public static string CreateSignedLogoutRequest(X509Certificate2 certificate, string nameId)
+    {
+        var xml = BuildLogoutRequestXml(nameId);
+        var signed = SignElement(xml, "_logout1", certificate);
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
+    }
+
+    /// <summary>
+    /// Produces an UNSIGNED SAML 2.0 <c>LogoutRequest</c> (base64-encoded). Used to prove the
+    /// server rejects an unauthenticated single-logout that would otherwise terminate a session.
+    /// </summary>
+    public static string CreateUnsignedLogoutRequest(string nameId)
+        => Convert.ToBase64String(Encoding.UTF8.GetBytes(BuildLogoutRequestXml(nameId)));
+
+    private static string BuildLogoutRequestXml(string nameId)
+    {
+        const string saml = "urn:oasis:names:tc:SAML:2.0:assertion";
+        const string samlp = "urn:oasis:names:tc:SAML:2.0:protocol";
+        var issueInstant = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+
+        // Realistic IdP shape: a prefixed samlp:LogoutRequest root with samlp-prefixed and
+        // assertion-default-namespace children, exercising exclusive-C14N prefix rendering.
+        return $"""
+            <samlp:LogoutRequest xmlns:samlp="{samlp}" xmlns="{saml}" ID="_logout1" Version="2.0" IssueInstant="{issueInstant}">
+              <Issuer>{Issuer}</Issuer>
+              <NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent">{nameId}</NameID>
+              <samlp:SessionIndex>_session1</samlp:SessionIndex>
+            </samlp:LogoutRequest>
+            """;
+    }
+
     private static string BuildResponseXml(
         string nameId,
         string email,
@@ -173,20 +210,28 @@ internal static class SamlTestAssertions
     /// RSA-SHA256, mirroring what a real IdP emits.
     /// </summary>
     private static string SignAssertion(string responseXml, X509Certificate2 certificate)
+        => SignElement(responseXml, "_assertion1", certificate);
+
+    /// <summary>
+    /// Signs the element bearing the supplied <c>ID</c> with an enveloped XML-DSig signature
+    /// (Exclusive C14N, RSA-SHA256), inserting the signature after the element's saml:Issuer
+    /// child. Shared by the assertion and LogoutRequest signers.
+    /// </summary>
+    private static string SignElement(string xml, string referenceId, X509Certificate2 certificate)
     {
         var document = new XmlDocument { PreserveWhitespace = true };
-        document.LoadXml(responseXml);
+        document.LoadXml(xml);
 
         var nsmgr = new XmlNamespaceManager(document.NameTable);
         nsmgr.AddNamespace("saml", "urn:oasis:names:tc:SAML:2.0:assertion");
-        var assertion = (XmlElement)document.SelectSingleNode("//saml:Assertion", nsmgr)!;
+        var element = (XmlElement)document.SelectSingleNode($"//*[@ID='{referenceId}']")!;
 
         using var rsa = certificate.GetRSAPrivateKey()!;
-        var signedXml = new SignedXml(assertion) { SigningKey = rsa };
+        var signedXml = new SignedXml(element) { SigningKey = rsa };
         signedXml.SignedInfo!.CanonicalizationMethod = SignedXml.XmlDsigExcC14NTransformUrl;
         signedXml.SignedInfo.SignatureMethod = SignedXml.XmlDsigRSASHA256Url;
 
-        var reference = new Reference("#_assertion1");
+        var reference = new Reference("#" + referenceId);
         reference.DigestMethod = SignedXml.XmlDsigSHA256Url;
         reference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
         reference.AddTransform(new XmlDsigExcC14NTransform());
@@ -195,9 +240,9 @@ internal static class SamlTestAssertions
         signedXml.ComputeSignature();
         var signatureElement = signedXml.GetXml();
 
-        // Insert the signature as the first child of the assertion (after Issuer is also valid;
-        // the verifier locates it as a direct child regardless of position).
-        assertion.InsertAfter(signatureElement, assertion.SelectSingleNode("saml:Issuer", nsmgr));
+        // Insert the signature as a direct child after the Issuer; the verifier locates it as a
+        // direct child regardless of position.
+        element.InsertAfter(signatureElement, element.SelectSingleNode("saml:Issuer", nsmgr));
 
         return document.OuterXml;
     }
