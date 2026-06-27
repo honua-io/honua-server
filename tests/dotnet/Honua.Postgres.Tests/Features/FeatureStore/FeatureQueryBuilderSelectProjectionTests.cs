@@ -59,7 +59,39 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         result.Sql.Should().Contain("jsonb_build_object('category', attributes -> $2)::text AS attributes");
         result.Sql.Should().Contain("COUNT(*) OVER()");
-        result.WhereParameters.Should().Equal("category", 10);
+        result.Sql.Should().Contain("LIMIT $3");
+        // The optimized window-count builder emits the LIMIT placeholder but must NOT carry the
+        // LIMIT value in WhereParameters — that value is bound positionally by
+        // FeatureDataAccess.AddQueryParameters, exactly like the non-optimized builders. Carrying
+        // it here previously double-bound pagination and 500'd the prepared-statement cache path
+        // (honua-server#1749).
+        result.WhereParameters.Should().Equal("category");
+    }
+
+    [Fact]
+    public void BuildOptimizedSelectGmlQuery_WithCountAndStartIndex_DoesNotDoubleBindPagination()
+    {
+        // Regression for honua-server#1749: WFS GetFeature (and OGC Features/KML) reads with a
+        // count + startIndex route through the optimized window-count GML builder. It previously
+        // appended the LIMIT/OFFSET values to WhereParameters in addition to emitting their
+        // placeholders, while FeatureDataAccess.AddQueryParameters binds pagination too — leaving
+        // more bound parameters than SQL placeholders. On the prepared-statement cache path the
+        // misalignment left a pagination placeholder unbound -> "Parameter cannot be null" -> 500.
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            Limit = 5,
+            Offset = 10,
+        };
+
+        var result = queryBuilder.BuildOptimizedSelectGmlQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("COUNT(*) OVER()");
+        result.Sql.Should().Contain("LIMIT $").And.Contain("OFFSET $");
+        // No OutFields/WHERE/spatial params here, so the LIMIT/OFFSET values must be the only thing
+        // that could land in WhereParameters — and they must NOT, since AddQueryParameters binds
+        // them positionally. An empty list proves the double-bind is gone.
+        result.WhereParameters.Should().BeEmpty();
     }
 
     [Fact]

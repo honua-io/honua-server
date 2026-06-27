@@ -1058,6 +1058,23 @@ jobs:
           HONUA_MIXED_LAYER_ID: '1'
           HONUA_API_KEY: "ci-admin-password"
 
+      # The setup-honua-server action redirects the server's stdout/stderr to
+      # ${RUNNER_TEMP}/honua-server-setup.log but only dumps it when the readiness
+      # wait *fails*. When readiness succeeds and a later JS request 500s (e.g. a
+      # WFS GetFeature), the server-side exception is otherwise lost — leaving the
+      # failure undiagnosable. Surface the log on JS-test failure so the actual
+      # exception/stack trace is visible in the job output.
+      - name: Dump Honua Server log on failure
+        if: failure()
+        run: |
+          SERVER_LOG="${RUNNER_TEMP:-/tmp}/honua-server-setup.log"
+          if [ -f "$SERVER_LOG" ]; then
+            echo "----- Honua Server log (${SERVER_LOG}) -----"
+            cat "$SERVER_LOG"
+          else
+            echo "No Honua Server log found at ${SERVER_LOG}."
+          fi
+
       - name: Run OpenLayers Rendering Test
         run: npx playwright test --config openlayers/rendering/playwright.config.ts
         working-directory: tests/js
