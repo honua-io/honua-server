@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.ServiceDefaults;
 
 namespace Honua.Infrastructure.Validation;
 
@@ -32,6 +33,15 @@ public static class ValidationErrorHelpers
                 Details = details
             }
         };
+
+        // #2243: this builder bypasses the central formatter, so emit the error
+        // telemetry here too. No HttpContext is available, so the surface is
+        // recorded as the generic GeoServices service type.
+        HonuaTelemetry.RecordErrorEnvelope(
+            "GeoServices",
+            "validation",
+            GeoServicesErrorCodes.BadRequest,
+            isGeoServices: true);
 
         return Results.BadRequest(errorResponse);
     }
@@ -238,6 +248,11 @@ public static class ValidationErrorHelpers
                 Details = details
             }
         };
+
+        // #2243: this writer bypasses the central formatter, so emit the error
+        // telemetry through the same funnel using the request path for surface
+        // classification.
+        StandardErrorResponseFormatter.RecordErrorTelemetry(context, statusCode);
 
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
