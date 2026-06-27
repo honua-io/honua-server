@@ -360,11 +360,18 @@ internal sealed class FeatureServerEditsHandler(
                     ? responseObjectId
                     : null);
             }
+            catch (EditNotPermittedException ex)
+            {
+                context.HasValidationErrors = true;
+                context.AddResults![i] = CreateFailureResult(
+                    code: GeoServicesEditErrorCodes.NotPermitted,
+                    description: SanitizeEditErrorMessage(ex.Message, "Edit not permitted."));
+            }
             catch (ArgumentException ex)
             {
                 context.HasValidationErrors = true;
                 context.AddResults![i] = CreateFailureResult(
-                    code: 1000,
+                    code: GeoServicesEditErrorCodes.ValidationFailed,
                     description: SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage));
             }
             catch (Exception ex)
@@ -372,7 +379,7 @@ internal sealed class FeatureServerEditsHandler(
                 FeatureServerLog.FeatureAddFailed(logger, i, ex.Message, ex);
                 context.HasValidationErrors = true;
                 context.AddResults![i] = CreateFailureResult(
-                    code: 1000,
+                    code: GeoServicesEditErrorCodes.GenericFailure,
                     description: "Failed to add feature");
             }
         }
@@ -401,7 +408,7 @@ internal sealed class FeatureServerEditsHandler(
             {
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
-                    code: 1001,
+                    code: GeoServicesEditErrorCodes.InvalidObjectId,
                     description: "ObjectId is required for update operations");
                 continue;
             }
@@ -429,7 +436,7 @@ internal sealed class FeatureServerEditsHandler(
                 {
                     context.HasValidationErrors = true;
                     context.UpdateResults![i] = CreateFailureResult(
-                        code: 1002,
+                        code: GeoServicesEditErrorCodes.InvalidObjectId,
                         description: description,
                         objectId: failedObjectId);
                 }
@@ -459,7 +466,7 @@ internal sealed class FeatureServerEditsHandler(
                 {
                     context.HasValidationErrors = true;
                     context.UpdateResults![i] = CreateFailureResult(
-                        code: 1002,
+                        code: GeoServicesEditErrorCodes.NotFound,
                         description: "Feature not found",
                         objectId: objectId);
                     continue;
@@ -484,11 +491,19 @@ internal sealed class FeatureServerEditsHandler(
                 context.UpdateObjectIds.Add(objectId);
                 context.UpdateGeometryChanged.Add(requestHasGeometry);
             }
+            catch (EditNotPermittedException ex)
+            {
+                context.HasValidationErrors = true;
+                context.UpdateResults![i] = CreateFailureResult(
+                    code: GeoServicesEditErrorCodes.NotPermitted,
+                    description: SanitizeEditErrorMessage(ex.Message, "Edit not permitted."),
+                    objectId: objectId);
+            }
             catch (ArgumentException ex)
             {
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
-                    code: 1002,
+                    code: GeoServicesEditErrorCodes.ValidationFailed,
                     description: SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage),
                     objectId: objectId);
             }
@@ -497,7 +512,7 @@ internal sealed class FeatureServerEditsHandler(
                 FeatureServerLog.FeatureUpdateFailed(logger, i, ex.Message, ex);
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
-                    code: 1002,
+                    code: GeoServicesEditErrorCodes.GenericFailure,
                     description: "Failed to update feature",
                     objectId: objectId);
             }
@@ -527,7 +542,7 @@ internal sealed class FeatureServerEditsHandler(
             {
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
-                    code: 1003,
+                    code: GeoServicesEditErrorCodes.InvalidObjectId,
                     description: "Invalid ObjectId for delete operation");
                 continue;
             }
@@ -558,7 +573,7 @@ internal sealed class FeatureServerEditsHandler(
             {
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
-                    code: 1003,
+                    code: GeoServicesEditErrorCodes.DeleteNotFound,
                     description: "Feature not found",
                     objectId: objectId);
                 continue;
@@ -576,7 +591,7 @@ internal sealed class FeatureServerEditsHandler(
             {
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
-                    code: 1003,
+                    code: GeoServicesEditErrorCodes.NotPermitted,
                     description: SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."),
                     objectId: objectId);
                 continue;
@@ -662,11 +677,11 @@ internal sealed class FeatureServerEditsHandler(
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         var editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
 
-        ApplyResults(context.AddResults, context.CreateIndexes, editResult.CreateResults);
+        ApplyResults(context.AddResults, context.CreateIndexes, editResult.CreateResults, FeatureEditOperationKind.Create);
         ApplyCreateResponseObjectIds(context);
         CaptureCreateEventObjectIds(context, editResult.CreateResults);
-        ApplyResults(context.UpdateResults, context.UpdateIndexes, editResult.UpdateResults, context.UpdateObjectIds);
-        ApplyResults(context.DeleteResults, context.DeleteIndexes, editResult.DeleteResults, context.DeleteResponseObjectIds);
+        ApplyResults(context.UpdateResults, context.UpdateIndexes, editResult.UpdateResults, FeatureEditOperationKind.Update, context.UpdateObjectIds);
+        ApplyResults(context.DeleteResults, context.DeleteIndexes, editResult.DeleteResults, FeatureEditOperationKind.Delete, context.DeleteResponseObjectIds);
 
         return editResult;
     }
@@ -711,7 +726,7 @@ internal sealed class FeatureServerEditsHandler(
     {
         var rollbackError = new EditError
         {
-            Code = 1000,
+            Code = GeoServicesEditErrorCodes.OperationRolledBack,
             Description = "Operation rolled back due to validation failure"
         };
 
@@ -1320,7 +1335,10 @@ internal sealed class FeatureServerEditsHandler(
                 ownerPolicy, editEvent, existingOwner, principal);
             if (!ownerDecision.IsAllowed)
             {
-                throw new ArgumentException(SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."));
+                // Owner-policy denial is an authorization failure, not invalid data: throw a
+                // typed exception so the per-feature catch maps it to the stable
+                // GeoServicesEditErrorCodes.NotPermitted code rather than ValidationFailed.
+                throw new EditNotPermittedException(SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."));
             }
 
             if (editEvent == AttributeRuleEditEvent.Insert &&
@@ -1531,7 +1549,10 @@ internal sealed class FeatureServerEditsHandler(
         };
     }
 
-    private static EditResult ConvertEditOperationResult(EditOperationResult result, long? responseObjectId = null)
+    private static EditResult ConvertEditOperationResult(
+        EditOperationResult result,
+        FeatureEditOperationKind kind,
+        long? responseObjectId = null)
     {
         if (result.IsSuccess)
         {
@@ -1543,8 +1564,11 @@ internal sealed class FeatureServerEditsHandler(
             };
         }
 
+        // Map the writer's typed outcome onto the stable per-feature conflict code (#2251)
+        // so clients can classify deterministically (e.g. update-update vs delete-delete)
+        // without parsing the free-form description.
         return CreateFailureResult(
-            result.ErrorCode,
+            GeoServicesEditErrorCodes.ClassifyWriterFailure(result, kind),
             SanitizeEditErrorMessage(result.ErrorMessage, "Operation failed"),
             responseObjectId ?? result.ObjectId,
             result.GlobalId);
@@ -1573,6 +1597,7 @@ internal sealed class FeatureServerEditsHandler(
         EditResult?[]? results,
         List<int> indexes,
         ImmutableArray<EditOperationResult> operationResults,
+        FeatureEditOperationKind kind,
         List<long>? responseObjectIds = null)
     {
         if (results == null)
@@ -1586,12 +1611,12 @@ internal sealed class FeatureServerEditsHandler(
             var responseObjectId = responseObjectIds != null && i < responseObjectIds.Count
                 ? responseObjectIds[i]
                 : (long?)null;
-            results[indexes[i]] = ConvertEditOperationResult(operationResults[i], responseObjectId);
+            results[indexes[i]] = ConvertEditOperationResult(operationResults[i], kind, responseObjectId);
         }
 
         for (var i = count; i < indexes.Count; i++)
         {
-            results[indexes[i]] ??= CreateFailureResult(1000, "Operation failed");
+            results[indexes[i]] ??= CreateFailureResult(GeoServicesEditErrorCodes.GenericFailure, "Operation failed");
         }
     }
 
@@ -1641,7 +1666,7 @@ internal sealed class FeatureServerEditsHandler(
         var finalized = new EditResult[results.Length];
         for (var i = 0; i < results.Length; i++)
         {
-            finalized[i] = results[i] ?? CreateFailureResult(1000, "Operation failed");
+            finalized[i] = results[i] ?? CreateFailureResult(GeoServicesEditErrorCodes.GenericFailure, "Operation failed");
         }
 
         return finalized;
@@ -1688,5 +1713,14 @@ internal sealed class FeatureServerEditsHandler(
                message.Contains("password", StringComparison.OrdinalIgnoreCase);
     }
 
-
+    /// <summary>
+    /// Raised inside the per-feature build path when an owner-based edit policy denies the
+    /// edit. Distinct from <see cref="ArgumentException"/> (used for invalid-data validation
+    /// failures) so the surrounding per-feature catch can classify the failure as
+    /// <see cref="GeoServicesEditErrorCodes.NotPermitted"/> rather than
+    /// <see cref="GeoServicesEditErrorCodes.ValidationFailed"/>.
+    /// </summary>
+    private sealed class EditNotPermittedException(string message) : Exception(message)
+    {
+    }
 }
