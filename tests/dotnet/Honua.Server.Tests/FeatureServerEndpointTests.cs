@@ -3111,6 +3111,84 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_RetriedAddWithSameIdempotencyKey_CreatesExactlyOneFeature()
+    {
+        // Server-side at-most-once (#2250): a client that retries an add carrying the same
+        // Idempotency-Key must not create a duplicate feature; the retry replays the original
+        // response (the same objectId) and the layer ends up with exactly one new row.
+        var uniqueName = $"Idempotent-{Guid.NewGuid():n}";
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+
+        var editsRequest = new ApplyEditsRequest
+        {
+            Adds = new[]
+            {
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = uniqueName,
+                        ["description"] = "Added via idempotent ApplyEdits test"
+                    },
+                    Geometry = new GeoServicesGeometry
+                    {
+                        X = -122.4194,
+                        Y = 37.7749
+                    }
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var firstResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        firstResponse.Be200Ok();
+        var first = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            await firstResponse.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
+        first.Should().NotBeNull();
+        first!.Success.Should().BeTrue();
+        first.AddResults.Should().HaveCount(1);
+        first.AddResults![0].Success.Should().BeTrue();
+        var originalObjectId = first.AddResults[0].ObjectId;
+        originalObjectId.Should().BeGreaterThan(0);
+
+        // Retry the identical add with the same Idempotency-Key.
+        var secondResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        secondResponse.Be200Ok();
+        var second = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            await secondResponse.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
+        second.Should().NotBeNull();
+        second!.Success.Should().BeTrue();
+        second.AddResults.Should().HaveCount(1);
+        second.AddResults![0].Success.Should().BeTrue();
+        second.AddResults[0].ObjectId.Should().Be(originalObjectId,
+            "a replayed idempotent add must return the original objectId");
+
+        // Exactly one feature with the unique name must exist.
+        var countResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='{uniqueName}'&returnCountOnly=true&f=json");
+        countResponse.Be200Ok();
+        var countQuery = JsonSerializer.Deserialize<QueryResponse>(
+            await countResponse.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.QueryResponse);
+        countQuery.Should().NotBeNull();
+        countQuery!.Count.Should().Be(1, "the retried add must not create a duplicate feature");
+    }
+
+    private Task<HttpResponseMessage> PostApplyEditsWithIdempotencyKeyAsync(string json, string idempotencyKey)
+    {
+        var requestMessage = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits")
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+        };
+        requestMessage.Headers.Add("Idempotency-Key", idempotencyKey);
+        return _fixture.Client.SendAsync(requestMessage);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithCalculationRule_PopulatesTargetFieldOnAdd()
     {
         // honua-server#1271: a calculation attribute rule attached to the resource must
