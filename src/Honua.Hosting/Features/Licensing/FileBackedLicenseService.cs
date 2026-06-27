@@ -25,7 +25,7 @@ internal sealed class FileBackedLicenseService :
     private readonly IOptions<LicenseOptions> _options;
     private readonly IEd25519Verifier _verifier;
     private readonly ILogger<FileBackedLicenseService> _logger;
-    private readonly ILicenseContentSecretResolver? _secretResolver;
+    private readonly IReadOnlyList<ILicenseContentSecretResolver> _secretResolvers;
     private LicenseSnapshot _snapshot;
     private long _snapshotVersion;
 
@@ -33,12 +33,14 @@ internal sealed class FileBackedLicenseService :
         IOptions<LicenseOptions> options,
         IEd25519Verifier verifier,
         ILogger<FileBackedLicenseService> logger,
-        ILicenseContentSecretResolver? secretResolver = null)
+        IEnumerable<ILicenseContentSecretResolver>? secretResolvers = null)
     {
         _options = options;
         _verifier = verifier;
         _logger = logger;
-        _secretResolver = secretResolver;
+        _secretResolvers = secretResolvers as IReadOnlyList<ILicenseContentSecretResolver>
+            ?? secretResolvers?.ToArray()
+            ?? [];
         _snapshot = CreateCommunitySnapshot(
             LicenseValidationState.NoLicenseConfigured,
             isValid: true,
@@ -112,21 +114,21 @@ internal sealed class FileBackedLicenseService :
     /// When <see langword="true"/>, a valid <c>Licensing:DevGrantEdition</c> short-circuits the
     /// snapshot to that edition. Must be <see langword="false"/> in Production.
     /// </param>
-    /// <param name="secretResolver">
-    /// The same <see cref="ILicenseContentSecretResolver"/> that <c>AddHonuaLicensing</c> registers
-    /// for the per-request license service. Supplying it here lets the bootstrap snapshot honor
-    /// <c>Licensing:LicenseContentSecretRef</c> (e.g. a Secrets-Manager-only Pro license); without
-    /// it a secret-ref license degrades to Community at bootstrap and a startup gate such as the
-    /// Redis-cache probe stays off for the process lifetime (honua-server#1755). It is optional so
-    /// hosts without a secret resolver (or built with the cloud SDK excluded) still resolve file /
-    /// inline / Community licenses correctly.
+    /// <param name="secretResolvers">
+    /// The same <see cref="ILicenseContentSecretResolver"/> set that <c>AddHonuaLicensing</c> registers
+    /// for the per-request license service (e.g. AWS Secrets Manager and/or Azure Key Vault). Supplying
+    /// them here lets the bootstrap snapshot honor <c>Licensing:LicenseContentSecretRef</c> (e.g. a
+    /// secret-store-only Pro license); without them a secret-ref license degrades to Community at
+    /// bootstrap and a startup gate such as the Redis-cache probe stays off for the process lifetime
+    /// (honua-server#1755). It is optional so hosts without a secret resolver (or built with the cloud
+    /// SDK excluded) still resolve file / inline / Community licenses correctly.
     /// </param>
     /// <param name="cancellationToken">Cancellation token for the snapshot load.</param>
     internal static async Task<LicenseSnapshot> LoadBootstrapSnapshotAsync(
         IConfiguration configuration,
         ILoggerFactory loggerFactory,
         bool honorDevGrant = false,
-        ILicenseContentSecretResolver? secretResolver = null,
+        IEnumerable<ILicenseContentSecretResolver>? secretResolvers = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -145,7 +147,7 @@ internal sealed class FileBackedLicenseService :
             Options.Create(options),
             new BouncyCastleEd25519Verifier(),
             loggerFactory.CreateLogger<FileBackedLicenseService>(),
-            secretResolver);
+            secretResolvers);
         await service.StartAsync(cancellationToken).ConfigureAwait(false);
         return service.GetSnapshot();
     }
@@ -317,10 +319,11 @@ internal sealed class FileBackedLicenseService :
     }
 
     /// <summary>
-    /// Resolves <see cref="LicenseOptions.LicenseContentSecretRef"/> through the registered
-    /// <see cref="ILicenseContentSecretResolver"/>, if any. Never throws: a missing resolver,
-    /// an unsupported reference, or an unreachable secret returns <c>null</c> so the caller
-    /// falls through to inline content / file / Community.
+    /// Resolves <see cref="LicenseOptions.LicenseContentSecretRef"/> through the first registered
+    /// <see cref="ILicenseContentSecretResolver"/> that recognizes the reference (e.g. AWS Secrets
+    /// Manager for <c>aws:secretsmanager:</c>, Azure Key Vault for <c>azure:keyvault:</c>). Never
+    /// throws: no registered resolver, an unsupported reference, or an unreachable secret returns
+    /// <c>null</c> so the caller falls through to inline content / file / Community.
     /// </summary>
     private async Task<string?> TryResolveLicenseContentSecretAsync(
         LicenseOptions options,
@@ -332,13 +335,23 @@ internal sealed class FileBackedLicenseService :
             return null;
         }
 
-        if (_secretResolver is null)
+        if (_secretResolvers.Count == 0)
         {
             LicenseRuntimeLog.LicenseSecretResolverUnavailable(_logger);
             return null;
         }
 
-        if (!_secretResolver.CanResolve(secretRef))
+        ILicenseContentSecretResolver? resolver = null;
+        foreach (var candidate in _secretResolvers)
+        {
+            if (candidate.CanResolve(secretRef))
+            {
+                resolver = candidate;
+                break;
+            }
+        }
+
+        if (resolver is null)
         {
             LicenseRuntimeLog.LicenseSecretReferenceUnsupported(_logger);
             return null;
@@ -346,7 +359,7 @@ internal sealed class FileBackedLicenseService :
 
         try
         {
-            var content = await _secretResolver
+            var content = await resolver
                 .ResolveLicenseContentAsync(secretRef, cancellationToken)
                 .ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(content))

@@ -105,41 +105,43 @@ internal static class StartupConfigurationHelpers
         // Pro license (Licensing:LicenseContentSecretRef) resolves as Community at bootstrap, so
         // this gate sees no caching.redis entitlement and the IConnectionMultiplexer never gets
         // wired for the process lifetime even when the SM license carries it (honua-server#1755).
-        var secretResolver = CreateBootstrapLicenseSecretResolver(loggerFactory);
+        var secretResolvers = CreateBootstrapLicenseSecretResolvers(loggerFactory);
         var snapshot = await FileBackedLicenseService
             .LoadBootstrapSnapshotAsync(
                 configuration,
                 loggerFactory,
                 honorDevGrant: !environment.IsProduction(),
-                secretResolver: secretResolver)
+                secretResolvers: secretResolvers)
             .ConfigureAwait(false);
         return snapshot.HasEntitlement("caching.redis");
     }
 
     /// <summary>
-    /// Constructs the provider-specific <see cref="ILicenseContentSecretResolver"/> for the
-    /// bootstrap entitlement probe, mirroring the resolver <c>AddHonuaLicensing</c> registers in
-    /// DI. The AWSSDK surface stays confined to <c>Honua.Aws</c> behind the same
-    /// <c>HONUA_EXCLUDE_AWS</c> guard the runtime wiring uses; when the cloud SDK is excluded the
-    /// probe falls back to file / inline / Community resolution exactly as before. Constructing the
-    /// resolver here is cheap — it only touches the network when a secret reference is configured
-    /// and resolved (its AWS client is created lazily).
+    /// Constructs the provider-specific <see cref="ILicenseContentSecretResolver"/> set for the
+    /// bootstrap entitlement probe, mirroring the resolvers <c>AddHonuaLicensing</c> registers in
+    /// DI. The AWSSDK / Azure SDK surfaces stay confined to <c>Honua.Aws</c> / <c>Honua.Azure</c>
+    /// behind the same <c>HONUA_EXCLUDE_AWS</c> / <c>HONUA_EXCLUDE_AZURE</c> guards the runtime
+    /// wiring uses; when a cloud SDK is excluded that resolver is simply omitted and the probe falls
+    /// back to file / inline / Community resolution exactly as before. Constructing the resolvers
+    /// here is cheap — each only touches the network when a matching secret reference is configured
+    /// and resolved (their cloud clients are created lazily).
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Performance",
-        "CA1859:Use concrete types when possible for improved performance",
-        Justification = "The return type must stay the cloud-neutral abstraction: in the " +
-            "HONUA_EXCLUDE_AWS build profile the concrete resolver type does not exist, so the " +
-            "method returns null typed as the interface.")]
-    private static ILicenseContentSecretResolver? CreateBootstrapLicenseSecretResolver(ILoggerFactory loggerFactory)
+    private static List<ILicenseContentSecretResolver> CreateBootstrapLicenseSecretResolvers(
+        ILoggerFactory loggerFactory)
     {
-#if HONUA_EXCLUDE_AWS
-        _ = loggerFactory;
-        return null;
-#else
-        return new Honua.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver(
-            loggerFactory.CreateLogger<Honua.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver>());
+        var resolvers = new List<ILicenseContentSecretResolver>(capacity: 2);
+#if !HONUA_EXCLUDE_AWS
+        resolvers.Add(new Honua.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver(
+            loggerFactory.CreateLogger<Honua.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver>()));
 #endif
+#if !HONUA_EXCLUDE_AZURE
+        resolvers.Add(new Honua.Licensing.AzureKeyVaultLicenseContentResolver(
+            loggerFactory.CreateLogger<Honua.Licensing.AzureKeyVaultLicenseContentResolver>()));
+#endif
+#if HONUA_EXCLUDE_AWS && HONUA_EXCLUDE_AZURE
+        _ = loggerFactory;
+#endif
+        return resolvers;
     }
 
     /// <summary>

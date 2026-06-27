@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Aws.Features.Licensing;
+using Honua.Licensing;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.TestKit.Attributes;
@@ -13,39 +13,40 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Tests.Features.Licensing;
 
 /// <summary>
-/// Opt-in live test for the AWS Secrets Manager license-content resolver. It is skipped
-/// unless the operator points it at a real secret holding a signed Pro license envelope
-/// and supplies the matching trusted public key, so CI never depends on cloud credentials.
+/// Opt-in live test for the Azure Key Vault license-content resolver. It is skipped unless the
+/// operator points it at a real Key Vault secret holding a signed Pro license envelope and supplies
+/// the matching trusted public key, so CI never depends on cloud credentials.
 ///
-/// To run against the demo Pro license:
-///   HONUA_LIVE_LICENSE_SECRET_ARN=aws:secretsmanager:&lt;arn-or-name of honua-demo-demo/license-pro&gt;
+/// To run against a Pro license stored in Key Vault:
+///   HONUA_LIVE_LICENSE_KEYVAULT_REF=azure:keyvault:https://&lt;vault&gt;.vault.azure.net/&lt;secret&gt;
 ///   HONUA_LIVE_LICENSE_KEY_ID=honuademo2026q2
 ///   HONUA_LIVE_LICENSE_PUBLIC_KEY=base64url:Y2XgDBncW5w6n7L3YG-T6HxX51DGybWazt0_gubk30k
-///   AWS_REGION=&lt;region&gt; plus credentials with secretsmanager:GetSecretValue on the secret.
+///   plus an Azure credential (managed identity / AZURE_* env / az login) with
+///   "Key Vault Secrets User" on the secret.
 /// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.LicenseManagement)]
-public sealed class AwsSecretsManagerLicenseContentResolverLiveTests
+public sealed class AzureKeyVaultLicenseContentResolverLiveTests
 {
-    private const string SecretArnEnv = "HONUA_LIVE_LICENSE_SECRET_ARN";
+    private const string KeyVaultRefEnv = "HONUA_LIVE_LICENSE_KEYVAULT_REF";
     private const string KeyIdEnv = "HONUA_LIVE_LICENSE_KEY_ID";
     private const string PublicKeyEnv = "HONUA_LIVE_LICENSE_PUBLIC_KEY";
 
-    [EmulatorTest(SecretArnEnv, KeyIdEnv, PublicKeyEnv)]
+    [EmulatorTest(KeyVaultRefEnv, KeyIdEnv, PublicKeyEnv)]
     [Trait("Category", "Live")]
     public async Task ResolveAndValidate_LiveSecret_ActivatesPro()
     {
-        var secretRef = Environment.GetEnvironmentVariable(SecretArnEnv)!;
+        var secretRef = Environment.GetEnvironmentVariable(KeyVaultRefEnv)!;
         var keyId = Environment.GetEnvironmentVariable(KeyIdEnv)!;
         var publicKey = Environment.GetEnvironmentVariable(PublicKeyEnv)!;
 
-        var resolver = new AwsSecretsManagerLicenseContentResolver(
-            NullLogger<AwsSecretsManagerLicenseContentResolver>.Instance);
+        var resolver = new AzureKeyVaultLicenseContentResolver(
+            NullLogger<AzureKeyVaultLicenseContentResolver>.Instance);
 
         resolver.CanResolve(secretRef).Should().BeTrue();
 
-        // Feed the resolver into the real license service exactly as production does, so the
-        // test proves end-to-end that a Secrets-Manager-sourced envelope activates Pro.
+        // Feed the resolver into the real license service exactly as production does, so the test
+        // proves end-to-end that a Key-Vault-sourced envelope activates Pro.
         var service = new FileBackedLicenseService(
             Options.Create(new LicenseOptions
             {

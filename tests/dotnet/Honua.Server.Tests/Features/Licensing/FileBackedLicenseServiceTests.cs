@@ -422,7 +422,7 @@ public sealed class FileBackedLicenseServiceTests
             configuration,
             loggerFactory,
             honorDevGrant: false,
-            secretResolver: resolver);
+            secretResolvers: [resolver]);
 
         snapshot.Edition.Should().Be(HonuaEdition.Pro);
         snapshot.IsValid.Should().BeTrue();
@@ -447,7 +447,7 @@ public sealed class FileBackedLicenseServiceTests
             configuration,
             loggerFactory,
             honorDevGrant: false,
-            secretResolver: null);
+            secretResolvers: null);
 
         snapshot.Edition.Should().Be(HonuaEdition.Community);
         snapshot.HasEntitlement("caching.redis").Should().BeFalse();
@@ -472,7 +472,7 @@ public sealed class FileBackedLicenseServiceTests
             configuration,
             loggerFactory,
             honorDevGrant: false,
-            secretResolver: resolver);
+            secretResolvers: [resolver]);
 
         snapshot.Edition.Should().Be(HonuaEdition.Community);
         snapshot.IsValid.Should().BeTrue();
@@ -521,7 +521,7 @@ public sealed class FileBackedLicenseServiceTests
             Options.Create(options),
             new BouncyCastleEd25519Verifier(),
             logger,
-            secretResolver);
+            secretResolver is null ? null : [secretResolver]);
 
     /// <summary>
     /// Stand-in for a cloud secret store (e.g. AWS Secrets Manager) that returns the
