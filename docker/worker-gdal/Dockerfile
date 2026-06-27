@@ -102,9 +102,6 @@ RUN apt-get update \
 # `pdal` must also be on PATH with the LAS reader + reprojection filter compiled
 # in (LAZ/COPC decompress + reproject, #1854).
 RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
- # gdal_grid backs the raster IDW interpolation tool (raster.interpolate-idw, #2141);
- # gdalwarp backs raster.resample and raster.mosaic. Both ship in the ubuntu-full base.
- && command -v gdal_grid \
  && gdalinfo --formats | grep -qi netCDF \
  && gdalinfo --formats | grep -qi GRIB \
  && command -v pdal \

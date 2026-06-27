@@ -67,15 +67,6 @@ internal static partial class ProcessPlanValidator
         "lanczos"
     };
 
-    // Mosaic overlap operators the native worker (GdalRasterMosaicJobExecutor) can
-    // express through gdalwarp source ordering. Statistical operators are not yet
-    // available and are rejected so a plan accepted here is also accepted by the
-    // worker rather than failing at the CLI boundary.
-    private static readonly HashSet<string> RasterMosaicOperatorValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "first", "last"
-    };
-
     private static readonly HashSet<string> RasterFormatValues = new(StringComparer.OrdinalIgnoreCase)
     {
         "gtiff", "geotiff", "tiff", "tif",
@@ -300,23 +291,6 @@ internal static partial class ProcessPlanValidator
                 break;
             case "raster.zonal-statistics":
                 ValidateRasterZonalStatisticsSemantics(step, violations);
-                break;
-            case "raster.resample":
-                ValidateRasterResampleSemantics(step, violations);
-                break;
-            case "raster.interpolate-idw":
-                ValidateRasterInterpolateIdwSemantics(step, violations);
-                break;
-            case "raster.interpolate-kriging":
-                // Kriging is advertised but flagged unsupported by the native worker
-                // (no kriging-capable backend is bundled). The plan is still
-                // shape-validated (the base type-validator enforces the required
-                // 'points' input); the worker FAILS the job at execution with a clear
-                // message rather than the validator blocking it, so the limitation is
-                // surfaced as a job failure rather than a submit-time rejection.
-                break;
-            case "raster.mosaic":
-                ValidateRasterMosaicSemantics(step, violations);
                 break;
             case "conversion.geometry-format":
                 ValidateGeometryFormatConversionSemantics(step, violations);
@@ -883,56 +857,6 @@ internal static partial class ProcessPlanValidator
         ValidateSharedRasterSourceSemantics(step, violations);
         RequireIntAtLeast(step, "band", 1, violations);
         ValidateEnumList(step, "statistics", RasterZonalStatisticValues, "count, sum, mean, min, max, stddev, variance", violations);
-    }
-
-    private static void ValidateRasterResampleSemantics(
-        AnalysisPlanStep step,
-        List<GeoprocessingValidationFailure> violations)
-    {
-        ValidateSharedRasterSourceSemantics(step, violations);
-        RequirePositiveFiniteDouble(step, "cellSize", violations);
-        RequirePositiveFiniteDouble(step, "cellSizeY", violations);
-
-        if (step.Inputs.TryGetValue("resampling", out var resamplingRaw)
-            && !string.IsNullOrWhiteSpace(resamplingRaw)
-            && !RasterResamplingValues.Contains(resamplingRaw.Trim()))
-        {
-            AddEnumViolation(step, "resampling", resamplingRaw, "nearestneighbor, bilinear, cubic, lanczos", violations);
-        }
-    }
-
-    private static void ValidateRasterInterpolateIdwSemantics(
-        AnalysisPlanStep step,
-        List<GeoprocessingValidationFailure> violations)
-    {
-        // 'points' is a declared-required base64 input enforced by the base
-        // type-validator. The IDW tuning parameters mirror gdal_grid's invdist
-        // options; range-check them so a plan accepted here is accepted by the CLI.
-        RequirePositiveFiniteDouble(step, "power", violations);
-        RequireNonNegativeFiniteDouble(step, "smoothing", violations);
-        RequirePositiveFiniteDouble(step, "radius", violations);
-        RequireIntAtLeast(step, "width", 1, violations);
-        RequireIntAtLeast(step, "height", 1, violations);
-    }
-
-    private static void ValidateRasterMosaicSemantics(
-        AnalysisPlanStep step,
-        List<GeoprocessingValidationFailure> violations)
-    {
-        // 'sources' is a declared-required input enforced by the base type-validator.
-        if (step.Inputs.TryGetValue("operator", out var operatorRaw)
-            && !string.IsNullOrWhiteSpace(operatorRaw)
-            && !RasterMosaicOperatorValues.Contains(operatorRaw.Trim()))
-        {
-            AddEnumViolation(step, "operator", operatorRaw, "first, last", violations);
-        }
-
-        if (step.Inputs.TryGetValue("resampling", out var resamplingRaw)
-            && !string.IsNullOrWhiteSpace(resamplingRaw)
-            && !RasterResamplingValues.Contains(resamplingRaw.Trim()))
-        {
-            AddEnumViolation(step, "resampling", resamplingRaw, "nearestneighbor, bilinear, cubic, lanczos", violations);
-        }
     }
 
     private static void ValidateGeometryFormatConversionSemantics(
@@ -1686,24 +1610,6 @@ internal static partial class ProcessPlanValidator
             || parsed <= 0d)
         {
             AddRangeViolationIfNew(step, parameter, $"expected positive number, got '{value}'", violations);
-        }
-    }
-
-    private static void RequireNonNegativeFiniteDouble(
-        AnalysisPlanStep step,
-        string parameter,
-        List<GeoprocessingValidationFailure> violations)
-    {
-        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
-        {
-            return;
-        }
-
-        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
-            || double.IsNaN(parsed) || double.IsInfinity(parsed)
-            || parsed < 0d)
-        {
-            AddRangeViolationIfNew(step, parameter, $"expected non-negative number, got '{value}'", violations);
         }
     }
 

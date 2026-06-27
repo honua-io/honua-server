@@ -665,7 +665,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Raster operations (9)
+        // Raster operations (5)
         // Raster analysis and mutation workflows implemented natively by the
         // heavyweight GDAL worker via the gdalwarp / gdalinfo CLI tools. Declared
         // RuntimeProfile = native so the submit path stamps the spec native and
@@ -746,70 +746,6 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("statistics", "Statistics", "Comma-separated stat names. Allowed values: count, sum, mean, min, max, stddev, variance.", ProcessParameterValueType.Text, defaultValue: "count,mean,stddev,min,max,sum"),
             ],
             OutputArtifactKinds = [ArtifactKind.Table],
-            RuntimeProfile = RuntimeProfiles.Native
-        },
-        new ProcessDefinition
-        {
-            ProcessId = "raster.resample",
-            Title = "Resample Raster",
-            Description = "Changes a raster's cell size using the requested resampling algorithm. Executed out-of-process by the heavyweight GDAL worker via gdalwarp -tr. Reads a base64-encoded GeoTIFF from 'source'; publishes the resampled GeoTIFF as a data-URI artifact.",
-            Category = "raster",
-            Parameters =
-            [
-                .. NativeRasterSourceParameters,
-                Param("cellSize", "Cell Size", "Target pixel size in the raster's georeferenced units. Must be > 0. Applied to both axes unless 'cellSizeY' is supplied.", ProcessParameterValueType.FloatingPoint, required: true),
-                Param("cellSizeY", "Cell Size Y", "Optional distinct vertical pixel size in georeferenced units. Must be > 0. Defaults to 'cellSize' (square pixels).", ProcessParameterValueType.FloatingPoint),
-                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear"),
-            ],
-            OutputArtifactKinds = [ArtifactKind.Raster],
-            RuntimeProfile = RuntimeProfiles.Native
-        },
-        new ProcessDefinition
-        {
-            ProcessId = "raster.interpolate-idw",
-            Title = "Interpolate (IDW)",
-            Description = "Interpolates a continuous raster surface from scattered points using inverse-distance weighting. Executed out-of-process by the heavyweight GDAL worker via gdal_grid -a invdist. Reads a base64-encoded GeoJSON point FeatureCollection from 'points'; publishes the interpolated GeoTIFF as a data-URI artifact.",
-            Category = "raster",
-            Parameters =
-            [
-                Param("points", "Points", "Source points as a base64-encoded GeoJSON FeatureCollection. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
-                Param("zField", "Z Field", "Attribute name holding the value to interpolate. When omitted, gdal_grid uses the geometry Z coordinate.", ProcessParameterValueType.Text),
-                Param("power", "Power", "Inverse-distance weighting exponent. Must be > 0. Defaults to 2.0.", ProcessParameterValueType.FloatingPoint, defaultValue: "2.0"),
-                Param("smoothing", "Smoothing", "Smoothing parameter applied during interpolation. Must be >= 0. Defaults to 0.", ProcessParameterValueType.FloatingPoint, defaultValue: "0"),
-                Param("radius", "Search Radius", "Optional search radius in georeferenced units. Must be > 0 when supplied. When omitted, all points contribute (global search).", ProcessParameterValueType.FloatingPoint),
-                Param("width", "Width", "Optional output raster width in pixels. Must be > 0 and supplied together with 'height'.", ProcessParameterValueType.WholeNumber),
-                Param("height", "Height", "Optional output raster height in pixels. Must be > 0 and supplied together with 'width'.", ProcessParameterValueType.WholeNumber),
-            ],
-            OutputArtifactKinds = [ArtifactKind.Raster],
-            RuntimeProfile = RuntimeProfiles.Native
-        },
-        new ProcessDefinition
-        {
-            ProcessId = "raster.interpolate-kriging",
-            Title = "Interpolate (Kriging)",
-            Description = "FLAGGED / UNSUPPORTED in this build: kriging interpolation requires a kriging-capable numerical backend that the worker image does not bundle (stock GDAL gdal_grid has no kriging algorithm). The process is advertised so callers can discover the limitation; a submitted job FAILS with a clear message rather than silently substituting a different algorithm. Use raster.interpolate-idw for inverse-distance-weighted interpolation.",
-            Category = "raster",
-            Parameters =
-            [
-                Param("points", "Points", "Source points as a base64-encoded GeoJSON FeatureCollection.", ProcessParameterValueType.Text, required: true),
-                Param("zField", "Z Field", "Attribute name holding the value to interpolate.", ProcessParameterValueType.Text),
-            ],
-            OutputArtifactKinds = [ArtifactKind.Raster],
-            RuntimeProfile = RuntimeProfiles.Native
-        },
-        new ProcessDefinition
-        {
-            ProcessId = "raster.mosaic",
-            Title = "Mosaic Rasters",
-            Description = "Combines two or more input rasters into a single raster. Executed out-of-process by the heavyweight GDAL worker via gdalwarp. Reads a '|'-separated list of base64-encoded GeoTIFFs from 'sources'; publishes the mosaicked GeoTIFF as a data-URI artifact. The 'operator' selects overlap behavior (first/last); statistical operators (min/max/mean/sum) are not yet available on the native worker.",
-            Category = "raster",
-            Parameters =
-            [
-                Param("sources", "Sources", "Two or more source rasters as base64-encoded GeoTIFFs separated by '|'. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
-                Param("operator", "Operator", "Overlap behavior. Allowed values: first, last. Defaults to last (later-listed source wins).", ProcessParameterValueType.Text, defaultValue: "last"),
-                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to nearestneighbor.", ProcessParameterValueType.Text, defaultValue: "nearestneighbor"),
-            ],
-            OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
         },
 

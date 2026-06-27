@@ -168,14 +168,6 @@ public sealed class CatalogExecutableConformanceTests
         "raster.statistics",
         "raster.histogram",
         "raster.zonal-statistics",
-        // Raster analysis tool pack (#2141): resample / IDW interpolation / mosaic
-        // run out-of-process in the GDAL worker; kriging is advertised but flagged
-        // unsupported (the worker FAILS it with a clear message). All declare the
-        // native runtime profile and have NO lean-dispatcher executor.
-        "raster.resample",
-        "raster.interpolate-idw",
-        "raster.interpolate-kriging",
-        "raster.mosaic",
         "conversion.raster-format",
         "conversion.raster-reproject",
         // Point-cloud conversion (#1854): LAZ/COPC decompression + optional
