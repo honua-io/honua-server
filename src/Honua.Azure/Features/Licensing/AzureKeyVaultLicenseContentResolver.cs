@@ -60,14 +60,14 @@ internal sealed class AzureKeyVaultLicenseContentResolver : ILicenseContentSecre
 
     /// <inheritdoc />
     public bool CanResolve(string? secretReference)
-        => TryParseReference(secretReference, out _, out _);
+        => TryParseReference(secretReference, out _, out _, out _);
 
     /// <inheritdoc />
     public async Task<string?> ResolveLicenseContentAsync(
         string secretReference,
         CancellationToken cancellationToken = default)
     {
-        if (!TryParseReference(secretReference, out var vaultUri, out var secretName))
+        if (!TryParseReference(secretReference, out var vaultUri, out var secretName, out var secretVersion))
         {
             return null;
         }
@@ -76,7 +76,7 @@ internal sealed class AzureKeyVaultLicenseContentResolver : ILicenseContentSecre
         {
             var client = _clientFactory(vaultUri);
             Response<KeyVaultSecret> response = await client
-                .GetSecretAsync(secretName, cancellationToken: cancellationToken)
+                .GetSecretAsync(secretName, secretVersion, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             var value = response.Value?.Value;
@@ -98,14 +98,34 @@ internal sealed class AzureKeyVaultLicenseContentResolver : ILicenseContentSecre
     }
 
     /// <summary>
-    /// Parses an <c>azure:keyvault:&lt;vault-uri&gt;/&lt;secret&gt;</c> reference into the vault URI
-    /// and secret name. Returns <c>false</c> (rather than throwing) for any unsupported or malformed
-    /// reference so both <see cref="CanResolve"/> and the fail-safe resolution path stay non-throwing.
+    /// Parses a Key Vault license reference into the vault endpoint, secret name, and optional secret
+    /// version. Two forms are accepted:
+    /// <list type="bullet">
+    /// <item>
+    /// The canonical Azure Key Vault secret identifier,
+    /// <c>azure:keyvault:https://&lt;vault&gt;.vault.azure.net/secrets/&lt;name&gt;</c> (with an optional
+    /// trailing <c>/&lt;version&gt;</c>). This is the form Azure surfaces in the portal and CLI.
+    /// </item>
+    /// <item>
+    /// The documented shorthand,
+    /// <c>azure:keyvault:https://&lt;vault&gt;.vault.azure.net/&lt;secret&gt;</c>.
+    /// </item>
+    /// </list>
+    /// The vault endpoint is always derived from the URI scheme + authority — never by string-splitting
+    /// the path — because a naive split on the final <c>'/'</c> folds the <c>/secrets</c> segment into the
+    /// vault base, producing an endpoint that silently 404s every fetch (so Pro never activates).
+    /// Returns <c>false</c> (rather than throwing) for any unsupported or malformed reference so both
+    /// <see cref="CanResolve"/> and the fail-safe resolution path stay non-throwing.
     /// </summary>
-    private static bool TryParseReference(string? secretReference, out Uri vaultUri, out string secretName)
+    private static bool TryParseReference(
+        string? secretReference,
+        out Uri vaultUri,
+        out string secretName,
+        out string? secretVersion)
     {
         vaultUri = null!;
         secretName = string.Empty;
+        secretVersion = null;
 
         if (string.IsNullOrWhiteSpace(secretReference) ||
             !secretReference.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
@@ -114,32 +134,43 @@ internal sealed class AzureKeyVaultLicenseContentResolver : ILicenseContentSecre
         }
 
         var remainder = secretReference[KeyVaultPrefix.Length..].Trim();
-        if (remainder.Length == 0)
-        {
-            return false;
-        }
-
-        // The vault URI is everything up to the final '/', the secret name is the trailing segment:
-        //   azure:keyvault:https://myvault.vault.azure.net/license-pro
-        //   -> vault = https://myvault.vault.azure.net, secret = license-pro
-        var lastSlash = remainder.LastIndexOf('/');
-        if (lastSlash <= 0 || lastSlash == remainder.Length - 1)
-        {
-            return false;
-        }
-
-        var vaultPart = remainder[..lastSlash];
-        var secretPart = remainder[(lastSlash + 1)..];
-
-        if (string.IsNullOrWhiteSpace(secretPart) ||
-            !Uri.TryCreate(vaultPart, UriKind.Absolute, out var parsedUri) ||
+        if (remainder.Length == 0 ||
+            !Uri.TryCreate(remainder, UriKind.Absolute, out var parsedUri) ||
             parsedUri.Scheme != Uri.UriSchemeHttps)
         {
             return false;
         }
 
-        vaultUri = parsedUri;
-        secretName = secretPart;
-        return true;
+        // Vault endpoint = scheme + authority only (e.g. https://myvault.vault.azure.net/). The secret
+        // name and optional version come from the path segments, NOT from a trailing-slash split.
+        var vaultEndpoint = new Uri(parsedUri.GetLeftPart(UriPartial.Authority), UriKind.Absolute);
+        var segments = parsedUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        // Canonical identifier: /secrets/<name>[/<version>]
+        if (segments.Length >= 2 &&
+            string.Equals(segments[0], "secrets", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(segments[1]))
+            {
+                return false;
+            }
+
+            vaultUri = vaultEndpoint;
+            secretName = segments[1];
+            secretVersion = segments.Length >= 3 && !string.IsNullOrWhiteSpace(segments[2])
+                ? segments[2]
+                : null;
+            return true;
+        }
+
+        // Shorthand: https://<vault>.vault.azure.net/<secret>
+        if (segments.Length == 1 && !string.IsNullOrWhiteSpace(segments[0]))
+        {
+            vaultUri = vaultEndpoint;
+            secretName = segments[0];
+            return true;
+        }
+
+        return false;
     }
 }

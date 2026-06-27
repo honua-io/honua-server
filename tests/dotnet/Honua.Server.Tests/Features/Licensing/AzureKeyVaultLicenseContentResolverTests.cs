@@ -43,7 +43,10 @@ public sealed class AzureKeyVaultLicenseContentResolverTests
         {
             (ValidRef, true),
             ("AZURE:KEYVAULT:https://myvault.vault.azure.net/license-pro", true),
+            // Canonical Azure secret identifier — see the dedicated resolution test for the
+            // assertion that it parses to the vault authority + "license-pro" (not a /secrets-mangled base).
             ("azure:keyvault:https://myvault.vault.azure.net/secrets/license-pro", true),
+            ("azure:keyvault:https://myvault.vault.azure.net/secrets/license-pro/abc123", true),
             ("aws:secretsmanager:arn:aws:secretsmanager:us-east-1:111122223333:secret:license", false),
             ("azure:keyvault:", false),
             ("azure:keyvault:license-pro", false),
@@ -110,6 +113,52 @@ public sealed class AzureKeyVaultLicenseContentResolverTests
     }
 
     [UnitTest]
+    public async Task ResolveLicenseContentAsync_CanonicalSecretIdentifier_UsesVaultAuthorityAndSecretName()
+    {
+        // Regression: the canonical Azure Key Vault secret identifier
+        // (https://<vault>.vault.azure.net/secrets/<name>) must parse to the vault *authority*
+        // (https://myvault.vault.azure.net/) and secret name "license-pro". A naive split on the
+        // final '/' folded "/secrets" into the vault base, which silently 404s every fetch so Pro
+        // never activates. Capture the URI the resolver hands the SecretClient factory and assert it.
+        const string canonicalRef = "azure:keyvault:https://myvault.vault.azure.net/secrets/license-pro";
+        const string envelope = "{\"version\":1}";
+
+        Uri? observedVaultUri = null;
+        var resolver = CreateResolver(uri =>
+        {
+            observedVaultUri = uri;
+            return CreateSecretClient(envelope);
+        });
+
+        var content = await resolver.ResolveLicenseContentAsync(canonicalRef, CancellationToken.None);
+
+        content.Should().Be(envelope);
+        observedVaultUri.Should().Be(new Uri("https://myvault.vault.azure.net/"));
+    }
+
+    [UnitTest]
+    public async Task ResolveLicenseContentAsync_VersionedSecretIdentifier_UsesVaultAuthorityNameAndVersion()
+    {
+        // The optional trailing version segment (.../secrets/<name>/<version>) must be peeled off the
+        // path: the vault is still the authority, the secret name is "license-pro", and the version is
+        // forwarded to GetSecretAsync rather than mangling the vault base.
+        const string versionedRef = "azure:keyvault:https://myvault.vault.azure.net/secrets/license-pro/abc123";
+        const string envelope = "{\"version\":1}";
+
+        Uri? observedVaultUri = null;
+        var resolver = CreateResolver(uri =>
+        {
+            observedVaultUri = uri;
+            return CreateSecretClient(envelope, secretVersion: "abc123");
+        });
+
+        var content = await resolver.ResolveLicenseContentAsync(versionedRef, CancellationToken.None);
+
+        content.Should().Be(envelope);
+        observedVaultUri.Should().Be(new Uri("https://myvault.vault.azure.net/"));
+    }
+
+    [UnitTest]
     public async Task StartAsync_KeyVaultResolvedSignedLicense_ActivatesPro()
     {
         // End-to-end parity with the AWS Secrets Manager path: a signed Pro envelope fetched from
@@ -164,14 +213,14 @@ public sealed class AzureKeyVaultLicenseContentResolverTests
         snapshot.ValidationState.Should().Be(LicenseValidationState.NoLicenseConfigured);
     }
 
-    private static SecretClient CreateSecretClient(string secretValue)
+    private static SecretClient CreateSecretClient(string secretValue, string? secretVersion = null)
     {
         var secret = new KeyVaultSecret(SecretName, secretValue);
         var response = Response.FromValue(secret, Mock.Of<Response>());
 
         var client = new Mock<SecretClient>();
         client
-            .Setup(c => c.GetSecretAsync(SecretName, null, It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetSecretAsync(SecretName, secretVersion, It.IsAny<CancellationToken>()))
             .ReturnsAsync(response);
         return client.Object;
     }
