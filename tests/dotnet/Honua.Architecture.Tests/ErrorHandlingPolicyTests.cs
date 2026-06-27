@@ -44,6 +44,7 @@ public sealed class ErrorHandlingPolicyTests
         "try",
         "StandardErrorHelpers",
         "Wfs20ErrorResults",
+        "ScimErrorResult",
         "TypedResults.Problem",
         "Results.Problem",
         "TypedResults.BadRequest",
