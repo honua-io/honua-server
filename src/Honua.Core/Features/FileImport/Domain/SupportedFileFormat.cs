@@ -45,6 +45,11 @@ public enum SupportedFileFormat
     Kml = 4,
 
     /// <summary>
+    /// Geography Markup Language (.gml)
+    /// </summary>
+    Gml = 5,
+
+    /// <summary>
     /// Well-Known Text format (.wkt)
     /// </summary>
     Wkt = 6,
