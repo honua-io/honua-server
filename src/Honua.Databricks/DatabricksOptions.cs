@@ -72,6 +72,22 @@ public sealed class DatabricksOptions
     /// </summary>
     public int PollIntervalMilliseconds { get; set; } = 750;
 
+    /// <summary>
+    /// Maximum number of automatic retries applied to each outbound Statement Execution
+    /// HTTP call (statement submit, status poll, and result-chunk fetch) when the workspace
+    /// returns a transient failure (HTTP 408/429/5xx) or the request faults with a transient
+    /// network error. Retries use exponential backoff with jitter. Set to <c>0</c> to disable
+    /// retries. Defaults to <c>3</c>.
+    /// </summary>
+    public int MaxRetryAttempts { get; set; } = 3;
+
+    /// <summary>
+    /// Base delay in milliseconds for the exponential backoff applied between retry attempts
+    /// (see <see cref="MaxRetryAttempts"/>). The effective delay grows exponentially per
+    /// attempt and has jitter applied. Defaults to <c>500</c>.
+    /// </summary>
+    public int RetryBaseDelayMilliseconds { get; set; } = 500;
+
     /// <summary>Configured layer definitions.</summary>
     public DatabricksLayerOptions[] Layers { get; set; } = [];
 }

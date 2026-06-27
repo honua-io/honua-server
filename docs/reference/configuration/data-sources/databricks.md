@@ -53,6 +53,8 @@ Bound from the `Databricks` configuration section (environment variables shown w
 | `Databricks__Schema` | no | Schema (database) used to qualify tables when a layer does not override it. |
 | `Databricks__CommandTimeoutSeconds` | no (default `120`) | Overall submit + poll budget. |
 | `Databricks__PollIntervalMilliseconds` | no (default `750`) | Delay between status polls. |
+| `Databricks__MaxRetryAttempts` | no (default `3`) | Automatic retries per Statement Execution HTTP call (submit, poll, chunk) on transient failures (HTTP 408/429/5xx, transient network faults). Set `0` to disable. |
+| `Databricks__RetryBaseDelayMilliseconds` | no (default `500`) | Base delay for the exponential backoff (with jitter) applied between retries. |
 
 ### Layer mappings
 
@@ -107,6 +109,13 @@ attribute identifiers are validated against a simple-identifier allow-list at st
 - **No writes.** The provider exposes no `IFeatureWriter`; all edit paths are rejected.
 - **No native .NET driver.** Communication is over the REST Statement Execution API, so
   every request incurs submit + poll latency rather than a persistent connection.
+- **Transient failures are retried automatically.** Each outbound Statement Execution call
+  (submit, status poll, and result-chunk fetch) is fronted by the shared HTTP resilience
+  policy: transient responses (HTTP 408/429/5xx) and transient network faults are retried
+  with exponential backoff + jitter (`Databricks__MaxRetryAttempts`,
+  `Databricks__RetryBaseDelayMilliseconds`), and a per-provider circuit breaker isolates
+  Databricks failures from other backends. Non-transient errors (e.g. HTTP 400) are not
+  retried.
 - **Spatial-function availability is environment-dependent.** `ST_AsBinary`,
   `ST_GeomFromText`, `ST_Intersects`, and the `ST_*min/max` aggregates require a
   Databricks runtime / DBSQL build that ships the spatial functions. On warehouses
@@ -127,8 +136,7 @@ attribute identifiers are validated against a simple-identifier allow-list at st
 - **No schema introspection.** Attribute columns must be listed explicitly per layer.
 - **Deferred to the hardening follow-up (#1719):** Metadata-v2 binding
   (`IBindableFeatureDataProvider`) so layers resolve from secure connections rather than
-  static config, and a retry/resilience policy on the submit/poll loop. Top-features,
-  date/value bins, and H3 aggregation remain unsupported.
+  static config. Top-features, date/value bins, and H3 aggregation remain unsupported.
 
 Provider selection variables are listed in the
 [environment variable reference](../environment-variables.md#database-and-providers).

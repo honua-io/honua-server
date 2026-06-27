@@ -237,4 +237,10 @@ internal static class DatabricksServiceClientName
 {
     /// <summary>Logical HttpClient name for Databricks Statement Execution outbound calls.</summary>
     public const string Default = "Honua.Databricks.Statements";
+
+    /// <summary>
+    /// Service-type identifier used to isolate this provider's resilience (retry +
+    /// circuit-breaker) state from other external dependencies.
+    /// </summary>
+    public const string ResilienceServiceType = "databricks-sql";
 }
