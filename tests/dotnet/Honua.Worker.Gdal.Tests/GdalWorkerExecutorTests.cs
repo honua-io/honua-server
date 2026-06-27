@@ -61,6 +61,27 @@ public sealed class GdalWorkerExecutorTests
             .Which.Should().Be(RuntimeProfiles.Native);
         dispatcher.AcceptedRuntimeProfiles.Should().NotContain(RuntimeProfiles.Managed);
         dispatcher.SupportedProcessIds.Should().Contain(new[] { "gdal.ogr2ogr", "gdal.gdalwarp" });
+
+        // The raster analysis & terrain GP tool packs (#2141, #2239, #2240) must all be
+        // routable by the worker dispatcher, including the flagged-but-routed ids
+        // (interpolate-kriging, euclidean-allocation) that fail fast with a clear
+        // message inside the executor.
+        dispatcher.SupportedProcessIds.Should().Contain(new[]
+        {
+            "raster.resample",
+            "raster.interpolate-idw",
+            "raster.interpolate-kriging",
+            "raster.mosaic",
+            "raster.map-algebra",
+            "raster.spectral-index",
+            "raster.reclassify",
+            "proximity.euclidean-distance",
+            "proximity.euclidean-allocation",
+            "surface.contour",
+            "surface.viewshed",
+            "conversion.polygonize",
+            "conversion.rasterize",
+        });
     }
 
     [UnitTest]
@@ -92,6 +113,18 @@ public sealed class GdalWorkerExecutorTests
             new GdalRasterZonalStatisticsJobExecutor(runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             new GdalMultidimCoverageMetadataJobExecutor(runner, options, NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance),
             new PdalPointCloudConvertJobExecutor(runner, options, NullLogger<PdalPointCloudConvertJobExecutor>.Instance),
+            // Raster analysis & terrain GP tool packs (#2141, #2239, #2240).
+            new GdalRasterResampleJobExecutor(runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
+            new GdalRasterInterpolateJobExecutor(runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
+            new GdalRasterMosaicJobExecutor(runner, options, NullLogger<GdalRasterMosaicJobExecutor>.Instance),
+            new GdalRasterMapAlgebraJobExecutor(runner, options, NullLogger<GdalRasterMapAlgebraJobExecutor>.Instance),
+            new GdalRasterSpectralIndexJobExecutor(runner, options, NullLogger<GdalRasterSpectralIndexJobExecutor>.Instance),
+            new GdalRasterReclassifyJobExecutor(runner, options, NullLogger<GdalRasterReclassifyJobExecutor>.Instance),
+            new GdalProximityJobExecutor(runner, options, NullLogger<GdalProximityJobExecutor>.Instance),
+            new GdalContourJobExecutor(runner, options, NullLogger<GdalContourJobExecutor>.Instance),
+            new GdalViewshedJobExecutor(runner, options, NullLogger<GdalViewshedJobExecutor>.Instance),
+            new GdalPolygonizeJobExecutor(runner, options, NullLogger<GdalPolygonizeJobExecutor>.Instance),
+            new GdalRasterizeJobExecutor(runner, options, NullLogger<GdalRasterizeJobExecutor>.Instance),
         };
 
         return new GdalDispatchJobExecutor(

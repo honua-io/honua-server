@@ -311,22 +311,11 @@ public sealed class CatalogExecutableConformanceTests
         // routes these ids; here we lock in the catalog declaration AND that
         // the lean dispatcher has no executor for them, so the routing decision
         // and the GDAL-free baseline agree.
-        var nativeExecutableProcessIds = new[]
-        {
-            "gdal.gdalwarp",
-            "gdal.ogr2ogr",
-            "surface.slope",
-            "surface.aspect",
-            "surface.hillshade",
-            "surface.rugosity-tri",
-            "surface.rugosity-tpi",
-            "surface.roughness",
-            "raster.clip",
-            "raster.reproject",
-            "raster.statistics",
-            "raster.histogram",
-            "raster.zonal-statistics",
-        };
+        // Derive the native-profile assertion set from the classification source of
+        // truth so a newly added native-routed id (the #2141 / #2239 / #2240 raster &
+        // terrain GP packs) is covered automatically instead of drifting away from a
+        // hand-maintained list.
+        var nativeExecutableProcessIds = RoutedToNativeProcessIds;
         var managedExecutable = DispatcherSupportedProcessIds();
 
         foreach (var processId in nativeExecutableProcessIds)
