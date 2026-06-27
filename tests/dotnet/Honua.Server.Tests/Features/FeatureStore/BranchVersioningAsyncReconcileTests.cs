@@ -130,7 +130,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
             new CreateVersionRequest("AsyncJob", "sde", VersionAccess.Public), CancellationToken.None);
 
         var job = await runner.StartReconcileAsync(
-            "svc", version.VersionId, VersionReconcilePolicy.None, CancellationToken.None);
+            "svc", version.VersionId, VersionReconcilePolicy.None, cancellationToken: CancellationToken.None);
         job.Status.Should().Be(VersionJobStatus.Pending);
 
         var terminal = await PollJobAsync(runner, job.JobId);
@@ -154,7 +154,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
         held.Should().NotBeNull();
 
         var job = await runner.StartReconcileAsync(
-            "svc", version.VersionId, VersionReconcilePolicy.None, CancellationToken.None);
+            "svc", version.VersionId, VersionReconcilePolicy.None, cancellationToken: CancellationToken.None);
 
         var terminal = await PollJobAsync(runner, job.JobId);
         terminal.Status.Should().Be(VersionJobStatus.LockContended);

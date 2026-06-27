@@ -65,6 +65,7 @@ internal sealed partial class PostgresVersionManager
     public async Task<VersionReconcileResult> ReconcileAsync(
         Guid versionId,
         VersionReconcilePolicy policy = VersionReconcilePolicy.None,
+        VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
         CancellationToken cancellationToken = default)
     {
         // The (service, version) lock serializes reconcile/post/resolve for the version (#1553); a
@@ -75,6 +76,7 @@ internal sealed partial class PostgresVersionManager
         activity?.SetTag("honua.version.id", versionId.ToString());
         activity?.SetTag("honua.version.service", _lockScope);
         activity?.SetTag("honua.version.policy", policy.ToString());
+        activity?.SetTag("honua.version.conflict_detection", detection.ToString());
 
         var version = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Version {versionId} does not exist.");
@@ -83,7 +85,7 @@ internal sealed partial class PostgresVersionManager
         try
         {
             var currentGeneration = await GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
-            var analysis = await AnalyzeOverlapsAsync(versionId, version.CommonAncestorGeneration, cancellationToken)
+            var analysis = await AnalyzeOverlapsAsync(versionId, version.CommonAncestorGeneration, detection, cancellationToken)
                 .ConfigureAwait(false);
 
             // Disjoint field-level edits auto-merge into the overlay so post carries both sides.
@@ -456,6 +458,7 @@ internal sealed partial class PostgresVersionManager
     private async Task<OverlapAnalysis> AnalyzeOverlapsAsync(
         Guid versionId,
         long commonAncestorGen,
+        VersionConflictDetection detection,
         CancellationToken cancellationToken)
     {
         var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
@@ -538,7 +541,15 @@ internal sealed partial class PostgresVersionManager
                 && !string.Equals(baseGeom, versionGeom, StringComparison.Ordinal)
                 && !string.Equals(defaultGeom, versionGeom, StringComparison.Ordinal);
 
-            if (overlappingFields.Length == 0 && !geometryChangedOnBoth)
+            // By-attribute detection auto-merges disjoint edits and only flags genuinely-overlapping
+            // edits (overlapping fields or geometry-vs-geometry). By-object detection flags ANY feature
+            // edited on both sides since the merge base as a conflict, with no field-level auto-merge —
+            // this is the documented Esri esriReconcileByObject behavior (#2135).
+            var autoMergeable = detection == VersionConflictDetection.ByAttribute
+                && overlappingFields.Length == 0
+                && !geometryChangedOnBoth;
+
+            if (autoMergeable)
             {
                 // Disjoint edits: auto-merge DEFAULT's field changes (and a DEFAULT-only geometry change)
                 // into the overlay so a post carries both sides without a conflict.
@@ -549,8 +560,14 @@ internal sealed partial class PostgresVersionManager
                 continue;
             }
 
-            var fieldDiffs = BuildFieldDiffs(overlappingFields, baseFields, defaultFields, versionFields);
-            var conflictType = overlappingFields.Length > 0
+            // Report the overlapping fields when present; under by-object detection a disjoint edit still
+            // surfaces the union of both sides' changed fields so the conflict carries a useful three-way
+            // diff for the manual-resolution UI.
+            var reportedFields = overlappingFields.Length > 0
+                ? overlappingFields
+                : defaultChangedFields.Union(versionChangedFields, StringComparer.Ordinal).ToArray();
+            var fieldDiffs = BuildFieldDiffs(reportedFields, baseFields, defaultFields, versionFields);
+            var conflictType = reportedFields.Length > 0
                 ? ReplicaConflictType.Attribute
                 : ReplicaConflictType.Geometry;
             conflicts.Add(new OverlapConflict(layerId, objectId, conflictType,

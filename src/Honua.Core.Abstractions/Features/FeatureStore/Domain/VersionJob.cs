@@ -56,6 +56,7 @@ public enum VersionJobStatus
 /// <param name="Status">Current lifecycle status.</param>
 /// <param name="Policy">Reconcile auto-resolution policy (ignored for post jobs).</param>
 /// <param name="CreatedAt">When the job was created.</param>
+/// <param name="ConflictDetection">Reconcile conflict-detection granularity (ignored for post jobs; #2135).</param>
 /// <param name="StartedAt">When the job acquired the lock and began, or null while pending.</param>
 /// <param name="CompletedAt">When the job reached a terminal state, or null while not terminal.</param>
 /// <param name="ConflictCount">Unresolved conflicts after a reconcile (0 for a clean reconcile or a post).</param>
@@ -73,6 +74,7 @@ public sealed record VersionJob(
     VersionJobStatus Status,
     VersionReconcilePolicy Policy,
     DateTimeOffset CreatedAt,
+    VersionConflictDetection ConflictDetection = VersionConflictDetection.ByAttribute,
     DateTimeOffset? StartedAt = null,
     DateTimeOffset? CompletedAt = null,
     int ConflictCount = 0,

@@ -22,12 +22,14 @@ public interface IVersionJobRunner
     /// <param name="service">Owning service identity (lock scope).</param>
     /// <param name="versionId">Version to reconcile.</param>
     /// <param name="policy">Auto-resolution policy.</param>
+    /// <param name="detection">Conflict-detection granularity (by-attribute or by-object; #2135).</param>
     /// <param name="cancellationToken">Cancellation token for the start request (not the job).</param>
     /// <returns>The created job record.</returns>
     Task<VersionJob> StartReconcileAsync(
         string service,
         Guid versionId,
         VersionReconcilePolicy policy,
+        VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
         CancellationToken cancellationToken = default);
 
     /// <summary>
