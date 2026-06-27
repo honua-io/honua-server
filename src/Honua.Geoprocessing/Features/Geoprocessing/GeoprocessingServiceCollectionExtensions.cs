@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
@@ -217,9 +218,11 @@ internal static class GeoprocessingServiceCollectionExtensions
     /// surfaced into the enumerable <see cref="IProcessExecutor"/> set the
     /// <see cref="GeoprocessingDispatchJobExecutor"/> enumerates — both bound to the
     /// SAME singleton instance via a resolving factory, so there is exactly one of
-    /// each. No reflection scan is used, keeping the registration AOT-safe; adding a
-    /// new managed process is a one-line <c>Register&lt;T&gt;</c> call here plus its
-    /// catalog entry.
+    /// each. No reflection scan is used; combined with the
+    /// <c>[DynamicallyAccessedMembers(PublicConstructors)]</c> annotation on
+    /// <c>Register</c>'s type parameter (which roots each executor's constructor for
+    /// the trimmer), the registration is Native-AOT-safe. Adding a new managed process
+    /// is a one-line <c>Register&lt;T&gt;</c> call here plus its catalog entry.
     /// </summary>
     private static void AddProcessExecutors(IServiceCollection services)
     {
@@ -285,7 +288,16 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<ImportDatasetJobExecutor>(services);
     }
 
-    private static void Register<TExecutor>(IServiceCollection services)
+    // [DynamicallyAccessedMembers] is REQUIRED for Native AOT: TryAddSingleton<T>()
+    // annotates its type parameter with PublicConstructors so the trimmer roots the
+    // constructor the DI container later reflects over. Without propagating that
+    // annotation through this generic helper, ILC trims every executor's constructor
+    // (the call sites pass concrete types, but the requirement does not flow), and the
+    // AOT image then crash-loops at startup under ValidateOnBuild with ~490 "a suitable
+    // constructor for type '...Executor' could not be located" errors — even though the
+    // JIT image, which binds constructors at runtime, starts fine.
+    private static void Register<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TExecutor>(
+        IServiceCollection services)
         where TExecutor : class, IProcessExecutor
     {
         services.TryAddSingleton<TExecutor>();
