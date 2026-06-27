@@ -105,6 +105,18 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
  # gdal_grid backs the raster IDW interpolation tool (raster.interpolate-idw, #2141);
  # gdalwarp backs raster.resample and raster.mosaic. Both ship in the ubuntu-full base.
  && command -v gdal_grid \
+ # Raster analysis & terrain GP tool pack (#2239 / #2240). gdal_calc.py backs
+ # raster.map-algebra / raster.spectral-index / raster.reclassify; gdal_proximity.py
+ # backs proximity.euclidean-distance; gdal_polygonize.py backs conversion.polygonize
+ # (the GDAL Python utilities, shipped in the ubuntu-full base's python3-gdal layer).
+ # gdal_contour / gdal_viewshed / gdal_rasterize are C binaries backing
+ # surface.contour / surface.viewshed / conversion.rasterize.
+ && command -v gdal_calc.py \
+ && command -v gdal_proximity.py \
+ && command -v gdal_polygonize.py \
+ && command -v gdal_contour \
+ && command -v gdal_viewshed \
+ && command -v gdal_rasterize \
  && gdalinfo --formats | grep -qi netCDF \
  && gdalinfo --formats | grep -qi GRIB \
  && command -v pdal \

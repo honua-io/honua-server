@@ -678,6 +678,15 @@ public sealed class GdalRasterExecutorTests
             // flagged-unsupported message rather than the dispatcher rejecting it).
             "raster.resample", "raster.interpolate-idw",
             "raster.interpolate-kriging", "raster.mosaic",
+            // Raster analysis & terrain GP tool pack (#2239 / #2240). map-algebra /
+            // spectral-index / reclassify compile to gdal_calc.py; euclidean distance
+            // runs gdal_proximity.py (allocation is routed here too but fails fast as
+            // flagged-unsupported); contour / viewshed / polygonize / rasterize run
+            // gdal_contour / gdal_viewshed / gdal_polygonize.py / gdal_rasterize.
+            "raster.map-algebra", "raster.spectral-index", "raster.reclassify",
+            "proximity.euclidean-distance", "proximity.euclidean-allocation",
+            "surface.contour", "surface.viewshed",
+            "conversion.polygonize", "conversion.rasterize",
             // Internal multidimensional-coverage metadata scan (ADR-0039 Path B).
             "coverage.multidim.metadata",
             // LAZ/COPC decompress + reproject (#1854).
@@ -742,6 +751,14 @@ public sealed class GdalRasterExecutorTests
             new GdalRasterResampleJobExecutor(runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
             new GdalRasterInterpolateJobExecutor(runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             new GdalRasterMosaicJobExecutor(runner, options, NullLogger<GdalRasterMosaicJobExecutor>.Instance),
+            new GdalRasterMapAlgebraJobExecutor(runner, options, NullLogger<GdalRasterMapAlgebraJobExecutor>.Instance),
+            new GdalRasterSpectralIndexJobExecutor(runner, options, NullLogger<GdalRasterSpectralIndexJobExecutor>.Instance),
+            new GdalRasterReclassifyJobExecutor(runner, options, NullLogger<GdalRasterReclassifyJobExecutor>.Instance),
+            new GdalProximityJobExecutor(runner, options, NullLogger<GdalProximityJobExecutor>.Instance),
+            new GdalContourJobExecutor(runner, options, NullLogger<GdalContourJobExecutor>.Instance),
+            new GdalViewshedJobExecutor(runner, options, NullLogger<GdalViewshedJobExecutor>.Instance),
+            new GdalPolygonizeJobExecutor(runner, options, NullLogger<GdalPolygonizeJobExecutor>.Instance),
+            new GdalRasterizeJobExecutor(runner, options, NullLogger<GdalRasterizeJobExecutor>.Instance),
             new GdalSurfaceJobExecutor(runner, options, NullLogger<GdalSurfaceJobExecutor>.Instance),
             new GdalRasterClipJobExecutor(runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
             new GdalRasterReprojectCatalogJobExecutor(runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),

@@ -473,6 +473,42 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
+        // Euclidean proximity operations (#2240)
+        // Raster proximity products implemented natively by the heavyweight GDAL
+        // worker via gdal_proximity.py. Declared RuntimeProfile = native; the lean
+        // image validates these plans but never executes them.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "proximity.euclidean-distance",
+            Title = "Euclidean Distance",
+            Description = "Computes a raster of the distance from each cell to the nearest source cell. Executed out-of-process by the heavyweight GDAL worker via gdal_proximity.py. Reads a base64-encoded GeoTIFF from 'source' whose non-zero (or 'values'-listed) pixels are the proximity targets; publishes the Float32 distance GeoTIFF as a data-URI artifact.",
+            Category = "proximity",
+            Parameters =
+            [
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the proximity targets. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("maxDistance", "Max Distance", "Optional maximum distance to compute. Must be > 0 when supplied. Cells beyond it take the nodata value.", ProcessParameterValueType.FloatingPoint),
+                Param("distUnits", "Distance Units", "Distance units. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO"),
+                Param("values", "Target Values", "Optional comma-separated list of integer source pixel values to treat as targets. When omitted, all non-zero pixels are targets.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "proximity.euclidean-allocation",
+            Title = "Euclidean Allocation",
+            Description = "FLAGGED / UNSUPPORTED in this build: nearest-source allocation requires a mode that stock GDAL gdal_proximity does not provide (it computes distance only). The process is advertised so callers can discover the limitation; a submitted job FAILS with a clear message rather than silently substituting a distance raster. Use proximity.euclidean-distance for the distance raster.",
+            Category = "proximity",
+            Parameters =
+            [
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+
+        // -----------------------------------------------------------------------
         // Statistics/summarization operations (#2140)
         // Managed table-producing aggregates over a single inline FeatureCollection.
         // Table outputs are null-geometry FeatureCollections (one feature per row).
@@ -555,9 +591,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
-        // Surface-analysis operations (6)
+        // Surface-analysis operations (8)
         // DEM-derived raster products implemented natively by the heavyweight GDAL
-        // worker via the gdaldem CLI. Declared RuntimeProfile = native so the
+        // worker via the gdaldem / gdal_contour / gdal_viewshed CLIs. Declared
+        // RuntimeProfile = native so the
         // submit path stamps ExecutionJobSpec.RuntimeProfile = "native" and the
         // claim fence routes the job to the GDAL worker and away from the lean
         // dispatcher. The lean image still validates these plans (parameter
@@ -649,9 +686,42 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
         },
+        new ProcessDefinition
+        {
+            ProcessId = "surface.contour",
+            Title = "Contour",
+            Description = "Generates contour lines from an elevation source. Executed out-of-process by the heavyweight GDAL worker via gdal_contour. Reads a base64-encoded GeoTIFF DEM from 'source' and publishes a GeoJSON FeatureCollection of contour lines carrying an ELEV attribute as a data-URI artifact.",
+            Category = "surface",
+            Parameters =
+            [
+                .. NativeRasterSourceParameters,
+                Param("interval", "Interval", "Contour interval in the DEM's elevation units. Must be > 0. Required.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("base", "Base", "Optional elevation offset relative to which intervals are interpreted.", ProcessParameterValueType.FloatingPoint),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "surface.viewshed",
+            Title = "Viewshed",
+            Description = "Computes a binary visibility raster from a DEM and an observer location. Executed out-of-process by the heavyweight GDAL worker via gdal_viewshed. Reads a base64-encoded GeoTIFF DEM from 'source'; publishes the visibility GeoTIFF as a data-URI artifact. The observer is placed at (observerX, observerY) in the DEM's georeferenced units.",
+            Category = "surface",
+            Parameters =
+            [
+                .. NativeRasterSourceParameters,
+                Param("observerX", "Observer X", "Observer X coordinate in the DEM's georeferenced units. Required.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("observerY", "Observer Y", "Observer Y coordinate in the DEM's georeferenced units. Required.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("observerHeight", "Observer Height", "Observer height above the surface. Must be >= 0. Defaults to 2.", ProcessParameterValueType.FloatingPoint, defaultValue: "2"),
+                Param("targetHeight", "Target Height", "Target height above the surface. Must be >= 0. Defaults to 0.", ProcessParameterValueType.FloatingPoint, defaultValue: "0"),
+                Param("maxDistance", "Max Distance", "Optional maximum visibility distance in georeferenced units. Must be > 0 when supplied.", ProcessParameterValueType.FloatingPoint),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
 
         // -----------------------------------------------------------------------
-        // Raster operations (9)
+        // Raster operations (12)
         // Raster analysis and mutation workflows implemented natively by the
         // heavyweight GDAL worker via the gdalwarp / gdalinfo CLI tools. Declared
         // RuntimeProfile = native so the submit path stamps the spec native and
@@ -798,9 +868,60 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
         },
+        new ProcessDefinition
+        {
+            ProcessId = "raster.map-algebra",
+            Title = "Map Algebra",
+            Description = "Evaluates an allow-listed arithmetic/logical expression across one or more input rasters. Executed out-of-process by the heavyweight GDAL worker via gdal_calc.py. Reads a '|'-separated list of base64-encoded GeoTIFFs from 'sources' (bound to band variables A, B, C, …) and a validated 'expression'; publishes the result GeoTIFF as a data-URI artifact. The expression is restricted to single-letter band variables, numeric literals, a fixed operator set, and a small allow-list of NumPy functions; arbitrary input is never shell- or eval-evaluated.",
+            Category = "raster",
+            Parameters =
+            [
+                Param("sources", "Sources", "One or more source rasters as base64-encoded GeoTIFFs separated by '|', bound to band variables A, B, C, … in order. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("expression", "Expression", "Allow-listed map-algebra expression over the band variables (e.g. '(A-B)/(A+B)'). Required.", ProcessParameterValueType.Text, required: true),
+                Param("dataType", "Output Type", "Optional GDAL output data type. Allowed values: Byte, Int16, UInt16, Int32, UInt32, Float32, Float64.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "raster.spectral-index",
+            Title = "Spectral Index",
+            Description = "Computes a named spectral index from band-role rasters, compiling down to the gdal_calc.py map-algebra core. Executed out-of-process by the heavyweight GDAL worker. Each required band role is supplied as its own base64-encoded GeoTIFF; publishes the Float32 index GeoTIFF as a data-URI artifact. Supported indices: NDVI (nir, red), NDWI (green, nir), NDBI (swir, nir), SAVI (nir, red), EVI (nir, red, blue).",
+            Category = "raster",
+            Parameters =
+            [
+                Param("index", "Index", "Spectral index preset. Allowed values: NDVI, NDWI, NDBI, SAVI, EVI.", ProcessParameterValueType.Text, required: true,
+                    allowedValues: ["NDVI", "NDWI", "NDBI", "SAVI", "EVI"]),
+                Param("red", "Red Band", "Red-band raster as a base64-encoded GeoTIFF. Required by NDVI, SAVI, EVI.", ProcessParameterValueType.Text),
+                Param("nir", "NIR Band", "Near-infrared-band raster as a base64-encoded GeoTIFF. Required by NDVI, NDWI, NDBI, SAVI, EVI.", ProcessParameterValueType.Text),
+                Param("green", "Green Band", "Green-band raster as a base64-encoded GeoTIFF. Required by NDWI.", ProcessParameterValueType.Text),
+                Param("swir", "SWIR Band", "Short-wave-infrared-band raster as a base64-encoded GeoTIFF. Required by NDBI.", ProcessParameterValueType.Text),
+                Param("blue", "Blue Band", "Blue-band raster as a base64-encoded GeoTIFF. Required by EVI.", ProcessParameterValueType.Text),
+                Param("L", "Soil Factor (SAVI)", "SAVI soil-adjustment factor in the closed range [0, 1]. Defaults to 0.5. Ignored by other indices.", ProcessParameterValueType.FloatingPoint, defaultValue: "0.5"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "raster.reclassify",
+            Title = "Reclassify",
+            Description = "Remaps source pixel values per a supplied remap table. Executed out-of-process by the heavyweight GDAL worker via gdal_calc.py. Reads a base64-encoded GeoTIFF from 'source' and a 'remap' table; publishes the reclassified GeoTIFF as a data-URI artifact. Remap entries are ';'-separated 'key:value' pairs where key is a single number or a half-open range 'lo..hi' (lower-inclusive, upper-exclusive); unmatched pixels take 'defaultValue' or the original value.",
+            Category = "raster",
+            Parameters =
+            [
+                .. NativeRasterSourceParameters,
+                Param("remap", "Remap Table", "Reclassification table: ';'-separated 'value:newValue' or 'lo..hi:newValue' entries (e.g. '0..10:1;10..20:2'). Required.", ProcessParameterValueType.Text, required: true),
+                Param("defaultValue", "Default Value", "Optional output value for pixels matching no remap entry. When omitted, unmatched pixels keep their original value.", ProcessParameterValueType.FloatingPoint),
+                Param("dataType", "Output Type", "Optional GDAL output data type. Allowed values: Byte, Int16, UInt16, Int32, UInt32, Float32, Float64.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
 
         // -----------------------------------------------------------------------
-        // Conversion operations (4)
+        // Conversion operations (6)
         // Explicit format/CRS conversion idioms so adapters can expose them
         // without inventing a second semantic layer.
         // -----------------------------------------------------------------------
@@ -857,6 +978,41 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 .. NativeRasterSourceParameters,
                 Param("targetSrid", "Target SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
                 Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "conversion.polygonize",
+            Title = "Polygonize Raster",
+            Description = "Vectorizes a raster into polygon features, one per connected region of equal pixel value. Executed out-of-process by the heavyweight GDAL worker via gdal_polygonize.py. Reads a base64-encoded GeoTIFF from 'source'; publishes a GeoJSON FeatureCollection carrying the pixel value in the 'fieldName' attribute as a data-URI artifact.",
+            Category = "conversion",
+            Parameters =
+            [
+                .. NativeRasterSourceParameters,
+                Param("band", "Band", "Source band to vectorize. Must be a positive integer. Defaults to 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
+                Param("connectedness", "Connectedness", "Pixel connectedness. Allowed values: 4, 8. Defaults to 4.", ProcessParameterValueType.Text, defaultValue: "4"),
+                Param("fieldName", "Field Name", "Output attribute holding the pixel value. Must match ^[A-Za-z_][A-Za-z0-9_]*$. Defaults to DN.", ProcessParameterValueType.Text, defaultValue: "DN"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "conversion.rasterize",
+            Title = "Rasterize Features",
+            Description = "Burns vector features into a new raster grid. Executed out-of-process by the heavyweight GDAL worker via gdal_rasterize. Reads a base64-encoded GeoJSON FeatureCollection from 'source' and burns either a fixed 'burnValue' or a numeric 'attribute'; publishes the GeoTIFF as a data-URI artifact. The output grid is defined by 'cellSize' (resolution) or 'width'+'height' (pixels); the extent is taken from the input layer.",
+            Category = "conversion",
+            Parameters =
+            [
+                Param("source", "Source Features", "Source features as a base64-encoded GeoJSON FeatureCollection. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("burnValue", "Burn Value", "Fixed value to burn into the raster. Supply exactly one of 'burnValue' or 'attribute'.", ProcessParameterValueType.FloatingPoint),
+                Param("attribute", "Attribute", "Numeric source attribute whose value is burned per feature. Must match ^[A-Za-z_][A-Za-z0-9_]*$. Supply exactly one of 'burnValue' or 'attribute'.", ProcessParameterValueType.Text),
+                Param("cellSize", "Cell Size", "Output pixel size in the source CRS units. Must be > 0. Supply either 'cellSize' or 'width'+'height'.", ProcessParameterValueType.FloatingPoint),
+                Param("width", "Width", "Output raster width in pixels. Must be > 0 and supplied together with 'height'.", ProcessParameterValueType.WholeNumber),
+                Param("height", "Height", "Output raster height in pixels. Must be > 0 and supplied together with 'width'.", ProcessParameterValueType.WholeNumber),
+                Param("nodata", "NoData", "Optional output nodata value.", ProcessParameterValueType.FloatingPoint),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native

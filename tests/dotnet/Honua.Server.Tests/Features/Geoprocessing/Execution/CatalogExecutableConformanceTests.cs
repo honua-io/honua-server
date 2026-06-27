@@ -174,6 +174,21 @@ public sealed class CatalogExecutableConformanceTests
         "raster.interpolate-idw",
         "raster.interpolate-kriging",
         "raster.mosaic",
+        // Raster analysis & terrain GP tool pack (#2239 / #2240): all run
+        // out-of-process in the GDAL worker (gdal_calc.py / gdal_proximity.py /
+        // gdal_contour / gdal_viewshed / gdal_polygonize.py / gdal_rasterize).
+        // proximity.euclidean-allocation is advertised but flagged unsupported
+        // (the worker FAILS it with a clear message). All declare the native
+        // runtime profile and have NO lean-dispatcher executor.
+        "raster.map-algebra",
+        "raster.spectral-index",
+        "raster.reclassify",
+        "proximity.euclidean-distance",
+        "proximity.euclidean-allocation",
+        "surface.contour",
+        "surface.viewshed",
+        "conversion.polygonize",
+        "conversion.rasterize",
         "conversion.raster-format",
         "conversion.raster-reproject",
         // Point-cloud conversion (#1854): LAZ/COPC decompression + optional
