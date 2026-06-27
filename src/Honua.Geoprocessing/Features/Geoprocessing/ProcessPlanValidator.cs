@@ -326,6 +326,9 @@ internal static partial class ProcessPlanValidator
             case "analytics.density-managed":
                 ValidateManagedDensitySemantics(step, violations);
                 break;
+            case "analytics.hotspot-managed":
+                ValidateManagedHotSpotSemantics(step, violations);
+                break;
             case "analytics.density":
                 ValidateDensitySemantics(step, analyticsLimits, violations);
                 ApplySharedAnalyticsFilterSemantics(step, violations);
@@ -616,6 +619,19 @@ internal static partial class ProcessPlanValidator
 
         // cellSize must be a finite positive number (CRS units, not meters).
         RequirePositiveFiniteDouble(step, "cellSize", violations);
+    }
+
+    private static void ValidateManagedHotSpotSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // The analysis field is mandatory: Gi* needs a numeric attribute to test.
+        RequireConditionalParameter(step, "field", "running Hot Spot Analysis", violations);
+
+        // distanceBand is the fixed-distance conceptualization of spatial
+        // relationships; it must be a finite positive number in CRS units.
+        RequireConditionalParameter(step, "distanceBand", "running Hot Spot Analysis", violations);
+        RequirePositiveFiniteDouble(step, "distanceBand", violations);
     }
 
     private static void ValidateSpatialFilterSemantics(
