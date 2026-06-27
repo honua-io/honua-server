@@ -96,28 +96,52 @@ COPY . .
 ARG CONFIGURATION=Release
 # Re-declared so the build stage sees the build-arg for the conditional STAC ops publish.
 ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
+# ILC (the native compiler) is single-threaded on BOTH arches and the publish is
+# retried with backoff — mirroring the hardening already in docker/Dockerfile.aot
+# (#1360). The Native AOT link peaks well above the hosted runner's memory ceiling,
+# so parallel ILC (IlcSingleThreaded=false, previously used on amd64) gets OOM-killed
+# mid-link: ilc exits with code -1 and surfaces only as Microsoft.NETCore.Native.targets
+# error MSB3073 "...ilc... exited with code -1". Single-threaded linking trades
+# wall-clock for a much lower memory peak; the retry loop additionally rides out an
+# intermittent OOM kill (the regular AOT image relies on the same retry to stay green).
+# The plain Dockerfile.aot wraps restore+publish; here restore is a cached prior stage,
+# so the loop wraps the --no-restore publish that actually OOMs.
+ARG AOT_PUBLISH_MAX_ATTEMPTS=3
 RUN --mount=type=cache,target=/root/.nuget/packages \
     case "${TARGETARCH:-amd64}" in \
-      amd64) RUNTIME_ID="linux-x64" ; ILC_SINGLE_THREADED="false" ;; \
-      arm64) RUNTIME_ID="linux-arm64" ; ILC_SINGLE_THREADED="true" ;; \
+      amd64) RUNTIME_ID="linux-x64" ;; \
+      arm64) RUNTIME_ID="linux-arm64" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    dotnet publish src/Honua.Server/Honua.Server.csproj \
-      --configuration "$CONFIGURATION" \
-      --runtime "$RUNTIME_ID" \
-      --no-restore \
-      --self-contained true \
-      --output /app \
-      -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:PublishAot=true \
-      -p:DebugType=None \
-      -p:DebugSymbols=false \
-      -p:StripSymbols=true \
-      -p:OptimizationPreference=Speed \
-      -p:IlcOptimizationPreference=Speed \
-      -p:IlcSingleThreaded="$ILC_SINGLE_THREADED" \
-      -p:HonuaSkipOracleForAotVerification=true \
-      -p:HonuaSkipSnowflakeForAotVerification=true && \
+    attempt=1 && \
+    max_attempts="${AOT_PUBLISH_MAX_ATTEMPTS:-3}" && \
+    until \
+        dotnet publish src/Honua.Server/Honua.Server.csproj \
+          --configuration "$CONFIGURATION" \
+          --runtime "$RUNTIME_ID" \
+          --no-restore \
+          --self-contained true \
+          --output /app \
+          -p:RuntimeIdentifier="$RUNTIME_ID" \
+          -p:PublishAot=true \
+          -p:DebugType=None \
+          -p:DebugSymbols=false \
+          -p:StripSymbols=true \
+          -p:OptimizationPreference=Speed \
+          -p:IlcOptimizationPreference=Speed \
+          -p:IlcSingleThreaded=true \
+          -p:HonuaSkipOracleForAotVerification=true \
+          -p:HonuaSkipSnowflakeForAotVerification=true ; \
+    do \
+        status=$? ; \
+        if [ "$attempt" -ge "$max_attempts" ]; then \
+            echo "AOT publish failed after ${attempt} attempts (last exit ${status})" >&2 ; \
+            exit "$status" ; \
+        fi ; \
+        echo "AOT publish attempt ${attempt} failed (exit ${status}); retrying after backoff..." >&2 ; \
+        sleep $((attempt * 15)) ; \
+        attempt=$((attempt + 1)) ; \
+    done && \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
       dotnet publish samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj \
         --configuration "$CONFIGURATION" --no-restore --output /tmp/stac-ops-demo && \
