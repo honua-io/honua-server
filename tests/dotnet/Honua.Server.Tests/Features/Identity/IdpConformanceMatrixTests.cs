@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Infrastructure.Helpers;
 using Honua.Server.Features.Identity.Saml;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -199,5 +200,37 @@ public sealed class IdpConformanceMatrixTests
         Assert.True(result.Succeeded, result.FailureReason);
         Assert.Single(result.Subject!.Roles);
         Assert.Contains("viewer", result.Subject.Roles);
+    }
+
+    [UnitTest]
+    public void Slo_SignedLogoutRequest_IsAcceptedForEachProvider()
+    {
+        // Single Logout (SLO) consumes an IdP-initiated, signed samlp:LogoutRequest. The signature
+        // path is provider-agnostic — every IdP signs the LogoutRequest with the same XML-DSig
+        // profile the SP verifies — so each provider's signed logout must verify against its own
+        // signing certificate.
+        foreach (var subject in new[] { "okta", "entra", "auth0", "ping" })
+        {
+            using var cert = SamlTestAssertions.CreateSigningCertificate();
+            var signed = SamlTestAssertions.CreateSignedLogoutRequest(cert, subject + ".user@example.com");
+            var logoutRequest = SecureXmlDocumentParser.Parse(Decode(signed)).Root!;
+
+            var result = SamlSignatureVerifier.Verify(logoutRequest, cert);
+
+            Assert.True(result.Verified, $"{subject}: {result.Reason}");
+        }
+    }
+
+    [UnitTest]
+    public void Slo_UnsignedLogoutRequest_IsRejected()
+    {
+        // An unsigned (or forged) LogoutRequest must never be able to terminate a session.
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var unsigned = SamlTestAssertions.CreateUnsignedLogoutRequest("attacker@example.com");
+        var logoutRequest = SecureXmlDocumentParser.Parse(Decode(unsigned)).Root!;
+
+        var result = SamlSignatureVerifier.Verify(logoutRequest, cert);
+
+        Assert.False(result.Verified);
     }
 }

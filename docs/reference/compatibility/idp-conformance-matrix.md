@@ -20,7 +20,12 @@ the main per-provider variable and is exercised by the conformance matrix tests.
   signature or attribute-mapping path fails the build.
 - **SCIM provisioning** — `ScimProvisioningEndpointsTests` exercises the RFC 7643/7644
   user/group lifecycle (create / replace / patch-active / patch-membership / deprovision)
-  that every listed IdP's SCIM client drives.
+  that every listed IdP's SCIM client drives, plus the RFC 7643 §5-7 discovery documents
+  (`/ServiceProviderConfig`, `/ResourceTypes`, `/Schemas`).
+- **SAML Single Logout** — `SamlBridgeEndpointsTests` drives the `/saml/slo` endpoint with a
+  signed, IdP-initiated `LogoutRequest`, asserting the local session is terminated and a
+  `LogoutResponse` relayed; `IdpConformanceMatrixTests` proves the SLO signature path verifies
+  each provider's signed logout and rejects an unsigned one.
 - **Live-IdP runs** are out of scope for CI (they require tenant credentials) and are tracked
   as a follow-up; see _Deferred_ below.
 
@@ -34,7 +39,8 @@ the main per-provider variable and is exercised by the conformance matrix tests.
 | Email / display-name attribute mapping | Supported | Supported | Supported | Supported |
 | Role/group attribute mapping | Supported | Supported | Supported | Supported |
 | Default-role fallback when no role claim is present | Supported | Supported | Supported | Supported |
-| Single Logout (SLO) | Unsupported (deferred) | Unsupported (deferred) | Unsupported (deferred) | Unsupported (deferred) |
+| Single Logout (SLO) — IdP-initiated, HTTP-POST, signed `LogoutRequest` | Supported | Supported | Supported | Supported |
+| Single Logout (SLO) — SP-initiated / HTTP-Redirect binding | Partial (deferred) | Partial (deferred) | Partial (deferred) | Partial (deferred) |
 
 ### Per-provider attribute configuration
 
@@ -50,6 +56,17 @@ the attribute `Name` your IdP emits:
 
 The validator resolves an attribute by both its `Name` and `FriendlyName`, so either form
 works when an IdP emits both.
+
+### Single Logout (SLO) configuration
+
+Set `Saml:SingleLogoutServiceUrl` to the SP's own `/saml/slo` endpoint to advertise a
+`SingleLogoutService` (HTTP-POST binding) in SP metadata. When the IdP front-channels a signed
+`LogoutRequest` there, Honua verifies the signature against `Saml:IdpSigningCertificate`,
+terminates the local admin session (store record + cookie), and emits a `LogoutResponse`. Set
+`Saml:IdpSingleLogoutServiceUrl` to relay that `LogoutResponse` back to the IdP via an
+auto-submitting HTTP-POST form; leave it unset to return the `LogoutResponse` directly. Only
+signed `LogoutRequest`s are honored — unsigned or forged logout requests are rejected so they
+cannot terminate a session.
 
 ### Known quirks
 
@@ -76,6 +93,7 @@ works when an IdP emits both.
 | Group membership PATCH (add / remove) | Supported | Supported | Supported | Supported |
 | Filtering + pagination (`filter`, `startIndex`, `count`) | Supported | Supported | Supported | Supported |
 | Bearer-token authentication | Supported | Supported | Supported | Supported |
+| Discovery documents (`/ServiceProviderConfig`, `/ResourceTypes`, `/Schemas`) | Supported | Supported | Supported | Supported |
 
 ### Known quirks
 
@@ -87,9 +105,10 @@ works when an IdP emits both.
   group display name (each SCIM group maps to a Honua role).
 - **PingFederate** — uses standard RFC 7644 PUT/PATCH; no Honua-specific deviation observed.
 
-## Deferred (tracked under #2154)
+## Deferred
 
-- SAML Single Logout (SLO) endpoint and front/back-channel logout flows.
+- SP-initiated SAML logout (Honua generating and signing its own `LogoutRequest`) and the
+  HTTP-Redirect SLO binding (with its query-string signature scheme). IdP-initiated,
+  HTTP-POST, signed Single Logout is supported today.
 - Live-IdP conformance runs gated behind tenant credentials (skippable in CI), with recorded
   real-world assertion/metadata fixtures captured per provider.
-- SCIM `/ServiceProviderConfig`, `/ResourceTypes`, and `/Schemas` discovery documents.

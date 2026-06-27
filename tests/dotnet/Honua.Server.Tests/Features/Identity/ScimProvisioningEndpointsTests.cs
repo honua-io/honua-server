@@ -254,6 +254,98 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /scim/v2/ServiceProviderConfig")]
+    public async Task ServiceProviderConfig_ReturnsSupportedFeatures()
+    {
+        var response = await _client.GetAsync("/scim/v2/ServiceProviderConfig");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var config = await ReadAsync(response);
+        Assert.Contains(
+            "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig",
+            config.GetProperty("schemas").EnumerateArray().Select(s => s.GetString()));
+        Assert.True(config.GetProperty("patch").GetProperty("supported").GetBoolean());
+        Assert.True(config.GetProperty("filter").GetProperty("supported").GetBoolean());
+
+        var schemes = config.GetProperty("authenticationSchemes");
+        Assert.Equal("oauthbearertoken", schemes[0].GetProperty("type").GetString());
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /scim/v2/ServiceProviderConfig")]
+    public async Task ServiceProviderConfig_WithoutToken_ReturnsUnauthorized()
+    {
+        using var anon = _fixture.CreateClient();
+        var response = await anon.GetAsync("/scim/v2/ServiceProviderConfig");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /scim/v2/ResourceTypes")]
+    public async Task ResourceTypes_ReturnsUserAndGroup()
+    {
+        var response = await _client.GetAsync("/scim/v2/ResourceTypes");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await ReadAsync(response);
+        Assert.Equal(2, body.GetProperty("totalResults").GetInt32());
+        var ids = body.GetProperty("resources").EnumerateArray()
+            .Select(r => r.GetProperty("id").GetString()).ToList();
+        Assert.Contains("User", ids);
+        Assert.Contains("Group", ids);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /scim/v2/ResourceTypes/{id}")]
+    public async Task ResourceType_ById_ReturnsUser()
+    {
+        var response = await _client.GetAsync("/scim/v2/ResourceTypes/User");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await ReadAsync(response);
+        Assert.Equal("User", body.GetProperty("id").GetString());
+        Assert.Equal("/Users", body.GetProperty("endpoint").GetString());
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /scim/v2/ResourceTypes/{id}")]
+    public async Task ResourceType_UnknownId_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync("/scim/v2/ResourceTypes/Nope");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /scim/v2/Schemas")]
+    public async Task Schemas_ReturnsUserAndGroupDefinitions()
+    {
+        var response = await _client.GetAsync("/scim/v2/Schemas");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await ReadAsync(response);
+        Assert.Equal(2, body.GetProperty("totalResults").GetInt32());
+        var ids = body.GetProperty("resources").EnumerateArray()
+            .Select(r => r.GetProperty("id").GetString()).ToList();
+        Assert.Contains("urn:ietf:params:scim:schemas:core:2.0:User", ids);
+        Assert.Contains("urn:ietf:params:scim:schemas:core:2.0:Group", ids);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /scim/v2/Schemas/{id}")]
+    public async Task Schema_ById_ReturnsUserSchema()
+    {
+        var response = await _client.GetAsync("/scim/v2/Schemas/urn:ietf:params:scim:schemas:core:2.0:User");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await ReadAsync(response);
+        Assert.Equal("urn:ietf:params:scim:schemas:core:2.0:User", body.GetProperty("id").GetString());
+        var attrNames = body.GetProperty("attributes").EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString()).ToList();
+        Assert.Contains("userName", attrNames);
+        Assert.Contains("active", attrNames);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /scim/v2/Users")]
     public async Task Request_WithoutBearerToken_ReturnsUnauthorized()
     {
