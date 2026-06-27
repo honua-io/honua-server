@@ -4,7 +4,6 @@
 using Honua.Infrastructure.Licensing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Aws.Features.Licensing;
 
@@ -35,7 +34,10 @@ public static class AwsLicenseSecretResolverServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.TryAddSingleton<ILicenseContentSecretResolver, AwsSecretsManagerLicenseContentResolver>();
+        // Additive (not TryAdd) so it coexists with the Azure Key Vault resolver in a multi-cloud
+        // build: the license service iterates every registered ILicenseContentSecretResolver and
+        // dispatches by reference prefix (aws:secretsmanager: here).
+        services.AddSingleton<ILicenseContentSecretResolver, AwsSecretsManagerLicenseContentResolver>();
         return services;
     }
 }
