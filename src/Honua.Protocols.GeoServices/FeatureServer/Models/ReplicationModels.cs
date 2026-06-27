@@ -389,10 +389,88 @@ public sealed class SynchronizeReplicaRequest
     public string? Edits { get; set; }
 
     /// <summary>
+    /// When true, each layer's uploaded edits are applied atomically: a single failing edit rolls back
+    /// that layer's whole batch, leaving the server state unchanged. Mirrors the Esri
+    /// <c>rollbackOnFailure</c> sync parameter. Defaults to false (best-effort per-row apply) (#2136).
+    /// </summary>
+    [JsonPropertyName("rollbackOnFailure")]
+    public bool RollbackOnFailure { get; set; }
+
+    /// <summary>
     /// Output format parameter.
     /// </summary>
     [JsonPropertyName("f")]
     public string? F { get; set; }
+}
+
+/// <summary>
+/// Service-level synchronization capabilities advertised on the FeatureServer metadata resource so
+/// Esri clients (ArcGIS API for Python, ArcGIS Pro, Maps SDKs) discover the offline replica behavior
+/// the server actually honors before they attempt createReplica / synchronizeReplica (#2136). Emitted
+/// only when the service is sync-enabled.
+/// </summary>
+public sealed class FeatureServerSyncCapabilities
+{
+    /// <summary>
+    /// Whether replica creation/synchronization runs asynchronously (replica jobs). Honua synchronizes
+    /// inline, so this is false.
+    /// </summary>
+    [JsonPropertyName("supportsAsync")]
+    public bool SupportsAsync { get; init; }
+
+    /// <summary>
+    /// Whether existing data can be registered as a replica without an extract. Not supported.
+    /// </summary>
+    [JsonPropertyName("supportsRegisteringExistingData")]
+    public bool SupportsRegisteringExistingData { get; init; }
+
+    /// <summary>
+    /// Whether the client may choose the sync direction (download / upload / bidirectional). Honua
+    /// honors <c>syncDirection</c>, so this is true.
+    /// </summary>
+    [JsonPropertyName("supportsSyncDirectionControl")]
+    public bool SupportsSyncDirectionControl { get; init; } = true;
+
+    /// <summary>
+    /// Whether per-layer sync (a replica spanning a subset of layers with per-layer generations) is
+    /// supported. Honua supports the <c>perLayer</c> sync model, so this is true.
+    /// </summary>
+    [JsonPropertyName("supportsPerLayerSync")]
+    public bool SupportsPerLayerSync { get; init; } = true;
+
+    /// <summary>
+    /// Whether per-replica sync (a single replica-wide generation) is supported. True.
+    /// </summary>
+    [JsonPropertyName("supportsPerReplicaSync")]
+    public bool SupportsPerReplicaSync { get; init; } = true;
+
+    /// <summary>
+    /// Whether the <c>none</c> sync model (snapshot replicas that never sync back) is supported. Not
+    /// supported.
+    /// </summary>
+    [JsonPropertyName("supportsSyncModelNone")]
+    public bool SupportsSyncModelNone { get; init; }
+
+    /// <summary>
+    /// Whether uploaded edits can be applied atomically via <c>rollbackOnFailure</c>. True (#2136).
+    /// </summary>
+    [JsonPropertyName("supportsRollbackOnFailure")]
+    public bool SupportsRollbackOnFailure { get; init; } = true;
+
+    /// <summary>
+    /// Whether attachment sync direction can be controlled independently. Attachment sync direction
+    /// control is not supported.
+    /// </summary>
+    [JsonPropertyName("supportsAttachmentsSyncDirection")]
+    public bool SupportsAttachmentsSyncDirection { get; init; }
+
+    /// <summary>
+    /// Bitmask of the sync data options the service supports (Esri <c>syncDataOptions</c>). Honua syncs
+    /// feature edits (bit 1, <c>esriSyncDataOptionsFeatures</c>); attachment-edit sync is not part of
+    /// the replica upload model, so the attachments bit is not advertised.
+    /// </summary>
+    [JsonPropertyName("supportedSyncDataOptions")]
+    public int SupportedSyncDataOptions { get; init; } = 1;
 }
 
 /// <summary>

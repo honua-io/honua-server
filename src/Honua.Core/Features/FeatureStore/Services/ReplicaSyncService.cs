@@ -164,7 +164,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             else
             {
                 applyResult = await editApplier
-                    .ApplyAsync(request.ServiceId, layer.PublicLayerId, editsToApply.ToImmutable(), cancellationToken)
+                    .ApplyAsync(request.ServiceId, layer.PublicLayerId, editsToApply.ToImmutable(), request.RollbackOnFailure, cancellationToken)
                     .ConfigureAwait(false);
             }
 

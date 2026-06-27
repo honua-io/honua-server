@@ -336,6 +336,131 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_Bidirectional_AppliesUploadAndDeliversServerDelta()
+    {
+        // Conformance (#2136): a bidirectional sync uploads the client's edits AND returns the
+        // server-to-client delta in one call, excluding the client's own just-applied edits.
+        var createRoot = await CreateReplicaWithResponseAsync("BidirectionalSync", "0");
+        var replicaId = createRoot.GetProperty("replicaID").GetString()!;
+        var baseServerGen = createRoot.GetProperty("serverGen").GetInt64();
+
+        // A server-side feature committed after the replica was created — the download half must deliver it.
+        var serverObjectId = await AddFeatureAsync("server-side-bidi");
+
+        // Client uploads its own add in the same bidirectional call.
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new { id = 0, adds = new[] { new { attributes = new { name = "client-side-bidi" } } } }
+        });
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "bidirectional",
+            replicaServerGen = baseServerGen,
+            edits,
+            f = "json"
+        });
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        root.GetProperty("syncDirection").GetString().Should().Be("bidirectional");
+
+        // Upload half applied the client's add.
+        root.GetProperty("appliedAdds").GetInt32().Should().Be(1);
+
+        // Download half delivered the server-side feature but not the client's own just-applied add.
+        root.TryGetProperty("edits", out var deltaEdits).Should().BeTrue("a bidirectional sync must carry the download delta");
+        var layer0 = deltaEdits.EnumerateArray().Single(layer => layer.GetProperty("id").GetInt32() == 0);
+        var deliveredObjectIds = layer0.TryGetProperty("addFeatures", out var addFeatures) && addFeatures.ValueKind == JsonValueKind.Array
+            ? addFeatures.EnumerateArray().Select(f => f.GetProperty("attributes").GetProperty("objectid").GetInt64()).ToList()
+            : new List<long>();
+        deliveredObjectIds.Should().Contain(serverObjectId, "the server-side change must be delivered to the replica");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_RollbackOnFailure_AbortsUploadLeavingStateUnchanged()
+    {
+        // Conformance (#2136): with rollbackOnFailure=true, a layer batch that contains a failing edit
+        // is applied atomically — the whole batch rolls back, leaving the layer's server state unchanged.
+        var replicaId = await CreateReplicaAsync("RollbackOnFailure", "0");
+        await SynchronizeDownloadAsync(replicaId);
+
+        // One valid add plus one update targeting an object id that does not exist (which fails). Under
+        // rollbackOnFailure the valid add must NOT be persisted.
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new
+            {
+                id = 0,
+                adds = new[] { new { attributes = new { name = "rollback-should-not-persist" } } },
+                updates = new[]
+                {
+                    new { attributes = new Dictionary<string, object?> { ["objectid"] = 999_999_999L, ["name"] = "missing" } }
+                }
+            }
+        });
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "upload",
+            rollbackOnFailure = true,
+            edits,
+            f = "json"
+        });
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        // The sync is rejected because an edit failed and the batch rolled back.
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // State unchanged: the valid add was rolled back and never persisted.
+        var matches = await CountFeaturesByNameAsync("rollback-should-not-persist");
+        matches.Should().Be(0, "rollbackOnFailure must discard the entire layer batch when any edit fails");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task ServiceMetadata_SyncEnabled_AdvertisesSyncCapabilities()
+    {
+        // Conformance (#2136): a sync-enabled service advertises its sync capabilities (supported sync
+        // directions, sync models, rollbackOnFailure, and supportedSyncDataOptions) so Esri clients can
+        // discover the offline replica behavior before attempting createReplica / synchronizeReplica.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+
+        // syncCapabilities is present exactly when the service is sync-enabled, and stays consistent
+        // with the capability flags the sync surface actually honors.
+        if (root.GetProperty("syncEnabled").GetBoolean())
+        {
+            root.TryGetProperty("syncCapabilities", out var syncCapabilities).Should().BeTrue();
+            syncCapabilities.GetProperty("supportsRollbackOnFailure").GetBoolean().Should().BeTrue();
+            syncCapabilities.GetProperty("supportsSyncDirectionControl").GetBoolean().Should().BeTrue();
+            syncCapabilities.GetProperty("supportsPerReplicaSync").GetBoolean().Should().BeTrue();
+            syncCapabilities.GetProperty("supportedSyncDataOptions").GetInt32().Should().BeGreaterThan(0);
+        }
+        else
+        {
+            root.TryGetProperty("syncCapabilities", out _).Should().BeFalse(
+                "syncCapabilities must be omitted when the service is not sync-enabled");
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ListReplicas)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]
     public async Task Replicas_AfterCreateAndUnregister_ReflectsLiveRegistryImmediately()
@@ -540,6 +665,17 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
+    private async Task<int> CountFeaturesByNameAsync(string name)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?where=name='{name}'&returnGeometry=false&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement.GetProperty("features").GetArrayLength();
     }
 
     private async Task<string?> ReadFeatureNameAsync(long objectId)

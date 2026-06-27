@@ -20,9 +20,11 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 /// <remarks>
 /// The canonical <see cref="IReplicaSyncService"/> owns conflict detection and only passes the edits
 /// it decided to apply; this applier maps each <see cref="ReplicaUploadEdit"/> back to its GeoServices
-/// wire payload and dispatches a single <c>applyEdits</c> per layer. Edits are applied with
-/// <see cref="ApplyEditsRequest.RollbackOnFailure"/> set to <c>false</c> so a single bad row does not
-/// discard the rest of the upload (matching the prior synchronize behavior and Esri sync semantics).
+/// wire payload and dispatches a single <c>applyEdits</c> per layer. The synchronize adapter's
+/// <c>rollbackOnFailure</c> parameter flows through to <see cref="ApplyEditsRequest.RollbackOnFailure"/>:
+/// when true, the shared edit pipeline wraps the layer's edits in an explicit transaction so a single
+/// bad row rolls back the whole layer batch (Esri sync semantics, #2136); when false the upload is
+/// applied best-effort per row (the prior synchronize behavior).
 /// </remarks>
 internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
 {
@@ -39,6 +41,7 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
         string serviceId,
         int publicLayerId,
         ImmutableArray<ReplicaUploadEdit> edits,
+        bool rollbackOnFailure,
         CancellationToken cancellationToken = default)
     {
         if (edits.IsDefaultOrEmpty)
@@ -77,7 +80,8 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             Adds = adds.Count > 0 ? adds.ToArray() : null,
             Updates = updates.Count > 0 ? updates.ToArray() : null,
             Deletes = deletes.Count > 0 ? deletes.ToArray() : null,
-            RollbackOnFailure = false,
+            RollbackOnFailure = rollbackOnFailure,
+            RollbackOnFailureExplicitlySet = true,
         };
 
         var editResult = await _editsHandler.HandleApplyEditsAsync(
