@@ -56,6 +56,23 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.Temporal);
         categories.Should().Contain(FeatureCatalog.Categories.FieldOps);
         categories.Should().Contain(FeatureCatalog.Categories.Ai);
+        categories.Should().Contain(FeatureCatalog.Categories.DisasterRecovery);
+    }
+
+    [Theory]
+    [InlineData("dr.backup-automation")]
+    [InlineData("dr.failover")]
+    [InlineData("dr.cache-backup")]
+    [InlineData("dr.rto-rpo-reporting")]
+    public void All_DisasterRecoveryFeaturesAreEnterpriseTier(string key)
+    {
+        // Ticket #356 (ADR-0024): HA/DR is an Enterprise tier capability across backup
+        // automation, failover playbooks, cache backup, and RTO/RPO reporting.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == key);
+
+        feature.Should().NotBeNull($"feature catalog must define '{key}' for ticket #356");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.DisasterRecovery);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
     }
 
     [Theory]
