@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "_comment": "Known-flake signatures for the optimistic trunk merge-coordinator (ADR-0055). Each entry matches a FAILED CI job by its job-name pattern (`shardPattern`, an extended-regex matched against the GitHub job `name`) AND a `logPattern` (extended-regex matched against that job's downloaded log text). A failed job that matches BOTH is bucketed as a KNOWN FLAKE: the coordinator treats it as NON-BLOCKING and merges THROUGH it WITHOUT a rerun (the core throughput win — see ADR-0055 'Land-fast gate'). A failed job that matches NO signature is a REAL failure (real-gate or affected-shard) and blocks/escalates. Keep this list TIGHT: an over-broad logPattern that swallows a genuine regression silently lands red trunk. `label` is the flake-rate bucket key surfaced by the dashboard so we know which flake to fix first (expected: deadlock-40P01 dominates). Extensible — add a new {shardPattern, logPattern, label} object to quarantine a newly-confirmed flake; remove one to stop merging through a flake that has been fixed. The coordinator NEVER auto-quarantines: every entry here is a deliberate, human-reviewed decision. shardPattern is anchored against the FULL job name including the 'Server Tests (<shard>)' wrapper.",
+  "signatures": [
+    {
+      "label": "deadlock-40P01",
+      "shardPattern": "Server Tests \\((Core|Migration|OData|Comprehensive|Performance).*\\)|\\.NET Foundation Tests",
+      "logPattern": "40P01|deadlock detected|PostgresException.*40P01|Npgsql.*deadlock",
+      "_comment": "Postgres '40P01: deadlock detected' under concurrent shard execution. honua-server#1568 / [Collection(\"Database\")]. The #1-frequency flake and the entire reason for merge-through. Scoped to the shards that share the Database collection under contention; NOT a blanket match."
+    },
+    {
+      "label": "ryuk-image-pull",
+      "shardPattern": "Server Tests \\(.*\\)|\\.NET Foundation Tests|Docker Build .*",
+      "logPattern": "ryuk|testcontainers\\.org/ryuk|failed to pull image|manifest unknown|toomanyrequests|TaskCanceledException.*pull|net/http: TLS handshake timeout|i/o timeout.*registry",
+      "_comment": "Testcontainers Ryuk reaper / Docker registry image-pull transient failures (rate limits, TLS/i-o timeouts). Infra flake, not a code regression."
+    },
+    {
+      "label": "docker-unavailable",
+      "shardPattern": "Server Tests \\(.*\\)|\\.NET Foundation Tests|.*Foundation.*|.*STAC.*|.*auth.*|.*Infra and Security.*",
+      "logPattern": "DockerUnavailableException|Cannot connect to the Docker daemon|docker daemon is not running|Docker.DotNet.*DockerApiException.*connection",
+      "_comment": "DockerUnavailableException on Database-collection tests when the runner has no Docker — hits auth/STAC Foundation jobs. Environmental, not code."
+    }
+  ]
+}
