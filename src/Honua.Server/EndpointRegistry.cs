@@ -74,6 +74,16 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/api-keys/{id}/revoke"),
         new("GET", "/api/v1/admin/api-keys/{id}/effective-permissions"),
 
+        // Embed governance: keys, scoping, policy, analytics, usage (#1191).
+        new("GET", "/api/v1/admin/embed/keys"),
+        new("POST", "/api/v1/admin/embed/keys"),
+        new("GET", "/api/v1/admin/embed/keys/{id}"),
+        new("POST", "/api/v1/admin/embed/keys/{id}/rotate"),
+        new("POST", "/api/v1/admin/embed/keys/{id}/revoke"),
+        new("GET", "/api/v1/admin/embed/usage"),
+        new("GET", "/api/v1/embed/policy"),
+        new("POST", "/api/v1/embed/analytics"),
+
         // OAuth2 client registry + scope catalogue (ADR-0053 Increment 2, #1888).
         new("GET", "/api/v1/admin/oauth-clients"),
         new("POST", "/api/v1/admin/oauth-clients"),

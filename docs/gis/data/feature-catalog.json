@@ -1356,6 +1356,45 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-embed-keys",
+      "route": "/api/v1/admin/embed/keys",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.CreateListAndGetEmbedKey_ReturnsScopeAndSecretOnce"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-embed-keys-id",
+      "route": "/api/v1/admin/embed/keys/{id}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.CreateListAndGetEmbedKey_ReturnsScopeAndSecretOnce"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-embed-usage",
+      "route": "/api/v1/admin/embed/usage",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.IngestAnalyticsThenQueryUsage_AggregatesEvents"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-feature-events-replay",
       "route": "/api/v1/admin/feature-events/replay",
       "method": "GET",
@@ -4108,6 +4147,21 @@
         "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_LayerWithoutServableCoverage_Returns404"
       ],
       "proof_ledger_surface": "datacube-tiles",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-embed-policy",
+      "route": "/api/v1/embed/policy",
+      "method": "GET",
+      "family": "uncategorized",
+      "protocol": "http-route",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.FetchPolicy_AllowedOrigin_ReturnsPolicyWithCorsHeader",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.FetchPolicy_DisallowedOrigin_ReturnsForbidden",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.FetchPolicy_MissingKey_ReturnsUnauthorized"
+      ],
+      "proof_ledger_surface": "",
       "maturity": "implemented"
     },
     {
@@ -11632,6 +11686,46 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-admin-embed-keys",
+      "route": "/api/v1/admin/embed/keys",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.CreateEmbedKey_WithoutAllowedOrigins_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.CreateListAndGetEmbedKey_ReturnsScopeAndSecretOnce"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-embed-keys-id-revoke",
+      "route": "/api/v1/admin/embed/keys/{id}/revoke",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.RevokeEmbedKey_BlocksPolicyIssuance"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-embed-keys-id-rotate",
+      "route": "/api/v1/admin/embed/keys/{id}/rotate",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.RotateEmbedKey_InvalidatesOldSecret"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-admin-external-services-discover",
       "route": "/api/v1/admin/external-services/discover",
       "method": "POST",
@@ -13665,6 +13759,20 @@
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowLifecycle_ValidatesDryRunsPublishesTargetsAndStampsJobProvenance"
       ],
       "proof_ledger_surface": "console-content-rbac",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-embed-analytics",
+      "route": "/api/v1/embed/analytics",
+      "method": "POST",
+      "family": "uncategorized",
+      "protocol": "http-route",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.IngestAnalyticsThenQueryUsage_AggregatesEvents",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.IngestAnalytics_WithRawKeyInPayload_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "",
       "maturity": "implemented"
     },
     {
