@@ -28,8 +28,10 @@ public sealed class AuditExportOptions
     public AuditExportDispatcherOptions Dispatch { get; set; } = new();
 
     /// <summary>
-    /// Retention window in days. <c>0</c> (or less) means retain forever.
-    /// Consumed by the (deferred) retention pruner.
+    /// Retention window in days. <c>0</c> (or less) means retain forever. When
+    /// positive, a background sweep (<c>AuditRetentionPruneService</c>) prunes
+    /// audit records older than this window via the registered
+    /// <see cref="AuditRetentionPolicy"/> pruner (#509).
     /// </summary>
     public int RetentionDays { get; set; }
 
