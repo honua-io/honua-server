@@ -64,6 +64,15 @@
          Parquet paths. -->
     <PackageReference Include="Apache.Arrow" />
     <PackageReference Include="ParquetSharp" />
+    <!-- Confluent.Kafka backs the enterprise event-bus Kafka sink (#357):
+         the broker-agnostic IFeatureChangeEventSink Kafka adapter publishes
+         committed feature-change events to a configurable topic with an
+         idempotent producer (producer-side exactly-once) and routes failed
+         deliveries to a dead-letter topic. The dependency is isolated behind
+         the ConfluentKafkaEventProducer wrapper; the sink itself depends only
+         on the IKafkaEventProducer abstraction so it stays unit-testable
+         without a live broker. -->
+    <PackageReference Include="Confluent.Kafka" />
   </ItemGroup>
 
   <ItemGroup>
