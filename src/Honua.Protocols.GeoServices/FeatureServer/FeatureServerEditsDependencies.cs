@@ -25,7 +25,8 @@ internal sealed class FeatureServerEditsDependencies
         IFilterExpressionService filterExpressionService,
         IHttpContextAccessor httpContextAccessor,
         FeatureMutationEventService mutationEventService,
-        IPluginEditPipeline pluginPipeline)
+        IPluginEditPipeline pluginPipeline,
+        IApplyEditsIdempotencyStore idempotencyStore)
     {
         ResourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
         FeatureWriter = featureWriter ?? throw new ArgumentNullException(nameof(featureWriter));
@@ -38,6 +39,7 @@ internal sealed class FeatureServerEditsDependencies
         HttpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         MutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
         PluginPipeline = pluginPipeline ?? throw new ArgumentNullException(nameof(pluginPipeline));
+        IdempotencyStore = idempotencyStore ?? throw new ArgumentNullException(nameof(idempotencyStore));
     }
 
     public IResourceValidator ResourceValidator { get; }
@@ -51,4 +53,5 @@ internal sealed class FeatureServerEditsDependencies
     public IHttpContextAccessor HttpContextAccessor { get; }
     public FeatureMutationEventService MutationEventService { get; }
     public IPluginEditPipeline PluginPipeline { get; }
+    public IApplyEditsIdempotencyStore IdempotencyStore { get; }
 }

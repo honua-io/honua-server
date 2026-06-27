@@ -42,6 +42,14 @@ internal static class FeatureServerServiceCollectionExtensions
             serviceProvider.GetRequiredService<FeatureServerQueryHandler>());
         services.AddScoped<FeatureServerRelatedRecordsDependencies>();
         services.AddScoped<FeatureServerRelatedRecordsHandler>();
+        // At-most-once applyEdits store (#2250). Distributed (Redis) when an IDistributedCache is
+        // configured, otherwise an in-process fallback — mirroring DistributedReplicaStore. Singleton so
+        // the in-process fallback dictionary survives across requests.
+        services.TryAddSingleton<IApplyEditsIdempotencyStore>(static serviceProvider =>
+            new DistributedApplyEditsIdempotencyStore(
+                serviceProvider.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
+                serviceProvider.GetRequiredService<ILogger<DistributedApplyEditsIdempotencyStore>>()));
+
         services.AddScoped<FeatureServerEditsDependencies>();
         services.AddScoped<FeatureServerEditsHandler>();
 

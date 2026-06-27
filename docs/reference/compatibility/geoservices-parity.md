@@ -67,6 +67,33 @@ Esri spec: [Feature Service](https://developers.arcgis.com/rest/services-referen
 `editsUploadId`, ...) are silently ignored. queryRelatedRecords rejects
 `gdbVersion` and `historicMoment` with 400 and accepts/ignores `returnTrueCurves`.
 
+#### Idempotency (at-most-once edits)
+
+`applyEdits`, `addFeatures`, `updateFeatures`, and `deleteFeatures` (layer-level) honour
+an optional `Idempotency-Key` request header so a client can retry an edit on a transient
+failure without creating duplicate features (#2250). When the header is present, the first
+request that commits at least one row records its full response keyed by the
+`(principal, serviceId, layerId, key)` tuple; any later request that repeats the same key
+within the dedupe window (24 hours) replays that original response — the same `objectId`s,
+with `success: true` — instead of re-applying the edit. This is the server-side contract the
+Honua SDKs and field clients rely on for true at-most-once semantics.
+
+Contract details:
+
+- The key is a client-generated, stable string of at most 200 characters with no control
+  characters; an empty, oversized, or malformed header is rejected with a 400.
+- The key is scoped to the authenticated principal, service, and layer — one caller's key
+  can never replay another caller's response, and the same key on a different layer is a
+  distinct edit.
+- Only requests that committed rows are recorded; a fully-failed/no-op request is not
+  recorded, so it can be retried fresh.
+- The store is Redis-backed when an `IDistributedCache` is configured (durable across
+  replicas) and falls back to an in-process window on a single node. Because
+  `IDistributedCache` exposes no atomic reserve, two *truly concurrent* identical requests
+  can both miss the window before either records its response; the header guarantees
+  at-most-once for the common *sequential-retry* pattern, not for simultaneous in-flight
+  duplicates.
+
 ## MapServer + WMS / WMTS
 
 Esri spec: [Map Service](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/).

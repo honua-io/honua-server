@@ -51,6 +51,7 @@ internal sealed class FeatureServerEditsHandler(
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly IPluginEditPipeline _pluginPipeline = dependencies.PluginPipeline;
+    private readonly IApplyEditsIdempotencyStore _idempotencyStore = dependencies.IdempotencyStore;
     private readonly ILogger<FeatureServerEditsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -74,6 +75,13 @@ internal sealed class FeatureServerEditsHandler(
         if (editsGate is not null)
         {
             return editsGate;
+        }
+
+        // Server-side at-most-once (#2250): validate the optional Idempotency-Key header up front so a
+        // malformed header fails fast with a 400 before any edit work, rather than being silently ignored.
+        if (!ApplyEditsIdempotency.TryResolveKey(httpContext, out var idempotencyKey, out var idempotencyError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(httpContext, idempotencyError!);
         }
 
         using var scope = HonuaTelemetryScope.StartFeature(
@@ -162,6 +170,29 @@ internal sealed class FeatureServerEditsHandler(
             // shared edit pipeline rather than by caller discipline.
             var editPrincipal = ResolveEditPrincipal(httpContext);
 
+            // At-most-once replay (#2250): a retry carrying a previously-seen Idempotency-Key returns the
+            // original response without re-applying the edit, so a retried add cannot create a duplicate
+            // feature. The key is scoped to (principal, service, layer) inside the store.
+            ApplyEditsIdempotencyScope? idempotencyScope = idempotencyKey is null
+                ? null
+                : new ApplyEditsIdempotencyScope(
+                    serviceId,
+                    layerId,
+                    string.IsNullOrEmpty(editPrincipal.Name) ? "anonymous" : editPrincipal.Name,
+                    idempotencyKey);
+
+            if (idempotencyScope is { } replayScope)
+            {
+                var replay = await _idempotencyStore.TryGetAsync(replayScope, cancellationToken).ConfigureAwait(false);
+                if (replay is not null)
+                {
+                    FeatureServerLog.ApplyEditsReplayed(_logger, serviceId, layerId);
+                    scope.SetSuccess(0);
+                    return Results.Json(replay, FeatureServerJsonContext.Default.ApplyEditsResponse,
+                        contentType: "application/json");
+                }
+            }
+
             // Process edit operations
             var editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, cancellationToken);
 
@@ -193,7 +224,19 @@ internal sealed class FeatureServerEditsHandler(
             // Build and return final response
             var featureCount = editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount;
             scope.SetSuccess(featureCount);
-            return CreateFinalResponse(editContext, editResult, serviceId, layerId);
+            var finalResponse = BuildFinalResponse(editContext, editResult);
+            FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, finalResponse.Success);
+
+            // Record the response for at-most-once replay (#2250) only when the edit actually committed
+            // rows. A fully-failed/no-op request is intentionally not recorded so a genuine retry is
+            // re-attempted rather than replaying a no-op failure. Best-effort: the store swallows errors.
+            if (idempotencyScope is { } recordScope && !editResult.WasRolledBack && featureCount > 0)
+            {
+                await _idempotencyStore.SetAsync(recordScope, finalResponse, CancellationToken.None).ConfigureAwait(false);
+            }
+
+            return Results.Json(finalResponse, FeatureServerJsonContext.Default.ApplyEditsResponse,
+                contentType: "application/json");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -691,9 +734,11 @@ internal sealed class FeatureServerEditsHandler(
     }
 
     /// <summary>
-    /// Creates the final response after all operations complete
+    /// Builds the final response after all operations complete. Returns the response object (rather than
+    /// an <see cref="IResult"/>) so the caller can record it in the idempotency store (#2250) before
+    /// serializing it.
     /// </summary>
-    private IResult CreateFinalResponse(EditOperationContext context, FeatureEditResult editResult, string serviceId, int layerId)
+    private static ApplyEditsResponse BuildFinalResponse(EditOperationContext context, FeatureEditResult editResult)
     {
         var finalAddResults = FinalizeResults(context.AddResults);
         var finalUpdateResults = FinalizeResults(context.UpdateResults);
@@ -704,18 +749,13 @@ internal sealed class FeatureServerEditsHandler(
                          !editResult.WasRolledBack &&
                          !context.HasValidationErrors;
 
-        var finalResponse = new ApplyEditsResponse
+        return new ApplyEditsResponse
         {
             AddResults = finalAddResults,
             UpdateResults = finalUpdateResults,
             DeleteResults = finalDeleteResults,
             Success = allSuccess
         };
-
-        FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, allSuccess);
-
-        return Results.Json(finalResponse, FeatureServerJsonContext.Default.ApplyEditsResponse,
-            contentType: "application/json");
     }
 
     private async Task PublishFeatureChangeEventsAsync(
