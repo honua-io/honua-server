@@ -67,12 +67,52 @@ internal static partial class ProcessPlanValidator
         "lanczos"
     };
 
+    // Mosaic overlap operators the native worker (GdalRasterMosaicJobExecutor) can
+    // express through gdalwarp source ordering. Statistical operators are not yet
+    // available and are rejected so a plan accepted here is also accepted by the
+    // worker rather than failing at the CLI boundary.
+    private static readonly HashSet<string> RasterMosaicOperatorValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "first", "last"
+    };
+
     private static readonly HashSet<string> RasterFormatValues = new(StringComparer.OrdinalIgnoreCase)
     {
         "gtiff", "geotiff", "tiff", "tif",
         "png",
         "jpeg", "jpg",
         "cog"
+    };
+
+    // gdal_calc.py --type values accepted by the calc-family executors
+    // (raster.map-algebra / raster.spectral-index / raster.reclassify). Mirrors
+    // GdalCalcInputs.TryNormalizeDataType so a plan accepted here is accepted by
+    // the worker.
+    private static readonly HashSet<string> RasterCalcDataTypeValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "byte", "int16", "uint16", "int32", "uint32", "float32", "float64"
+    };
+
+    // Spectral-index presets the native worker (GdalRasterSpectralIndexJobExecutor)
+    // recognizes, with the band roles each requires.
+    private static readonly HashSet<string> SpectralIndexValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ndvi", "ndwi", "ndbi", "savi", "evi"
+    };
+
+    // Euclidean-distance units the native worker passes to gdal_proximity -distunits.
+    private static readonly HashSet<string> ProximityDistanceUnitValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "GEO", "PIXEL"
+    };
+
+    // NumPy element-wise functions the map-algebra allow-list admits. Mirrors
+    // MapAlgebraExpression.AllowedFunctions in the worker.
+    private static readonly HashSet<string> MapAlgebraFunctions = new(StringComparer.Ordinal)
+    {
+        "abs", "absolute", "minimum", "maximum", "sqrt", "exp", "log", "log10",
+        "power", "where", "clip", "sign", "floor", "ceil", "mod", "fmod",
+        "sin", "cos", "tan", "arctan", "nan_to_num"
     };
 
     private static readonly HashSet<string> GeometryFormatValues = new(StringComparer.OrdinalIgnoreCase)
@@ -291,6 +331,54 @@ internal static partial class ProcessPlanValidator
                 break;
             case "raster.zonal-statistics":
                 ValidateRasterZonalStatisticsSemantics(step, violations);
+                break;
+            case "raster.resample":
+                ValidateRasterResampleSemantics(step, violations);
+                break;
+            case "raster.interpolate-idw":
+                ValidateRasterInterpolateIdwSemantics(step, violations);
+                break;
+            case "raster.interpolate-kriging":
+                // Kriging is advertised but flagged unsupported by the native worker
+                // (no kriging-capable backend is bundled). The plan is still
+                // shape-validated (the base type-validator enforces the required
+                // 'points' input); the worker FAILS the job at execution with a clear
+                // message rather than the validator blocking it, so the limitation is
+                // surfaced as a job failure rather than a submit-time rejection.
+                break;
+            case "raster.mosaic":
+                ValidateRasterMosaicSemantics(step, violations);
+                break;
+            case "raster.map-algebra":
+                ValidateRasterMapAlgebraSemantics(step, violations);
+                break;
+            case "raster.spectral-index":
+                ValidateRasterSpectralIndexSemantics(step, violations);
+                break;
+            case "raster.reclassify":
+                ValidateRasterReclassifySemantics(step, violations);
+                break;
+            case "proximity.euclidean-distance":
+                ValidateProximityEuclideanDistanceSemantics(step, violations);
+                break;
+            case "proximity.euclidean-allocation":
+                // Euclidean allocation is advertised but flagged unsupported by the
+                // native worker (stock gdal_proximity has no allocation mode). The
+                // plan is still shape-validated (the base type-validator enforces the
+                // required 'source' input); the worker FAILS the job at execution with
+                // a clear message rather than the validator blocking it.
+                break;
+            case "surface.contour":
+                ValidateSurfaceContourSemantics(step, violations);
+                break;
+            case "surface.viewshed":
+                ValidateSurfaceViewshedSemantics(step, violations);
+                break;
+            case "conversion.polygonize":
+                ValidateConversionPolygonizeSemantics(step, violations);
+                break;
+            case "conversion.rasterize":
+                ValidateConversionRasterizeSemantics(step, violations);
                 break;
             case "conversion.geometry-format":
                 ValidateGeometryFormatConversionSemantics(step, violations);
@@ -841,6 +929,421 @@ internal static partial class ProcessPlanValidator
         ValidateSharedRasterSourceSemantics(step, violations);
         RequireIntAtLeast(step, "band", 1, violations);
         ValidateEnumList(step, "statistics", RasterZonalStatisticValues, "count, sum, mean, min, max, stddev, variance", violations);
+    }
+
+    private static void ValidateRasterResampleSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateSharedRasterSourceSemantics(step, violations);
+        RequirePositiveFiniteDouble(step, "cellSize", violations);
+        RequirePositiveFiniteDouble(step, "cellSizeY", violations);
+
+        if (step.Inputs.TryGetValue("resampling", out var resamplingRaw)
+            && !string.IsNullOrWhiteSpace(resamplingRaw)
+            && !RasterResamplingValues.Contains(resamplingRaw.Trim()))
+        {
+            AddEnumViolation(step, "resampling", resamplingRaw, "nearestneighbor, bilinear, cubic, lanczos", violations);
+        }
+    }
+
+    private static void ValidateRasterInterpolateIdwSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'points' is a declared-required base64 input enforced by the base
+        // type-validator. The IDW tuning parameters mirror gdal_grid's invdist
+        // options; range-check them so a plan accepted here is accepted by the CLI.
+        RequirePositiveFiniteDouble(step, "power", violations);
+        RequireNonNegativeFiniteDouble(step, "smoothing", violations);
+        RequirePositiveFiniteDouble(step, "radius", violations);
+        RequireIntAtLeast(step, "width", 1, violations);
+        RequireIntAtLeast(step, "height", 1, violations);
+
+        // gdal_grid -outsize requires BOTH dimensions; reject a half-specified grid up
+        // front so submit-time validation matches the executor (which fails the job for
+        // the same XOR), mirroring ValidateConversionRasterizeSemantics.
+        var hasWidth = step.Inputs.TryGetValue("width", out var width) && !string.IsNullOrWhiteSpace(width);
+        var hasHeight = step.Inputs.TryGetValue("height", out var height) && !string.IsNullOrWhiteSpace(height);
+        if (hasWidth ^ hasHeight)
+        {
+            AddRangeViolationIfNew(step, "width", "supply both 'width' and 'height' together to set the output grid size", violations);
+        }
+    }
+
+    private static void ValidateRasterMosaicSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'sources' is a declared-required input enforced by the base type-validator.
+        if (step.Inputs.TryGetValue("operator", out var operatorRaw)
+            && !string.IsNullOrWhiteSpace(operatorRaw)
+            && !RasterMosaicOperatorValues.Contains(operatorRaw.Trim()))
+        {
+            AddEnumViolation(step, "operator", operatorRaw, "first, last", violations);
+        }
+
+        if (step.Inputs.TryGetValue("resampling", out var resamplingRaw)
+            && !string.IsNullOrWhiteSpace(resamplingRaw)
+            && !RasterResamplingValues.Contains(resamplingRaw.Trim()))
+        {
+            AddEnumViolation(step, "resampling", resamplingRaw, "nearestneighbor, bilinear, cubic, lanczos", violations);
+        }
+    }
+
+    private static void ValidateRasterMapAlgebraSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'sources' and 'expression' are declared-required inputs enforced by the
+        // base type-validator. Validate the expression against the same allow-list
+        // the worker (MapAlgebraExpression) enforces, since gdal_calc.py eval()'s it.
+        var bandCount = 0;
+        if (step.Inputs.TryGetValue("sources", out var sourcesRaw) && !string.IsNullOrWhiteSpace(sourcesRaw))
+        {
+            bandCount = sourcesRaw.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+            if (bandCount > 26)
+            {
+                AddRangeViolationIfNew(step, "sources", $"at most 26 rasters may be supplied (one per band variable A–Z), got {bandCount}", violations);
+            }
+        }
+
+        if (step.Inputs.TryGetValue("expression", out var expression)
+            && !string.IsNullOrWhiteSpace(expression)
+            && !IsAllowedMapAlgebraExpression(expression, bandCount, out var expressionError))
+        {
+            AddRangeViolationIfNew(step, "expression", expressionError, violations);
+        }
+
+        ValidateCalcDataType(step, violations);
+    }
+
+    private static void ValidateRasterSpectralIndexSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("index", out var indexRaw) || string.IsNullOrWhiteSpace(indexRaw))
+        {
+            return;
+        }
+
+        var index = indexRaw.Trim();
+        if (!SpectralIndexValues.Contains(index))
+        {
+            AddEnumViolation(step, "index", indexRaw, "NDVI, NDWI, NDBI, SAVI, EVI", violations);
+            return;
+        }
+
+        // Each preset requires a specific set of band-role rasters; reject a plan
+        // missing one so it does not route to the worker and fail there.
+        var required = index.ToUpperInvariant() switch
+        {
+            "NDVI" => new[] { "nir", "red" },
+            "NDWI" => new[] { "green", "nir" },
+            "NDBI" => new[] { "swir", "nir" },
+            "SAVI" => new[] { "nir", "red" },
+            "EVI" => new[] { "nir", "red", "blue" },
+            _ => [],
+        };
+        foreach (var role in required)
+        {
+            if (!step.Inputs.TryGetValue(role, out var roleValue) || string.IsNullOrWhiteSpace(roleValue))
+            {
+                RequireConditionalParameter(step, role, $"the '{index}' index requires it", violations);
+            }
+        }
+
+        RequireDoubleInClosedRange(step, "L", 0d, 1d, "(soil factor)", violations);
+    }
+
+    private static void ValidateRasterReclassifySemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'source' and 'remap' are declared-required inputs enforced by the base
+        // type-validator. Validate the remap table parses to numeric entries.
+        if (step.Inputs.TryGetValue("remap", out var remap)
+            && !string.IsNullOrWhiteSpace(remap)
+            && !IsParseableRemap(remap, out var remapError))
+        {
+            AddRangeViolationIfNew(step, "remap", remapError, violations);
+        }
+
+        RequireFiniteDouble(step, "defaultValue", violations);
+        ValidateCalcDataType(step, violations);
+    }
+
+    private static void ValidateProximityEuclideanDistanceSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'source' is a declared-required input enforced by the base type-validator.
+        RequirePositiveFiniteDouble(step, "maxDistance", violations);
+
+        if (step.Inputs.TryGetValue("distUnits", out var distUnits)
+            && !string.IsNullOrWhiteSpace(distUnits)
+            && !ProximityDistanceUnitValues.Contains(distUnits.Trim()))
+        {
+            AddEnumViolation(step, "distUnits", distUnits, "GEO, PIXEL", violations);
+        }
+
+        if (step.Inputs.TryGetValue("values", out var values) && !string.IsNullOrWhiteSpace(values))
+        {
+            var parts = values.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length == 0 || parts.Any(p => !long.TryParse(p, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)))
+            {
+                AddRangeViolationIfNew(step, "values", "expected one or more comma-separated integer pixel values", violations);
+            }
+        }
+    }
+
+    private static void ValidateSurfaceContourSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'source' and 'interval' are declared-required inputs enforced by the base
+        // type-validator.
+        RequirePositiveFiniteDouble(step, "interval", violations);
+        RequireFiniteDouble(step, "base", violations);
+    }
+
+    private static void ValidateSurfaceViewshedSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'source', 'observerX', 'observerY' are declared-required inputs enforced by
+        // the base type-validator.
+        RequireFiniteDouble(step, "observerX", violations);
+        RequireFiniteDouble(step, "observerY", violations);
+        RequireNonNegativeFiniteDouble(step, "observerHeight", violations);
+        RequireNonNegativeFiniteDouble(step, "targetHeight", violations);
+        RequirePositiveFiniteDouble(step, "maxDistance", violations);
+    }
+
+    private static void ValidateConversionPolygonizeSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'source' is a declared-required input enforced by the base type-validator.
+        RequireIntAtLeast(step, "band", 1, violations);
+
+        if (step.Inputs.TryGetValue("connectedness", out var conn)
+            && !string.IsNullOrWhiteSpace(conn)
+            && conn.Trim() is not "4" and not "8")
+        {
+            AddEnumViolation(step, "connectedness", conn, "4, 8", violations);
+        }
+
+        if (step.Inputs.TryGetValue("fieldName", out var fieldName)
+            && !string.IsNullOrWhiteSpace(fieldName)
+            && !IsValidGdalFieldName(fieldName))
+        {
+            AddRangeViolationIfNew(step, "fieldName", "must match ^[A-Za-z_][A-Za-z0-9_]*$", violations);
+        }
+    }
+
+    private static void ValidateConversionRasterizeSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'source' is a declared-required input enforced by the base type-validator.
+        var hasBurn = step.Inputs.TryGetValue("burnValue", out var burn) && !string.IsNullOrWhiteSpace(burn);
+        var hasAttribute = step.Inputs.TryGetValue("attribute", out var attribute) && !string.IsNullOrWhiteSpace(attribute);
+        if (hasBurn == hasAttribute)
+        {
+            AddRangeViolationIfNew(step, "burnValue", "supply exactly one of 'burnValue' or 'attribute'", violations);
+        }
+
+        RequireFiniteDouble(step, "burnValue", violations);
+        if (hasAttribute && !IsValidGdalFieldName(attribute!))
+        {
+            AddRangeViolationIfNew(step, "attribute", "must match ^[A-Za-z_][A-Za-z0-9_]*$", violations);
+        }
+
+        var hasCellSize = step.Inputs.TryGetValue("cellSize", out var cell) && !string.IsNullOrWhiteSpace(cell);
+        var hasWidth = step.Inputs.TryGetValue("width", out var width) && !string.IsNullOrWhiteSpace(width);
+        var hasHeight = step.Inputs.TryGetValue("height", out var height) && !string.IsNullOrWhiteSpace(height);
+        if (hasCellSize && (hasWidth || hasHeight))
+        {
+            AddRangeViolationIfNew(step, "cellSize", "supply either 'cellSize' or 'width'+'height', not both", violations);
+        }
+        else if (!hasCellSize && !(hasWidth && hasHeight))
+        {
+            AddRangeViolationIfNew(step, "cellSize", "supply either 'cellSize' or both 'width' and 'height' to define the output grid", violations);
+        }
+
+        RequirePositiveFiniteDouble(step, "cellSize", violations);
+        RequireIntAtLeast(step, "width", 1, violations);
+        RequireIntAtLeast(step, "height", 1, violations);
+        RequireFiniteDouble(step, "nodata", violations);
+    }
+
+    private static void ValidateCalcDataType(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("dataType", out var dataType)
+            && !string.IsNullOrWhiteSpace(dataType)
+            && !RasterCalcDataTypeValues.Contains(dataType.Trim()))
+        {
+            AddEnumViolation(step, "dataType", dataType, "Byte, Int16, UInt16, Int32, UInt32, Float32, Float64", violations);
+        }
+    }
+
+    // Mirror of MapAlgebraExpression.IsAllowed in the worker: gdal_calc.py eval()'s
+    // the calc string, so an un-vetted expression is RCE. Admits only single-letter
+    // band variables (within the supplied band count), numeric literals, a fixed
+    // operator/grouping set, and an allow-list of NumPy functions.
+    private static bool IsAllowedMapAlgebraExpression(string expression, int bandCount, out string error)
+    {
+        error = "";
+        var expr = expression.Trim();
+        if (expr.Length == 0)
+        {
+            error = "must not be empty";
+            return false;
+        }
+        if (expr.Length > 2048)
+        {
+            error = "exceeds the maximum length of 2048 characters";
+            return false;
+        }
+
+        var i = 0;
+        var referencedAny = false;
+        while (i < expr.Length)
+        {
+            var c = expr[i];
+            if (char.IsWhiteSpace(c) || IsAllowedMapAlgebraSymbol(c))
+            {
+                i++;
+                continue;
+            }
+
+            if (char.IsDigit(c) || c == '.')
+            {
+                while (i < expr.Length && (char.IsDigit(expr[i]) || expr[i] is '.' or 'e' or 'E'))
+                {
+                    i++;
+                }
+                continue;
+            }
+
+            if (char.IsAsciiLetter(c))
+            {
+                var start = i;
+                while (i < expr.Length && char.IsAsciiLetterOrDigit(expr[i]))
+                {
+                    i++;
+                }
+                var identifier = expr[start..i];
+                if (identifier.Length == 1 && identifier[0] is >= 'A' and <= 'Z')
+                {
+                    if (identifier[0] - 'A' >= bandCount)
+                    {
+                        error = $"references band variable '{identifier}' but only {bandCount} source raster(s) were supplied";
+                        return false;
+                    }
+                    referencedAny = true;
+                    continue;
+                }
+                if (MapAlgebraFunctions.Contains(identifier))
+                {
+                    continue;
+                }
+                error = $"contains a disallowed identifier '{identifier}'";
+                return false;
+            }
+
+            error = $"contains a disallowed character '{c}'";
+            return false;
+        }
+
+        if (!referencedAny)
+        {
+            error = "must reference at least one source band variable (A, B, …)";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsAllowedMapAlgebraSymbol(char c) => c switch
+    {
+        '+' or '-' or '*' or '/' or '%' or '(' or ')' or ',' or '.' => true,
+        '<' or '>' or '=' or '!' or '&' or '|' or '^' or '~' => true,
+        _ => false,
+    };
+
+    // Mirror of GdalRasterReclassifyJobExecutor.TryBuildCalc's table parser: every
+    // remap key/value must be numeric so the worker can fold it into a trusted calc.
+    private static bool IsParseableRemap(string remap, out string error)
+    {
+        error = "";
+        var entries = remap.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (entries.Length == 0)
+        {
+            error = "must list at least one 'value:newValue' or 'lo..hi:newValue' entry";
+            return false;
+        }
+
+        foreach (var entry in entries)
+        {
+            var colon = entry.IndexOf(':', StringComparison.Ordinal);
+            if (colon <= 0 || colon == entry.Length - 1)
+            {
+                error = $"entry '{entry}' must have the form 'value:newValue' or 'lo..hi:newValue'";
+                return false;
+            }
+
+            var keyPart = entry[..colon].Trim();
+            var valuePart = entry[(colon + 1)..].Trim();
+            if (!IsFiniteNumber(valuePart))
+            {
+                error = $"entry '{entry}' has a non-numeric output value";
+                return false;
+            }
+
+            var range = keyPart.IndexOf("..", StringComparison.Ordinal);
+            if (range >= 0)
+            {
+                var loRaw = keyPart[..range].Trim();
+                var hiRaw = keyPart[(range + 2)..].Trim();
+                if (!IsFiniteNumber(loRaw) || !IsFiniteNumber(hiRaw))
+                {
+                    error = $"entry '{entry}' has a non-numeric range bound";
+                    return false;
+                }
+                if (double.Parse(hiRaw, CultureInfo.InvariantCulture) <= double.Parse(loRaw, CultureInfo.InvariantCulture))
+                {
+                    error = $"entry '{entry}' must have lo < hi";
+                    return false;
+                }
+            }
+            else if (!IsFiniteNumber(keyPart))
+            {
+                error = $"entry '{entry}' has a non-numeric key";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsFiniteNumber(string raw)
+        => double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            && !double.IsNaN(value) && !double.IsInfinity(value);
+
+    // Mirror of GdalFieldName.IsValid in the worker.
+    private static bool IsValidGdalFieldName(string value)
+    {
+        var token = value.Trim();
+        if (token.Length is 0 or > 128 || !(char.IsAsciiLetter(token[0]) || token[0] == '_'))
+        {
+            return false;
+        }
+
+        return token.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
     }
 
     private static void ValidateGeometryFormatConversionSemantics(
@@ -1594,6 +2097,41 @@ internal static partial class ProcessPlanValidator
             || parsed <= 0d)
         {
             AddRangeViolationIfNew(step, parameter, $"expected positive number, got '{value}'", violations);
+        }
+    }
+
+    private static void RequireNonNegativeFiniteDouble(
+        AnalysisPlanStep step,
+        string parameter,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || double.IsNaN(parsed) || double.IsInfinity(parsed)
+            || parsed < 0d)
+        {
+            AddRangeViolationIfNew(step, parameter, $"expected non-negative number, got '{value}'", violations);
+        }
+    }
+
+    private static void RequireFiniteDouble(
+        AnalysisPlanStep step,
+        string parameter,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || double.IsNaN(parsed) || double.IsInfinity(parsed))
+        {
+            AddRangeViolationIfNew(step, parameter, $"expected a finite number, got '{value}'", violations);
         }
     }
 

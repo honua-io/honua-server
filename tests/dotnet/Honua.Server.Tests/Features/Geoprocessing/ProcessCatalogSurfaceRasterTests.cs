@@ -18,14 +18,21 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Catalog_SurfaceRasterAndConversionCategories_AreRegistered()
     {
-        _catalog.GetProcessesByCategory("surface").Should().HaveCount(6);
-        // 5 native raster idioms + gdal.gdalwarp (the native-profile raster
-        // reproject executed out-of-process by the GDAL worker).
-        _catalog.GetProcessesByCategory("raster").Should().HaveCount(6);
+        // 6 gdaldem-backed surface products + surface.contour / surface.viewshed
+        // (gdal_contour / gdal_viewshed; #2240).
+        _catalog.GetProcessesByCategory("surface").Should().HaveCount(8);
+        // 5 native raster idioms (clip, reproject, statistics, histogram,
+        // zonal-statistics) + the raster analysis tool pack (resample,
+        // interpolate-idw, interpolate-kriging, mosaic; #2141) + gdal.gdalwarp
+        // (the native-profile raster reproject executed out-of-process by the
+        // GDAL worker) + the map-algebra tool pack (map-algebra, spectral-index,
+        // reclassify; #2239).
+        _catalog.GetProcessesByCategory("raster").Should().HaveCount(13);
         // 4 managed conversion idioms + gdal.ogr2ogr (the native-profile vector
         // conversion executed out-of-process by the GDAL worker) + pcloud.translate
-        // (the native-profile LAZ/COPC decompress + projected-CRS reproject, #1854).
-        _catalog.GetProcessesByCategory("conversion").Should().HaveCount(6);
+        // (the native-profile LAZ/COPC decompress + projected-CRS reproject, #1854)
+        // + conversion.polygonize / conversion.rasterize (#2240).
+        _catalog.GetProcessesByCategory("conversion").Should().HaveCount(8);
     }
 
     [UnitTest]
@@ -364,6 +371,396 @@ public sealed class ProcessCatalogSurfaceRasterTests
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
 
         violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.targetFormat");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_RasterAnalyticToolPack_IsRegistered_WithNativeProfileAndRasterOutput()
+    {
+        // The #2141 raster analysis tool pack is executed out-of-process by the
+        // native GDAL worker, so each entry MUST declare the native runtime profile.
+        string[] toolPackIds =
+        [
+            "raster.resample", "raster.interpolate-idw",
+            "raster.interpolate-kriging", "raster.mosaic",
+        ];
+        foreach (var processId in toolPackIds)
+        {
+            var definition = _catalog.GetProcess(processId);
+            definition.Should().NotBeNull($"catalog must advertise raster tool '{processId}'");
+            definition!.Category.Should().Be("raster");
+            definition.RuntimeProfile.Should().Be(
+                Core.Features.ControlPlane.Domain.RuntimeProfiles.Native,
+                $"'{processId}' is executed by the native worker");
+            definition.OutputArtifactKinds.Should().ContainSingle().Which.Should().Be(ArtifactKind.Raster);
+        }
+
+        _catalog.GetProcess("raster.resample")!.Parameters
+            .Should().Contain(p => p.Name == "source" && p.Required)
+            .And.Contain(p => p.Name == "cellSize" && p.Required);
+        _catalog.GetProcess("raster.interpolate-idw")!.Parameters
+            .Should().Contain(p => p.Name == "points" && p.Required);
+        _catalog.GetProcess("raster.mosaic")!.Parameters
+            .Should().Contain(p => p.Name == "sources" && p.Required);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterResample_WithoutCellSize_ProducesMissingRequiredParameterViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.resample",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER"
+            && v.FieldPath == "steps[s1].inputs.cellSize");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterResample_WithNonPositiveCellSize_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.resample",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+                ["cellSize"] = "0",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.cellSize");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterResample_WithUnknownResampling_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.resample",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+                ["cellSize"] = "30",
+                ["resampling"] = "spline",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.resampling");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateIdw_WithValidTuning_ProducesNoViolations()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-idw",
+            new Dictionary<string, string>
+            {
+                ["points"] = StubBase64,
+                ["zField"] = "elevation",
+                ["power"] = "2.5",
+                ["smoothing"] = "0",
+                ["width"] = "256",
+                ["height"] = "256",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateIdw_WithoutPoints_ProducesMissingRequiredParameterViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-idw",
+            new Dictionary<string, string>
+            {
+                ["power"] = "2",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER"
+            && v.FieldPath == "steps[s1].inputs.points");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateIdw_WithNonPositivePower_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-idw",
+            new Dictionary<string, string>
+            {
+                ["points"] = StubBase64,
+                ["power"] = "-1",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.power");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateIdw_WithWidthWithoutHeight_ProducesViolation()
+    {
+        // gdal_grid -outsize needs both dimensions; the executor rejects a
+        // half-specified grid, so submit-time validation must too.
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-idw",
+            new Dictionary<string, string>
+            {
+                ["points"] = StubBase64,
+                ["width"] = "256",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.width");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateKriging_WithPoints_PassesValidation_AsFlaggedButShapeValid()
+    {
+        // Kriging is flagged unsupported at execution, but a shape-valid plan must
+        // still pass submit-time validation so the worker can surface the
+        // unsupported-dependency message as a job failure (not a submit rejection).
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-kriging",
+            new Dictionary<string, string>
+            {
+                ["points"] = StubBase64,
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterMosaic_WithUnsupportedOperator_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.mosaic",
+            new Dictionary<string, string>
+            {
+                ["sources"] = StubBase64,
+                ["operator"] = "mean",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.operator");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterMosaic_WithoutSources_ProducesMissingRequiredParameterViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.mosaic",
+            new Dictionary<string, string>
+            {
+                ["operator"] = "last",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER"
+            && v.FieldPath == "steps[s1].inputs.sources");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_RasterAnalysisAndTerrainToolPack_DeclaresNativeProfile()
+    {
+        // The #2239/#2240 tool pack is executed out-of-process by the native GDAL
+        // worker, so each entry MUST declare the native runtime profile.
+        string[] toolPackIds =
+        [
+            "raster.map-algebra", "raster.spectral-index", "raster.reclassify",
+            "proximity.euclidean-distance", "proximity.euclidean-allocation",
+            "surface.contour", "surface.viewshed",
+            "conversion.polygonize", "conversion.rasterize",
+        ];
+        foreach (var processId in toolPackIds)
+        {
+            var definition = _catalog.GetProcess(processId);
+            definition.Should().NotBeNull($"catalog must advertise GP tool '{processId}'");
+            definition!.RuntimeProfile.Should().Be(
+                Core.Features.ControlPlane.Domain.RuntimeProfiles.Native,
+                $"'{processId}' is executed by the native worker");
+        }
+
+        _catalog.GetProcess("raster.map-algebra")!.Parameters
+            .Should().Contain(p => p.Name == "sources" && p.Required)
+            .And.Contain(p => p.Name == "expression" && p.Required);
+        _catalog.GetProcess("raster.reclassify")!.Parameters
+            .Should().Contain(p => p.Name == "remap" && p.Required);
+        _catalog.GetProcess("conversion.polygonize")!.OutputArtifactKinds
+            .Should().ContainSingle().Which.Should().Be(ArtifactKind.FeatureLayer);
+        _catalog.GetProcess("surface.contour")!.OutputArtifactKinds
+            .Should().ContainSingle().Which.Should().Be(ArtifactKind.FeatureLayer);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterMapAlgebra_WithDisallowedExpression_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.map-algebra",
+            new Dictionary<string, string>
+            {
+                ["sources"] = StubBase64,
+                ["expression"] = "__import__('os')",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.expression");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterReclassify_WithNonNumericRemap_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.reclassify",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+                ["remap"] = "lo..hi:1",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.remap");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterSpectralIndex_MissingRequiredBand_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.spectral-index",
+            new Dictionary<string, string>
+            {
+                ["index"] = "NDVI",
+                ["nir"] = StubBase64,
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.red");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_ProximityEuclideanAllocation_ShapeValid_PassesValidation_AsFlagged()
+    {
+        // Allocation is flagged unsupported at execution, but a shape-valid plan must
+        // pass submit-time validation so the worker surfaces the unsupported message
+        // as a job failure (not a submit rejection).
+        var plan = CreateSingleStepPlan(
+            "proximity.euclidean-allocation",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_SurfaceContour_WithoutInterval_ProducesMissingRequiredParameterViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "surface.contour",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER"
+            && v.FieldPath == "steps[s1].inputs.interval");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_ConversionRasterize_WithBothBurnAndAttribute_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "conversion.rasterize",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+                ["burnValue"] = "1",
+                ["attribute"] = "pop",
+                ["cellSize"] = "0.001",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.burnValue");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_ConversionRasterize_WithGridAndBurn_ProducesNoViolations()
+    {
+        var plan = CreateSingleStepPlan(
+            "conversion.rasterize",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+                ["burnValue"] = "1",
+                ["cellSize"] = "0.001",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
     }
 
     private static AnalysisPlan CreateSingleStepPlan(
