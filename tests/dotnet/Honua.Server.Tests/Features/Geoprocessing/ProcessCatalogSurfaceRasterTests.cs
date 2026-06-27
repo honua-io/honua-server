@@ -523,6 +523,26 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateIdw_WithWidthWithoutHeight_ProducesViolation()
+    {
+        // gdal_grid -outsize needs both dimensions; the executor rejects a
+        // half-specified grid, so submit-time validation must too.
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-idw",
+            new Dictionary<string, string>
+            {
+                ["points"] = StubBase64,
+                ["width"] = "256",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.width");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Validator_RasterInterpolateKriging_WithPoints_PassesValidation_AsFlaggedButShapeValid()
     {
         // Kriging is flagged unsupported at execution, but a shape-valid plan must

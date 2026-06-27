@@ -959,6 +959,16 @@ internal static partial class ProcessPlanValidator
         RequirePositiveFiniteDouble(step, "radius", violations);
         RequireIntAtLeast(step, "width", 1, violations);
         RequireIntAtLeast(step, "height", 1, violations);
+
+        // gdal_grid -outsize requires BOTH dimensions; reject a half-specified grid up
+        // front so submit-time validation matches the executor (which fails the job for
+        // the same XOR), mirroring ValidateConversionRasterizeSemantics.
+        var hasWidth = step.Inputs.TryGetValue("width", out var width) && !string.IsNullOrWhiteSpace(width);
+        var hasHeight = step.Inputs.TryGetValue("height", out var height) && !string.IsNullOrWhiteSpace(height);
+        if (hasWidth ^ hasHeight)
+        {
+            AddRangeViolationIfNew(step, "width", "supply both 'width' and 'height' together to set the output grid size", violations);
+        }
     }
 
     private static void ValidateRasterMosaicSemantics(
