@@ -670,6 +670,14 @@ public sealed class GdalRasterExecutorTests
             "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",
             "raster.clip", "raster.reproject", "raster.statistics",
             "raster.histogram", "raster.zonal-statistics",
+            // Explicit raster CRS-conversion idiom, routed by the same
+            // GdalRasterReprojectCatalogJobExecutor that handles raster.reproject.
+            "conversion.raster-reproject",
+            // Raster analysis tool pack (#2141): resample / IDW + kriging interpolation
+            // / mosaic. Kriging is routed here too (the executor fails it fast with a
+            // flagged-unsupported message rather than the dispatcher rejecting it).
+            "raster.resample", "raster.interpolate-idw",
+            "raster.interpolate-kriging", "raster.mosaic",
             // Internal multidimensional-coverage metadata scan (ADR-0039 Path B).
             "coverage.multidim.metadata",
             // LAZ/COPC decompress + reproject (#1854).
@@ -731,6 +739,9 @@ public sealed class GdalRasterExecutorTests
             new GdalVectorReprojectJobExecutor(runner, options, NullLogger<GdalVectorReprojectJobExecutor>.Instance),
             new GdalVectorSourceReadJobExecutor(runner, options, NullLogger<GdalVectorSourceReadJobExecutor>.Instance),
             new GdalRasterReprojectJobExecutor(runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
+            new GdalRasterResampleJobExecutor(runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
+            new GdalRasterInterpolateJobExecutor(runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
+            new GdalRasterMosaicJobExecutor(runner, options, NullLogger<GdalRasterMosaicJobExecutor>.Instance),
             new GdalSurfaceJobExecutor(runner, options, NullLogger<GdalSurfaceJobExecutor>.Instance),
             new GdalRasterClipJobExecutor(runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
             new GdalRasterReprojectCatalogJobExecutor(runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),

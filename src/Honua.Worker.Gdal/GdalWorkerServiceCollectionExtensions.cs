@@ -164,6 +164,9 @@ public static class GdalWorkerServiceCollectionExtensions
         RegisterGdalExecutor<GdalVectorReprojectJobExecutor>(services);
         RegisterGdalExecutor<GdalVectorSourceReadJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterReprojectJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterResampleJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterInterpolateJobExecutor>(services);
+        RegisterGdalExecutor<GdalRasterMosaicJobExecutor>(services);
         RegisterGdalExecutor<GdalSurfaceJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterClipJobExecutor>(services);
         RegisterGdalExecutor<GdalRasterReprojectCatalogJobExecutor>(services);
