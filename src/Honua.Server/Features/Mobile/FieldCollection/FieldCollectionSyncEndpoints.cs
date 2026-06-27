@@ -293,7 +293,8 @@ internal static class FieldCollectionSyncEndpoints
         HttpContext context,
         [FromBody] FieldCollectionPushRequestModel? body,
         [FromServices] IFieldCollectionSyncStore store,
-        [FromServices] ILoggerFactory loggerFactory)
+        [FromServices] ILoggerFactory loggerFactory,
+        [FromServices] IFieldCollectionAutomationTrigger? automationTrigger = null)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("FieldCollectionSync.Push");
         activity?.SetTag("honua.protocol", ProtocolTag);
@@ -395,6 +396,29 @@ internal static class FieldCollectionSyncEndpoints
         if (result.Outcome == FieldCollectionPushOutcome.Rejected)
         {
             FieldCollectionSyncLog.PushRejected(logger, response.ChangeId, response.RejectionReason ?? string.Empty);
+        }
+
+        // Server-side Workflows companion (#2121): fan out online actions only for
+        // durably applied changes. Best-effort — the trigger swallows its own
+        // failures so automation never affects the push outcome returned above.
+        if (automationTrigger is not null
+            && result.Outcome == FieldCollectionPushOutcome.Applied
+            && result.Version is long appliedVersion)
+        {
+            var automationEvent = new FieldCollectionAutomationEvent
+            {
+                ClientId = clientId,
+                ChangeId = result.ChangeId,
+                FeatureId = pushRequest.FeatureId,
+                LayerId = pushRequest.LayerId,
+                Operation = pushRequest.Operation,
+                Version = appliedVersion,
+                Generation = result.ServerGeneration,
+                Timestamp = pushRequest.Timestamp ?? DateTimeOffset.UtcNow,
+                FeaturePayloadJson = pushRequest.FeaturePayloadJson,
+            };
+
+            await automationTrigger.OnChangeAppliedAsync(automationEvent, context.RequestAborted).ConfigureAwait(false);
         }
 
         if (logger.IsEnabled(LogLevel.Information))

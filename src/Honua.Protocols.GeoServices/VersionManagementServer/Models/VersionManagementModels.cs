@@ -166,6 +166,18 @@ public sealed class ReconcileResponse
     /// <summary>Number of conflicts the supplied auto-resolution policy resolved.</summary>
     public int AutoResolvedCount { get; init; }
 
+    /// <summary>
+    /// True when <c>withPost=true</c> was requested and the clean reconcile posted the version in the
+    /// same operation (#2135). False when not requested or when conflicts remained (no-op-with-conflicts).
+    /// </summary>
+    public bool Posted { get; init; }
+
+    /// <summary>Net feature changes replayed onto DEFAULT when <see cref="Posted"/> is true; 0 otherwise.</summary>
+    public int AppliedChanges { get; init; }
+
+    /// <summary>DEFAULT generation produced by the <c>withPost</c> post when <see cref="Posted"/> is true; 0 otherwise.</summary>
+    public long ServerGeneration { get; init; }
+
     /// <summary>Unresolved conflicts; non-empty blocks post.</summary>
     public VersionConflictInfo[] Conflicts { get; init; } = [];
 }

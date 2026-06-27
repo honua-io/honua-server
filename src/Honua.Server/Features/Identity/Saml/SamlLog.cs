@@ -17,4 +17,12 @@ internal static partial class SamlLog
     [LoggerMessage(EventId = 4621, Level = LogLevel.Information,
         Message = "SAML session established for subject '{NameId}' with {RoleCount} role(s).")]
     public static partial void SessionEstablished(ILogger logger, string nameId, int roleCount);
+
+    [LoggerMessage(EventId = 4622, Level = LogLevel.Information,
+        Message = "SAML single-logout processed for subject '{NameId}'.")]
+    public static partial void SingleLogoutProcessed(ILogger logger, string nameId);
+
+    [LoggerMessage(EventId = 4623, Level = LogLevel.Warning,
+        Message = "SAML single-logout request rejected. Reason={Reason}")]
+    public static partial void SingleLogoutRejected(ILogger logger, string reason);
 }

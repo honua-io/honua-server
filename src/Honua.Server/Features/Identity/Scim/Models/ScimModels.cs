@@ -25,8 +25,186 @@ internal static class ScimSchemas
     /// <summary>Error message schema URI.</summary>
     public const string Error = "urn:ietf:params:scim:api:messages:2.0:Error";
 
+    /// <summary>ServiceProviderConfig resource schema URI.</summary>
+    public const string ServiceProviderConfig = "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig";
+
+    /// <summary>ResourceType resource schema URI.</summary>
+    public const string ResourceType = "urn:ietf:params:scim:schemas:core:2.0:ResourceType";
+
+    /// <summary>Schema-definition resource schema URI.</summary>
+    public const string Schema = "urn:ietf:params:scim:schemas:core:2.0:Schema";
+
     /// <summary>SCIM JSON content type.</summary>
     public const string ContentType = "application/scim+json";
+}
+
+/// <summary>
+/// SCIM 2.0 ServiceProviderConfig resource (RFC 7643 §5). Advertises the optional features the
+/// service provider supports so an IdP can adapt its provisioning behavior.
+/// </summary>
+public sealed class ScimServiceProviderConfig
+{
+    /// <summary>Schema URIs for this resource.</summary>
+    public IReadOnlyList<string> Schemas { get; init; } = [ScimSchemas.ServiceProviderConfig];
+
+    /// <summary>HTTP-addressable documentation describing the service provider.</summary>
+    public string? DocumentationUri { get; init; }
+
+    /// <summary>PATCH support (RFC 7644 §3.5.2).</summary>
+    public required ScimSupported Patch { get; init; }
+
+    /// <summary>Bulk-operation support (RFC 7644 §3.7).</summary>
+    public required ScimBulkConfig Bulk { get; init; }
+
+    /// <summary>Filtering support (RFC 7644 §3.4.2.2).</summary>
+    public required ScimFilterConfig Filter { get; init; }
+
+    /// <summary>Change-password support.</summary>
+    public required ScimSupported ChangePassword { get; init; }
+
+    /// <summary>Sorting support (RFC 7644 §3.4.2.3).</summary>
+    public required ScimSupported Sort { get; init; }
+
+    /// <summary>ETag support.</summary>
+    public required ScimSupported Etag { get; init; }
+
+    /// <summary>Supported authentication schemes.</summary>
+    public IReadOnlyList<ScimAuthenticationScheme> AuthenticationSchemes { get; init; } = [];
+
+    /// <summary>Resource metadata (read-only).</summary>
+    public ScimMeta? Meta { get; init; }
+}
+
+/// <summary>A simple supported/unsupported feature flag (RFC 7643 §5).</summary>
+public sealed class ScimSupported
+{
+    /// <summary>Whether the feature is supported.</summary>
+    public bool Supported { get; init; }
+}
+
+/// <summary>Bulk-operation capability descriptor (RFC 7643 §5).</summary>
+public sealed class ScimBulkConfig
+{
+    /// <summary>Whether bulk operations are supported.</summary>
+    public bool Supported { get; init; }
+
+    /// <summary>Maximum number of operations per bulk request.</summary>
+    public int MaxOperations { get; init; }
+
+    /// <summary>Maximum bulk-request payload size in bytes.</summary>
+    public int MaxPayloadSize { get; init; }
+}
+
+/// <summary>Filtering capability descriptor (RFC 7643 §5).</summary>
+public sealed class ScimFilterConfig
+{
+    /// <summary>Whether filtering is supported.</summary>
+    public bool Supported { get; init; }
+
+    /// <summary>Maximum number of resources returned by a filtered query.</summary>
+    public int MaxResults { get; init; }
+}
+
+/// <summary>An authentication scheme advertised by the service provider (RFC 7643 §5).</summary>
+public sealed class ScimAuthenticationScheme
+{
+    /// <summary>Scheme type (e.g. "oauthbearertoken", "httpbasic").</summary>
+    public string? Type { get; init; }
+
+    /// <summary>Human-readable name.</summary>
+    public string? Name { get; init; }
+
+    /// <summary>Human-readable description.</summary>
+    public string? Description { get; init; }
+
+    /// <summary>HTTP-addressable specification document for the scheme.</summary>
+    public string? SpecUri { get; init; }
+
+    /// <summary>Whether this is the primary/preferred scheme.</summary>
+    public bool? Primary { get; init; }
+}
+
+/// <summary>
+/// SCIM 2.0 ResourceType resource (RFC 7643 §6). Describes an endpoint resource (User/Group),
+/// the schema that backs it, and where it is hosted.
+/// </summary>
+public sealed class ScimResourceType
+{
+    /// <summary>Schema URIs for this resource.</summary>
+    public IReadOnlyList<string> Schemas { get; init; } = [ScimSchemas.ResourceType];
+
+    /// <summary>Resource type identifier (e.g. "User").</summary>
+    public string? Id { get; init; }
+
+    /// <summary>Resource type name.</summary>
+    public string? Name { get; init; }
+
+    /// <summary>Relative endpoint the resource is hosted at (e.g. "/Users").</summary>
+    public string? Endpoint { get; init; }
+
+    /// <summary>The primary schema URI for this resource type.</summary>
+    public string? Schema { get; init; }
+
+    /// <summary>Human-readable description.</summary>
+    public string? Description { get; init; }
+
+    /// <summary>Resource metadata (read-only).</summary>
+    public ScimMeta? Meta { get; init; }
+}
+
+/// <summary>
+/// SCIM 2.0 Schema resource (RFC 7643 §7) describing the attributes of a resource type.
+/// </summary>
+public sealed class ScimSchemaResource
+{
+    /// <summary>The schema URI this definition describes.</summary>
+    public string? Id { get; init; }
+
+    /// <summary>Schema name (e.g. "User").</summary>
+    public string? Name { get; init; }
+
+    /// <summary>Human-readable description.</summary>
+    public string? Description { get; init; }
+
+    /// <summary>Attribute definitions for the schema.</summary>
+    public IReadOnlyList<ScimAttributeDefinition> Attributes { get; init; } = [];
+
+    /// <summary>Resource metadata (read-only).</summary>
+    public ScimMeta? Meta { get; init; }
+}
+
+/// <summary>A SCIM attribute definition (RFC 7643 §7).</summary>
+public sealed class ScimAttributeDefinition
+{
+    /// <summary>Attribute name.</summary>
+    public string? Name { get; init; }
+
+    /// <summary>Data type (e.g. "string", "boolean", "complex", "reference").</summary>
+    public string? Type { get; init; }
+
+    /// <summary>Whether the attribute is multi-valued.</summary>
+    public bool MultiValued { get; init; }
+
+    /// <summary>Human-readable description.</summary>
+    public string? Description { get; init; }
+
+    /// <summary>Whether the attribute is required.</summary>
+    public bool Required { get; init; }
+
+    /// <summary>Whether string comparison is case-sensitive.</summary>
+    public bool CaseExact { get; init; }
+
+    /// <summary>Mutability ("readOnly", "readWrite", "immutable", "writeOnly").</summary>
+    public string? Mutability { get; init; }
+
+    /// <summary>Return characteristics ("always", "never", "default", "request").</summary>
+    public string? Returned { get; init; }
+
+    /// <summary>Uniqueness constraint ("none", "server", "global").</summary>
+    public string? Uniqueness { get; init; }
+
+    /// <summary>Sub-attribute definitions for a complex attribute.</summary>
+    public IReadOnlyList<ScimAttributeDefinition>? SubAttributes { get; init; }
 }
 
 /// <summary>
@@ -196,6 +374,11 @@ public sealed class ScimError
 [JsonSerializable(typeof(ScimListResponse<ScimGroupResource>))]
 [JsonSerializable(typeof(ScimPatchRequest))]
 [JsonSerializable(typeof(ScimError))]
+[JsonSerializable(typeof(ScimServiceProviderConfig))]
+[JsonSerializable(typeof(ScimResourceType))]
+[JsonSerializable(typeof(ScimSchemaResource))]
+[JsonSerializable(typeof(ScimListResponse<ScimResourceType>))]
+[JsonSerializable(typeof(ScimListResponse<ScimSchemaResource>))]
 internal sealed partial class ScimJsonContext : JsonSerializerContext
 {
 }

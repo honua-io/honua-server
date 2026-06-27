@@ -31,4 +31,14 @@ internal static class FeatureChangeEventSinkMetrics
         "honua.event_sink.failed_total",
         "events",
         "Feature-change events whose sink publish attempt failed.");
+
+    /// <summary>
+    /// Events routed to a sink's dead-letter destination after the primary
+    /// delivery failed, tagged by sink name. A dead-lettered event is counted in
+    /// addition to (not instead of) the primary <see cref="Failed"/> increment.
+    /// </summary>
+    public static readonly Counter<long> DeadLettered = Meter.CreateCounter<long>(
+        "honua.event_sink.dead_lettered_total",
+        "events",
+        "Feature-change events routed to a sink dead-letter destination after a delivery failure.");
 }

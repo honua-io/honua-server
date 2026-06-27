@@ -536,6 +536,41 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_ReturnsSpatialReferenceGeometryTypeAndFieldsFromMetadata()
+    {
+        // REST-parity contract (#2252): a standard feature query response carries the
+        // layer's spatial reference, geometry type, object-id field name, and field
+        // definitions so gRPC clients do not have to fall back to a separate metadata
+        // lookup. The fixture layer is WGS84 / Point with objectid + name fields.
+        var features = ImmutableArray.Create(Feature.Create(1, null));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            Where = "1=1"
+        };
+
+        var response = await _sut.QueryFeatures(request, CreateCallContext());
+
+        response.ObjectIdFieldName.Should().Be("objectid");
+        response.GeometryType.Should().Be(Proto.GeometryType.Point);
+        response.SpatialReference.Should().NotBeNull();
+        response.SpatialReference.Wkid.Should().Be(SpatialReference.WGS84.Wkid);
+
+        response.Fields.Should().HaveCount(2);
+        response.Fields.Select(field => field.Name)
+            .Should().BeEquivalentTo(["objectid", "name"]);
+        var nameField = response.Fields.Single(field => field.Name == "name");
+        nameField.FieldType.Should().Be(Proto.FieldType.String);
+        nameField.Length.Should().Be(255);
+        nameField.Nullable.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_CountOnly_ReturnsCountWithNoFeatures()
     {
         _featureReader.CountAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())

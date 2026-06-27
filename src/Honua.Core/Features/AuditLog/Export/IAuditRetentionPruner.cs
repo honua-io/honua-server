@@ -14,9 +14,11 @@ namespace Honua.Core.Features.AuditLog.Export;
 /// The audit trail is append-only and tamper-evident (a Postgres
 /// <c>DO INSTEAD NOTHING</c> rule blocks ordinary deletes). The production
 /// pruner is therefore a <em>privileged</em> maintenance path that bypasses the
-/// append-only rule under controlled conditions, and is deferred to the
-/// Postgres provider wiring. This Core seam exists so the retention policy and
-/// cutoff arithmetic can be unit-tested independently of a database.
+/// append-only rule under controlled conditions; the Postgres implementation
+/// (<c>PostgresAuditLogRetentionPruner</c>) lifts the delete guard inside a
+/// transaction and removes only a contiguous head prefix of the chain so
+/// integrity verification still passes. This Core seam exists so the retention
+/// policy and cutoff arithmetic can be unit-tested independently of a database.
 /// </para>
 /// </remarks>
 public interface IAuditRetentionPruner

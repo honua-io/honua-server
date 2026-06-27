@@ -58,7 +58,7 @@ internal static class ExclusiveCanonicalizer
         var namespacesToOutput = new SortedDictionary<string, string>(PrefixComparer.Instance);
 
         // (a) the element's own namespace.
-        ConsiderNamespace(element.Name, localRendered, namespacesToOutput);
+        ConsiderNamespace(element.Name, element, localRendered, namespacesToOutput);
 
         // (a) namespaces used by qualified attributes.
         foreach (var attribute in element.Attributes())
@@ -70,7 +70,7 @@ internal static class ExclusiveCanonicalizer
 
             if (attribute.Name.Namespace != XNamespace.None)
             {
-                ConsiderNamespace(attribute.Name, localRendered, namespacesToOutput);
+                ConsiderNamespace(attribute.Name, element, localRendered, namespacesToOutput);
             }
         }
 
@@ -148,17 +148,22 @@ internal static class ExclusiveCanonicalizer
 
     private static void ConsiderNamespace(
         XName name,
+        XElement scope,
         Dictionary<string, string> rendered,
         SortedDictionary<string, string> toOutput)
     {
         var uri = name.NamespaceName;
-        var prefix = NamespacePrefix(name);
 
         // The XML namespace is implicitly declared and never rendered.
         if (string.Equals(uri, XmlNs.NamespaceName, StringComparison.Ordinal))
         {
             return;
         }
+
+        // Resolve the real prefix from the element scope. XName does not carry the prefix, so a
+        // prefixed name (e.g. a root <samlp:LogoutRequest>) must render xmlns:<prefix>, not the
+        // default namespace — resolving via the scope is what distinguishes the two.
+        var prefix = scope.GetPrefixOfNamespace(name.Namespace) ?? string.Empty;
 
         // Attributes in no namespace contribute nothing; an element in no namespace only needs
         // a default-namespace undeclaration if an ancestor rendered one (handled below).
@@ -190,18 +195,6 @@ internal static class ExclusiveCanonicalizer
             : element.GetNamespaceOfPrefix(prefix);
         var uri = xname?.NamespaceName;
         return string.IsNullOrEmpty(uri) ? null : uri;
-    }
-
-    private static string NamespacePrefix(XName name)
-    {
-        if (name.Namespace == XNamespace.None)
-        {
-            return string.Empty;
-        }
-
-        // Resolve the prefix from the declaring element where possible; XName itself does not
-        // carry the prefix, so callers pass through QualifiedName which uses the element scope.
-        return string.Empty;
     }
 
     private static string QualifiedName(XName name, XElement scope)

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.Text;
 using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Scene;
@@ -78,6 +79,114 @@ public sealed class I3sAttributeBufferBuilderTests
 
         I3sAttributeBufferBuilder.Build(geometry, field).Should().BeNull();
     }
+
+    [UnitTest]
+    public void Build_FromFeatures_ObjectIdField_EmitsFeatureIdsInOrder()
+    {
+        var features = ThreeFeaturesWithAttributes();
+
+        var bytes = I3sAttributeBufferBuilder.Build(features, I3sAttributeSchemaBuilder.BuildObjectIdField());
+
+        bytes.Should().NotBeNull();
+        var span = bytes!.AsSpan();
+        BinaryPrimitives.ReadUInt32LittleEndian(span[..4]).Should().Be(3);
+        BinaryPrimitives.ReadInt32LittleEndian(span.Slice(I3sAttributeBufferBuilder.HeaderBytes, 4)).Should().Be(11);
+        BinaryPrimitives.ReadInt32LittleEndian(span.Slice(I3sAttributeBufferBuilder.HeaderBytes + 4, 4)).Should().Be(22);
+        BinaryPrimitives.ReadInt32LittleEndian(span.Slice(I3sAttributeBufferBuilder.HeaderBytes + 8, 4)).Should().Be(33);
+    }
+
+    [UnitTest]
+    public void Build_FromFeatures_Float64Field_EmitsCountHeaderAndDoubleValues()
+    {
+        var features = ThreeFeaturesWithAttributes();
+        var field = NumericField("f_1", "HEIGHT");
+
+        var bytes = I3sAttributeBufferBuilder.Build(features, field);
+
+        bytes.Should().NotBeNull();
+        var span = bytes!.AsSpan();
+        var expectedLength = I3sAttributeBufferBuilder.HeaderBytes
+            + (features.Count * I3sAttributeBufferBuilder.Float64ValueBytes);
+        bytes!.Length.Should().Be(expectedLength);
+
+        BinaryPrimitives.ReadUInt32LittleEndian(span[..4]).Should().Be(3);
+        BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(I3sAttributeBufferBuilder.HeaderBytes, 8)).Should().Be(12.5);
+        BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(I3sAttributeBufferBuilder.HeaderBytes + 8, 8)).Should().Be(7.0);
+        // The third feature has no HEIGHT value, so it encodes as 0.
+        BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(I3sAttributeBufferBuilder.HeaderBytes + 16, 8)).Should().Be(0.0);
+    }
+
+    [UnitTest]
+    public void Build_FromFeatures_StringField_EmitsByteCountsAndNullTerminatedUtf8()
+    {
+        var features = ThreeFeaturesWithAttributes();
+        var field = StringField("f_2", "NAME");
+
+        var bytes = I3sAttributeBufferBuilder.Build(features, field);
+
+        bytes.Should().NotBeNull();
+        var span = bytes!.AsSpan();
+
+        var count = BinaryPrimitives.ReadUInt32LittleEndian(span[..4]);
+        count.Should().Be(3);
+        var valuesByteCount = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(4, 4));
+
+        // Per-value byte counts include the trailing NUL: "alpha"=6, "beta"=5, ""=1.
+        var byteCountsOffset = I3sAttributeBufferBuilder.StringHeaderBytes;
+        BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(byteCountsOffset, 4)).Should().Be(6);
+        BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(byteCountsOffset + 4, 4)).Should().Be(5);
+        BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(byteCountsOffset + 8, 4)).Should().Be(1);
+        valuesByteCount.Should().Be(6u + 5u + 1u);
+
+        var valuesOffset = byteCountsOffset + (3 * I3sAttributeBufferBuilder.ByteCountValueBytes);
+        var firstValue = Encoding.UTF8.GetString(span.Slice(valuesOffset, 5));
+        firstValue.Should().Be("alpha");
+        span[valuesOffset + 5].Should().Be(0);
+    }
+
+    [UnitTest]
+    public void Build_FromFeatures_UnsupportedValueType_ReturnsNull()
+    {
+        var features = ThreeFeaturesWithAttributes();
+        var field = new I3sAttributeStorageInfo
+        {
+            Key = "f_3",
+            Name = "GEOM",
+            AttributeValues = new I3sAttributeValues { ValueType = "Geometry" },
+        };
+
+        I3sAttributeBufferBuilder.Build(features, field).Should().BeNull();
+    }
+
+    private static IReadOnlyList<SceneFeature> ThreeFeaturesWithAttributes() =>
+    [
+        FeatureWith(11, new Dictionary<string, object?> { ["HEIGHT"] = 12.5, ["NAME"] = "alpha" }),
+        FeatureWith(22, new Dictionary<string, object?> { ["HEIGHT"] = 7, ["NAME"] = "beta" }),
+        FeatureWith(33, new Dictionary<string, object?>()),
+    ];
+
+    private static SceneFeature FeatureWith(long id, IReadOnlyDictionary<string, object?> attributes) => new()
+    {
+        Id = id,
+        Geometry = Square(id, -122.42, 37.77).Geometry,
+        Attributes = attributes,
+    };
+
+    private static I3sAttributeStorageInfo NumericField(string key, string name) => new()
+    {
+        Key = key,
+        Name = name,
+        Ordering = ["attributeValues"],
+        AttributeValues = new I3sAttributeValues { ValueType = I3sAttributeBufferBuilder.Float64ValueType, ValuesPerElement = 1 },
+    };
+
+    private static I3sAttributeStorageInfo StringField(string key, string name) => new()
+    {
+        Key = key,
+        Name = name,
+        Ordering = ["attributeByteCounts", "attributeValues"],
+        AttributeValues = new I3sAttributeValues { ValueType = I3sAttributeBufferBuilder.StringValueType, Encoding = "UTF-8", ValuesPerElement = 1 },
+    };
 
     private static I3sTranscodedGeometry TranscodeThreeFeatures()
     {

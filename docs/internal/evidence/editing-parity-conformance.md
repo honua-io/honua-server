@@ -30,6 +30,30 @@ conformance matrix so a regression fails CI.
 | VersionManagementServer — reconcile withPost | Post after clean reconcile | Separate reconcile + post operations | Partial (withPost auto-post pending #2135) |
 | VersionManagementServer — inspect/resolveConflicts shapes | Esri conflict descriptors + resolution echo | Per-object/per-field descriptors served | Partial (resolution echo + byAttribute pending #2135) |
 | Replica sync — directional sync | Bidirectional/up/down sync | Branch-versioned sync via VersionManagementServer | See branch-versioning evidence |
+| applyEdits per-feature conflict codes (#2251) | Per-edit `error.code` lets clients classify failures | Stable `GeoServicesEditErrorCodes` taxonomy on the HTTP-200 envelope | Supported |
+
+## applyEdits per-feature conflict classification (#2251)
+
+`applyEdits` returns HTTP 200 with a per-feature `error.{code,description}` for each failed
+edit. The `code` is a **stable, machine-readable classification** (`GeoServicesEditErrorCodes`)
+so clients (honua-mobile `ConflictType`, honua-collect sync) branch deterministically rather
+than guessing from the description. Codes are derived from the edit pipeline's typed outcome,
+never by parsing the message.
+
+| Code | Class | Trigger |
+|---:|---|---|
+| `1000` | Generic | Unclassified / fallback failure |
+| `1001` | Invalid object id | Missing/non-numeric object id or unresolvable object-id field |
+| `1002` | Not found | `update` target row absent (or RLS-hidden) |
+| `1003` | Delete conflict (delete-delete) | `delete` target already removed |
+| `1004` | Update conflict (update-update) | Optimistic-concurrency / version mismatch (writer precondition failure) |
+| `1005` | Locked | Feature locked by another editor/session (HTTP 423; reserved for lock-aware providers) |
+| `1006` | Validation failed | Invalid attributes/geometry, attribute-rule or contingent-value violation |
+| `1007` | Not permitted | Owner-based edit-policy denial |
+| `1008` | Rolled back | Sibling operation failed under `rollbackOnFailure=true` |
+
+- **Conformance test:** `tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerApplyEditsConflictCodeTests.cs`
+  exercises the classification per conflict class.
 
 ## Non-Postgres / unsupported caveats
 

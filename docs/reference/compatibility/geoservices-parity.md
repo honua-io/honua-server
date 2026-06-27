@@ -67,6 +67,60 @@ Esri spec: [Feature Service](https://developers.arcgis.com/rest/services-referen
 `editsUploadId`, ...) are silently ignored. queryRelatedRecords rejects
 `gdbVersion` and `historicMoment` with 400 and accepts/ignores `returnTrueCurves`.
 
+#### Idempotency (at-most-once edits)
+
+`applyEdits`, `addFeatures`, `updateFeatures`, and `deleteFeatures` (layer-level) honour
+an optional `Idempotency-Key` request header so a client can retry an edit on a transient
+failure without creating duplicate features (#2250). When the header is present, the first
+request that commits at least one row records its full response keyed by the
+`(principal, serviceId, layerId, key)` tuple; any later request that repeats the same key
+within the dedupe window (24 hours) replays that original response — the same `objectId`s,
+with `success: true` — instead of re-applying the edit. This is the server-side contract the
+Honua SDKs and field clients rely on for true at-most-once semantics.
+
+Contract details:
+
+- The key is a client-generated, stable string of at most 200 characters with no control
+  characters; an empty, oversized, or malformed header is rejected with a 400.
+- The key is scoped to the authenticated principal, service, and layer — one caller's key
+  can never replay another caller's response, and the same key on a different layer is a
+  distinct edit.
+- Only requests that committed rows are recorded; a fully-failed/no-op request is not
+  recorded, so it can be retried fresh.
+- The store is Redis-backed when an `IDistributedCache` is configured (durable across
+  replicas) and falls back to an in-process window on a single node. Because
+  `IDistributedCache` exposes no atomic reserve, two *truly concurrent* identical requests
+  can both miss the window before either records its response; the header guarantees
+  at-most-once for the common *sequential-retry* pattern, not for simultaneous in-flight
+  duplicates.
+
+### applyEdits per-feature error codes
+
+`applyEdits` (and the standalone `addFeatures`/`updateFeatures`/`deleteFeatures`
+endpoints) return HTTP 200 with a per-feature result in `addResults`/`updateResults`/
+`deleteResults`. A failed result carries `success:false` and an `error` object
+`{ "code": <int>, "description": "<safe message>" }`. The `code` is a **stable,
+machine-readable classification** so clients can branch on the *kind* of failure without
+parsing `description` (descriptions are sanitized free-form text and may change). These
+codes are the contract; once published, a code does not change meaning.
+
+| `error.code` | Class | Meaning |
+| ---: | --- | --- |
+| `1000` | Generic | Unclassified / fallback failure (unexpected provider error). |
+| `1001` | Invalid object id | Update/delete object id missing, non-numeric, or the object-id field could not be resolved (request-shape error). |
+| `1002` | Not found | The `update` target feature does not exist (or is hidden by row-level security). |
+| `1003` | Delete conflict (delete-delete) | The `delete` target was already removed, typically by another writer. |
+| `1004` | Update conflict (update-update) | Optimistic-concurrency / version mismatch: the row changed since the caller read it. Clients may re-read and retry. |
+| `1005` | Locked | The feature is locked by another editor/session (HTTP 423 semantics). Reserved for lock-aware providers; the default edit path produces no locks yet. |
+| `1006` | Validation failed | Invalid attributes/geometry, attribute-rule violation, or invalid contingent-value combination (request-shape error). |
+| `1007` | Not permitted | Denied by an owner-based edit policy (non-owning/non-admin or anonymous caller). |
+| `1008` | Rolled back | The operation was otherwise applicable but the transaction rolled back because a sibling operation failed under `rollbackOnFailure=true`. |
+
+The classification is deterministic: it is derived from the edit pipeline's typed outcome
+(e.g. a writer precondition failure → `1004`), never from the error message. The codes are
+defined in `GeoServicesEditErrorCodes` and exercised per class by
+`FeatureServerApplyEditsConflictCodeTests`.
+
 ## MapServer + WMS / WMTS
 
 Esri spec: [Map Service](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/).

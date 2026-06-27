@@ -57,7 +57,7 @@ public sealed class AwsSecretsManagerLicenseContentResolverLiveTests
             }),
             new BouncyCastleEd25519Verifier(),
             NullLogger<FileBackedLicenseService>.Instance,
-            resolver);
+            [resolver]);
 
         await service.StartAsync(CancellationToken.None);
 

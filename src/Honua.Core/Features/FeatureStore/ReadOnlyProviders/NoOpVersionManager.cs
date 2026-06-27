@@ -51,6 +51,7 @@ public sealed class NoOpVersionManager : IVersionManager
     public Task<VersionReconcileResult> ReconcileAsync(
         Guid versionId,
         VersionReconcilePolicy policy = VersionReconcilePolicy.None,
+        VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Branch versioning is not supported by this data provider.");
 

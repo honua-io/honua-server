@@ -63,6 +63,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/configuration/audit"),
         new("GET", "/api/v1/admin/configuration/summary"),
         new("GET", "/api/v1/admin/auth/config"),
+        new("POST", "/api/v1/admin/auth/bearer"),
         new("POST", "/api/v1/admin/auth/logout"),
         new("GET", "/api/v1/admin/auth/session"),
         new("POST", "/api/v1/admin/auth/providers/{providerKey}/authorize-url"),
@@ -73,6 +74,16 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/api-keys/{id}/rotate"),
         new("POST", "/api/v1/admin/api-keys/{id}/revoke"),
         new("GET", "/api/v1/admin/api-keys/{id}/effective-permissions"),
+
+        // Embed governance: keys, scoping, policy, analytics, usage (#1191).
+        new("GET", "/api/v1/admin/embed/keys"),
+        new("POST", "/api/v1/admin/embed/keys"),
+        new("GET", "/api/v1/admin/embed/keys/{id}"),
+        new("POST", "/api/v1/admin/embed/keys/{id}/rotate"),
+        new("POST", "/api/v1/admin/embed/keys/{id}/revoke"),
+        new("GET", "/api/v1/admin/embed/usage"),
+        new("GET", "/api/v1/embed/policy"),
+        new("POST", "/api/v1/embed/analytics"),
 
         // OAuth2 client registry + scope catalogue (ADR-0053 Increment 2, #1888).
         new("GET", "/api/v1/admin/oauth-clients"),
@@ -265,9 +276,17 @@ public static class EndpointRegistry
         new("PATCH", "/scim/v2/Groups/{id}"),
         new("DELETE", "/scim/v2/Groups/{id}"),
 
-        // SAML 2.0 Service Provider endpoints (#508)
+        // SCIM 2.0 discovery documents (#2154, RFC 7643 §5-7)
+        new("GET", "/scim/v2/ServiceProviderConfig"),
+        new("GET", "/scim/v2/ResourceTypes"),
+        new("GET", "/scim/v2/ResourceTypes/{id}"),
+        new("GET", "/scim/v2/Schemas"),
+        new("GET", "/scim/v2/Schemas/{id}"),
+
+        // SAML 2.0 Service Provider endpoints (#508; SLO #2154)
         new("GET", "/saml/metadata"),
         new("POST", "/saml/acs"),
+        new("POST", "/saml/slo"),
 
         // v1 console metadata v2 content + RBAC baseline (#1162)
         new("GET", "/api/v1/console/session"),
@@ -881,6 +900,11 @@ public static class EndpointRegistry
         // geometry served at the node/geometries path (GeoServices + /scenes alias).
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
+
+        // I3S per-field attribute binary resource (#2234): per-node attribute
+        // buffer served at the node/attributes path (GeoServices + /scenes alias).
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
 
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),

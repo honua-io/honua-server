@@ -21,6 +21,7 @@ using Honua.Server.Features.Protocols.Zarr;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Forms;
+using Honua.Server.Features.Mobile.FieldCollection.Automations;
 using Honua.Server.Features.FieldWorkflows;
 using Honua.Server.Features.FieldWorkflows.Export;
 using Honua.Server.Features.FieldWorkflows.Review;
@@ -116,6 +117,7 @@ internal static class FeatureRegistrationExtensions
         services.AddHonuaGrpc(configuration);
         services.AddObservability(configuration);
         services.AddAlerts(configuration);
+        services.AddFieldCollectionAutomations(configuration);
         services.AddNlQuery(configuration);
         services.AddWorkflowGeneration(configuration);
         services.AddStac();

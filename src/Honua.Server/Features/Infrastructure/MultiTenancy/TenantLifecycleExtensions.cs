@@ -29,7 +29,11 @@ public static class TenantLifecycleExtensions
 
         services.TryAddSingleton<ITenantCatalog, InMemoryTenantCatalog>();
         services.TryAddSingleton<IBillingUsageSink, LoggingBillingUsageSink>();
-        services.TryAddSingleton<TenantLifecycleService>();
+        // Scoped: TenantLifecycleService consumes the scoped IAuditLog sink, so it must
+        // not be a singleton or it captures a scoped service and fails ValidateOnBuild/
+        // ValidateScopes at host startup. It is only resolved from scoped admin endpoint
+        // handlers (TenantAdminEndpoints), so request-scoped lifetime is correct.
+        services.TryAddScoped<TenantLifecycleService>();
         services.TryAddSingleton<TenantBillingExporter>();
 
         return services;

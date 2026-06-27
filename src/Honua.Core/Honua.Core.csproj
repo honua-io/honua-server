@@ -46,6 +46,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Core.Tests" />
+    <InternalsVisibleTo Include="Honua.ServiceDefaults" />
     <InternalsVisibleTo Include="Honua.Geometry" />
     <InternalsVisibleTo Include="Honua.Io" />
     <InternalsVisibleTo Include="Honua.Import" />

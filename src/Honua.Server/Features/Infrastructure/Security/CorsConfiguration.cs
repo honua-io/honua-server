@@ -30,12 +30,23 @@ public static class CorsConfiguration
         "Content-Type", "Authorization", "X-API-Key", "X-Correlation-ID",
         "X-Grpc-Web", "X-User-Agent", "Range", "If-Range",
         "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since",
-        "Prefer"
+        "Prefer", "X-Honua-Embed-Key"
     ];
 
     public const string DevelopmentPolicy = "DevelopmentCors";
     public const string ProductionPolicy = "ProductionCors";
     public const string RestrictedPolicy = "RestrictedCors";
+
+    /// <summary>
+    /// CORS policy for the public embed governance endpoints (<c>/api/v1/embed/*</c>).
+    /// These are intentionally reachable cross-origin from arbitrary ISV sites, so the
+    /// browser preflight must be permitted from any origin — the authoritative gate is
+    /// the per-embed-key origin allow-list enforced inside the handler (which echoes
+    /// <c>Access-Control-Allow-Origin</c> only for approved origins). The global
+    /// <see cref="ProductionPolicy"/> restricts origins to the server allow-list, which
+    /// would reject the preflight before the handler ever runs (#1191).
+    /// </summary>
+    public const string EmbedPolicy = "EmbedCors";
 
     /// <summary>
     /// Configures CORS policies for different environments.
@@ -106,6 +117,13 @@ public static class CorsConfiguration
             options.AddPolicy(RestrictedPolicy, policy =>
             {
                 ConfigureRestrictedPolicy(policy, configuration);
+            });
+
+            // Embed policy - public embed governance endpoints reachable cross-origin
+            // from arbitrary ISV sites; the per-embed-key origin allow-list is the real gate.
+            options.AddPolicy(EmbedPolicy, policy =>
+            {
+                ConfigureEmbedPolicy(policy, configuration);
             });
         });
     }
@@ -212,6 +230,24 @@ public static class CorsConfiguration
             // No origins configured - explicitly deny all.
             policy.SetIsOriginAllowed(_ => false);
         }
+    }
+
+    /// <summary>
+    /// Configures the CORS policy for the public embed governance endpoints. Unlike the
+    /// production policy, this permits the cross-origin preflight from ANY origin because
+    /// embed widgets load on arbitrary ISV pages; the embed handler is the authoritative
+    /// origin gate (it validates the request origin against the per-embed-key allow-list
+    /// and echoes <c>Access-Control-Allow-Origin</c> only for approved origins). Credentials
+    /// are never enabled here — embed authentication travels in the <c>X-Honua-Embed-Key</c>
+    /// header, not cookies — so <c>AllowAnyOrigin</c> is safe.
+    /// </summary>
+    private static void ConfigureEmbedPolicy(CorsPolicyBuilder policy, IConfiguration configuration)
+    {
+        policy.AllowAnyOrigin()
+              .WithMethods("GET", "POST", "OPTIONS")
+              .WithHeaders(ResolveAllowedHeaders(configuration))
+              .WithExposedHeaders("Content-Length", "ETag")
+              .SetPreflightMaxAge(TimeSpan.FromMinutes(5));
     }
 
     /// <summary>

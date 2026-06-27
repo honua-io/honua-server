@@ -1356,6 +1356,46 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-embed-keys",
+      "route": "/api/v1/admin/embed/keys",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.CreateListAndGetEmbedKey_ReturnsScopeAndSecretOnce"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-embed-keys-id",
+      "route": "/api/v1/admin/embed/keys/{id}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.CreateListAndGetEmbedKey_ReturnsScopeAndSecretOnce"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-embed-usage",
+      "route": "/api/v1/admin/embed/usage",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.IngestAnalyticsThenQueryUsage_AggregatesEvents",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.IngestAnalytics_BatchWithOneInvalidEvent_PersistsZeroEvents"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-feature-events-replay",
       "route": "/api/v1/admin/feature-events/replay",
       "method": "GET",
@@ -4111,6 +4151,22 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-embed-policy",
+      "route": "/api/v1/embed/policy",
+      "method": "GET",
+      "family": "Admin API \u002B HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.FetchPolicy_AllowedOrigin_ReturnsPolicyWithCorsHeader",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.FetchPolicy_CrossOriginPreflightFromArbitraryOrigin_IsAllowed",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.FetchPolicy_DisallowedOrigin_ReturnsForbidden",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.FetchPolicy_MissingKey_ReturnsUnauthorized"
+      ],
+      "proof_ledger_surface": "content-publication-registry",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-fieldcollection-changes",
       "route": "/api/v1/fieldcollection/changes",
       "method": "GET",
@@ -4442,7 +4498,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_AssignsMonotonicCursors_AndReplayReturnsThem"
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_AssignsMonotonicCursors_AndReplayReturnsThem",
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Replay_WithoutSavedMapCapability_ReturnsForbidden"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
       "maturity": "implemented"
@@ -7696,6 +7753,7 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithWrongHttpMethod_Returns405",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerEditCapabilityAdvertisementTests.GetServiceMetadata_EditableService_AdvertisesCreateUpdateDelete",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerEditCapabilityAdvertisementTests.GetServiceMetadata_ReadOnlyService_AdvertisesQueryOnly",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.ServiceMetadata_SyncEnabled_AdvertisesSyncCapabilities",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataClientParameterTests.FeatureServer_ServiceMetadata_WithArcGisProClientParameters_ReturnsSameAsPlain",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.FeatureServerGdbVersionFlowTests.ServiceMetadata_AdvertisesBranchVersioning",
         "Honua.Server.Tests.Features.Security.GeoServicesRouteValidationTests.FeatureServer_Metadata_AllowsNumericLeadingServiceId",
@@ -9687,7 +9745,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Metadata_WhenConfigured_ReturnsSpMetadata"
+        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Metadata_WhenConfigured_ReturnsSpMetadata",
+        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Metadata_WhenSloConfigured_AdvertisesSingleLogoutService"
       ],
       "proof_ledger_surface": "saml-sso",
       "maturity": "implemented"
@@ -9889,6 +9948,73 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.GroupLifecycle_MembershipChanges_SyncRoles"
+      ],
+      "proof_ledger_surface": "scim-provisioning",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-scim-v2-resourcetypes",
+      "route": "/scim/v2/ResourceTypes",
+      "method": "GET",
+      "family": "SCIM 2.0",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ResourceTypes_ReturnsUserAndGroup"
+      ],
+      "proof_ledger_surface": "scim-provisioning",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-scim-v2-resourcetypes-id",
+      "route": "/scim/v2/ResourceTypes/{id}",
+      "method": "GET",
+      "family": "SCIM 2.0",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ResourceType_ById_ReturnsUser",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ResourceType_UnknownId_ReturnsNotFound"
+      ],
+      "proof_ledger_surface": "scim-provisioning",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-scim-v2-schemas",
+      "route": "/scim/v2/Schemas",
+      "method": "GET",
+      "family": "SCIM 2.0",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.Schemas_ReturnsUserAndGroupDefinitions"
+      ],
+      "proof_ledger_surface": "scim-provisioning",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-scim-v2-schemas-id",
+      "route": "/scim/v2/Schemas/{id}",
+      "method": "GET",
+      "family": "SCIM 2.0",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.Schema_ById_ReturnsUserSchema"
+      ],
+      "proof_ledger_surface": "scim-provisioning",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-scim-v2-serviceproviderconfig",
+      "route": "/scim/v2/ServiceProviderConfig",
+      "method": "GET",
+      "family": "SCIM 2.0",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ServiceProviderConfig_ReturnsSupportedFeatures",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ServiceProviderConfig_WithoutToken_ReturnsUnauthorized"
       ],
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented"
@@ -11237,6 +11363,22 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-admin-auth-bearer",
+      "route": "/api/v1/admin/auth/bearer",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.AdminApi_WithForgedOperatorBearer_IsRejected",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WhenFeatureNotConfigured_ReturnsServiceUnavailable",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithoutAuthenticatedSession_ReturnsUnauthorized"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-admin-auth-logout",
       "route": "/api/v1/admin/auth/logout",
       "method": "POST",
@@ -11627,6 +11769,46 @@
         "Honua.Server.Tests.Features.Admin.OperateObservabilityFixtureDisabledEndpointTests.SeedOperateObservabilityFixture_DefaultConfiguration_IsNotMapped",
         "Honua.Server.Tests.Features.Admin.OperateObservabilityFixtureEndpointsTests.SeedOperateObservabilityFixture_WithEnabledProfile_HydratesLiveAdminSurfaces",
         "Honua.Server.Tests.Features.Admin.OperateObservabilityFixtureEnvAliasEndpointTests.SeedOperateObservabilityFixture_EnabledViaFlatEnvAlias_SeedsAlertsAndJobs"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-embed-keys",
+      "route": "/api/v1/admin/embed/keys",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.CreateEmbedKey_WithoutAllowedOrigins_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.CreateListAndGetEmbedKey_ReturnsScopeAndSecretOnce"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-embed-keys-id-revoke",
+      "route": "/api/v1/admin/embed/keys/{id}/revoke",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.RevokeEmbedKey_BlocksPolicyIssuance"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-embed-keys-id-rotate",
+      "route": "/api/v1/admin/embed/keys/{id}/rotate",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.RotateEmbedKey_InvalidatesOldSecret"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -13668,6 +13850,21 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-embed-analytics",
+      "route": "/api/v1/embed/analytics",
+      "method": "POST",
+      "family": "Admin API \u002B HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.IngestAnalyticsThenQueryUsage_AggregatesEvents",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.IngestAnalytics_BatchWithOneInvalidEvent_PersistsZeroEvents",
+        "Honua.Server.Tests.Features.Admin.EmbedGovernanceEndpointsTests.IngestAnalytics_WithRawKeyInPayload_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "content-publication-registry",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-fieldcollection-changes",
       "route": "/api/v1/fieldcollection/changes",
       "method": "POST",
@@ -13805,7 +14002,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_AssignsMonotonicCursors_AndReplayReturnsThem",
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_DuplicateOperationId_IsIdempotent",
-        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_WithoutAuthentication_ReturnsUnauthorized"
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_WithoutAuthentication_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_WithoutSavedMapCapability_ReturnsForbidden"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
       "maturity": "implemented"
@@ -15456,11 +15654,13 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_AttributeConflict_RemainsClassifiedAsAttribute",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Bidirectional_AppliesUploadAndDeliversServerDelta",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ConcurrentServerEdit_RecordsConflictAndAppliesLastWriteWins",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Download_DeliversPostReplicaChangesAndAdvancesServerGen",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_GeometryOnlyConflict_ClassifiesAsGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_MultiLayerUpload_AppliesPerLayerEdits",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_NoConcurrentServerEdit_AppliesWithoutConflict",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_RollbackOnFailure_AbortsUploadLeavingStateUnchanged",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_UploadThenExtract_ExcludesOwnEdits",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.SynchronizeReplica_MissingReplicaId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.SynchronizeReplica_ValidReplica_ReturnsSuccess",
@@ -15561,6 +15761,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_RetriedAddWithSameIdempotencyKey_CreatesExactlyOneFeature",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_WithAddOperationAndCallerObjectId_ReturnsGeneratedObjectId",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_WithAddOperation_ReturnsNewObjectId",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_WithCalculationRule_PopulatesTargetFieldOnAdd",
@@ -15575,6 +15776,9 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_WithUpdateOperation_ReturnsUpdatedObjectId",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_WithUseGlobalIdsEnabled_ReturnsBadRequest",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsConflictCodeTests.ApplyEdits_DeleteMissingFeature_ReturnsDeleteConflictCode",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsConflictCodeTests.ApplyEdits_DeleteNonNumericObjectId_ReturnsInvalidObjectIdCode",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsConflictCodeTests.ApplyEdits_UpdateMissingFeature_ReturnsNotFoundCode",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerEditingEditionGateTests.ApplyEdits_UnderCommunity_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_FeatureAllowedByPlugin_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_FeatureRejectedByPlugin_IsNotWritten",
@@ -16740,8 +16944,11 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Reconcile_Async_Returns202WithPollableJob",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Reconcile_ByObjectDetection_CleanVersion_CanPost",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Reconcile_CleanVersion_CanPost",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Reconcile_WithPolicy_ReportsAutoResolvedCount"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Reconcile_UnsupportedConflictDetection_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Reconcile_WithPolicy_ReportsAutoResolvedCount",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Reconcile_WithPost_CleanVersion_PostsInline"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "implemented"
@@ -16828,6 +17035,21 @@
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_MissingSamlResponse_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_UnsignedAssertion_IsRejected",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_ValidSignedAssertion_EstablishesSession"
+      ],
+      "proof_ledger_surface": "saml-sso",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-saml-slo",
+      "route": "/saml/slo",
+      "method": "POST",
+      "family": "SAML 2.0",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_MissingSamlRequest_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_UnsignedLogoutRequest_IsRejected",
+        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_ValidSignedLogoutRequest_TerminatesSessionAndRelaysResponse"
       ],
       "proof_ledger_surface": "saml-sso",
       "maturity": "implemented"

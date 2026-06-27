@@ -17,6 +17,14 @@ public sealed class ReadOnlyReplicaRepositoryTests
     private readonly NoOpReplicaRepository _repo = new();
 
     [Fact]
+    public void SupportsReplicaPersistence_IsFalse()
+    {
+        // Read-only providers cannot durably persist replicas, so the synchronize adapter emits a
+        // conformant "operation not supported" response instead of silently no-op'ing a sync (#2136).
+        Assert.False(_repo.SupportsReplicaPersistence);
+    }
+
+    [Fact]
     public async Task UpsertAsync_NoOps()
     {
         var record = new ReplicaRecord
