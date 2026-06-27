@@ -126,6 +126,14 @@ public sealed class FeatureServerResponse
     public bool SyncEnabled { get; init; }
 
     /// <summary>
+    /// Service-level synchronization capabilities (supported sync directions, sync models,
+    /// rollbackOnFailure, and <c>supportedSyncDataOptions</c>). Emitted only when the service is
+    /// sync-enabled so Esri clients discover the offline replica behavior the server honors before they
+    /// attempt createReplica / synchronizeReplica; null (omitted) otherwise (#2136).
+    /// </summary>
+    public FeatureServerSyncCapabilities? SyncCapabilities { get; init; }
+
+    /// <summary>
     /// Whether the service exposes branch-versioned data. Emitted so Esri clients discover the
     /// VersionManagementServer surface (#1272, ADR-0051). True only when the active provider supports
     /// branch versioning (Postgres) and the Enterprise branch-versioning entitlement is active.

@@ -18,6 +18,14 @@ namespace Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 public sealed class NoOpReplicaRepository : IReplicaRepository
 {
     /// <inheritdoc />
+    /// <remarks>
+    /// Read-only providers cannot durably persist replicas, so the offline replica sync surface is
+    /// unsupported. Protocol adapters read this to emit a conformant "operation not supported"
+    /// response instead of letting the no-op upsert silently swallow a sync (#2136).
+    /// </remarks>
+    public bool SupportsReplicaPersistence => false;
+
+    /// <inheritdoc />
     public Task UpsertAsync(ReplicaRecord record, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 

@@ -36,6 +36,28 @@ internal static partial class FeatureServerEndpoints
             FeatureCatalog.FieldOpsOfflineSyncKey,
             "GeoServices offline sync");
 
+    /// <summary>
+    /// Rejects replica write operations (createReplica / synchronizeReplica / unRegisterReplica) on
+    /// backends that cannot durably persist replicas — read-only providers (DuckDB, MySQL/MariaDB)
+    /// whose <see cref="IReplicaRepository"/> is a no-op. Returns a conformant Esri-shaped
+    /// <c>501 Not Implemented</c> error so an Esri client receives an explicit "operation not
+    /// supported" response instead of a silently no-op'd sync that is never durably applied (#2136).
+    /// Returns <c>null</c> when the active backend supports replica persistence.
+    /// </summary>
+    private static IResult? RequireReplicaPersistenceSupport(HttpContext context)
+    {
+        var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
+        if (replicaRepository.SupportsReplicaPersistence)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateNotImplemented(
+            context,
+            "Offline replica synchronization is not supported by this service's data store.",
+            ["The active feature provider is read-only and cannot durably persist replicas. createReplica, synchronizeReplica, and unRegisterReplica require a Postgres-backed service."]);
+    }
+
     private static async Task<IResult> HandleReplicas(
         string serviceId,
         HttpContext context)
@@ -199,6 +221,12 @@ internal static partial class FeatureServerEndpoints
         if (entitlementGate is not null)
         {
             return entitlementGate;
+        }
+
+        var unsupportedBackend = RequireReplicaPersistenceSupport(context);
+        if (unsupportedBackend is not null)
+        {
+            return unsupportedBackend;
         }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -839,6 +867,12 @@ internal static partial class FeatureServerEndpoints
             return entitlementGate;
         }
 
+        var unsupportedBackend = RequireReplicaPersistenceSupport(context);
+        if (unsupportedBackend is not null)
+        {
+            return unsupportedBackend;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
         if (serviceValidationResult.ErrorResult is not null)
@@ -944,6 +978,16 @@ internal static partial class FeatureServerEndpoints
             acknowledgedServerGen = parsedServerGen;
         }
 
+        // Esri sync parameter: rollbackOnFailure=true applies each layer's uploaded edits atomically so
+        // a single failing row rolls back that layer's whole batch, leaving the server state unchanged
+        // (#2136). Defaults to false (best-effort per-row), matching the prior synchronize behavior.
+        if (!TryParseBoolValue(values, "rollbackOnFailure", false, out var rollbackOnFailure, out var rollbackError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid rollbackOnFailure parameter",
+                [rollbackError ?? "rollbackOnFailure must be a boolean value."]);
+        }
+
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
 
         SynchronizeReplicaConflict[]? conflicts = null;
@@ -988,7 +1032,8 @@ internal static partial class FeatureServerEndpoints
                     BaseGeneration: replica.LastSyncGeneration,
                     LayerEdits: layerEdits,
                     LastWriteWins: true,
-                    SyncOperationId: context.TraceIdentifier);
+                    SyncOperationId: context.TraceIdentifier,
+                    RollbackOnFailure: rollbackOnFailure);
 
                 var report = await syncService.ApplyUploadAsync(syncRequest, applier, cancellationToken);
                 if (!report.Success)
@@ -1475,6 +1520,12 @@ internal static partial class FeatureServerEndpoints
         if (entitlementGate is not null)
         {
             return entitlementGate;
+        }
+
+        var unsupportedBackend = RequireReplicaPersistenceSupport(context);
+        if (unsupportedBackend is not null)
+        {
+            return unsupportedBackend;
         }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);

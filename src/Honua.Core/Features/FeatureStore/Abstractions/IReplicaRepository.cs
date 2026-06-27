@@ -12,6 +12,16 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 public interface IReplicaRepository
 {
     /// <summary>
+    /// Whether this provider durably persists replica state and can therefore serve the offline
+    /// replica sync workflow (createReplica / synchronizeReplica / unRegisterReplica). True for the
+    /// Postgres-backed store; false for read-only providers (DuckDB, MySQL/MariaDB) whose replica
+    /// repository is a no-op. Protocol adapters consult this so they can return a clear, Esri-shaped
+    /// "operation not supported" response on backends that cannot persist replicas instead of
+    /// silently accepting a sync that is never durably applied (#2136).
+    /// </summary>
+    bool SupportsReplicaPersistence => true;
+
+    /// <summary>
     /// Creates or updates a replica record in persistent storage
     /// </summary>
     /// <param name="record">The replica record to persist</param>
