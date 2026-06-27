@@ -203,6 +203,7 @@ internal static partial class ImportEndpoints
             [".gpx"] = "GPX - GPS Exchange format",
             [".kml"] = "KML - Keyhole Markup Language (Google Earth)",
             [".kmz"] = "KMZ - Compressed KML format",
+            [".gml"] = "GML - Geography Markup Language (OGC XML format)",
             [".wkt"] = "WKT - Well-Known Text format",
             [".csv"] = "CSV - Comma-separated values with lon/lat or WKT geometry columns",
             [".fgb"] = "FlatGeobuf - Compact binary geospatial format",

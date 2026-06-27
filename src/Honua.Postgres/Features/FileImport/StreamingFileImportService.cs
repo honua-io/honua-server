@@ -74,6 +74,12 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static readonly Regex _wktSridRegex = new(
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex _gmlSrsNameRegex = new(
+        "srsName\\s*=\\s*[\"']([^\"']+)[\"']",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex _gmlEpsgCodeRegex = new(
+        @"(\d+)\D*$",
+        RegexOptions.Compiled);
 
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]{0,128}$")]
     private static partial Regex GeoPackageTableNameRegex();

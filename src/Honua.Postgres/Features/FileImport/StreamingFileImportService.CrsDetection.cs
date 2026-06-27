@@ -34,6 +34,7 @@ internal sealed partial class StreamingFileImportService
                 SupportedFileFormat.Kml => 4326,
                 SupportedFileFormat.Gpx => 4326,
                 SupportedFileFormat.Csv => 4326,
+                SupportedFileFormat.Gml => await DetectGmlSridAsync(stream, cancellationToken),
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
                 SupportedFileFormat.FlatGeobuf => await DetectFlatGeobufCrsAsync(stream, cancellationToken),
@@ -104,6 +105,7 @@ internal sealed partial class StreamingFileImportService
             SupportedFileFormat.Kml => 4326,
             SupportedFileFormat.Gpx => 4326,
             SupportedFileFormat.Csv => 4326,
+            SupportedFileFormat.Gml => ParseGmlSrid(Encoding.UTF8.GetString(header)),
             SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
             // Defensive: currently unreachable — FlatGeobuf non-seekable paths spill to
             // a seekable temp file before reaching here (see the dedicated FlatGeobuf branch above).
@@ -143,6 +145,51 @@ internal sealed partial class StreamingFileImportService
         }
 
         return srid;
+    }
+
+    /// <summary>
+    /// Detects the SRID of a GML document by reading the leading header bytes and parsing the
+    /// first <c>srsName</c> attribute (e.g. <c>EPSG:4326</c>,
+    /// <c>urn:ogc:def:crs:EPSG::4326</c>, or
+    /// <c>http://www.opengis.net/def/crs/EPSG/0/4326</c>). Falls back to WGS 84 (4326) when no
+    /// usable <c>srsName</c> is present, consistent with the other XML-based readers.
+    /// </summary>
+    private static async Task<int?> DetectGmlSridAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[CrsDetectionHeaderSize];
+        var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+        if (bytesRead <= 0)
+        {
+            return 4326;
+        }
+
+        var header = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+        return ParseGmlSrid(header);
+    }
+
+    /// <summary>
+    /// Extracts an EPSG SRID from the first <c>srsName</c> attribute found in a GML header,
+    /// defaulting to 4326 when no <c>srsName</c> is present.
+    /// </summary>
+    private static int? ParseGmlSrid(string header)
+    {
+        var match = _gmlSrsNameRegex.Match(header);
+        if (!match.Success)
+        {
+            return 4326;
+        }
+
+        var srsName = match.Groups[1].Value;
+
+        // The EPSG code is the trailing run of digits in every common srsName form
+        // (EPSG:4326, urn:ogc:def:crs:EPSG::4326, .../EPSG/0/4326, epsg.xml#4326).
+        var codeMatch = _gmlEpsgCodeRegex.Match(srsName);
+        if (codeMatch.Success && int.TryParse(codeMatch.Groups[1].Value, out var srid) && srid > 0)
+        {
+            return srid;
+        }
+
+        return 4326;
     }
 
     private async Task<int?> DetectGeoPackageSridAsync(Stream stream, CancellationToken cancellationToken)

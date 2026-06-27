@@ -183,6 +183,7 @@ internal sealed partial class StreamingFileImportService
                 SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Gml => GmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(fileStream, cancellationToken),

@@ -34,6 +34,7 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
             [".json"] = SupportedFileFormat.GeoJson,
             [".kml"] = SupportedFileFormat.Kml,
             [".kmz"] = SupportedFileFormat.Kml,
+            [".gml"] = SupportedFileFormat.Gml,
             [".wkt"] = SupportedFileFormat.Wkt,
             [".zip"] = SupportedFileFormat.Shapefile,
             [".gpkg"] = SupportedFileFormat.GeoPackage,
@@ -188,6 +189,17 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         if (trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("<gpx"))
         {
             return SupportedFileFormat.Gpx;
+        }
+
+        // GML detection. Must be evaluated after KML/GPX (which also begin with the
+        // XML prolog) so those formats are not misclassified. GML feature collections
+        // declare the GML namespace and/or use the gml: prefix; match either signal.
+        if (trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) &&
+            (trimmed.Contains("opengis.net/gml", StringComparison.OrdinalIgnoreCase) ||
+             trimmed.Contains("<gml:", StringComparison.OrdinalIgnoreCase) ||
+             trimmed.Contains(":gml=", StringComparison.OrdinalIgnoreCase)))
+        {
+            return SupportedFileFormat.Gml;
         }
 
         // WKT detection (simple heuristic)

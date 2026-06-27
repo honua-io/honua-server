@@ -67,5 +67,10 @@ public enum SupportedFileFormat
     /// <summary>
     /// GeoParquet format (.parquet, .geoparquet)
     /// </summary>
-    GeoParquet = 11
+    GeoParquet = 11,
+
+    /// <summary>
+    /// Geography Markup Language (.gml) - OGC XML geospatial format
+    /// </summary>
+    Gml = 12
 }

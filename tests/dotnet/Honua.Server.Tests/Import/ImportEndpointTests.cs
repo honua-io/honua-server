@@ -80,6 +80,7 @@ public class ImportEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain(".geojson");
         content.Should().Contain(".kml");
+        content.Should().Contain(".gml");
         content.Should().Contain(".gpkg");
         content.Should().Contain(".gpx");
         content.Should().Contain(".csv");
@@ -100,6 +101,7 @@ public class ImportEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain(".geojson");
         content.Should().Contain(".kml");
+        content.Should().Contain(".gml");
         content.Should().Contain(".gpkg");
         content.Should().Contain(".gpx");
         content.Should().Contain(".csv");
@@ -126,11 +128,8 @@ public class ImportEndpointTests : IAsyncLifetime
             .ToArray();
         var formatDescriptions = document.RootElement.GetProperty("formatDescriptions");
 
-        extensions.Should().NotContain(".gml");
         extensions.Should().NotContain(".twkb");
-        formatDescriptions.TryGetProperty(".gml", out _).Should().BeFalse();
         formatDescriptions.TryGetProperty(".twkb", out _).Should().BeFalse();
-        content.Should().NotContain("GML - Geography Markup Language");
         content.Should().NotContain("TinyWKB - Compact binary format");
     }
 
