@@ -458,7 +458,8 @@ internal static partial class FeatureServerEndpoints
         long sinceGeneration,
         ReplicaLayerV2[] replicaLayers,
         IChangeTracker changeTracker,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? maxGeneration = null)
     {
         var layerChanges = new List<LayerChanges>(replicaLayers.Length);
 
@@ -477,6 +478,16 @@ internal static partial class FeatureServerEndpoints
             sinceGeneration,
             replicaLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
             cancellationToken);
+
+        // Optional upper bound on the delta. A bidirectional sync caps the server-to-client delta at
+        // the generation observed just before the client's upload was applied, so the client receives
+        // every server-side change committed since its last sync (e.g. another client's edits made
+        // after createReplica) but NOT its own just-applied edits, which carry a later generation
+        // (#2136). Download-only syncs pass null and deliver the full delta up to the current generation.
+        if (maxGeneration is { } upperBound)
+        {
+            changes = changes.Where(c => c.Generation <= upperBound).ToList();
+        }
 
         // Group collapsed changes by layer
         var changesByLayer = changes
@@ -1000,6 +1011,11 @@ internal static partial class FeatureServerEndpoints
         // non-conflicting edits via the shared edit pipeline, and writes durable conflict records
         // when supported. Download-only syncs and empty uploads skip the pipeline entirely (#1272).
         long uploadServerGen = 0;
+        // The server generation observed immediately before the client's upload is applied. A
+        // bidirectional download caps its server-to-client delta at this value so the client's own
+        // just-applied edits (which carry a later generation) are excluded while every server-side
+        // change committed since the replica's last sync is still delivered (#2136).
+        long preUploadGen = 0;
         var didUpload = false;
         if (isUploadDirection && !string.IsNullOrWhiteSpace(editsJson))
         {
@@ -1015,6 +1031,10 @@ internal static partial class FeatureServerEndpoints
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
                 var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
                 var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
+
+                // Capture the pre-upload generation so the bidirectional download below can exclude the
+                // client's own edits without skipping concurrent server-side changes.
+                preUploadGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
 
                 // Snapshot the pre-apply server state of every uploaded update/delete target so durable
                 // conflict records can carry the server side of the comparison for the review API
@@ -1102,11 +1122,16 @@ internal static partial class FeatureServerEndpoints
         ReplicaInfoLayerServerGeneration[]? downloadLayerServerGens = null;
         if (isDownloadDirection)
         {
-            var downloadSinceGen = didUpload
-                ? uploadServerGen
-                : acknowledgedServerGen is { } acknowledged
-                    ? Math.Min(acknowledged, currentGen)
-                    : replica.LastSyncGeneration;
+            // The download lower bound is the generation the client already holds (replicaServerGen,
+            // from its preceding extractChanges/createReplica) when supplied, otherwise the replica's
+            // recorded last-sync generation. A bidirectional upload in the same call does NOT advance
+            // this lower bound past concurrent server changes; instead the delta is capped at the
+            // pre-upload generation so the client receives every server-side change committed since its
+            // last sync but not its own just-applied edits (#2136, #1775).
+            var downloadSinceGen = acknowledgedServerGen is { } acknowledged
+                ? Math.Min(acknowledged, currentGen)
+                : replica.LastSyncGeneration;
+            long? downloadMaxGen = didUpload ? preUploadGen : null;
 
             var (assembledEdits, deltaError) = await BuildReplicaLayerChangesAsync(
                 context,
@@ -1114,7 +1139,8 @@ internal static partial class FeatureServerEndpoints
                 downloadSinceGen,
                 replicaLayers,
                 changeTracker,
-                cancellationToken);
+                cancellationToken,
+                downloadMaxGen);
             if (deltaError is not null)
             {
                 return deltaError;
