@@ -67,6 +67,7 @@ using Honua.Server.Features.Studio;
 using Honua.PackageReview;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Features.WorkflowPackages;
+using Honua.Server.Features.Operations;
 using Honua.Server.Startup;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -561,6 +562,7 @@ builder.Services.AddValidationServices();
 builder.Services.AddServerFeatures(builder.Configuration);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 builder.Services.AddWorkflowPackages();
+builder.Services.AddHonuaOperations();
 builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
@@ -1256,6 +1258,7 @@ app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
+app.MapOperationsEndpoints();
 Honua.Server.Features.Console.Publications.ContentPublicationEndpoints.MapContentPublicationEndpoints(app);
 Honua.Server.Features.Console.Publications.PublishedRouteEndpoints.MapPublishedRouteEndpoints(app);
 app.MapAdminApiKeyEndpoints();

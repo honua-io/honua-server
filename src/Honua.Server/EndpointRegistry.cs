@@ -267,6 +267,10 @@ public static class EndpointRegistry
         new("GET", "/api/v1/console/workflow-generation/providers"),
         new("POST", "/api/v1/console/workflow-packages/generate"),
 
+        // v1 Honua Operations Toolset surface (operations spike)
+        new("GET", "/api/v1/operations"),
+        new("POST", "/api/v1/operations/{operationId}/invoke"),
+
         // v1 Studio package lifecycle endpoints (#1180)
         new("GET", "/api/v1/studio/package-families"),
         new("POST", "/api/v1/studio/package-drafts"),
