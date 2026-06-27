@@ -113,6 +113,16 @@ public sealed class I3sAttributeStorageInfo
     [JsonPropertyName("header")]
     public IReadOnlyList<I3sAttributeHeader>? Header { get; set; }
 
+    /// <summary>
+    /// Per-value byte-count buffer encoding descriptor for variable-length
+    /// (string) attributes (OGC 19-008 <c>attributeByteCounts</c>). Present only
+    /// for <c>String</c> fields, whose binary file carries a
+    /// <c>UInt32</c> byte-count per value before the UTF-8 value blob so a client
+    /// can index into the variable-length values; omitted for fixed-width fields.
+    /// </summary>
+    [JsonPropertyName("attributeByteCounts")]
+    public I3sAttributeValues? AttributeByteCounts { get; set; }
+
     /// <summary>Value-buffer encoding descriptor.</summary>
     [JsonPropertyName("attributeValues")]
     public I3sAttributeValues? AttributeValues { get; set; }
