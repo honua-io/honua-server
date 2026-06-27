@@ -68,7 +68,9 @@ public sealed class ProcessCatalogTests
         // + 4 native-profile raster analysis tool pack ops (raster.resample,
         // raster.interpolate-idw, raster.interpolate-kriging, raster.mosaic) added
         // by #2141.
-        all.Should().HaveCount(86);
+        // + 1 spatial-statistics tool-pack op (analytics.hotspot-managed, Hot Spot
+        // Analysis / Getis-Ord Gi*) added by #2142.
+        all.Should().HaveCount(87);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
@@ -86,15 +88,16 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_AnalyticsCategory_Returns8Processes()
+    public void Catalog_AnalyticsCategory_Returns9Processes()
     {
         var analytics = _catalog.GetProcessesByCategory("analytics");
 
         // 4 trunk analytics + analytics.spatial-join-managed +
         // 3 managed counterparts from #1260 (analytics.cluster-managed,
         // analytics.buffer-aggregate-managed, analytics.density-managed) — the
-        // job-dispatchable managed counterparts to the PostGIS-protocol entries.
-        analytics.Should().HaveCount(8);
+        // job-dispatchable managed counterparts to the PostGIS-protocol entries —
+        // + analytics.hotspot-managed (Getis-Ord Gi* Hot Spot Analysis, #2142).
+        analytics.Should().HaveCount(9);
         analytics.Should().AllSatisfy(p => p.Category.Should().Be("analytics"));
     }
 
@@ -252,6 +255,7 @@ public sealed class ProcessCatalogTests
             "analytics.cluster-managed",
             "analytics.buffer-aggregate-managed",
             "analytics.density-managed",
+            "analytics.hotspot-managed",
             "analytics.buffer-aggregate", "analytics.density",
             "surface.slope", "surface.aspect", "surface.hillshade",
             "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",

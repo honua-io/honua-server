@@ -344,6 +344,20 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
+        new ProcessDefinition
+        {
+            ProcessId = "analytics.hotspot-managed",
+            Title = "Hot Spot Analysis (Getis-Ord Gi*, Managed)",
+            Description = "Job-executable, managed (NetTopologySuite) Hot Spot Analysis over an inline FeatureCollection, computing the Getis-Ord Gi* statistic per feature using a fixed-distance-band conceptualization of spatial relationships. Every input feature is preserved one-to-one with GI_ZSCORE (Gi* z-score), GI_PVALUE (two-tailed p-value) and GI_BIN (Esri-style confidence bin in [-3, 3]: sign = hot/cold, magnitude = 99/95/90% significance) attributes appended. Distances are evaluated in the CRS units of the supplied feature geometries — geodesic conversion is not performed. Rejects degenerate inputs (fewer than two located features, or zero variance in the analysis field).",
+            Category = "analytics",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Non-point geometries are analysed on their centroid; features with null/empty geometry are dropped before analysis.", ProcessParameterValueType.Text, required: true),
+                Param("field", "Analysis Field", "Attribute name whose numeric values are analysed for clustering. Every located feature must carry a numeric value for this field.", ProcessParameterValueType.Text, required: true),
+                Param("distanceBand", "Distance Band", "Fixed distance band in CRS units. Features within this Euclidean distance of one another are neighbours (each feature is always its own neighbour for Gi*). Must be a finite positive number.", ProcessParameterValueType.FloatingPoint, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
 
         // -----------------------------------------------------------------------
         // Layer-aware overlay operations (#2206, #2139)

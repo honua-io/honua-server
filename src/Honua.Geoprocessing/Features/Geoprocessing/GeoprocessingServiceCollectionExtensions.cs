@@ -241,6 +241,8 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<ManagedClusterExecutor>(services);
         Register<ManagedBufferAggregateExecutor>(services);
         Register<ManagedDensityExecutor>(services);
+        // Spatial-statistics tool pack (#2142): Hot Spot Analysis (Getis-Ord Gi*).
+        Register<ManagedHotSpotExecutor>(services);
         // Layer-aware overlay tool pack (#2206, #2139).
         Register<OverlayClipExecutor>(services);
         Register<OverlayIntersectExecutor>(services);
