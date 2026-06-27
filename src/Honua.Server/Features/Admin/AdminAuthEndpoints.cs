@@ -66,6 +66,11 @@ internal static class AdminAuthEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithMetadata(new RateLimitAttribute(5)); // 5 requests per minute for token exchange
 
+        _ = group.MapPost("/bearer", HandleIssueOperatorBearer)
+            .WithDisplayName("Issue Console Operator Bearer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithMetadata(new RateLimitAttribute(10)); // 10 requests per minute for bearer issuance
+
         _ = group.MapPost("/logout", HandleLogout)
             .WithDisplayName("Logout Admin Auth Session")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
@@ -180,6 +185,49 @@ internal static class AdminAuthEndpoints
                     Value = claim.Value
                 })
                 .ToList()
+        });
+    }
+
+    private static async Task<IResult> HandleIssueOperatorBearer(
+        HttpContext context,
+        [FromServices] AdminAuthSessionStore sessionStore,
+        [FromServices] OperatorBearerTokenService bearerTokenService)
+    {
+        // Fail-closed: a forwardable operator bearer is only minted for a live,
+        // authenticated admin session. The bearer carries the session's claims, so
+        // the principal it produces on the request path resolves to the same RBAC.
+        var sessionId = context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName];
+        var session = await sessionStore.GetAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
+        if (session is null || session.Claims is null || session.Claims.Length == 0)
+        {
+            DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
+            return StandardErrorHelpers.CreateUnauthorized(
+                context,
+                "An authenticated admin session is required to issue an operator bearer.");
+        }
+
+        if (!bearerTokenService.Enabled)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Operator bearer issuance is not configured on this server.");
+        }
+
+        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt);
+        if (issuance is null)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Operator bearer issuance is not configured on this server.");
+        }
+
+        var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
+        return TypedResults.Ok(new AdminOperatorBearerResponse
+        {
+            AccessToken = issuance.Token,
+            TokenType = "Bearer",
+            ExpiresAt = issuance.ExpiresAt,
+            ExpiresIn = expiresInSeconds
         });
     }
 

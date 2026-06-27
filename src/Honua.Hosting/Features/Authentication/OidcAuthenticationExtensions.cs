@@ -67,6 +67,11 @@ public static class OidcAuthenticationExtensions
     public const string AdminSessionScheme = "AdminSession";
 
     /// <summary>
+    /// Authentication scheme name for the console-consumable operator bearer (#2258).
+    /// </summary>
+    public const string OperatorBearerScheme = "OperatorBearer";
+
+    /// <summary>
     /// Adds OIDC authentication services with multi-provider support.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -98,6 +103,14 @@ public static class OidcAuthenticationExtensions
 
         authBuilder.AddScheme<AuthenticationSchemeOptions, AdminAuthSessionAuthenticationHandler>(
             AdminSessionScheme,
+            static _ => { });
+
+        // Console-consumable operator bearer (#2258, Option C): validates a
+        // Honua-signed forwardable bearer on the admin request path. Issuance and
+        // validation are fail-closed and gated on a configured signing key; routing
+        // to this scheme happens in the composite selector below.
+        authBuilder.AddScheme<AuthenticationSchemeOptions, OperatorBearerAuthenticationHandler>(
+            OperatorBearerScheme,
             static _ => { });
 
         // Add JWT Bearer authentication for API access
@@ -155,6 +168,18 @@ public static class OidcAuthenticationExtensions
                 var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
                 if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                 {
+                    // Honua-issued operator bearers (#2258) are routed to their own
+                    // validator before the OIDC JWT scheme: they are signed with the
+                    // operator-bearer key, not the IdP key, so the JWT scheme would
+                    // reject them. Issuer match is a routing hint only; trust is
+                    // established by OperatorBearerAuthenticationHandler.
+                    var operatorBearer = context.RequestServices.GetService<OperatorBearerTokenService>();
+                    if (operatorBearer is not null &&
+                        operatorBearer.IsOperatorBearerCandidate(authHeader["Bearer ".Length..].Trim()))
+                    {
+                        return OperatorBearerScheme;
+                    }
+
                     var currentOptions = context.RequestServices
                         .GetRequiredService<IOptions<OidcAuthenticationOptions>>()
                         .Value;
@@ -259,7 +284,11 @@ public static class OidcAuthenticationExtensions
         var schemes = new List<string>
         {
             CompositeScheme,
-            ClientCertificateAuthenticationDefaults.AuthenticationScheme
+            ClientCertificateAuthenticationDefaults.AuthenticationScheme,
+            // Console-consumable operator bearer (#2258): admin policies must accept
+            // a principal projected from a forwardable operator bearer so it resolves
+            // to the same RBAC as the cookie session it was issued from.
+            OperatorBearerScheme
         };
 
         return schemes;

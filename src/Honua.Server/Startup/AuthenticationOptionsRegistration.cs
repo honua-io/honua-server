@@ -74,6 +74,14 @@ internal static class AuthenticationOptionsRegistration
         services.Configure<OidcAuthenticationOptions>(
             configuration.GetSection(OidcAuthenticationOptions.SectionName));
 
+        // Console-consumable operator bearer (#2258, Option C). Registered
+        // unconditionally so the issue endpoint can report a fail-closed 503 when the
+        // feature is not configured; the request-path scheme is only wired when OIDC
+        // is enabled (operator login itself requires OIDC).
+        services.Configure<OperatorBearerOptions>(
+            configuration.GetSection(OperatorBearerOptions.SectionName));
+        services.AddSingleton<OperatorBearerTokenService>();
+
         // Mobile runtime auth refresh options
         services.Configure<MobileAuthOptions>(
             configuration.GetSection(MobileAuthOptions.SectionName));
