@@ -63,6 +63,32 @@ public enum VersionReconcilePolicy
 }
 
 /// <summary>
+/// Conflict-detection granularity applied by the version manager's <c>ReconcileAsync</c> when it diffs
+/// a branch version against DEFAULT (Esri <c>conflictDetection</c> conformance; #2135). Mirrors ArcGIS'
+/// <c>esriReconcileByObject</c>/<c>esriReconcileByAttribute</c> reconcile options. The two modes diverge
+/// for a feature edited on both sides on DISJOINT attribute/geometry sets: by-object flags any such
+/// object as a conflict, while by-attribute auto-merges the disjoint edits and only reports a conflict
+/// when the SAME attribute (or geometry on both sides) was changed.
+/// </summary>
+public enum VersionConflictDetection
+{
+    /// <summary>
+    /// By-attribute (column-level) detection. A feature edited in both the branch and DEFAULT on
+    /// disjoint attribute sets auto-merges; only a genuinely-overlapping field edit (or a
+    /// geometry-vs-geometry change) is reported as a conflict. This is the substrate default and keeps
+    /// the pre-#2135 reconcile behavior byte-identical.
+    /// </summary>
+    ByAttribute = 0,
+
+    /// <summary>
+    /// By-object (row-level) detection. Any feature edited in both the branch and DEFAULT since the
+    /// merge base is reported as a conflict, even when the edited attribute/geometry sets are disjoint
+    /// (no field-level auto-merge). Convergent edits (both sides deleted the same row) remain a no-op.
+    /// </summary>
+    ByObject = 1,
+}
+
+/// <summary>
 /// Operator choice for a single manually-resolved reconcile conflict (#371). Selects which side of a
 /// three-way conflict (base / DEFAULT / version) becomes the posted state for the feature. Field-level
 /// merges are produced automatically during reconcile for disjoint field edits, so the manual surface

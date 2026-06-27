@@ -397,23 +397,51 @@ public static class VersionManagementServerEndpoints
             return policyError;
         }
 
+        var (detection, detectionError) = ParseConflictDetection(context, values!);
+        if (detectionError is not null)
+        {
+            return detectionError;
+        }
+
         // Async fast path: start a durable, pollable job under the version lock and return 202 with a
         // job handle. The synchronous path stays the default for small/fast versions (#1553).
         if (ParseAsyncRequested(values!))
         {
-            var job = await jobRunner.StartReconcileAsync(serviceId, versionId, policy, cancellationToken)
+            var job = await jobRunner.StartReconcileAsync(serviceId, versionId, policy, detection, cancellationToken)
                 .ConfigureAwait(false);
             return AcceptedJob(serviceId, versionGuid, job);
         }
 
+        var withPost = ParseFlag(values!, "withPost");
+
         try
         {
-            var result = await versionManager.ReconcileAsync(versionId, policy, cancellationToken).ConfigureAwait(false);
+            var result = await versionManager.ReconcileAsync(versionId, policy, detection, cancellationToken)
+                .ConfigureAwait(false);
+            var hasConflicts = !result.Conflicts.IsDefaultOrEmpty && result.Conflicts.Length > 0;
+
+            // withPost=true posts the version in the same operation after a clean reconcile (Esri
+            // conformance; #2135). When conflicts remain it is a no-op-with-conflicts response: the
+            // reconcile conflicts are returned and nothing is posted.
+            var posted = false;
+            var appliedChanges = 0;
+            long serverGeneration = 0;
+            if (withPost && result.CanPost && !hasConflicts)
+            {
+                var post = await versionManager.PostAsync(versionId, cancellationToken).ConfigureAwait(false);
+                posted = post.Posted;
+                appliedChanges = post.AppliedChanges;
+                serverGeneration = post.ServerGeneration;
+            }
+
             var response = new ReconcileResponse
             {
-                HasConflicts = !result.Conflicts.IsDefaultOrEmpty && result.Conflicts.Length > 0,
+                HasConflicts = hasConflicts,
                 CanPost = result.CanPost,
                 AutoResolvedCount = result.AutoResolvedCount,
+                Posted = posted,
+                AppliedChanges = appliedChanges,
+                ServerGeneration = serverGeneration,
                 Conflicts = result.Conflicts.IsDefaultOrEmpty
                     ? []
                     : result.Conflicts.Select(ToConflictInfo).ToArray(),
@@ -868,6 +896,44 @@ public static class VersionManagementServerEndpoints
                 "Unsupported conflictResolution policy.",
                 ["Supported policies: none, lastWriteWins, versionWins, defaultWins."])),
         };
+    }
+
+    /// <summary>
+    /// Parses the reconcile conflict-detection granularity from the <c>conflictDetection</c> parameter
+    /// (Esri conformance; #2135). Accepts Honua's short names (<c>byObject</c>/<c>byAttribute</c>), the
+    /// Esri tokens (<c>esriReconcileByObject</c>/<c>esriReconcileByAttribute</c>), and the bare
+    /// <c>object</c>/<c>attribute</c> forms. Absent or empty resolves to the
+    /// <see cref="VersionConflictDetection.ByAttribute"/> default (pre-#2135 behavior).
+    /// </summary>
+    private static (VersionConflictDetection Detection, IResult? Error) ParseConflictDetection(
+        HttpContext context,
+        IReadOnlyDictionary<string, StringValues> values)
+    {
+        var raw = GeoServicesRequestValueHelpers.GetValueString(values, "conflictDetection");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return (VersionConflictDetection.ByAttribute, null);
+        }
+
+        return raw.Trim().ToLowerInvariant() switch
+        {
+            "byattribute" or "esrireconcilebyattribute" or "attribute" => (VersionConflictDetection.ByAttribute, null),
+            "byobject" or "esrireconcilebyobject" or "object" => (VersionConflictDetection.ByObject, null),
+            _ => (VersionConflictDetection.ByAttribute, StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Unsupported conflictDetection mode.",
+                ["Supported modes: byObject, byAttribute."])),
+        };
+    }
+
+    /// <summary>
+    /// Whether a boolean request flag (e.g. <c>withPost</c>) is set to <c>true</c> (case-insensitive).
+    /// Absent or any other value is treated as false.
+    /// </summary>
+    private static bool ParseFlag(IReadOnlyDictionary<string, StringValues> values, string name)
+    {
+        var raw = GeoServicesRequestValueHelpers.GetValueString(values, name);
+        return string.Equals(raw?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
