@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.ServiceDefaults;
 
@@ -34,6 +35,31 @@ public static class HonuaTelemetry
     /// Used to record counters, histograms, and gauges for Honua-specific operations.
     /// </summary>
     public static readonly Meter Meter = new(ServiceName, ServiceVersion);
+
+    /// <summary>
+    /// Counter for GeoServices/ArcGIS REST error envelopes produced by the server.
+    /// GeoServices returns most errors as an <c>{"error":{code,message,details}}</c>
+    /// body (often with an HTTP 2xx status), so without this counter the headline
+    /// compat surface's error rate is invisible to aggregatable metrics. Tags:
+    /// <c>service_type</c>, <c>operation</c>, <c>error_code</c>.
+    /// </summary>
+    public static readonly Counter<long> GeoServicesErrors = Meter.CreateCounter<long>(
+        "honua_geoservices_error_total",
+        "errors",
+        "Total GeoServices/ArcGIS REST error envelopes produced, tagged by service_type, operation, and error_code.");
+
+    /// <summary>
+    /// Generic counter for protocol error envelopes produced across every surface
+    /// (GeoServices, OGC, WFS, OData, Admin, generic Problem Details). The
+    /// <c>in_band</c> tag is <c>true</c> when the error is delivered with a
+    /// non-error HTTP status (a 2xx/3xx body envelope) that is invisible to
+    /// load-balancer 5xx metrics and SLO gates. Tags: <c>service_type</c>,
+    /// <c>operation</c>, <c>error_code</c>, <c>in_band</c>.
+    /// </summary>
+    public static readonly Counter<long> RequestErrors = Meter.CreateCounter<long>(
+        "honua_request_error_total",
+        "errors",
+        "Total protocol error envelopes produced across all surfaces, tagged by service_type, operation, error_code, and in_band.");
 
     private const int DefaultMaxExceptionDetailLength = 256;
 
@@ -80,6 +106,59 @@ public static class HonuaTelemetry
         _exportExceptionDetails = exportDetails;
         _includeExceptionStackTraces = includeStackTraces;
         _maxExceptionDetailLength = maxDetailLength > 0 ? maxDetailLength : DefaultMaxExceptionDetailLength;
+    }
+
+    /// <summary>
+    /// Records telemetry for a single produced error envelope. This is the one
+    /// funnel every error-envelope construction path must call so the platform can
+    /// aggregate and alert on its own compat error rate (#2243). It increments
+    /// <see cref="RequestErrors"/> for every protocol, <see cref="GeoServicesErrors"/>
+    /// additionally for GeoServices surfaces, and the Core
+    /// <c>PerformanceMetrics.ApplicationErrors</c> counter so protocol error paths
+    /// are no longer silent. AOT-safe: no reflection, statically-shaped tag lists.
+    /// </summary>
+    /// <param name="serviceType">The protocol/service surface (e.g. FeatureServer, OGC, OData).</param>
+    /// <param name="operation">The logical operation (e.g. query, addfeatures) or "unknown".</param>
+    /// <param name="errorCode">The error code carried in the envelope (HTTP status or GeoServices code).</param>
+    /// <param name="isGeoServices">When true, also increments the GeoServices-specific counter.</param>
+    public static void RecordErrorEnvelope(string serviceType, string operation, int errorCode, bool isGeoServices)
+    {
+        serviceType = string.IsNullOrWhiteSpace(serviceType) ? "unknown" : serviceType;
+        operation = string.IsNullOrWhiteSpace(operation) ? "unknown" : operation;
+
+        // An error delivered with a non-error HTTP status (2xx/3xx) is "in band":
+        // the body carries an {error} envelope but the transport status reads
+        // success, so load-balancer/SLO 5xx metrics never see it. This is the
+        // keystone signal the audit is blind to today.
+        var inBand = errorCode < 400;
+
+        var requestTags = new TagList
+        {
+            { "service_type", serviceType },
+            { "operation", operation },
+            { "error_code", errorCode },
+            { "in_band", inBand },
+        };
+        RequestErrors.Add(1, requestTags);
+
+        if (isGeoServices)
+        {
+            var geoTags = new TagList
+            {
+                { "service_type", serviceType },
+                { "operation", operation },
+                { "error_code", errorCode },
+            };
+            GeoServicesErrors.Add(1, geoTags);
+        }
+
+        var appErrorTags = new TagList
+        {
+            { "error_type", "protocol_error" },
+            { "operation", operation },
+            { "service_type", serviceType },
+        };
+        PerformanceMetrics.ApplicationErrors.Add(1, appErrorTags);
     }
 
     /// <summary>

@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Security;
 using Honua.Infrastructure.Middleware;
+using Honua.ServiceDefaults;
 
 namespace Honua.Infrastructure.Models;
 
@@ -58,6 +59,7 @@ internal static class StandardErrorResponseFormatter
         options ??= new ErrorResponseFormatterOptions();
 
         TryRecordRecentError(context, errorResponse);
+        RecordErrorTelemetry(context, errorResponse.StatusCode);
 
         var path = context.Request.Path;
 
@@ -337,4 +339,121 @@ internal static class StandardErrorResponseFormatter
     private static void TryRecordRecentError(HttpContext context, StandardErrorResponse errorResponse)
         => RecentErrorBufferRecordOverride?.Invoke(context, errorResponse);
 
+    /// <summary>
+    /// Emits the keystone error-rate telemetry (#2243) for a produced error
+    /// envelope. Every error-envelope construction path funnels here — both the
+    /// central <see cref="FormatError"/> dispatch and the GeoServices builders in
+    /// <c>ValidationErrorHelpers</c> that bypass this formatter — so the platform
+    /// can aggregate and alert on its own compat error rate. Classifies the
+    /// surface from the request path and delegates to
+    /// <see cref="HonuaTelemetry.RecordErrorEnvelope"/>.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol/operation classification.</param>
+    /// <param name="statusCode">The HTTP status carried by the error envelope.</param>
+    internal static void RecordErrorTelemetry(HttpContext context, int statusCode)
+    {
+        var path = context.Request.Path;
+        var (serviceType, isGeoServices) = ClassifyServiceType(path);
+        HonuaTelemetry.RecordErrorEnvelope(serviceType, ResolveOperation(path), statusCode, isGeoServices);
+    }
+
+    private static readonly string[] GeoServicesServiceTypes =
+    [
+        "FeatureServer",
+        "MapServer",
+        "ImageServer",
+        "VectorTileServer",
+        "GPServer",
+        "GeocodeServer",
+        "GeometryServer",
+        "NAServer",
+        "SceneServer"
+    ];
+
+    private static (string ServiceType, bool IsGeoServices) ClassifyServiceType(PathString path)
+    {
+        if (ProtocolRequestClassifier.IsOData(path))
+        {
+            return ("OData", false);
+        }
+
+        if (ProtocolRequestClassifier.IsOgcServiceAlias(path))
+        {
+            return ("OGC-Service", false);
+        }
+
+        if (ProtocolRequestClassifier.IsOgc(path))
+        {
+            return ("OGC", false);
+        }
+
+        if (ProtocolRequestClassifier.IsWfs(path))
+        {
+            return ("WFS", false);
+        }
+
+        if (ProtocolRequestClassifier.IsAdmin(path))
+        {
+            return ("Admin", false);
+        }
+
+        if (ProtocolRequestClassifier.IsGeoServices(path))
+        {
+            return (ExtractGeoServicesServiceType(path), true);
+        }
+
+        return ("Generic", false);
+    }
+
+    private static string ExtractGeoServicesServiceType(PathString path)
+    {
+        var value = path.Value;
+        if (string.IsNullOrEmpty(value))
+        {
+            return "GeoServices";
+        }
+
+        foreach (var segment in value.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var type in GeoServicesServiceTypes)
+            {
+                if (string.Equals(segment, type, StringComparison.OrdinalIgnoreCase))
+                {
+                    return type;
+                }
+            }
+        }
+
+        return "GeoServices";
+    }
+
+    private static string ResolveOperation(PathString path)
+    {
+        var value = path.Value;
+        if (string.IsNullOrEmpty(value))
+        {
+            return "unknown";
+        }
+
+        var segments = value.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return "unknown";
+        }
+
+        // Use the last segment as the operation only when it is purely alphabetic
+        // (Esri operations like query/addFeatures/applyEdits/exportImage). Numeric
+        // or mixed segments are identifiers (layer/feature ids) and would explode
+        // metric cardinality, so they collapse to "unknown".
+        var last = segments[^1];
+        foreach (var ch in last)
+        {
+            if (!char.IsLetter(ch))
+            {
+                return "unknown";
+            }
+        }
+
+        return last.ToLowerInvariant();
+    }
 }
