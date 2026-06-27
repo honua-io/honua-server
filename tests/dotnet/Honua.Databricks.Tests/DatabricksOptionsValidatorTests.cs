@@ -79,4 +79,31 @@ public class DatabricksOptionsValidatorTests
         options.Layers = [new DatabricksLayerOptions { Id = 1, Table = "t", GeometryColumn = "geom", PrimaryKeyColumn = "id", GeometryType = "Hyperbola" }];
         Assert.Throws<InvalidOperationException>(() => DatabricksOptionsValidator.ThrowIfInvalid(options));
     }
+
+    [Fact]
+    public void ThrowIfInvalid_NegativeMaxRetryAttempts_Throws()
+    {
+        var options = Valid();
+        options.MaxRetryAttempts = -1;
+        Assert.Throws<InvalidOperationException>(() => DatabricksOptionsValidator.ThrowIfInvalid(options));
+    }
+
+    [Fact]
+    public void ThrowIfInvalid_ZeroMaxRetryAttempts_DoesNotThrow()
+    {
+        // Zero is valid and disables retries.
+        var options = Valid();
+        options.MaxRetryAttempts = 0;
+        DatabricksOptionsValidator.ThrowIfInvalid(options);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-100)]
+    public void ThrowIfInvalid_NonPositiveRetryBaseDelay_Throws(int delayMs)
+    {
+        var options = Valid();
+        options.RetryBaseDelayMilliseconds = delayMs;
+        Assert.Throws<InvalidOperationException>(() => DatabricksOptionsValidator.ThrowIfInvalid(options));
+    }
 }
