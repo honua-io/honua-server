@@ -17,6 +17,7 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(AdminAuthClientCertificateInfo))]
 [JsonSerializable(typeof(List<AdminAuthProviderInfo>))]
 [JsonSerializable(typeof(AdminAuthSessionResponse))]
+[JsonSerializable(typeof(AdminOperatorBearerResponse))]
 [JsonSerializable(typeof(AdminAuthClaimInfo))]
 [JsonSerializable(typeof(List<AdminAuthClaimInfo>))]
 [JsonSerializable(typeof(AdminAuthAuthorizeUrlRequest))]

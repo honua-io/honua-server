@@ -119,6 +119,35 @@ public sealed class AdminAuthSessionResponse
 }
 
 /// <summary>
+/// Forwardable operator bearer issued to the console after an operator authenticates
+/// through the admin OIDC flow (#2258, Option C). The bearer is a short-lived,
+/// server-delegated credential the console forwards as <c>Authorization: Bearer</c>
+/// to the admin control-plane API; it resolves to the same RBAC as the cookie session.
+/// </summary>
+public sealed class AdminOperatorBearerResponse
+{
+    /// <summary>
+    /// Gets the forwardable operator bearer token.
+    /// </summary>
+    public required string AccessToken { get; init; }
+
+    /// <summary>
+    /// Gets the token type. Always <c>Bearer</c>.
+    /// </summary>
+    public string TokenType { get; init; } = "Bearer";
+
+    /// <summary>
+    /// Gets the UTC expiry of the bearer, clamped to the issuing session's expiry.
+    /// </summary>
+    public DateTimeOffset ExpiresAt { get; init; }
+
+    /// <summary>
+    /// Gets the remaining lifetime of the bearer in seconds.
+    /// </summary>
+    public long ExpiresIn { get; init; }
+}
+
+/// <summary>
 /// Claim projected from the authenticated admin session.
 /// </summary>
 public sealed class AdminAuthClaimInfo
