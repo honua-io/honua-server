@@ -1377,6 +1377,7 @@ app.MapIdentityAdminEndpoints();
 app.MapAdminInfoEndpoints();
 app.MapCacheAdminEndpoints();
 app.MapGeocodingAdminEndpoints();
+app.MapGeoprocessingUsageEndpoints();
 app.MapFeatureOverviewEndpoints();
 
 // Rate limit policy administration (issue #355): CRUD + status for tenant/user/API-key
