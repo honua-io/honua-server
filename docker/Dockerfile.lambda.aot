@@ -56,6 +56,7 @@ COPY src/Honua.Protocols.Ogc.Shared/*.csproj src/Honua.Protocols.Ogc.Shared/
 COPY src/Honua.Protocols.OgcApi/*.csproj src/Honua.Protocols.OgcApi/
 COPY src/Honua.Protocols.OgcClassic/*.csproj src/Honua.Protocols.OgcClassic/
 COPY src/Honua.Protocols.Stac/*.csproj src/Honua.Protocols.Stac/
+COPY src/Honua.Protocols.SensorThings/*.csproj src/Honua.Protocols.SensorThings/
 COPY src/Honua.Protocols.GeoServices/*.csproj src/Honua.Protocols.GeoServices/
 COPY src/Honua.Scene/*.csproj src/Honua.Scene/
 COPY src/Honua.Core.Abstractions/*.csproj src/Honua.Core.Abstractions/
