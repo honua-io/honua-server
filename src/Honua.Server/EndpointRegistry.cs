@@ -901,6 +901,11 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
 
+        // I3S per-field attribute binary resource (#2234): per-node attribute
+        // buffer served at the node/attributes path (GeoServices + /scenes alias).
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
+
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
 
