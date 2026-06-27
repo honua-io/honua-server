@@ -57,9 +57,38 @@ public sealed class GdalRasterMapAlgebraExecutorTests
             invocation.Tool.Should().Be("gdal_calc.py");
             invocation.Arguments.Should().Contain(a => a.StartsWith("-A"));
             invocation.Arguments.Should().Contain(a => a.StartsWith("-B"));
-            invocation.Arguments.Should().ContainInOrder("--calc", "(A-B)/(A+B)");
+            invocation.Arguments.Should().Contain("--calc=(A-B)/(A+B)");
             invocation.Arguments.Should().Contain("--overwrite");
             invocation.Arguments[^1].Should().EndWith("output.tif");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task MapAlgebra_LeadingUnaryMinus_PassesCalcAsSingleToken()
+    {
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("calc-tif"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterMapAlgebraJobExecutor.HandledProcessId,
+                ("sources", Sources("raster-a")),
+                ("expression", "-A"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+
+            var args = runner.Invocations.Single().Arguments;
+            // The expression is a single "--calc=-A" token so argparse cannot mistake
+            // the leading minus for a separate option. (The band-variable flag "-A" is
+            // a separate, expected argument.)
+            args.Should().Contain("--calc=-A");
+            args.Should().NotContain("--calc");
         }
         finally
         {
@@ -154,6 +183,34 @@ public sealed class GdalRasterMapAlgebraExecutorTests
 
             result.Status.Should().Be(ExecutionJobStatus.Failed);
             result.ErrorMessage.Should().Contain("expression");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task MapAlgebra_AggregateDecodedBytesExceedCeiling_FailsBeforeReachingTheCli()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        // Each source decodes to 4 bytes (under the 6-byte ceiling), but the aggregate
+        // exceeds it, so GdalCalcInputs must reject before the CLI is reached.
+        var executor = new GdalRasterMapAlgebraJobExecutor(
+            runner, GdalJobFactory.Options(scratch, maxArtifactBytes: 6), NullLogger<GdalRasterMapAlgebraJobExecutor>.Instance);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterMapAlgebraJobExecutor.HandledProcessId,
+                ("sources", Sources("ABCD", "EFGH")),
+                ("expression", "A+B"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("total");
             runner.Invocations.Should().BeEmpty();
         }
         finally

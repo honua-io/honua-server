@@ -119,8 +119,10 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
                 args.Add(inputPath);
             }
 
-            args.Add("--calc");
-            args.Add(expression.Trim());
+            // Pass the calc as a single "--calc=<expr>" token so an expression with a
+            // leading unary minus (e.g. "-A") is not mistaken for a separate option by
+            // gdal_calc.py's argparse.
+            args.Add($"--calc={expression.Trim()}");
             if (dataType is not null)
             {
                 args.Add("--type");

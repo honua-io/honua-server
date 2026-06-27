@@ -166,6 +166,60 @@ public sealed class GdalRasterMosaicExecutorTests
         }
     }
 
+    [UnitTest]
+    public async Task Mosaic_TooManySources_FailsBeforeReachingTheCli()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var entries = Enumerable
+                .Range(0, GdalRasterMosaicJobExecutor.MaxSources + 1)
+                .Select(i => "tile" + i.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .ToArray();
+            var job = GdalJobFactory.Job(
+                GdalRasterMosaicJobExecutor.HandledProcessId,
+                ("sources", Sources(entries)));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("at most");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Mosaic_AggregateDecodedBytesExceedCeiling_FailsBeforeReachingTheCli()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        // Each source decodes to 4 bytes (under the 6-byte ceiling) but together they
+        // exceed it, so the aggregate guard must reject before any decode reaches scratch.
+        var executor = new GdalRasterMosaicJobExecutor(
+            runner, GdalJobFactory.Options(scratch, maxArtifactBytes: 6), NullLogger<GdalRasterMosaicJobExecutor>.Instance);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterMosaicJobExecutor.HandledProcessId,
+                ("sources", Sources("ABCD", "EFGH")));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("total");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
     private static GdalRasterMosaicJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {
         scratch = GdalCli.NewScratch(ScratchSuite);

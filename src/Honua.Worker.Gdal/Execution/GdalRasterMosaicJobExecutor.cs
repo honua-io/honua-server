@@ -38,6 +38,13 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
     /// <summary>Separator between base64 raster entries in the <c>sources</c> input.</summary>
     public const string SourceSeparator = "|";
 
+    /// <summary>
+    /// Upper bound on the number of mosaic sources. gdalwarp can merge many tiles, but
+    /// the worker decodes them all into memory and writes them to the scratch workspace
+    /// first, so the count is bounded to keep a single job from exhausting the host.
+    /// </summary>
+    public const int MaxSources = 256;
+
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
 
     private static readonly IReadOnlySet<string> NativeProfileSet =
@@ -246,7 +253,14 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             return false;
         }
 
+        if (entries.Length > MaxSources)
+        {
+            failure = $"'sources' must list at most {MaxSources.ToString(CultureInfo.InvariantCulture)} rasters; got {entries.Length.ToString(CultureInfo.InvariantCulture)}";
+            return false;
+        }
+
         var decoded = new List<byte[]>(entries.Length);
+        long totalBytes = 0;
         for (var i = 0; i < entries.Length; i++)
         {
             var entry = entries[i];
@@ -277,6 +291,16 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             if (bytes.Length > maxBytes)
             {
                 failure = $"source #{(i + 1).ToString(CultureInfo.InvariantCulture)} size {bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes exceeds configured MaxArtifactBytes={maxBytes}";
+                return false;
+            }
+
+            // Bound the aggregate decoded size: every source is buffered in memory and
+            // staged to scratch before gdalwarp runs, so cap the total by the same
+            // MaxArtifactBytes ceiling used for the merged output artifact.
+            totalBytes += bytes.Length;
+            if (totalBytes > maxBytes)
+            {
+                failure = $"decoded sources total {totalBytes.ToString(CultureInfo.InvariantCulture)} bytes, exceeding configured MaxArtifactBytes={maxBytes}";
                 return false;
             }
 
