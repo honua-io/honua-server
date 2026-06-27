@@ -3,6 +3,8 @@
 
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Configuration;
@@ -80,6 +82,94 @@ public sealed class GdalProcessExecutorModeRegistrationTests
             .Value;
 
         options.Image.Should().Be(customImage);
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_RegistersExactlyTheExpectedNativeProcessIdSet()
+    {
+        using var provider = BuildProvider(static (services, config) =>
+            services.AddGdalProcessExecutors(config));
+
+        var registeredIds = provider
+            .GetServices<IProcessExecutor>()
+            .SelectMany(e => e.ProcessIds)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // The full process-id surface the GDAL worker exposes. Asserting the exact set
+        // (not just mode-to-mode equality) makes adding or dropping an executor a
+        // deliberate, reviewed change rather than a silent drift.
+        registeredIds.Should().BeEquivalentTo(new[]
+        {
+            // Vector / raster passthrough + canonicalization.
+            "gdal.ogr2ogr",
+            "gdal.gdalwarp",
+            "transform.reproject",
+            "source.ogr",
+            // Raster analysis tool pack (#2141).
+            "raster.resample",
+            "raster.interpolate-idw",
+            "raster.interpolate-kriging",
+            "raster.mosaic",
+            // Raster analysis & terrain GP tool packs (#2239, #2240).
+            "raster.map-algebra",
+            "raster.spectral-index",
+            "raster.reclassify",
+            "proximity.euclidean-distance",
+            "proximity.euclidean-allocation",
+            "surface.contour",
+            "surface.viewshed",
+            "conversion.polygonize",
+            "conversion.rasterize",
+            // Surface / terrain derivatives.
+            "surface.slope",
+            "surface.aspect",
+            "surface.hillshade",
+            "surface.rugosity-tri",
+            "surface.rugosity-tpi",
+            "surface.roughness",
+            // Raster clip / reproject / format conversion.
+            "raster.clip",
+            "raster.reproject",
+            "conversion.raster-reproject",
+            "conversion.raster-format",
+            // Raster statistics.
+            "raster.statistics",
+            "raster.histogram",
+            "raster.zonal-statistics",
+            // Coverage metadata + point-cloud translate.
+            "coverage.multidim.metadata",
+            "pcloud.translate",
+        });
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_RoutesEveryNativeRoutedCatalogProcess()
+    {
+        // Cross-project honesty: the managed-side CatalogExecutableConformanceTests
+        // proves these native-routed ids are ABSENT from the lean dispatcher; here we
+        // prove the GDAL worker actually routes every native-profile catalog process,
+        // so a catalog entry can never claim native execution with no worker executor.
+        using var provider = BuildProvider(static (services, config) =>
+            services.AddGdalProcessExecutors(config));
+
+        var supported = provider
+            .GetServices<IProcessExecutor>()
+            .SelectMany(e => e.ProcessIds)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var catalog = new BuiltInProcessCatalog();
+        var nativeRouted = catalog.ListProcesses()
+            .Where(p => RuntimeProfiles.Normalize(p.RuntimeProfile) == RuntimeProfiles.Native)
+            .Select(p => p.ProcessId)
+            .ToList();
+
+        nativeRouted.Should().NotBeEmpty("the catalog advertises native-routed processes");
+        foreach (var processId in nativeRouted)
+        {
+            supported.Should().Contain(
+                processId,
+                $"the catalog advertises native-routed '{processId}', so the GDAL worker dispatcher must route it");
+        }
     }
 
     private static string[] ExecutorTypeNames(IServiceProvider provider)
