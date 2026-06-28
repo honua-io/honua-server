@@ -101,6 +101,11 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
             }
         }
 
+        if (!GdalNoData.TryReadExplicitNoData(parameters, out var explicitNoData, out var noDataError))
+        {
+            return JobExecutionResult.Failed($"Invalid reclassify inputs: {noDataError}");
+        }
+
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
@@ -124,6 +129,14 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
                 args.Add("--type");
                 args.Add(dataType);
             }
+
+            // Propagate NoData: explicit override, else the source's band NoData
+            // (best-effort). --hideNoData is never used (it would DISABLE masking).
+            var effectiveNoData = explicitNoData
+                ?? await GdalNoData.TryReadSourceNoDataAsync(
+                    runner, inputPath, workspace, opts.ToolTimeout, cancellationToken).ConfigureAwait(false);
+            GdalNoData.AppendNoDataArg(args, effectiveNoData);
+
             args.Add("--overwrite");
             args.Add("--quiet");
             args.Add("--outfile");

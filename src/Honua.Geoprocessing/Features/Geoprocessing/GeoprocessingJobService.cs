@@ -47,6 +47,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IScopedJobTokenIssuer? _scopedJobTokenIssuer;
     private readonly IOptionsMonitor<CustomCodeOptions>? _customCodeOptions;
     private readonly CustomCodeSubmitCoordinator? _customCodeCoordinator;
+    private readonly IGeoprocessingRasterSourceResolver? _rasterSourceResolver;
 
     public GeoprocessingJobService(
         IUniversalProgressStore progressStore,
@@ -65,7 +66,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IGeoprocessingResultPackageStore? resultPackageStore = null,
         IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
         IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
-        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null)
+        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
+        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -86,6 +88,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _customCodeCoordinator = scopedJobTokenIssuer is null
             ? null
             : new CustomCodeSubmitCoordinator(scopedJobTokenIssuer, customCodeSignatureVerifier);
+        _rasterSourceResolver = rasterSourceResolver;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -138,10 +141,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        var destructiveProcessId = ProcessDestructiveClassifier.FindFirstDestructiveProcessId(plan);
-        if (destructiveProcessId != null)
+        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan);
+        if (approvalGatedProcessId != null)
         {
-            GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", destructiveProcessId);
+            GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", approvalGatedProcessId);
         }
 
         var approvalReq = _approvalEvaluator.Evaluate(
@@ -150,7 +153,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             {
                 ResourceType = OperatorResourceType.Process,
                 Operation = OperatorOperation.Execute,
-                IsDestructive = destructiveProcessId != null
+                IsDestructive = approvalGatedProcessId != null
             });
 
         var result = new PlanValidationResult
@@ -190,6 +193,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IReadOnlyDictionary<string, string>? protocolMetadata = null,
         CancellationToken cancellationToken = default)
     {
+        // Centralize submit-path authorization here so every adapter (GPServer,
+        // OGC Processes, MCP, and the AnalysisContent run/rerun paths) is gated
+        // through the shared pipeline rather than relying on caller discipline
+        // (#2263). Adapters that already call EnsureCallerAuthorizedAsync before
+        // submit stay correct — this evaluation is idempotent and never
+        // double-fails an authorized caller.
+        await EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Process,
+            OperatorOperation.Execute,
+            cancellationToken).ConfigureAwait(false);
+
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
 
@@ -211,6 +226,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan);
+
+        // Resolve any native raster/surface step that references a registered catalog
+        // raster by layerId/rasterId, materializing the bytes onto the canonical base64
+        // 'source' input the worker reads (#2264). The fingerprint above is computed on
+        // the caller's original (reference-carrying) plan so idempotency keys map to the
+        // request, not the resolved payload; the spec below carries the resolved bytes.
+        plan = await GeoprocessingRasterSourceResolution.ResolveAsync(
+            plan,
+            _processCatalog,
+            _rasterSourceResolver,
+            _executorOptions.CurrentValue.MaxArtifactBytes,
+            cancellationToken).ConfigureAwait(false);
 
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)
@@ -1046,10 +1073,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private void EnsureApproved(ClaimsPrincipal principal, AnalysisPlan plan)
     {
-        var destructiveProcessId = ProcessDestructiveClassifier.FindFirstDestructiveProcessId(plan);
-        if (destructiveProcessId != null)
+        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan);
+        if (approvalGatedProcessId != null)
         {
-            GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", destructiveProcessId);
+            GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", approvalGatedProcessId);
         }
 
         var approval = _approvalEvaluator.Evaluate(
@@ -1058,7 +1085,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             {
                 ResourceType = OperatorResourceType.Process,
                 Operation = OperatorOperation.Execute,
-                IsDestructive = destructiveProcessId != null
+                IsDestructive = approvalGatedProcessId != null
             });
 
         if (!approval.IsRequired)

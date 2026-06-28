@@ -893,6 +893,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("sources", "Sources", "One or more source rasters as base64-encoded GeoTIFFs separated by '|', bound to band variables A, B, C, … in order. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
                 Param("expression", "Expression", "Allow-listed map-algebra expression over the band variables (e.g. '(A-B)/(A+B)'). Required.", ProcessParameterValueType.Text, required: true),
                 Param("dataType", "Output Type", "Optional GDAL output data type. Allowed values: Byte, Int16, UInt16, Int32, UInt32, Float32, Float64.", ProcessParameterValueType.Text),
+                Param("noData", "NoData Value", "Optional output NoData value tagged on the result band and used to fill masked cells. When omitted, the first source raster's band NoData is detected and propagated. Each input is masked by its own NoData by default.", ProcessParameterValueType.FloatingPoint),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
@@ -913,6 +914,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("swir", "SWIR Band", "Short-wave-infrared-band raster as a base64-encoded GeoTIFF. Required by NDBI.", ProcessParameterValueType.Text),
                 Param("blue", "Blue Band", "Blue-band raster as a base64-encoded GeoTIFF. Required by EVI.", ProcessParameterValueType.Text),
                 Param("L", "Soil Factor (SAVI)", "SAVI soil-adjustment factor in the closed range [0, 1]. Defaults to 0.5. Ignored by other indices.", ProcessParameterValueType.FloatingPoint, defaultValue: "0.5"),
+                Param("noData", "NoData Value", "Optional output NoData value tagged on the index band and used to fill masked cells. When omitted, the first band-role raster's band NoData is detected and propagated.", ProcessParameterValueType.FloatingPoint),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
@@ -929,6 +931,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("remap", "Remap Table", "Reclassification table: ';'-separated 'value:newValue' or 'lo..hi:newValue' entries (e.g. '0..10:1;10..20:2'). Required.", ProcessParameterValueType.Text, required: true),
                 Param("defaultValue", "Default Value", "Optional output value for pixels matching no remap entry. When omitted, unmatched pixels keep their original value.", ProcessParameterValueType.FloatingPoint),
                 Param("dataType", "Output Type", "Optional GDAL output data type. Allowed values: Byte, Int16, UInt16, Int32, UInt32, Float32, Float64.", ProcessParameterValueType.Text),
+                Param("noData", "NoData Value", "Optional output NoData value tagged on the result band and used to fill masked cells. When omitted, the source raster's band NoData is detected and propagated.", ProcessParameterValueType.FloatingPoint),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
@@ -1705,17 +1708,18 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     ];
 
     // Native worker raster source selector for surface.* and raster.* entries.
-    // The native GDAL worker reads a base64 GeoTIFF directly from 'source';
-    // layer-resolved sourcing (`layerId`/`rasterId`) is a follow-on, so both are
-    // declared OPTIONAL here even though future submit-side resolution will
-    // populate `source` from them. Marking `source` as REQUIRED keeps the
-    // catalog honest about what the worker accepts today: plans that omit
-    // `source` would route to the native worker and fail at runtime.
+    // The native GDAL worker reads a base64 GeoTIFF directly from 'source'. As of
+    // #2264 the submit path also resolves a registered catalog raster from
+    // `layerId`/`rasterId` and materializes it onto `source` before dispatch, so a
+    // plan must supply EXACTLY ONE of: an inline `source`, a `layerId`, or a
+    // `rasterId`. `source` is therefore declared OPTIONAL and the "supply one of"
+    // rule is enforced by ValidateSharedRasterSourceSemantics so a plan that omits
+    // all three is rejected at submit time rather than failing in the worker.
     private static readonly ProcessParameterSpec[] NativeRasterSourceParameters =
     [
-        Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Required by the native worker execution path; layer-resolved sourcing (layerId/rasterId) is a follow-on.", ProcessParameterValueType.Text, required: true),
-        Param("layerId", "Layer", "Target raster layer identifier. Optional today; reserved for submit-time layer-to-source resolution (a follow-on).", ProcessParameterValueType.LayerId),
-        Param("rasterId", "Raster", "Optional raster identifier. Reserved for submit-time layer-to-source resolution (a follow-on). When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
+        Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Supply this OR a layerId/rasterId that resolves to a registered catalog raster.", ProcessParameterValueType.Text),
+        Param("layerId", "Layer", "Catalog raster layer identifier. Resolved at submit time to the layer's registered raster (newest registration when several exist). Supply this OR an inline source / rasterId.", ProcessParameterValueType.LayerId),
+        Param("rasterId", "Raster", "Registered raster identifier. Resolved at submit time to the registered raster bytes. Supply this OR an inline source / layerId. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
     ];
 
     private static ProcessParameterSpec Param(
