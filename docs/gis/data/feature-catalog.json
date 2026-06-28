@@ -1590,6 +1590,22 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-geoprocessing-tools-usage-ranking",
+      "route": "/api/v1/admin/geoprocessing/tools/usage-ranking",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GeoprocessingUsageEndpointsTests.GetUsageRanking_AfterRecordingInvocations_RanksMostInvokedFirst",
+        "Honua.Server.Tests.Features.Admin.GeoprocessingUsageEndpointsTests.GetUsageRanking_WithLimit_TruncatesToRequestedCount",
+        "Honua.Server.Tests.Features.Admin.GeoprocessingUsageEndpointsTests.GetUsageRanking_WithNonPositiveLimit_Returns400",
+        "Honua.Server.Tests.Features.Admin.GeoprocessingUsageEndpointsTests.GetUsageRanking_WithoutAdminAuth_IsUnauthorized"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-identity-providers",
       "route": "/api/v1/admin/identity/providers",
       "method": "GET",
