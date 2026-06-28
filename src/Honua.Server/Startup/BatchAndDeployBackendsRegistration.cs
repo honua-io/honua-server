@@ -37,11 +37,16 @@ internal static class BatchAndDeployBackendsRegistration
 
         // Multi-provider deploy telemetry gate. The dispatcher selects a provider evaluator by the
         // telemetry connection's Provider; Prometheus is always available, CloudWatch is added with
-        // the rest of the AWS surface.
+        // the rest of the AWS surface, and Azure Monitor with the Azure surface so Azure deploy
+        // backends get the same health-gated rollback parity as AWS.
         services.AddSingleton<IDeployTelemetryProviderEvaluator, PrometheusDeployTelemetryProviderEvaluator>();
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<ICloudWatchMetricClient, AwsSdkCloudWatchMetricClient>();
         services.AddSingleton<IDeployTelemetryProviderEvaluator, CloudWatchDeployTelemetryProviderEvaluator>();
+#endif
+#if !HONUA_EXCLUDE_AZURE
+        services.AddSingleton<IAzureMonitorMetricClient, AzureMonitorLogsQueryClient>();
+        services.AddSingleton<IDeployTelemetryProviderEvaluator, AzureMonitorDeployTelemetryProviderEvaluator>();
 #endif
         // Provider-independent synthetic /healthz/ready gate inherited by every deploy backend.
         services.AddSingleton<IDeployHealthProbe, HttpDeployHealthProbe>();
