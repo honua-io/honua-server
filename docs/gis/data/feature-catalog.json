@@ -7703,6 +7703,25 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-attributes-fieldkey-attributeid-int",
+      "route": "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
+      "method": "GET",
+      "family": "I3S",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_CommunityEdition_Returns403",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_EnterpriseEdition_ReturnsObjectIdAttributeFile",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_SceneWithNoTranscodableGeometry_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_UnknownAttributeId_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_UnknownField_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_UnknownLayerId_Returns404"
+      ],
+      "proof_ledger_surface": "i3s-sceneserver",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-geometries-geometryid-int",
       "route": "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
       "method": "GET",
@@ -9809,6 +9828,19 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodePage_ScenesAlias_CommunityEdition_Returns403",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodePage_ScenesAlias_EnterpriseEdition_ReturnsNodePage"
+      ],
+      "proof_ledger_surface": "scenes-3dtiles",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-attributes-fieldkey-attributeid-int",
+      "route": "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
+      "method": "GET",
+      "family": "3D-Tiles",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_AtScenesAlias_ReturnsObjectIdAttributeFile"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented"
