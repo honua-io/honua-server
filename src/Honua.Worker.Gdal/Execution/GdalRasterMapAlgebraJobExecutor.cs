@@ -105,16 +105,26 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
             }
         }
 
+        if (!GdalNoData.TryReadExplicitNoData(parameters, out var explicitNoData, out var noDataError))
+        {
+            return JobExecutionResult.Failed($"Invalid map-algebra inputs: {noDataError}");
+        }
+
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             var outputPath = Path.Combine(workspace, "output.tif");
+            var firstInputPath = "";
             var args = new List<string>(sources.Count * 2 + 8);
             for (var i = 0; i < sources.Count; i++)
             {
                 var letter = (char)('A' + i);
                 var inputPath = Path.Combine(workspace, $"input{i.ToString(CultureInfo.InvariantCulture)}.tif");
                 await File.WriteAllBytesAsync(inputPath, sources[i], cancellationToken).ConfigureAwait(false);
+                if (i == 0)
+                {
+                    firstInputPath = inputPath;
+                }
                 args.Add($"-{letter}");
                 args.Add(inputPath);
             }
@@ -128,6 +138,15 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
                 args.Add("--type");
                 args.Add(dataType);
             }
+
+            // Propagate NoData: explicit override, else the first source's band NoData
+            // (best-effort). Passing a real --NoDataValue tags the output band and fills
+            // gdal_calc's default-masked cells with it; --hideNoData is never used.
+            var effectiveNoData = explicitNoData
+                ?? await GdalNoData.TryReadSourceNoDataAsync(
+                    runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken).ConfigureAwait(false);
+            GdalNoData.AppendNoDataArg(args, effectiveNoData);
+
             args.Add("--overwrite");
             args.Add("--quiet");
             args.Add("--outfile");

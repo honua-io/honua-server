@@ -389,6 +389,45 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_SinkProcessRequiresApproval_ThrowsApprovalException()
+    {
+        // A sink/write process must pass the same approval gate as a destructive
+        // mutation (#2262). The evaluator requires approval only when the request
+        // is flagged destructive, so this asserts the submit path raises that flag
+        // for a sink plan that materializes data into a caller-owned destination.
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
+            .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
+
+        var act = async () => await _sut.SubmitJobAsync(CreateSinkPlan(), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CallerNotAuthorized_ThrowsAuthorizationException()
+    {
+        // The submit path centralizes Process/Execute authorization (#2263) so a
+        // forbidden caller is rejected before any job record is created, regardless
+        // of which adapter (or none) authorized first.
+        _authEvaluator
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden()));
+
+        var act = async () => await _sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithConfiguredWorkload_SubmitsToMatchingBackendAndPersistsState()
     {
         var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
@@ -2651,6 +2690,30 @@ public sealed class GeoprocessingJobServiceTests
                     ["wkb"] = "AAAA",
                     ["srid"] = "4326",
                     ["distance"] = "100"
+                }
+            }
+        ]
+    };
+
+    private static AnalysisPlan CreateSinkPlan() => new()
+    {
+        PlanId = "plan-sink",
+        IntentId = "intent-sink",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-sink",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "sink.honua-layer",
+                Inputs = new Dictionary<string, string>
+                {
+                    // Minimal canonical geo+json data URI ({"type":"FeatureCollection","features":[]}).
+                    ["input"] =
+                        "data:application/geo+json;base64," +
+                        "eyJ0eXBlIjoiRmVhdHVyZUNvbGxlY3Rpb24iLCJmZWF0dXJlcyI6W119",
+                    ["layer"] = "sink_layer",
+                    ["targetSrid"] = "4326"
                 }
             }
         ]
