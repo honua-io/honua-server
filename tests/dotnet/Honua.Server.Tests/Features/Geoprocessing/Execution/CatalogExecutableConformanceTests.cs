@@ -73,6 +73,8 @@ public sealed class CatalogExecutableConformanceTests
         "analytics.cluster-managed",
         "analytics.buffer-aggregate-managed",
         "analytics.density-managed",
+        // Spatial-statistics tool pack (#2142): Hot Spot Analysis (Getis-Ord Gi*).
+        "analytics.hotspot-managed",
         // Layer-aware overlay tool pack (#2206, #2139): managed NTS, two
         // FeatureCollections in, one FeatureCollection/table out.
         "overlay.clip",
@@ -383,6 +385,7 @@ public sealed class CatalogExecutableConformanceTests
             new ManagedClusterExecutor(monitor),
             new ManagedBufferAggregateExecutor(monitor),
             new ManagedDensityExecutor(monitor),
+            new ManagedHotSpotExecutor(monitor),
             new OverlayClipExecutor(monitor),
             new OverlayIntersectExecutor(monitor),
             new OverlayUnionExecutor(monitor),
