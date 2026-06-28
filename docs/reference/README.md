@@ -22,4 +22,5 @@ Lookup material for Honua's public surfaces: protocols, the admin API, configura
 | [OpenAPI and the explorer](openapi-and-explorer.md) | Runtime OpenAPI endpoints, `/docs`, and the pinned spec bundles. |
 | [Versioning and support](versioning-and-support.md) | Admin API versioning, deprecation lifecycle, protocol and gRPC stability. |
 | [Integration patterns](integration-patterns.md) | Capability discovery, pagination, polling vs webhooks, auth, idempotent loads. |
+| [Saved-map collaboration op-log](saved-map-collaboration-op-log.md) | Durable collaborative-edit operation log: envelope, cursors, idempotency, replay, conflict/LWW semantics, resync, authorization. |
 | [Control plane migration guide](control-plane-migration-guide.md) | SDK generation and breaking-change upgrade flow for the admin API. |
