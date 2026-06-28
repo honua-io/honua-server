@@ -126,6 +126,15 @@ internal static partial class AdminLog
     public static partial void GeocodingProviderHealthQueried(ILogger logger);
 
     /// <summary>
+    /// Log when the geoprocessing tool usage ranking is queried.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4082,
+        Level = LogLevel.Debug,
+        Message = "Geoprocessing tool usage ranking queried, returned {Count} tools")]
+    public static partial void GeoprocessingUsageRankingQueried(ILogger logger, int count);
+
+    /// <summary>
     /// Log when feature overview is queried.
     /// </summary>
     [LoggerMessage(
