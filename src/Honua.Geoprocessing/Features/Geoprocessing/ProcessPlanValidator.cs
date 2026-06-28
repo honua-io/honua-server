@@ -1016,6 +1016,7 @@ internal static partial class ProcessPlanValidator
         }
 
         ValidateCalcDataType(step, violations);
+        RequireFiniteDouble(step, "noData", violations);
     }
 
     private static void ValidateRasterSpectralIndexSemantics(
@@ -1054,6 +1055,7 @@ internal static partial class ProcessPlanValidator
         }
 
         RequireDoubleInClosedRange(step, "L", 0d, 1d, "(soil factor)", violations);
+        RequireFiniteDouble(step, "noData", violations);
     }
 
     private static void ValidateRasterReclassifySemantics(
@@ -1071,6 +1073,7 @@ internal static partial class ProcessPlanValidator
 
         RequireFiniteDouble(step, "defaultValue", violations);
         ValidateCalcDataType(step, violations);
+        RequireFiniteDouble(step, "noData", violations);
     }
 
     private static void ValidateProximityEuclideanDistanceSemantics(
@@ -1377,6 +1380,25 @@ internal static partial class ProcessPlanValidator
         List<GeoprocessingValidationFailure> violations)
     {
         ValidatePositiveLong(step, "rasterId", violations);
+
+        // The native worker reads a base64 'source'; the submit path can also
+        // materialize 'source' from a registered catalog raster referenced by
+        // 'layerId' or 'rasterId' (#2264). A plan that supplies NONE of the three
+        // would route to the worker with no readable input and fail there, so the
+        // catalog rejects it at submit-time validation instead. (The base required
+        // loop no longer enforces 'source' because it is now optional.)
+        var hasSource = step.Inputs.TryGetValue("source", out var source) && !string.IsNullOrWhiteSpace(source);
+        var hasLayerId = step.Inputs.TryGetValue("layerId", out var layerId) && !string.IsNullOrWhiteSpace(layerId);
+        var hasRasterId = step.Inputs.TryGetValue("rasterId", out var rasterId) && !string.IsNullOrWhiteSpace(rasterId);
+        if (!hasSource && !hasLayerId && !hasRasterId)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "MISSING_REQUIRED_PARAMETER",
+                Message = $"Step '{step.StepId}' requires an inline 'source' raster or a 'layerId'/'rasterId' that resolves to a registered catalog raster for process '{step.ProcessId}'.",
+                FieldPath = $"steps[{step.StepId}].inputs.source"
+            });
+        }
     }
 
     // pcloud.translate decompresses LAZ/COPC and, when a projected source CRS is

@@ -47,6 +47,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IScopedJobTokenIssuer? _scopedJobTokenIssuer;
     private readonly IOptionsMonitor<CustomCodeOptions>? _customCodeOptions;
     private readonly CustomCodeSubmitCoordinator? _customCodeCoordinator;
+    private readonly IGeoprocessingRasterSourceResolver? _rasterSourceResolver;
 
     public GeoprocessingJobService(
         IUniversalProgressStore progressStore,
@@ -65,7 +66,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IGeoprocessingResultPackageStore? resultPackageStore = null,
         IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
         IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
-        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null)
+        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
+        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -86,6 +88,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _customCodeCoordinator = scopedJobTokenIssuer is null
             ? null
             : new CustomCodeSubmitCoordinator(scopedJobTokenIssuer, customCodeSignatureVerifier);
+        _rasterSourceResolver = rasterSourceResolver;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -211,6 +214,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan);
+
+        // Resolve any native raster/surface step that references a registered catalog
+        // raster by layerId/rasterId, materializing the bytes onto the canonical base64
+        // 'source' input the worker reads (#2264). The fingerprint above is computed on
+        // the caller's original (reference-carrying) plan so idempotency keys map to the
+        // request, not the resolved payload; the spec below carries the resolved bytes.
+        plan = await GeoprocessingRasterSourceResolution.ResolveAsync(
+            plan,
+            _processCatalog,
+            _rasterSourceResolver,
+            _executorOptions.CurrentValue.MaxArtifactBytes,
+            cancellationToken).ConfigureAwait(false);
 
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)

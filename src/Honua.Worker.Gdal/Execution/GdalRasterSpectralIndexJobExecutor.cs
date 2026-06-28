@@ -98,10 +98,16 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
             return JobExecutionResult.Failed($"Invalid spectral-index inputs: {buildError}");
         }
 
+        if (!GdalNoData.TryReadExplicitNoData(parameters, out var explicitNoData, out var noDataError))
+        {
+            return JobExecutionResult.Failed($"Invalid spectral-index inputs: {noDataError}");
+        }
+
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             var outputPath = Path.Combine(workspace, "output.tif");
+            var firstInputPath = "";
             var args = new List<string>(roles.Count * 2 + 8);
             for (var i = 0; i < roles.Count; i++)
             {
@@ -114,6 +120,10 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
 
                 var inputPath = Path.Combine(workspace, $"{roles[i]}.tif");
                 await File.WriteAllBytesAsync(inputPath, bytes, cancellationToken).ConfigureAwait(false);
+                if (i == 0)
+                {
+                    firstInputPath = inputPath;
+                }
                 args.Add($"-{letter}");
                 args.Add(inputPath);
             }
@@ -122,6 +132,15 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
             args.Add(calc);
             args.Add("--type");
             args.Add("Float32");
+
+            // Propagate NoData: explicit override, else the first band-role raster's
+            // band NoData (best-effort). --hideNoData is never used (it would DISABLE
+            // gdal_calc's per-input masking).
+            var effectiveNoData = explicitNoData
+                ?? await GdalNoData.TryReadSourceNoDataAsync(
+                    runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken).ConfigureAwait(false);
+            GdalNoData.AppendNoDataArg(args, effectiveNoData);
+
             args.Add("--overwrite");
             args.Add("--quiet");
             args.Add("--outfile");

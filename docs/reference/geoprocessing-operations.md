@@ -5,7 +5,8 @@ Catalog of the built-in geoprocessing processes (process catalog `honua.process_
 Execution notes that apply across families:
 
 - **Runtime profile.** Processes marked *native* below execute out-of-process in the heavyweight GDAL worker image; the lean GDAL-free serving image validates their plans but never executes them. A deployment without the GDAL worker cannot run them.
-- **Raster sourcing.** Native raster/surface processes currently read the raster as base64-encoded GeoTIFF bytes on the `source` parameter; layer-resolved sourcing (`layerId`/`rasterId`) is declared but not yet wired.
+- **Raster sourcing.** Native raster/surface processes accept the raster either as base64-encoded GeoTIFF bytes on the `source` parameter, or by reference to a registered catalog raster via `layerId`/`rasterId` (#2264). Layer/raster references are resolved on the submit side and materialized onto `source` before dispatch, so a plan must supply exactly one of `source`, `layerId`, or `rasterId`. Layer-resolved sourcing requires a configured raster catalog; deployments without one must supply an inline `source`.
+- **NoData (raster calc).** `raster.map-algebra`, `raster.spectral-index`, and `raster.reclassify` propagate NoData: each input is masked by its own NoData, and the output band is tagged with an explicit `noData` value when supplied, otherwise with the first source raster's detected band NoData (#2267).
 - **Inline FeatureCollections.** `*-managed`, `transform.*`, `source.*`, and `sink.*` processes exchange features as `data:application/geo+json;base64` data URIs so they compose as workflow nodes.
 - **Approval gate.** `data-management.delete-features` and `data-management.calculate-field` are destructive and require operator approval.
 - **Admission.** Submissions pass through admission control (`ExecutionAdmission__*` — see [environment variables](configuration/environment-variables.md#admission-and-pooling)).
