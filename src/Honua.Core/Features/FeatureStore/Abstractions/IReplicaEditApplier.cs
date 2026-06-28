@@ -25,11 +25,17 @@ public interface IReplicaEditApplier
     /// <param name="serviceId">Service the layer belongs to.</param>
     /// <param name="publicLayerId">Service-local layer id the edits target.</param>
     /// <param name="edits">Resolved edits to apply (conflicting edits already filtered when skipped).</param>
+    /// <param name="rollbackOnFailure">
+    /// When true, the layer's edits are applied atomically so a single failing row rolls back the whole
+    /// batch (leaving the layer's server state unchanged); when false, edits apply best-effort per row
+    /// (#2136).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The per-layer apply result.</returns>
     Task<ReplicaLayerApplyResult> ApplyAsync(
         string serviceId,
         int publicLayerId,
         ImmutableArray<ReplicaUploadEdit> edits,
+        bool rollbackOnFailure,
         CancellationToken cancellationToken = default);
 }

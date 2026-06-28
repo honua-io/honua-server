@@ -65,7 +65,15 @@ public sealed class ProcessCatalogTests
         // FeatureCollection canonicalization) added for the honua-worker-etl format
         // breadth (ADR-0038 roadmap F).
         // Round-5 (72) ∪ Round-4 (69) = 82 distinct processes (59 shared).
-        all.Should().HaveCount(82);
+        // + 4 native-profile raster analysis tool pack ops (raster.resample,
+        // raster.interpolate-idw, raster.interpolate-kriging, raster.mosaic) added
+        // by #2141.
+        // + 9 native-profile raster analysis & terrain ops added by #2239/#2240:
+        // raster.map-algebra, raster.spectral-index, raster.reclassify (#2239);
+        // proximity.euclidean-distance, proximity.euclidean-allocation,
+        // surface.contour, surface.viewshed, conversion.polygonize,
+        // conversion.rasterize (#2240).
+        all.Should().HaveCount(95);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 

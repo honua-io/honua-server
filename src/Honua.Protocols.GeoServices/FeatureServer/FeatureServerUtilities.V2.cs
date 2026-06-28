@@ -95,6 +95,7 @@ internal static partial class FeatureServerEndpoints
             HasGeometryProperties = hasGeometry,
             AllowGeometryUpdates = supportsEditing,
             SyncEnabled = ServiceSupportsSyncV2(service),
+            SyncCapabilities = ServiceSupportsSyncV2(service) ? new FeatureServerSyncCapabilities() : null,
             HasVersionedData = branchVersioningEnabled,
             IsDataVersioned = branchVersioningEnabled,
             SupportsBranchVersioning = branchVersioningEnabled,

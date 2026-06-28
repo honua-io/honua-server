@@ -31,6 +31,34 @@ grpcurl -plaintext -d '{"serviceId":"roads","layerId":0,"where":"1=1"}' \
   server.example.com:8081 geospatial.v1.FeatureService/QueryFeatures
 ```
 
+## Feature query result contract (REST parity)
+
+`QueryFeatures` (`QueryFeaturesResponse`) and `QueryFeaturesStream` (the first
+`FeaturePage`) carry the same descriptive metadata that the GeoServices REST
+`query` response returns inline, so clients reach result parity without a
+separate layer-metadata round trip:
+
+| Field | Meaning |
+| --- | --- |
+| `spatial_reference` | The spatial reference of the returned geometries. Reflects the requested `out_sr` when supplied, otherwise the layer's spatial reference. |
+| `geometry_type` | The layer geometry type (`POINT`, `POLYLINE`/line, `POLYGON`, multi variants, or `NONE` for tables). |
+| `object_id_field_name` | The primary object-id field name (defaults to `objectid`). |
+| `fields` | Field definitions (name, type, length, nullability) for every non-geometry attribute field. |
+
+Notes:
+
+- For streaming queries the metadata is populated **only on the first
+  `FeaturePage`**; subsequent pages set `is_last_page` and feature payloads only.
+- `fields` is emitted for full feature payloads. The `return_count_only`,
+  `return_ids_only`, and `return_extent_only` shapes return the relevant scalar
+  (`count`, `object_ids`, `extent`) and still carry `spatial_reference` /
+  `geometry_type`, but omit `fields`.
+- Metadata-fallback contract: if a client is pinned to an older `Geospatial.Grpc`
+  package whose `geospatial.v1` messages predate one of these fields, that field
+  is absent (proto3 implicit default) and the client should fall back to the
+  layer metadata surface (`FeatureService` reflection / the REST layer document)
+  for the missing descriptor. Current `geospatial.v1` carries all four fields.
+
 ## Versioning and deprecation policy
 
 Every protobuf package carries a major-version suffix (`geospatial.v1`, future `geospatial.v2`); a service lives under exactly one major version, and versions are hosted side by side.

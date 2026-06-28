@@ -88,6 +88,24 @@ internal static partial class FeatureEventsAndStreamingRegistration
         services.AddOptions<FeatureChangeEventSinkOptions>()
             .Bind(configuration.GetSection(FeatureChangeEventSinkOptions.SectionName));
         services.AddSingleton<IFeatureChangeEventSink, NoOpFeatureChangeEventSink>();
+
+        // Kafka sink adapter (#357). Bound and validated always, but the producer
+        // and sink are only registered when the adapter is enabled so deployments
+        // without Kafka never construct a broker client. The sink publishes with an
+        // idempotent producer (producer-side exactly-once) and routes failed
+        // deliveries to a dead-letter topic.
+        services.AddOptions<KafkaFeatureChangeEventSinkOptions>()
+            .Bind(configuration.GetSection(KafkaFeatureChangeEventSinkOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<
+            IValidateOptions<KafkaFeatureChangeEventSinkOptions>,
+            KafkaFeatureChangeEventSinkOptionsValidator>();
+        if (configuration.GetValue<bool>($"{KafkaFeatureChangeEventSinkOptions.SectionName}:Enabled"))
+        {
+            services.AddSingleton<IKafkaEventProducer, ConfluentKafkaEventProducer>();
+            services.AddSingleton<IFeatureChangeEventSink, KafkaFeatureChangeEventSink>();
+        }
+
         services.AddSingleton<FeatureChangeEventSinkBroadcaster>();
         services.AddSingleton<IFeatureChangeEventPublisher>(sp =>
             new FeatureStreamPublisher(

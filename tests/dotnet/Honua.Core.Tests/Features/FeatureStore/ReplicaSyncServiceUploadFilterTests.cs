@@ -66,15 +66,51 @@ public sealed class ReplicaSyncServiceUploadFilterTests
         tracker.FilteredCalls.Should().Be(0, "creates use server-assigned ids and cannot conflict");
     }
 
+    [UnitTest]
+    public async Task ApplyUpload_RollbackOnFailureRequested_FlowsThroughToEditApplier()
+    {
+        // The protocol adapter's rollbackOnFailure=true must reach the edit applier so the shared edit
+        // pipeline applies each layer's batch atomically (#2136).
+        var tracker = new RecordingChangeTracker();
+        var service = CreateService(tracker);
+        var applier = new CountingEditApplier();
+        var edits = ImmutableArray.Create(
+            new ReplicaUploadEdit(FeatureEditOperationKind.Create, ObjectId: null, Payload: null));
+        var request = CreateRequest(edits, rollbackOnFailure: true);
+
+        var report = await service.ApplyUploadAsync(request, applier);
+
+        report.Success.Should().BeTrue();
+        applier.LastRollbackOnFailure.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ApplyUpload_RollbackOnFailureDefault_DoesNotRequestAtomicApply()
+    {
+        var tracker = new RecordingChangeTracker();
+        var service = CreateService(tracker);
+        var applier = new CountingEditApplier();
+        var edits = ImmutableArray.Create(
+            new ReplicaUploadEdit(FeatureEditOperationKind.Create, ObjectId: null, Payload: null));
+        var request = CreateRequest(edits);
+
+        await service.ApplyUploadAsync(request, applier);
+
+        applier.LastRollbackOnFailure.Should().BeFalse("rollbackOnFailure defaults to false (best-effort per-row)");
+    }
+
     private static ReplicaSyncService CreateService(RecordingChangeTracker tracker)
         => new(tracker, new NoReviewConflictRepository(), NullLogger<ReplicaSyncService>.Instance);
 
-    private static ReplicaSyncRequest CreateRequest(ImmutableArray<ReplicaUploadEdit> edits) => new(
+    private static ReplicaSyncRequest CreateRequest(
+        ImmutableArray<ReplicaUploadEdit> edits,
+        bool rollbackOnFailure = false) => new(
         ReplicaId: "replica-1",
         ServiceId: "svc-1",
         Direction: ReplicaSyncDirection.Upload,
         BaseGeneration: 10,
-        LayerEdits: ImmutableArray.Create(new ReplicaUploadLayerEdits(PublicLayerId: 0, StorageLayerId: 10, edits)));
+        LayerEdits: ImmutableArray.Create(new ReplicaUploadLayerEdits(PublicLayerId: 0, StorageLayerId: 10, edits)),
+        RollbackOnFailure: rollbackOnFailure);
 
     private sealed class RecordingChangeTracker : IChangeTracker
     {
@@ -112,12 +148,16 @@ public sealed class ReplicaSyncServiceUploadFilterTests
 
     private sealed class CountingEditApplier : IReplicaEditApplier
     {
+        public bool? LastRollbackOnFailure { get; private set; }
+
         public Task<ReplicaLayerApplyResult> ApplyAsync(
             string serviceId,
             int publicLayerId,
             ImmutableArray<ReplicaUploadEdit> edits,
+            bool rollbackOnFailure,
             CancellationToken cancellationToken = default)
         {
+            LastRollbackOnFailure = rollbackOnFailure;
             var result = new ReplicaLayerApplyResult(
                 publicLayerId,
                 AppliedAdds: edits.Count(edit => edit.Kind == FeatureEditOperationKind.Create),

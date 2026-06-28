@@ -60,6 +60,10 @@
          registration to resolve the managed IProcessExecutor set Redis-free.
          Grant matches the CLI's AssemblyName (honua-gp), not its project name. -->
     <InternalsVisibleTo Include="honua-gp" />
+    <!-- Cross-project honesty check (#2253): the GDAL worker test asserts every
+         native-routed catalog process (BuiltInProcessCatalog) is routable by the
+         worker dispatcher, so it needs the internal catalog. -->
+    <InternalsVisibleTo Include="Honua.Worker.Gdal.Tests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

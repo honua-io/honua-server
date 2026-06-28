@@ -16,6 +16,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
     PropertyNameCaseInsensitive = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(FeatureServerResponse))]
+[JsonSerializable(typeof(FeatureServerSyncCapabilities))]
 [JsonSerializable(typeof(LayerResponse))]
 [JsonSerializable(typeof(LayerRelationshipInfo))]
 [JsonSerializable(typeof(LayerRelationshipInfo[]))]

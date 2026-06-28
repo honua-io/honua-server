@@ -48,8 +48,15 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
             services.RemoveAll<IChangeTracker>();
             services.RemoveAll<IReplicaStore>();
+            services.RemoveAll<IReplicaRepository>();
             services.AddSingleton<IChangeTracker, InMemoryChangeTracker>();
             services.AddSingleton<IReplicaStore, InMemoryReplicaStore>();
+            // The default host registers the Postgres-backed IReplicaRepository (which needs a real
+            // IAdoNetDatabaseConnectionProvider). This fixture has no real database, so substitute a
+            // persistence-capable in-memory repository. Without it, the replica write endpoints'
+            // RequireReplicaPersistenceSupport check (#2136) fails to resolve IReplicaRepository and
+            // surfaces a 500 instead of exercising RBAC/sync behavior.
+            services.AddSingleton<IReplicaRepository, InMemoryReplicaRepository>();
             services.AddScoped<ISecureConnectionRegistry, NullSecureConnectionRegistry>();
             services.AddScoped<IConnectionEncryptionService, NullConnectionEncryptionService>();
             services.AddScoped<ISecureConnectionResolver, NullSecureConnectionResolver>();
@@ -294,6 +301,64 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         public Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
             => Task.FromResult(_replicas.TryRemove(replicaId, out _));
+    }
+
+    /// <summary>
+    /// In-memory <see cref="IReplicaRepository"/> double that reports
+    /// <see cref="IReplicaRepository.SupportsReplicaPersistence"/> as <c>true</c> so the offline
+    /// replica sync surface is treated as supported (mirroring a Postgres-backed deployment) while
+    /// keeping all state in process. Replaces the host's Postgres-backed repository, which cannot be
+    /// constructed without a real database connection provider.
+    /// </summary>
+    private sealed class InMemoryReplicaRepository : IReplicaRepository
+    {
+        private readonly ConcurrentDictionary<string, ReplicaRecord> _records = new(StringComparer.OrdinalIgnoreCase);
+
+        public bool SupportsReplicaPersistence => true;
+
+        public Task UpsertAsync(ReplicaRecord record, CancellationToken cancellationToken = default)
+        {
+            _records[record.ReplicaId] = record;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> TryUpdateSyncStateAsync(
+            ReplicaRecord record,
+            long expectedLastSyncGeneration,
+            long expectedUploadBaseGeneration,
+            CancellationToken cancellationToken = default)
+        {
+            while (true)
+            {
+                if (!_records.TryGetValue(record.ReplicaId, out var current) ||
+                    current.LastSyncGeneration != expectedLastSyncGeneration ||
+                    current.UploadBaseGeneration != expectedUploadBaseGeneration)
+                {
+                    return Task.FromResult(false);
+                }
+
+                if (_records.TryUpdate(record.ReplicaId, record, current))
+                {
+                    return Task.FromResult(true);
+                }
+            }
+        }
+
+        public Task<ReplicaRecord?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_records.TryGetValue(replicaId, out var record) ? record : (ReplicaRecord?)null);
+        }
+
+        public Task<IReadOnlyList<ReplicaRecord>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default)
+        {
+            var matches = _records.Values
+                .Where(record => string.Equals(record.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<ReplicaRecord>>(matches);
+        }
+
+        public Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_records.TryRemove(replicaId, out _));
     }
 
     private sealed class AllowAllSqlFilterTranslator : ISqlFilterTranslator

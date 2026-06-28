@@ -327,6 +327,67 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/reconcile")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "reconcile")]
+    public async Task Reconcile_ByObjectDetection_CleanVersion_CanPost()
+    {
+        // A clean version reconciles cleanly under either detection mode; this exercises the
+        // conflictDetection=byObject parameter parsing on the reconcile endpoint (#2135).
+        var created = await CreateVersionAsync("admin.reconcile_byobject");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
+            ("conflictDetection", "byObject"), ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "reconcile with byObject detection should succeed; body: {0}", await response.Content.ReadAsStringAsync());
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("hasConflicts").GetBoolean().Should().BeFalse();
+        doc.RootElement.GetProperty("canPost").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/reconcile")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "reconcile")]
+    public async Task Reconcile_UnsupportedConflictDetection_ReturnsBadRequest()
+    {
+        var created = await CreateVersionAsync("admin.reconcile_bad_detection");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
+            ("conflictDetection", "byPlanet"), ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "an unsupported conflictDetection mode should be rejected; body: {0}", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/reconcile")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "reconcile")]
+    public async Task Reconcile_WithPost_CleanVersion_PostsInline()
+    {
+        // withPost=true posts the version in the same operation after a clean reconcile; the response
+        // echoes the post outcome (#2135).
+        var created = await CreateVersionAsync("admin.reconcile_withpost");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
+            ("withPost", "true"), ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "reconcile withPost should succeed; body: {0}", await response.Content.ReadAsStringAsync());
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("canPost").GetBoolean().Should().BeTrue();
+        doc.RootElement.GetProperty("hasConflicts").GetBoolean().Should().BeFalse();
+        doc.RootElement.GetProperty("posted").GetBoolean().Should().BeTrue("a clean reconcile with withPost posts inline");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/inspectConflicts")]
     [InterfaceOperation(TestProtocols.VersionManagementServer, "inspectConflicts")]
     public async Task InspectConflicts_CleanVersion_ReturnsNoConflicts()

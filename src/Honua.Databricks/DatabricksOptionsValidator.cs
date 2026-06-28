@@ -61,6 +61,16 @@ internal static class DatabricksOptionsValidator
             throw new InvalidOperationException("Databricks:PollIntervalMilliseconds must be positive.");
         }
 
+        if (options.MaxRetryAttempts < 0)
+        {
+            throw new InvalidOperationException("Databricks:MaxRetryAttempts must not be negative.");
+        }
+
+        if (options.RetryBaseDelayMilliseconds <= 0)
+        {
+            throw new InvalidOperationException("Databricks:RetryBaseDelayMilliseconds must be positive.");
+        }
+
         foreach (var layer in options.Layers)
         {
             DatabricksIdentifier.ValidateIdentifier(layer.Table);

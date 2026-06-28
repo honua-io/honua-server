@@ -84,7 +84,35 @@ public static class FeatureCatalog
 
         /// <summary>Server extensibility features — plugin/extension SDK.</summary>
         public const string Extensibility = "Extensibility";
+
+        /// <summary>High availability and disaster recovery — backup automation, failover, RTO/RPO reporting.</summary>
+        public const string DisasterRecovery = "DisasterRecovery";
     }
+
+    /// <summary>
+    /// Entitlement key for automated PostgreSQL backups — scheduled base backups plus
+    /// WAL archiving that enable point-in-time recovery (#356, ADR-0024). Enterprise-only.
+    /// </summary>
+    public const string BackupAutomationKey = "dr.backup-automation";
+
+    /// <summary>
+    /// Entitlement key for active-passive failover playbooks driven by automated health
+    /// checks against the primary serving surface (#356, ADR-0024). Enterprise-only.
+    /// </summary>
+    public const string FailoverPlaybooksKey = "dr.failover";
+
+    /// <summary>
+    /// Entitlement key for Redis cache-state backup and restore so warm cache contents
+    /// survive a regional failover (#356, ADR-0024). Enterprise-only.
+    /// </summary>
+    public const string CacheBackupKey = "dr.cache-backup";
+
+    /// <summary>
+    /// Entitlement key for RTO/RPO objective tracking and recovery-readiness reporting that
+    /// surfaces last-successful-backup, restorable point, and objective compliance to the
+    /// admin observability surface (#356, ADR-0024). Enterprise-only.
+    /// </summary>
+    public const string RecoveryReportingKey = "dr.rto-rpo-reporting";
 
     /// <summary>
     /// Entitlement key for agent-initiated operations under the Pro validation
@@ -394,5 +422,15 @@ public static class FeatureCatalog
         // AI — Enterprise (approval + policy on top of the validation layer)
         new(AiApprovalWorkflowsKey, "Agent Approval Workflows", Categories.Ai,
             HonuaEdition.Enterprise, "Human-in-the-loop approval, policy-scoped agent permissions, and immutable audit for agent-initiated operations."),
+
+        // Disaster Recovery — Enterprise (HA/DR: backup automation, failover, RTO/RPO reporting)
+        new(BackupAutomationKey, "Backup Automation", Categories.DisasterRecovery,
+            HonuaEdition.Enterprise, "Scheduled PostgreSQL base backups plus WAL archiving enabling point-in-time recovery."),
+        new(FailoverPlaybooksKey, "Failover Playbooks", Categories.DisasterRecovery,
+            HonuaEdition.Enterprise, "Active-passive failover playbooks driven by automated health checks against the primary serving surface."),
+        new(CacheBackupKey, "Cache State Backup", Categories.DisasterRecovery,
+            HonuaEdition.Enterprise, "Backup and restore Redis cache state so warm cache contents survive a regional failover."),
+        new(RecoveryReportingKey, "RTO/RPO Reporting", Categories.DisasterRecovery,
+            HonuaEdition.Enterprise, "Track recovery time and recovery point objectives and report recovery readiness, last successful backup, and restorable point."),
     ];
 }

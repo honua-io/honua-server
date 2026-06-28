@@ -49,6 +49,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      # Reclaim runner disk before the CodeQL build. The C# autobuild plus the
+      # security-extended query pack intermittently exhausts the hosted runner's
+      # disk ("No space left on device"); free large preinstalled toolchains first.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: false
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
         with:

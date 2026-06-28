@@ -2,12 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Identity;
 
@@ -38,6 +41,8 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
                 builder.UseSetting("Saml:EntityId", SamlTestAssertions.Audience);
                 builder.UseSetting("Saml:IdpEntityId", SamlTestAssertions.Issuer);
                 builder.UseSetting("Saml:AssertionConsumerServiceUrl", SamlTestAssertions.Audience + "/saml/acs");
+                builder.UseSetting("Saml:SingleLogoutServiceUrl", SamlTestAssertions.Audience + "/saml/slo");
+                builder.UseSetting("Saml:IdpSingleLogoutServiceUrl", "https://idp.example.com/slo");
                 builder.UseSetting("Saml:IdpSigningCertificate", base64Cert);
             });
     }
@@ -66,6 +71,87 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
         Assert.Contains("EntityDescriptor", body, StringComparison.Ordinal);
         Assert.Contains("AssertionConsumerService", body, StringComparison.Ordinal);
         Assert.Contains(SamlTestAssertions.Audience, body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /saml/metadata")]
+    public async Task Metadata_WhenSloConfigured_AdvertisesSingleLogoutService()
+    {
+        var response = await _client.GetAsync("/saml/metadata");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("SingleLogoutService", body, StringComparison.Ordinal);
+        Assert.Contains(SamlTestAssertions.Audience + "/saml/slo", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
+    public async Task Slo_ValidSignedLogoutRequest_TerminatesSessionAndRelaysResponse()
+    {
+        // Seed an authenticated SAML session, then drive an IdP-initiated single logout.
+        string sessionId;
+        await using (var scope = _fixture.Services.CreateAsyncScope())
+        {
+            var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+            sessionId = await sessionStore.CreateAuthenticatedSessionAsync(
+                "saml",
+                "opaque-token",
+                idToken: null,
+                [new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "slo-user@example.com" }],
+                DateTimeOffset.UtcNow.AddMinutes(5),
+                CancellationToken.None);
+        }
+
+        var samlRequest = SamlTestAssertions.CreateSignedLogoutRequest(_certificate, "slo-user@example.com");
+        using var client = _fixture.CreateClient(
+            c => c.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+
+        var response = await client.PostAsync(
+            "/saml/slo",
+            new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The LogoutResponse is relayed back to the IdP via an auto-submitting HTTP-POST form.
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("https://idp.example.com/slo", body, StringComparison.Ordinal);
+        Assert.Contains("SAMLResponse", body, StringComparison.Ordinal);
+
+        // The local session cookie is expired.
+        Assert.Contains(
+            response.Headers.GetValues("Set-Cookie"),
+            c => c.Contains(AdminAuthSessionStore.AuthSessionCookieName, StringComparison.Ordinal)
+                 && c.Contains("01 Jan 1970", StringComparison.Ordinal));
+
+        // The session record is removed from the store.
+        await using var verifyScope = _fixture.Services.CreateAsyncScope();
+        var verifyStore = verifyScope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        Assert.Null(await verifyStore.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
+    public async Task Slo_UnsignedLogoutRequest_IsRejected()
+    {
+        var samlRequest = SamlTestAssertions.CreateUnsignedLogoutRequest("attacker@example.com");
+
+        var response = await _client.PostAsync(
+            "/saml/slo",
+            new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest }));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
+    public async Task Slo_MissingSamlRequest_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsync(
+            "/saml/slo",
+            new FormUrlEncodedContent(new Dictionary<string, string> { ["RelayState"] = "x" }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [IntegrationTest]

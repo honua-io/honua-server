@@ -77,6 +77,14 @@ public readonly record struct ReplicaUploadLayerEdits(
 /// <param name="SyncOperationId">Optional correlation id linking produced conflicts to this call.</param>
 /// <param name="DeviceId">Optional uploading device identifier (conflict audit evidence).</param>
 /// <param name="UserId">Optional uploading user identifier (conflict audit evidence).</param>
+/// <param name="RollbackOnFailure">
+/// When true, each layer's uploaded edits are applied atomically (the shared edit pipeline wraps them
+/// in an explicit transaction) so a single failing row rolls back that layer's whole edit batch,
+/// leaving the layer's server state unchanged. Mirrors the Esri <c>rollbackOnFailure</c> sync
+/// parameter. The replica's sync cursor is only advanced when the upload succeeds, so a rolled-back
+/// upload leaves the replica re-syncable from its prior generation (#2136). Defaults to false to
+/// preserve the prior best-effort per-row behavior.
+/// </param>
 public readonly record struct ReplicaSyncRequest(
     string ReplicaId,
     string ServiceId,
@@ -86,7 +94,8 @@ public readonly record struct ReplicaSyncRequest(
     bool LastWriteWins = true,
     string? SyncOperationId = null,
     string? DeviceId = null,
-    string? UserId = null);
+    string? UserId = null,
+    bool RollbackOnFailure = false);
 
 /// <summary>
 /// A conflict detected while applying an uploaded replica edit: the client edit and a server edit to

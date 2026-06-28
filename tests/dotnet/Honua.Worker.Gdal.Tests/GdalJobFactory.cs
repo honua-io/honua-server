@@ -44,11 +44,11 @@ internal static class GdalJobFactory
         };
     }
 
-    public static IOptionsMonitor<GdalWorkerOptions> Options(string scratchRoot)
+    public static IOptionsMonitor<GdalWorkerOptions> Options(string scratchRoot, long maxArtifactBytes = 50L * 1024L * 1024L)
         => new StaticOptionsMonitor<GdalWorkerOptions>(new GdalWorkerOptions
         {
             ScratchRoot = scratchRoot,
-            MaxArtifactBytes = 50L * 1024L * 1024L,
+            MaxArtifactBytes = maxArtifactBytes,
             ToolTimeout = TimeSpan.FromMinutes(1),
         });
 

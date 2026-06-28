@@ -3,13 +3,18 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.Collaboration.Sessions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Collaboration.OperationLog;
 
@@ -30,7 +35,7 @@ public sealed class SavedMapOperationEndpointsTests
     [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/operations")]
     public async Task Append_AssignsMonotonicCursors_AndReplayReturnsThem()
     {
-        using var factory = CreateFactory();
+        using var factory = CreateFactory(allowEdit: true);
         using var client = CreateAdminClient(factory);
 
         var first = await AppendAsync(client, "op-1", baseCursor: 0);
@@ -57,7 +62,7 @@ public sealed class SavedMapOperationEndpointsTests
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     public async Task Append_DuplicateOperationId_IsIdempotent()
     {
-        using var factory = CreateFactory();
+        using var factory = CreateFactory(allowEdit: true);
         using var client = CreateAdminClient(factory);
 
         var first = await AppendAsync(client, "op-dupe", baseCursor: 0);
@@ -77,11 +82,36 @@ public sealed class SavedMapOperationEndpointsTests
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     public async Task Append_WithoutAuthentication_ReturnsUnauthorized()
     {
-        using var factory = CreateFactory();
+        using var factory = CreateFactory(allowEdit: true);
         using var client = factory.CreateClient();
 
         var response = await AppendAsync(client, "op-anon", baseCursor: 0);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    public async Task Append_WithoutSavedMapCapability_ReturnsForbidden()
+    {
+        // No permissive authorizer registered, so the default fail-closed authorizer denies an
+        // otherwise-authenticated principal: durable edits must be permission-checked per map.
+        using var factory = CreateFactory(allowEdit: false);
+        using var client = CreateAdminClient(factory);
+
+        var response = await AppendAsync(client, "op-forbidden", baseCursor: 0);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    public async Task Replay_WithoutSavedMapCapability_ReturnsForbidden()
+    {
+        using var factory = CreateFactory(allowEdit: false);
+        using var client = CreateAdminClient(factory);
+
+        using var response = await client.GetAsync(
+            $"/api/v1/saved-maps/{MapId}/collaboration/operations?since=0");
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     private static async Task<HttpResponseMessage> AppendAsync(HttpClient client, string operationId, long baseCursor)
@@ -105,7 +135,7 @@ public sealed class SavedMapOperationEndpointsTests
         return document.RootElement.Clone();
     }
 
-    private static WebApplicationFactory<Program> CreateFactory()
+    private static WebApplicationFactory<Program> CreateFactory(bool allowEdit)
     {
         return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
@@ -118,6 +148,17 @@ public sealed class SavedMapOperationEndpointsTests
                         ["HONUA_ADMIN_PASSWORD"] = AdminPassword
                     });
                 });
+
+                if (allowEdit)
+                {
+                    // The default authorizer is fail-closed, so happy-path durable edits need an
+                    // explicit permissive capability grant just like the session join tests.
+                    builder.ConfigureTestServices(services =>
+                    {
+                        services.RemoveAll<ISavedMapCollaborationAuthorizer>();
+                        services.AddSingleton<ISavedMapCollaborationAuthorizer, AllowSavedMapCollaborationAuthorizer>();
+                    });
+                }
             });
     }
 
@@ -126,5 +167,14 @@ public sealed class SavedMapOperationEndpointsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
         return client;
+    }
+
+    private sealed class AllowSavedMapCollaborationAuthorizer : ISavedMapCollaborationAuthorizer
+    {
+        public ValueTask<SavedMapCollaborationAuthorizationResult> AuthorizeJoinAsync(
+            string mapId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(SavedMapCollaborationAuthorizationResult.Allow());
     }
 }

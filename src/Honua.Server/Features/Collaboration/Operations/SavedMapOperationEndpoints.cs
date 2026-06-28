@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Collaboration.Sessions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Collaboration.Operations;
@@ -51,8 +52,15 @@ internal static class SavedMapOperationEndpoints
         string mapId,
         [FromBody] SavedMapOperationAppendApiRequest request,
         [FromServices] ISavedMapOperationLogRepository repository,
+        [FromServices] ISavedMapCollaborationAuthorizer authorizer,
         HttpContext context)
     {
+        var authorizationError = await AuthorizeAsync(mapId, authorizer, context).ConfigureAwait(false);
+        if (authorizationError is not null)
+        {
+            return authorizationError;
+        }
+
         if (!TryValidate(request, out var validationError) ||
             string.IsNullOrWhiteSpace(request.OperationId) ||
             request.Kind is null)
@@ -119,9 +127,16 @@ internal static class SavedMapOperationEndpoints
     private static async Task<IResult> HandleReplay(
         string mapId,
         [FromServices] ISavedMapOperationLogRepository repository,
+        [FromServices] ISavedMapCollaborationAuthorizer authorizer,
         HttpContext context,
         [FromQuery] long? since = null)
     {
+        var authorizationError = await AuthorizeAsync(mapId, authorizer, context).ConfigureAwait(false);
+        if (authorizationError is not null)
+        {
+            return authorizationError;
+        }
+
         var sinceCursor = since.GetValueOrDefault(0);
         if (sinceCursor < 0)
         {
@@ -147,6 +162,33 @@ internal static class SavedMapOperationEndpoints
         return Results.Json(
             ApiResponse<SavedMapOperationReplayApiResponse>.CreateSuccess(response),
             SavedMapOperationJsonContext.Default.ApiResponseSavedMapOperationReplayApiResponse);
+    }
+
+    // Fail-closed per-map capability check shared with the session transport (#971/#972): a
+    // generally authenticated principal must still be permitted on THIS saved map before its
+    // edits enter the durable op-log. Reusing the join authorizer keeps presence and durable
+    // edits on a single identity/RBAC seam. The middleware-level RequireAuthorization already
+    // rejected anonymous callers, so this maps capability decisions to typed 401/403 results.
+    private static async Task<IResult?> AuthorizeAsync(
+        string mapId,
+        ISavedMapCollaborationAuthorizer authorizer,
+        HttpContext context)
+    {
+        var authorization = await authorizer
+            .AuthorizeJoinAsync(mapId, context.User, context.RequestAborted)
+            .ConfigureAwait(false);
+
+        return authorization.Status switch
+        {
+            SavedMapCollaborationAuthorizationStatus.Authorized => null,
+            SavedMapCollaborationAuthorizationStatus.RequiresAuthentication =>
+                StandardErrorHelpers.CreateUnauthorized(
+                    context,
+                    authorization.Detail ?? "Authentication is required to edit this saved map."),
+            _ => StandardErrorHelpers.CreateForbidden(
+                context,
+                authorization.Detail ?? "You are not allowed to edit this saved map.")
+        };
     }
 
     private static string ToWireStatus(SavedMapOperationAppendStatus status) => status switch

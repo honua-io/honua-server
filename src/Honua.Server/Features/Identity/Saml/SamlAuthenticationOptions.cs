@@ -39,6 +39,21 @@ public sealed class SamlAuthenticationOptions
     public string? AssertionConsumerServiceUrl { get; set; }
 
     /// <summary>
+    /// The SP's own Single Logout (SLO) service URL (the endpoint the IdP sends a
+    /// <c>LogoutRequest</c> to over the HTTP-POST binding). Advertised in SP metadata as a
+    /// <c>SingleLogoutService</c> when set; leaving it null omits the SLO declaration so an IdP
+    /// will not attempt single-logout against an unconfigured SP.
+    /// </summary>
+    public string? SingleLogoutServiceUrl { get; set; }
+
+    /// <summary>
+    /// The IdP's Single Logout service URL the SP posts its <c>LogoutResponse</c> back to after
+    /// terminating the local session. When null the SP terminates the session and returns the
+    /// <c>LogoutResponse</c> directly rather than relaying it to the IdP.
+    /// </summary>
+    public string? IdpSingleLogoutServiceUrl { get; set; }
+
+    /// <summary>
     /// The IdP's signing certificate, base64-encoded DER (the inner text of an
     /// <c>&lt;X509Certificate&gt;</c> element). Required: signatures are verified against this
     /// certificate's public key, and unsigned assertions are rejected.

@@ -23,7 +23,10 @@ internal static class GdalDataUri
         ArgumentNullException.ThrowIfNull(contentType);
         ArgumentNullException.ThrowIfNull(payload);
 
-        var sb = new StringBuilder(payload.Length * 2 + contentType.Length + 32);
+        // base64 encodes 3 input bytes as 4 output chars (rounded up to a 4-char
+        // group), plus the "data:" + ";base64," envelope and the content type.
+        var base64Length = (payload.Length + 2) / 3 * 4;
+        var sb = new StringBuilder(base64Length + contentType.Length + 16);
         sb.Append("data:");
         sb.Append(contentType);
         sb.Append(";base64,");

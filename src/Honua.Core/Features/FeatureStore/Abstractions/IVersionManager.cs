@@ -60,20 +60,24 @@ public interface IVersionManager
     Task<VersionContext?> ResolveAsync(string? gdbVersion, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reconciles a version against DEFAULT, detecting conflicts since the merge base. Disjoint
-    /// field-level edits auto-merge; only genuinely-overlapping edits (overlapping fields,
-    /// geometry-vs-geometry, or update-vs-delete) become conflicts. When <paramref name="policy"/> is
-    /// a deterministic policy (#371) each conflict is auto-resolved so the version may be posted; when
-    /// <see cref="VersionReconcilePolicy.None"/> the unresolved conflicts are persisted for manual
-    /// review and block <c>Post</c>.
+    /// Reconciles a version against DEFAULT, detecting conflicts since the merge base. Under the default
+    /// <see cref="VersionConflictDetection.ByAttribute"/> detection, disjoint field-level edits auto-merge
+    /// and only genuinely-overlapping edits (overlapping fields, geometry-vs-geometry, or update-vs-delete)
+    /// become conflicts; under <see cref="VersionConflictDetection.ByObject"/> any feature edited on both
+    /// sides since the merge base is a conflict (no field-level auto-merge; #2135). When
+    /// <paramref name="policy"/> is a deterministic policy (#371) each conflict is auto-resolved so the
+    /// version may be posted; when <see cref="VersionReconcilePolicy.None"/> the unresolved conflicts are
+    /// persisted for manual review and block <c>Post</c>.
     /// </summary>
     /// <param name="versionId">Version to reconcile.</param>
     /// <param name="policy">Auto-resolution policy; <see cref="VersionReconcilePolicy.None"/> for manual review.</param>
+    /// <param name="detection">Conflict-detection granularity (by-attribute or by-object; #2135).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The reconcile result.</returns>
     Task<VersionReconcileResult> ReconcileAsync(
         Guid versionId,
         VersionReconcilePolicy policy = VersionReconcilePolicy.None,
+        VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
         CancellationToken cancellationToken = default);
 
     /// <summary>

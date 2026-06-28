@@ -254,6 +254,27 @@ internal static partial class FeatureServerLog
     public static partial void ApplyEditsFailed(ILogger logger, string serviceId, int layerId, string errorMessage, Exception exception);
 
     /// <summary>
+    /// Logs when an ApplyEdits request is replayed from the idempotency store (#2250): a retry carrying
+    /// a previously-seen Idempotency-Key returns the original response without re-applying the edit.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="layerId">The layer identifier.</param>
+    [LoggerMessage(EventId = 2406, Level = LogLevel.Information, Message = "ApplyEdits replayed from idempotency store for service '{ServiceId}' layer {LayerId}")]
+    public static partial void ApplyEditsReplayed(ILogger logger, string serviceId, int layerId);
+
+    /// <summary>
+    /// Logs when the ApplyEdits idempotency store is unavailable (#2250). Best-effort: the edit still
+    /// proceeds, but a retry may be re-applied rather than deduplicated.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="layerId">The layer identifier.</param>
+    /// <param name="exception">The exception raised by the store.</param>
+    [LoggerMessage(EventId = 2407, Level = LogLevel.Warning, Message = "ApplyEdits idempotency store unavailable for service '{ServiceId}' layer {LayerId}; retry deduplication is degraded")]
+    public static partial void ApplyEditsIdempotencyStoreUnavailable(ILogger logger, string serviceId, int layerId, Exception exception);
+
+    /// <summary>
     /// Logs when adding a feature fails.
     /// </summary>
     /// <param name="logger">The logger instance.</param>

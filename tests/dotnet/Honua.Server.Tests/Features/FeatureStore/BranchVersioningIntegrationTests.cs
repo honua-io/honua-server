@@ -348,6 +348,64 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Reconcile_ByObjectVsByAttribute_DivergeOnDisjointFieldEdits()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        // Seed the SAME disjoint-field fixture twice (two independent features) so the two detection
+        // modes can be compared on identical edits: branch edits only "name", DEFAULT edits only
+        // "status" => the edited attribute sets are disjoint (#2135).
+        var byAttributeFeature = await store.CreateAsync(
+            PointsLayerId, BuildFeatureWithFields(13.0, 13.0, ("name", "Base"), ("status", "open")), CancellationToken.None);
+        var byObjectFeature = await store.CreateAsync(
+            PointsLayerId, BuildFeatureWithFields(13.1, 13.1, ("name", "Base"), ("status", "open")), CancellationToken.None);
+
+        var attributeVersion = await versionManager.CreateAsync(
+            new CreateVersionRequest("DivergeByAttribute", "sde", VersionAccess.Public), CancellationToken.None);
+        var objectVersion = await versionManager.CreateAsync(
+            new CreateVersionRequest("DivergeByObject", "sde", VersionAccess.Public), CancellationToken.None);
+
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeatureWithFields(13.0, 13.0, byAttributeFeature.Id, ("name", "Branch"), ("status", "open"))),
+                versionContext: VersionContext.ForVersion(attributeVersion)),
+            CancellationToken.None);
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeatureWithFields(13.1, 13.1, byObjectFeature.Id, ("name", "Branch"), ("status", "open"))),
+                versionContext: VersionContext.ForVersion(objectVersion)),
+            CancellationToken.None);
+
+        // DEFAULT edits only "status" on both features (disjoint from the branch's "name" edit).
+        await store.UpdateAsync(
+            PointsLayerId, BuildFeatureWithFields(13.0, 13.0, byAttributeFeature.Id, ("name", "Base"), ("status", "closed")), CancellationToken.None);
+        await store.UpdateAsync(
+            PointsLayerId, BuildFeatureWithFields(13.1, 13.1, byObjectFeature.Id, ("name", "Base"), ("status", "closed")), CancellationToken.None);
+
+        // By-attribute detection auto-merges the disjoint edits: no conflict, clear to post.
+        var byAttribute = await versionManager.ReconcileAsync(
+            attributeVersion.VersionId, VersionReconcilePolicy.None, VersionConflictDetection.ByAttribute, CancellationToken.None);
+        byAttribute.Conflicts.Should().BeEmpty("by-attribute detection auto-merges disjoint field edits");
+        byAttribute.CanPost.Should().BeTrue();
+
+        // By-object detection flags the same object as a conflict even though the field sets are disjoint.
+        var byObject = await versionManager.ReconcileAsync(
+            objectVersion.VersionId, VersionReconcilePolicy.None, VersionConflictDetection.ByObject, CancellationToken.None);
+        byObject.CanPost.Should().BeFalse("by-object detection flags any object edited on both sides");
+        var conflict = byObject.Conflicts.Should().ContainSingle(c => c.ObjectId == byObjectFeature.Id).Subject;
+        conflict.ConflictType.Should().Be(ReplicaConflictType.Attribute);
+
+        // The by-object conflict is persisted and retrievable for manual resolution; post is blocked.
+        (await versionManager.GetPendingConflictsAsync(objectVersion.VersionId, CancellationToken.None))
+            .Should().ContainSingle(c => c.ObjectId == byObjectFeature.Id);
+        var blocked = await versionManager.PostAsync(objectVersion.VersionId, CancellationToken.None);
+        blocked.BlockedByConflicts.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Reconcile_OverlappingFieldEdits_ReportsThreeWayConflict()
     {
         var store = CreateFeatureStore();
@@ -410,7 +468,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         await store.UpdateAsync(
             PointsLayerId, BuildFeatureWithFields(11.0, 11.0, feature.Id, ("name", "Base"), ("status", "default")), CancellationToken.None);
 
-        var reconcile = await versionManager.ReconcileAsync(version.VersionId, policy, CancellationToken.None);
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, policy, cancellationToken: CancellationToken.None);
         reconcile.CanPost.Should().BeTrue("policy auto-resolves the conflict");
         reconcile.AutoResolvedCount.Should().Be(1);
         reconcile.Conflicts.Should().BeEmpty();

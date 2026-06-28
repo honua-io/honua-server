@@ -23,6 +23,10 @@ internal static class GdalVsiPath
     /// <returns>A path GDAL can open, e.g. <c>/vsis3/bucket/key.nc</c>.</returns>
     /// <exception cref="ArgumentException">Bucket or key is null/empty.</exception>
     /// <exception cref="NotSupportedException">The provider has no GDAL VSI handler.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A <see cref="CloudStorageProvider.Local"/> key escapes the configured bucket root
+    /// (rooted segment or <c>..</c> traversal).
+    /// </exception>
     public static string Build(CloudStorageProvider provider, string bucket, string objectKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(bucket);
@@ -40,6 +44,31 @@ internal static class GdalVsiPath
         };
     }
 
+    /// <summary>
+    /// Combines a Local-provider bucket root with a relative object key, rejecting any
+    /// key that escapes the root. Mirrors the root-prefix containment check in
+    /// <see cref="GdalScratch.CreateWorkspace"/>: a rooted segment or a <c>..</c>
+    /// traversal must never resolve outside the configured bucket directory.
+    /// </summary>
     private static string CombineLocal(string directory, string key)
-        => Path.Combine(directory, key.Replace('/', Path.DirectorySeparatorChar));
+    {
+        var normalizedKey = key.Replace('/', Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(normalizedKey))
+        {
+            throw new InvalidOperationException("Local object key must be a relative path under the bucket root.");
+        }
+
+        var root = Path.GetFullPath(directory);
+        var combined = Path.GetFullPath(Path.Combine(root, normalizedKey));
+        var rootPrefix = Path.EndsInDirectorySeparator(root)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+
+        if (!combined.StartsWith(rootPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Local object key must resolve to a path under the bucket root.");
+        }
+
+        return combined;
+    }
 }

@@ -28,10 +28,22 @@ public sealed class AuditExportOptions
     public AuditExportDispatcherOptions Dispatch { get; set; } = new();
 
     /// <summary>
-    /// Retention window in days. <c>0</c> (or less) means retain forever.
-    /// Consumed by the (deferred) retention pruner.
+    /// Retention window in days. <c>0</c> (or less) means retain forever. When
+    /// positive, a background sweep (<c>AuditRetentionPruneService</c>) prunes
+    /// audit records older than this window via the registered
+    /// <see cref="AuditRetentionPolicy"/> pruner (#509).
     /// </summary>
     public int RetentionDays { get; set; }
+
+    /// <summary>
+    /// Number of expired audit rows deleted per batch by the retention sweep.
+    /// The sweep prunes in bounded chunks across short transactions so the
+    /// append-only guard's <c>ACCESS EXCLUSIVE</c> lock is held only briefly per
+    /// batch (never across an entire large first sweep), letting inline audit
+    /// inserts interleave. Values &lt;= 0 fall back to the pruner default
+    /// (<c>5000</c>).
+    /// </summary>
+    public int RetentionPruneBatchSize { get; set; } = 5000;
 
     /// <summary>Splunk HTTP Event Collector sink configuration.</summary>
     public SplunkHecSinkOptions Splunk { get; set; } = new();

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Queries.Filters;
 using Honua.Databricks.Features.FeatureStore;
 using Honua.Databricks.Features.FeatureStore.Services;
@@ -54,20 +55,25 @@ public static class ServiceCollectionExtensions
 
         // Typed-HttpClient registration: the BaseAddress points at the workspace host so
         // host applications can attach resilience / retry / telemetry handlers via the
-        // well-known name without depending on this provider's internals.
-        services.AddHttpClient<IDatabricksStatementClient, DatabricksStatementClient>(
-            DatabricksServiceClientName.Default,
-            client =>
-            {
-                if (Uri.TryCreate(options.Host, UriKind.Absolute, out var host))
+        // well-known name without depending on this provider's internals. A standard
+        // retry + circuit-breaker policy is attached below so the Statement Execution
+        // submit/poll/chunk loop survives transient workspace failures (HTTP 408/429/5xx
+        // and transient network faults) with exponential backoff and jitter.
+        services
+            .AddHttpClient<IDatabricksStatementClient, DatabricksStatementClient>(
+                DatabricksServiceClientName.Default,
+                client =>
                 {
-                    client.BaseAddress = host;
-                }
+                    if (Uri.TryCreate(options.Host, UriKind.Absolute, out var host))
+                    {
+                        client.BaseAddress = host;
+                    }
 
-                // Generous client timeout; the statement client enforces the finer-grained
-                // CommandTimeout budget across the submit/poll loop.
-                client.Timeout = TimeSpan.FromSeconds(Math.Max(options.CommandTimeoutSeconds + 30, 60));
-            });
+                    // Generous client timeout; the statement client enforces the finer-grained
+                    // CommandTimeout budget across the submit/poll loop.
+                    client.Timeout = TimeSpan.FromSeconds(Math.Max(options.CommandTimeoutSeconds + 30, 60));
+                })
+            .AddHttpResiliencePolicy(DatabricksServiceClientName.ResilienceServiceType, BuildResilienceOptions(options));
 
         services.AddSingleton<IDatabricksFeatureQueryBuilder, DatabricksFeatureQueryBuilder>();
         services.AddScoped<IDatabricksFeatureDataAccess, DatabricksFeatureDataAccess>();
@@ -82,6 +88,19 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Maps the Databricks retry options onto the shared HTTP resilience policy options so the
+    /// Statement Execution client reuses the canonical retry + circuit-breaker pipeline.
+    /// </summary>
+    private static ResiliencePolicyOptions BuildResilienceOptions(DatabricksOptions options)
+        => new()
+        {
+            MaxRetryAttempts = options.MaxRetryAttempts,
+            BaseDelay = TimeSpan.FromMilliseconds(options.RetryBaseDelayMilliseconds),
+            BackoffExponent = 2.0,
+            JitterPercentage = 0.2,
+        };
 
     private static List<DatabricksLayerMapping> BuildLayerMappings(DatabricksOptions options)
     {

@@ -48,15 +48,18 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         string service,
         Guid versionId,
         VersionReconcilePolicy policy,
+        VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
         CancellationToken cancellationToken = default)
-        => StartAsync(service, versionId, VersionJobKind.Reconcile, policy, cancellationToken);
+        => StartAsync(service, versionId, VersionJobKind.Reconcile, policy, detection, cancellationToken);
 
     /// <inheritdoc />
     public Task<VersionJob> StartPostAsync(
         string service,
         Guid versionId,
         CancellationToken cancellationToken = default)
-        => StartAsync(service, versionId, VersionJobKind.Post, VersionReconcilePolicy.None, cancellationToken);
+        => StartAsync(
+            service, versionId, VersionJobKind.Post, VersionReconcilePolicy.None,
+            VersionConflictDetection.ByAttribute, cancellationToken);
 
     /// <inheritdoc />
     public Task<VersionJob?> GetJobAsync(Guid jobId, CancellationToken cancellationToken = default)
@@ -67,6 +70,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         Guid versionId,
         VersionJobKind kind,
         VersionReconcilePolicy policy,
+        VersionConflictDetection detection,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(service);
@@ -78,7 +82,8 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             Kind: kind,
             Status: VersionJobStatus.Pending,
             Policy: policy,
-            CreatedAt: DateTimeOffset.UtcNow);
+            CreatedAt: DateTimeOffset.UtcNow,
+            ConflictDetection: detection);
 
         await _jobStore.SaveAsync(job, cancellationToken).ConfigureAwait(false);
 
@@ -172,7 +177,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         VersionJob job,
         CancellationToken cancellationToken)
     {
-        var result = await manager.ReconcileAsync(job.VersionId, job.Policy, cancellationToken).ConfigureAwait(false);
+        var result = await manager.ReconcileAsync(job.VersionId, job.Policy, job.ConflictDetection, cancellationToken).ConfigureAwait(false);
         var conflictCount = result.Conflicts.IsDefaultOrEmpty ? 0 : result.Conflicts.Length;
         return job with
         {

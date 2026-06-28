@@ -32,6 +32,9 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     private const string TestTenantId = "11111111-1111-1111-1111-111111111111";
     private const string TestClientId = "22222222-2222-2222-2222-222222222222";
     private const string TestSigningKey = "test-key-at-least-32-characters-long-for-testing";
+    private const string TestOperatorBearerSigningKey = "operator-bearer-signing-key-at-least-32-bytes-long";
+    private const string OperatorBearerIssuer = "honua-operator-bearer";
+    private const string OperatorBearerAudience = "honua-admin-api";
     private const string TestOidcIssuer = "https://auth.example.com";
     private const string TestOidcAudience = "generic-client-id";
     private static readonly RsaSecurityKey _oidcSigningKey = CreateOidcSigningKey();
@@ -913,6 +916,158 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         {
             await oidcFixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/bearer")]
+    public async Task IssueOperatorBearer_WithoutAuthenticatedSession_ReturnsUnauthorized()
+    {
+        var response = await _client.PostAsync("/api/v1/admin/auth/bearer", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/bearer")]
+    public async Task IssueOperatorBearer_WhenFeatureNotConfigured_ReturnsServiceUnavailable()
+    {
+        using var stubFactory = CreateStubFactory();
+        var oidcFixture = CreateGenericOidcFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var sessionId = await CreateAuthenticatedSessionAsync(oidcFixture);
+            var oidcClient = oidcFixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+
+            var response = await oidcClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/bearer")]
+    public async Task IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi()
+    {
+        using var stubFactory = CreateStubFactory();
+        var oidcFixture = CreateOperatorBearerFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var sessionExpiry = DateTimeOffset.UtcNow.AddMinutes(10);
+            var sessionId = await CreateAuthenticatedSessionAsync(oidcFixture, sessionExpiry);
+            var sessionClient = oidcFixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+
+            var response = await sessionClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var bearer = await response.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
+            bearer.Should().NotBeNull();
+            bearer!.AccessToken.Should().NotBeNullOrWhiteSpace();
+            bearer.TokenType.Should().Be("Bearer");
+            bearer.ExpiresIn.Should().BeGreaterThan(0);
+            // The bearer never outlives the issuing session (with a small clock-skew margin).
+            bearer.ExpiresAt.Should().BeOnOrBefore(sessionExpiry.AddSeconds(1));
+
+            // The forwardable bearer resolves to the same RBAC as the cookie session:
+            // an admin-gated control-plane read succeeds when it is presented as a Bearer.
+            var bearerClient = oidcFixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearer.AccessToken));
+
+            var adminResponse = await bearerClient.GetAsync("/api/v1/admin/config");
+            adminResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/bearer")]
+    public async Task AdminApi_WithForgedOperatorBearer_IsRejected()
+    {
+        using var stubFactory = CreateStubFactory();
+        var oidcFixture = CreateOperatorBearerFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+
+            // A token that carries the operator-bearer issuer (so it routes to the
+            // operator-bearer scheme) but is signed with a different key must be
+            // rejected — never treated as an authenticated operator.
+            var wrongKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes("a-totally-different-key-also-32-bytes-long!!"));
+            var forged = new JwtSecurityToken(
+                issuer: OperatorBearerIssuer,
+                audience: OperatorBearerAudience,
+                claims:
+                [
+                    new Claim("sub", "attacker"),
+                    new Claim(ClaimTypes.Role, "admin")
+                ],
+                expires: DateTime.UtcNow.AddMinutes(10),
+                signingCredentials: new SigningCredentials(wrongKey, SecurityAlgorithms.HmacSha256));
+            var forgedToken = new JwtSecurityTokenHandler().WriteToken(forged);
+
+            var forgedClient = oidcFixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", forgedToken));
+
+            var adminResponse = await forgedClient.GetAsync("/api/v1/admin/config");
+            adminResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    private static StubHttpClientFactory CreateStubFactory()
+        => new(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"));
+
+    private static async Task<string> CreateAuthenticatedSessionAsync(
+        WebAppFixture fixture,
+        DateTimeOffset? expiresAt = null)
+    {
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        return await sessionStore.CreateAuthenticatedSessionAsync(
+            "oidc",
+            "access-token",
+            "id-token",
+            [
+                new AdminAuthSessionClaim { Type = "name", Value = "Operator Admin" },
+                new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "operator-1" },
+                new AdminAuthSessionClaim { Type = ClaimTypes.Role, Value = "admin" }
+            ],
+            expiresAt ?? DateTimeOffset.UtcNow.AddMinutes(10),
+            CancellationToken.None);
+    }
+
+    private static WebAppFixture CreateOperatorBearerFixture(IHttpClientFactory httpClientFactory)
+    {
+        return CreateGenericOidcFixture(httpClientFactory)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+                builder.UseSetting("Authentication:OperatorBearer:SigningKey", TestOperatorBearerSigningKey);
+            });
     }
 
     private static WebAppFixture CreateBaseFixture()

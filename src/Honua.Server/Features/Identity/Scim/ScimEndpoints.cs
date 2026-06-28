@@ -57,6 +57,18 @@ internal static partial class ScimEndpoints
         groups.MapPut("/{id}", HandleReplaceGroup).WithDisplayName("SCIM Replace Group");
         groups.MapPatch("/{id}", HandlePatchGroup).WithDisplayName("SCIM Patch Group");
         groups.MapDelete("/{id}", HandleDeleteGroup).WithDisplayName("SCIM Delete Group");
+
+        // RFC 7643 service-provider discovery documents (#2154). These let an IdP probe the
+        // optional features, resource types, and attribute schemas Honua supports.
+        var discovery = endpoints.MapGroup("/scim/v2")
+            .WithTags("Identity", "SCIM")
+            .AllowAnonymous();
+
+        discovery.MapGet("/ServiceProviderConfig", HandleServiceProviderConfig).WithDisplayName("SCIM ServiceProviderConfig");
+        discovery.MapGet("/ResourceTypes", HandleResourceTypes).WithDisplayName("SCIM ResourceTypes");
+        discovery.MapGet("/ResourceTypes/{id}", HandleResourceType).WithDisplayName("SCIM ResourceType");
+        discovery.MapGet("/Schemas", HandleSchemas).WithDisplayName("SCIM Schemas");
+        discovery.MapGet("/Schemas/{id}", HandleSchema).WithDisplayName("SCIM Schema");
     }
 
     // ---- Users ------------------------------------------------------------------------

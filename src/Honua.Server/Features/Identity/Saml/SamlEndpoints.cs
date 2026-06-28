@@ -1,11 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Xml;
+using System.Xml.Linq;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -39,6 +44,7 @@ internal static partial class SamlEndpoints
 
         group.MapGet("/metadata", HandleMetadata).WithDisplayName("SAML SP Metadata");
         group.MapPost("/acs", HandleAssertionConsumerService).WithDisplayName("SAML Assertion Consumer Service");
+        group.MapPost("/slo", HandleSingleLogout).WithDisplayName("SAML Single Logout Service");
     }
 
     private static IResult HandleMetadata(
@@ -169,6 +175,218 @@ internal static partial class SamlEndpoints
         return TypedResults.NoContent();
     }
 
+    /// <summary>
+    /// Handles SAML 2.0 Single Logout (SLO) over the HTTP-POST binding. Consumes an
+    /// IdP-initiated, signed <c>LogoutRequest</c>, verifies its signature against the configured
+    /// IdP certificate (reusing the assertion signature path), terminates the local Honua admin
+    /// session (store record + cookie), and emits a <c>LogoutResponse</c> — relayed back to the
+    /// IdP's SLO endpoint via an auto-submitting form when configured, or returned directly.
+    /// </summary>
+    private static async Task<IResult> HandleSingleLogout(
+        HttpContext context,
+        [FromServices] IOptions<SamlAuthenticationOptions> options,
+        [FromServices] AdminAuthSessionStore sessionStore,
+        [FromServices] ILogger<SamlEndpointsLog> logger)
+    {
+        var opts = options.Value;
+        if (!opts.Enabled)
+        {
+            return Results.Problem(
+                title: "SAML not enabled",
+                detail: "The SAML SP bridge is not enabled.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        if (!context.Request.HasFormContentType)
+        {
+            return BadRequest(context, "Expected an HTTP-POST SAML logout form.");
+        }
+
+        var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+        var relayState = form["RelayState"].ToString();
+
+        // A SAMLResponse here is the IdP acknowledging an SP-initiated logout: clear any local
+        // session and finish. No signed request to validate in this direction.
+        if (string.IsNullOrWhiteSpace(form["SAMLRequest"]) && !string.IsNullOrWhiteSpace(form["SAMLResponse"]))
+        {
+            await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false);
+            SamlLog.SingleLogoutProcessed(logger, "(sp-initiated)");
+            return TypedResults.NoContent();
+        }
+
+        var encodedRequest = form["SAMLRequest"].ToString();
+        if (string.IsNullOrWhiteSpace(encodedRequest))
+        {
+            return BadRequest(context, "Missing SAMLRequest.");
+        }
+
+        string requestXml;
+        try
+        {
+            requestXml = Encoding.UTF8.GetString(Convert.FromBase64String(encodedRequest));
+        }
+        catch (FormatException)
+        {
+            return BadRequest(context, "SAMLRequest is not valid base64.");
+        }
+
+        XDocument document;
+        try
+        {
+            document = SecureXmlDocumentParser.Parse(requestXml, LoadOptions.None);
+        }
+        catch (XmlException)
+        {
+            return BadRequest(context, "Malformed SAML logout request XML.");
+        }
+
+        var logoutRequest = document.Root;
+        if (logoutRequest is null || logoutRequest.Name.LocalName != "LogoutRequest")
+        {
+            return BadRequest(context, "Expected a samlp:LogoutRequest.");
+        }
+
+        if (string.IsNullOrWhiteSpace(opts.IdpSigningCertificate))
+        {
+            SamlLog.SingleLogoutRejected(logger, "no signing certificate configured");
+            return LogoutRejected(context, "No IdP signing certificate configured.");
+        }
+
+        X509Certificate2 certificate;
+        try
+        {
+            certificate = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(opts.IdpSigningCertificate!.Trim()));
+        }
+        catch (Exception ex) when (ex is FormatException or CryptographicException)
+        {
+            SamlLog.SingleLogoutRejected(logger, "invalid signing certificate");
+            return LogoutRejected(context, "IdP signing certificate is not valid base64 DER.");
+        }
+
+        using (certificate)
+        {
+            var signatureResult = SamlSignatureVerifier.Verify(logoutRequest, certificate);
+            if (!signatureResult.Verified)
+            {
+                // Unsigned or forged LogoutRequests must not be able to terminate sessions.
+                SamlLog.SingleLogoutRejected(logger, signatureResult.Reason ?? "signature verification failed");
+                return LogoutRejected(context, signatureResult.Reason ?? "The SAML logout request could not be validated.");
+            }
+        }
+
+        var issuer = logoutRequest.Element(XName.Get("Issuer", SamlAssertionNs))?.Value?.Trim();
+        if (!string.IsNullOrEmpty(opts.IdpEntityId) &&
+            !string.Equals(issuer, opts.IdpEntityId, StringComparison.Ordinal))
+        {
+            SamlLog.SingleLogoutRejected(logger, "issuer mismatch");
+            return LogoutRejected(context, "SAML logout request issuer does not match the configured IdP.");
+        }
+
+        await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false);
+
+        var nameId = logoutRequest.Element(XName.Get("NameID", SamlAssertionNs))?.Value?.Trim();
+        SamlLog.SingleLogoutProcessed(logger, string.IsNullOrEmpty(nameId) ? "(unknown)" : nameId);
+
+        var requestId = logoutRequest.Attribute("ID")?.Value;
+        var logoutResponse = BuildLogoutResponse(opts, requestId);
+        var encodedResponse = Convert.ToBase64String(Encoding.UTF8.GetBytes(logoutResponse));
+
+        // Relay the LogoutResponse back to the IdP via an auto-submitting HTML form (HTTP-POST
+        // binding). With no IdP SLO endpoint configured, return the response payload directly.
+        if (string.IsNullOrWhiteSpace(opts.IdpSingleLogoutServiceUrl))
+        {
+            return Results.Content(logoutResponse, "application/samlp+xml", Encoding.UTF8);
+        }
+
+        var formHtml = BuildAutoPostForm(opts.IdpSingleLogoutServiceUrl!, encodedResponse, relayState);
+        return Results.Content(formHtml, "text/html", Encoding.UTF8);
+    }
+
+    private const string SamlAssertionNs = "urn:oasis:names:tc:SAML:2.0:assertion";
+    private const string SamlProtocolNs = "urn:oasis:names:tc:SAML:2.0:protocol";
+
+    private static async Task TerminateLocalSessionAsync(HttpContext context, AdminAuthSessionStore sessionStore)
+    {
+        if (context.Request.Cookies.TryGetValue(AdminAuthSessionStore.AuthSessionCookieName, out var sessionId) &&
+            !string.IsNullOrWhiteSpace(sessionId))
+        {
+            await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
+        }
+
+        context.Response.Cookies.Delete(
+            AdminAuthSessionStore.AuthSessionCookieName,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                IsEssential = true,
+                SameSite = SameSiteMode.Lax,
+                Secure = context.Request.IsHttps,
+                Path = "/",
+            });
+    }
+
+    private static string BuildLogoutResponse(SamlAuthenticationOptions opts, string? inResponseTo)
+    {
+        var settings = new XmlWriterSettings
+        {
+            Encoding = new UTF8Encoding(false),
+            Indent = false,
+            OmitXmlDeclaration = false,
+        };
+
+        var output = new StringWriterUtf8();
+        using (var writer = XmlWriter.Create(output, settings))
+        {
+            writer.WriteStartElement("samlp", "LogoutResponse", SamlProtocolNs);
+            writer.WriteAttributeString("ID", "_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant());
+            writer.WriteAttributeString("Version", "2.0");
+            writer.WriteAttributeString("IssueInstant", DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
+            if (!string.IsNullOrWhiteSpace(inResponseTo))
+            {
+                writer.WriteAttributeString("InResponseTo", inResponseTo);
+            }
+
+            if (!string.IsNullOrWhiteSpace(opts.EntityId))
+            {
+                writer.WriteStartElement("Issuer", SamlAssertionNs);
+                writer.WriteString(opts.EntityId);
+                writer.WriteEndElement();
+            }
+
+            writer.WriteStartElement("Status", SamlProtocolNs);
+            writer.WriteStartElement("StatusCode", SamlProtocolNs);
+            writer.WriteAttributeString("Value", "urn:oasis:names:tc:SAML:2.0:status:Success");
+            writer.WriteEndElement(); // StatusCode
+            writer.WriteEndElement(); // Status
+
+            writer.WriteEndElement(); // LogoutResponse
+        }
+
+        return output.ToString();
+    }
+
+    private static string BuildAutoPostForm(string destination, string encodedResponse, string? relayState)
+    {
+        var relayInput = string.IsNullOrEmpty(relayState)
+            ? string.Empty
+            : $"<input type=\"hidden\" name=\"RelayState\" value=\"{WebUtility.HtmlEncode(relayState)}\"/>";
+
+        return $"""
+            <!DOCTYPE html>
+            <html><head><title>SAML Single Logout</title></head>
+            <body onload="document.forms[0].submit()">
+            <form method="post" action="{WebUtility.HtmlEncode(destination)}">
+            <input type="hidden" name="SAMLResponse" value="{WebUtility.HtmlEncode(encodedResponse)}"/>
+            {relayInput}
+            <noscript><button type="submit">Continue</button></noscript>
+            </form>
+            </body></html>
+            """;
+    }
+
+    private static IResult LogoutRejected(HttpContext context, string detail)
+        => Results.Problem(title: "SAML logout request rejected", detail: detail, statusCode: StatusCodes.Status401Unauthorized);
+
     private static string BuildSpMetadata(SamlAuthenticationOptions opts)
     {
         // Emit minimal, valid SP metadata describing the ACS endpoint and supported NameID
@@ -191,6 +409,16 @@ internal static partial class SamlEndpoints
             writer.WriteAttributeString("AuthnRequestsSigned", "false");
             writer.WriteAttributeString("WantAssertionsSigned", "true");
             writer.WriteAttributeString("protocolSupportEnumeration", "urn:oasis:names:tc:SAML:2.0:protocol");
+
+            // SingleLogoutService advertises SP-side support for SAML 2.0 Single Logout (SLO).
+            // Schema order places it before NameIDFormat within an SSODescriptor.
+            if (!string.IsNullOrWhiteSpace(opts.SingleLogoutServiceUrl))
+            {
+                writer.WriteStartElement("SingleLogoutService", md);
+                writer.WriteAttributeString("Binding", "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST");
+                writer.WriteAttributeString("Location", opts.SingleLogoutServiceUrl);
+                writer.WriteEndElement(); // SingleLogoutService
+            }
 
             writer.WriteStartElement("NameIDFormat", md);
             writer.WriteString("urn:oasis:names:tc:SAML:2.0:nameid-format:persistent");

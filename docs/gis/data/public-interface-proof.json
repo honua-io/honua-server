@@ -859,7 +859,8 @@
       "parentSurfaceId": "console-content-rbac",
       "endpointPrefixes": [
         "/api/v1/console/publications",
-        "/api/v1/published/"
+        "/api/v1/published/",
+        "/api/v1/embed/"
       ],
       "endpointExactMatches": [],
       "endpointContains": [],

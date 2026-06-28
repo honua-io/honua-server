@@ -36,6 +36,28 @@ internal static partial class FeatureServerEndpoints
             FeatureCatalog.FieldOpsOfflineSyncKey,
             "GeoServices offline sync");
 
+    /// <summary>
+    /// Rejects replica write operations (createReplica / synchronizeReplica / unRegisterReplica) on
+    /// backends that cannot durably persist replicas — read-only providers (DuckDB, MySQL/MariaDB)
+    /// whose <see cref="IReplicaRepository"/> is a no-op. Returns a conformant Esri-shaped
+    /// <c>501 Not Implemented</c> error so an Esri client receives an explicit "operation not
+    /// supported" response instead of a silently no-op'd sync that is never durably applied (#2136).
+    /// Returns <c>null</c> when the active backend supports replica persistence.
+    /// </summary>
+    private static IResult? RequireReplicaPersistenceSupport(HttpContext context)
+    {
+        var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
+        if (replicaRepository.SupportsReplicaPersistence)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateNotImplemented(
+            context,
+            "Offline replica synchronization is not supported by this service's data store.",
+            ["The active feature provider is read-only and cannot durably persist replicas. createReplica, synchronizeReplica, and unRegisterReplica require a Postgres-backed service."]);
+    }
+
     private static async Task<IResult> HandleReplicas(
         string serviceId,
         HttpContext context)
@@ -199,6 +221,12 @@ internal static partial class FeatureServerEndpoints
         if (entitlementGate is not null)
         {
             return entitlementGate;
+        }
+
+        var unsupportedBackend = RequireReplicaPersistenceSupport(context);
+        if (unsupportedBackend is not null)
+        {
+            return unsupportedBackend;
         }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -430,7 +458,8 @@ internal static partial class FeatureServerEndpoints
         long sinceGeneration,
         ReplicaLayerV2[] replicaLayers,
         IChangeTracker changeTracker,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? maxGeneration = null)
     {
         var layerChanges = new List<LayerChanges>(replicaLayers.Length);
 
@@ -449,6 +478,16 @@ internal static partial class FeatureServerEndpoints
             sinceGeneration,
             replicaLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
             cancellationToken);
+
+        // Optional upper bound on the delta. A bidirectional sync caps the server-to-client delta at
+        // the generation observed just before the client's upload was applied, so the client receives
+        // every server-side change committed since its last sync (e.g. another client's edits made
+        // after createReplica) but NOT its own just-applied edits, which carry a later generation
+        // (#2136). Download-only syncs pass null and deliver the full delta up to the current generation.
+        if (maxGeneration is { } upperBound)
+        {
+            changes = changes.Where(c => c.Generation <= upperBound).ToList();
+        }
 
         // Group collapsed changes by layer
         var changesByLayer = changes
@@ -839,6 +878,12 @@ internal static partial class FeatureServerEndpoints
             return entitlementGate;
         }
 
+        var unsupportedBackend = RequireReplicaPersistenceSupport(context);
+        if (unsupportedBackend is not null)
+        {
+            return unsupportedBackend;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
         if (serviceValidationResult.ErrorResult is not null)
@@ -944,6 +989,16 @@ internal static partial class FeatureServerEndpoints
             acknowledgedServerGen = parsedServerGen;
         }
 
+        // Esri sync parameter: rollbackOnFailure=true applies each layer's uploaded edits atomically so
+        // a single failing row rolls back that layer's whole batch, leaving the server state unchanged
+        // (#2136). Defaults to false (best-effort per-row), matching the prior synchronize behavior.
+        if (!TryParseBoolValue(values, "rollbackOnFailure", false, out var rollbackOnFailure, out var rollbackError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid rollbackOnFailure parameter",
+                [rollbackError ?? "rollbackOnFailure must be a boolean value."]);
+        }
+
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
 
         SynchronizeReplicaConflict[]? conflicts = null;
@@ -956,6 +1011,11 @@ internal static partial class FeatureServerEndpoints
         // non-conflicting edits via the shared edit pipeline, and writes durable conflict records
         // when supported. Download-only syncs and empty uploads skip the pipeline entirely (#1272).
         long uploadServerGen = 0;
+        // The server generation observed immediately before the client's upload is applied. A
+        // bidirectional download caps its server-to-client delta at this value so the client's own
+        // just-applied edits (which carry a later generation) are excluded while every server-side
+        // change committed since the replica's last sync is still delivered (#2136).
+        long preUploadGen = 0;
         var didUpload = false;
         if (isUploadDirection && !string.IsNullOrWhiteSpace(editsJson))
         {
@@ -971,6 +1031,10 @@ internal static partial class FeatureServerEndpoints
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
                 var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
                 var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
+
+                // Capture the pre-upload generation so the bidirectional download below can exclude the
+                // client's own edits without skipping concurrent server-side changes.
+                preUploadGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
 
                 // Snapshot the pre-apply server state of every uploaded update/delete target so durable
                 // conflict records can carry the server side of the comparison for the review API
@@ -988,7 +1052,8 @@ internal static partial class FeatureServerEndpoints
                     BaseGeneration: replica.LastSyncGeneration,
                     LayerEdits: layerEdits,
                     LastWriteWins: true,
-                    SyncOperationId: context.TraceIdentifier);
+                    SyncOperationId: context.TraceIdentifier,
+                    RollbackOnFailure: rollbackOnFailure);
 
                 var report = await syncService.ApplyUploadAsync(syncRequest, applier, cancellationToken);
                 if (!report.Success)
@@ -1057,11 +1122,16 @@ internal static partial class FeatureServerEndpoints
         ReplicaInfoLayerServerGeneration[]? downloadLayerServerGens = null;
         if (isDownloadDirection)
         {
-            var downloadSinceGen = didUpload
-                ? uploadServerGen
-                : acknowledgedServerGen is { } acknowledged
-                    ? Math.Min(acknowledged, currentGen)
-                    : replica.LastSyncGeneration;
+            // The download lower bound is the generation the client already holds (replicaServerGen,
+            // from its preceding extractChanges/createReplica) when supplied, otherwise the replica's
+            // recorded last-sync generation. A bidirectional upload in the same call does NOT advance
+            // this lower bound past concurrent server changes; instead the delta is capped at the
+            // pre-upload generation so the client receives every server-side change committed since its
+            // last sync but not its own just-applied edits (#2136, #1775).
+            var downloadSinceGen = acknowledgedServerGen is { } acknowledged
+                ? Math.Min(acknowledged, currentGen)
+                : replica.LastSyncGeneration;
+            long? downloadMaxGen = didUpload ? preUploadGen : null;
 
             var (assembledEdits, deltaError) = await BuildReplicaLayerChangesAsync(
                 context,
@@ -1069,7 +1139,8 @@ internal static partial class FeatureServerEndpoints
                 downloadSinceGen,
                 replicaLayers,
                 changeTracker,
-                cancellationToken);
+                cancellationToken,
+                downloadMaxGen);
             if (deltaError is not null)
             {
                 return deltaError;
@@ -1475,6 +1546,12 @@ internal static partial class FeatureServerEndpoints
         if (entitlementGate is not null)
         {
             return entitlementGate;
+        }
+
+        var unsupportedBackend = RequireReplicaPersistenceSupport(context);
+        if (unsupportedBackend is not null)
+        {
+            return unsupportedBackend;
         }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
