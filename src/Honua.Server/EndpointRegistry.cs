@@ -201,6 +201,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/cache/status"),
         new("POST", "/api/v1/admin/cache/invalidate"),
         new("GET", "/api/v1/admin/geocoding/providers"),
+        new("GET", "/api/v1/admin/geoprocessing/tools/usage-ranking"),
         new("GET", "/api/v1/admin/features"),
 
         // v1 admin rate limit policy endpoints (#355)
