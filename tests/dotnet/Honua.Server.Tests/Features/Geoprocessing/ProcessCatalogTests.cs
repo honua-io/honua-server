@@ -3142,6 +3142,62 @@ public sealed class ProcessCatalogTests
         ProcessDestructiveClassifier.HasDestructiveStep(plan).Should().BeFalse();
     }
 
+    [Theory]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    [InlineData("sink.external-postgis")]
+    [InlineData("sink.honua-layer")]
+    [InlineData("sink.geojson-file")]
+    public void DestructiveClassifier_SinkProcess_RequiresApproval(string processId)
+    {
+        // A sink/write process is not a destructive source mutation, but it must
+        // still pass the approval gate (#2262).
+        ProcessDestructiveClassifier.IsSink(processId).Should().BeTrue();
+        ProcessDestructiveClassifier.IsDestructive(processId).Should().BeFalse();
+        ProcessDestructiveClassifier.RequiresApproval(processId).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_QuarantineSink_IsNotApprovalGated()
+    {
+        // The dead-letter quarantine sink is the internal half of the row-level
+        // error contract, not a caller-chosen destination, so it is not gated.
+        ProcessDestructiveClassifier.IsSink("sink.quarantine").Should().BeFalse();
+        ProcessDestructiveClassifier.RequiresApproval("sink.quarantine").Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_PlanWithSinkStep_IsApprovalGated()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "sink.honua-layer"
+                }
+            ]
+        };
+
+        // The sink step is not classified as a destructive source mutation...
+        ProcessDestructiveClassifier.FindFirstDestructiveProcessId(plan).Should().BeNull();
+        ProcessDestructiveClassifier.HasDestructiveStep(plan).Should().BeFalse();
+
+        // ...but it is approval-gated, which is what drives EnsureApproved.
+        ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan)
+            .Should().Be("sink.honua-layer");
+        ProcessDestructiveClassifier.HasApprovalGatedStep(plan).Should().BeTrue();
+    }
+
     // -----------------------------------------------------------------------
     // Integration: ValidatePlan RPC with catalog validation
     // -----------------------------------------------------------------------
