@@ -190,6 +190,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IReadOnlyDictionary<string, string>? protocolMetadata = null,
         CancellationToken cancellationToken = default)
     {
+        // Centralize submit-path authorization here so every adapter (GPServer,
+        // OGC Processes, MCP, and the AnalysisContent run/rerun paths) is gated
+        // through the shared pipeline rather than relying on caller discipline
+        // (#2263). Adapters that already call EnsureCallerAuthorizedAsync before
+        // submit stay correct — this evaluation is idempotent and never
+        // double-fails an authorized caller.
+        await EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Process,
+            OperatorOperation.Execute,
+            cancellationToken).ConfigureAwait(false);
+
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
 

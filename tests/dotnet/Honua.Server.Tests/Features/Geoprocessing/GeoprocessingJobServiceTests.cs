@@ -409,6 +409,25 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CallerNotAuthorized_ThrowsAuthorizationException()
+    {
+        // The submit path centralizes Process/Execute authorization (#2263) so a
+        // forbidden caller is rejected before any job record is created, regardless
+        // of which adapter (or none) authorized first.
+        _authEvaluator
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden()));
+
+        var act = async () => await _sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithConfiguredWorkload_SubmitsToMatchingBackendAndPersistsState()
     {
         var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();

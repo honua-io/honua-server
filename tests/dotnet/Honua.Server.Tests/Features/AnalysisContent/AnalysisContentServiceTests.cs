@@ -5,9 +5,13 @@ using System.Security.Claims;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Query;
 using Honua.Ai.AnalysisContent;
@@ -17,6 +21,7 @@ using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using StackExchange.Redis;
@@ -269,6 +274,93 @@ public sealed class AnalysisContentServiceTests
             Assert.Equal(itemId, resolved!.ItemId);
         }
     }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitAnalysisPackageAsync_WhenCallerNotAuthorized_RejectedByCentralSubmitGate()
+    {
+        // The AnalysisContent run path delegates straight to the shared
+        // GeoprocessingJobService.SubmitJobAsync without authorizing first, so the
+        // centralized submit-path authorization (#2263) is what protects it. Wire a
+        // real job service whose evaluator forbids Process/Execute and assert the
+        // package submission is rejected centrally.
+        var authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
+        authEvaluator
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden()));
+        var approvalEvaluator = Substitute.For<IOperatorApprovalEvaluator>();
+        approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(ApprovalRequirement.NotRequired());
+        var executorOptions = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
+        executorOptions.CurrentValue.Returns(new GeoprocessingExecutorOptions());
+
+        var jobService = new GeoprocessingJobService(
+            Substitute.For<IUniversalProgressStore>(),
+            Array.Empty<IJobCancellationNotifier>(),
+            authEvaluator,
+            approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            executorOptions);
+
+        const string itemId = "analysis-package-auth";
+        var store = Substitute.For<IAnalysisContentStore>();
+        store.GetVersionAsync(itemId, Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(CreatePackageVersion(itemId));
+
+        var sut = new AnalysisContentService(
+            store,
+            Substitute.For<IMetadataV2GraphProvider>(),
+            Substitute.For<IQueryProcessor>(),
+            Substitute.For<IFeatureReader>(),
+            jobService,
+            Array.Empty<IExecutionLogStore>(),
+            TimeProvider.System,
+            NullLogger<AnalysisContentService>.Instance);
+
+        await Assert.ThrowsAsync<GeoprocessingAuthorizationException>(
+            () => sut.SubmitAnalysisPackageAsync(
+                itemId,
+                1,
+                new RunAnalysisContentVersionCommand(IdempotencyKey: null, Parameters: null),
+                Principal(),
+                CancellationToken.None));
+    }
+
+    private static AnalysisContentVersion CreatePackageVersion(string itemId)
+        => new()
+        {
+            VersionId = $"{itemId}:v1",
+            ItemId = itemId,
+            Version = 1,
+            Kind = AnalysisContentKind.AnalysisPackage,
+            AnalysisPackage = new AnalysisPackageContent
+            {
+                Plan = new AnalysisPlan
+                {
+                    PlanId = "plan-1",
+                    IntentId = "intent-1",
+                    Steps =
+                    [
+                        new AnalysisPlanStep
+                        {
+                            StepId = "step-1",
+                            Kind = AnalysisPlanStepKind.Geoprocess,
+                            ProcessId = "geometry.buffer",
+                            Inputs = new Dictionary<string, string>
+                            {
+                                ["wkb"] = "AAAA",
+                                ["srid"] = "4326",
+                                ["distance"] = "100"
+                            }
+                        }
+                    ]
+                }
+            },
+            ContentHash = "hash-1",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
 
     private static AnalysisContentService CreateService(
         IGeoprocessingJobService? jobService = null,
