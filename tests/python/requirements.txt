@@ -23,6 +23,10 @@ shapely>=2.0.0
 geopandas>=0.14.0
 pyproj>=3.6.0
 
+# Numerical: backs the Euclidean allocation worker-step unit test (#2255),
+# which exercises the nearest-source distance-transform algorithm directly.
+scipy>=1.11.0
+
 # Optional: PyQGIS integration (for desktop client compatibility tests)
 # Note: PyQGIS is a system dependency provided by the QGIS installation.
 # It is NOT installable via pip. The pyqgis test suite auto-skips when
