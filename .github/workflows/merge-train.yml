@@ -240,7 +240,7 @@ jobs:
 
       - name: Upload merge-train metrics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: merge-train-metrics
           path: ${{ github.workspace }}/merge-train-metrics.json
