@@ -1434,25 +1434,29 @@
       "displayName": "Data enrichment API",
       "surfaceKind": "http-route-family",
       "protocol": "Data Enrichment",
-      "canonicalIdentifier": "/api/enrich + /api/enrich/catalog",
+      "canonicalIdentifier": "/api/enrich + /api/enrich/catalog + /api/enrich/datasets",
       "parentSurfaceId": null,
       "endpointPrefixes": [],
       "endpointExactMatches": [
         "/api/enrich",
-        "/api/enrich/catalog"
+        "/api/enrich/catalog",
+        "/api/enrich/datasets",
+        "/api/enrich/datasets/{id}"
       ],
       "endpointContains": [],
       "operationKeys": [],
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus data-enrichment endpoint integration tests (catalog listing, spatial-join enrichment over a registered dataset, unknown-dataset 404, and Pro-edition gate).",
+          "proofMechanism": "EndpointRegistry coverage plus data-enrichment endpoint integration tests: the managed enrichment-dataset catalog (discovery list/get plus admin register/update/deregister with edition filtering, #2280) and the spatial-join enrichment facade (method vocabulary, aggregates, over-limit guard, unknown-dataset 404, and Pro-edition gate, #2282).",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "src/Honua.Server/Features/DataEnrichment/DataEnrichmentEndpoints.cs",
+            "src/Honua.Server/Features/DataEnrichment/EnrichmentDatasetAdminEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/DataEnrichment/DataEnrichmentEndpointTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/DataEnrichment/DataEnrichmentEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/DataEnrichment/EnrichmentDatasetCatalogEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
