@@ -637,6 +637,50 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task ToolsList_WithInvalidCursor_ReturnsInvalidParamsJsonRpcError()
+    {
+        // MCP 2025-03-26 pagination: an unparseable/expired cursor must surface as
+        // the JSON-RPC -32602 invalid-params error so the client restarts paging.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"page-bad","method":"tools/list","params":{"cursor":"not-a-cursor"}}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").GetString().Should().Be("page-bad");
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32602);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task ToolsList_WhenSinglePage_OmitsNextCursor()
+    {
+        // The default page size comfortably holds the composed tool catalog, so a
+        // single-page result must omit nextCursor entirely (WhenWritingNull) —
+        // proving the pagination plumbing is additive and backward compatible.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"page-1","method":"tools/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var result = document.RootElement.GetProperty("result");
+
+        result.GetProperty("tools").ValueKind.Should().Be(JsonValueKind.Array);
+        result.TryGetProperty("nextCursor", out _).Should().BeFalse(
+            "a single-page list must not advertise a nextCursor");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "resources/list")]
     public async Task ResourcesList_ExcludesParameterizedUris()
     {

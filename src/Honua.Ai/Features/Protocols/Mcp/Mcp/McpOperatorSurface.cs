@@ -38,15 +38,18 @@ internal sealed class McpOperatorSurface
 
     private readonly IReadOnlyDictionary<string, IMcpTool> _tools;
     private readonly IReadOnlyList<IMcpResource> _resources;
+    private readonly McpSurfaceLimits _limits;
     private readonly ILogger<McpOperatorSurface> _logger;
 
     public McpOperatorSurface(
         IEnumerable<IMcpTool> tools,
         IEnumerable<IMcpResource> resources,
-        ILogger<McpOperatorSurface> logger)
+        ILogger<McpOperatorSurface> logger,
+        McpSurfaceLimits? limits = null)
     {
         _tools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _resources = resources.ToList();
+        _limits = limits ?? McpSurfaceLimits.Default;
         _logger = logger;
 
         McpLog.SurfaceInitialized(
@@ -141,12 +144,12 @@ internal sealed class McpOperatorSurface
             return request.Method switch
             {
                 "initialize" => HandleInitialize(request),
-                "tools/list" => SuccessResponse(request.Id, ListTools(), McpJsonContext.Default.McpToolsListResult),
+                "tools/list" => ListTools(request),
                 "tools/call" => await CallToolAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
-                "resources/list" => SuccessResponse(request.Id, ListResources(), McpJsonContext.Default.McpResourcesListResult),
-                "resources/templates/list" => SuccessResponse(request.Id, ListResourceTemplates(), McpJsonContext.Default.McpResourceTemplatesListResult),
+                "resources/list" => ListResources(request),
+                "resources/templates/list" => ListResourceTemplates(request),
                 "resources/read" => await ReadResourceAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
-                "prompts/list" => SuccessResponse(request.Id, McpPromptCatalog.List(), McpJsonContext.Default.McpPromptsListResult),
+                "prompts/list" => ListPrompts(request),
                 "prompts/get" => GetPrompt(request),
                 _ => ErrorResponse(request.Id, McpErrorMapper.MethodNotFound($"Unknown MCP method '{request.Method}'."))
             };
@@ -209,13 +212,55 @@ internal sealed class McpOperatorSurface
         return LatestProtocolVersion;
     }
 
-    private McpToolsListResult ListTools() => new()
+    private McpJsonRpcResponse ListTools(McpJsonRpcRequest request)
     {
-        Tools = _tools.Values
+        if (!TryReadCursor(request, out var cursor, out var error))
+        {
+            return error;
+        }
+
+        var ordered = _tools.Values
             .Select(t => t.Describe())
             .OrderBy(d => d.Name, StringComparer.Ordinal)
-            .ToList()
-    };
+            .ToList();
+
+        try
+        {
+            var page = McpPagination.Page(ordered, cursor, _limits.ListPageSize, out var nextCursor);
+            return SuccessResponse(
+                request.Id,
+                new McpToolsListResult { Tools = page, NextCursor = nextCursor },
+                McpJsonContext.Default.McpToolsListResult);
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+        }
+    }
+
+    private McpJsonRpcResponse ListPrompts(McpJsonRpcRequest request)
+    {
+        if (!TryReadCursor(request, out var cursor, out var error))
+        {
+            return error;
+        }
+
+        // McpPromptCatalog.List() already returns the catalog in stable name order.
+        var ordered = McpPromptCatalog.List().Prompts;
+
+        try
+        {
+            var page = McpPagination.Page(ordered, cursor, _limits.ListPageSize, out var nextCursor);
+            return SuccessResponse(
+                request.Id,
+                new McpPromptsListResult { Prompts = page, NextCursor = nextCursor },
+                McpJsonContext.Default.McpPromptsListResult);
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+        }
+    }
 
     private static McpJsonRpcResponse GetPrompt(McpJsonRpcRequest request)
     {
@@ -350,21 +395,82 @@ internal sealed class McpOperatorSurface
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
     }
 
-    private McpResourcesListResult ListResources() => new()
+    private McpJsonRpcResponse ListResources(McpJsonRpcRequest request)
     {
-        Resources = _resources
+        if (!TryReadCursor(request, out var cursor, out var error))
+        {
+            return error;
+        }
+
+        var ordered = _resources
             .SelectMany(r => r.Describe())
             .OrderBy(d => d.Uri, StringComparer.Ordinal)
-            .ToList()
-    };
+            .ToList();
 
-    private McpResourceTemplatesListResult ListResourceTemplates() => new()
+        try
+        {
+            var page = McpPagination.Page(ordered, cursor, _limits.ListPageSize, out var nextCursor);
+            return SuccessResponse(
+                request.Id,
+                new McpResourcesListResult { Resources = page, NextCursor = nextCursor },
+                McpJsonContext.Default.McpResourcesListResult);
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+        }
+    }
+
+    private McpJsonRpcResponse ListResourceTemplates(McpJsonRpcRequest request)
     {
-        ResourceTemplates = _resources
+        if (!TryReadCursor(request, out var cursor, out var error))
+        {
+            return error;
+        }
+
+        var ordered = _resources
             .SelectMany(r => r.DescribeTemplates())
             .OrderBy(d => d.UriTemplate, StringComparer.Ordinal)
-            .ToList()
-    };
+            .ToList();
+
+        try
+        {
+            var page = McpPagination.Page(ordered, cursor, _limits.ListPageSize, out var nextCursor);
+            return SuccessResponse(
+                request.Id,
+                new McpResourceTemplatesListResult { ResourceTemplates = page, NextCursor = nextCursor },
+                McpJsonContext.Default.McpResourceTemplatesListResult);
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Parses the optional opaque <c>cursor</c> from a paginated list request's
+    /// <c>params</c>. Returns <c>false</c> with a populated
+    /// <paramref name="errorResponse"/> when the params shape is malformed; a
+    /// missing or null cursor is valid and yields <c>null</c>.
+    /// </summary>
+    private static bool TryReadCursor(
+        McpJsonRpcRequest request,
+        out string? cursor,
+        out McpJsonRpcResponse errorResponse)
+    {
+        cursor = null;
+        errorResponse = null!;
+        try
+        {
+            cursor = ParseParams(request.Params, McpJsonContext.Default.McpListParams)?.Cursor;
+            return true;
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            errorResponse = ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+            return false;
+        }
+    }
 
     private async Task<McpJsonRpcResponse> ReadResourceAsync(
         HttpContext httpContext,
@@ -421,6 +527,29 @@ internal sealed class McpOperatorSurface
             var result = await handler
                 .ReadAsync(httpContext, parameters.Uri, cancellationToken)
                 .ConfigureAwait(false);
+
+            // Chunk large documents (job results, catalogs) into windowed pages so
+            // a single resources/read response stays bounded; small documents are
+            // returned verbatim with no nextCursor. An invalid cursor surfaces as
+            // the same invalid_argument the list methods use.
+            try
+            {
+                var page = McpPagination.Chunk(
+                    result.Contents,
+                    parameters.Cursor,
+                    _limits.MaxResourceReadChars,
+                    out var nextCursor);
+                result = new McpResourcesReadResult { Contents = page, NextCursor = nextCursor };
+            }
+            catch (GeoprocessingValidationException ex)
+            {
+                McpTelemetry.ResourceReadCount.Add(
+                    1,
+                    new KeyValuePair<string, object?>("resource_family", resourceFamily),
+                    new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
+                return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+            }
+
             // Contract-first stub resources return `not_implemented` envelopes.
             // Tag the counter accordingly so dashboards can separate stub reads
             // from functional reads.

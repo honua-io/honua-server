@@ -187,12 +187,32 @@ internal sealed class McpServerInfo
 }
 
 /// <summary>
+/// Request payload shared by the paginated MCP list methods (<c>tools/list</c>,
+/// <c>resources/list</c>, <c>resources/templates/list</c>, <c>prompts/list</c>).
+/// The optional opaque <c>cursor</c> resumes a previous page; clients MUST echo
+/// the <c>nextCursor</c> from the prior result verbatim and treat it as opaque.
+/// See https://modelcontextprotocol.io/specification/2025-03-26/server/utilities/pagination.
+/// </summary>
+internal sealed class McpListParams
+{
+    [JsonPropertyName("cursor")]
+    public string? Cursor { get; set; }
+}
+
+/// <summary>
 /// Response payload for <c>tools/list</c>.
 /// </summary>
 internal sealed class McpToolsListResult
 {
     [JsonPropertyName("tools")]
     public IReadOnlyList<McpToolDescriptor> Tools { get; set; } = [];
+
+    /// <summary>
+    /// Opaque cursor for the next page, present only when more tools remain.
+    /// Omitted (null) on the final page per MCP 2025-03-26 pagination.
+    /// </summary>
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; set; }
 }
 
 internal sealed class McpToolDescriptor
@@ -350,6 +370,13 @@ internal sealed class McpResourcesListResult
 {
     [JsonPropertyName("resources")]
     public IReadOnlyList<McpResourceDescriptor> Resources { get; set; } = [];
+
+    /// <summary>
+    /// Opaque cursor for the next page, present only when more resources remain.
+    /// Omitted (null) on the final page per MCP 2025-03-26 pagination.
+    /// </summary>
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; set; }
 }
 
 internal sealed class McpResourceDescriptor
@@ -377,6 +404,13 @@ internal sealed class McpResourceTemplatesListResult
 {
     [JsonPropertyName("resourceTemplates")]
     public IReadOnlyList<McpResourceTemplateDescriptor> ResourceTemplates { get; set; } = [];
+
+    /// <summary>
+    /// Opaque cursor for the next page, present only when more templates remain.
+    /// Omitted (null) on the final page per MCP 2025-03-26 pagination.
+    /// </summary>
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; set; }
 }
 
 internal sealed class McpResourceTemplateDescriptor
@@ -401,6 +435,15 @@ internal sealed class McpResourcesReadParams
 {
     [JsonPropertyName("uri")]
     public string? Uri { get; set; }
+
+    /// <summary>
+    /// Optional opaque cursor that resumes a chunked read of a large resource
+    /// document (job results, catalogs). Honua extension over MCP 2025-03-26,
+    /// which does not paginate <c>resources/read</c>; clients echo the prior
+    /// <c>nextCursor</c> verbatim. Omit to read from the start of the document.
+    /// </summary>
+    [JsonPropertyName("cursor")]
+    public string? Cursor { get; set; }
 }
 
 /// <summary>
@@ -410,6 +453,15 @@ internal sealed class McpResourcesReadResult
 {
     [JsonPropertyName("contents")]
     public IReadOnlyList<McpResourceContent> Contents { get; set; } = [];
+
+    /// <summary>
+    /// Opaque cursor for the next chunk of a large resource document, present
+    /// only when more content remains. Honua extension over MCP 2025-03-26; each
+    /// page's <c>text</c> concatenates per <c>uri</c> to rebuild the full
+    /// document. Omitted (null) when the whole document was returned.
+    /// </summary>
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; set; }
 }
 
 internal sealed class McpResourceContent
@@ -439,6 +491,13 @@ internal sealed class McpPromptsListResult
 {
     [JsonPropertyName("prompts")]
     public IReadOnlyList<McpPromptDescriptor> Prompts { get; set; } = [];
+
+    /// <summary>
+    /// Opaque cursor for the next page, present only when more prompts remain.
+    /// Omitted (null) on the final page per MCP 2025-03-26 pagination.
+    /// </summary>
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; set; }
 }
 
 /// <summary>
