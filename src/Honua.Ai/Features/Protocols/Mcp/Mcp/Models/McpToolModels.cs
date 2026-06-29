@@ -173,6 +173,67 @@ internal sealed class McpPublishServiceOutput
 }
 
 /// <summary>
+/// Arguments for <c>honua_create_map_package</c>: author a MapPackage from a
+/// prompt through the canonical map-generation pipeline (#1951). The standard
+/// geospatial-mcp composition selectors (<c>templateId</c>, <c>styleId</c>,
+/// <c>themeId</c>) are woven into the generation prompt as explicit guidance.
+/// All fields are optional in the published schema (the standard schema marks
+/// none required); a missing <c>prompt</c> is reported as a structured
+/// <c>invalid_argument</c> at invocation time.
+/// </summary>
+internal sealed class McpCreateMapPackageArgument
+{
+    [JsonPropertyName("prompt")]
+    public string? Prompt { get; set; }
+
+    [JsonPropertyName("provider")]
+    public string? Provider { get; set; }
+
+    [JsonPropertyName("model")]
+    public string? Model { get; set; }
+
+    [JsonPropertyName("templateId")]
+    public string? TemplateId { get; set; }
+
+    [JsonPropertyName("styleId")]
+    public string? StyleId { get; set; }
+
+    [JsonPropertyName("themeId")]
+    public string? ThemeId { get; set; }
+}
+
+/// <summary>
+/// Arguments for <c>honua_create_app_package</c>: author an AppPackage from a
+/// prompt through the canonical app-generation pipeline (#1951). The standard
+/// geospatial-mcp composition fields (<c>templateId</c>, <c>targetSdk</c>,
+/// <c>mapPackageId</c>, <c>boundArtifactIds</c>) are woven into the generation
+/// prompt as explicit guidance.
+/// </summary>
+internal sealed class McpCreateAppPackageArgument
+{
+    [JsonPropertyName("prompt")]
+    public string? Prompt { get; set; }
+
+    [JsonPropertyName("provider")]
+    public string? Provider { get; set; }
+
+    [JsonPropertyName("model")]
+    public string? Model { get; set; }
+
+    [JsonPropertyName("templateId")]
+    public string? TemplateId { get; set; }
+
+    [JsonPropertyName("targetSdk")]
+    public string? TargetSdk { get; set; }
+
+    [JsonPropertyName("mapPackageId")]
+    public string? MapPackageId { get; set; }
+
+    [JsonPropertyName("boundArtifactIds")]
+    public IReadOnlyList<string>? BoundArtifactIds { get; set; }
+}
+
+/// <summary>
 /// Canonical-object plan wire shape consumed by MCP plan tools.
 /// Maps directly to <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisPlan"/>.
 /// </summary>

@@ -16,13 +16,10 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// domain types the tools serialize.
 /// </summary>
 /// <remarks>
-/// The MCP revision this server advertises (2025-03-26) predates the standard
-/// <c>outputSchema</c> tool field (added in 2025-06-18). Each schema here is
-/// published on the descriptor under the Honua extension key
-/// <c>structuredContentSchema</c> and describes the same
-/// <c>result.structuredContent</c> payload <c>outputSchema</c> would. The
-/// revision bump that lets these move to the standard <c>outputSchema</c> key is
-/// tracked in honua-server#1954.
+/// These schemas are published on the descriptor under the standard MCP
+/// <c>outputSchema</c> tool field, available in the 2025-06-18 revision this
+/// server negotiates by default (honua-server#1954). Each describes the same
+/// <c>result.structuredContent</c> payload the tool emits.
 /// </remarks>
 internal static class McpToolOutputSchemas
 {
@@ -339,6 +336,62 @@ internal static class McpToolOutputSchemas
                 "features": { "type": "array", "items": { "type": "object" } }
               }
             }
+          }
+        }
+        """);
+
+    /// <summary>
+    /// Schema for the <c>honua_create_map_package</c> result (a
+    /// <c>MapGenerationResult</c>). Pins the top-level envelope (status, package,
+    /// rationale, clarifications, validation, capabilityState, provider, model)
+    /// and leaves the deep package/validation sub-objects open so the published
+    /// contract stays stable as the generation engine evolves.
+    /// </summary>
+    public static readonly JsonElement CreateMapPackageOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "generated, needs_clarification, invalid, or capability_unavailable."
+            },
+            "package": { "type": ["object", "null"], "description": "The generated MapPackage when status is generated." },
+            "rationale": { "type": ["string", "null"] },
+            "clarifications": { "type": "array", "items": { "type": "object" } },
+            "validation": { "type": ["object", "null"] },
+            "unmappedRequests": { "type": "array", "items": { "type": "string" } },
+            "capabilityState": { "type": ["object", "null"] },
+            "provider": { "type": ["string", "null"] },
+            "model": { "type": ["string", "null"] }
+          }
+        }
+        """);
+
+    /// <summary>
+    /// Schema for the <c>honua_create_app_package</c> result (an
+    /// <c>AppGenerationResult</c>). Mirrors <see cref="CreateMapPackageOutputSchema"/>;
+    /// the <c>package</c> is the opaque studio-app/v1 body.
+    /// </summary>
+    public static readonly JsonElement CreateAppPackageOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "generated, needs_clarification, invalid, or capability_unavailable."
+            },
+            "package": { "type": ["object", "null"], "description": "The generated studio-app/v1 AppPackage body when status is generated." },
+            "rationale": { "type": ["string", "null"] },
+            "clarifications": { "type": "array", "items": { "type": "object" } },
+            "validation": { "type": ["object", "null"] },
+            "unmappedRequests": { "type": "array", "items": { "type": "string" } },
+            "capabilityState": { "type": ["object", "null"] },
+            "provider": { "type": ["string", "null"] },
+            "model": { "type": ["string", "null"] }
           }
         }
         """);
