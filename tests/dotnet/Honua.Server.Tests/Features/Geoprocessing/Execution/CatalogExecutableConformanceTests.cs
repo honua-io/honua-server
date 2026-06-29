@@ -179,9 +179,9 @@ public sealed class CatalogExecutableConformanceTests
         // Raster analysis & terrain GP tool pack (#2239 / #2240): all run
         // out-of-process in the GDAL worker (gdal_calc.py / gdal_proximity.py /
         // gdal_contour / gdal_viewshed / gdal_polygonize.py / gdal_rasterize).
-        // proximity.euclidean-allocation is advertised but flagged unsupported
-        // (the worker FAILS it with a clear message). All declare the native
-        // runtime profile and have NO lean-dispatcher executor.
+        // proximity.euclidean-allocation runs the custom gdal_euclidean_allocation.py
+        // worker step (#2255). All declare the native runtime profile and have NO
+        // lean-dispatcher executor.
         "raster.map-algebra",
         "raster.spectral-index",
         "raster.reclassify",

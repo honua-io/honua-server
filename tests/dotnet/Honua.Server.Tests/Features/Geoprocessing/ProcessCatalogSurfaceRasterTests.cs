@@ -696,11 +696,10 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Validator_ProximityEuclideanAllocation_ShapeValid_PassesValidation_AsFlagged()
+    public void Validator_ProximityEuclideanAllocation_ShapeValid_PassesValidation()
     {
-        // Allocation is flagged unsupported at execution, but a shape-valid plan must
-        // pass submit-time validation so the worker surfaces the unsupported message
-        // as a job failure (not a submit rejection).
+        // Allocation (#2255) shares the distance op's parameter surface; a plan
+        // supplying only the required 'source' must pass submit-time validation.
         var plan = CreateSingleStepPlan(
             "proximity.euclidean-allocation",
             new Dictionary<string, string>
@@ -711,6 +710,26 @@ public sealed class ProcessCatalogSurfaceRasterTests
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
 
         violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_ProximityEuclideanAllocation_WithInvalidDistUnits_ProducesViolation()
+    {
+        // Allocation reuses the distance semantic validator (#2255), so an
+        // out-of-enum distUnits is rejected at submit time.
+        var plan = CreateSingleStepPlan(
+            "proximity.euclidean-allocation",
+            new Dictionary<string, string>
+            {
+                ["source"] = StubBase64,
+                ["distUnits"] = "MILES",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.distUnits");
     }
 
     [UnitTest]

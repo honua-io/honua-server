@@ -362,11 +362,11 @@ internal static partial class ProcessPlanValidator
                 ValidateProximityEuclideanDistanceSemantics(step, violations);
                 break;
             case "proximity.euclidean-allocation":
-                // Euclidean allocation is advertised but flagged unsupported by the
-                // native worker (stock gdal_proximity has no allocation mode). The
-                // plan is still shape-validated (the base type-validator enforces the
-                // required 'source' input); the worker FAILS the job at execution with
-                // a clear message rather than the validator blocking it.
+                // Allocation shares the distance op's parameter surface (#2255):
+                // 'source' (required), optional maxDistance / distUnits / values. The
+                // native worker computes the nearest-source raster via the custom
+                // gdal_euclidean_allocation.py step.
+                ValidateProximityEuclideanDistanceSemantics(step, violations);
                 break;
             case "surface.contour":
                 ValidateSurfaceContourSemantics(step, violations);
