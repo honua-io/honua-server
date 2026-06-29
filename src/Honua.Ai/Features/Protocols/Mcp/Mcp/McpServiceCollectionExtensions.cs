@@ -84,6 +84,13 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ClarifyIntentTool>());
 
+        // honua_list_capabilities (#1949): a self-describing manifest of the live
+        // tool/resource surface for a cold client LLM. Registered unconditionally
+        // because it only reflects whatever catalog the composition wired — it has
+        // no external service dependency and never advertises an empty capability
+        // it cannot back.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, Discovery.ListCapabilitiesTool>());
+
         // Geocode/route tools (#1597) are only advertised when the host
         // composition has wired the underlying canonical services (AddGeocoding
         // / AddRouting run before AddMcpOperatorSurface in the server
@@ -110,6 +117,11 @@ internal static class McpServiceCollectionExtensions
         if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.ListLayersTool>());
+
+            // honua_resolve_entity (#1949): NL/text → ranked service/layer refs over
+            // the same Metadata v2 catalog ListLayersTool reads, so it is gated on
+            // the same provider being wired.
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, Discovery.ResolveEntityTool>());
 
             if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader)))
             {
@@ -154,6 +166,14 @@ internal static class McpServiceCollectionExtensions
         // singleton so a session id issued on initialize is recognized on every
         // subsequent POST/GET/DELETE handled by the same host.
         services.TryAddSingleton<McpSessionManager>();
+
+        // Server-push notifications over the session SSE stream (honua-server#1954):
+        // the publisher builds notifications/progress + */list_changed frames and
+        // enqueues them onto the owning session; the progress bridge polls the
+        // canonical job runtime and forwards progress to the session that started
+        // the job. Both are process-wide singletons.
+        services.TryAddSingleton<IMcpNotificationPublisher, McpNotificationPublisher>();
+        services.TryAddSingleton<McpJobProgressBridge>();
 
         return services;
     }

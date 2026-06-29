@@ -103,6 +103,51 @@ internal sealed class McpValidationViolation
     public string? FieldPath { get; set; }
 }
 
+/// <summary>
+/// JSON-RPC 2.0 notification envelope pushed from the server to the client over
+/// the Streamable-HTTP <c>GET /mcp</c> Server-Sent-Events stream (honua-server#1954).
+/// A notification carries no <c>id</c> per JSON-RPC 2.0; the client never replies.
+/// Used for <c>notifications/progress</c> (long-running job progress) and the
+/// <c>notifications/tools/list_changed</c> / <c>notifications/resources/list_changed</c>
+/// catalog-change signals.
+/// </summary>
+internal sealed class McpJsonRpcNotification
+{
+    [JsonPropertyName("jsonrpc")]
+    public string JsonRpc { get; set; } = "2.0";
+
+    [JsonPropertyName("method")]
+    public string Method { get; set; } = string.Empty;
+
+    [JsonPropertyName("params")]
+    public JsonElement? Params { get; set; }
+}
+
+/// <summary>
+/// Parameters for an MCP <c>notifications/progress</c> message. The
+/// <see cref="ProgressToken"/> correlates the progress stream with the work the
+/// client started; Honua uses the durable job id as the token so a client that
+/// received a job id from <c>honua_execute_plan</c> can correlate streamed
+/// progress with that job. <see cref="Progress"/>/<see cref="Total"/> express a
+/// 0–100 completion ratio sourced from the canonical job runtime's
+/// <c>PercentComplete</c>, and <see cref="Message"/> mirrors the job's current
+/// phase. See https://modelcontextprotocol.io/specification/2025-06-18/basic/utilities/progress.
+/// </summary>
+internal sealed class McpProgressNotificationParams
+{
+    [JsonPropertyName("progressToken")]
+    public string ProgressToken { get; set; } = string.Empty;
+
+    [JsonPropertyName("progress")]
+    public double Progress { get; set; }
+
+    [JsonPropertyName("total")]
+    public double? Total { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+}
+
 // -----------------------------------------------------------------------
 // MCP protocol payloads
 // -----------------------------------------------------------------------

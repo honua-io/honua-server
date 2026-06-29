@@ -1,0 +1,8 @@
+{
+  "id": "resolve_entity.text",
+  "schemaRef": "tools/resolve_entity.schema.json",
+  "validates": "inputs",
+  "inputs": { "text": "parcels", "entityType": "any", "limit": 10 },
+  "expected": "tool_result",
+  "canonicalRefs": ["CapabilityCatalog", "LayerRef"]
+}

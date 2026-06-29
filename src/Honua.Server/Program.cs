@@ -654,7 +654,7 @@ builder.Services.AddValidationServices();
 builder.Services.AddServerFeatures(builder.Configuration);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 builder.Services.AddWorkflowPackages();
-builder.Services.AddOperationsToolset();
+builder.Services.AddOperationsToolset(builder.Configuration);
 builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {

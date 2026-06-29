@@ -153,6 +153,22 @@
       "family": "Control-plane proposal (reference shape)",
       "schema": "tools/propose_operation.schema.json",
       "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "resolve_entity",
+      "referenceToolName": "honua_resolve_entity",
+      "family": "Discovery and grounding (Honua extension)",
+      "schema": "tools/resolve_entity.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (#1949): NL/text -> ranked service/layer references grounded in the live catalog. Pending formalization in the geospatial-mcp standard; schema marks x-honua-extension."
+    },
+    {
+      "standardName": "list_capabilities",
+      "referenceToolName": "honua_list_capabilities",
+      "family": "Discovery and grounding (Honua extension)",
+      "schema": "tools/list_capabilities.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (#1949): self-describing manifest of the live tool/resource surface for a cold client LLM. Pending formalization in the geospatial-mcp standard; schema marks x-honua-extension."
     }
   ],
   "resources": [

@@ -44,7 +44,9 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_solve_route",
         "honua_list_layers",
         "honua_query_features",
-        "honua_render_map"
+        "honua_render_map",
+        "honua_resolve_entity",
+        "honua_list_capabilities"
     };
 
     private static readonly string[] TaxonomyResourceUris =
@@ -214,6 +216,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_list_layers",
         "honua_query_features",
         "honua_render_map",
+        "honua_resolve_entity",
+        "honua_list_capabilities",
     };
 
     /// <summary>
@@ -571,7 +575,11 @@ public sealed partial class McpTaxonomyAlignmentTests
             new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance)
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool>.Instance)
         ];
     }
 

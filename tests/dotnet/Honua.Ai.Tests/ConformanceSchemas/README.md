@@ -20,3 +20,23 @@ implements today. Standard tools Honua does not yet implement as discrete MCP
 tools (the map/app composition and publish families) are tracked as
 **known-gaps**: their absence does not fail the suite; only NON-CONFORMANCE of
 an implemented tool fails.
+
+## Honua extensions (`x-honua-extension`)
+
+A few schemas under `geospatial-mcp/tools/` are **documented Honua extensions**
+over the bare standard taxonomy rather than copies of an upstream schema. They
+carry `"x-honua-extension": true` in the schema body:
+
+- `resolve_entity.schema.json` — `honua_resolve_entity` (#1949): natural-language
+  text → ranked service/layer references grounded in the live catalog.
+- `list_capabilities.schema.json` — `honua_list_capabilities` (#1949): a
+  self-describing manifest of the live tool/resource surface for a cold client
+  LLM.
+
+These are exposed as first-class reference-implementation tools while the
+`geospatial-mcp` standard formalizes capability discovery / entity resolution
+(the standard currently models them as `CapabilityCatalog` reads). When the
+upstream standard publishes canonical schemas for them, re-vendor and drop the
+extension marker. They participate in the full conformance assertions (required
+fields + fixture validation) because their live and vendored shapes are authored
+together.

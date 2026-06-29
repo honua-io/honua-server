@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/resolve_entity.schema.json",
+  "title": "resolve_entity inputSchema",
+  "description": "Argument shape for resolving a natural-language name or phrase to concrete catalog entity references (services/layers). The bare standard taxonomy models entity resolution as a CapabilityCatalog/grounding read; the reference implementation exposes it as a discrete tool (advertised name honua_resolve_entity). x-honua-extension: this is a documented Honua extension over the bare taxonomy, pending formalization in the geospatial-mcp standard. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["text"],
+  "properties": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Natural-language name or phrase to resolve to catalog entities (e.g. \"parcels\", \"flood zones\", \"roads\")."
+    },
+    "entityType": {
+      "type": "string",
+      "enum": ["any", "service", "layer"],
+      "default": "any",
+      "description": "Restrict matches to services, to layers, or to both (default)."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 10,
+      "description": "Maximum number of ranked matches to return (capped at 50)."
+    }
+  }
+}

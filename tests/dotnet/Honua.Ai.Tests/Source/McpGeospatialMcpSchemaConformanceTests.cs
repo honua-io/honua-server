@@ -59,6 +59,15 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_query_features"] = "query_features",
             ["honua_render_map"] = "render_map",
             ["honua_publish_service"] = "publish_service",
+            // Honua extensions over the bare taxonomy (#1949): the standard models
+            // entity resolution and capability discovery as CapabilityCatalog reads;
+            // the reference implementation exposes them as discrete tools and ships
+            // vendored conformance schemas marked x-honua-extension. Their live and
+            // vendored required sets agree, so they participate in the full
+            // required-field + fixture conformance assertions (unlike the
+            // publish_service divergence recorded below).
+            ["honua_resolve_entity"] = "resolve_entity",
+            ["honua_list_capabilities"] = "list_capabilities",
         };
 
     /// <summary>
