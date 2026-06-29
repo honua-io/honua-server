@@ -68,6 +68,12 @@ curl -s -X POST "$BASE/mcp" -H "Content-Type: application/json" \
 
 The response lists the nine `honua_*` tools above with JSON Schema input definitions. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 
+Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`) and a `structuredContentSchema` describing the tool's structured result, so schema-driven clients can reason about safety and validate responses.
+
+## Pagination
+
+The list methods (`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`) are paginated per MCP 2025-03-26: when more entries remain the result carries an opaque `nextCursor`; pass it back as `params.cursor` to fetch the next page. A single-page result omits `nextCursor`. Treat cursors as opaque and echo them verbatim; an invalid or expired cursor returns JSON-RPC `-32602` invalid-params. Large `resources/read` documents (job results, catalogs) are chunked the same way — each page's `text` concatenates per `uri` to rebuild the full document, with `nextCursor` pointing at the next chunk.
+
 ## Troubleshoot
 
 - **`unauthenticated` on `tools/call` or `resources/read`** — handshake methods work anonymously but tool calls do not; attach the `X-API-Key` header (or token) to the client config. See [troubleshooting](../deploy/troubleshooting.md).
