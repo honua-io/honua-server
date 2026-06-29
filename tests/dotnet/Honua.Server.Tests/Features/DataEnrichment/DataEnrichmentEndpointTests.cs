@@ -128,6 +128,147 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Enrich)]
+    [Endpoint("POST /api/enrich")]
+    public async Task Enrich_PointInPolygonMethod_ReturnsFeatureCollection()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            datasetKey = DatasetKey,
+            sourceLayerId = WebAppFixture.TestLayerId,
+            method = "point-in-polygon",
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/api/enrich",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        doc.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Enrich)]
+    [Endpoint("POST /api/enrich")]
+    public async Task Enrich_WithAggregates_ReturnsAggregateProperty()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            datasetKey = DatasetKey,
+            sourceLayerId = WebAppFixture.TestLayerId,
+            method = "intersects",
+            aggregates = new[]
+            {
+                new { statisticType = "count", onField = "name", outName = "count_name" },
+            },
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/api/enrich",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var features = doc.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().BeGreaterThan(0);
+        features.EnumerateArray().First()
+            .GetProperty("properties").TryGetProperty("count_name", out _)
+            .Should().BeTrue("the aggregate output field must be present on enriched features");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Enrich)]
+    [Endpoint("POST /api/enrich")]
+    public async Task Enrich_NearestNeighborMethod_ReturnsNotImplemented()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            datasetKey = DatasetKey,
+            sourceLayerId = WebAppFixture.TestLayerId,
+            method = "nearest-neighbor",
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/api/enrich",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Enrich)]
+    [Endpoint("POST /api/enrich")]
+    public async Task Enrich_InlineGeoJsonSource_ReturnsNotImplemented()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            datasetKey = DatasetKey,
+            sourceLayerId = WebAppFixture.TestLayerId,
+            features = new { type = "FeatureCollection", features = Array.Empty<object>() },
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/api/enrich",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+    }
+}
+
+/// <summary>
+/// Verifies the synchronous over-limit guard (#2282): when the source selection
+/// exceeds the configured analytics input cap, the sync endpoint returns 413 and
+/// points callers at the async batch path. Configures a cap of 1 so the seed layer
+/// trips the guard.
+/// </summary>
+[Collection("Database")]
+[Protocol(ProtocolNames.DataEnrichment)]
+public sealed class DataEnrichmentSyncLimitTests : IAsyncLifetime
+{
+    private const string DatasetKey = "test-boundaries";
+
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro)
+        .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["DataEnrichment:Datasets:0:Key"] = DatasetKey,
+                ["DataEnrichment:Datasets:0:LayerId"] = "1",
+                ["DataEnrichment:Datasets:0:Predicate"] = "intersects",
+                ["Limits:Analytics:MaxInputFeatures"] = "1",
+            });
+        }));
+
+    public Task InitializeAsync() => _fixture.InitializeAsync();
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Enrich)]
+    [Endpoint("POST /api/enrich")]
+    public async Task Enrich_OverLimit_ReturnsPayloadTooLarge()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            datasetKey = DatasetKey,
+            sourceLayerId = WebAppFixture.TestLayerId,
+            method = "intersects",
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/api/enrich",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+    }
 }
 
 /// <summary>

@@ -11,12 +11,40 @@ shared spatial-analytics pipeline.
 
 | Method | Route | Description |
 |---|---|---|
-| `GET`  | `/api/enrich/catalog` | List the registered enrichment datasets you may reference. |
-| `POST` | `/api/enrich`         | Enrich a registered source layer with attributes from a registered enrichment dataset. |
+| `GET`  | `/api/enrich/catalog` | List the configuration-driven enrichment datasets you may reference (back-compat). |
+| `GET`  | `/api/enrich/datasets` | Discover the managed enrichment-dataset catalog, filtered by your edition (#2280). |
+| `GET`  | `/api/enrich/datasets/{id}` | Discover a single managed enrichment dataset by id. |
+| `POST` | `/api/enrich/datasets` | **Admin:** register a managed layer as an enrichment dataset (#2280). |
+| `PUT`  | `/api/enrich/datasets/{id}` | **Admin:** update a registered enrichment dataset. |
+| `DELETE` | `/api/enrich/datasets/{id}` | **Admin:** deregister an enrichment dataset. |
+| `POST` | `/api/enrich`         | Enrich a registered source layer with attributes from an enrichment dataset. |
 
-Both endpoints require an active **Pro** entitlement (they share the
-`analytics.spatial-join` entitlement, since enrichment is a curated facade over
-the same join primitive).
+The compute endpoint (`POST /api/enrich`) requires an active **Pro** entitlement
+(it shares the `analytics.spatial-join` entitlement, since enrichment is a curated
+facade over the same join primitive). Discovery (`GET /api/enrich/datasets`) is
+**edition-filtered** rather than hard-gated: callers see only datasets whose
+minimum edition is at or below theirs. The admin registration routes require the
+admin authorization policy and are only mapped when the active data provider is
+Postgres (the managed registry table is Postgres-backed).
+
+## Managed enrichment-dataset catalog (#2280)
+
+`POST /api/enrich/datasets` designates an existing managed layer as a reusable
+enrichment dataset. Each entry captures: a stable `id` (slug), `title`,
+`category` (`boundary` | `demographic` | `poi`), the backing `layerId`,
+`geometryType`, joinable `attributes`, default `defaultPredicate`/`distanceMeters`,
+and the provenance/`attribution`/`license`/`minimumEdition` metadata so downstream
+consumers can comply with the data provider's terms. The catalog is persisted in
+`honua.enrichment_datasets` (migration 071), cached through the shared
+generation-stamped catalog scope, and invalidated on register/update/deregister.
+
+`POST /api/enrich` resolves its `datasetId` through this catalog (falling back to
+the configuration catalog key for back-compat), maps the enrichment `method`
+vocabulary (`intersects`, `point-in-polygon`, `within-distance`) to the canonical
+spatial predicates, supports `outputFields` and per-match `aggregates`
+(count/sum/avg/min/max), echoes the dataset attribution in the
+`X-Honua-Data-Attribution` response header, and returns `413` (pointing to the
+async batch path) when the source selection exceeds the synchronous input cap.
 
 ## Registering enrichment datasets
 
