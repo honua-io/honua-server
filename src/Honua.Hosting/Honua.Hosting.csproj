@@ -73,6 +73,15 @@
          on the IKafkaEventProducer abstraction so it stays unit-testable
          without a live broker. -->
     <PackageReference Include="Confluent.Kafka" />
+    <!-- NATS.Net backs the enterprise event-bus NATS sink (#357): the
+         broker-agnostic IFeatureChangeEventSink NATS adapter publishes committed
+         feature-change events to a configurable JetStream subject with optional
+         message deduplication (publish-side exactly-once) and routes failed
+         deliveries to a dead-letter subject. The dependency is isolated behind
+         the NatsJetStreamEventProducer wrapper; the sink itself depends only on
+         the INatsEventProducer abstraction so it stays unit-testable without a
+         live JetStream server. -->
+    <PackageReference Include="NATS.Net" />
   </ItemGroup>
 
   <ItemGroup>
