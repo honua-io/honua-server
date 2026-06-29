@@ -104,11 +104,27 @@ Readiness reporting projects recorded backups onto the objectives and reports on
 The shared posture rules live in `Honua.Core` (`Features/DisasterRecovery`), so the admin
 reporting surface and provider implementations agree on a single definition of recoverable.
 
-> Scope note (#356): this slice ships the licensing catalog entries, the recovery-objective /
-> backup-record / readiness domain, and this runbook. The PostgreSQL backup service that
-> executes the schedule, the Redis backup path, the failover state machine, the admin
-> endpoint, and the multi-region Terraform modules are tracked as follow-up work on the same
-> issue.
+### Failover decision (active-passive)
+
+The failover playbook reacts to automated health checks against the primary serving surface.
+The shared decision rules also live in `Honua.Core` (`Features/DisasterRecovery`) so the
+failover automation, the admin reporting surface, and tests agree on when to fail over:
+
+| Decision | When | Action |
+|---|---|---|
+| `hold` | The primary is healthy, or it has fewer consecutive failed health checks than the configured threshold. | Stay on the primary. |
+| `promote` | The primary has reached the consecutive-failure threshold and the standby is recoverable inside its objectives (`ready`). | Promote the standby. |
+| `block` | The primary has reached the threshold but the standby is not recoverable inside its objectives. | Block automated failover and page an operator — promoting now would breach the RPO. |
+
+The default enterprise policy triggers after **three consecutive failed health checks** and
+requires the standby to be recoverable before an automated promotion proceeds; a policy may
+opt out of the standby-readiness gate for environments that accept best-effort failover.
+
+> Scope note (#356): the landed slices ship the licensing catalog entries, the
+> recovery-objective / backup-record / readiness domain, the active-passive failover decision
+> domain, and this runbook. The PostgreSQL backup service that executes the schedule, the
+> Redis backup path, the failover orchestration runtime, the admin endpoint, and the
+> multi-region Terraform modules are tracked as follow-up work on the same issue.
 
 ## Next steps
 
