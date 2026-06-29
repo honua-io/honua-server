@@ -214,6 +214,14 @@ public sealed class PostgresFixture : IAsyncLifetime
         {
             try
             {
+                // Flush any idle physical connections Npgsql still holds for the
+                // target database in process-wide pools. The per-test NpgsqlDataSource
+                // is disposed before this runs, but seed/migration paths that opened
+                // connections from a bare connection string can leave pooled backends
+                // that re-appear in pg_stat_activity between the terminate and the drop
+                // (the classic "database is being accessed by other users" race).
+                NpgsqlConnection.ClearAllPools();
+
                 await using var conn = await DataSource.OpenConnectionAsync().ConfigureAwait(false);
 
                 // Terminate any lingering backends so DROP DATABASE is not blocked by
@@ -230,8 +238,11 @@ public sealed class PostgresFixture : IAsyncLifetime
                     await terminateCmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
 
+                // DROP DATABASE ... WITH (FORCE) (PostgreSQL 13+) terminates any
+                // backend that reconnects after the explicit terminate above, closing
+                // the race window that the plain DROP leaves open.
                 await using var cmd = conn.CreateCommand();
-                cmd.CommandText = $"DROP DATABASE IF EXISTS \"{databaseName}\";";
+                cmd.CommandText = $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE);";
                 cmd.CommandTimeout = DropSchemaCommandTimeoutSeconds;
                 await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                 return;

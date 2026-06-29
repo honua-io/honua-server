@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/publish_service.schema.json",
+  "title": "publish_service inputSchema",
+  "description": "Argument shape for the lifecycle service-publish tool (advertised name honua_publish_service). Publishes a table from a registered secure connection as a layer on a target service via the canonical service.publish operation. x-honua-reference-shape: tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["connectionId", "schema", "table", "layerName"],
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "description": "Secure-connection identifier whose table is published. Required: the canonical service.publish operation resolves the target database connection from it."
+    },
+    "schema": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Source schema containing the table to publish."
+    },
+    "table": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Source table to publish as a layer."
+    },
+    "layerName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display name for the published layer."
+    },
+    "serviceName": {
+      "type": "string",
+      "description": "Target service name. Defaults to the canonical default service when omitted."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional layer description."
+    },
+    "geometryColumn": {
+      "type": "string",
+      "description": "Geometry column to publish when the table has more than one."
+    },
+    "geometryType": {
+      "type": "string",
+      "description": "Geometry type override (for example Point, Polygon) when it cannot be inferred."
+    },
+    "srid": {
+      "type": "integer",
+      "description": "Spatial reference identifier for the published layer."
+    },
+    "primaryKey": {
+      "type": "string",
+      "description": "Primary key column when the table has no detectable key."
+    },
+    "fields": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Subset of attribute columns to publish. All columns are published when omitted."
+    }
+  }
+}

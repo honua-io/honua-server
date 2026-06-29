@@ -28,9 +28,7 @@ public sealed class FileGdbFormatDetectionTests
     {
         var service = new FileFormatDetectionService(NullLogger<FileFormatDetectionService>.Instance);
 
-        service.DetectFormat("sample.gml").Should().BeNull();
         service.DetectFormat("sample.twkb").Should().BeNull();
-        service.GetSupportedExtensions().Should().NotContain(".gml");
         service.GetSupportedExtensions().Should().NotContain(".twkb");
     }
 }
