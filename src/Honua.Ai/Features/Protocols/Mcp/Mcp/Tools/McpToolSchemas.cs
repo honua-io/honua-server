@@ -132,6 +132,91 @@ internal static class McpToolSchemas
         }
         """;
 
+    // The geospatial-mcp create_map_package / create_app_package schemas mark NO
+    // field required and set additionalProperties:true, so a standard-conformant
+    // client composes a map/app from any subset of the composition selectors. The
+    // live schemas mirror that (no required fields) and add the Honua prompt /
+    // provider / model extension inputs the canonical generation pipeline drives.
+    private const string CreateMapPackageArgumentSchemaJson = """
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "description": "Natural-language description of the map to build. Required by the generation pipeline; a missing prompt returns a structured invalid_argument."
+            },
+            "templateId": {
+              "type": "string",
+              "description": "Registry-defined MapTemplate identifier seeding the composition (e.g. analysis_default)."
+            },
+            "styleId": {
+              "type": "string",
+              "description": "StyleRef selection (style_…) applied to the composition."
+            },
+            "themeId": {
+              "type": "string",
+              "description": "ThemeSpec selection (theme_…) applied to the composition."
+            },
+            "initialView": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Initial view geometry: bounding box and CRS.",
+              "properties": {
+                "bbox": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
+                "crs": { "type": ["string", "integer"] }
+              }
+            },
+            "provider": {
+              "type": "string",
+              "description": "Optional workflow-generation provider override (e.g. anthropic, bedrock, local)."
+            },
+            "model": {
+              "type": "string",
+              "description": "Optional model override for the selected provider."
+            }
+          }
+        }
+        """;
+
+    private const string CreateAppPackageArgumentSchemaJson = """
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "description": "Natural-language description of the application to build. Required by the generation pipeline; a missing prompt returns a structured invalid_argument."
+            },
+            "templateId": {
+              "type": "string",
+              "description": "App-template registry identifier (surfaced through AppPackage.templateId)."
+            },
+            "targetSdk": {
+              "type": "string",
+              "description": "Target SDK declaration. V1 default is honua-sdk-js."
+            },
+            "mapPackageId": {
+              "type": "string",
+              "description": "MapPackage (map_…) bound into the application."
+            },
+            "boundArtifactIds": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "ArtifactRef identifiers (artifact_…) required at runtime."
+            },
+            "provider": {
+              "type": "string",
+              "description": "Optional workflow-generation provider override (e.g. anthropic, bedrock, local)."
+            },
+            "model": {
+              "type": "string",
+              "description": "Optional model override for the selected provider."
+            }
+          }
+        }
+        """;
+
     private const string PlanAnalysisArgumentSchemaJson = """
         {
           "type": "object",
@@ -192,6 +277,21 @@ internal static class McpToolSchemas
     /// Schema for the <c>honua_plan_analysis</c> tool input.
     /// </summary>
     public static readonly JsonElement PlanAnalysisArgumentSchema = Parse(PlanAnalysisArgumentSchemaJson);
+
+    /// <summary>
+    /// Schema for the <c>honua_create_map_package</c> tool input. Marks no field
+    /// required to match the geospatial-mcp <c>create_map_package</c> standard
+    /// schema (the composition is built from any subset of selectors); the
+    /// generation pipeline reports a missing prompt as a structured finding.
+    /// </summary>
+    public static readonly JsonElement CreateMapPackageArgumentSchema = Parse(CreateMapPackageArgumentSchemaJson);
+
+    /// <summary>
+    /// Schema for the <c>honua_create_app_package</c> tool input. Marks no field
+    /// required to match the geospatial-mcp <c>create_app_package</c> standard
+    /// schema.
+    /// </summary>
+    public static readonly JsonElement CreateAppPackageArgumentSchema = Parse(CreateAppPackageArgumentSchemaJson);
 
     /// <summary>
     /// Schema for the package-review tools. The schema intentionally does not
