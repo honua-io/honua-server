@@ -157,14 +157,17 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_SurfaceAndRasterProcesses_DeclareNativeProfile_AndRequireSourceInput()
+    public void Catalog_SurfaceAndRasterProcesses_DeclareNativeProfile_AndOfferRasterSourceSelectors()
     {
         // The native worker pipeline reads a base64 GeoTIFF from the canonical
-        // 'source' input — and ONLY that input today (layer-resolved sourcing is
-        // a follow-on). The catalog declares 'source' REQUIRED so plans that
-        // omit it fail at submit-time validation rather than routing to the
-        // worker and failing there. layerId/rasterId stay optional placeholders
-        // for the deferred resolution path.
+        // 'source' input. As of #2264 the submit path can also materialize
+        // 'source' from a registered catalog raster referenced by 'layerId' or
+        // 'rasterId', so all three selectors are declared OPTIONAL and the
+        // "supply exactly one" rule is enforced by the validator
+        // (ValidateSharedRasterSourceSemantics) rather than the per-parameter
+        // Required flag. A plan that omits all three is rejected at submit-time
+        // (see Validator_SurfaceSlope_WithoutSource_... below) rather than
+        // routing to the worker with no readable input and failing there.
         string[] nativeProcessIds =
         [
             "surface.slope", "surface.aspect", "surface.hillshade",
@@ -179,10 +182,12 @@ public sealed class ProcessCatalogSurfaceRasterTests
             definition!.RuntimeProfile.Should().Be(
                 Core.Features.ControlPlane.Domain.RuntimeProfiles.Native,
                 $"'{processId}' is executed by the native worker");
-            definition.Parameters.Should().Contain(p => p.Name == "source" && p.Required,
-                $"'{processId}' must REQUIRE the canonical 'source' base64 GeoTIFF input until layer-resolved sourcing lands");
+            definition.Parameters.Should().Contain(p => p.Name == "source" && !p.Required,
+                $"'{processId}' must advertise the canonical 'source' base64 GeoTIFF selector as OPTIONAL now that layerId/rasterId resolution lands the bytes (#2264)");
             definition.Parameters.Should().Contain(p => p.Name == "layerId" && !p.Required,
-                $"'{processId}' must keep 'layerId' OPTIONAL until layer-resolved sourcing lands");
+                $"'{processId}' must advertise the 'layerId' raster selector as OPTIONAL");
+            definition.Parameters.Should().Contain(p => p.Name == "rasterId" && !p.Required,
+                $"'{processId}' must advertise the 'rasterId' raster selector as OPTIONAL");
         }
 
         // raster.zonal-statistics additionally REQUIRES an inline 'zones' input;
@@ -396,8 +401,11 @@ public sealed class ProcessCatalogSurfaceRasterTests
             definition.OutputArtifactKinds.Should().ContainSingle().Which.Should().Be(ArtifactKind.Raster);
         }
 
+        // 'source' is an OPTIONAL raster selector (#2264 — supply one of
+        // source/layerId/rasterId, enforced by the validator); 'cellSize' is the
+        // genuinely-required resample parameter.
         _catalog.GetProcess("raster.resample")!.Parameters
-            .Should().Contain(p => p.Name == "source" && p.Required)
+            .Should().Contain(p => p.Name == "source" && !p.Required)
             .And.Contain(p => p.Name == "cellSize" && p.Required);
         _catalog.GetProcess("raster.interpolate-idw")!.Parameters
             .Should().Contain(p => p.Name == "points" && p.Required);
