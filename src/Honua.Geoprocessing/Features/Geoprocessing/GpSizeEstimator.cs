@@ -100,7 +100,13 @@ internal static class GpSizeEstimator
     // stats document) is on the order of a few hundred bytes.
     private const long ScalarOutputBytes = 512;
 
-    private static bool IsRasterClass(ProcessDefinition definition)
+    /// <summary>
+    /// True when <paramref name="definition"/> is a raster/surface-class process — heavier and
+    /// potentially long-running, so both the size estimate and the serverless
+    /// <see cref="GpResourceProfile"/> default treat it as the largest tier. Shared so the size
+    /// heuristic and the resource-profile derivation classify a process identically.
+    /// </summary>
+    internal static bool IsRasterClass(ProcessDefinition definition)
     {
         if (definition.OutputArtifactKinds.Contains(ArtifactKind.Raster))
         {
