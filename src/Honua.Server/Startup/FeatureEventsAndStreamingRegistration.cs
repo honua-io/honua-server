@@ -83,8 +83,8 @@ internal static partial class FeatureEventsAndStreamingRegistration
         // Broker-agnostic event-bus sinks (#357). The publish path fans committed
         // feature-change events out to every registered sink through the broadcaster.
         // Sinks are off by default; the no-op sink keeps the fan-out path exercised
-        // and observable. Concrete Kafka/NATS adapters register additional sinks in a
-        // follow-up increment (they require a live broker).
+        // and observable. The concrete Kafka and NATS JetStream adapters below
+        // register additional sinks when enabled (they require a live broker).
         services.AddOptions<FeatureChangeEventSinkOptions>()
             .Bind(configuration.GetSection(FeatureChangeEventSinkOptions.SectionName));
         services.AddSingleton<IFeatureChangeEventSink, NoOpFeatureChangeEventSink>();
@@ -104,6 +104,23 @@ internal static partial class FeatureEventsAndStreamingRegistration
         {
             services.AddSingleton<IKafkaEventProducer, ConfluentKafkaEventProducer>();
             services.AddSingleton<IFeatureChangeEventSink, KafkaFeatureChangeEventSink>();
+        }
+
+        // NATS JetStream sink adapter (#357). Bound and validated always, but the
+        // producer and sink are only registered when the adapter is enabled so
+        // deployments without NATS never open a JetStream connection. The sink
+        // publishes with optional message deduplication (publish-side
+        // exactly-once) and routes failed deliveries to a dead-letter subject.
+        services.AddOptions<NatsFeatureChangeEventSinkOptions>()
+            .Bind(configuration.GetSection(NatsFeatureChangeEventSinkOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<
+            IValidateOptions<NatsFeatureChangeEventSinkOptions>,
+            NatsFeatureChangeEventSinkOptionsValidator>();
+        if (configuration.GetValue<bool>($"{NatsFeatureChangeEventSinkOptions.SectionName}:Enabled"))
+        {
+            services.AddSingleton<INatsEventProducer, NatsJetStreamEventProducer>();
+            services.AddSingleton<IFeatureChangeEventSink, NatsFeatureChangeEventSink>();
         }
 
         services.AddSingleton<FeatureChangeEventSinkBroadcaster>();
