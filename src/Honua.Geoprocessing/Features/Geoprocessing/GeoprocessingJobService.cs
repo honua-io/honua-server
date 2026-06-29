@@ -295,7 +295,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var requiredRuntimeProfile = isCustomCode
             ? CustomCodeJobContract.RuntimeProfile
             : ResolveRequiredRuntimeProfile(plan);
-        var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile);
+        // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
+        // the plan's steps, overridden by any explicit gp.resource.* request values. Projected onto
+        // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
+        // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
+        var resourceProfile = ResolveResourceProfile(plan, specParams, isCustomCode);
+        var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -540,24 +545,66 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return ManagedReprojectFastPath.RequiresNativeWorker(fromSrid, toSrid);
     }
 
+    /// <summary>
+    /// Resolves the effective per-job <see cref="GpResourceProfile"/>: the heaviest catalog-derived
+    /// default across the plan's steps, overridden field-by-field by any explicit
+    /// <c>gp.resource.*</c> request values. Custom-code jobs are param-driven (no catalog process),
+    /// so they take only the explicit request values.
+    /// </summary>
+    private GpResourceProfile ResolveResourceProfile(
+        AnalysisPlan plan,
+        IReadOnlyDictionary<string, string> specParams,
+        bool isCustomCode)
+    {
+        var derived = GpResourceProfile.Empty;
+        if (!isCustomCode)
+        {
+            foreach (var step in plan.Steps)
+            {
+                if (string.IsNullOrWhiteSpace(step.ProcessId))
+                {
+                    continue;
+                }
+
+                var definition = _processCatalog.GetProcess(step.ProcessId);
+                if (definition == null)
+                {
+                    continue;
+                }
+
+                derived = derived.MergeMax(GpResourceProfile.ForProcess(definition));
+            }
+        }
+
+        return derived.OverrideWith(GpResourceProfile.FromRequestParameters(specParams));
+    }
+
     private static ExecutionJobSpec BuildSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
         ExecutionJobDefinition? workload,
-        string? requiredRuntimeProfile)
+        string? requiredRuntimeProfile,
+        GpResourceProfile resourceProfile)
     {
         if (workload == null)
         {
             // The no-registered-workload case (the default) is built through the shared
             // spec builder so the durable spec — parameter bag AND envelope — is
             // identical to the one the GP Devkit local runner produces for the same
-            // plan (issue #2180).
+            // plan (issue #2180). The per-job resource profile is NOT projected here: the
+            // batch.* sizing keys are meaningless to the local/Kubernetes baseline and would
+            // break the local-runner spec-parity invariant.
             return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(plan, specParams, requiredRuntimeProfile);
         }
 
         // Project the plan's id / process-definitions / output kinds / step inputs onto
         // the workload-supplied parameter bag through the same shared projection.
         GeoprocessingSpecBuilder.ProjectPlanParameters(plan, specParams);
+
+        // Project the per-job resource profile onto the batch.* params BEFORE merging the workload
+        // defaults: set-if-absent semantics make explicit request params win over the per-job
+        // profile, and the per-job profile win over the workload's baseline sizing.
+        resourceProfile.ProjectOnto(specParams);
 
         foreach (var kv in workload.Parameters)
         {

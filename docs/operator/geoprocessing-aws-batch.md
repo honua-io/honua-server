@@ -53,15 +53,48 @@ The four tiers differ only by ephemeral (scratch) storage:
 `s` = 20 GiB, `m` = 50 GiB, `l` = 100 GiB, `xl` = 200 GiB. vCPU / memory /
 timeout / retry stay per-submit overrides and are unaffected by tier selection.
 
-> **Tier selection (dependency).** The runtime tier selector that maps
-> `batch.ephemeral_gib` to the right `batch.job_definition_arn.{tier}` lands with
-> [#2181 / `feat/gp-batch-tier-selection`](https://github.com/honua-io/honua-server/pull/2181).
-> Until that PR merges, the backend honors only the **single**
-> `batch.job_definition_arn` key. You can wire AWS Batch today by setting that
-> single key (point it at one job definition); the per-tier keys begin selecting
-> automatically once #2181 is on `trunk`. The parameter-key contract
+> **Tier selection.** The runtime tier selector that maps `batch.ephemeral_gib`
+> to the right `batch.job_definition_arn.{tier}` is on `trunk` (#2181). When no
+> per-tier keys are configured the backend honors the **single**
+> `batch.job_definition_arn` key for back-compat. The parameter-key contract
 > (`batch.job_queue_arn`, `batch.region`, `batch.job_definition_arn`,
 > `batch.job_definition_arn.{s,m,l,xl}`) is identical on both sides.
+
+## Per-job resource sizing (#2165)
+
+Per-job sizing is **runtime and instant** — no terraform, no agent in the job
+path. Each GP job carries a resource profile that is mapped onto the
+`batch.*` submit parameters the backend reads:
+
+| Profile dimension | Spec param the backend reads | Effect |
+|---|---|---|
+| vCPU | `batch.vcpus` | `SubmitJob` resource override |
+| Memory (MiB) | `batch.memory_mib` | `SubmitJob` resource override |
+| GPU count | `batch.gpu_count` | `SubmitJob` resource override |
+| Attempt timeout (s) | `batch.timeout_seconds` | `SubmitJob` timeout override |
+| Retry attempts | `batch.retry_attempts` | `SubmitJob` retry override |
+| Ephemeral (GiB) | `batch.ephemeral_gib` | selects the job-definition **tier** |
+| CPU architecture | `batch.arch` | reserved for the iac arch/image tier set |
+
+The effective profile is the **heaviest catalog-derived default** across the
+plan's steps (raster/surface → largest tier, native GDAL → mid tier, ordinary
+managed → smallest tier), then overridden field-by-field by any explicit
+per-job request values supplied under the `gp.resource.*` keys (for example
+`gp.resource.vcpus`, `gp.resource.memory_mib`, `gp.resource.ephemeral_gib`,
+`gp.resource.arch`). Precedence is: explicit request &gt; per-job derived
+profile &gt; workload baseline. The local/Kubernetes baseline does **not**
+carry these keys (they are meaningless off AWS Batch), preserving the GP Devkit
+local-runner spec parity.
+
+## Health-gating a GP substrate deploy
+
+When the durable GP substrate (compute-env / queue / IAM / ECR / job-def tier
+set) is deployed via GitOps, gate it with the **`gp-batch`** deploy telemetry
+policy preset. GP per-job metrics are burstier than steady HTTP traffic, so the
+preset bakes longer (5 min) and the anti-flap gate defaults to requiring
+several consecutive breaching scrapes (rather than one) before an automatic
+rollback fires — set `telemetry.policy=gp-batch` on the deploy operation. An
+explicit `telemetry.rollback.consecutive_breaches` still overrides the default.
 
 ### appsettings override
 
