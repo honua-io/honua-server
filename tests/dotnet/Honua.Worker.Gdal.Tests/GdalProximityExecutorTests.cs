@@ -12,8 +12,9 @@ namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>
 /// Fake-runner coverage for <see cref="GdalProximityJobExecutor"/>: the
-/// gdal_proximity.py distance argument projection plus the flagged allocation path
-/// that fails fast with a clear unsupported-dependency message (#2240).
+/// gdal_proximity.py distance argument projection (#2240) plus the
+/// nearest-source allocation path that invokes the custom
+/// gdal_euclidean_allocation.py worker step via python3 (#2255).
 /// </summary>
 public sealed class GdalProximityExecutorTests
 {
@@ -93,7 +94,66 @@ public sealed class GdalProximityExecutorTests
     }
 
     [UnitTest]
-    public async Task Allocation_IsFlaggedUnsupported_AndFailsFast()
+    public async Task Allocation_Default_RunsPythonStep_AndPublishesGeoTiff()
+    {
+        var runner = SucceedingWritingOutputTif(Encoding.UTF8.GetBytes("alloc-tif"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalProximityJobExecutor.AllocationProcessId,
+                ("source", Base64("fake-raster")));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            context.Artifacts.Single().Should().StartWith("data:image/tiff");
+
+            var invocation = runner.Invocations.Single();
+            invocation.Tool.Should().Be("python3");
+            invocation.Arguments[0].Should().EndWith(GdalProximityJobExecutor.AllocationScriptName);
+            invocation.Arguments[1].Should().EndWith("input.tif");
+            invocation.Arguments[2].Should().EndWith("output.tif");
+            invocation.Arguments.Should().ContainInOrder("--dist-units", "GEO");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Allocation_WithOptions_ProjectsScriptFlags()
+    {
+        var runner = SucceedingWritingOutputTif(Encoding.UTF8.GetBytes("alloc-tif"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalProximityJobExecutor.AllocationProcessId,
+                ("source", Base64("fake-raster")),
+                ("maxDistance", "750"),
+                ("distUnits", "PIXEL"),
+                ("values", "3,7"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            var invocation = runner.Invocations.Single();
+            invocation.Tool.Should().Be("python3");
+            invocation.Arguments.Should().ContainInOrder("--dist-units", "PIXEL");
+            invocation.Arguments.Should().ContainInOrder("--max-distance", "750");
+            invocation.Arguments.Should().ContainInOrder("--values", "3,7");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Allocation_InvalidUnits_FailsBeforeReachingTheCli()
     {
         var runner = FakeGdalCommandRunner.Failing(1, "n/a");
         var executor = NewExecutor(runner, out var scratch);
@@ -101,12 +161,13 @@ public sealed class GdalProximityExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalProximityJobExecutor.AllocationProcessId,
-                ("source", Base64("fake-raster")));
+                ("source", Base64("fake-raster")),
+                ("distUnits", "MILES"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
             result.Status.Should().Be(ExecutionJobStatus.Failed);
-            result.ErrorMessage.Should().Be(GdalProximityJobExecutor.AllocationUnsupportedMessage);
+            result.ErrorMessage.Should().Contain("distUnits");
             runner.Invocations.Should().BeEmpty();
         }
         finally
@@ -114,6 +175,19 @@ public sealed class GdalProximityExecutorTests
             CleanupScratch(scratch);
         }
     }
+
+    /// <summary>
+    /// The allocation step puts the output path positionally before its optional
+    /// flags, so this fake locates the <c>output.tif</c> argument (rather than a
+    /// fixed offset) and writes the payload there so the read-back path runs.
+    /// </summary>
+    private static FakeGdalCommandRunner SucceedingWritingOutputTif(byte[] outputBytes)
+        => new((_, args, _) =>
+        {
+            var outputPath = args.First(a => a.EndsWith("output.tif", StringComparison.Ordinal));
+            File.WriteAllBytes(outputPath, outputBytes);
+            return new GdalCommandResult { ExitCode = 0 };
+        });
 
     private static GdalProximityJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {

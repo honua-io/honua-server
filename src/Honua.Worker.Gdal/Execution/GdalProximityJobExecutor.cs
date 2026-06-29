@@ -12,9 +12,9 @@ namespace Honua.Worker.Gdal.Execution;
 
 /// <summary>
 /// Native-profile <see cref="IProcessExecutor"/> for the Euclidean-proximity family
-/// (#2240): <c>proximity.euclidean-distance</c>, a distance-to-nearest-source raster
-/// backed by the GDAL <c>gdal_proximity.py</c> CLI, and
-/// <c>proximity.euclidean-allocation</c>, which is FLAGGED unsupported in this build.
+/// (#2240, #2255): <c>proximity.euclidean-distance</c>, a distance-to-nearest-source
+/// raster backed by the GDAL <c>gdal_proximity.py</c> CLI, and
+/// <c>proximity.euclidean-allocation</c>, the nearest-source allocation companion.
 ///
 /// <para>
 /// Distance reads a base64-encoded source GeoTIFF whose non-zero (or
@@ -23,11 +23,13 @@ namespace Honua.Worker.Gdal.Execution;
 /// distance.
 /// </para>
 /// <para>
-/// Allocation (assigning each cell the value of its nearest source) has NO equivalent
-/// in stock <c>gdal_proximity.py</c> — the CLI computes distance only and has no
-/// nearest-source allocation mode. Rather than silently substitute a distance raster
-/// or a fixed-buffer value, the executor FAILS the job with a clear message so the
-/// limitation is explicit, mirroring the flagged-kriging contract (#2141).
+/// Allocation (assigning each cell the VALUE/id of its nearest source — a discrete
+/// Voronoi tessellation) has NO equivalent in stock <c>gdal_proximity.py</c>, which
+/// computes distance only. It is implemented as a small custom worker step
+/// (<c>Scripts/gdal_euclidean_allocation.py</c>, #2255) layered on the GDAL Python
+/// bindings plus SciPy's exact Euclidean distance transform with nearest-feature
+/// index return. The output GeoTIFF preserves the source extent, cell size, CRS and
+/// band data type.
 /// </para>
 /// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
 /// <c>{ "native" }</c>.
@@ -40,16 +42,16 @@ internal sealed partial class GdalProximityJobExecutor(
     /// <summary>Process id for the Euclidean distance raster.</summary>
     public const string DistanceProcessId = "proximity.euclidean-distance";
 
-    /// <summary>Process id for Euclidean allocation (flagged unsupported).</summary>
+    /// <summary>Process id for the Euclidean allocation (nearest-source) raster.</summary>
     public const string AllocationProcessId = "proximity.euclidean-allocation";
 
     /// <summary>
-    /// Stable failure message published when an allocation job is submitted. Stock
-    /// <c>gdal_proximity.py</c> has no nearest-source allocation mode.
+    /// Name of the bundled custom worker step implementing Euclidean allocation. The
+    /// script ships in the published worker's <c>Scripts</c> folder and is invoked via
+    /// <c>python3</c>; it requires the GDAL Python bindings + SciPy from the worker
+    /// image.
     /// </summary>
-    public const string AllocationUnsupportedMessage =
-        "Euclidean allocation is not available in this build: stock GDAL gdal_proximity computes distance only and "
-        + "has no nearest-source allocation mode. Use proximity.euclidean-distance for the distance raster.";
+    public const string AllocationScriptName = "gdal_euclidean_allocation.py";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
 
@@ -98,11 +100,7 @@ internal sealed partial class GdalProximityJobExecutor(
                 $"Process id '{processId ?? "<none>"}' is not handled by the proximity executor.");
         }
 
-        if (string.Equals(processId, AllocationProcessId, StringComparison.Ordinal))
-        {
-            Log.AllocationUnsupported(logger, job.OperationId);
-            return JobExecutionResult.Failed(AllocationUnsupportedMessage);
-        }
+        var isAllocation = string.Equals(processId, AllocationProcessId, StringComparison.Ordinal);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing proximity inputs", cancellationToken).ConfigureAwait(false);
@@ -153,6 +151,42 @@ internal sealed partial class GdalProximityJobExecutor(
             var inputPath = Path.Combine(workspace, "input.tif");
             var outputPath = Path.Combine(workspace, "output.tif");
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
+
+            if (isAllocation)
+            {
+                // Custom worker step: stock gdal_proximity has no nearest-source
+                // allocation mode. python3 Scripts/gdal_euclidean_allocation.py SRC DST
+                // [--band 1] --dist-units U [--max-distance D] [--values v,...] — keep
+                // the positional src/dst pair first so the optional flags follow.
+                var scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", AllocationScriptName);
+                var allocArgs = new List<string>
+                {
+                    scriptPath,
+                    inputPath,
+                    outputPath,
+                    "--dist-units", distUnits,
+                };
+                if (maxDistance.HasValue)
+                {
+                    allocArgs.Add("--max-distance");
+                    allocArgs.Add(maxDistance.Value.ToString("R", CultureInfo.InvariantCulture));
+                }
+                if (values is not null)
+                {
+                    allocArgs.Add("--values");
+                    allocArgs.Add(values);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                await context.ReportProgressAsync(40, "Running euclidean allocation", cancellationToken).ConfigureAwait(false);
+
+                return await GdalToolExecution.RunAndPublishAsync(
+                    runner, context, opts, logger, job.OperationId,
+                    "python3", allocArgs, workspace, outputPath,
+                    GeoTiffContentType, "Allocation raster",
+                    "Encoding allocation raster artifact", "Allocation completed",
+                    cancellationToken).ConfigureAwait(false);
+            }
 
             // gdal_proximity.py [options] srcfile dstfile — keep the positional
             // src/dst pair last so the output path is the final argument.
@@ -234,9 +268,5 @@ internal sealed partial class GdalProximityJobExecutor(
         [LoggerMessage(9371, LogLevel.Warning,
             "GDAL proximity executor rejected job {OperationId}: {Reason}")]
         public static partial void InvalidInputs(ILogger logger, string operationId, string reason);
-
-        [LoggerMessage(9372, LogLevel.Warning,
-            "GDAL proximity executor refused job {OperationId}: euclidean allocation is flagged unsupported in this build")]
-        public static partial void AllocationUnsupported(ILogger logger, string operationId);
     }
 }
