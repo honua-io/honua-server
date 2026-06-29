@@ -11,7 +11,7 @@ namespace Honua.Postgres.Features.EnrichmentCatalog;
 /// <summary>
 /// Postgres-backed implementation of <see cref="IEnrichmentDatasetCatalogStore"/>
 /// (#2280) over the <c>honua.enrichment_datasets</c> registry table provisioned by
-/// migration 071. Mirrors the network-dataset registry store: all values are bound
+/// migration 072. Mirrors the network-dataset registry store: all values are bound
 /// as parameters (never interpolated), and schema isolation for test schemas is
 /// handled upstream by the connection's <c>search_path</c>.
 /// </summary>
