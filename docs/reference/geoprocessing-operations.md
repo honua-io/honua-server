@@ -34,7 +34,7 @@ Single-geometry operations; inputs are base64-encoded WKB plus an SRID. Managed 
 | `geometry.dissolve` | Union by optional group key, one feature per group. | `wkbs`, `srid`, `groupKeys` |
 | `geometry.snap` | Snap vertices to a reference geometry within a tolerance. | `wkb`, `referenceWkb`, `srid`, `tolerance` |
 
-## Analytics (9)
+## Analytics (8)
 
 The layer-scoped processes (`analytics.cluster`, `analytics.spatial-join`, `analytics.buffer-aggregate`, `analytics.density`) run synchronously against PostGIS-backed layers and are **not job-dispatchable**; each has a job-executable `*-managed` counterpart that runs in managed code (NetTopologySuite) over inline FeatureCollections. The layer-scoped processes accept the shared GeoServices filter parameters (`where`, `objectIds`, `geometry`, `geometryType`, `inSR`, `spatialRel`, `time`, `timeRelation`). Managed-counterpart distances are evaluated in CRS units (no geodesic conversion).
 
@@ -48,7 +48,6 @@ The layer-scoped processes (`analytics.cluster`, `analytics.spatial-join`, `anal
 | `analytics.spatial-join-managed` | Job-executable join over two inline FeatureCollections; `JOIN_COUNT` plus sum/mean/min/max aggregates. | `input`, `join`, `predicate`, `statistics` |
 | `analytics.buffer-aggregate-managed` | Job-executable buffer-and-dissolve over inline features. | `input`, `distance`, `unit`, `dissolve`, `groupByFields` |
 | `analytics.density-managed` | Job-executable hex/square binning over inline features. | `input`, `mode`, `cellSize`, `weightField` |
-| `analytics.hotspot-managed` | Job-executable Getis-Ord Gi* hot spot analysis over inline features; appends `GI_ZSCORE`, `GI_PVALUE`, `GI_BIN`. | `input`, `field`, `distanceBand` |
 
 ## Overlay (6)
 
