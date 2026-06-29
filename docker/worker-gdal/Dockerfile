@@ -87,8 +87,14 @@ ARG DOTNET_RUNTIME_VERSION
 # PointCloudTilesetBuilder) turns into 3D Tiles. Like GDAL, PDAL lives ONLY in
 # this image; the lean serving image stays point-cloud-native-dep-free.
 # hadolint ignore=DL3008,DL3015
+# python3-scipy backs the custom Euclidean allocation worker step
+# (proximity.euclidean-allocation, #2255): Scripts/gdal_euclidean_allocation.py
+# uses SciPy's exact distance transform (nearest-feature index return) plus the
+# GDAL Python bindings (shipped in the ubuntu-full base) since stock
+# gdal_proximity has no nearest-source allocation mode.
+# hadolint ignore=DL3008,DL3015
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl libicu-dev pdal \
+ && apt-get install -y --no-install-recommends ca-certificates curl libicu-dev pdal python3-scipy \
  && rm -rf /var/lib/apt/lists/* \
  && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
  && chmod +x /tmp/dotnet-install.sh \
@@ -113,6 +119,10 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
  # surface.contour / surface.viewshed / conversion.rasterize.
  && command -v gdal_calc.py \
  && command -v gdal_proximity.py \
+ # The Euclidean allocation custom step (proximity.euclidean-allocation, #2255)
+ # imports the GDAL Python bindings + NumPy + SciPy at runtime; fail the build
+ # early if any are missing from the image.
+ && python3 -c "import numpy, scipy; from scipy import ndimage; from osgeo import gdal" \
  && command -v gdal_polygonize.py \
  && command -v gdal_contour \
  && command -v gdal_viewshed \
@@ -138,6 +148,10 @@ RUN groupadd --gid 1001 --system honua \
 
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
+
+# Guard: the custom worker steps (e.g. the Euclidean allocation step, #2255) must
+# be published alongside the worker assemblies so the executors can invoke them.
+RUN test -f /app/Scripts/gdal_euclidean_allocation.py
 
 ENV DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \

@@ -7,7 +7,7 @@ The catalog currently registers **95 processes** across 14 families. This page i
 Execution notes that apply across families:
 
 - **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 95 processes are native.
-- **Flagged / unsupported.** Two native processes are advertised so callers can *discover* the capability gap but **fail with a clear message when submitted** rather than silently substituting a different algorithm: `raster.interpolate-kriging` (no kriging backend in the worker image — use `raster.interpolate-idw`) and `proximity.euclidean-allocation` (stock GDAL `gdal_proximity` computes distance only — use `proximity.euclidean-distance`).
+- **Flagged / unsupported.** One native process is advertised so callers can *discover* the capability gap but **fails with a clear message when submitted** rather than silently substituting a different algorithm: `raster.interpolate-kriging` (no kriging backend in the worker image — use `raster.interpolate-idw`).
 - **Raster sourcing.** Native raster/surface processes read the raster as base64-encoded GeoTIFF bytes on the `source` parameter; `layerId`/`rasterId` selectors are declared but layer-resolved sourcing is a follow-on and `source` remains required today.
 - **Inline FeatureCollections.** Managed `*-managed`, `overlay.*`, `proximity.near*`, `statistics.*`, `transform.*`, `source.*`, and `sink.*` processes exchange features as `data:application/geo+json;base64` data URIs so they compose as workflow nodes.
 - **Approval gate.** `data-management.delete-features` and `data-management.calculate-field` are destructive and require operator approval.
@@ -48,6 +48,7 @@ The layer-scoped processes (`analytics.cluster`, `analytics.spatial-join`, `anal
 | `analytics.spatial-join-managed` | Job-executable join over two inline FeatureCollections; `JOIN_COUNT` plus sum/mean/min/max aggregates. | `input`, `join`, `predicate`, `statistics` |
 | `analytics.buffer-aggregate-managed` | Job-executable buffer-and-dissolve over inline features. | `input`, `distance`, `unit`, `dissolve`, `groupByFields` |
 | `analytics.density-managed` | Job-executable hex/square binning over inline features. | `input`, `mode`, `cellSize`, `weightField` |
+| `analytics.hotspot-managed` | Job-executable Getis-Ord Gi* Hot Spot Analysis over inline features; appends `GI_ZSCORE`, `GI_PVALUE`, `GI_BIN`. | `input`, `field`, `distanceBand` |
 
 ## Overlay (6)
 
@@ -71,7 +72,7 @@ Nearest-feature and Euclidean-distance tools.
 | `proximity.near` | Append `NEAR_FID`/`NEAR_DIST` for the closest near-layer feature (Esri Near). Planar CRS units. | `input`, `near`, `nearIdField`, `searchRadius` | managed |
 | `proximity.near-table` | Emit a table of `IN_FID`/`NEAR_FID`/`NEAR_DIST` rows (Esri GenerateNearTable). | `input`, `near`, `inputIdField`, `nearIdField`, `searchRadius` | managed |
 | `proximity.euclidean-distance` | Raster of distance from each cell to the nearest source cell (`gdal_proximity.py`). | `source` (base64 GeoTIFF), `maxDistance`, `distUnits`, `values` | **native** |
-| `proximity.euclidean-allocation` | **FLAGGED / UNSUPPORTED** — allocation needs a mode stock GDAL `gdal_proximity` lacks; submitted jobs fail with a clear message. Use `proximity.euclidean-distance`. | `source` | **native (flagged)** |
+| `proximity.euclidean-allocation` | Nearest-source allocation raster (discrete Voronoi): each cell takes the value/id of its nearest source cell. Custom worker step (`gdal_euclidean_allocation.py`, GDAL bindings + SciPy distance transform) since stock `gdal_proximity` computes distance only. | `source` (base64 GeoTIFF), `maxDistance`, `distUnits`, `values` | **native** |
 
 ## Statistics (3)
 

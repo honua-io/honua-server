@@ -512,11 +512,14 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "proximity.euclidean-allocation",
             Title = "Euclidean Allocation",
-            Description = "FLAGGED / UNSUPPORTED in this build: nearest-source allocation requires a mode that stock GDAL gdal_proximity does not provide (it computes distance only). The process is advertised so callers can discover the limitation; a submitted job FAILS with a clear message rather than silently substituting a distance raster. Use proximity.euclidean-distance for the distance raster.",
+            Description = "Computes the nearest-source allocation raster (the discrete-Voronoi companion of proximity.euclidean-distance): every cell takes the VALUE/id of its nearest source cell. Executed out-of-process by the heavyweight GDAL worker via a custom worker step (gdal_euclidean_allocation.py) layered on the GDAL Python bindings plus SciPy's exact Euclidean distance transform, since stock gdal_proximity computes distance only. Reads a base64-encoded GeoTIFF from 'source' whose non-zero (or 'values'-listed) pixels are the sources; publishes the allocation GeoTIFF (source extent/cell-size/CRS/band data type preserved) as a data-URI artifact.",
             Category = "proximity",
             Parameters =
             [
-                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the allocation sources carrying the ids to assign. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("maxDistance", "Max Distance", "Optional maximum allocation distance. Must be > 0 when supplied. Cells whose nearest source is farther take the nodata value.", ProcessParameterValueType.FloatingPoint),
+                Param("distUnits", "Distance Units", "Distance units used for maxDistance. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO"),
+                Param("values", "Target Values", "Optional comma-separated list of integer source pixel values to treat as allocation sources. When omitted, all non-zero pixels are sources.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
