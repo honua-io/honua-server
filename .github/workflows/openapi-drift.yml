@@ -11,7 +11,7 @@ on:
       - 'src/Honua.Server/ogc-maps-openapi.json'
       - 'src/Honua.Server/ogc-processes-openapi.json'
       - 'src/Honua.Server/ogc-coverages-openapi.json'
-      - 'src/Honua.Server/EndpointRegistry.cs'
+      - 'src/Honua.Server/EndpointRegistry*.cs'
       - 'src/Honua.Server/Features/Protocols/**'
       - 'scripts/ci/openapi-drift-check.py'
       - '.github/workflows/openapi-drift.yml'
