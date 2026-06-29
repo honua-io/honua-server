@@ -56,6 +56,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_list_layers"] = "list_layers",
             ["honua_query_features"] = "query_features",
             ["honua_render_map"] = "render_map",
+            ["honua_publish_service"] = "publish_service",
         };
 
     /// <summary>
