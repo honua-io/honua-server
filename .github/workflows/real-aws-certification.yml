@@ -1,0 +1,102 @@
+name: Real AWS Certification
+
+# Real-AWS certification lane (#2164). UNLIKE the emulated cloud-integration-harness.yml (kind +
+# LocalStack), this lane runs the [Trait("Category","RealAwsCertification")] tests against a LIVE
+# AWS account to certify the cloud control-plane seams Honua depends on.
+#
+# It is GATED, BUDGETED, and TEARDOWN-GUARANTEED:
+#   * Gated   — runs the live tests ONLY when the maintainer OIDC role variable
+#               `vars.REALAWS_CERT_ROLE_ARN` is configured. On forks, PRs, and any repo without
+#               that variable the live step is skipped and the lane is an explicit no-op (it never
+#               costs money and never fails for lack of credentials).
+#   * Budgeted — the seeded test (RegisterThenDeregisterJobDefinition) only REGISTERS a job
+#               definition; it never submits a job, so there is no compute and ZERO cost.
+#   * Teardown — every test namespaces its resources honua-cert-* and deregisters them in a
+#               finally block, so no standing resources remain.
+#
+# Never runs on pull_request, so it cannot be triggered by forks or untrusted contributors.
+
+on:
+  schedule:
+    # Weekly; the live lane is intentionally infrequent.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # OIDC for aws-actions/configure-aws-credentials (no-op when no role is set)
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  CSPROJ: tests/dotnet/Honua.CloudIntegration.Tests/Honua.CloudIntegration.Tests.csproj
+
+concurrency:
+  group: real-aws-certification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify:
+    name: Certify (live AWS Batch control-plane)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      # Always build the lane so a compile regression is caught even when the live run is dormant.
+      - name: Build certification test binaries
+        timeout-minutes: 25
+        run: dotnet build ${{ env.CSPROJ }} --no-restore --configuration Release
+
+      # Live credentials via OIDC, ONLY when a maintainer role is configured. Without it this step
+      # is skipped and the lane stays dormant — exactly the fork/no-secret safe path.
+      - name: Configure AWS credentials (OIDC)
+        id: aws
+        if: ${{ vars.REALAWS_CERT_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
+        with:
+          role-to-assume: ${{ vars.REALAWS_CERT_ROLE_ARN }}
+          aws-region: ${{ vars.REALAWS_CERT_REGION || 'us-west-2' }}
+          role-session-name: honua-real-aws-certification
+
+      - name: Run real-AWS certification tests
+        if: ${{ vars.REALAWS_CERT_ROLE_ARN != '' }}
+        env:
+          # Master switch the RealAwsCertificationFixture reads; only set when creds are present.
+          HONUA_REALAWS_CERT_ENABLED: 'true'
+          HONUA_REALAWS_CERT_REGION: ${{ vars.REALAWS_CERT_REGION || 'us-west-2' }}
+        run: |
+          mkdir -p ./tests/TestResults
+          dotnet test ${{ env.CSPROJ }} \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=RealAwsCertification" \
+            --logger "trx;LogFileName=real-aws-certification.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Lane dormant (no OIDC role configured)
+        if: ${{ vars.REALAWS_CERT_ROLE_ARN == '' }}
+        run: |
+          echo "::notice::Real-AWS certification lane is dormant — vars.REALAWS_CERT_ROLE_ARN is not set."
+          echo "Configure an OIDC role with least-privilege AWS Batch register/describe/deregister"
+          echo "permissions and set vars.REALAWS_CERT_ROLE_ARN (and optionally vars.REALAWS_CERT_REGION)"
+          echo "to enable live certification. No tests ran; no resources were created."
+
+      - name: Upload results
+        if: ${{ always() && vars.REALAWS_CERT_ROLE_ARN != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: real-aws-certification-results
+          path: tests/TestResults/
+          retention-days: 14

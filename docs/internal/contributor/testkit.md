@@ -572,6 +572,55 @@ HONUA_EVAL_CORPUS_VERSION=core@0001 \
   dotnet test --filter "Protocol=OperatorEval"
 ```
 
+## Cloud-integration harness (#2163 / #2166 / #2164)
+
+`tests/dotnet/Honua.CloudIntegration.Tests` is a standalone project (not in the ADR-0037 server
+shard matrix, never AOT-published) that exercises Honua's cloud control-plane and artifact seams
+against REAL backends. Every test carries a `Category` trait so the default PR run never invokes
+it; the dedicated workflows opt in by filter.
+
+### Emulated lanes — `Category=CloudIntegration` (free, no paid token)
+
+Runs in `.github/workflows/cloud-integration-harness.yml` (nightly + manual). All tests are
+`[SkippableFact]` and skip — never fail — when Docker/kind is unavailable.
+
+| Scenario | Backend | Emulator |
+|----------|---------|----------|
+| `S3ArtifactRoundTripCloudIntegrationTests` | `AwsS3FileStorage` ServiceURL seam | LocalStack Community S3 |
+| `S3ArtifactRollbackCloudIntegrationTests` | versioned-artifact rollback (enable versioning → publish v1/v2 → delete bad version → prior promoted live) | LocalStack Community S3 |
+| `KubernetesJobLifecycleCloudIntegrationTests` | `KubernetesJobBatchComputeBackend` submit → succeeded | kind (real Kubernetes-in-Docker) |
+| `KubernetesJobNegativePathCloudIntegrationTests` | same backend: non-zero exit → `Failed`; cancel running Job → `Cancelled` | kind |
+
+The kind lane builds three busybox worker images (`/bin/true`, `/bin/false`, `/bin/sleep`) loaded
+with `ImagePullPolicy=Never`; the backend's `BuildManifest` sets no container command, so each
+image self-selects behaviour via its `ENTRYPOINT`.
+
+### Real-AWS certification lane — `Category=RealAwsCertification`
+
+Runs in `.github/workflows/real-aws-certification.yml` (weekly + manual, never on `pull_request`)
+and targets a LIVE AWS account. It is gated, budgeted, and teardown-guaranteed:
+
+- **Gated** — the live test step runs only when `vars.REALAWS_CERT_ROLE_ARN` is configured
+  (OIDC role assumption). Without it the lane is an explicit no-op; the tests also self-skip
+  unless `HONUA_REALAWS_CERT_ENABLED=true`, so forks and credential-less runs never fail.
+- **Budgeted** — `AwsBatchRealCertificationTests` only *registers* a job definition (never submits
+  a job), so there is no compute and zero cost.
+- **Isolated + torn down** — `RealAwsCertificationFixture` mints a unique `honua-cert-*` prefix for
+  every resource; tests deregister in a `finally` block and assert no `ACTIVE` resource remains.
+
+Run locally against your own account (credentials via the default chain):
+
+```bash
+HONUA_REALAWS_CERT_ENABLED=true HONUA_REALAWS_CERT_REGION=us-west-2 \
+  dotnet test tests/dotnet/Honua.CloudIntegration.Tests/Honua.CloudIntegration.Tests.csproj \
+  --filter "Category=RealAwsCertification"
+```
+
+**Remainder (tracked under #2164):** the full submit-to-`SUCCEEDED` Batch lifecycle and the
+ECS/Lambda deploy + rollback certifications need an ephemeral Fargate compute environment + IAM
+execution role whose teardown is slower and must be supervised, so they are not performed
+automatically by this lane yet.
+
 ## Environment Requirements
 
 - Docker (for Testcontainers)

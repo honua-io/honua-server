@@ -1,0 +1,132 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Amazon;
+using Amazon.Batch;
+using Amazon.Batch.Model;
+using FluentAssertions;
+using Xunit;
+
+namespace Honua.CloudIntegration.Tests;
+
+/// <summary>
+/// Real-AWS certification lane (#2164): the first live-account smoke proving the AWS Batch
+/// control-plane path Honua's <c>AwsBatchComputeBackend</c> depends on actually works against a
+/// REAL account (not LocalStack), and that the OIDC/credential wiring in
+/// <c>real-aws-certification.yml</c> is sound. It performs a register → describe → deregister
+/// round-trip on a uniquely-named job definition.
+///
+/// SAFETY: this lane is OFF unless <see cref="RealAwsCertificationFixture.Enabled"/> (it
+/// <c>[SkippableFact]</c>-skips otherwise, so it never costs money or fails on
+/// forks/PRs without credentials). The job definition is registered ONLY (never submitted), so
+/// there is NO compute, NO running job, and therefore ZERO cost. Every created resource carries
+/// the per-run <c>honua-cert-*</c> prefix, no pre-existing resource is ever read-modified, and
+/// teardown (deregister → status INACTIVE) is guaranteed in a <c>finally</c> block.
+///
+/// Remainder (tracked under #2164, requires a supervised, budgeted run): the full
+/// submit-to-SUCCEEDED Batch lifecycle and the ECS/Lambda deploy + rollback certifications need an
+/// ephemeral Fargate compute environment + IAM execution role whose teardown is slower and must be
+/// supervised, so they are intentionally NOT performed automatically here.
+/// </summary>
+[Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.RealAwsCertification)]
+public sealed class AwsBatchRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
+{
+    private readonly RealAwsCertificationFixture _cert;
+
+    public AwsBatchRealCertificationTests(RealAwsCertificationFixture cert)
+    {
+        _cert = cert;
+    }
+
+    [SkippableFact]
+    public async Task RegisterThenDeregisterJobDefinition_RoundTripsAgainstLiveBatch()
+    {
+        Skip.IfNot(
+            _cert.Enabled,
+            "Real-AWS certification lane disabled (set HONUA_REALAWS_CERT_ENABLED=true with credentials present).");
+
+        using var batch = new AmazonBatchClient(RegionEndpoint.GetBySystemName(_cert.Region));
+
+        var jobDefinitionName = $"{_cert.ResourcePrefix}-jobdef";
+
+        // Register an EC2-type container job definition. It is never submitted, so it incurs no
+        // cost and needs no compute environment or execution role. The image string is not pulled
+        // at registration time, so a public reference suffices.
+        var register = new RegisterJobDefinitionRequest
+        {
+            JobDefinitionName = jobDefinitionName,
+            Type = JobDefinitionType.Container,
+            ContainerProperties = new ContainerProperties
+            {
+                Image = "public.ecr.aws/docker/library/busybox:latest",
+                Command = ["true"],
+                ResourceRequirements =
+                [
+                    new ResourceRequirement { Type = ResourceType.VCPU, Value = "1" },
+                    new ResourceRequirement { Type = ResourceType.MEMORY, Value = "512" }
+                ]
+            }
+        };
+
+        string? registeredArn = null;
+        try
+        {
+            var registered = await batch.RegisterJobDefinitionAsync(register);
+            registeredArn = registered.JobDefinitionArn;
+
+            registeredArn.Should().NotBeNullOrWhiteSpace("registering against live AWS Batch must return an ARN");
+            registered.JobDefinitionName.Should().Be(jobDefinitionName);
+            registeredArn.Should().Contain(
+                _cert.ResourcePrefix,
+                "the created resource must carry the unique honua-cert-* prefix so it is isolated and traceable");
+
+            // The freshly registered definition must be discoverable as ACTIVE.
+            var active = await DescribeActiveAsync(batch, jobDefinitionName);
+            active.Should().ContainSingle("the just-registered job definition must be ACTIVE")
+                .Which.JobDefinitionArn.Should().Be(registeredArn);
+
+            // Tear down: deregister flips the revision to INACTIVE so no ACTIVE resource remains.
+            await batch.DeregisterJobDefinitionAsync(new DeregisterJobDefinitionRequest
+            {
+                JobDefinition = registeredArn
+            });
+            registeredArn = null;
+
+            var afterDeregister = await DescribeActiveAsync(batch, jobDefinitionName);
+            afterDeregister.Should().BeEmpty(
+                "after deregistration no ACTIVE job definition must remain — the lane leaves zero standing resources");
+        }
+        finally
+        {
+            // Guaranteed teardown if any assertion above threw after registration.
+            if (registeredArn is not null)
+            {
+                try
+                {
+                    await batch.DeregisterJobDefinitionAsync(new DeregisterJobDefinitionRequest
+                    {
+                        JobDefinition = registeredArn
+                    });
+                }
+                catch
+                {
+                    // Best-effort: a deregister failure here would leave only an INACTIVE-able
+                    // revision under the unique honua-cert-* prefix, never live infrastructure.
+                }
+            }
+        }
+    }
+
+    private static async Task<IReadOnlyList<JobDefinition>> DescribeActiveAsync(
+        AmazonBatchClient batch,
+        string jobDefinitionName)
+    {
+        var response = await batch.DescribeJobDefinitionsAsync(new DescribeJobDefinitionsRequest
+        {
+            JobDefinitionName = jobDefinitionName,
+            Status = "ACTIVE"
+        });
+
+        return response.JobDefinitions ?? [];
+    }
+}

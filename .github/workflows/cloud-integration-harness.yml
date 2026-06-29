@@ -24,9 +24,12 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   CSPROJ: tests/dotnet/Honua.CloudIntegration.Tests/Honua.CloudIntegration.Tests.csproj
-  # Self-terminating worker image the kind-backed Job lifecycle test submits. Built and loaded
-  # into the kind node below; ImagePullPolicy=Never in the test keeps it local-only.
+  # Worker images the kind-backed Job lifecycle tests submit. Built and loaded into the kind node
+  # below; ImagePullPolicy=Never in the tests keeps them local-only.
+  #   succeed -> exits 0 (happy path), fail -> exits 1 (failure path), sleep -> long-running (cancel path).
   JOB_IMAGE: honua-ci/job-succeed:latest
+  JOB_FAIL_IMAGE: honua-ci/job-fail:latest
+  JOB_SLEEP_IMAGE: honua-ci/job-sleep:latest
 
 concurrency:
   group: cloud-integration-harness-${{ github.ref }}
@@ -64,19 +67,29 @@ jobs:
         with:
           cluster_name: honua-cloud-integration
 
-      - name: Build and load the self-terminating worker image into kind
+      - name: Build and load the self-terminating worker images into kind
         shell: bash
         run: |
-          # A minimal image whose entrypoint runs to completion and exits 0 — stands in for a GP
-          # worker. The lifecycle test sets ImagePullPolicy=Never, so the image must be present
-          # on the kind node (no registry pull).
-          workdir="$(mktemp -d)"
-          cat > "${workdir}/Dockerfile" <<'EOF'
+          # Minimal busybox images standing in for GP workers across the success, failure, and
+          # cancellation lifecycle paths. The tests set ImagePullPolicy=Never, so each image must
+          # be present on the kind node (no registry pull). BuildManifest does not set a container
+          # command/args, so each image self-selects behaviour via its own ENTRYPOINT.
+          build_and_load() {
+            local image="$1" entrypoint="$2"
+            local workdir
+            workdir="$(mktemp -d)"
+            cat > "${workdir}/Dockerfile" <<EOF
           FROM busybox:1.36
-          ENTRYPOINT ["/bin/true"]
+          ENTRYPOINT ${entrypoint}
           EOF
-          docker build -t "${JOB_IMAGE}" "${workdir}"
-          kind load docker-image "${JOB_IMAGE}" --name honua-cloud-integration
+            docker build -t "${image}" "${workdir}"
+            kind load docker-image "${image}" --name honua-cloud-integration
+          }
+
+          # Succeed (exit 0), fail (exit 1), and sleep (long-running, for the cancel path).
+          build_and_load "${JOB_IMAGE}"       '["/bin/true"]'
+          build_and_load "${JOB_FAIL_IMAGE}"  '["/bin/false"]'
+          build_and_load "${JOB_SLEEP_IMAGE}" '["/bin/sleep", "600"]'
 
       - name: Export kind cluster inputs for the harness
         shell: bash
@@ -102,6 +115,8 @@ jobs:
             echo "HONUA_TEST_K8S_BEARER_TOKEN=${token}"
             echo "HONUA_TEST_K8S_NAMESPACE=default"
             echo "HONUA_TEST_K8S_JOB_IMAGE=${JOB_IMAGE}"
+            echo "HONUA_TEST_K8S_FAIL_IMAGE=${JOB_FAIL_IMAGE}"
+            echo "HONUA_TEST_K8S_SLEEP_IMAGE=${JOB_SLEEP_IMAGE}"
           } >> "$GITHUB_ENV"
 
       - name: Run cloud-integration tests

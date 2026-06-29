@@ -24,4 +24,16 @@ internal static class CloudIntegrationTraits
     /// Trait value applied to every Docker-backed cloud-integration test.
     /// </summary>
     public const string CloudIntegration = "CloudIntegration";
+
+    /// <summary>
+    /// Trait value applied to the real-AWS certification lane (#2164). These tests target a
+    /// LIVE AWS account (not an emulator) and are kept in a distinct category so neither the
+    /// default PR run nor the emulated <c>cloud-integration-harness.yml</c>
+    /// (<c>--filter "Category=CloudIntegration"</c>) ever invokes them. They run only in the
+    /// dedicated, OIDC-gated <c>real-aws-certification.yml</c> workflow (or locally with
+    /// <c>HONUA_REALAWS_CERT_ENABLED=true</c> and credentials present); every test
+    /// <c>[SkippableFact]</c>-skips — never fails — when the lane is not enabled, so
+    /// the project still builds and runs (skipping) on forks and credential-less environments.
+    /// </summary>
+    public const string RealAwsCertification = "RealAwsCertification";
 }
