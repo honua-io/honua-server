@@ -177,9 +177,11 @@ internal static class McpEndpointExtensions
     /// <summary>
     /// Handles <c>GET /mcp</c>: opens the server-to-client SSE stream defined by
     /// the Streamable-HTTP transport. A valid <c>Mcp-Session-Id</c> is required;
-    /// the client must also accept <c>text/event-stream</c>. The stream stays
-    /// open (emitting no events in this increment — server-initiated progress and
-    /// listChanged notifications are a follow-up) until the client disconnects.
+    /// the client must also accept <c>text/event-stream</c>. The handler drains the
+    /// session's notification channel (honua-server#1954), writing each queued
+    /// <c>notifications/progress</c> / <c>*/list_changed</c> frame as an SSE
+    /// <c>message</c> event until the session is terminated or the client
+    /// disconnects.
     /// </summary>
     private static async Task HandleGetAsync(HttpContext context, CancellationToken cancellationToken)
     {
@@ -195,7 +197,7 @@ internal static class McpEndpointExtensions
         }
 
         var sessionId = context.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
-        if (string.IsNullOrEmpty(sessionId) || !sessions.IsValid(sessionId))
+        if (string.IsNullOrEmpty(sessionId) || !sessions.TryGetReader(sessionId, out var reader))
         {
             McpLog.SessionRejected(logger, "stream-requires-valid-session");
             context.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -204,19 +206,37 @@ internal static class McpEndpointExtensions
 
         StartEventStream(context);
         // Flush the response head so the client (and proxies) see the open SSE
-        // stream immediately, before any server-initiated frame is available.
+        // stream immediately, before the first server-initiated frame is available.
         await context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
 
-        // Hold the stream open for server-initiated messages. No frames are
-        // pushed yet (progress/listChanged land in a follow-up); the stream
-        // closes when the client cancels or disconnects.
+        // Close the stream when the client disconnects OR the session is terminated
+        // (DELETE /mcp completes the channel, which ends the drain loop below).
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, sessions.GetLifetimeToken(sessionId));
         try
         {
-            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            await PumpSessionStreamAsync(context.Response.Body, reader, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            // Client disconnected — normal stream teardown.
+            // Client disconnected or session terminated — normal stream teardown.
+        }
+    }
+
+    /// <summary>
+    /// Drains a session's notification channel onto an output stream, writing each
+    /// queued JSON-RPC notification as one SSE <c>message</c> frame. Returns when
+    /// the channel completes (session terminated) or the token cancels. Extracted
+    /// so the SSE pump is unit-testable without an HTTP host.
+    /// </summary>
+    internal static async Task PumpSessionStreamAsync(
+        Stream output,
+        System.Threading.Channels.ChannelReader<string> reader,
+        CancellationToken cancellationToken)
+    {
+        await foreach (var payload in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await WriteEventToStreamAsync(output, payload, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -460,7 +480,10 @@ internal static class McpEndpointExtensions
     /// the JSON-RPC payload, terminated by the blank line the SSE wire format
     /// requires, then flushes so the client receives the frame promptly.
     /// </summary>
-    private static async Task WriteEventAsync(HttpContext context, string json, CancellationToken cancellationToken)
+    private static Task WriteEventAsync(HttpContext context, string json, CancellationToken cancellationToken) =>
+        WriteEventToStreamAsync(context.Response.Body, json, cancellationToken);
+
+    private static async Task WriteEventToStreamAsync(Stream output, string json, CancellationToken cancellationToken)
     {
         var builder = new StringBuilder();
         builder.Append("event: message\n");
@@ -470,8 +493,8 @@ internal static class McpEndpointExtensions
         builder.Append("data: ").Append(json).Append("\n\n");
 
         var bytes = Encoding.UTF8.GetBytes(builder.ToString());
-        await context.Response.Body.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-        await context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+        await output.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+        await output.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static McpJsonRpcResponse ErrorResponse(JsonElement id, McpJsonRpcError error) => new()

@@ -65,4 +65,13 @@ internal static partial class McpLog
 
     [LoggerMessage(8168, LogLevel.Debug, "MCP session terminated: SessionId={SessionId}, Found={Found}")]
     public static partial void SessionTerminated(ILogger logger, string sessionId, bool found);
+
+    [LoggerMessage(8169, LogLevel.Debug, "MCP notification published: Method={Method}, SessionId={SessionId}")]
+    public static partial void NotificationPublished(ILogger logger, string method, string sessionId);
+
+    [LoggerMessage(8170, LogLevel.Debug, "MCP notification broadcast: Method={Method}, Sessions={SessionCount}")]
+    public static partial void NotificationBroadcast(ILogger logger, string method, int sessionCount);
+
+    [LoggerMessage(8171, LogLevel.Debug, "MCP job progress bridge stopped: SessionId={SessionId}, JobId={JobId}, Reason={Reason}")]
+    public static partial void ProgressBridgeStopped(ILogger logger, string sessionId, string jobId, string reason);
 }

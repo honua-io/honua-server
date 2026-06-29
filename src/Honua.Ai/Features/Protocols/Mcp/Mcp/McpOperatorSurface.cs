@@ -63,6 +63,15 @@ internal sealed class McpOperatorSurface
 
     public IReadOnlyCollection<string> ToolNames => (IReadOnlyCollection<string>)_tools.Keys;
 
+    /// <summary>
+    /// The registered tool handlers, exposed so the <c>honua_list_capabilities</c>
+    /// tool (#1949) can project the live tool catalog into a self-describing
+    /// manifest. This is the same single source-of-truth catalog served over both
+    /// the HTTP-SSE and stdio transports (#1950), so the manifest is
+    /// transport-symmetric.
+    /// </summary>
+    public IReadOnlyCollection<IMcpTool> ToolHandlers => (IReadOnlyCollection<IMcpTool>)_tools.Values;
+
     public IReadOnlyList<IMcpResource> Resources => _resources;
 
     /// <summary>
@@ -198,7 +207,21 @@ internal sealed class McpOperatorSurface
         }
 
         var negotiatedVersion = NegotiateProtocolVersion(parameters.ProtocolVersion);
-        var result = new McpInitializeResult { ProtocolVersion = negotiatedVersion };
+        var result = new McpInitializeResult
+        {
+            ProtocolVersion = negotiatedVersion,
+            // honua-server#1954: the server now emits notifications/tools/list_changed
+            // and notifications/resources/list_changed over the session SSE stream
+            // (e.g. when a publish mutates the catalog), so advertise the listChanged
+            // capability instead of leaving the flags inert. The prompt catalog stays
+            // static, so prompts.listChanged remains false.
+            Capabilities = new McpServerCapabilities
+            {
+                Tools = new McpCapabilityFlag { ListChanged = true },
+                Resources = new McpCapabilityFlag { ListChanged = true },
+                Prompts = new McpCapabilityFlag { ListChanged = false }
+            }
+        };
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpInitializeResult);
     }
 

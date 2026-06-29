@@ -110,6 +110,12 @@ internal sealed class ExecutePlanTool : IMcpTool
             .SubmitJobAsync(plan, idempotencyKey, principal, metadata, cancellationToken)
             .ConfigureAwait(false);
 
+        // honua-server#1954: when the call is part of a streamable-HTTP session,
+        // stream the job's progress to the session's GET /mcp SSE channel instead
+        // of forcing the client to poll honua://jobs/{id}. Resolved leniently so a
+        // lightweight test host (no session services registered) keeps working.
+        StartProgressStreaming(httpContext, jobRecord.OperationId, principal);
+
         var output = new McpExecuteOutput
         {
             JobId = jobRecord.OperationId,
@@ -119,6 +125,25 @@ internal sealed class ExecutePlanTool : IMcpTool
         };
 
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpExecuteOutput);
+    }
+
+    private static void StartProgressStreaming(HttpContext httpContext, string jobId, System.Security.Claims.ClaimsPrincipal principal)
+    {
+        var sessionId = httpContext.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            return;
+        }
+
+        var sessions = httpContext.RequestServices.GetService<McpSessionManager>();
+        var bridge = httpContext.RequestServices.GetService<McpJobProgressBridge>();
+        if (sessions is null || bridge is null || !sessions.IsValid(sessionId))
+        {
+            return;
+        }
+
+        sessions.AssociateJob(sessionId, jobId);
+        bridge.Track(sessionId, jobId, principal);
     }
 
     private static void EnforceGuardrails(HttpContext httpContext)

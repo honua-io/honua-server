@@ -1,0 +1,8 @@
+{
+  "id": "list_capabilities.default",
+  "schemaRef": "tools/list_capabilities.schema.json",
+  "validates": "inputs",
+  "inputs": { "includeResources": true, "includeGroundingResources": true },
+  "expected": "tool_result",
+  "canonicalRefs": ["CapabilityCatalog"]
+}
