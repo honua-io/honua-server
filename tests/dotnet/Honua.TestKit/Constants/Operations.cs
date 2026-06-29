@@ -189,6 +189,13 @@ public static class Operations
     public const string EnrichCatalog = "EnrichCatalog";
     public const string Enrich = "Enrich";
 
+    // Managed enrichment-dataset catalog operations (#2280)
+    public const string ListEnrichmentDatasets = "ListEnrichmentDatasets";
+    public const string GetEnrichmentDataset = "GetEnrichmentDataset";
+    public const string RegisterEnrichmentDataset = "RegisterEnrichmentDataset";
+    public const string UpdateEnrichmentDataset = "UpdateEnrichmentDataset";
+    public const string DeregisterEnrichmentDataset = "DeregisterEnrichmentDataset";
+
     // OGC API Processes Operations
     public const string ProcessDiscovery = "ProcessDiscovery";
     public const string ProcessExecution = "ProcessExecution";

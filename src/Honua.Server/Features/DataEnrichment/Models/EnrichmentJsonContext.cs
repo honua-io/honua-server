@@ -18,4 +18,11 @@ namespace Honua.Server.Features.DataEnrichment.Models;
 [JsonSerializable(typeof(EnrichmentDatasetDescriptor))]
 [JsonSerializable(typeof(EnrichmentDatasetDescriptor[]))]
 [JsonSerializable(typeof(EnrichmentRequest))]
+[JsonSerializable(typeof(EnrichmentAggregate))]
+[JsonSerializable(typeof(EnrichmentAggregate[]))]
+[JsonSerializable(typeof(EnrichmentDatasetsResponse))]
+[JsonSerializable(typeof(EnrichmentDatasetMetadata))]
+[JsonSerializable(typeof(EnrichmentDatasetMetadata[]))]
+[JsonSerializable(typeof(RegisterEnrichmentDatasetRequest))]
+[JsonSerializable(typeof(UpdateEnrichmentDatasetRequest))]
 internal sealed partial class EnrichmentJsonContext : JsonSerializerContext;

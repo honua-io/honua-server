@@ -52,15 +52,24 @@ internal sealed class EnrichmentDatasetDescriptor
 /// optional overrides for the spatial predicate and carried attributes.
 /// </summary>
 /// <remarks>
-/// Inline GeoJSON source feature sets are intentionally deferred for this first
-/// increment: enrichment operates over a registered source layer only, reusing
-/// the canonical spatial-join pipeline. The deferral is documented in
-/// <c>docs/operator/data-enrichment.md</c>.
+/// The endpoint is a thin adapter over the shared spatial-join pipeline (#2282):
+/// the <c>method</c> vocabulary maps to the canonical spatial predicates, and the
+/// dataset is resolved through the managed enrichment catalog (#2280). Inline
+/// GeoJSON source feature sets and the nearest-neighbor method are deferred to the
+/// async/managed batch path; see <c>docs/operator/data-enrichment.md</c>.
 /// </remarks>
 internal sealed class EnrichmentRequest
 {
     /// <summary>
-    /// Identifier of the registered enrichment dataset (see the catalog endpoint).
+    /// Identifier of the managed enrichment dataset (slug) to resolve through the
+    /// catalog (#2280/#2282). Preferred over <see cref="DatasetKey"/>.
+    /// </summary>
+    [JsonPropertyName("datasetId")]
+    public string? DatasetId { get; set; }
+
+    /// <summary>
+    /// Back-compat alias for the configuration-driven enrichment dataset key. Used
+    /// only when <see cref="DatasetId"/> is not supplied.
     /// </summary>
     [JsonPropertyName("datasetKey")]
     public string? DatasetKey { get; set; }
@@ -78,8 +87,18 @@ internal sealed class EnrichmentRequest
     public string? Where { get; set; }
 
     /// <summary>
+    /// Enrichment method vocabulary (#2282) mapping to the canonical spatial
+    /// predicates: <c>intersects</c>, <c>point-in-polygon</c> (→ contains),
+    /// <c>within-distance</c> (→ dwithin). <c>nearest-neighbor</c> is recognised but
+    /// requires the async batch path. Takes precedence over <see cref="Predicate"/>.
+    /// </summary>
+    [JsonPropertyName("method")]
+    public string? Method { get; set; }
+
+    /// <summary>
     /// Optional spatial predicate override (intersects, contains, within, dwithin).
-    /// Falls back to the dataset default when omitted.
+    /// Falls back to the dataset default when neither <see cref="Method"/> nor this
+    /// is supplied.
     /// </summary>
     [JsonPropertyName("predicate")]
     public string? Predicate { get; set; }
@@ -92,9 +111,49 @@ internal sealed class EnrichmentRequest
     public double? DistanceMeters { get; set; }
 
     /// <summary>
-    /// Optional override of the enrichment-layer attributes carried onto each
-    /// source feature. Falls back to the dataset default when omitted.
+    /// Enrichment-layer attributes carried onto each source feature (#2282). Falls
+    /// back to <see cref="Attributes"/> then the dataset default when omitted.
+    /// </summary>
+    [JsonPropertyName("outputFields")]
+    public string[]? OutputFields { get; set; }
+
+    /// <summary>
+    /// Back-compat alias for <see cref="OutputFields"/>.
     /// </summary>
     [JsonPropertyName("attributes")]
     public string[]? Attributes { get; set; }
+
+    /// <summary>
+    /// Optional per-match aggregates (count/sum/avg/min/max) computed over the
+    /// matched enrichment-layer features (#2282).
+    /// </summary>
+    [JsonPropertyName("aggregates")]
+    public EnrichmentAggregate[]? Aggregates { get; set; }
+
+    /// <summary>
+    /// Inline GeoJSON FeatureCollection source (#2282). Deferred to the async/managed
+    /// path in this slice; supplying it returns a clear error directing callers to the
+    /// layer-backed source or the async batch enrichment job.
+    /// </summary>
+    [JsonPropertyName("features")]
+    public System.Text.Json.JsonElement? Features { get; set; }
+}
+
+/// <summary>
+/// A single per-match aggregate over the matched enrichment-layer features (#2282):
+/// count/sum/avg/min/max applied to one reference-layer attribute.
+/// </summary>
+internal sealed class EnrichmentAggregate
+{
+    /// <summary>Aggregate type: count, sum, avg, min, or max.</summary>
+    [JsonPropertyName("statisticType")]
+    public string? StatisticType { get; set; }
+
+    /// <summary>Reference-layer attribute the aggregate is computed over (omit for count).</summary>
+    [JsonPropertyName("onField")]
+    public string? OnField { get; set; }
+
+    /// <summary>Optional output property name; defaults to <c>{statisticType}_{onField}</c>.</summary>
+    [JsonPropertyName("outName")]
+    public string? OutName { get; set; }
 }

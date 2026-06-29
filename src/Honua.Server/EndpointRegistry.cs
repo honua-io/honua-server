@@ -835,6 +835,13 @@ public static class EndpointRegistry
         new("GET", "/api/enrich/catalog"),
         new("POST", "/api/enrich"),
 
+        // Managed enrichment-dataset catalog: discovery + admin registration (#2280).
+        new("GET", "/api/enrich/datasets"),
+        new("GET", "/api/enrich/datasets/{id}"),
+        new("POST", "/api/enrich/datasets"),
+        new("PUT", "/api/enrich/datasets/{id}"),
+        new("DELETE", "/api/enrich/datasets/{id}"),
+
         // Spec-shaped "not implemented" FeatureServer operations (#1402).
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryContingentValues"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/sharedTemplates"),
