@@ -672,6 +672,18 @@ internal static class GPServerEndpoints
         EnrichActivity("JobsList", serviceId, taskName);
         var logger = ResolveLogger(context);
 
+        // A request to ".../jobs/" (trailing slash, empty {jobId}) is collapsed by
+        // ASP.NET routing onto this listing route. An Esri client addressing a
+        // specific job with an empty/missing id must receive an error, not the full
+        // job listing, so treat the trailing-slash form as a missing job id rather
+        // than a listing request.
+        if (context.Request.Path.Value is { } requestPath && requestPath.EndsWith('/'))
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "Missing jobId."),
+                "Missing jobId");
+        }
+
         var formatError = ValidateJsonFormat(context);
         if (formatError != null)
         {
