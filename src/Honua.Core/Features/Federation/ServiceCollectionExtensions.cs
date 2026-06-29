@@ -25,11 +25,13 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddFederationCore(this IServiceCollection services)
     {
         services.TryAddSingleton<IFederationQueryPlanner, FederationQueryPlanner>();
+        services.TryAddSingleton<FederationMetrics>();
         services.TryAddSingleton<IFederatedQueryExecutor>(static sp => new FederatedQueryExecutor(
             sp.GetRequiredService<IFederationQueryPlanner>(),
             sp.GetServices<IFederatedSourceConnector>(),
             sp.GetService<ResiliencePolicyOptions>() ?? ResiliencePolicyOptions.Default,
-            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FederatedQueryExecutor>>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FederatedQueryExecutor>>(),
+            sp.GetRequiredService<FederationMetrics>()));
         return services;
     }
 }
