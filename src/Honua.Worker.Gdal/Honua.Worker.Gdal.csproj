@@ -22,6 +22,22 @@
 
   <ItemGroup>
     <!--
+      Custom worker steps shipped alongside the published worker. These Python
+      scripts are invoked via `python3` by the corresponding executors and run
+      ONLY inside the GDAL worker image (they require the GDAL Python bindings +
+      SciPy provided by docker/worker-gdal/Dockerfile). gdal_euclidean_allocation.py
+      backs proximity.euclidean-allocation (#2255): stock gdal_proximity has no
+      nearest-source allocation mode. Copied to the build/publish output so the
+      runtime image's build-stage COPY includes them at /app/Scripts.
+    -->
+    <Content Include="Scripts\**\*.py">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Scripts\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
       Reuses the durable job-execution substrate from Honua.Jobs (the shared
       JobExecutionService loop, RedisJobQueue, and Redis-backed stores). The
       worker DELIBERATELY does NOT ProjectReference Honua.Server — ADR-0038's
