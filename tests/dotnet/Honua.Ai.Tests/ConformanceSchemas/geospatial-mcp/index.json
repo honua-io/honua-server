@@ -98,6 +98,13 @@
       "implementationStatus": "known-gap"
     },
     {
+      "standardName": "publish_service",
+      "referenceToolName": "honua_publish_service",
+      "family": "Publishing",
+      "schema": "tools/publish_service.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
       "standardName": "list_layers",
       "referenceToolName": "honua_list_layers",
       "family": "Discovery and query (reference shape)",

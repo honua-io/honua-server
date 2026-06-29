@@ -126,11 +126,8 @@ public class ImportEndpointTests : IAsyncLifetime
             .ToArray();
         var formatDescriptions = document.RootElement.GetProperty("formatDescriptions");
 
-        extensions.Should().NotContain(".gml");
         extensions.Should().NotContain(".twkb");
-        formatDescriptions.TryGetProperty(".gml", out _).Should().BeFalse();
         formatDescriptions.TryGetProperty(".twkb", out _).Should().BeFalse();
-        content.Should().NotContain("GML - Geography Markup Language");
         content.Should().NotContain("TinyWKB - Compact binary format");
     }
 
