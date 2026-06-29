@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Federation.Services;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Studio.Services;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -36,6 +37,7 @@ public static partial class Extensions
         "Honua.Wfs20.Transactions",
         "Honua.Database.ConnectionPool",
         "Honua.Production.Metrics",
+        FederationMetrics.MeterName,
         LambdaTelemetry.MeterName
     ];
     private static readonly string[] _activitySourceNames =

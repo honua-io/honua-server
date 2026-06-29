@@ -26,6 +26,7 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
     private readonly IFederationQueryPlanner _planner;
     private readonly Dictionary<FederatedSourceKind, IFederatedSourceConnector> _connectors;
     private readonly ResiliencePolicyOptions _resilienceOptions;
+    private readonly FederationMetrics _metrics;
     private readonly ILogger<FederatedQueryExecutor> _logger;
 
     // Circuit-breaker state must persist across calls, so the per-source policy is cached.
@@ -35,7 +36,8 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
         IFederationQueryPlanner planner,
         IEnumerable<IFederatedSourceConnector> connectors,
         ResiliencePolicyOptions resilienceOptions,
-        ILogger<FederatedQueryExecutor> logger)
+        ILogger<FederatedQueryExecutor> logger,
+        FederationMetrics? metrics = null)
     {
         ArgumentNullException.ThrowIfNull(planner);
         ArgumentNullException.ThrowIfNull(connectors);
@@ -44,6 +46,7 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
 
         _planner = planner;
         _resilienceOptions = resilienceOptions;
+        _metrics = metrics ?? new FederationMetrics();
         _logger = logger;
 
         // Last writer wins when two connectors claim the same kind; this keeps registration
@@ -66,6 +69,7 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
 
         if (!_connectors.TryGetValue(source.Kind, out var connector))
         {
+            _metrics.RecordUnavailable(source, FederatedSourceUnavailableReason.NoConnector, TimeSpan.Zero);
             throw new FederatedSourceUnavailableException(source.Id, FederatedSourceUnavailableReason.NoConnector);
         }
 
@@ -79,13 +83,18 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
             candidates = await FetchWithResilienceAsync(source, connector, request, cancellationToken)
                 .ConfigureAwait(false);
         }
-        finally
+        catch (FederatedSourceUnavailableException ex)
         {
             stopwatch.Stop();
+            _metrics.RecordUnavailable(source, ex.Reason, stopwatch.Elapsed);
+            throw;
         }
+
+        stopwatch.Stop();
 
         var refinement = RefineLocally(query, plan, candidates);
 
+        _metrics.RecordSuccess(source, stopwatch.Elapsed, refinement.Result.Items.Length);
         FederationExecutionLog.SourceExecuted(_logger, source.Id, stopwatch.Elapsed.TotalMilliseconds, refinement.Result.Items.Length);
 
         return new FederatedQueryResult
