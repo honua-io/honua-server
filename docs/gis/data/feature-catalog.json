@@ -14394,6 +14394,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_Failure_DoesNotIssueSessionHeader",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_MissingClientInfo_ReturnsInvalidArgumentJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_Success_IssuesMcpSessionIdHeader",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_With2025_06_18_NegotiatesThatRevision",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_WithSupportedVersion_NegotiatesAndReturnsServerInfo",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_WithUnsupportedVersion_FallsBackToLatestServerVersion",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Initialize_WithoutParams_ReturnsInvalidArgumentJsonRpcError",

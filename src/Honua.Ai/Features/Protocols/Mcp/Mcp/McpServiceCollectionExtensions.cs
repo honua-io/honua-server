@@ -69,6 +69,17 @@ internal static class McpServiceCollectionExtensions
         // pattern ProposeOperationTool uses for the operation gateway.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishServiceTool>());
 
+        // Authoring tools (#1951): create_map_package / create_app_package route
+        // through the canonical IMapGenerationService / IAppGenerationService
+        // generation pipelines. Those services are registered later in the host
+        // composition root than AddMcpOperatorSurface, so the tools resolve them
+        // per-request (like PublishServiceTool resolves IOperationInvoker) and
+        // return a structured capability-unavailable result when no generation
+        // service is composed. Registered unconditionally so the catalog is
+        // transport-symmetric.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateMapPackageTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateAppPackageTool>());
+
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlanAnalysisTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ClarifyIntentTool>());
