@@ -58,7 +58,7 @@ public sealed class FederationMetricsTests
         await executor.ExecuteAsync(Source(FederatedSourceKind.HonuaGrpc), new FeatureQuery());
         capture.Flush();
 
-        var request = Assert.Single(capture.Measurements.Where(m => m.Instrument == "honua_federation_source_requests_total"));
+        var request = Assert.Single(capture.Measurements, m => m.Instrument == "honua_federation_source_requests_total");
         Assert.Equal("success", request.Tags["outcome"]);
         Assert.Equal("src-HonuaGrpc", request.Tags["source.id"]);
         Assert.Equal("HonuaGrpc", request.Tags["source.kind"]);
@@ -77,7 +77,7 @@ public sealed class FederationMetricsTests
             () => executor.ExecuteAsync(Source(FederatedSourceKind.EsriRest), new FeatureQuery()));
         capture.Flush();
 
-        var request = Assert.Single(capture.Measurements.Where(m => m.Instrument == "honua_federation_source_requests_total"));
+        var request = Assert.Single(capture.Measurements, m => m.Instrument == "honua_federation_source_requests_total");
         Assert.Equal("no_connector", request.Tags["outcome"]);
     }
 
