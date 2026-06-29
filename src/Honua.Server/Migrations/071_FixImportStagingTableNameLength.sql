@@ -1,43 +1,52 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
--- Fix import replace-mode for long table names. honua.create_import_staging_table
--- (migration 070) derived the staging sibling name as "<table>__staging" and RAISEd
--- a hard P0001 error whenever that exceeded PostgreSQL's 63-character identifier
--- limit. A perfectly valid live target name (<= 63 chars) whose length is >= 55 then
--- could never be imported in the default "replace" load mode, because appending the
--- 9-character "__staging" suffix overflowed the limit. (Ad-hoc imports such as
--- "imported_custom_schema_<32-hex>" hit exactly this.) honua.ensure_import_upsert_key
--- already solved the same class of problem for its unique-index name with an md5
--- fallback; this migration applies the same deterministic, bounded strategy to the
--- staging table name and shares it between create_import_staging_table and
--- swap_import_table (which MUST compute the identical name) via a single helper.
+-- Fix: the transactional-replace staging path (migration 070) hard-fails for
+-- valid-but-long target table names. honua.create_import_staging_table derived
+-- the staging name as `<table>__staging` and RAISEd when it exceeded the 63-char
+-- PostgreSQL identifier limit. Because the default import load mode is Replace,
+-- this rejected every import whose physical table name is >= 55 characters
+-- (e.g. the `imported_<requested>` names the import endpoint generates), even
+-- though such names are perfectly valid on their own — the original, non-staging
+-- create path (migration 004) only capped the base table name at 63 and let
+-- PostgreSQL silently truncate the derived index identifiers.
 --
--- The staging name is bounded to 48 characters so that the derived staging index
--- names ("idx_<staging>_geometry" and "idx_<staging>_properties", up to
--- 4 + 48 + 11 = 63) also stay within the identifier limit and can be renamed onto
--- their canonical "<table>" forms during the swap.
+-- This migration makes the staging name length-safe by falling back to a short,
+-- deterministic md5-based name when the natural `<table>__staging` form would
+-- exceed 63 characters, mirroring the existing fallback in
+-- honua.ensure_import_upsert_key. The derivation is factored into a single
+-- IMMUTABLE helper so create_import_staging_table and swap_import_table always
+-- agree on the staging table's name. Short names keep the exact, unchanged
+-- `<table>__staging` form, so existing imports are unaffected.
 
 CREATE SCHEMA IF NOT EXISTS honua;
 
--- Deterministic, collision-resistant staging-table name bounded to <= 48 characters.
--- Short names keep the readable "<table>__staging" form; long names fall back to a
--- truncated readable prefix plus a stable md5-derived suffix so the same input always
--- yields the same staging name (create and swap therefore agree).
+-- Single source of truth for the staging-table name so the create and swap
+-- functions never disagree. Deterministic and length-safe (<= 36 chars in the
+-- fallback form: 'stg_' + 32-char md5).
 CREATE OR REPLACE FUNCTION honua.import_staging_table_name(table_name text)
 RETURNS text
-LANGUAGE sql
+LANGUAGE plpgsql
 IMMUTABLE
 AS $$
-    SELECT CASE
-        WHEN length(table_name) + 9 <= 48
-            THEN table_name || '__staging'
-        ELSE left(table_name, 33) || '_' || substr(md5(table_name), 1, 10) || '_stg'
-    END;
+DECLARE
+    staging_name text;
+BEGIN
+    staging_name := table_name || '__staging';
+
+    -- A truncated `<table>__staging` could collide with the live target or
+    -- another staging sibling, so when the natural name would exceed the 63-char
+    -- identifier limit, use a short, deterministic md5-based name instead.
+    IF length(staging_name) > 63 THEN
+        staging_name := 'stg_' || md5(table_name);
+    END IF;
+
+    RETURN staging_name;
+END;
 $$;
 
--- Builds an EMPTY staging sibling for a transactional replace, now using the bounded
--- helper for the staging name so long-but-valid target names no longer fail.
+-- Redefine the staging-create function to use the length-safe helper instead of
+-- RAISEing on long names. Behaviour for short names is unchanged.
 CREATE OR REPLACE FUNCTION honua.create_import_staging_table(
     schema_name text,
     table_name text,
@@ -56,9 +65,6 @@ BEGIN
     END IF;
 
     staging_name := honua.import_staging_table_name(table_name);
-    -- Defensive: the helper bounds to 48, but validate the final identifier shape so a
-    -- future change to the naming strategy cannot silently emit an invalid identifier.
-    PERFORM honua.assert_import_identifier(staging_name, 'Staging table name');
 
     EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
     -- A leftover staging table from a previously-crashed load is safe to drop: it
@@ -74,8 +80,8 @@ BEGIN
 END;
 $$;
 
--- Atomically replaces the live target with the staging sibling. Recomputes the staging
--- name through the shared helper so it matches create_import_staging_table exactly.
+-- Redefine the swap function to resolve the staging name through the same helper
+-- so it always finds the table that create_import_staging_table built.
 CREATE OR REPLACE FUNCTION honua.swap_import_table(
     schema_name text,
     table_name text)
@@ -95,6 +101,8 @@ BEGIN
 
     -- Rename the staging indexes onto the canonical names so a later load (which
     -- references idx_<table>_geometry / idx_<table>_properties) does not collide.
+    -- PostgreSQL truncates these derived names to 63 chars exactly as the live
+    -- create path relies on.
     EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
         schema_name, 'idx_' || staging_name || '_geometry', 'idx_' || table_name || '_geometry');
     EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
