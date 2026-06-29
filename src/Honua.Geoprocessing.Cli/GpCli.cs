@@ -103,10 +103,47 @@ public static class GpCli
         return services.BuildServiceProvider();
     }
 
+    /// <summary>
+    /// Resolves the registered <see cref="IProcessExecutor"/> set for the local runner,
+    /// de-duplicating any process id claimed by BOTH a managed executor and a native GDAL
+    /// executor. In the real system the managed executors (server host) and the native GDAL
+    /// executors (worker host) run in SEPARATE processes, so an id handled by both — e.g.
+    /// <c>transform.reproject</c> (managed NTS reproject vs native <c>ogr2ogr</c>) — never
+    /// collides there. The devkit composes BOTH sets into one provider for a single offline
+    /// loop, so the overlap is resolved deterministically here: the managed executor wins (the
+    /// sub-second, binary-free default), and a native executor is dropped only when EVERY id it
+    /// handles is already owned by a managed executor. Its distinct <c>gdal.*</c> ids and the
+    /// <c>--real-worker</c> fidelity path are unaffected; a partial overlap is left for
+    /// <see cref="ProcessExecutorRouteTable"/> to surface as the authoring error it is.
+    /// </summary>
+    private static List<IProcessExecutor> ResolveExecutors(ServiceProvider provider)
+    {
+        var all = provider.GetServices<IProcessExecutor>().ToList();
+        var gdalAssembly = typeof(GdalProcessExecutorMode).Assembly;
+
+        var managed = all.Where(e => e.GetType().Assembly != gdalAssembly).ToList();
+        var claimed = new HashSet<string>(
+            managed.SelectMany(e => e.ProcessIds), StringComparer.Ordinal);
+
+        var resolved = new List<IProcessExecutor>(managed);
+        foreach (var executor in all.Where(e => e.GetType().Assembly == gdalAssembly))
+        {
+            if (executor.ProcessIds.All(claimed.Contains))
+            {
+                // Pure managed/native overlap (e.g. transform.reproject): managed already owns it.
+                continue;
+            }
+
+            resolved.Add(executor);
+        }
+
+        return resolved;
+    }
+
     private static int RunList()
     {
         using var provider = BuildProvider();
-        var executors = provider.GetServices<IProcessExecutor>();
+        var executors = ResolveExecutors(provider);
         var runner = new GeoprocessingLocalRunner(executors);
         var catalog = provider.GetService<IProcessCatalog>();
 
@@ -182,7 +219,7 @@ public static class GpCli
 
         var gdalMode = await ResolveGdalModeAsync(parsed.ForceContainer).ConfigureAwait(false);
         using var provider = BuildProvider(gdalMode, capture);
-        var executors = provider.GetServices<IProcessExecutor>();
+        var executors = ResolveExecutors(provider);
         var runner = new GeoprocessingLocalRunner(executors);
 
         if (!runner.AvailableProcessIds.Contains(parsed.ProcessId, StringComparer.Ordinal))
@@ -655,7 +692,7 @@ public static class GpCli
             : GoldenUpdateMode.Assert;
 
         using var provider = BuildProvider();
-        var executors = provider.GetServices<IProcessExecutor>();
+        var executors = ResolveExecutors(provider);
         var runner = new GpProcessTestRunner(executors);
 
         Console.WriteLine($"GP golden tests : {fixtures.Count} fixture(s) under {fixtureRoot}");
@@ -731,7 +768,7 @@ public static class GpCli
         // Reuse the live P1 registration as the collision source of truth: the runner's
         // available ids are exactly the registered IProcessExecutor set.
         using var provider = BuildProvider();
-        var executors = provider.GetServices<IProcessExecutor>();
+        var executors = ResolveExecutors(provider);
         var runner = new GeoprocessingLocalRunner(executors);
         var existingIds = runner.AvailableProcessIds;
 
@@ -804,7 +841,7 @@ public static class GpCli
     private static async Task<int> RunPublish(string[] args)
     {
         using var provider = BuildProvider();
-        var executors = provider.GetServices<IProcessExecutor>();
+        var executors = ResolveExecutors(provider);
         var runner = new GeoprocessingLocalRunner(executors);
         var processIds = runner.AvailableProcessIds.ToHashSet(StringComparer.Ordinal);
         var catalog = provider.GetService<IProcessCatalog>();
