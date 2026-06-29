@@ -42,7 +42,12 @@ from typing import Any, Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-ENDPOINT_REGISTRY = REPO_ROOT / "src" / "Honua.Server" / "EndpointRegistry.cs"
+# The endpoint inventory is declared across `EndpointRegistry.cs` plus the
+# per-feature `EndpointRegistry.<Area>.cs` partial-class fragments. Glob all of
+# them so the drift check stays accurate after the registry was decomposed into
+# per-feature files (#2160); a single-file read would miss every fragment.
+ENDPOINT_REGISTRY_DIR = REPO_ROOT / "src" / "Honua.Server"
+ENDPOINT_REGISTRY_GLOB = "EndpointRegistry*.cs"
 STAC_INLINE_SOURCE = (
     REPO_ROOT
     / "src"
@@ -153,11 +158,19 @@ class Drift:
 
 
 def load_registry_endpoints() -> set[tuple[str, str]]:
-    """Parse EndpointRegistry.cs and extract (METHOD, PATH) pairs."""
+    """Parse the EndpointRegistry partial-class files and extract (METHOD, PATH) pairs.
 
-    text = ENDPOINT_REGISTRY.read_text(encoding="utf-8")
+    Reads ``EndpointRegistry.cs`` together with every per-feature
+    ``EndpointRegistry.<Area>.cs`` fragment, so the inventory is complete after
+    the registry decomposition (#2160).
+    """
+
     pattern = re.compile(r'new\(\s*"([A-Z]+)"\s*,\s*"([^"]+)"\s*\)')
-    return {(m.group(1), m.group(2)) for m in pattern.finditer(text)}
+    endpoints: set[tuple[str, str]] = set()
+    for source in sorted(ENDPOINT_REGISTRY_DIR.glob(ENDPOINT_REGISTRY_GLOB)):
+        text = source.read_text(encoding="utf-8")
+        endpoints.update((m.group(1), m.group(2)) for m in pattern.finditer(text))
+    return endpoints
 
 
 def extract_inline_stac_spec() -> dict[str, Any]:
@@ -411,14 +424,11 @@ def check_endpoint_cross_reference(
 
 
 def main() -> int:
-    try:
-        registry = load_registry_endpoints()
-    except FileNotFoundError:
-        print(f"ERROR: cannot read {ENDPOINT_REGISTRY}", file=sys.stderr)
-        return 2
+    registry = load_registry_endpoints()
     if not registry:
         print(
-            f"ERROR: EndpointRegistry parser found no endpoints in {ENDPOINT_REGISTRY}",
+            "ERROR: EndpointRegistry parser found no endpoints in "
+            f"{ENDPOINT_REGISTRY_DIR}/{ENDPOINT_REGISTRY_GLOB}",
             file=sys.stderr,
         )
         return 2
