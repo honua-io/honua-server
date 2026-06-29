@@ -49,6 +49,30 @@ internal static class DataEnrichmentEndpoints
             .Produces(StatusCodes.Status402PaymentRequired)
             .AllowAnonymous();
 
+        // Managed enrichment-dataset catalog discovery (#2280). Edition-filtered: a
+        // caller sees only datasets whose minimum edition is at or below theirs.
+        endpoints.MapGet("/api/enrich/datasets", (Delegate)DataEnrichmentRequestHandlers.HandleDatasetsGet)
+            .WithName("ListEnrichmentDatasets")
+            .WithDisplayName("List Enrichment Datasets")
+            .WithSummary("Discover managed enrichment datasets")
+            .WithDescription(
+                "Returns the managed enrichment-dataset catalog (boundary, demographic, and POI "
+                + "reference datasets) visible to the caller's edition, with provenance, "
+                + "attribution, and license metadata.")
+            .WithTags(EnrichmentTag)
+            .Produces<EnrichmentDatasetsResponse>(StatusCodes.Status200OK, contentType: "application/json")
+            .AllowAnonymous();
+
+        endpoints.MapGet("/api/enrich/datasets/{id}", (Delegate)DataEnrichmentRequestHandlers.HandleDatasetGet)
+            .WithName("GetEnrichmentDataset")
+            .WithDisplayName("Get Enrichment Dataset")
+            .WithSummary("Discover a single managed enrichment dataset")
+            .WithDescription("Returns a single managed enrichment dataset by id, filtered by the caller's edition.")
+            .WithTags(EnrichmentTag)
+            .Produces<EnrichmentDatasetMetadata>(StatusCodes.Status200OK, contentType: "application/json")
+            .Produces(StatusCodes.Status404NotFound)
+            .AllowAnonymous();
+
         // Cast to Delegate so the route-handler MapPost overload is selected rather
         // than the RequestDelegate overload (the handler's single-HttpContext /
         // Task<IResult> shape otherwise matches RequestDelegate and trips ASP0016).
@@ -67,7 +91,12 @@ internal static class DataEnrichmentEndpoints
             .Produces(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status501NotImplemented)
+            .Produces(StatusCodes.Status413PayloadTooLarge)
             .AllowAnonymous();
+
+        // Admin registration surface for the managed catalog (#2280). No-ops on
+        // non-Postgres profiles where the registry store is unavailable.
+        endpoints.MapEnrichmentDatasetAdminEndpoints();
 
         return endpoints;
     }
