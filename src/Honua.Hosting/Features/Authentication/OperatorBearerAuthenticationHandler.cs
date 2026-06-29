@@ -3,6 +3,7 @@
 
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
@@ -61,5 +62,40 @@ internal sealed class OperatorBearerAuthenticationHandler(
         {
             return AuthenticateResult.Fail("The operator bearer is invalid.");
         }
+    }
+
+    /// <summary>
+    /// Sets the 401 challenge status without writing a body. The admin authorization
+    /// policy lists multiple authentication schemes (composite, client certificate,
+    /// operator bearer), and ASP.NET Core challenges each one in turn on an auth
+    /// failure. A preceding scheme (e.g. client certificate) may already have written
+    /// a problem-details response, so this guards <see cref="HttpResponse.HasStarted"/>
+    /// before touching the status code to avoid "the response has already started".
+    /// </summary>
+    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+    {
+        if (Response.HasStarted)
+        {
+            return Task.CompletedTask;
+        }
+
+        Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Sets the 403 forbidden status without writing a body. See
+    /// <see cref="HandleChallengeAsync"/> for why <see cref="HttpResponse.HasStarted"/>
+    /// is guarded before the status code is set.
+    /// </summary>
+    protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        if (Response.HasStarted)
+        {
+            return Task.CompletedTask;
+        }
+
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
     }
 }
