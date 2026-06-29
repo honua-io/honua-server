@@ -51,6 +51,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_execute_plan"] = "execute_plan",
             ["honua_cancel_job"] = "cancel_job",
             ["honua_propose_operation"] = "propose_operation",
+            ["honua_create_map_package"] = "create_map_package",
+            ["honua_create_app_package"] = "create_app_package",
             ["honua_geocode_address"] = "geocode_address",
             ["honua_solve_route"] = "solve_route",
             ["honua_list_layers"] = "list_layers",
@@ -66,15 +68,30 @@ public sealed partial class McpTaxonomyAlignmentTests
     /// </summary>
     private static readonly string[] KnownGapStandardTools =
     {
-        "create_map_package",
         "refine_map_package",
         "apply_style_preset",
         "compose_mixed_protocol_map",
         "preview_map_package",
-        "create_app_package",
         "preview_app_package",
         "publish_result",
     };
+
+    /// <summary>
+    /// Implemented Honua tools that have no 1:1 geospatial-mcp standard schema
+    /// because their input contract intentionally diverges from the standard.
+    /// <c>honua_publish_service</c> publishes a source database table as a new
+    /// hosted service (connectionId/schema/table/layerName); the standard
+    /// <c>publish_result</c> instead promotes an existing result/package
+    /// (sourceId) and its concrete publish field set is still finalizing upstream
+    /// (honua-server#730/#732). These are recorded so coverage stays honest, but
+    /// they are excluded from the standard-schema required-field match until the
+    /// standard finalizes a service-publish contract.
+    /// </summary>
+    private static readonly HashSet<string> HonuaNativeToolsWithoutStandardSchema =
+        new(StringComparer.Ordinal)
+        {
+            "honua_publish_service",
+        };
 
     private static string SchemaRoot =>
         Path.Combine(AppContext.BaseDirectory, "ConformanceSchemas", "geospatial-mcp");
@@ -119,11 +136,13 @@ public sealed partial class McpTaxonomyAlignmentTests
 
         var unmapped = liveToolNames
             .Where(n => !ImplementedToolStandardNames.ContainsKey(n))
+            .Where(n => !HonuaNativeToolsWithoutStandardSchema.Contains(n))
             .ToArray();
 
         unmapped.Should().BeEmpty(
             "every advertised /mcp tool must map to a published geospatial-mcp tool schema "
-            + "(add a mapping in ImplementedToolStandardNames or record a known-gap)");
+            + "(add a mapping in ImplementedToolStandardNames, record it as a Honua-native "
+            + "divergence, or record a known-gap)");
     }
 
     [UnitTest]
@@ -133,6 +152,13 @@ public sealed partial class McpTaxonomyAlignmentTests
 
         foreach (var tool in tools)
         {
+            // Honua-native tools that intentionally diverge from the standard
+            // (e.g. honua_publish_service) carry no 1:1 standard schema to match.
+            if (HonuaNativeToolsWithoutStandardSchema.Contains(tool.Name))
+            {
+                continue;
+            }
+
             ImplementedToolStandardNames.TryGetValue(tool.Name, out var standardName)
                 .Should().BeTrue($"tool '{tool.Name}' must map to a standard tool schema");
 

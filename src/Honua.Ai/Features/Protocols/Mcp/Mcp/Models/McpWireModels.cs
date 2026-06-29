@@ -215,18 +215,15 @@ internal sealed class McpToolDescriptor
     public JsonElement InputSchema { get; set; }
 
     /// <summary>
-    /// JSON-schema document describing the tool's structured result. The MCP
-    /// revision this server advertises (2025-03-26) predates the standard
-    /// <c>outputSchema</c> field (added in 2025-06-18), so the schema is
-    /// published here under the Honua extension key
-    /// <c>structuredContentSchema</c> rather than <c>outputSchema</c>. It
+    /// JSON-schema document describing the tool's structured result, published
+    /// under the standard MCP <c>outputSchema</c> tool field (added in the
+    /// 2025-06-18 revision this server now negotiates, honua-server#1954). It
     /// describes the same <see cref="McpToolsCallResult.StructuredContent"/>
-    /// payload <c>outputSchema</c> would: when the negotiated revision is bumped
-    /// to 2025-06-18+ (honua-server#1954) this moves to the standard
-    /// <c>outputSchema</c> key. Null for tools whose result carries no structured
-    /// content (e.g. image-only renders).
+    /// payload. Null for tools whose result carries no structured content (e.g.
+    /// image-only renders). Clients negotiating the older 2025-03-26 revision
+    /// ignore this field harmlessly.
     /// </summary>
-    [JsonPropertyName("structuredContentSchema")]
+    [JsonPropertyName("outputSchema")]
     public JsonElement? OutputSchema { get; set; }
 
     /// <summary>

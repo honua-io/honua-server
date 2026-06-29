@@ -73,6 +73,28 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task Initialize_With2025_06_18_NegotiatesThatRevision()
+    {
+        // honua-server#1954: the server negotiates the 2025-06-18 revision (which
+        // adds the native tool outputSchema field this server publishes).
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+                "protocolVersion":"2025-06-18",
+                "capabilities":{},
+                "clientInfo":{"name":"honua-tests","version":"1.0.0"}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.GetProperty("result").GetProperty("protocolVersion").GetString()
+            .Should().Be("2025-06-18");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
     public async Task Initialize_WithUnsupportedVersion_FallsBackToLatestServerVersion()
     {
         var response = await PostRpcAsync("""
@@ -88,8 +110,9 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         var root = document.RootElement;
 
         // Spec requires the server to advertise a version it actually supports
-        // when the client asks for one it does not implement.
-        root.GetProperty("result").GetProperty("protocolVersion").GetString().Should().Be("2025-03-26");
+        // when the client asks for one it does not implement: the latest
+        // supported revision (2025-06-18, honua-server#1954).
+        root.GetProperty("result").GetProperty("protocolVersion").GetString().Should().Be("2025-06-18");
     }
 
     [IntegrationTest]

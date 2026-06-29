@@ -25,10 +25,13 @@ internal sealed class McpOperatorSurface
     /// <summary>
     /// MCP protocol revisions this server can negotiate during <c>initialize</c>.
     /// Listed newest-first so the latest entry is returned when the client asks
-    /// for an unsupported revision.
+    /// for an unsupported revision. <c>2025-06-18</c> is the default negotiated
+    /// revision (honua-server#1954); it adds the native tool <c>outputSchema</c>
+    /// field this server publishes. <c>2025-03-26</c> remains supported for older
+    /// clients, which negotiate it explicitly.
     /// See https://modelcontextprotocol.io/docs/learn/versioning.
     /// </summary>
-    public static readonly IReadOnlyList<string> SupportedProtocolVersions = ["2025-03-26"];
+    public static readonly IReadOnlyList<string> SupportedProtocolVersions = ["2025-06-18", "2025-03-26"];
 
     /// <summary>
     /// Latest MCP protocol revision supported by this server. Used when the
