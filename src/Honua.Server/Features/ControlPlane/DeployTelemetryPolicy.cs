@@ -22,6 +22,15 @@ internal sealed record DeployTelemetryPolicy
     private const string DefaultPrometheusJob = "honua";
     private const string DefaultCanaryPrometheusJob = "honua-canary";
 
+    /// <summary>
+    /// Telemetry-policy preset name for a serverless geoprocessing (AWS Batch) substrate deploy
+    /// (honua-server#2165). GP per-job metrics are burstier and sparser than steady HTTP traffic, so
+    /// this preset bakes longer and tolerates a lower sample floor, and pairs with the GP-aware
+    /// anti-flap default in <see cref="DeployTelemetrySignalEvaluator"/> so a single noisy scrape
+    /// does not trigger a production rollback.
+    /// </summary>
+    public const string GpBatchPolicyName = "gp-batch";
+
     public required string ConnectionId { get; init; }
 
     public string? ErrorRateQuery { get; init; }
@@ -186,6 +195,7 @@ internal sealed record DeployTelemetryPolicy
         return policyName.ToLowerInvariant() switch
         {
             "honua-http" or "kubernetes-honua-http" => CreateHonuaHttpPreset(parameters),
+            GpBatchPolicyName or "serverless-gp" => CreateGpBatchPreset(parameters),
             "aws-alb-canary" => CreateAwsAlbCanaryPreset(parameters),
             "aws-lambda-canary" => CreateAwsLambdaCanaryPreset(parameters),
             "azure-aca-canary" => CreateAzureAcaCanaryPreset(parameters),
@@ -238,6 +248,21 @@ internal sealed record DeployTelemetryPolicy
         return string.IsNullOrWhiteSpace(selector)
             ? InvalidPreset("Deploy telemetry policy 'kubernetes-honua-http' requires a Prometheus selector or job.")
             : CreateHonuaHttpPolicy(selector, warmupDuration: TimeSpan.FromMinutes(2));
+    }
+
+    private static DeployTelemetryPolicy CreateGpBatchPreset(IReadOnlyDictionary<string, string> parameters)
+    {
+        var selector = BuildPrometheusSelector(
+            parameters,
+            selectorKey: "telemetry.prometheus.selector",
+            jobKey: "telemetry.prometheus.job",
+            defaultJob: DefaultPrometheusJob);
+
+        // Longer bake (5m) and a low sample floor (10) suit GP's sparse/bursty per-job metrics;
+        // operators typically override the synthesized PromQL with GP-specific queries.
+        return string.IsNullOrWhiteSpace(selector)
+            ? InvalidPreset($"Deploy telemetry policy '{GpBatchPolicyName}' requires a Prometheus selector or job.")
+            : CreateHonuaHttpPolicy(selector, warmupDuration: TimeSpan.FromMinutes(5), minimumSampleCount: 10);
     }
 
     private static DeployTelemetryPolicy CreateAwsAlbCanaryPreset(IReadOnlyDictionary<string, string> parameters)

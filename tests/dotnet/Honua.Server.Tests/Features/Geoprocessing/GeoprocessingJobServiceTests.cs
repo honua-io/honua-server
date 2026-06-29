@@ -631,6 +631,109 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithBatchWorkload_CarriesPerJobResourceProfileSizing()
+    {
+        // The per-job resource profile derived from the plan's process (geometry.buffer is
+        // managed → smallest tier) must be projected onto the spec's batch.* params so
+        // AwsBatchComputeBackend sizes SubmitJob and selects the ephemeral tier per job.
+        var sut = BuildBatchWorkloadService(out _);
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        job.Spec.Parameters.Should().ContainKey("batch.vcpus").WhoseValue.Should().Be("1");
+        job.Spec.Parameters.Should().ContainKey("batch.memory_mib").WhoseValue.Should().Be("2048");
+        job.Spec.Parameters.Should().ContainKey("batch.ephemeral_gib").WhoseValue.Should().Be("20");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithExplicitResourceRequest_OverridesDerivedProfile()
+    {
+        // An explicit gp.resource.* request wins over the catalog-derived default.
+        var sut = BuildBatchWorkloadService(out _);
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal(), new Dictionary<string, string>
+        {
+            ["gp.resource.vcpus"] = "8",
+            ["gp.resource.ephemeral_gib"] = "150",
+        });
+
+        job.Spec.Parameters.Should().ContainKey("batch.vcpus").WhoseValue.Should().Be("8");
+        job.Spec.Parameters.Should().ContainKey("batch.ephemeral_gib").WhoseValue.Should().Be("150");
+        // Unspecified dimensions still come from the derived default.
+        job.Spec.Parameters.Should().ContainKey("batch.memory_mib").WhoseValue.Should().Be("2048");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithLocalDefault_DoesNotCarryBatchSizingParams()
+    {
+        // The no-remote-workload local baseline must NOT carry batch.* sizing — the keys are
+        // meaningless to the local/Kubernetes backend and would break local-runner spec parity.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        job.Spec.Parameters.Should().NotContainKey("batch.vcpus");
+        job.Spec.Parameters.Should().NotContainKey("batch.ephemeral_gib");
+    }
+
+    private GeoprocessingJobService BuildBatchWorkloadService(out IBatchComputeBackend backend)
+    {
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("honua-aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-aws-batch",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "honua-aws-batch",
+                WorkloadName = "Geoprocessing (AWS Batch)",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["batch.job_queue_arn"] = "arn:aws:batch:us-east-1:123:job-queue/honua-gp",
+                    ["batch.region"] = "us-east-1",
+                    ["batch.job_definition_arn.s"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-s:1",
+                    ["batch.job_definition_arn.m"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-m:1",
+                    ["batch.job_definition_arn.l"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-l:1",
+                    ["batch.job_definition_arn.xl"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-xl:1",
+                },
+            },
+        });
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "job-batch-profile",
+                Message = "Submitted to AWS Batch",
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        return new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry,
+            backends: [backend]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithOnlyLocalWorkload_FallsBackToLocalBackend()
     {
         // Without an activated remote workload (the AWS Batch row gated off / absent),
