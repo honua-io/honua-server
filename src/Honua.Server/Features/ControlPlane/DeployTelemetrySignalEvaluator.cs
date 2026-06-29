@@ -397,12 +397,32 @@ internal sealed class DeployTelemetrySignalEvaluator(
         };
     }
 
+    /// <summary>
+    /// GP-aware anti-flap default. A serverless geoprocessing (AWS Batch) substrate deploy
+    /// (<c>telemetry.policy = gp-batch</c>) carries burstier per-job metrics, so when the operator
+    /// has not pinned an explicit consecutive-breach threshold it defaults to requiring several
+    /// breaching scrapes rather than the single-scrape default, so one noisy GP burst does not
+    /// trigger a production rollback (honua-server#2165, building on the #2161 anti-flap gate).
+    /// </summary>
+    internal const int GpBatchDefaultBreachDebounceThreshold = 3;
+
     private static int ResolveBreachDebounceThreshold(DeployOperationSpec spec)
-        => spec.Parameters.TryGetValue(BreachDebounceThresholdParameterKey, out var raw) &&
+    {
+        if (spec.Parameters.TryGetValue(BreachDebounceThresholdParameterKey, out var raw) &&
             int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
-            parsed > 0
-                ? parsed
-                : 1;
+            parsed > 0)
+        {
+            return parsed;
+        }
+
+        // No explicit threshold: GP substrate deploys default to the burst-tolerant streak.
+        return IsGpBatchDeploy(spec) ? GpBatchDefaultBreachDebounceThreshold : 1;
+    }
+
+    private static bool IsGpBatchDeploy(DeployOperationSpec spec)
+        => spec.Parameters.TryGetValue("telemetry.policy", out var policyName)
+            && (string.Equals(policyName?.Trim(), DeployTelemetryPolicy.GpBatchPolicyName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(policyName?.Trim(), "serverless-gp", StringComparison.OrdinalIgnoreCase));
 
     private static int ResolveBreachStreak(DeployOperationSpec spec)
         => spec.Parameters.TryGetValue(BreachStreakParameterKey, out var raw) &&

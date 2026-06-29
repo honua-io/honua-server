@@ -604,6 +604,74 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         decision.UpdatedDeployParameters.Should().BeNull("no debounce configured means no streak bookkeeping");
     }
 
+    [Fact]
+    public async Task EvaluateAsync_GpBatchPolicy_SingleBreach_DefaultsToBurstTolerantAntiFlap()
+    {
+        // GP substrate deploys (telemetry.policy = gp-batch) are burstier, so with NO explicit
+        // consecutive-breach param the gate defaults to the burst-tolerant streak (3) rather than
+        // the single-scrape default — one breaching scrape must NOT roll back (honua-server#2165).
+        var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
+        {
+            SampleCount = 50,
+            ErrorRate = 0.5,
+            LatencyP95 = 120
+        });
+
+        var evaluator = CreateProviderEvaluator(fakeProvider);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-metrics",
+                ["telemetry.policy"] = "gp-batch",
+                ["telemetry.prometheus.job"] = "honua-gp",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.sample_count.query"] = "requests",
+                ["telemetry.sample_count.minimum"] = "10"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-6)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeFalse("the GP-batch policy defaults to a burst-tolerant anti-flap streak");
+        decision.WaitForMoreTelemetry.Should().BeTrue();
+        decision.UpdatedDeployParameters!["telemetry.rollback.breach_streak"].Should().Be("1");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_GpBatchPolicy_ExplicitThreshold_OverridesGpDefault()
+    {
+        // An operator can still pin the threshold: an explicit consecutive_breaches=1 on a GP-batch
+        // deploy rolls back on the first breach, overriding the GP burst-tolerant default.
+        var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
+        {
+            SampleCount = 50,
+            ErrorRate = 0.5,
+            LatencyP95 = 120
+        });
+
+        var evaluator = CreateProviderEvaluator(fakeProvider);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-metrics",
+                ["telemetry.policy"] = "gp-batch",
+                ["telemetry.prometheus.job"] = "honua-gp",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.sample_count.query"] = "requests",
+                ["telemetry.sample_count.minimum"] = "10",
+                ["telemetry.rollback.consecutive_breaches"] = "1"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-6)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue("an explicit threshold of 1 overrides the GP burst-tolerant default");
+    }
+
     // ---- synthetic /healthz/ready gate (#1849) ---------------------------
 
     [Fact]

@@ -157,6 +157,24 @@ public sealed class DeployTelemetryPolicyTests
     }
 
     [Fact]
+    public void Parse_GpBatchPreset_ProducesValidPolicyWithLongerWarmup()
+    {
+        // The serverless-GP substrate preset bakes longer (5m) than the standard 2m HTTP preset
+        // because GP per-job metrics are sparse/bursty (honua-server#2165).
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.policy"] = "gp-batch",
+            ["telemetry.prometheus.job"] = "honua-gp"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeTrue();
+        policy.WarmupDuration.Should().Be(TimeSpan.FromMinutes(5));
+        policy.HasMetricSignals.Should().BeTrue();
+    }
+
+    [Fact]
     public void Parse_HealthProbe_AugmentsMetricGate_WithDefaults()
     {
         // The synthetic /healthz/ready gate (#1849) is provider-independent and layers onto the metric

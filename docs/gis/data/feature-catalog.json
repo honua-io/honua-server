@@ -14487,6 +14487,8 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsCall_WithMalformedParams_ReturnsInvalidArgumentJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsCall_WithToolExecutionFailure_SurfacesIsErrorInsideResult",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsList_DefaultComposition_AdvertisesGeocodeAndRouteTools",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsList_WhenSinglePage_OmitsNextCursor",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ToolsList_WithInvalidCursor_ReturnsInvalidParamsJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownMethod_ReturnsMethodNotFoundJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownNotification_AcceptedSilentlyWithoutBody",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownNotification_WithId_IsRejectedAsInvalidRequest"
