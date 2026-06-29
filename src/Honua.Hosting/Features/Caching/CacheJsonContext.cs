@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.EnrichmentCatalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -20,6 +21,8 @@ namespace Honua.Infrastructure.Caching;
 [JsonSerializable(typeof(Relationship))]
 [JsonSerializable(typeof(Relationship[]))]
 [JsonSerializable(typeof(LayerStyleDefinition))]
+[JsonSerializable(typeof(EnrichmentDatasetRecord))]
+[JsonSerializable(typeof(EnrichmentDatasetRecord[]))]
 [JsonSerializable(typeof(CachedExistenceResult))]
 [JsonSerializable(typeof(CachedCacheKeyIndex))]
 [JsonSerializable(typeof(CachedResponse))]

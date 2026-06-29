@@ -5,6 +5,20 @@
   "slice": "slice-1-api-surface",
   "entries": [
     {
+      "id": "delete-api-enrich-datasets-id",
+      "route": "/api/enrich/datasets/{id}",
+      "method": "DELETE",
+      "family": "Data Enrichment",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Deregister_RemovesDataset",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Deregister_UnknownDataset_ReturnsNotFound"
+      ],
+      "proof_ledger_surface": "data-enrichment",
+      "maturity": "implemented"
+    },
+    {
       "id": "delete-api-v1-admin-alerts-rules-ruleid",
       "route": "/api/v1/admin/alerts/rules/{ruleId}",
       "method": "DELETE",
@@ -798,6 +812,34 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.Catalog_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Catalog_ListsRegisteredDataset"
+      ],
+      "proof_ledger_surface": "data-enrichment",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-enrich-datasets",
+      "route": "/api/enrich/datasets",
+      "method": "GET",
+      "family": "Data Enrichment",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEditionFilterTests.List_CommunityEdition_HidesProDatasets",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.List_IncludesRegisteredDataset"
+      ],
+      "proof_ledger_surface": "data-enrichment",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-enrich-datasets-id",
+      "route": "/api/enrich/datasets/{id}",
+      "method": "GET",
+      "family": "Data Enrichment",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Get_ReturnsRegisteredDataset",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Get_UnknownDataset_ReturnsNotFound"
       ],
       "proof_ledger_surface": "data-enrichment",
       "maturity": "implemented"
@@ -11299,8 +11341,29 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.Enrich_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_InlineGeoJsonSource_ReturnsNotImplemented",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_Intersects_ReturnsSourceFeaturesWithMatchCount",
-        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_UnknownDataset_ReturnsNotFound"
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_NearestNeighborMethod_ReturnsNotImplemented",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_PointInPolygonMethod_ReturnsFeatureCollection",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_UnknownDataset_ReturnsNotFound",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_WithAggregates_ReturnsAggregateProperty",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentSyncLimitTests.Enrich_OverLimit_ReturnsPayloadTooLarge"
+      ],
+      "proof_ledger_surface": "data-enrichment",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-enrich-datasets",
+      "route": "/api/enrich/datasets",
+      "method": "POST",
+      "family": "Data Enrichment",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_DuplicateId_ReturnsConflict",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_InvalidCategory_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_ValidDataset_ReturnsCreatedWithAttribution",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_WithoutAdmin_IsRejected"
       ],
       "proof_ledger_surface": "data-enrichment",
       "maturity": "implemented"
@@ -17528,6 +17591,20 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_Post_GetFeature_XmlBody_ReturnsGml31FeatureCollection"
       ],
       "proof_ledger_surface": "wfs-2.0",
+      "maturity": "implemented"
+    },
+    {
+      "id": "put-api-enrich-datasets-id",
+      "route": "/api/enrich/datasets/{id}",
+      "method": "PUT",
+      "family": "Data Enrichment",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Update_ModifiesDataset",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Update_UnknownDataset_ReturnsNotFound"
+      ],
+      "proof_ledger_surface": "data-enrichment",
       "maturity": "implemented"
     },
     {
