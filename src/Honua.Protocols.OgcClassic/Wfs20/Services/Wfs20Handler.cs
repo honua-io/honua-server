@@ -79,25 +79,30 @@ internal sealed partial class Wfs20Handler
 
     public Wfs20Handler(
         ILogger<Wfs20Handler> logger,
-        Wfs20QueryServices queryServices)
+        Wfs20QueryServices queryServices,
+        Wfs20EditServices editServices,
+        Wfs20SpatialServices spatialServices)
     {
         _logger = logger;
+
         _featureReader = queryServices.FeatureReader;
-        _featureWriter = queryServices.FeatureWriter;
         _gmlFeatureStore = queryServices.GmlFeatureStore;
         _metadataV2GraphProvider = queryServices.MetadataV2GraphProvider;
         _filterExpressionService = queryServices.FilterExpressionService;
         _queryParameterAdapter = queryServices.QueryParameterAdapter;
         _queryProcessor = queryServices.QueryProcessor;
-        _editParameterAdapter = queryServices.EditParameterAdapter;
-        _editProcessor = queryServices.EditProcessor;
-        _geometryServices = queryServices.GeometryServices;
-        _coordinateTransformService = queryServices.CoordinateTransformService;
-        _crsRegistry = queryServices.CrsRegistry;
         _wfs20Options = queryServices.Wfs20Options;
-        _mutationValidator = queryServices.MutationValidator;
-        _mutationEventService = queryServices.MutationEventService;
-        _editLimits = queryServices.EditLimits;
+
+        _featureWriter = editServices.FeatureWriter;
+        _editParameterAdapter = editServices.EditParameterAdapter;
+        _editProcessor = editServices.EditProcessor;
+        _mutationValidator = editServices.MutationValidator;
+        _mutationEventService = editServices.MutationEventService;
+        _editLimits = editServices.EditLimits;
+
+        _geometryServices = spatialServices.GeometryServices;
+        _coordinateTransformService = spatialServices.CoordinateTransformService;
+        _crsRegistry = spatialServices.CrsRegistry;
     }
 
     private static IResult CreateStoredQueryFeatureNotFoundResult(HttpContext context, string featureId)

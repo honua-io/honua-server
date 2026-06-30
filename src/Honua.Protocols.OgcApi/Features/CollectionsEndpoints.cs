@@ -26,7 +26,6 @@ namespace Honua.Protocols.Ogc.Api.Features;
 /// </summary>
 internal static class CollectionsEndpoints
 {
-    internal const int MaxCollectionProjectionConcurrency = 8;
     private const string OgcFeaturesProtocolName = "OgcFeatures";
     private const string OgcApiMapsProtocolName = "OGC-API-Maps";
     private const string OgcApiTilesProtocolName = "OGC-API-Tiles";
@@ -206,7 +205,7 @@ internal static class CollectionsEndpoints
             }
 
             var visiblePublications = publicationsByResource.Values.ToList();
-            var collections = await ProjectWithLimitedConcurrencyAsync(
+            var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
                 visiblePublications,
                 (entry, ct) => CreateCollectionAsync(
                     entry.Resource,
@@ -763,45 +762,6 @@ internal static class CollectionsEndpoints
             Properties = properties.ToImmutable(),
             Required = requiredFields.ToImmutableArray()
         };
-    }
-
-    internal static async Task<ImmutableArray<TProjection>> ProjectWithLimitedConcurrencyAsync<TSource, TProjection>(
-        IReadOnlyList<TSource> source,
-        Func<TSource, CancellationToken, Task<TProjection>> projector,
-        CancellationToken cancellationToken)
-        where TProjection : class
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(projector);
-
-        if (source.Count == 0)
-        {
-            return [];
-        }
-
-        var results = new TProjection?[source.Count];
-        var workerCount = Math.Min(MaxCollectionProjectionConcurrency, source.Count);
-        var nextIndex = -1;
-
-        async Task RunWorkerAsync()
-        {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var index = Interlocked.Increment(ref nextIndex);
-                if (index >= source.Count)
-                {
-                    return;
-                }
-
-                results[index] = await projector(source[index], cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        var workers = Enumerable.Range(0, workerCount).Select(_ => RunWorkerAsync());
-        await Task.WhenAll(workers).ConfigureAwait(false);
-        return results.Select(static result => result!).ToImmutableArray();
     }
 
     /// <summary>

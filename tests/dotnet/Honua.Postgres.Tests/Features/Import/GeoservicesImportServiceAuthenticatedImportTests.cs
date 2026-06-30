@@ -145,7 +145,8 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
             new FixtureConnectionProvider(fixture),
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
-            NullLogger<GeoservicesImportService>.Instance);
+            NullLogger<GeoservicesImportService>.Instance,
+            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
     }
 
     private async Task<ImportedRow[]> ReadImportedRowsAsync(string schemaName, string tableName)

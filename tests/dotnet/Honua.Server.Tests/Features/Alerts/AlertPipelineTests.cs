@@ -58,16 +58,16 @@ public sealed class AlertPipelineTests
         evaluator.EvaluateAsync(Arg.Any<AlertChange>(), Arg.Any<Feature?>(), rule, zone, Arg.Any<AlertStateSnapshot?>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new AlertEvaluationResult());
 
+        var dispatchWriter = new AlertDispatchWriter(eventStore, dispatchStore, NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
             stateStore,
-            eventStore,
-            dispatchStore,
             featureReader,
             graphProvider,
             evaluator,
             editionPolicy,
+            dispatchWriter,
             NullLogger<AlertPipeline>.Instance);
 
         var maxGeneration = await sut.ProcessChangesAsync(0, 10, CancellationToken.None);
@@ -123,16 +123,16 @@ public sealed class AlertPipelineTests
         evaluator.EvaluateAsync(Arg.Any<AlertChange>(), Arg.Any<Feature?>(), rule, zone, Arg.Any<AlertStateSnapshot?>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new AlertEvaluationResult());
 
+        var dispatchWriter = new AlertDispatchWriter(eventStore, dispatchStore, NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
             stateStore,
-            eventStore,
-            dispatchStore,
             featureReader,
             graphProvider,
             evaluator,
             editionPolicy,
+            dispatchWriter,
             NullLogger<AlertPipeline>.Instance);
 
         var evaluated = await sut.SweepDwellAsync(DateTimeOffset.UtcNow, 10, CancellationToken.None);
@@ -198,16 +198,16 @@ public sealed class AlertPipelineTests
                 UpdatedState = CreateState(ruleTwo.RuleId, ruleTwo.LayerId, change.ObjectId, change.Generation)
             });
 
+        var dispatchWriter = new AlertDispatchWriter(eventStore, dispatchStore, NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
             stateStore,
-            eventStore,
-            dispatchStore,
             featureReader,
             graphProvider,
             evaluator,
             editionPolicy,
+            dispatchWriter,
             NullLogger<AlertPipeline>.Instance);
 
         _ = await sut.ProcessChangesAsync(0, 10, CancellationToken.None);
@@ -257,16 +257,16 @@ public sealed class AlertPipelineTests
                 new AlertEvaluationResult { UpdatedState = CreateState(rule.RuleId, rule.LayerId, 100, 1) },
                 new AlertEvaluationResult { UpdatedState = CreateState(rule.RuleId, rule.LayerId, 101, 2) });
 
+        var dispatchWriter = new AlertDispatchWriter(eventStore, dispatchStore, NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
             stateStore,
-            eventStore,
-            dispatchStore,
             featureReader,
             graphProvider,
             evaluator,
             editionPolicy,
+            dispatchWriter,
             NullLogger<AlertPipeline>.Instance);
 
         _ = await sut.SweepDwellAsync(DateTimeOffset.UtcNow, 10, CancellationToken.None);

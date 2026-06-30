@@ -3123,6 +3123,12 @@ internal sealed class GeometryServiceHandler(
         };
     }
 
+    // Planar (calculationType=planar / geodesic=false) measures on a geographic CRS scale
+    // native degrees to meters with a single equator-based constant per axis; this matches
+    // Esri "planar on GCS" semantics and intentionally ignores cos(latitude) longitude
+    // shrinkage, so meter-valued output for high-latitude data is an equator-scaled
+    // approximation. Callers wanting true ground measures must use calculationType=geodesic,
+    // which routes through the geography pipeline.
     private static double ResolveMetersPerNativeUnit(string? wkt, bool isGeographic)
     {
         var unitMatches = System.Text.RegularExpressions.Regex.Matches(

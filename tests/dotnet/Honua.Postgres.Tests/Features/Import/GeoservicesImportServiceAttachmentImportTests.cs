@@ -182,7 +182,9 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
-            layerPublishingService: publishingService,
+            new GeoservicesLayerPublicationService(
+                NullLogger<GeoservicesLayerPublicationService>.Instance,
+                layerPublishingService: publishingService),
             attachmentStore: attachmentStore);
     }
 

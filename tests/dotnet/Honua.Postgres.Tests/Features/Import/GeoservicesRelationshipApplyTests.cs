@@ -243,7 +243,7 @@ public sealed class GeoservicesRelationshipApplyTests
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
-            layerPublishingService: null,
+            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance),
             catalogWriter: catalogWriter);
     }
 

@@ -11,39 +11,39 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Postgres.Features.Migration;
 
-internal sealed partial class GeoservicesImportService
+/// <summary>
+/// Outcome of the post-publish reconciliation gate (issues #1247, #1380). Carries the
+/// data-reconciliation artifact, the optional catalog-parity report, and the aggregated verdict
+/// the import pipeline uses to decide between <see cref="GeoservicesImportStatus.Completed"/> and
+/// <see cref="GeoservicesImportStatus.NeedsReview"/>.
+/// </summary>
+internal readonly record struct GeoservicesReconciliationGateOutcome
 {
-    /// <summary>
-    /// Outcome of the post-publish reconciliation gate (issues #1247, #1380). Carries the
-    /// data-reconciliation artifact, the optional catalog-parity report, and the aggregated verdict
-    /// the import pipeline uses to decide between <see cref="GeoservicesImportStatus.Completed"/> and
-    /// <see cref="GeoservicesImportStatus.NeedsReview"/>.
-    /// </summary>
-    private readonly record struct ReconciliationGateOutcome
-    {
-        /// <summary>A gate outcome for runs where reconciliation did not run (no publish or no service registered).</summary>
-        public static ReconciliationGateOutcome Skipped => default;
+    /// <summary>A gate outcome for runs where reconciliation did not run (no publish or no service registered).</summary>
+    public static GeoservicesReconciliationGateOutcome Skipped => default;
 
-        /// <summary>Per-layer data-reconciliation artifact, when reconciliation ran.</summary>
-        public MigrationReconciliationArtifact? Artifact { get; init; }
+    /// <summary>Per-layer data-reconciliation artifact, when reconciliation ran.</summary>
+    public MigrationReconciliationArtifact? Artifact { get; init; }
 
-        /// <summary>Catalog parity report, when one was produced. Always <c>null</c> on the per-layer geoservices path today.</summary>
-        public MigrationCatalogReconciliationReport? CatalogReport { get; init; }
+    /// <summary>Catalog parity report, when one was produced. Always <c>null</c> on the per-layer geoservices path today.</summary>
+    public MigrationCatalogReconciliationReport? CatalogReport { get; init; }
 
-        /// <summary>True when a hard finding routes the run to operator review.</summary>
-        public bool NeedsReview { get; init; }
+    /// <summary>True when a hard finding routes the run to operator review.</summary>
+    public bool NeedsReview { get; init; }
 
-        /// <summary>Operator-visible reason the run was routed to review. <c>null</c> when the gate passed.</summary>
-        public string? ReviewReason { get; init; }
-    }
+    /// <summary>Operator-visible reason the run was routed to review. <c>null</c> when the gate passed.</summary>
+    public string? ReviewReason { get; init; }
+}
 
+internal sealed partial class GeoservicesLayerPublicationService
+{
     /// <summary>
     /// Runs the post-publish reconciliation gate for a single imported + published layer. Builds the
     /// reconciliation request from the apply-time source snapshot (<paramref name="layerInfo"/>) so
     /// the gate is deterministic against the apply moment, runs the
     /// <see cref="ILayerReconciliationService"/>, and aggregates the verdict.
     /// </summary>
-    private async Task<ReconciliationGateOutcome> RunReconciliationGateAsync(
+    public async Task<GeoservicesReconciliationGateOutcome> RunReconciliationGateAsync(
         GeoservicesImportRequest request,
         string jobId,
         GeoservicesLayerInfo layerInfo,
@@ -52,7 +52,7 @@ internal sealed partial class GeoservicesImportService
     {
         if (_reconciliationService is null)
         {
-            return ReconciliationGateOutcome.Skipped;
+            return GeoservicesReconciliationGateOutcome.Skipped;
         }
 
         try
@@ -88,7 +88,7 @@ internal sealed partial class GeoservicesImportService
                 MigrationReconciliationClassifications.Fail,
                 StringComparison.Ordinal);
 
-            return new ReconciliationGateOutcome
+            return new GeoservicesReconciliationGateOutcome
             {
                 Artifact = artifact,
                 CatalogReport = catalogReport,
@@ -107,7 +107,7 @@ internal sealed partial class GeoservicesImportService
             // a reconciliation-infrastructure failure is not evidence of a faithless import. Operators
             // can re-run reconciliation out of band.
             Log.ReconciliationGateUnavailable(_logger, request.TableName, ex);
-            return ReconciliationGateOutcome.Skipped;
+            return GeoservicesReconciliationGateOutcome.Skipped;
         }
     }
 
@@ -124,7 +124,7 @@ internal sealed partial class GeoservicesImportService
         PublishedLayerSummary publishedLayer)
     {
         var sourceFieldNames = layerInfo.Fields
-            .Where(static field => !field.IsObjectId && !IsGeometryField(field))
+            .Where(static field => !field.IsObjectId && !GeoservicesImportService.IsGeometryField(field))
             .Select(static field => field.Name.SanitizeFieldName())
             .Where(static name => !string.IsNullOrWhiteSpace(name))
             .ToArray();

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Exceptions;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Infrastructure.Models;
 
@@ -369,24 +370,5 @@ internal static class StandardErrorHelpers
     /// <param name="errorMessage">The original error message.</param>
     /// <returns>A sanitized error message.</returns>
     private static string SanitizeCqlErrorMessage(string errorMessage)
-    {
-        if (string.IsNullOrWhiteSpace(errorMessage))
-        {
-            return "Syntax error in filter expression.";
-        }
-
-        // Limit length to prevent overly detailed messages
-        if (errorMessage.Length > 200)
-        {
-            errorMessage = errorMessage[..200] + "...";
-        }
-
-        // Remove any potential sensitive information patterns
-        // This is a basic sanitization - more sophisticated logic could be added as needed
-        var sanitized = errorMessage
-            .Replace("System.", "", StringComparison.OrdinalIgnoreCase)
-            .Replace("Exception", "", StringComparison.OrdinalIgnoreCase);
-
-        return sanitized.Trim();
-    }
+        => ErrorMessageSanitizer.Sanitize(errorMessage, "Syntax error in filter expression.");
 }

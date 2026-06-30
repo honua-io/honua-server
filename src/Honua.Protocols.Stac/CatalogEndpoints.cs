@@ -6,7 +6,6 @@ using System.Globalization;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
-using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
@@ -219,7 +218,7 @@ internal static class CatalogEndpoints
                     title: "STAC Catalog"))
         };
 
-        return Results.Json(conformance, OgcJsonContext.Default.ConformanceDeclaration, MediaTypes.Json);
+        return Results.Json(conformance, StacJsonContext.Default.ConformanceDeclaration, MediaTypes.Json);
     }
 
     private static IResult HandleGetOpenApiSpec(HttpContext context)

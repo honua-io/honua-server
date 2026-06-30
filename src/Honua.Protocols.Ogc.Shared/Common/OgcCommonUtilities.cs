@@ -405,4 +405,56 @@ internal static class OgcCommonUtilities
             return string.Empty;
         }
     }
+
+    /// <summary>
+    /// Upper bound on parallel collection projection workers. Caps fan-out when mapping a
+    /// service's resources into collection DTOs so a large catalog cannot exhaust the thread
+    /// pool or overwhelm the feature store with concurrent extent probes.
+    /// </summary>
+    internal const int MaxCollectionProjectionConcurrency = 8;
+
+    /// <summary>
+    /// Projects a source list into collection DTOs with bounded concurrency, preserving input
+    /// order. Shared by the OGC API Features and STAC collection-listing surfaces, which both
+    /// map a service's resources into per-collection metadata (each projection probes the
+    /// feature store for extents), so the fan-out control lives in the neutral OGC foundation.
+    /// </summary>
+    public static async Task<ImmutableArray<TProjection>> ProjectWithLimitedConcurrencyAsync<TSource, TProjection>(
+        IReadOnlyList<TSource> source,
+        Func<TSource, CancellationToken, Task<TProjection>> projector,
+        CancellationToken cancellationToken)
+        where TProjection : class
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(projector);
+
+        if (source.Count == 0)
+        {
+            return [];
+        }
+
+        var results = new TProjection?[source.Count];
+        var workerCount = Math.Min(MaxCollectionProjectionConcurrency, source.Count);
+        var nextIndex = -1;
+
+        async Task RunWorkerAsync()
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var index = Interlocked.Increment(ref nextIndex);
+                if (index >= source.Count)
+                {
+                    return;
+                }
+
+                results[index] = await projector(source[index], cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        var workers = Enumerable.Range(0, workerCount).Select(_ => RunWorkerAsync());
+        await Task.WhenAll(workers).ConfigureAwait(false);
+        return results.Select(static result => result!).ToImmutableArray();
+    }
 }

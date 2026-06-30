@@ -35,6 +35,8 @@ internal static class Wfs20ServiceCollectionExtensions
         services.TryAddScoped<Wfs20QueryParameterAdapter>();
         services.TryAddScoped<Wfs20EditParameterAdapter>();
         services.AddScoped<Wfs20QueryServices>();
+        services.AddScoped<Wfs20EditServices>();
+        services.AddScoped<Wfs20SpatialServices>();
         services.AddScoped<Wfs20Handler>();
 
         // Register additional WFS 2.0 services for comprehensive OGC compliance

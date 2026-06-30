@@ -150,7 +150,7 @@ internal sealed partial class GeoservicesImportService
             PublishedLayerSummary? publishedLayer = null;
             if (request.AutoPublish)
             {
-                publishedLayer = await TryPublishImportedLayerAsync(
+                publishedLayer = await _layerPublicationService.TryPublishImportedLayerAsync(
                     request,
                     targetSchema,
                     layerInfo,
@@ -159,6 +159,7 @@ internal sealed partial class GeoservicesImportService
                     jobId,
                     startedAt,
                     featuresProcessed,
+                    _connectionProvider.GetConnectionString(),
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -193,15 +194,15 @@ internal sealed partial class GeoservicesImportService
             // NeedsReview (issue #1380) instead of Completed; warn findings are recorded but do
             // not block. Reconciliation runs outside the import transaction (which is already
             // committed) because it probes the published, queryable layer.
-            ReconciliationGateOutcome reconciliation = ReconciliationGateOutcome.Skipped;
-            if (publishedLayer is not null && _reconciliationService is not null)
+            GeoservicesReconciliationGateOutcome reconciliation = GeoservicesReconciliationGateOutcome.Skipped;
+            if (publishedLayer is not null && _layerPublicationService.ReconciliationEnabled)
             {
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Validating, request,
                     "Reconciling published layer against source snapshot",
                     featuresProcessed, featuresProcessed, layerInfo.Name, publishedLayer.LayerId,
                     attachmentsProcessed: attachmentCount, failedAttachments: failedAttachments);
 
-                reconciliation = await RunReconciliationGateAsync(
+                reconciliation = await _layerPublicationService.RunReconciliationGateAsync(
                     request,
                     jobId,
                     layerInfo,
@@ -378,7 +379,11 @@ internal sealed partial class GeoservicesImportService
         return esriType.ToPostgresType(length);
     }
 
-    private static string MapEsriGeometryType(string esriGeometryType)
+    /// <summary>
+    /// Maps an Esri geometry-type token to the PostGIS geometry-column type. Shared with
+    /// <see cref="GeoservicesLayerPublicationService"/> so AutoPublish and table creation agree.
+    /// </summary>
+    internal static string MapEsriGeometryType(string esriGeometryType)
     {
         return esriGeometryType.ToUpperInvariant() switch
         {
@@ -391,6 +396,11 @@ internal sealed partial class GeoservicesImportService
         };
     }
 
-    private static bool IsGeometryField(GeoservicesFieldInfo field)
+    /// <summary>
+    /// True when the source field is the Esri geometry field (excluded from attribute columns).
+    /// Shared with <see cref="GeoservicesLayerPublicationService"/> so the reconciliation field set
+    /// matches the imported column set.
+    /// </summary>
+    internal static bool IsGeometryField(GeoservicesFieldInfo field)
         => field.Type.Equals("esriFieldTypeGeometry", StringComparison.OrdinalIgnoreCase);
 }

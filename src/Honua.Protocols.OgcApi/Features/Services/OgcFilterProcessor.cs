@@ -9,6 +9,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Filtering;
 using Honua.Infrastructure.Parsing;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.Extensions.Logging;
@@ -586,49 +587,12 @@ internal sealed partial class OgcFilterProcessor
         };
     }
 
+    // Reflected filter error text is sanitized through the shared cross-cutting
+    // sanitizer so the OGC API Features filter path enforces the same SQL/credential,
+    // parser-diagnostic, control-character, and length guarantees as every other
+    // protocol adapter (e.g. the GeoServices edit path).
     private static string SanitizeCqlErrorMessage(string exceptionMessage)
-    {
-        if (string.IsNullOrWhiteSpace(exceptionMessage))
-        {
-            return InvalidCqlSyntaxMessage;
-        }
-
-        // Limit message length to prevent overly detailed exposure
-        const int maxLength = 200;
-
-        // Remove any potential internal details after common delimiters
-        var message = exceptionMessage;
-
-        // Remove stack trace info if accidentally included
-        var stackTraceIndex = message.IndexOf("   at ", StringComparison.Ordinal);
-        if (stackTraceIndex > 0)
-        {
-            message = message[..stackTraceIndex].Trim();
-        }
-
-        // Parser diagnostics often include user-provided payload fragments and internal parser state.
-        if (message.Contains("BytePositionInLine", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("LineNumber", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("Path:", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("JsonException", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("Unexpected", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("syntax error", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("parse error", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains(" at position ", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains(" at column ", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains(" at line ", StringComparison.OrdinalIgnoreCase))
-        {
-            return InvalidCqlSyntaxMessage;
-        }
-
-        // Truncate if too long
-        if (message.Length > maxLength)
-        {
-            message = string.Concat(message.AsSpan(0, maxLength), "...");
-        }
-
-        return string.IsNullOrWhiteSpace(message) ? InvalidCqlSyntaxMessage : message;
-    }
+        => ErrorMessageSanitizer.Sanitize(exceptionMessage, InvalidCqlSyntaxMessage);
 
     // Result classes
     private sealed class FilterLanguageResult

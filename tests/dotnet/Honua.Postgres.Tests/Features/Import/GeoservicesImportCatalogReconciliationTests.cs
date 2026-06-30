@@ -120,11 +120,13 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
-            layerPublishingService: publishingService,
-            // A pass-through data-reconciliation service so the gate reaches the catalog pass; the
-            // catalog reconciler reads the published entry back through the real graph store.
-            reconciliationService: new PassThroughReconciliationService(),
-            metadataGraphStore: graphStore);
+            new GeoservicesLayerPublicationService(
+                NullLogger<GeoservicesLayerPublicationService>.Instance,
+                layerPublishingService: publishingService,
+                // A pass-through data-reconciliation service so the gate reaches the catalog pass; the
+                // catalog reconciler reads the published entry back through the real graph store.
+                reconciliationService: new PassThroughReconciliationService(),
+                metadataGraphStore: graphStore));
     }
 
     private sealed class PassThroughReconciliationService : ILayerReconciliationService

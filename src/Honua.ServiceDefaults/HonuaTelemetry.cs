@@ -412,6 +412,9 @@ public static class HonuaTelemetry
         /// <summary>SpatioTemporal Asset Catalog API.</summary>
         public const string Stac = "STAC";
 
+        /// <summary>OGC SensorThings API (STA v1.1).</summary>
+        public const string SensorThings = "SensorThings";
+
         /// <summary>Model Context Protocol operator surface.</summary>
         public const string Mcp = "Mcp";
     }

@@ -41,6 +41,11 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 /// </summary>
 internal sealed partial class Wfs20Handler
 {
+    // Fixed client-facing text for untyped validation exceptions, matching the
+    // GetFeature path so both surfaces expose error detail identically (real
+    // message stays in the logs).
+    private const string GeneralizedValidationErrorMessage = "Invalid WFS parameter value; see logs for details.";
+
     public async Task<IResult> HandleTransactionAsync(
         HttpContext context,
         CancellationToken cancellationToken = default)
@@ -137,16 +142,20 @@ internal sealed partial class Wfs20Handler
         }
         catch (InvalidDataException ex)
         {
+            // Generalize untyped validation-exception text (mirrors the GetFeature path):
+            // the real message is logged for diagnosis but must not be reflected verbatim,
+            // so GetFeature and Transaction expose error text identically.
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
             HonuaTelemetry.RecordException(activity, ex);
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 "OperationParsingFailed",
-                ex.Message,
+                GeneralizedValidationErrorMessage,
                 "request");
         }
         catch (WfsTransactionException ex)
         {
+            // Typed protocol exception with an author-controlled message/locator; reported verbatim by design.
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
             HonuaTelemetry.RecordException(activity, ex);
             return Wfs20ErrorResults.CreateBadRequest(
@@ -162,7 +171,7 @@ internal sealed partial class Wfs20Handler
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 "InvalidParameterValue",
-                ex.Message,
+                GeneralizedValidationErrorMessage,
                 "request");
         }
         catch (NotSupportedException ex)
@@ -172,7 +181,7 @@ internal sealed partial class Wfs20Handler
             return Wfs20ErrorResults.CreateNotImplemented(
                 context,
                 "OperationNotSupported",
-                ex.Message,
+                GeneralizedValidationErrorMessage,
                 "request");
         }
         catch (RequestBodyTooLargeException)

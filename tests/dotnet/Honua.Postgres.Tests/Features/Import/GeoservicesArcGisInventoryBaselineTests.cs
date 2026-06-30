@@ -431,7 +431,8 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             connectionProvider.Object,
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
-            NullLogger<GeoservicesImportService>.Instance);
+            NullLogger<GeoservicesImportService>.Instance,
+            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
     }
 
     private sealed record FixtureScenario(string ServiceUrl, IReadOnlyDictionary<string, string> Responses);
