@@ -99,6 +99,10 @@ internal sealed class ProcessCatalogResource : IMcpResource
         DisplayName = process.Title,
         Family = process.Category,
         Description = process.Description,
+        OutputArtifactKinds = process.OutputArtifactKinds
+            .Select(kind => kind.ToString())
+            .ToList(),
+        RuntimeProfile = process.RuntimeProfile,
         Parameters = process.Parameters
             .Select(parameter => new McpProcessParameter
             {
@@ -107,7 +111,8 @@ internal sealed class ProcessCatalogResource : IMcpResource
                 Description = parameter.Description,
                 ValueType = ToWireValueType(parameter.ValueType),
                 Required = parameter.Required,
-                DefaultValue = parameter.DefaultValue
+                DefaultValue = parameter.DefaultValue,
+                AllowedValues = parameter.AllowedValues
             })
             .ToList()
     };
