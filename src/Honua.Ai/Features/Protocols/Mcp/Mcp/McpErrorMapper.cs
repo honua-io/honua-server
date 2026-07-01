@@ -140,7 +140,8 @@ internal static class McpErrorMapper
             Message = conflictEx.Message,
             Data = new McpErrorData
             {
-                Code = Codes.AlreadyExists
+                Code = Codes.AlreadyExists,
+                ConflictingJobId = conflictEx.ConflictingJobId
             }
         },
 

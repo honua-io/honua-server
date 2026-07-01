@@ -1114,7 +1114,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (!string.IsNullOrWhiteSpace(requestedBy)
             && !string.Equals(requestedBy, callerName, StringComparison.Ordinal))
         {
-            throw new GeoprocessingIdempotencyConflictException();
+            throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
         }
 
         var existingFingerprint = existing.Audit.RequestFingerprint;
@@ -1124,7 +1124,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return;
         }
 
-        throw new GeoprocessingIdempotencyConflictException();
+        throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
     }
 
     private static void EnsureSubmissionDidNotRollback(ExecutionJobRecord existing)

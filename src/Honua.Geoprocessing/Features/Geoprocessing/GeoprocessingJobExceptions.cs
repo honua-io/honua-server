@@ -87,8 +87,17 @@ internal sealed class GeoprocessingStoreUnavailableException : Exception
 /// </summary>
 internal sealed class GeoprocessingIdempotencyConflictException : Exception
 {
-    public GeoprocessingIdempotencyConflictException()
-        : base("Idempotency key is already associated with a different request.") { }
+    public GeoprocessingIdempotencyConflictException(string? conflictingJobId = null)
+        : base("Idempotency key is already associated with a different request.")
+    {
+        ConflictingJobId = conflictingJobId;
+    }
+
+    /// <summary>
+    /// Identifier of the job that already owns the idempotency key, so a client
+    /// can recover by inspecting the winning job rather than blindly retrying.
+    /// </summary>
+    public string? ConflictingJobId { get; }
 }
 
 /// <summary>
