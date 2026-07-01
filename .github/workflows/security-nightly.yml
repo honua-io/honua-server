@@ -69,14 +69,25 @@ jobs:
 
           cat vulnerability-report.txt
 
-          if grep -E "(High|Critical)" vulnerability-report.txt; then
+          # Advisories explicitly risk-accepted because there is NO upstream fix.
+          # Keep in sync with the NuGetAuditSuppress entries in Directory.Build.props
+          # and the .trivyignore file. `dotnet list package --vulnerable` does not
+          # honor NuGetAuditSuppress, so the accepted rows are filtered here before the
+          # gate. Only no-patched-version advisories belong here; anything with a fix
+          # must be bumped, not allowlisted.
+          #   GHSA-2m69-gcr7-jv3q — SQLitePCLRaw.lib.e_sqlite3 <= 2.1.11 (no patched version)
+          ALLOWLISTED_ADVISORIES="GHSA-2m69-gcr7-jv3q"
+
+          grep -vE "${ALLOWLISTED_ADVISORIES}" vulnerability-report.txt > vulnerability-report.gated.txt || true
+
+          if grep -E "(High|Critical)" vulnerability-report.gated.txt; then
             echo "vulnerable_packages=true" >> "$GITHUB_OUTPUT"
-            echo "::error::High or Critical vulnerabilities found in NuGet packages"
+            echo "::error::High or Critical vulnerabilities found in NuGet packages (excluding risk-accepted advisories)"
             exit 1
           fi
 
           echo "vulnerable_packages=false" >> "$GITHUB_OUTPUT"
-          echo "No high or critical NuGet vulnerabilities found"
+          echo "No high or critical NuGet vulnerabilities found (excluding risk-accepted advisories)"
 
       - name: Upload vulnerability report
         uses: actions/upload-artifact@v7
@@ -251,6 +262,7 @@ jobs:
           format: sarif
           output: trivy-container-results.sarif
           severity: HIGH,CRITICAL
+          trivyignores: .trivyignore
 
       - name: Upload container Trivy SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
@@ -266,6 +278,7 @@ jobs:
           format: table
           severity: HIGH,CRITICAL
           exit-code: '1'
+          trivyignores: .trivyignore
 
       - name: Install container-structure-test
         run: |

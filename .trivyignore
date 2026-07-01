@@ -1,0 +1,14 @@
+# Trivy ignore file — risk-accepted vulnerabilities with no available upstream fix.
+#
+# Keep this in sync with the NuGetAuditSuppress entries in Directory.Build.props.
+# Only advisories that are genuinely unactionable (no patched version) belong here;
+# everything else must be remediated by a version bump, not ignored.
+#
+# CVE-2025-6965 — SQLitePCLRaw.lib.e_sqlite3 2.1.11 (HIGH): integer truncation in the
+#   bundled SQLite native lib. Pulled in transitively via Microsoft.Data.Sqlite. There
+#   is NO patched e_sqlite3 published (first_patched_version = none), so it cannot be
+#   cleared by a version bump. Same finding as GHSA-2m69-gcr7-jv3q suppressed for the
+#   NuGet audit in Directory.Build.props. e_sqlite3 is the bundled SQLite used by
+#   test/tooling paths; tracked for re-evaluation when a patched e_sqlite3 ships, at
+#   which point this entry is removed.
+CVE-2025-6965
