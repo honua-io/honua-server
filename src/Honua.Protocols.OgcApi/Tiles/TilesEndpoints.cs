@@ -610,27 +610,26 @@ internal static partial class TilesEndpoints
             // Raster (PNG) tile path
             if (isRaster)
             {
+                var renderContext = new RasterTileRenderContext(
+                    tileBounds,
+                    filterSrid,
+                    tileLimits,
+                    tileOptionsValue,
+                    activity);
+
                 return layers.Length == 1
                     ? await HandleRasterTileAsync(
                         context,
                         layer,
-                        tileBounds,
-                        filterSrid,
+                        renderContext,
                         GetTemporalFilterForLayer(layer, temporalFilters),
                         GetVerticalSelectionForLayer(layer, verticalSelections),
-                        tileLimits,
-                        tileOptionsValue,
-                        activity,
                         cancellationToken)
                     : await HandleDatasetRasterTileAsync(
                         context,
                         layers,
-                        tileBounds,
-                        filterSrid,
+                        renderContext,
                         temporalFilters,
-                        tileLimits,
-                        tileOptionsValue,
-                        activity,
                         cancellationToken);
             }
 
@@ -710,15 +709,17 @@ internal static partial class TilesEndpoints
     private static async Task<IResult> HandleRasterTileAsync(
         HttpContext context,
         TileRequestLayer layer,
-        TileBounds bounds,
-        int filterSrid,
+        RasterTileRenderContext renderContext,
         TemporalFilter? temporalFilter,
         VerticalSelection? verticalSelection,
-        TileLimits tileLimits,
-        TileOptions tileOptionsValue,
-        Activity? activity,
         CancellationToken cancellationToken)
     {
+        var bounds = renderContext.Bounds;
+        var filterSrid = renderContext.FilterSrid;
+        var tileLimits = renderContext.TileLimits;
+        var tileOptionsValue = renderContext.TileOptions;
+        var activity = renderContext.Activity;
+
         // Record-but-don't-render the vertical selection (see the documented divergence at
         // the raster/vector dispatch). The feature query below is unchanged — there is no
         // Z-aware raster source yet (the Zarr datacube Z-slice render is the deferred
@@ -814,14 +815,16 @@ internal static partial class TilesEndpoints
     private static async Task<IResult> HandleDatasetRasterTileAsync(
         HttpContext context,
         TileRequestLayer[] layers,
-        TileBounds bounds,
-        int filterSrid,
+        RasterTileRenderContext renderContext,
         IReadOnlyDictionary<int, TemporalFilter?> temporalFilters,
-        TileLimits tileLimits,
-        TileOptions tileOptionsValue,
-        Activity? activity,
         CancellationToken cancellationToken)
     {
+        var bounds = renderContext.Bounds;
+        var filterSrid = renderContext.FilterSrid;
+        var tileLimits = renderContext.TileLimits;
+        var tileOptionsValue = renderContext.TileOptions;
+        var activity = renderContext.Activity;
+
         var spatialFilter = CreateBboxSpatialFilter(bounds, filterSrid);
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var renderedLayers = new List<TileRenderer.TileRenderLayer>(layers.Length);
