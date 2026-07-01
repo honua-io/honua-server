@@ -1016,6 +1016,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             throw new GeoprocessingValidationException(
                 "Plan must contain at least one step for job submission.");
         }
+
+        // A single execution job runs exactly one process (the dispatcher resolves
+        // one process id from the spec), so a multi-step plan submitted directly
+        // would silently execute only the first step and drop the rest. Reject it
+        // rather than mislead: multi-step DAGs are executed by the workflow
+        // orchestration engine, which decomposes the DAG into one single-step job
+        // per node and submits those here. This keeps the direct submit path honest
+        // for MCP/gRPC/OGC callers that author a plan by hand.
+        if (plan.Steps.Count > 1)
+        {
+            throw new GeoprocessingValidationException(
+                "Multi-step plans are not executable on the direct submit path: a job runs a single " +
+                "process, so steps beyond the first would be silently dropped. Submit one process per " +
+                "job, or use the workflow orchestration engine to execute a multi-step DAG.");
+        }
     }
 
     private void EnsurePlanCatalogValid(AnalysisPlan plan)
@@ -1114,7 +1129,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (!string.IsNullOrWhiteSpace(requestedBy)
             && !string.Equals(requestedBy, callerName, StringComparison.Ordinal))
         {
-            throw new GeoprocessingIdempotencyConflictException();
+            throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
         }
 
         var existingFingerprint = existing.Audit.RequestFingerprint;
@@ -1124,7 +1139,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return;
         }
 
-        throw new GeoprocessingIdempotencyConflictException();
+        throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
     }
 
     private static void EnsureSubmissionDidNotRollback(ExecutionJobRecord existing)

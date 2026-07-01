@@ -116,6 +116,22 @@ internal sealed class McpJobResultsResource
     [JsonPropertyName("artifacts")]
     public IReadOnlyList<McpArtifactRef> Artifacts { get; set; } = [];
 
+    /// <summary>
+    /// Total number of artifacts in the underlying result package. When this
+    /// exceeds the number of entries in <see cref="Artifacts"/>, the list was
+    /// capped for agent consumption and <see cref="ArtifactsTruncated"/> is true.
+    /// </summary>
+    [JsonPropertyName("totalArtifactCount")]
+    public int TotalArtifactCount { get; set; }
+
+    /// <summary>
+    /// True when <see cref="Artifacts"/> was truncated to a bounded page so the
+    /// response stays within an agent-friendly token budget. Retrieve the full
+    /// artifact set from the job's workspace(s) rather than this resource.
+    /// </summary>
+    [JsonPropertyName("artifactsTruncated")]
+    public bool ArtifactsTruncated { get; set; }
+
     [JsonPropertyName("workspaceRefs")]
     public IReadOnlyList<McpWorkspaceRef> WorkspaceRefs { get; set; } = [];
 
@@ -310,6 +326,23 @@ internal sealed class McpProcessEntry
 
     [JsonPropertyName("parameters")]
     public IReadOnlyList<McpProcessParameter> Parameters { get; set; } = [];
+
+    /// <summary>
+    /// Artifact kinds this process is expected to produce, so an agent can
+    /// author a plan whose <c>outputs</c> match what the process actually emits.
+    /// Values are canonical <see cref="Honua.Core.Features.Geoprocessing.Domain.ArtifactKind"/> names.
+    /// </summary>
+    [JsonPropertyName("outputArtifactKinds")]
+    public IReadOnlyList<string> OutputArtifactKinds { get; set; } = [];
+
+    /// <summary>
+    /// Runtime profile the process executes under. <c>managed</c> runs in the lean
+    /// serving image; <c>native</c> requires the heavyweight GDAL worker to be
+    /// deployed, so an agent knows whether a plan referencing it will actually run
+    /// in the current deployment rather than only validate.
+    /// </summary>
+    [JsonPropertyName("runtimeProfile")]
+    public string RuntimeProfile { get; set; } = string.Empty;
 }
 
 internal sealed class McpProcessParameter
@@ -331,6 +364,15 @@ internal sealed class McpProcessParameter
 
     [JsonPropertyName("defaultValue")]
     public string? DefaultValue { get; set; }
+
+    /// <summary>
+    /// Finite set of accepted values when the parameter is an enumeration, so an
+    /// agent gets a machine-readable choice list instead of parsing allowed
+    /// values out of the prose <see cref="Description"/>. Null when the parameter
+    /// is not constrained to a fixed set.
+    /// </summary>
+    [JsonPropertyName("allowedValues")]
+    public IReadOnlyList<string>? AllowedValues { get; set; }
 }
 
 // -----------------------------------------------------------------------
