@@ -104,12 +104,18 @@ capabilities an environment exposes) stays a property of the resolver layer.
 
 Because every surface derives from the registry, the registry-derived manifest
 is the **one lever** that controls advertised scope. First-release scope
-advertises **only in-first-release capabilities**; the deferred endpoints are
-**gated / flag-off**: temporal (`/api/v1/temporal/*`), disconnected-sync
-(replica/conflict endpoints), realtime/geofence (`/api/v1/admin/alerts/*`),
-cross-env metadata-promotion (`/api/v1/admin/metadata` + deploy `MetadataRelease`
-ops), SIEM (`/api/v1/admin/investigations/*`), and mTLS
-(`/api/v1/admin/security/client-certificates/validate`). Flipping a capability
+advertises **only in-first-release capabilities**; the deferred capabilities are
+marked `maturity:deferred` in the feature catalog and **gated / flag-off**:
+temporal (`/api/v1/temporal/*`), disconnected-sync (replica/conflict endpoints),
+realtime/geofence (`/api/v1/admin/alerts/*`), cross-env metadata-promotion
+(`/api/v1/admin/metadata` + deploy `MetadataRelease` ops), SIEM
+(`/api/v1/admin/investigations/*`), mTLS
+(`/api/v1/admin/security/client-certificates/validate`), and — per the
+release-owner scope update (2026-07) — **forms** (`form.package` / forms
+authoring + field forms), **mobile / offline**, and **field data collection**
+(honua-collect). Note only **cross-environment** metadata-promotion is deferred;
+**single-instance GitOps change-safety stays as the release operate floor**.
+Flipping a capability
 off in the registry removes it from the manifest, `/mcp`, Studio availability,
 and Console at once. This is the manifest lever the Console release gate
 (honua-io/honua-console#264) already consumes.
