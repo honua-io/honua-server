@@ -1,7 +1,12 @@
 # Cesium client interop lane. Uses the official Playwright image so headless
 # Chromium with WebGL works without further configuration.
-
-FROM mcr.microsoft.com/playwright:v1.59.1-noble
+#
+# IMPORTANT: keep this image tag in lockstep with the @playwright/test version
+# resolved in tests/js-browser/cesium/package-lock.json. The image bakes in the
+# matching browser build; a drift (e.g. the lockfile bumped to 1.61.0 while this
+# stayed at 1.59.1) makes `npx playwright test` fail with
+# "browserType.launch: Executable doesn't exist at .../chromium_headless_shell-<build>".
+FROM mcr.microsoft.com/playwright:v1.61.0-noble
 
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_OPTIONS="--max-old-space-size=4096" \
