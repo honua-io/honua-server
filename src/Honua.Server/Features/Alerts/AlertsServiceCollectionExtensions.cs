@@ -27,6 +27,7 @@ internal static class AlertsServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<AlertDeliveryOptions>, AlertDeliveryOptionsValidator>();
 
+        services.AddScoped<AlertDispatchWriter>();
         services.AddScoped<IAlertPipeline, AlertPipeline>();
         services.AddScoped<IAlertEvaluator, DefaultAlertEvaluator>();
         services.AddScoped<IAlertEditionPolicy, AlertEditionPolicy>();

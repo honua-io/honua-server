@@ -24,6 +24,14 @@ public sealed class FederationMetrics : IDisposable
     public const string MeterName = "Honua.Federation";
 
     private readonly Meter _meter;
+
+    /// <summary>
+    /// The underlying <see cref="Meter"/> instance. Exposed to tests so a per-instance
+    /// <see cref="MeterListener"/> can scope capture to this object rather than the shared
+    /// meter name, which prevents cross-test contamination under parallel execution.
+    /// </summary>
+    internal Meter Meter => _meter;
+
     private readonly Histogram<double> _sourceDuration;
     private readonly Counter<long> _sourceRequests;
     private readonly Counter<long> _sourceRows;

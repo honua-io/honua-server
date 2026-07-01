@@ -1432,20 +1432,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private bool ShouldUseGeodesicNearestNeighbor()
     {
-        var storageSrid = _storageSrid;
-        return IsLikelyGeographicSrid(storageSrid);
+        // Use the curated canonical geographic-SRID list (single source of truth) rather
+        // than a loose 4000-4999 range, which swept in projected/geocentric CRS in that band
+        // (e.g. EPSG:4978 geocentric) and missed geographic CRS outside it. The classification
+        // gates both the geodesic ordering and the returned NearestNeighbor distance units.
+        return DistanceConversions.IsGeographicSrid(_storageSrid);
     }
 
     private static string ToWgs84Geography(string geometryExpression, int srid)
         => srid == SpatialReference.WGS84.Wkid
             ? $"{geometryExpression}::geography"
             : $"ST_Transform({geometryExpression}, {SpatialReference.WGS84.Wkid})::geography";
-
-    private static bool IsLikelyGeographicSrid(int srid)
-        => srid == SpatialReference.WGS84.Wkid ||
-           srid == 4269 ||
-           srid == 4267 ||
-           srid is >= 4000 and <= 4999;
 
     private static bool IsNearestNeighborQuery(FeatureQuery query)
         => query.SpatialFilter.HasValue &&

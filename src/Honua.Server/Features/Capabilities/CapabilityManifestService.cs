@@ -27,8 +27,6 @@ using Honua.Infrastructure.Security;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Streaming;
 using Honua.ServiceDefaults;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Capabilities;
 
@@ -48,21 +46,12 @@ internal readonly record struct CapabilityManifestRequest(
     bool Authenticated);
 
 internal sealed class CapabilityManifestService(
-    IOptions<LimitsOptions> limitsOptions,
-    IOptions<FeatureStreamOptions> streamOptions,
-    IOptions<FeatureChangeEventOptions> eventOptions,
-    IOptions<ClientCertificateAuthenticationOptions> clientCertificateOptions,
-    IOptions<ControlPlaneOptions> controlPlaneOptions,
-    IOptions<FileUploadOptions> fileUploadOptions,
-    IOptions<FileUploadSecurityOptions> fileUploadSecurityOptions,
-    IOptions<GrpcOptions> grpcOptions,
-    IOptions<AlertOptions> alertOptions,
-    IOptions<RbacOptions> rbacOptions,
+    CapabilityManifestOptionsSnapshot options,
     ILicenseEntitlementService entitlementService,
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     IEnumerable<IBatchComputeBackend> batchBackends,
-    IServiceProvider serviceProvider,
+    IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
     IWebHostEnvironment hostEnvironment,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
@@ -287,11 +276,11 @@ internal sealed class CapabilityManifestService(
 
     private CapabilityManifestCapability[] BuildCapabilities(CapabilityPolicyContext context)
     {
-        var alertOptionsValue = alertOptions.Value;
-        var mtlsOptions = clientCertificateOptions.Value;
+        var alertOptionsValue = options.Alerts;
+        var mtlsOptions = options.ClientCertificate;
         var syncSupported = IsFieldCollectionSyncSupported();
-        var deployTargetCount = controlPlaneOptions.Value.DeployTargets.Count;
-        var workloadCount = controlPlaneOptions.Value.ExecutionWorkloads.Count;
+        var deployTargetCount = options.ControlPlane.DeployTargets.Count;
+        var workloadCount = options.ControlPlane.ExecutionWorkloads.Count;
 
         return
         [
@@ -423,12 +412,12 @@ internal sealed class CapabilityManifestService(
 
     private CapabilityManifestTransports BuildTransports()
     {
-        var options = clientCertificateOptions.Value;
-        var mtlsAvailable = options.Mode != ClientCertificateAuthenticationMode.Disabled;
+        var clientCertificate = options.ClientCertificate;
+        var mtlsAvailable = clientCertificate.Mode != ClientCertificateAuthenticationMode.Disabled;
         return new CapabilityManifestTransports
         {
-            MtlsMode = ToWireValue(options.Mode),
-            ForwardedClientCertificateEnabled = options.ForwardedCertificate.Enabled,
+            MtlsMode = ToWireValue(clientCertificate.Mode),
+            ForwardedClientCertificateEnabled = clientCertificate.ForwardedCertificate.Enabled,
             Items =
             [
                 Transport("rest-http", supported: true, available: true),
@@ -466,13 +455,13 @@ internal sealed class CapabilityManifestService(
 
     private CapabilityManifestLimits BuildLimits(BatchCapabilitySummary batchCapabilities)
     {
-        var limits = limitsOptions.Value;
+        var limits = options.Limits;
         var importLimits = limits.Imports;
-        var featureStreamOptions = streamOptions.Value;
-        var featureChangeEventOptions = eventOptions.Value;
-        var uploads = fileUploadOptions.Value;
-        var uploadSecurity = fileUploadSecurityOptions.Value;
-        var grpc = grpcOptions.Value;
+        var featureStreamOptions = options.Streaming;
+        var featureChangeEventOptions = options.FeatureChangeEvents;
+        var uploads = options.FileUpload;
+        var uploadSecurity = options.FileUploadSecurity;
+        var grpc = options.Grpc;
         var analyticsLimits = limits.Analytics;
 
         return new CapabilityManifestLimits
@@ -511,12 +500,12 @@ internal sealed class CapabilityManifestService(
             },
             Publication = new CapabilityManifestPublicationLimits
             {
-                ConfiguredDeployTargetCount = controlPlaneOptions.Value.DeployTargets.Count,
+                ConfiguredDeployTargetCount = options.ControlPlane.DeployTargets.Count,
                 GitOpsManifestExportSupported = true
             },
             Job = new CapabilityManifestJobLimits
             {
-                ConfiguredWorkloadCount = controlPlaneOptions.Value.ExecutionWorkloads.Count,
+                ConfiguredWorkloadCount = options.ControlPlane.ExecutionWorkloads.Count,
                 AvailableBackendCount = batchCapabilities.AvailableBackendCount,
                 SupportsCancellation = batchCapabilities.SupportsCancellation,
                 SupportsProgressPolling = batchCapabilities.SupportsProgressPolling
@@ -648,11 +637,7 @@ internal sealed class CapabilityManifestService(
     }
 
     private bool IsFieldCollectionSyncSupported()
-    {
-        var serviceInspector = serviceProvider.GetService<IServiceProviderIsService>();
-        return serviceInspector?.IsService(typeof(IFieldCollectionSyncStore)) == true ||
-            serviceProvider.GetService<IFieldCollectionSyncStore>() is not null;
-    }
+        => fieldCollectionSyncStores.Any();
 
     private bool ResolveWorkspaceAvailability(
         ClaimsPrincipal principal,
@@ -674,7 +659,7 @@ internal sealed class CapabilityManifestService(
             return true;
         }
 
-        var workspaceClaimType = rbacOptions.Value.WorkspaceScopeClaimType;
+        var workspaceClaimType = options.Rbac.WorkspaceScopeClaimType;
         return principal.Claims.Any(claim =>
             string.Equals(claim.Type, workspaceClaimType, StringComparison.OrdinalIgnoreCase)
             && string.Equals(claim.Value, workspaceId, StringComparison.Ordinal));
@@ -682,7 +667,7 @@ internal sealed class CapabilityManifestService(
 
     private bool HasAdminRole(ClaimsPrincipal principal)
     {
-        var roleClaimType = rbacOptions.Value.EffectiveRoleClaimType;
+        var roleClaimType = options.Rbac.EffectiveRoleClaimType;
         var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);
 
         foreach (var claim in principal.Claims)

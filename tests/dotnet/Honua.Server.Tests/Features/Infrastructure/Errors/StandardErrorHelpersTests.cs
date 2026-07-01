@@ -274,7 +274,8 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
     {
         // Arrange
         var context = CreateContext("/ogc/features/collections/test/items");
-        var longErrorMessage = new string('x', 250) + " with sensitive data like passwords and connection strings";
+        // A long message with no unsafe fragments is echoed back, capped in length.
+        var longErrorMessage = new string('x', 250);
 
         // Act
         var result = StandardErrorHelpers.CreateCqlFilterError(context, longErrorMessage);
@@ -290,6 +291,34 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
         detail.Should().StartWith("Invalid CQL filter syntax:");
         detail.Length.Should().BeLessThan(250); // Message should be truncated
         detail.Should().EndWith("..."); // Should indicate truncation
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/features/collections/test/items")]
+    public async Task CreateCqlFilterError_LongSensitiveMessage_ReturnsSafeFallback()
+    {
+        // Arrange
+        var context = CreateContext("/ogc/features/collections/test/items");
+        // A long message that trips the leakage blocklist (credentials/connection
+        // internals) must be replaced wholesale by the safe fallback, not merely
+        // truncated - truncation could still leak a sensitive prefix.
+        var sensitiveErrorMessage = new string('x', 250) + " with sensitive data like passwords and connection strings";
+
+        // Act
+        var result = StandardErrorHelpers.CreateCqlFilterError(context, sensitiveErrorMessage);
+        await result.ExecuteAsync(context);
+
+        // Assert
+        context.Response.StatusCode.Should().Be(400);
+
+        var responseBody = GetResponseBody(context);
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(responseBody);
+
+        var detail = problemDetails.GetProperty("detail").GetString();
+        detail.Should().StartWith("Invalid CQL filter syntax:");
+        detail.Should().NotContain("password"); // Sensitive fragment must not be echoed
+        detail.Should().NotContain("connection string");
     }
 
     [IntegrationTest]

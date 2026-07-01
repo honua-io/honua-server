@@ -23,6 +23,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 
@@ -1682,36 +1683,12 @@ internal sealed class FeatureServerEditsHandler(
         return results.All(result => result.Success);
     }
 
+    // Edit error text reflected to clients is sanitized through the shared cross-cutting
+    // sanitizer so the GeoServices edit path enforces the same SQL/credential,
+    // provider-internal, parser-diagnostic, control-character, and length guarantees as
+    // every other protocol adapter (e.g. the OGC API Features filter path).
     private static string SanitizeEditErrorMessage(string? message, string fallback)
-    {
-        if (string.IsNullOrWhiteSpace(message))
-        {
-            return fallback;
-        }
-
-        var trimmed = message.Trim();
-        if (trimmed.Length > MaxSafeEditErrorMessageLength || ContainsUnsafeEditMessagePattern(trimmed))
-        {
-            return fallback;
-        }
-
-        return trimmed;
-    }
-
-    private static bool ContainsUnsafeEditMessagePattern(string message)
-    {
-        return message.Contains('\r') ||
-               message.Contains('\n') ||
-               message.Contains("BytePositionInLine", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("LineNumber", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("System.", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("Exception", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("StackTrace", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("SQLSTATE", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("ConnectionString", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("password", StringComparison.OrdinalIgnoreCase);
-    }
+        => ErrorMessageSanitizer.Sanitize(message, fallback, MaxSafeEditErrorMessageLength);
 
     /// <summary>
     /// Raised inside the per-feature build path when an owner-based edit policy denies the

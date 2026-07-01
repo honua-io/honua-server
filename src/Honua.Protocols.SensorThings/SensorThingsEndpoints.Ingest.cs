@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using Honua.Core.Features.SensorThings.Abstractions;
@@ -9,7 +10,9 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.SensorThings.Models;
 using Honua.Protocols.SensorThings.Services;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.SensorThings;
 
@@ -59,6 +62,12 @@ internal static partial class SensorThingsIngestEndpoints
         return endpoints;
     }
 
+    private const string IngestOperation = "sensor.ingest";
+    private const string DatastreamCreateOperation = "datastream.create";
+
+    /// <summary>Span tag carrying the target Datastream identifier for ingest activities.</summary>
+    private const string DatastreamIdTag = "honua.sensorthings.datastream.id";
+
     private static string StaBase(HttpContext context) =>
         $"{BaseUrlResolver.GetBaseUrl(context)}{SensorThingsEndpoints.BasePath}";
 
@@ -67,7 +76,8 @@ internal static partial class SensorThingsIngestEndpoints
     private static async Task<IResult> HandleCreateObservations(
         HttpContext context,
         [FromServices] IObservationStore store,
-        [FromServices] IObservationChangeEventPublisher publisher)
+        [FromServices] IObservationChangeEventPublisher publisher,
+        [FromServices] ILogger<SensorThingsEndpoints.SensorThingsEndpointsLog> logger)
     {
         var ct = context.RequestAborted;
 
@@ -106,7 +116,7 @@ internal static partial class SensorThingsIngestEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, "Bulk ingest requires a non-empty 'value' array.");
             }
 
-            return await IngestBulkAsync(context, store, publisher, bulk, ct).ConfigureAwait(false);
+            return await IngestBulkAsync(context, store, publisher, logger, bulk, ct).ConfigureAwait(false);
         }
 
         StaObservationCreate? single;
@@ -131,14 +141,15 @@ internal static partial class SensorThingsIngestEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "An Observation must reference a Datastream by @iot.id.");
         }
 
-        return await IngestSingleAsync(context, store, publisher, datastreamId, single, ct).ConfigureAwait(false);
+        return await IngestSingleAsync(context, store, publisher, logger, datastreamId, single, ct).ConfigureAwait(false);
     }
 
     private static async Task<IResult> HandleCreateDatastreamObservation(
         long id,
         HttpContext context,
         [FromServices] IObservationStore store,
-        [FromServices] IObservationChangeEventPublisher publisher)
+        [FromServices] IObservationChangeEventPublisher publisher,
+        [FromServices] ILogger<SensorThingsEndpoints.SensorThingsEndpointsLog> logger)
     {
         var ct = context.RequestAborted;
         StaObservationCreate? single;
@@ -157,76 +168,109 @@ internal static partial class SensorThingsIngestEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be a valid Observation.");
         }
 
-        return await IngestSingleAsync(context, store, publisher, id, single, ct).ConfigureAwait(false);
+        return await IngestSingleAsync(context, store, publisher, logger, id, single, ct).ConfigureAwait(false);
     }
 
     private static async Task<IResult> IngestSingleAsync(
         HttpContext context,
         IObservationStore store,
         IObservationChangeEventPublisher publisher,
+        ILogger logger,
         long datastreamId,
         StaObservationCreate body,
         CancellationToken ct)
     {
-        if (await store.GetDatastreamAsync(datastreamId, ct).ConfigureAwait(false) is null)
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("sensorthings.ingest", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.SensorThings);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, IngestOperation);
+        activity?.SetTag(DatastreamIdTag, datastreamId);
+
+        try
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Datastream({datastreamId}) not found.");
-        }
+            if (await store.GetDatastreamAsync(datastreamId, ct).ConfigureAwait(false) is null)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Datastream({datastreamId}) not found.");
+            }
 
-        if (!TryBuildRow(datastreamId, body, out var row, out var error))
+            if (!TryBuildRow(datastreamId, body, out var row, out var error))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, error);
+            }
+
+            var persisted = await store.IngestObservationsAsync(new[] { row }, ct).ConfigureAwait(false);
+            publisher.PublishObservations(persisted);
+
+            var staBase = StaBase(context);
+            var observation = StaEntityMapper.MapObservation(persisted[0], staBase);
+            context.Response.Headers.Location = observation.IotSelfLink;
+            HonuaTelemetry.SetSuccess(activity, persisted.Count);
+            SensorThingsIngestLog.ObservationsIngested(logger, persisted.Count, datastreamId);
+            return Results.Json(observation, SensorThingsJsonContext.Default.StaObservation, statusCode: 201);
+        }
+        catch (Exception ex)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, error);
+            HonuaTelemetry.RecordException(activity, ex);
+            SensorThingsIngestLog.IngestFailed(logger, datastreamId, ex);
+            throw;
         }
-
-        var persisted = await store.IngestObservationsAsync(new[] { row }, ct).ConfigureAwait(false);
-        publisher.PublishObservations(persisted);
-
-        var staBase = StaBase(context);
-        var observation = StaEntityMapper.MapObservation(persisted[0], staBase);
-        context.Response.Headers.Location = observation.IotSelfLink;
-        return Results.Json(observation, SensorThingsJsonContext.Default.StaObservation, statusCode: 201);
     }
 
     private static async Task<IResult> IngestBulkAsync(
         HttpContext context,
         IObservationStore store,
         IObservationChangeEventPublisher publisher,
+        ILogger logger,
         StaObservationBulkCreate bulk,
         CancellationToken ct)
     {
-        var rows = new List<ObservationIngestRow>(bulk.Value.Count);
-        foreach (var item in bulk.Value)
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("sensorthings.ingest", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.SensorThings);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, IngestOperation);
+
+        try
         {
-            var datastreamId = item.Datastream?.IotId ?? 0;
-            if (datastreamId <= 0)
+            var rows = new List<ObservationIngestRow>(bulk.Value.Count);
+            foreach (var item in bulk.Value)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, "Each Observation must reference a Datastream by @iot.id.");
+                var datastreamId = item.Datastream?.IotId ?? 0;
+                if (datastreamId <= 0)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, "Each Observation must reference a Datastream by @iot.id.");
+                }
+
+                if (!TryBuildRow(datastreamId, item, out var row, out var error))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, error);
+                }
+
+                rows.Add(row);
             }
 
-            if (!TryBuildRow(datastreamId, item, out var row, out var error))
+            // Validate referenced datastreams exist (deduplicated).
+            foreach (var datastreamId in rows.Select(r => r.DatastreamId).Distinct())
             {
-                return StandardErrorHelpers.CreateBadRequest(context, error);
+                if (await store.GetDatastreamAsync(datastreamId, ct).ConfigureAwait(false) is null)
+                {
+                    return StandardErrorHelpers.CreateNotFound(context, $"Datastream({datastreamId}) not found.");
+                }
             }
 
-            rows.Add(row);
+            var persisted = await store.IngestObservationsAsync(rows, ct).ConfigureAwait(false);
+            publisher.PublishObservations(persisted);
+
+            HonuaTelemetry.SetSuccess(activity, persisted.Count);
+            SensorThingsIngestLog.BulkObservationsIngested(logger, persisted.Count);
+            return Results.Json(
+                new StaObservationBulkResult { Count = persisted.Count, Value = persisted.Select(o => o.Id).ToList() },
+                SensorThingsJsonContext.Default.StaObservationBulkResult,
+                statusCode: 201);
         }
-
-        // Validate referenced datastreams exist (deduplicated).
-        foreach (var datastreamId in rows.Select(r => r.DatastreamId).Distinct())
+        catch (Exception ex)
         {
-            if (await store.GetDatastreamAsync(datastreamId, ct).ConfigureAwait(false) is null)
-            {
-                return StandardErrorHelpers.CreateNotFound(context, $"Datastream({datastreamId}) not found.");
-            }
+            HonuaTelemetry.RecordException(activity, ex);
+            SensorThingsIngestLog.BulkIngestFailed(logger, ex);
+            throw;
         }
-
-        var persisted = await store.IngestObservationsAsync(rows, ct).ConfigureAwait(false);
-        publisher.PublishObservations(persisted);
-
-        return Results.Json(
-            new StaObservationBulkResult { Count = persisted.Count, Value = persisted.Select(o => o.Id).ToList() },
-            SensorThingsJsonContext.Default.StaObservationBulkResult,
-            statusCode: 201);
     }
 
     private static bool TryBuildRow(
@@ -275,7 +319,8 @@ internal static partial class SensorThingsIngestEndpoints
 
     private static async Task<IResult> HandleCreateDatastream(
         HttpContext context,
-        [FromServices] IObservationStore store)
+        [FromServices] IObservationStore store,
+        [FromServices] ILogger<SensorThingsEndpoints.SensorThingsEndpointsLog> logger)
     {
         var ct = context.RequestAborted;
         StaDatastreamCreate? body;
@@ -294,26 +339,74 @@ internal static partial class SensorThingsIngestEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "A Datastream requires a name, description, and unitOfMeasurement.");
         }
 
-        var request = new CreateDatastreamRequest
-        {
-            Name = body.Name,
-            Description = body.Description,
-            ObservationType = string.IsNullOrWhiteSpace(body.ObservationType)
-                ? "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement"
-                : body.ObservationType,
-            UnitName = body.UnitOfMeasurement.Name,
-            UnitSymbol = body.UnitOfMeasurement.Symbol,
-            UnitDefinition = body.UnitOfMeasurement.Definition,
-            Thing = new RelatedEntityRef(body.Thing.IotId, body.Thing.Name, body.Thing.Description),
-            Sensor = new RelatedEntityRef(body.Sensor.IotId, body.Sensor.Name, body.Sensor.Description),
-            ObservedProperty = new RelatedEntityRef(
-                body.ObservedProperty.IotId, body.ObservedProperty.Name, body.ObservedProperty.Description)
-        };
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("sensorthings.datastream.create", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.SensorThings);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, DatastreamCreateOperation);
 
-        var created = await store.CreateDatastreamAsync(request, ct).ConfigureAwait(false);
-        var staBase = StaBase(context);
-        var datastream = StaEntityMapper.MapDatastream(created, staBase, expandedObservations: null);
-        context.Response.Headers.Location = datastream.IotSelfLink;
-        return Results.Json(datastream, SensorThingsJsonContext.Default.StaDatastream, statusCode: 201);
+        try
+        {
+            var request = new CreateDatastreamRequest
+            {
+                Name = body.Name,
+                Description = body.Description,
+                ObservationType = string.IsNullOrWhiteSpace(body.ObservationType)
+                    ? "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement"
+                    : body.ObservationType,
+                UnitName = body.UnitOfMeasurement.Name,
+                UnitSymbol = body.UnitOfMeasurement.Symbol,
+                UnitDefinition = body.UnitOfMeasurement.Definition,
+                Thing = new RelatedEntityRef(body.Thing.IotId, body.Thing.Name, body.Thing.Description),
+                Sensor = new RelatedEntityRef(body.Sensor.IotId, body.Sensor.Name, body.Sensor.Description),
+                ObservedProperty = new RelatedEntityRef(
+                    body.ObservedProperty.IotId, body.ObservedProperty.Name, body.ObservedProperty.Description)
+            };
+
+            var created = await store.CreateDatastreamAsync(request, ct).ConfigureAwait(false);
+            var staBase = StaBase(context);
+            var datastream = StaEntityMapper.MapDatastream(created, staBase, expandedObservations: null);
+            context.Response.Headers.Location = datastream.IotSelfLink;
+            activity?.SetTag(DatastreamIdTag, created.Id);
+            HonuaTelemetry.SetSuccess(activity);
+            SensorThingsIngestLog.DatastreamCreated(logger, created.Id);
+            return Results.Json(datastream, SensorThingsJsonContext.Default.StaDatastream, statusCode: 201);
+        }
+        catch (Exception ex)
+        {
+            HonuaTelemetry.RecordException(activity, ex);
+            SensorThingsIngestLog.DatastreamCreateFailed(logger, ex);
+            throw;
+        }
     }
+}
+
+/// <summary>
+/// Source-generated structured logs for the SensorThings ingest/persist surface so
+/// the protocol carries stable diagnostic identifiers (datastream id, persisted count)
+/// consistently with the other protocol adapters.
+/// </summary>
+internal static partial class SensorThingsIngestLog
+{
+    [LoggerMessage(EventId = 5200, Level = LogLevel.Information,
+        Message = "SensorThings ingested {Count} observation(s) into datastream {DatastreamId}.")]
+    public static partial void ObservationsIngested(ILogger logger, int count, long datastreamId);
+
+    [LoggerMessage(EventId = 5201, Level = LogLevel.Information,
+        Message = "SensorThings ingested {Count} observation(s) via bulk envelope.")]
+    public static partial void BulkObservationsIngested(ILogger logger, int count);
+
+    [LoggerMessage(EventId = 5202, Level = LogLevel.Information,
+        Message = "SensorThings created datastream {DatastreamId}.")]
+    public static partial void DatastreamCreated(ILogger logger, long datastreamId);
+
+    [LoggerMessage(EventId = 5203, Level = LogLevel.Warning,
+        Message = "SensorThings ingest failed for datastream {DatastreamId}.")]
+    public static partial void IngestFailed(ILogger logger, long datastreamId, Exception exception);
+
+    [LoggerMessage(EventId = 5204, Level = LogLevel.Warning,
+        Message = "SensorThings bulk ingest failed.")]
+    public static partial void BulkIngestFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 5205, Level = LogLevel.Warning,
+        Message = "SensorThings datastream creation failed.")]
+    public static partial void DatastreamCreateFailed(ILogger logger, Exception exception);
 }

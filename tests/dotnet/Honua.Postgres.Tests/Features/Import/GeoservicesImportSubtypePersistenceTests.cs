@@ -142,7 +142,9 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
-            layerPublishingService: publishingService);
+            new GeoservicesLayerPublicationService(
+                NullLogger<GeoservicesLayerPublicationService>.Instance,
+                layerPublishingService: publishingService));
     }
 
     private async Task EnsureCatalogSchemaAsync()

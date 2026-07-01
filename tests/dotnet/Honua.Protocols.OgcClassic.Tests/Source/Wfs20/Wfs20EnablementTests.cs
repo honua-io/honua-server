@@ -19,7 +19,6 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Validation;
-using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
@@ -137,28 +136,32 @@ public sealed class Wfs20EnablementTests
         var coordinateTransformService = Substitute.For<ICoordinateTransformService>();
         var queryServices = new Wfs20QueryServices(
             Substitute.For<IFeatureReader>(),
-            Substitute.For<IFeatureWriter>(),
             Substitute.For<IGmlFeatureStore>(),
             metadataProvider,
             Substitute.For<IFilterExpressionService>(),
             new Wfs20QueryParameterAdapter(NullLogger<Wfs20QueryParameterAdapter>.Instance),
             Substitute.For<IQueryProcessor>(),
+            Options.Create(new Wfs20Options()));
+
+        var editServices = new Wfs20EditServices(
+            Substitute.For<IFeatureWriter>(),
             new Wfs20EditParameterAdapter(NullLogger<Wfs20EditParameterAdapter>.Instance),
             Substitute.For<IEditProcessor>(),
+            new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
+            new FeatureMutationEventService(
+                Substitute.For<IFeatureChangeEventPublisher>(),
+                outboxCapabilityProvider: Substitute.For<IOutboxCapabilityProvider>()),
+            Options.Create(new LimitsOptions()));
+
+        var spatialServices = new Wfs20SpatialServices(
             new OgcFeaturesGeometryServices(
                 Substitute.For<IGeometryService>(),
                 coordinateTransformService,
                 Options.Create(new LimitsOptions()),
                 NullLogger<OgcFeaturesGeometryServices>.Instance),
-            new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
-            new FeatureMutationEventService(
-                Substitute.For<IFeatureChangeEventPublisher>(),
-                outboxCapabilityProvider: Substitute.For<IOutboxCapabilityProvider>()),
             coordinateTransformService,
-            Substitute.For<ICrsRegistry>(),
-            Options.Create(new Wfs20Options()),
-            Options.Create(new LimitsOptions()));
+            Substitute.For<ICrsRegistry>());
 
-        return new Wfs20Handler(NullLogger<Wfs20Handler>.Instance, queryServices);
+        return new Wfs20Handler(NullLogger<Wfs20Handler>.Instance, queryServices, editServices, spatialServices);
     }
 }

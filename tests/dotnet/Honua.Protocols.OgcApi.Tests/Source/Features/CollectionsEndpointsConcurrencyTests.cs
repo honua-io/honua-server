@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using FluentAssertions;
-using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Common;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -23,7 +23,7 @@ public sealed class CollectionsEndpointsConcurrencyTests
         var active = 0;
         var maxObserved = 0;
 
-        var projectionTask = CollectionsEndpoints.ProjectWithLimitedConcurrencyAsync(
+        var projectionTask = OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
             items,
             async (item, ct) =>
             {
@@ -35,7 +35,7 @@ public sealed class CollectionsEndpointsConcurrencyTests
                         maxObserved = current;
                     }
 
-                    if (current == CollectionsEndpoints.MaxCollectionProjectionConcurrency)
+                    if (current == OgcCommonUtilities.MaxCollectionProjectionConcurrency)
                     {
                         started.TrySetResult();
                     }
@@ -53,6 +53,6 @@ public sealed class CollectionsEndpointsConcurrencyTests
         var results = await projectionTask;
 
         results.Should().Equal(items.Select(item => item.ToString(CultureInfo.InvariantCulture)));
-        maxObserved.Should().BeLessOrEqualTo(CollectionsEndpoints.MaxCollectionProjectionConcurrency);
+        maxObserved.Should().BeLessOrEqualTo(OgcCommonUtilities.MaxCollectionProjectionConcurrency);
     }
 }

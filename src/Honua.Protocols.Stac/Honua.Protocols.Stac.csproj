@@ -9,9 +9,11 @@
     <!--
       STAC (SpatioTemporal Asset Catalog) protocol assembly. Carved out of
       Honua.Protocols.Stac per the modularization Phase 1 plan.
-      STAC is an OGC API Features extension, so it reuses OGC API Features adapter
-      types (Honua.Protocols.OgcApi) and the shared OGC base (Honua.Protocols.Ogc.Shared);
-      that Stac -> Ogc edge is the ratcheted CrossProtocolIsolationTests allowance.
+      STAC is an OGC API Features extension. It adapts to the shared OGC foundation
+      (Honua.Protocols.Ogc.Shared) for the neutral queryables/conformance/temporal-extent
+      models and helpers instead of reaching into the sibling OGC API Features adapter
+      (Honua.Protocols.OgcApi); that shared-foundation reuse is the ratcheted
+      Stac -> Ogc CrossProtocolIsolationTests allowance.
       Its Infrastructure dependencies live in Honua.Hosting. It may not reference Honua.Server.
     -->
     <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
@@ -25,7 +27,6 @@
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Protocols.Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.OgcApi\Honua.Protocols.OgcApi.csproj" />
   </ItemGroup>
 
   <ItemGroup>
