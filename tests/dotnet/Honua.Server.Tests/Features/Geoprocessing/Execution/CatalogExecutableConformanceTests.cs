@@ -75,6 +75,15 @@ public sealed class CatalogExecutableConformanceTests
         "analytics.density-managed",
         // Spatial-statistics tool pack (#2142): Hot Spot Analysis (Getis-Ord Gi*).
         "analytics.hotspot-managed",
+        // Layer-aware, layer-SOURCED managed ops (#2322, #2325): the job-executable
+        // counterparts of the layer-scoped analytics/generalization/conversion ops.
+        // Each streams a Honua catalog layer through source.honua-layer and runs the
+        // managed op in one dispatched job, so the per-op OGC API - Processes
+        // projections (#1382) that advertise a layerId input reach a terminal state.
+        "analytics.buffer-aggregate",
+        "conversion.feature-project",
+        "generalization.dissolve",
+        "generalization.simplify-layer",
         // Layer-aware overlay tool pack (#2206, #2139): managed NTS, two
         // FeatureCollections in, one FeatureCollection/table out.
         "overlay.clip",
@@ -136,15 +145,11 @@ public sealed class CatalogExecutableConformanceTests
     {
         "analytics.cluster",
         "analytics.spatial-join",
-        "analytics.buffer-aggregate",
         "analytics.density",
-        "generalization.simplify-layer",
-        "generalization.dissolve",
         "data-management.copy-features",
         "data-management.delete-features",
         "data-management.calculate-field",
         "conversion.geometry-format",
-        "conversion.feature-project",
     };
 
     // Processes routed to the GDAL native worker. NOT executable in the GDAL-free
@@ -364,6 +369,7 @@ public sealed class CatalogExecutableConformanceTests
         };
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
         monitor.CurrentValue.Returns(options);
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
 
         IProcessExecutor[] executors =
         {
@@ -386,6 +392,10 @@ public sealed class CatalogExecutableConformanceTests
             new ManagedBufferAggregateExecutor(monitor),
             new ManagedDensityExecutor(monitor),
             new ManagedHotSpotExecutor(monitor),
+            new LayerBufferAggregateExecutor(scopeFactory, monitor, NullLogger<LayerBufferAggregateExecutor>.Instance),
+            new LayerFeatureProjectExecutor(scopeFactory, monitor, NullLogger<LayerFeatureProjectExecutor>.Instance),
+            new LayerDissolveExecutor(scopeFactory, monitor, NullLogger<LayerDissolveExecutor>.Instance),
+            new LayerSimplifyExecutor(scopeFactory, monitor, NullLogger<LayerSimplifyExecutor>.Instance),
             new OverlayClipExecutor(monitor),
             new OverlayIntersectExecutor(monitor),
             new OverlayUnionExecutor(monitor),

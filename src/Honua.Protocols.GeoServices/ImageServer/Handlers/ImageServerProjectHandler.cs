@@ -4,13 +4,11 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.GeometryService.Abstractions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
-using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
@@ -29,25 +27,19 @@ internal sealed class ImageServerProjectHandler
     private const int MaxGeometryJsonLength = 10_000_000;
 
     private readonly IGeometryOperationService _operationService;
-    private readonly SpatialReferenceResolver _spatialReferenceResolver;
-    private readonly IDatumTransformationCatalog _datumTransformationCatalog;
+    private readonly ImageServerCoordinateProjection _projection;
     private readonly ILogger<ImageServerProjectHandler> _logger;
-    private readonly ICoordinateTransformService? _transformService;
     private readonly IRasterStore? _rasterStore;
 
     public ImageServerProjectHandler(
         IGeometryOperationService operationService,
-        SpatialReferenceResolver spatialReferenceResolver,
-        IDatumTransformationCatalog datumTransformationCatalog,
+        ImageServerCoordinateProjection projection,
         ILogger<ImageServerProjectHandler> logger,
-        ICoordinateTransformService? transformService = null,
         IRasterStore? rasterStore = null)
     {
         _operationService = operationService ?? throw new ArgumentNullException(nameof(operationService));
-        _spatialReferenceResolver = spatialReferenceResolver ?? throw new ArgumentNullException(nameof(spatialReferenceResolver));
-        _datumTransformationCatalog = datumTransformationCatalog ?? throw new ArgumentNullException(nameof(datumTransformationCatalog));
+        _projection = projection ?? throw new ArgumentNullException(nameof(projection));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _transformService = transformService;
         _rasterStore = rasterStore;
     }
 
@@ -108,8 +100,7 @@ internal sealed class ImageServerProjectHandler
             var sourceSrid = inSrid.Value;
             var targetSrid = outSrid.Value;
 
-            if (!GeoServicesDatumTransformationResolver.TryResolve(
-                    _datumTransformationCatalog,
+            if (!_projection.TryResolveDatumTransformation(
                     GetString(values, "datumTransformation"),
                     sourceSrid,
                     targetSrid,
@@ -129,7 +120,7 @@ internal sealed class ImageServerProjectHandler
                     StringComparison.OrdinalIgnoreCase);
                 if (TryReadEnvelopeGeometry(geometryJson, requireEnvelope, out var envelope, out var envelopeError))
                 {
-                    if (_transformService is null && sourceSrid != targetSrid)
+                    if (!_projection.HasTransformService && sourceSrid != targetSrid)
                     {
                         return StandardErrorHelpers.CreateNotImplemented(
                             context,
@@ -242,7 +233,7 @@ internal sealed class ImageServerProjectHandler
         }
 
         var reprojectToOut = outSrid.Value != GroundSrid;
-        if (reprojectToOut && _transformService is null)
+        if (reprojectToOut && !_projection.HasTransformService)
         {
             return StandardErrorHelpers.CreateNotImplemented(
                 context,
@@ -268,7 +259,7 @@ internal sealed class ImageServerProjectHandler
             var outY = latitude;
             if (reprojectToOut)
             {
-                var transformResult = await _transformService!.TransformExtentAsync(
+                var transformResult = await _projection.TransformExtentAsync(
                     longitude, latitude, longitude, latitude,
                     GroundSrid, outSrid.Value, cancellationToken).ConfigureAwait(false);
                 if (transformResult is null)
@@ -353,7 +344,7 @@ internal sealed class ImageServerProjectHandler
         var projected = (XMin: envelope.XMin, YMin: envelope.YMin, XMax: envelope.XMax, YMax: envelope.YMax);
         if (inSrid != outSrid)
         {
-            var transformResult = await _transformService!.TransformExtentAsync(
+            var transformResult = await _projection.TransformExtentAsync(
                 envelope.XMin,
                 envelope.YMin,
                 envelope.XMax,
@@ -397,7 +388,7 @@ internal sealed class ImageServerProjectHandler
             return (null, $"{key} is required.");
         }
 
-        var srid = await _spatialReferenceResolver.ResolveSridAsync(raw, null, cancellationToken)
+        var srid = await _projection.ResolveSridAsync(raw, cancellationToken)
             .ConfigureAwait(false);
         if (!srid.HasValue)
         {

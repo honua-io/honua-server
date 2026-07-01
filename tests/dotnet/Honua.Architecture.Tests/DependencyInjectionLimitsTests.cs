@@ -35,23 +35,21 @@ public sealed class DependencyInjectionLimitsTests
     private const int MaxServiceCollaborators = 8;
 
     /// <summary>
-    /// Pre-existing endpoint over-injection accepted as tracked debt (raster tile render paths
-    /// that legitimately compose several render/cache services). Do not grow this for new code.
+    /// Endpoint over-injection accepted as tracked debt. Now empty: the raster tile render paths
+    /// (TilesEndpoints.HandleRasterTileAsync / HandleDatasetRasterTileAsync) were decomposed to
+    /// pass their shared render inputs through a single carrier, so the gate enforces the endpoint
+    /// parameter limit with no exceptions. Add an entry here only with a follow-up issue; do not
+    /// grow this list for new code.
     /// </summary>
-    private static readonly HashSet<string> AllowedEndpointExceptions = new(StringComparer.Ordinal)
-    {
-        "Honua.Protocols.Ogc.Api.Tiles.TilesEndpoints.HandleRasterTileAsync",
-        "Honua.Protocols.Ogc.Api.Tiles.TilesEndpoints.HandleDatasetRasterTileAsync",
-    };
+    private static readonly HashSet<string> AllowedEndpointExceptions = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Pre-existing handler/coordinator/manager over-injection accepted as tracked debt.
+    /// Handler/coordinator/manager over-injection accepted as tracked debt. Now empty: the last
+    /// allowlisted handler (ImageServerProjectHandler) was decomposed so its CRS/datum/transform
+    /// collaborators fold behind one projection seam, keeping it within the collaborator limit.
     /// Add a type here only with a follow-up issue; do not grow this list for new code.
     /// </summary>
-    private static readonly HashSet<string> AllowedHandlerExceptions = new(StringComparer.Ordinal)
-    {
-        "Honua.Protocols.GeoServices.ImageServer.Handlers.ImageServerProjectHandler",
-    };
+    private static readonly HashSet<string> AllowedHandlerExceptions = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Service/coordinator/facade god objects accepted as tracked debt. Now empty: the last
