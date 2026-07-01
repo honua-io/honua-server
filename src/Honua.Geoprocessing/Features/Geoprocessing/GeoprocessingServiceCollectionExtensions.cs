@@ -256,6 +256,16 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<ManagedDensityExecutor>(services);
         // Spatial-statistics tool pack (#2142): Hot Spot Analysis (Getis-Ord Gi*).
         Register<ManagedHotSpotExecutor>(services);
+        // Layer-aware, layer-SOURCED managed ops (#2322, #2325): the job-executable
+        // counterparts of the layer-scoped PostGIS analytics/generalization/conversion
+        // ops. Each streams a Honua catalog layer through source.honua-layer and runs a
+        // managed NetTopologySuite op in one dispatched job, so the per-operation OGC
+        // API - Processes projections (#1382) that advertise a layerId input reach a
+        // terminal SUCCEEDED state instead of being refused at dispatch.
+        Register<LayerBufferAggregateExecutor>(services);
+        Register<LayerFeatureProjectExecutor>(services);
+        Register<LayerDissolveExecutor>(services);
+        Register<LayerSimplifyExecutor>(services);
         // Layer-aware overlay tool pack (#2206, #2139).
         Register<OverlayClipExecutor>(services);
         Register<OverlayIntersectExecutor>(services);
