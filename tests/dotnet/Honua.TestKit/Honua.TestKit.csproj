@@ -53,8 +53,6 @@
 
     <!-- Dependency overrides -->
     <PackageReference Include="WireMock.Net" />
-    <!-- Direct pin of WireMock.Net's transitive Scriban.Signed to a patched version (GHSA-24c8-4792-22hx). -->
-    <PackageReference Include="Scriban.Signed" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.abstractions" />
   </ItemGroup>
