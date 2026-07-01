@@ -109,6 +109,16 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         services.TryAddSingleton<IExecutionAdmissionEvaluator, ExecutionAdmissionEvaluator>();
 
+        // Cohesive sub-services the shared job service delegates to (authorization/approval,
+        // admission+queue+workload+backend dispatch, the custom-code submit-token gate, and
+        // raster-input/result-package artifacts). Registered as singletons so the production
+        // GeoprocessingJobService constructor binds them; their own optional collaborators
+        // resolve to null/empty when the backing infrastructure is absent.
+        services.TryAddSingleton<GeoprocessingJobAuthorizer>();
+        services.TryAddSingleton<GeoprocessingJobDispatcher>();
+        services.TryAddSingleton<CustomCodeJobSubmissionGate>();
+        services.TryAddSingleton<GeoprocessingJobArtifactService>();
+
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();
 

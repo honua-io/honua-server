@@ -701,7 +701,8 @@ public sealed class MigrationAcceptanceReadinessStageTests
             connectionProvider.Object,
             crsRegistry,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
-            NullLogger<GeoservicesImportService>.Instance);
+            NullLogger<GeoservicesImportService>.Instance,
+            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
     }
 
     private static GeoServerImportService CreateGeoServerService(HttpMessageHandler handler)

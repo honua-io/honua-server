@@ -16,38 +16,32 @@ internal sealed partial class AlertPipeline : IAlertPipeline
     private readonly IAlertChangeReader _changeReader;
     private readonly IAlertRuleRepository _ruleRepository;
     private readonly IAlertStateStore _stateStore;
-    private readonly IAlertEventStore _eventStore;
-    private readonly IAlertDispatchStore _dispatchStore;
     private readonly IFeatureReader _featureReader;
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IAlertEvaluator _evaluator;
     private readonly IAlertEditionPolicy _editionPolicy;
+    private readonly AlertDispatchWriter _dispatchWriter;
     private readonly ILogger<AlertPipeline> _logger;
-    private readonly record struct PendingAlertDispatch(
-        AlertEventEnvelope AlertEvent,
-        ImmutableArray<AlertChannelType> Channels);
 
     public AlertPipeline(
         IAlertChangeReader changeReader,
         IAlertRuleRepository ruleRepository,
         IAlertStateStore stateStore,
-        IAlertEventStore eventStore,
-        IAlertDispatchStore dispatchStore,
         IFeatureReader featureReader,
         IMetadataV2GraphProvider graphProvider,
         IAlertEvaluator evaluator,
         IAlertEditionPolicy editionPolicy,
+        AlertDispatchWriter dispatchWriter,
         ILogger<AlertPipeline> logger)
     {
         _changeReader = changeReader ?? throw new ArgumentNullException(nameof(changeReader));
         _ruleRepository = ruleRepository ?? throw new ArgumentNullException(nameof(ruleRepository));
         _stateStore = stateStore ?? throw new ArgumentNullException(nameof(stateStore));
-        _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
-        _dispatchStore = dispatchStore ?? throw new ArgumentNullException(nameof(dispatchStore));
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _evaluator = evaluator ?? throw new ArgumentNullException(nameof(evaluator));
         _editionPolicy = editionPolicy ?? throw new ArgumentNullException(nameof(editionPolicy));
+        _dispatchWriter = dispatchWriter ?? throw new ArgumentNullException(nameof(dispatchWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -143,7 +137,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 await _stateStore.UpsertManyAsync(pendingStateUpdates, cancellationToken).ConfigureAwait(false);
             }
 
-            await PersistDispatchesAsync(pendingDispatches, cancellationToken).ConfigureAwait(false);
+            await _dispatchWriter.PersistAsync(pendingDispatches, cancellationToken).ConfigureAwait(false);
         }
 
         return maxGeneration;
@@ -225,30 +219,9 @@ internal sealed partial class AlertPipeline : IAlertPipeline
             await _stateStore.UpsertManyAsync(pendingStateUpdates, cancellationToken).ConfigureAwait(false);
         }
 
-        await PersistDispatchesAsync(pendingDispatches, cancellationToken).ConfigureAwait(false);
+        await _dispatchWriter.PersistAsync(pendingDispatches, cancellationToken).ConfigureAwait(false);
 
         return evaluated;
-    }
-
-    private async Task PersistDispatchesAsync(
-        IReadOnlyList<PendingAlertDispatch> pendingDispatches,
-        CancellationToken cancellationToken)
-    {
-        foreach (var pendingDispatch in pendingDispatches)
-        {
-            var eventId = await _eventStore.TryAppendAsync(pendingDispatch.AlertEvent, cancellationToken).ConfigureAwait(false);
-            if (!eventId.HasValue)
-            {
-                LogEventDeduplicated(
-                    _logger,
-                    pendingDispatch.AlertEvent.DedupeKey,
-                    pendingDispatch.AlertEvent.RuleId,
-                    pendingDispatch.AlertEvent.ObjectId);
-                continue;
-            }
-
-            await _dispatchStore.EnqueueAsync(eventId.Value, pendingDispatch.Channels, cancellationToken).ConfigureAwait(false);
-        }
     }
 
     private async Task<Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>> LoadRulesForChangesAsync(
@@ -393,9 +366,6 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
         return builder.ToImmutable();
     }
-
-    [LoggerMessage(EventId = 9401, Level = LogLevel.Debug, Message = "Alert event deduplicated for key {DedupeKey} (rule {RuleId}, object {ObjectId}).")]
-    private static partial void LogEventDeduplicated(ILogger logger, string dedupeKey, long ruleId, long objectId);
 
     [LoggerMessage(EventId = 9440, Level = LogLevel.Warning, Message = "Skipping alert channel {ChannelType} for rule {RuleId} because it is unavailable under the current {Reason} policy.")]
     private static partial void LogChannelSkipped(ILogger logger, long ruleId, AlertChannelType channelType, string reason);

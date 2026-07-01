@@ -8,8 +8,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
-using Honua.Protocols.Ogc.Api.Features;
-using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
@@ -110,7 +108,7 @@ internal static class CollectionEndpoints
             var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
                 .ConfigureAwait(false);
 
-            var collections = await CollectionsEndpoints.ProjectWithLimitedConcurrencyAsync(
+            var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
                 visible,
                 (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
                     resolved.Resource,
@@ -235,7 +233,7 @@ internal static class CollectionEndpoints
             // that are common across all STAC collections (STAC common metadata fields).
             var schema = BuildCatalogQueryablesSchema(queryablesId);
 
-            return Task.FromResult(Results.Json(schema, OgcJsonContext.Default.QueryablesSchema, MediaTypes.SchemaJson));
+            return Task.FromResult(Results.Json(schema, StacJsonContext.Default.QueryablesSchema, MediaTypes.SchemaJson));
         }
         catch (Exception ex)
         {
@@ -269,7 +267,7 @@ internal static class CollectionEndpoints
 
             var schema = BuildCollectionQueryablesSchema(resolved.Value.Resource, queryablesId);
 
-            return Results.Json(schema, OgcJsonContext.Default.QueryablesSchema, MediaTypes.SchemaJson);
+            return Results.Json(schema, StacJsonContext.Default.QueryablesSchema, MediaTypes.SchemaJson);
         }
         catch (OperationCanceledException)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -376,7 +374,7 @@ internal static class CollectionEndpoints
                 continue;
             }
 
-            if (!OgcFeaturesUtilities.IsSimpleQueryableField(field))
+            if (!OgcQueryablesUtilities.IsSimpleQueryableField(field))
             {
                 continue;
             }

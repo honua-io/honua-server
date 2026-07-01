@@ -49,14 +49,9 @@ internal sealed partial class FeatureQueryBuilder
             return false;
         }
 
-        return IsLikelyGeographicSrid(query.SpatialReferenceSrid.Value);
-    }
-
-    private static bool IsLikelyGeographicSrid(int srid)
-    {
-        return srid == SpatialReference.WGS84.Wkid ||
-               srid == 4269 ||
-               srid == 4267 ||
-               srid is >= 4000 and <= 4999;
+        // Use the curated canonical geographic-SRID list (single source of truth) rather
+        // than a loose 4000-4999 range, which swept in projected/geocentric CRS in that band
+        // (e.g. EPSG:4978 geocentric) and missed geographic CRS outside it.
+        return DistanceConversions.IsGeographicSrid(query.SpatialReferenceSrid.Value);
     }
 }

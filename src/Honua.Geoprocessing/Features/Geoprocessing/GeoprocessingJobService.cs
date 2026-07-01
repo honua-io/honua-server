@@ -28,28 +28,68 @@ namespace Honua.Geoprocessing;
 /// Consumed by gRPC (<see cref="HonuaProcessService"/>) and REST
 /// (<c>GPServerEndpoints</c>) adapters.
 /// </summary>
+/// <remarks>
+/// The service owns the durable job state (<see cref="IExecutionJobStore"/>,
+/// <see cref="IUniversalProgressStore"/>), the worker cancellation notifiers, and the
+/// process catalog, and orchestrates submit/cancel/read lifecycles. The remaining
+/// cross-cutting concerns are delegated to four cohesive collaborators —
+/// <see cref="GeoprocessingJobAuthorizer"/> (authorization/approval),
+/// <see cref="GeoprocessingJobDispatcher"/> (admission/queue/workload/backend),
+/// <see cref="CustomCodeJobSubmissionGate"/> (custom-code token gate), and
+/// <see cref="GeoprocessingJobArtifactService"/> (raster input + result-package artifacts) —
+/// so the orchestration here stays focused while behavior is preserved exactly.
+/// </remarks>
 internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 {
     private readonly IExecutionJobStore? _jobStore;
-    private readonly IJobQueue? _jobQueue;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IReadOnlyList<IJobCancellationNotifier> _cancellationNotifiers;
-    private readonly IOperatorAuthorizationEvaluator _authEvaluator;
-    private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly IProcessCatalog _processCatalog;
     private readonly AnalyticsLimits _analyticsLimits;
-    private readonly IExecutionJobDefinitionRegistry? _workloadRegistry;
-    private readonly IReadOnlyList<IBatchComputeBackend> _backends;
-    private readonly IExecutionAdmissionEvaluator? _admissionEvaluator;
-    private readonly IGeoprocessingResultPackageStore? _resultPackageStore;
+    private readonly GeoprocessingJobAuthorizer _authorizer;
+    private readonly GeoprocessingJobDispatcher _dispatcher;
+    private readonly CustomCodeJobSubmissionGate _customCodeGate;
+    private readonly GeoprocessingJobArtifactService _artifacts;
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
-    private readonly IScopedJobTokenIssuer? _scopedJobTokenIssuer;
-    private readonly IOptionsMonitor<CustomCodeOptions>? _customCodeOptions;
-    private readonly CustomCodeSubmitCoordinator? _customCodeCoordinator;
-    private readonly IGeoprocessingRasterSourceResolver? _rasterSourceResolver;
 
+    /// <summary>
+    /// Production constructor. Composes the durable stores and process catalog with the four
+    /// delegating sub-services. The sub-services are registered in DI alongside this type.
+    /// </summary>
     public GeoprocessingJobService(
+        IUniversalProgressStore progressStore,
+        IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
+        IProcessCatalog processCatalog,
+        GeoprocessingJobAuthorizer authorizer,
+        GeoprocessingJobDispatcher dispatcher,
+        CustomCodeJobSubmissionGate customCodeGate,
+        GeoprocessingJobArtifactService artifacts,
+        ILogger<GeoprocessingJobService> logger,
+        IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
+        IExecutionJobStore? jobStore = null,
+        IOptions<LimitsOptions>? limitsOptions = null)
+    {
+        _progressStore = progressStore;
+        _cancellationNotifiers = cancellationNotifiers.ToArray();
+        _processCatalog = processCatalog;
+        _authorizer = authorizer;
+        _dispatcher = dispatcher;
+        _customCodeGate = customCodeGate;
+        _artifacts = artifacts;
+        _logger = logger;
+        _executorOptions = executorOptions;
+        _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
+        _jobStore = jobStore;
+    }
+
+    /// <summary>
+    /// Collaborator-level constructor that composes the delegating sub-services from their raw
+    /// dependencies and forwards to the production constructor. Retained so existing call sites
+    /// (and direct unit-test construction) can wire the individual collaborators without
+    /// building the sub-services by hand. Not used by DI, which binds the production constructor.
+    /// </summary>
+    internal GeoprocessingJobService(
         IUniversalProgressStore progressStore,
         IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IOperatorAuthorizationEvaluator authEvaluator,
@@ -68,27 +108,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
         ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
         IGeoprocessingRasterSourceResolver? rasterSourceResolver = null)
+        : this(
+            progressStore,
+            cancellationNotifiers,
+            processCatalog,
+            new GeoprocessingJobAuthorizer(authEvaluator, approvalEvaluator, logger),
+            new GeoprocessingJobDispatcher(
+                logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator),
+            new CustomCodeJobSubmissionGate(
+                logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
+            new GeoprocessingJobArtifactService(
+                logger, executorOptions, processCatalog, resultPackageStore, rasterSourceResolver),
+            logger,
+            executorOptions,
+            jobStore,
+            limitsOptions)
     {
-        _progressStore = progressStore;
-        _cancellationNotifiers = cancellationNotifiers.ToArray();
-        _authEvaluator = authEvaluator;
-        _approvalEvaluator = approvalEvaluator;
-        _processCatalog = processCatalog;
-        _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
-        _logger = logger;
-        _executorOptions = executorOptions;
-        _jobStore = jobStore;
-        _jobQueue = jobQueue;
-        _workloadRegistry = workloadRegistry;
-        _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
-        _admissionEvaluator = admissionEvaluator;
-        _resultPackageStore = resultPackageStore;
-        _scopedJobTokenIssuer = scopedJobTokenIssuer;
-        _customCodeOptions = customCodeOptions;
-        _customCodeCoordinator = scopedJobTokenIssuer is null
-            ? null
-            : new CustomCodeSubmitCoordinator(scopedJobTokenIssuer, customCodeSignatureVerifier);
-        _rasterSourceResolver = rasterSourceResolver;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -99,7 +134,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         OperatorOperation operation,
         CancellationToken cancellationToken = default)
     {
-        return EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
+        return _authorizer.EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
     }
 
     public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
@@ -147,7 +182,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", approvalGatedProcessId);
         }
 
-        var approvalReq = _approvalEvaluator.Evaluate(
+        var approvalReq = _authorizer.EvaluateApproval(
             principal,
             new OperatorAuthorizationRequest
             {
@@ -199,7 +234,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // (#2263). Adapters that already call EnsureCallerAuthorizedAsync before
         // submit stay correct — this evaluation is idempotent and never
         // double-fails an authorized caller.
-        await EnsureAuthorizedAsync(
+        await _authorizer.EnsureAuthorizedAsync(
             principal,
             OperatorResourceType.Process,
             OperatorOperation.Execute,
@@ -232,12 +267,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // 'source' input the worker reads (#2264). The fingerprint above is computed on
         // the caller's original (reference-carrying) plan so idempotency keys map to the
         // request, not the resolved payload; the spec below carries the resolved bytes.
-        plan = await GeoprocessingRasterSourceResolution.ResolveAsync(
-            plan,
-            _processCatalog,
-            _rasterSourceResolver,
-            _executorOptions.CurrentValue.MaxArtifactBytes,
-            cancellationToken).ConfigureAwait(false);
+        plan = await _artifacts.ResolveRasterSourcesAsync(plan, cancellationToken).ConfigureAwait(false);
 
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)
@@ -252,7 +282,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         string? mintedCustomCodeToken = null;
         if (isCustomCode)
         {
-            (ownerScope, mintedCustomCodeToken) = await ValidateMintAndInjectCustomCodeAsync(
+            (ownerScope, mintedCustomCodeToken) = await _customCodeGate.ValidateMintAndInjectAsync(
                 jobId, principal, specParams, cancellationToken).ConfigureAwait(false);
         }
         else
@@ -275,8 +305,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var costWeight = (double)Math.Max(plan.Steps.Count, 1);
         var priority = ResolvePriority(specParams);
 
-        var admission = await EnsureAdmittedAsync(
-            plan, principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
+        var admission = await _dispatcher.EnsureAdmittedAsync(
+            principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
 
         if (admission != null)
         {
@@ -288,7 +318,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        var workload = await ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
+        var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
         // A custom-code job forces the custom-code runtime profile so the claim
         // fence routes it to the custom-code Batch workload (and away from the lean
         // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
@@ -343,19 +373,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (_jobQueue != null && string.Equals(jobRecord.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-            {
-                await _jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
-            }
+            await _dispatcher.MaybeEnqueueLocalAsync(jobId, jobRecord.Spec.Backend, cancellationToken)
+                .ConfigureAwait(false);
 
-            jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
+            jobRecord = await _dispatcher.TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
             // Revoke the scoped callback token so a credential is never left valid
             // for a job whose submission rolled back (the token must not outlive the
             // job — Phase-0 invariant #5).
-            await TryRevokeCustomCodeTokenAsync(mintedCustomCodeToken).ConfigureAwait(false);
+            await _customCodeGate.TryRevokeTokenAsync(mintedCustomCodeToken).ConfigureAwait(false);
 
             await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                 jobStore,
@@ -373,95 +401,436 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return jobRecord;
     }
 
-    /// <summary>
-    /// Runs the custom-code submit gate: validates the <c>customcode.*</c>
-    /// parameters, clamps the declared scope to ⊆ the submitter, mints the scoped
-    /// job-bound token, and injects it (plus the API base URL and the server-set
-    /// output prefix) into <paramref name="specParams"/>. Throws
-    /// <see cref="GeoprocessingValidationException"/> on rejection so the adapter
-    /// maps it onto the same validation channel ordinary plan failures use.
-    /// </summary>
-    private async Task<(CustomCodeOwnerScope OwnerScope, string Token)> ValidateMintAndInjectCustomCodeAsync(
+    public async Task<ExecutionJobRecord> GetJobAsync(
         string jobId,
         ClaimsPrincipal principal,
-        Dictionary<string, string> specParams,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
-        if (_customCodeCoordinator is null || _customCodeOptions is null)
+        await _authorizer.EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Job,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(jobId))
         {
-            throw new GeoprocessingValidationException(
-                "Custom-code geoprocessing is not enabled on this server (no scoped-job token issuer is configured).");
+            throw new GeoprocessingValidationException("Job identifier is required.");
         }
 
-        try
+        var jobStore = RequireJobStore();
+        var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (job == null)
         {
-            var result = await _customCodeCoordinator.ValidateMintAndInjectAsync(
-                jobId, principal, specParams, _customCodeOptions.CurrentValue, cancellationToken).ConfigureAwait(false);
-            return (result.OwnerScope, result.Token);
+            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+            throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
         }
-        catch (CustomCodeSubmitRejectedException ex)
-        {
-            GeoprocessingServiceLog.DeclaredScopeRejected(_logger, ex.Message);
-            throw new GeoprocessingValidationException(ex.Message);
-        }
+
+        EnsureJobOwnership(job, principal);
+
+        GeoprocessingServiceLog.JobRetrieved(_logger, jobId, job.Status.ToString());
+        return job;
     }
 
-    private async Task TryRevokeCustomCodeTokenAsync(string? token)
+    public async Task<GeoprocessingJobListPage> ListJobsAsync(
+        GeoprocessingJobListFilter filter,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(token) || _scopedJobTokenIssuer is null)
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentNullException.ThrowIfNull(principal);
+
+        await _authorizer.EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Job,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
+
+        var jobStore = RequireJobStore();
+        var limit = Math.Clamp(filter.Limit, 1, MaxJobListPageSize);
+
+        // Page the canonical store (newest first, status-filtered there), then apply
+        // the adapter binding constraint and per-job ownership in the shared service so
+        // no protocol surface can list jobs the caller cannot read. The store cursor is
+        // returned verbatim so the client walks the full history without dupes; a page
+        // may carry fewer than `limit` items after post-filtering.
+        var page = await jobStore.QueryAsync(
+            new ExecutionJobQuery
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                Statuses = filter.Statuses,
+                Cursor = filter.Cursor,
+                Limit = limit
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var items = new List<ExecutionJobRecord>(page.Items.Count);
+        foreach (var job in page.Items)
+        {
+            if (MatchesRequiredParameters(job, filter.RequiredParameters) && IsJobReadable(job, principal))
+            {
+                items.Add(job);
+            }
+        }
+
+        GeoprocessingServiceLog.JobsListed(_logger, items.Count);
+        return new GeoprocessingJobListPage
+        {
+            Items = items,
+            NextCursor = page.NextCursor
+        };
+    }
+
+    private const int MaxJobListPageSize = 200;
+
+    private static bool MatchesRequiredParameters(
+        ExecutionJobRecord job,
+        IReadOnlyDictionary<string, string> required)
+    {
+        foreach (var (key, value) in required)
+        {
+            if (!job.Spec.Parameters.TryGetValue(key, out var actual) ||
+                !string.Equals(actual, value, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
+    {
+        var owner = job.Audit.RequestedBy;
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            return true;
+        }
+
+        return string.Equals(owner, principal.Identity?.Name, StringComparison.Ordinal)
+            || principal.IsInRole("admin");
+    }
+
+    public async Task<AnalysisResultPackage> GetJobResultsAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        await _authorizer.EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Job,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            throw new GeoprocessingValidationException("Job identifier is required.");
+        }
+
+        var jobStore = RequireJobStore();
+        var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (job == null)
+        {
+            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+            throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
+        }
+
+        EnsureJobOwnership(job, principal);
+
+        if (!IsTerminal(job.Status))
+        {
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
+        }
+
+        return await _artifacts.GetOrSynthesizeResultPackageAsync(job, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task CancelJobAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            throw new GeoprocessingValidationException("Job identifier is required.");
+        }
+
+        await _authorizer.EnsureAuthorizedAsync(
+            principal,
+            OperatorResourceType.Job,
+            OperatorOperation.Execute,
+            cancellationToken).ConfigureAwait(false);
+
+        var jobStore = RequireJobStore();
+        var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (job == null)
+        {
+            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+            throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
+        }
+
+        EnsureJobOwnership(job, principal);
+
+        if (job.Status == ExecutionJobStatus.Cancelled)
+        {
+            await _dispatcher.TryRemoveFromQueueAsync(jobId, cancellationToken).ConfigureAwait(false);
+
+            var staleProgress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
+                jobId, cancellationToken).ConfigureAwait(false);
+            if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
+            {
+                var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+                await _progressStore.SetProgressAsync(
+                    jobId, reconciledProgress, ProgressRetention, cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        if (IsTerminal(job.Status))
+        {
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+            GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, job.Status.ToString());
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' is in terminal state '{job.Status}' and cannot be cancelled.");
+        }
+
+        // Cancelling a running job is a destructive action — require approval.
+        // Evaluated after state checks so idempotent and terminal paths remain reachable.
+        var approval = _authorizer.EvaluateApproval(
+            principal,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Execute,
+                IsDestructive = true
+            });
+
+        if (approval.IsRequired)
+        {
+            GeoprocessingServiceLog.CancelRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
+            throw new GeoprocessingApprovalRequiredException(
+                approval.PolicyRef ?? "unknown",
+                "Job cancellation requires approval.");
+        }
+
+        var workerOwnsTerminalState = _cancellationNotifiers.CancelAny(jobId);
+
+        if (workerOwnsTerminalState)
+        {
+            GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
+            return;
+        }
+
+        var latest = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (latest == null)
+        {
+            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+            throw new GeoprocessingNotFoundException(
+                $"Job '{jobId}' was not found on re-read and could not be cancelled.");
+        }
+
+        if (!IsTerminal(latest.Status))
+        {
+            var backendResult = await _dispatcher.TryCancelViaBackendAsync(latest, jobStore, cancellationToken).ConfigureAwait(false);
+            switch (backendResult.Outcome)
+            {
+                case RemoteCancelOutcome.Delegated:
+                    GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
+                    return;
+                case RemoteCancelOutcome.TerminalConflict:
+                    var terminalStatus = backendResult.TerminalStatus ?? latest.Status;
+                    GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, terminalStatus.ToString());
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' reached terminal state '{terminalStatus}' before cancellation could be applied.");
+                case RemoteCancelOutcome.Missing:
+                    GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+                    throw new GeoprocessingNotFoundException(
+                        $"Job '{jobId}' was deleted during cancellation.");
+                case RemoteCancelOutcome.Unconfirmed:
+                    GeoprocessingServiceLog.RemoteCancelCasExhausted(_logger, jobId);
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' remote cancellation could not be confirmed after retries.");
+                case RemoteCancelOutcome.Unsupported:
+                    GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
+                case RemoteCancelOutcome.BackendNotFound:
+                    GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which is not registered.");
+                case RemoteCancelOutcome.NotRemote:
+                    break;
+            }
+        }
+
+        if (IsTerminal(latest.Status))
+        {
+            if (latest.Status == ExecutionJobStatus.Cancelled)
+            {
+                await _dispatcher.TryRemoveFromQueueAsync(jobId, cancellationToken).ConfigureAwait(false);
+
+                var staleProgress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
+                    jobId, cancellationToken).ConfigureAwait(false);
+                if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
+                {
+                    var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+                    await _progressStore.SetProgressAsync(
+                        jobId, reconciledProgress, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                }
+
+                return;
+            }
+
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                _progressStore, latest, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+            GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, latest.Status.ToString());
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' is in terminal state '{latest.Status}' and cannot be cancelled.");
+        }
+
+        var cancelOutcome = await ExecutionJobCancellationHelper.TryApplyAsync(
+            jobStore,
+            jobId,
+            latest,
+            "Cancelled",
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        switch (cancelOutcome.State)
+        {
+            case ExecutionJobCancellationState.CancellationRequested:
+                GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
+                return;
+            case ExecutionJobCancellationState.TerminalConflict:
+                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                    _progressStore, cancelOutcome.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+                GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, cancelOutcome.Job!.Status.ToString());
+                throw new GeoprocessingPreconditionFailedException(
+                    $"Job '{jobId}' reached terminal state '{cancelOutcome.Job.Status}' before cancellation could be applied.");
+            case ExecutionJobCancellationState.Missing:
+                GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+                throw new GeoprocessingNotFoundException(
+                    $"Job '{jobId}' was deleted during cancellation.");
+            case ExecutionJobCancellationState.Unconfirmed:
+                throw new GeoprocessingPreconditionFailedException(
+                    $"Job '{jobId}' cancellation could not be confirmed after retries.");
+            case ExecutionJobCancellationState.Cancelled:
+                break;
+            default:
+                throw new InvalidOperationException($"Unexpected durable cancellation outcome '{cancelOutcome.State}'.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+
+        await _dispatcher.TryRemoveFromQueueAsync(jobId, cancellationToken).ConfigureAwait(false);
+
+        var progress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
+            jobId, cancellationToken).ConfigureAwait(false);
+        if (progress != null)
+        {
+            var cancelledProgress = progress.WithCancellation(now, "Cancelled");
+            await _progressStore.SetProgressAsync(
+                jobId, cancelledProgress, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        }
+
+        GeoprocessingServiceLog.JobCancelled(_logger, jobId);
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Enforces that job state, results, and cancellation are scoped to the
+    /// principal that submitted the job (threat-model residual #1576). A coarse
+    /// <c>Job</c>-level grant authorizes the operation class; this check pins the
+    /// specific record to its submitter so one authenticated user cannot read or
+    /// cancel another user's jobs. Jobs without a recorded submitter (deployments
+    /// running with authentication disabled record no identity) keep the previous
+    /// behavior, and the conventional <c>admin</c> role retains full visibility
+    /// for operations. Denials surface as not-found so cross-principal probing
+    /// cannot confirm that a job identifier exists.
+    /// </summary>
+    private void EnsureJobOwnership(ExecutionJobRecord job, ClaimsPrincipal principal)
+    {
+        var owner = job.Audit.RequestedBy;
+        if (string.IsNullOrWhiteSpace(owner))
         {
             return;
         }
 
-        try
+        var caller = principal.Identity?.Name;
+        if (string.Equals(owner, caller, StringComparison.Ordinal))
         {
-            await _scopedJobTokenIssuer.RevokeAsync(token, CancellationToken.None).ConfigureAwait(false);
+            return;
         }
-        catch (Exception ex)
+
+        if (principal.IsInRole("admin"))
         {
-            GeoprocessingServiceLog.CustomCodeTokenRevokeFailed(_logger, ex);
+            return;
         }
+
+        GeoprocessingServiceLog.JobOwnershipDenied(_logger, job.OperationId);
+        throw new GeoprocessingNotFoundException($"Job '{job.OperationId}' not found.");
     }
 
-    private async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(bool isCustomCode, CancellationToken cancellationToken)
+    private void EnsureApproved(ClaimsPrincipal principal, AnalysisPlan plan)
     {
-        if (_workloadRegistry == null)
+        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan);
+        if (approvalGatedProcessId != null)
         {
-            return null;
+            GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", approvalGatedProcessId);
         }
 
-        var definitions = await _workloadRegistry.ListAsync(cancellationToken).ConfigureAwait(false);
+        var approval = _authorizer.EvaluateApproval(
+            principal,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Process,
+                Operation = OperatorOperation.Execute,
+                IsDestructive = approvalGatedProcessId != null
+            });
 
-        if (isCustomCode)
+        if (!approval.IsRequired)
         {
-            // Route a custom-code job to the workload that declares the custom-code
-            // runtime profile (the Batch tier/queue params, NO secretsmanager env
-            // refs — those are built into the job-def family by the iac). The runtime
-            // selector (customcode.runtime = python|dotnet) flows through the spec
-            // parameters and the iac job-def family resolves it to the matching image;
-            // the routing fence itself is runtime-agnostic. Falls back to null when not configured
-            // so submission fails cleanly rather than landing on the GP workload.
-            return definitions.FirstOrDefault(d =>
-                d.Kind == ExecutionJobKind.Geoprocessing &&
-                string.Equals(d.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal));
+            return;
         }
 
-        // An ordinary geoprocessing job must NOT pick up the custom-code workload.
-        var geoprocessingWorkloads = definitions
-            .Where(d => d.Kind == ExecutionJobKind.Geoprocessing &&
-                        !string.Equals(d.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal))
-            .ToArray();
+        GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
+        throw new GeoprocessingApprovalRequiredException(approval.PolicyRef ?? "unknown");
+    }
 
-        // When the operator has supplied a remote (e.g. AWS Batch) GP workload
-        // alongside the always-present local/Kubernetes baseline, prefer the remote
-        // one so a fully-configured substrate routes GP execution off-box. The
-        // registry already drops remote workloads that are missing their required
-        // ARNs (see ExecutionWorkloadGate), so a surviving non-local workload is one
-        // the operator deliberately activated. Falling back to FirstOrDefault keeps
-        // the local-only default behavior when no remote workload is configured.
-        return geoprocessingWorkloads.FirstOrDefault(d =>
-                   !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-               ?? geoprocessingWorkloads.FirstOrDefault();
+    private static string? ResolvePartitionKey(Dictionary<string, string> specParams)
+    {
+        if (specParams.TryGetValue(ExecutionAdmissionEvaluator.PartitionKeyParameterKey, out var explicitKey)
+            && !string.IsNullOrWhiteSpace(explicitKey))
+        {
+            return explicitKey;
+        }
+
+        if (specParams.TryGetValue("workspace.id", out var workspaceId) && !string.IsNullOrWhiteSpace(workspaceId))
+        {
+            return workspaceId;
+        }
+
+        if (specParams.TryGetValue("tenant.id", out var tenantId) && !string.IsNullOrWhiteSpace(tenantId))
+        {
+            return tenantId;
+        }
+
+        return null;
+    }
+
+    private static OperationPriority ResolvePriority(Dictionary<string, string> specParams)
+    {
+        if (specParams.TryGetValue("admission.priority", out var raw)
+            && Enum.TryParse<OperationPriority>(raw, ignoreCase: true, out var parsed))
+        {
+            return parsed;
+        }
+
+        return OperationPriority.Normal;
     }
 
     /// <summary>
@@ -627,718 +996,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         };
     }
 
-    private async Task<ExecutionJobRecord> TrySubmitToBackendAsync(
-        ExecutionJobRecord job,
-        IExecutionJobStore jobStore,
-        CancellationToken cancellationToken)
-    {
-        if (string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-        {
-            return job;
-        }
-
-        var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
-        if (backend == null)
-        {
-            throw new InvalidOperationException(
-                $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind}).");
-        }
-
-        return await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
-            job, backend, jobStore, _progressStore, ProgressRetention, _logger, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    public async Task<ExecutionJobRecord> GetJobAsync(
-        string jobId,
-        ClaimsPrincipal principal,
-        CancellationToken cancellationToken = default)
-    {
-        await EnsureAuthorizedAsync(
-            principal,
-            OperatorResourceType.Job,
-            OperatorOperation.Read,
-            cancellationToken).ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(jobId))
-        {
-            throw new GeoprocessingValidationException("Job identifier is required.");
-        }
-
-        var jobStore = RequireJobStore();
-        var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null)
-        {
-            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
-            throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
-        }
-
-        EnsureJobOwnership(job, principal);
-
-        GeoprocessingServiceLog.JobRetrieved(_logger, jobId, job.Status.ToString());
-        return job;
-    }
-
-    public async Task<GeoprocessingJobListPage> ListJobsAsync(
-        GeoprocessingJobListFilter filter,
-        ClaimsPrincipal principal,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(filter);
-        ArgumentNullException.ThrowIfNull(principal);
-
-        await EnsureAuthorizedAsync(
-            principal,
-            OperatorResourceType.Job,
-            OperatorOperation.Read,
-            cancellationToken).ConfigureAwait(false);
-
-        var jobStore = RequireJobStore();
-        var limit = Math.Clamp(filter.Limit, 1, MaxJobListPageSize);
-
-        // Page the canonical store (newest first, status-filtered there), then apply
-        // the adapter binding constraint and per-job ownership in the shared service so
-        // no protocol surface can list jobs the caller cannot read. The store cursor is
-        // returned verbatim so the client walks the full history without dupes; a page
-        // may carry fewer than `limit` items after post-filtering.
-        var page = await jobStore.QueryAsync(
-            new ExecutionJobQuery
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                Statuses = filter.Statuses,
-                Cursor = filter.Cursor,
-                Limit = limit
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        var items = new List<ExecutionJobRecord>(page.Items.Count);
-        foreach (var job in page.Items)
-        {
-            if (MatchesRequiredParameters(job, filter.RequiredParameters) && IsJobReadable(job, principal))
-            {
-                items.Add(job);
-            }
-        }
-
-        GeoprocessingServiceLog.JobsListed(_logger, items.Count);
-        return new GeoprocessingJobListPage
-        {
-            Items = items,
-            NextCursor = page.NextCursor
-        };
-    }
-
-    private const int MaxJobListPageSize = 200;
-
-    private static bool MatchesRequiredParameters(
-        ExecutionJobRecord job,
-        IReadOnlyDictionary<string, string> required)
-    {
-        foreach (var (key, value) in required)
-        {
-            if (!job.Spec.Parameters.TryGetValue(key, out var actual) ||
-                !string.Equals(actual, value, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
-    {
-        var owner = job.Audit.RequestedBy;
-        if (string.IsNullOrWhiteSpace(owner))
-        {
-            return true;
-        }
-
-        return string.Equals(owner, principal.Identity?.Name, StringComparison.Ordinal)
-            || principal.IsInRole("admin");
-    }
-
-    public async Task<AnalysisResultPackage> GetJobResultsAsync(
-        string jobId,
-        ClaimsPrincipal principal,
-        CancellationToken cancellationToken = default)
-    {
-        await EnsureAuthorizedAsync(
-            principal,
-            OperatorResourceType.Job,
-            OperatorOperation.Read,
-            cancellationToken).ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(jobId))
-        {
-            throw new GeoprocessingValidationException("Job identifier is required.");
-        }
-
-        var jobStore = RequireJobStore();
-        var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null)
-        {
-            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
-            throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
-        }
-
-        EnsureJobOwnership(job, principal);
-
-        if (!IsTerminal(job.Status))
-        {
-            throw new GeoprocessingPreconditionFailedException(
-                $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
-        }
-
-        var expectedResultPackageId = GeoprocessingResultPackageFactory.CreateResultPackageId(job);
-        if (_resultPackageStore != null)
-        {
-            try
-            {
-                var storedPackage = await _resultPackageStore
-                    .GetAsync(jobId, cancellationToken)
-                    .ConfigureAwait(false);
-                if (storedPackage != null &&
-                    string.Equals(
-                        storedPackage.ResultPackageId,
-                        expectedResultPackageId,
-                        StringComparison.Ordinal))
-                {
-                    GeoprocessingServiceLog.JobResultsRetrieved(_logger, jobId);
-                    return storedPackage;
-                }
-            }
-            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
-            {
-                GeoprocessingServiceLog.JobResultsStoreReadFailed(_logger, jobId, ex);
-            }
-        }
-
-        var synthesizedPackage = GeoprocessingResultPackageFactory.Create(job, _processCatalog);
-
-        if (_resultPackageStore != null)
-        {
-            try
-            {
-                await _resultPackageStore
-                    .SetAsync(jobId, synthesizedPackage, ProgressRetention, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
-            {
-                GeoprocessingServiceLog.JobResultsStoreWriteFailed(_logger, jobId, ex);
-            }
-        }
-
-        GeoprocessingServiceLog.JobResultsRetrieved(_logger, jobId);
-        return synthesizedPackage;
-    }
-
-    public async Task CancelJobAsync(
-        string jobId,
-        ClaimsPrincipal principal,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(jobId))
-        {
-            throw new GeoprocessingValidationException("Job identifier is required.");
-        }
-
-        await EnsureAuthorizedAsync(
-            principal,
-            OperatorResourceType.Job,
-            OperatorOperation.Execute,
-            cancellationToken).ConfigureAwait(false);
-
-        var jobStore = RequireJobStore();
-        var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null)
-        {
-            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
-            throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
-        }
-
-        EnsureJobOwnership(job, principal);
-
-        if (job.Status == ExecutionJobStatus.Cancelled)
-        {
-            if (_jobQueue != null)
-            {
-                try
-                {
-                    await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    GeoprocessingServiceLog.QueueRemovalFailed(_logger, jobId, ex);
-                }
-            }
-
-            var staleProgress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
-                jobId, cancellationToken).ConfigureAwait(false);
-            if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
-            {
-                var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
-                await _progressStore.SetProgressAsync(
-                    jobId, reconciledProgress, ProgressRetention, cancellationToken).ConfigureAwait(false);
-            }
-
-            return;
-        }
-
-        if (IsTerminal(job.Status))
-        {
-            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-            GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, job.Status.ToString());
-            throw new GeoprocessingPreconditionFailedException(
-                $"Job '{jobId}' is in terminal state '{job.Status}' and cannot be cancelled.");
-        }
-
-        // Cancelling a running job is a destructive action — require approval.
-        // Evaluated after state checks so idempotent and terminal paths remain reachable.
-        var approval = _approvalEvaluator.Evaluate(
-            principal,
-            new OperatorAuthorizationRequest
-            {
-                ResourceType = OperatorResourceType.Job,
-                Operation = OperatorOperation.Execute,
-                IsDestructive = true
-            });
-
-        if (approval.IsRequired)
-        {
-            GeoprocessingServiceLog.CancelRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
-            throw new GeoprocessingApprovalRequiredException(
-                approval.PolicyRef ?? "unknown",
-                "Job cancellation requires approval.");
-        }
-
-        var workerOwnsTerminalState = _cancellationNotifiers.CancelAny(jobId);
-
-        if (workerOwnsTerminalState)
-        {
-            GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
-            return;
-        }
-
-        var latest = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (latest == null)
-        {
-            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
-            throw new GeoprocessingNotFoundException(
-                $"Job '{jobId}' was not found on re-read and could not be cancelled.");
-        }
-
-        if (!IsTerminal(latest.Status))
-        {
-            var backendResult = await TryCancelViaBackendAsync(latest, cancellationToken).ConfigureAwait(false);
-            switch (backendResult.Outcome)
-            {
-                case RemoteCancelOutcome.Delegated:
-                    GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
-                    return;
-                case RemoteCancelOutcome.TerminalConflict:
-                    var terminalStatus = backendResult.TerminalStatus ?? latest.Status;
-                    GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, terminalStatus.ToString());
-                    throw new GeoprocessingPreconditionFailedException(
-                        $"Job '{jobId}' reached terminal state '{terminalStatus}' before cancellation could be applied.");
-                case RemoteCancelOutcome.Missing:
-                    GeoprocessingServiceLog.JobNotFound(_logger, jobId);
-                    throw new GeoprocessingNotFoundException(
-                        $"Job '{jobId}' was deleted during cancellation.");
-                case RemoteCancelOutcome.Unconfirmed:
-                    GeoprocessingServiceLog.RemoteCancelCasExhausted(_logger, jobId);
-                    throw new GeoprocessingPreconditionFailedException(
-                        $"Job '{jobId}' remote cancellation could not be confirmed after retries.");
-                case RemoteCancelOutcome.Unsupported:
-                    GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
-                    throw new GeoprocessingPreconditionFailedException(
-                        $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
-                case RemoteCancelOutcome.BackendNotFound:
-                    GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
-                    throw new GeoprocessingPreconditionFailedException(
-                        $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which is not registered.");
-                case RemoteCancelOutcome.NotRemote:
-                    break;
-            }
-        }
-
-        if (IsTerminal(latest.Status))
-        {
-            if (latest.Status == ExecutionJobStatus.Cancelled)
-            {
-                if (_jobQueue != null)
-                {
-                    try
-                    {
-                        await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        GeoprocessingServiceLog.QueueRemovalFailed(_logger, jobId, ex);
-                    }
-                }
-
-                var staleProgress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
-                    jobId, cancellationToken).ConfigureAwait(false);
-                if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
-                {
-                    var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
-                    await _progressStore.SetProgressAsync(
-                        jobId, reconciledProgress, ProgressRetention, cancellationToken).ConfigureAwait(false);
-                }
-
-                return;
-            }
-
-            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                _progressStore, latest, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-            GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, latest.Status.ToString());
-            throw new GeoprocessingPreconditionFailedException(
-                $"Job '{jobId}' is in terminal state '{latest.Status}' and cannot be cancelled.");
-        }
-
-        var cancelOutcome = await ExecutionJobCancellationHelper.TryApplyAsync(
-            jobStore,
-            jobId,
-            latest,
-            "Cancelled",
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        switch (cancelOutcome.State)
-        {
-            case ExecutionJobCancellationState.CancellationRequested:
-                GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
-                return;
-            case ExecutionJobCancellationState.TerminalConflict:
-                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                    _progressStore, cancelOutcome.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-                GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, cancelOutcome.Job!.Status.ToString());
-                throw new GeoprocessingPreconditionFailedException(
-                    $"Job '{jobId}' reached terminal state '{cancelOutcome.Job.Status}' before cancellation could be applied.");
-            case ExecutionJobCancellationState.Missing:
-                GeoprocessingServiceLog.JobNotFound(_logger, jobId);
-                throw new GeoprocessingNotFoundException(
-                    $"Job '{jobId}' was deleted during cancellation.");
-            case ExecutionJobCancellationState.Unconfirmed:
-                throw new GeoprocessingPreconditionFailedException(
-                    $"Job '{jobId}' cancellation could not be confirmed after retries.");
-            case ExecutionJobCancellationState.Cancelled:
-                break;
-            default:
-                throw new InvalidOperationException($"Unexpected durable cancellation outcome '{cancelOutcome.State}'.");
-        }
-
-        var now = DateTimeOffset.UtcNow;
-
-        if (_jobQueue != null)
-        {
-            try
-            {
-                await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                GeoprocessingServiceLog.QueueRemovalFailed(_logger, jobId, ex);
-            }
-        }
-
-        var progress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
-            jobId, cancellationToken).ConfigureAwait(false);
-        if (progress != null)
-        {
-            var cancelledProgress = progress.WithCancellation(now, "Cancelled");
-            await _progressStore.SetProgressAsync(
-                jobId, cancelledProgress, ProgressRetention, cancellationToken).ConfigureAwait(false);
-        }
-
-        GeoprocessingServiceLog.JobCancelled(_logger, jobId);
-    }
-
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
-
-    private async Task EnsureAuthorizedAsync(
-        ClaimsPrincipal principal,
-        OperatorResourceType resourceType,
-        OperatorOperation operation,
-        CancellationToken cancellationToken = default)
-    {
-        var decision = await _authEvaluator.EvaluateAsync(
-            principal,
-            new OperatorAuthorizationRequest
-            {
-                ResourceType = resourceType,
-                Operation = operation
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        if (decision.IsAllowed)
-        {
-            return;
-        }
-
-        GeoprocessingServiceLog.AuthorizationDenied(_logger, resourceType.ToString(), operation.ToString());
-        throw new GeoprocessingAuthorizationException(decision.RequiresAuthentication);
-    }
-
-    /// <summary>
-    /// Enforces that job state, results, and cancellation are scoped to the
-    /// principal that submitted the job (threat-model residual #1576). A coarse
-    /// <c>Job</c>-level grant authorizes the operation class; this check pins the
-    /// specific record to its submitter so one authenticated user cannot read or
-    /// cancel another user's jobs. Jobs without a recorded submitter (deployments
-    /// running with authentication disabled record no identity) keep the previous
-    /// behavior, and the conventional <c>admin</c> role retains full visibility
-    /// for operations. Denials surface as not-found so cross-principal probing
-    /// cannot confirm that a job identifier exists.
-    /// </summary>
-    private void EnsureJobOwnership(ExecutionJobRecord job, ClaimsPrincipal principal)
-    {
-        var owner = job.Audit.RequestedBy;
-        if (string.IsNullOrWhiteSpace(owner))
-        {
-            return;
-        }
-
-        var caller = principal.Identity?.Name;
-        if (string.Equals(owner, caller, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        if (principal.IsInRole("admin"))
-        {
-            return;
-        }
-
-        GeoprocessingServiceLog.JobOwnershipDenied(_logger, job.OperationId);
-        throw new GeoprocessingNotFoundException($"Job '{job.OperationId}' not found.");
-    }
-
-    private void EnsureApproved(ClaimsPrincipal principal, AnalysisPlan plan)
-    {
-        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan);
-        if (approvalGatedProcessId != null)
-        {
-            GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", approvalGatedProcessId);
-        }
-
-        var approval = _approvalEvaluator.Evaluate(
-            principal,
-            new OperatorAuthorizationRequest
-            {
-                ResourceType = OperatorResourceType.Process,
-                Operation = OperatorOperation.Execute,
-                IsDestructive = approvalGatedProcessId != null
-            });
-
-        if (!approval.IsRequired)
-        {
-            return;
-        }
-
-        GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
-        throw new GeoprocessingApprovalRequiredException(approval.PolicyRef ?? "unknown");
-    }
-
-    private async Task<ExecutionAdmissionDecision?> EnsureAdmittedAsync(
-        AnalysisPlan plan,
-        ClaimsPrincipal principal,
-        string? partitionKey,
-        double costWeight,
-        OperationPriority priority,
-        CancellationToken cancellationToken)
-    {
-        if (_admissionEvaluator == null)
-        {
-            return null;
-        }
-
-        var request = new ExecutionAdmissionRequest
-        {
-            JobKind = ExecutionJobKind.Geoprocessing,
-            PartitionKey = partitionKey,
-            PrincipalId = principal.Identity?.Name,
-            EstimatedCostWeight = costWeight,
-            Priority = priority
-        };
-
-        var decision = await _admissionEvaluator
-            .EvaluateAsync(request, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (decision.Outcome == ExecutionAdmissionOutcome.Admitted)
-        {
-            return decision;
-        }
-
-        GeoprocessingServiceLog.SubmitRejectedByAdmission(
-            _logger,
-            decision.Outcome.ToString(),
-            decision.DenyingDimension?.ToString() ?? "Unknown",
-            decision.PolicyRef ?? "unknown");
-
-        throw new GeoprocessingAdmissionException(
-            decision.Outcome,
-            decision.DenyingDimension ?? ExecutionAdmissionDimension.Backpressure,
-            decision.PolicyRef ?? "unknown",
-            decision.Reason ?? "Execution admission rejected the request.",
-            decision.RetryAfterSeconds ?? 10);
-    }
-
-    private static string? ResolvePartitionKey(Dictionary<string, string> specParams)
-    {
-        if (specParams.TryGetValue(ExecutionAdmissionEvaluator.PartitionKeyParameterKey, out var explicitKey)
-            && !string.IsNullOrWhiteSpace(explicitKey))
-        {
-            return explicitKey;
-        }
-
-        if (specParams.TryGetValue("workspace.id", out var workspaceId) && !string.IsNullOrWhiteSpace(workspaceId))
-        {
-            return workspaceId;
-        }
-
-        if (specParams.TryGetValue("tenant.id", out var tenantId) && !string.IsNullOrWhiteSpace(tenantId))
-        {
-            return tenantId;
-        }
-
-        return null;
-    }
-
-    private static OperationPriority ResolvePriority(Dictionary<string, string> specParams)
-    {
-        if (specParams.TryGetValue("admission.priority", out var raw)
-            && Enum.TryParse<OperationPriority>(raw, ignoreCase: true, out var parsed))
-        {
-            return parsed;
-        }
-
-        return OperationPriority.Normal;
-    }
-
-    private IExecutionJobStore RequireJobStore()
-        => _jobStore ?? throw new GeoprocessingStoreUnavailableException();
-
-    private enum RemoteCancelOutcome
-    {
-        Delegated,
-        TerminalConflict,
-        Missing,
-        Unconfirmed,
-        Unsupported,
-        BackendNotFound,
-        NotRemote
-    }
-
-    private readonly record struct RemoteCancelResult(
-        RemoteCancelOutcome Outcome,
-        ExecutionJobStatus? TerminalStatus = null);
-
-    private async Task<RemoteCancelResult> TryCancelViaBackendAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
-    {
-        if (string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-        {
-            return new(RemoteCancelOutcome.NotRemote);
-        }
-
-        if (IsTerminal(job.Status))
-        {
-            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-            return job.Status == ExecutionJobStatus.Cancelled
-                ? new(RemoteCancelOutcome.Delegated)
-                : new(RemoteCancelOutcome.TerminalConflict, job.Status);
-        }
-
-        var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
-        if (backend == null)
-        {
-            return new(RemoteCancelOutcome.BackendNotFound);
-        }
-
-        var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
-        if (!capabilities.SupportsCancellation)
-        {
-            return new(RemoteCancelOutcome.Unsupported);
-        }
-
-        var jobStore = RequireJobStore();
-
-        if (job.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.HasSubmittedProviderMarker(job))
-        {
-            var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
-                jobStore, job, cancellationToken).ConfigureAwait(false);
-
-            switch (preResult.Outcome)
-            {
-                case PreSubmissionCancelOutcome.Cancelled:
-                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                        _progressStore, preResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-                    return new(RemoteCancelOutcome.Delegated);
-                case PreSubmissionCancelOutcome.TerminalConflict:
-                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                        _progressStore, preResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-                    return new(RemoteCancelOutcome.TerminalConflict, preResult.Job!.Status);
-                case PreSubmissionCancelOutcome.Missing:
-                    return new(RemoteCancelOutcome.Missing);
-                default:
-                    return new(RemoteCancelOutcome.Unconfirmed);
-            }
-        }
-
-        // Stamp CancellationRequestedAt before the remote cancel so a concurrent caller
-        // that races ahead and sees the provider job already gone maps NotFound →
-        // Cancelled rather than Failed. Without this, two callers that both observed the
-        // same pre-cancel snapshot could have the "saw the delete" observation lose the
-        // CAS race to the "saw NotFound" observation.
-        var stampResult = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
-            jobStore, job, cancellationToken: cancellationToken).ConfigureAwait(false);
-        switch (stampResult.Outcome)
-        {
-            case RemoteCancelStampOutcome.Missing:
-                return new(RemoteCancelOutcome.Missing);
-            case RemoteCancelStampOutcome.TerminalConflict:
-                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                    _progressStore, stampResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-                return new(RemoteCancelOutcome.TerminalConflict, stampResult.TerminalStatus ?? stampResult.Job!.Status);
-            case RemoteCancelStampOutcome.Unconfirmed:
-                GeoprocessingServiceLog.RemoteCancelCasRetry(_logger, job.OperationId);
-                return new(RemoteCancelOutcome.Unconfirmed);
-        }
-
-        var stampedJob = stampResult.Job!;
-        var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
-        var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, stampedJob, observation, cancellationToken).ConfigureAwait(false);
-
-        switch (applyResult.Outcome)
-        {
-            case BackendCancelApplyOutcome.Missing:
-                return new(RemoteCancelOutcome.Missing);
-            case BackendCancelApplyOutcome.TerminalConflict:
-                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                    _progressStore, applyResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-                return new(RemoteCancelOutcome.TerminalConflict, applyResult.TerminalStatus ?? applyResult.Job!.Status);
-            case BackendCancelApplyOutcome.Unconfirmed:
-                GeoprocessingServiceLog.RemoteCancelCasRetry(_logger, job.OperationId);
-                return new(RemoteCancelOutcome.Unconfirmed);
-        }
-
-        var updated = applyResult.Job!;
-
-        await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
-            _progressStore, updated, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return updated.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed
-            ? new(RemoteCancelOutcome.TerminalConflict, updated.Status)
-            : new(RemoteCancelOutcome.Delegated);
-    }
-
     private static void ValidatePlanStructure(AnalysisPlan plan)
         // Structural (dependency-graph) validation is shared with the headless
         // GP Devkit `honua gp plan` dry-run path via AnalysisPlanGraphValidator so
@@ -1381,6 +1038,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         throw new GeoprocessingValidationException(
             $"Plan failed catalog validation: {first.Code} — {first.Message}");
     }
+
+    private IExecutionJobStore RequireJobStore()
+        => _jobStore ?? throw new GeoprocessingStoreUnavailableException();
 
     internal static string CreateJobId(string? idempotencyKey)
     {

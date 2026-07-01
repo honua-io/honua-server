@@ -124,7 +124,9 @@ public sealed class FederationMetricsTests
             {
                 InstrumentPublished = (instrument, listener) =>
                 {
-                    if (instrument.Meter.Name == FederationMetrics.MeterName)
+                    // Scope to this capture's own meter instance (not just the shared meter name)
+                    // so measurements from federation tests running in parallel are not captured.
+                    if (ReferenceEquals(instrument.Meter, Metrics.Meter))
                     {
                         listener.EnableMeasurementEvents(instrument);
                     }

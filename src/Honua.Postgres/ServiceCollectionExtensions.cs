@@ -480,6 +480,12 @@ internal static class ServiceCollectionExtensions
             configureHandler: static () => ArcGisRestClient.CreatePinnedDnsHttpMessageHandler())
             .AddHttpMessageHandler<MigrationRequestCountingHandler>();
 
+        // Register the published-layer lifecycle service the importer delegates to (AutoPublish ->
+        // style attach -> post-publish reconciliation). Its publishing/style/reconciliation/metadata
+        // collaborators are individually optional and resolved from the container when registered, so
+        // each step no-ops gracefully when its dependency is absent.
+        services.AddScoped<GeoservicesLayerPublicationService>();
+
         // Register Geoservices import service. The optional IAttachmentStore parameter is
         // automatically resolved from the container when registered above so attachment
         // copy runs during ArcGIS layer imports without a separate wiring step.

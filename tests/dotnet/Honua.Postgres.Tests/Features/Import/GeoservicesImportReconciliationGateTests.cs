@@ -116,8 +116,10 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
-            layerPublishingService: new StubLayerPublishingService(publishedLayerId),
-            reconciliationService: reconciliationService);
+            new GeoservicesLayerPublicationService(
+                NullLogger<GeoservicesLayerPublicationService>.Instance,
+                layerPublishingService: new StubLayerPublishingService(publishedLayerId),
+                reconciliationService: reconciliationService));
     }
 
     private sealed class StubReconciliationService(string classification, int failCount) : ILayerReconciliationService

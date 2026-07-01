@@ -8,6 +8,7 @@ internal static class CapabilityManifestServiceCollectionExtensions
     public static IServiceCollection AddCapabilityManifest(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+        services.AddSingleton<CapabilityManifestOptionsSnapshot>();
         services.AddScoped<ICapabilityManifestService, CapabilityManifestService>();
         return services;
     }

@@ -10,7 +10,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
-using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using NetTopologySuite.IO;
@@ -411,7 +410,7 @@ internal sealed class StacMappingService
         }
 
         var temporalInterval = ImmutableArray.Create(ImmutableArray.Create<string?>(null, null));
-        var temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(
+        var temporalExtent = await OgcQueryablesUtilities.BuildTemporalExtentAsync(
             resource, layerIndex, featureReader, cancellationToken).ConfigureAwait(false);
         if (temporalExtent is not null)
         {
