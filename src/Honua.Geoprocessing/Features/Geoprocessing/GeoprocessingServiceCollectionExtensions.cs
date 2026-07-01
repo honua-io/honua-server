@@ -266,6 +266,10 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<LayerFeatureProjectExecutor>(services);
         Register<LayerDissolveExecutor>(services);
         Register<LayerSimplifyExecutor>(services);
+        // Two-layer analytics.spatial-join (#2322): resolves BOTH the target layerId and
+        // the joinLayerId through source.honua-layer and enriches each target feature
+        // with matched join attributes/aggregates in one dispatched job.
+        Register<LayerSpatialJoinExecutor>(services);
         // Layer-aware overlay tool pack (#2206, #2139).
         Register<OverlayClipExecutor>(services);
         Register<OverlayIntersectExecutor>(services);
