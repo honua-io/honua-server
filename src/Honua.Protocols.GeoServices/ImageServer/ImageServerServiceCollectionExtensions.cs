@@ -59,6 +59,11 @@ internal static class ImageServerServiceCollectionExtensions
         // Register supporting services
         services.TryAddScoped<SpatialReferenceResolver>();
 
+        // CRS/datum/transform seam for the project operation: folds the spatial-reference
+        // resolver, datum-transformation catalog, and optional coordinate transform service
+        // behind one dependency so ImageServerProjectHandler stays within the collaborator limit.
+        services.TryAddScoped<ImageServerCoordinateProjection>();
+
         // Shared Esri datum-transformation catalog (WKID -> PROJ pipeline) used by the
         // project operation. TryAdd keeps a single instance shared with the FeatureServer
         // registration regardless of protocol registration order.

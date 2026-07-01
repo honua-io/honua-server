@@ -187,7 +187,11 @@ internal static partial class FeatureServerEndpoints
 
         // Validate output format only after the service is confirmed to exist, so a
         // missing service returns 404 rather than a misleading 400 (e.g. f=html).
-        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        // The layer query handler produces the full FeatureServerQueryFormats set
+        // (json/pjson/geojson/pbf/fgb/geobuf/parquet/arrow) — matching what the
+        // layer's SupportedQueryFormats advertises — so validate against that set
+        // rather than JsonOnly (which wrongly rejected f=geojson; #2323).
+        if (!TryValidateOutputFormat(requestedFormat, FeatureServerQueryFormats, out _, out var formatError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
