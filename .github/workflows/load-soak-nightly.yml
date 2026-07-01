@@ -146,6 +146,13 @@ jobs:
           HONUA_ADMIN_PASSWORD: "Load-Soak-Admin-Pass1!"
           PUBLIC_BASE_URL: ${{ env.BASE_URL }}
           HostValidation__AllowedHosts__0: "localhost"
+          # The soak harness deliberately floods the server from a single host, so the
+          # opt-in app-level rate limiter (activated by #355 / appsettings.Security.json,
+          # GlobalRequestsPerMinute=1000 per tenant/identity/IP partition) would reject
+          # ~94% of requests as 429s and mask real latency/throughput signal. Production
+          # posture is edge rate limiting (ADR-0004); disable the app-level limiter here
+          # so the load/soak run measures the server, not the throttle.
+          RateLimiting__Enabled: "false"
           Security__DisableHttpsRedirection: "true"
           Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
           ConnectionStrings__redis: "localhost:6379"
