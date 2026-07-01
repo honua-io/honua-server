@@ -117,15 +117,10 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(20, $"Streaming layer features for {ProcessId}", cancellationToken).ConfigureAwait(false);
 
-        var geoJsonReader = new GeoJsonReader();
-        var features = new List<IFeature>();
+        List<IFeature> features;
         try
         {
-            await foreach (var sourceFeature in source.ReadAsync(request, cancellationToken).ConfigureAwait(false))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                features.Add(ToNtsFeature(sourceFeature, geoJsonReader));
-            }
+            features = await ReadLayerAsync(source, request, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -143,7 +138,8 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         List<IFeature> output;
         try
         {
-            output = Apply(features, inputs, cancellationToken);
+            output = await ApplyCoreAsync(new LayerOpContext(features, source), inputs, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
         {
@@ -181,11 +177,97 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// returning the output feature set. Throw <see cref="TransformInputException"/>
     /// for caller-supplied parameter errors so they surface as a classified
     /// <c>Invalid ... inputs</c> failure.
+    ///
+    /// <para>
+    /// Single-layer ops override this synchronous hook. A two-layer op (for example
+    /// <c>analytics.spatial-join</c>, which resolves a second catalog layer through
+    /// the same <c>source.honua-layer</c> connector) overrides
+    /// <see cref="ApplyCoreAsync"/> instead and leaves this default in place.
+    /// </para>
     /// </summary>
-    protected abstract List<IFeature> Apply(
+    protected virtual List<IFeature> Apply(
         List<IFeature> source,
         StepInputReader inputs,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken)
+        => throw new NotSupportedException(
+            $"{GetType().Name} must override {nameof(Apply)} or {nameof(ApplyCoreAsync)}.");
+
+    /// <summary>
+    /// Asynchronous apply seam. The default delegates to the synchronous
+    /// <see cref="Apply"/> over the already-streamed target layer. A two-layer op
+    /// overrides this to resolve and read an additional catalog layer (via
+    /// <see cref="LayerOpContext.LayerSource"/> and <see cref="ReadLayerAsync"/>)
+    /// before computing its output. Throw <see cref="TransformInputException"/> for
+    /// caller-supplied parameter errors so they surface as a classified
+    /// <c>Invalid ... inputs</c> failure.
+    /// </summary>
+    private protected virtual Task<List<IFeature>> ApplyCoreAsync(
+        LayerOpContext context,
+        StepInputReader inputs,
+        CancellationToken cancellationToken)
+        => Task.FromResult(Apply(context.Features, inputs, cancellationToken));
+
+    /// <summary>
+    /// The resolved inputs a concrete layer-aware op computes over: the streamed
+    /// target-layer <see cref="Features"/> and the resolved <see cref="LayerSource"/>
+    /// connector, so a two-layer op can read a second catalog layer through the same
+    /// connector within the executor's service scope.
+    /// </summary>
+    private protected readonly struct LayerOpContext
+    {
+        /// <summary>Creates a context over the streamed target features and connector.</summary>
+        public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource)
+        {
+            Features = features;
+            LayerSource = layerSource;
+        }
+
+        /// <summary>The streamed features of the primary (target) layer.</summary>
+        public List<IFeature> Features { get; }
+
+        /// <summary>The resolved <c>source.honua-layer</c> connector for further layer reads.</summary>
+        public IDagFeatureSource LayerSource { get; }
+    }
+
+    /// <summary>
+    /// Streams every feature the resolved <paramref name="source"/> returns for
+    /// <paramref name="request"/> into an in-memory NetTopologySuite feature list.
+    /// Shared by the base's primary layer read and by two-layer ops that resolve a
+    /// second catalog layer through the same connector.
+    /// </summary>
+    private protected static async Task<List<IFeature>> ReadLayerAsync(
+        IDagFeatureSource source,
+        DagSourceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var geoJsonReader = new GeoJsonReader();
+        var features = new List<IFeature>();
+        await foreach (var sourceFeature in source.ReadAsync(request, cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            features.Add(ToNtsFeature(sourceFeature, geoJsonReader));
+        }
+
+        return features;
+    }
+
+    /// <summary>
+    /// Reads and validates a non-negative catalog layer id from the input at
+    /// <paramref name="key"/> (for example <c>layerId</c> for the target layer or
+    /// <c>joinLayerId</c> for a spatial-join reference layer).
+    /// </summary>
+    private protected static int RequireLayerId(StepInputReader inputs, string key)
+    {
+        if (!inputs.TryGet(key, out var raw)
+            || !int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            || value < 0)
+        {
+            throw new TransformInputException(
+                $"missing or invalid required input '{key}'; expected a non-negative integer.");
+        }
+
+        return value;
+    }
 
     /// <summary>
     /// Hook for a concrete op to add operation-specific fields to the layer read
@@ -199,16 +281,9 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     private DagSourceRequest BuildSourceRequest(StepInputReader inputs)
     {
-        if (!inputs.TryGet("layerId", out var layerIdRaw)
-            || !int.TryParse(layerIdRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
-            || layerId < 0)
-        {
-            throw new TransformInputException("missing or invalid required input 'layerId'; expected a non-negative integer.");
-        }
-
         var request = new DagSourceRequest
         {
-            LayerId = layerId,
+            LayerId = RequireLayerId(inputs, "layerId"),
             Where = inputs.TryGet("where", out var where) ? where : null,
             Bbox = inputs.TryGet("bbox", out var bbox) ? bbox : null,
             OutFields = inputs.TryGet("outFields", out var outFields) ? outFields : null,

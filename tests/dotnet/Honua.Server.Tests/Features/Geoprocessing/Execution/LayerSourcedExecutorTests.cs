@@ -181,9 +181,119 @@ public sealed class LayerSourcedExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
     }
 
+    [UnitTest]
+    public async Task SpatialJoin_IntersectsCarriesJoinFields_ReachesSucceededWithJoinCount()
+    {
+        // Target layer 7: two disjoint zone polygons. Join layer 8: three named points,
+        // two inside zone A and one inside zone B.
+        var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [7] =
+            [
+                BoxFeature(0, 0, 10, 10, ("zone", "a")),
+                BoxFeature(20, 20, 30, 30, ("zone", "b")),
+            ],
+            [8] =
+            [
+                NamedPoint(5, 5, "p1"),
+                NamedPoint(6, 6, "p2"),
+                NamedPoint(25, 25, "p3"),
+            ],
+        });
+
+        var (status, uri, _) = await RunAsync(
+            new LayerSpatialJoinExecutor(ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+            LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("joinLayerId", "8"),
+            ("predicate", "intersects"),
+            ("carryFields", "name"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().HaveCount(2, "each target zone is preserved one-to-one");
+
+        var zoneA = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "a"));
+        Convert.ToInt64(zoneA.Attributes.GetOptionalValue(LayerSpatialJoinExecutor.JoinCountAttribute), CultureInfo.InvariantCulture)
+            .Should().Be(2);
+        CarriedValues(zoneA, "name").Should().BeEquivalentTo(new[] { "p1", "p2" });
+
+        var zoneB = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "b"));
+        Convert.ToInt64(zoneB.Attributes.GetOptionalValue(LayerSpatialJoinExecutor.JoinCountAttribute), CultureInfo.InvariantCulture)
+            .Should().Be(1);
+        CarriedValues(zoneB, "name").Should().BeEquivalentTo(new[] { "p3" });
+    }
+
+    [UnitTest]
+    public async Task SpatialJoin_Dwithin_MatchesNeighboursWithinDistance()
+    {
+        // Target point at origin; join layer has one point 3 units away and one 30 away.
+        var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [1] = [NamedPoint(0, 0, "target")],
+            [2] =
+            [
+                NamedPoint(3, 0, "near"),
+                NamedPoint(30, 0, "far"),
+            ],
+        });
+
+        var (status, uri, _) = await RunAsync(
+            new LayerSpatialJoinExecutor(ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+            LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "1"),
+            ("joinLayerId", "2"),
+            ("predicate", "dwithin"),
+            ("distance", "5"),
+            ("carryFields", "name"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().ContainSingle();
+        Convert.ToInt64(features[0].Attributes.GetOptionalValue(LayerSpatialJoinExecutor.JoinCountAttribute), CultureInfo.InvariantCulture)
+            .Should().Be(1, "only the point within 5 units matches");
+        CarriedValues(features[0], "name").Should().BeEquivalentTo(new[] { "near" });
+    }
+
+    [UnitTest]
+    public async Task SpatialJoin_MissingJoinLayerId_Fails()
+    {
+        var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [7] = [BoxFeature(0, 0, 10, 10, ("zone", "a"))],
+        });
+
+        var (status, _, _) = await RunAsync(
+            new LayerSpatialJoinExecutor(ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+            LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "7"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private static List<string?> CarriedValues(IFeature feature, string field)
+    {
+        var raw = feature.Attributes.GetOptionalValue(field);
+        raw.Should().BeAssignableTo<System.Collections.IEnumerable>("carried join fields are emitted as arrays");
+        var values = new List<string?>();
+        foreach (var item in (System.Collections.IEnumerable)raw!)
+        {
+            values.Add(item?.ToString());
+        }
+
+        return values;
+    }
+
+    private static DagSourceFeature NamedPoint(double x, double y, string name)
+        => new()
+        {
+            GeometryGeoJson = $$"""{"type":"Point","coordinates":[{{x.ToString(System.Globalization.CultureInfo.InvariantCulture)}},{{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}}]}""",
+            Attributes = new Dictionary<string, object?> { ["name"] = name },
+        };
 
     private static IOptionsMonitor<GeoprocessingExecutorOptions> Options()
     {
@@ -307,6 +417,43 @@ public sealed class LayerSourcedExecutorTests
             foreach (var feature in _features)
             {
                 yield return feature;
+            }
+
+            await Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Fake <see cref="IDagFeatureSource"/> that returns a distinct feature set per
+    /// catalog layer id, so a two-layer op such as <c>analytics.spatial-join</c> reads
+    /// its target (<c>layerId</c>) and join (<c>joinLayerId</c>) layers from the same
+    /// connector without a Postgres catalog.
+    /// </summary>
+    private sealed class FakeTwoLayerDagFeatureSource : IDagFeatureSource
+    {
+        private readonly IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>> _byLayer;
+
+        public FakeTwoLayerDagFeatureSource(
+            string sourceId,
+            IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>> byLayer)
+        {
+            SourceId = sourceId;
+            _byLayer = byLayer;
+        }
+
+        public string SourceId { get; }
+
+        public async IAsyncEnumerable<DagSourceFeature> ReadAsync(
+            DagSourceRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            _lastRequestForAssertions = request;
+            if (request.LayerId is int layerId && _byLayer.TryGetValue(layerId, out var features))
+            {
+                foreach (var feature in features)
+                {
+                    yield return feature;
+                }
             }
 
             await Task.CompletedTask;

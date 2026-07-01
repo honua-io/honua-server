@@ -84,6 +84,9 @@ public sealed class CatalogExecutableConformanceTests
         "conversion.feature-project",
         "generalization.dissolve",
         "generalization.simplify-layer",
+        // Two-layer analytics.spatial-join (#2322): resolves both the target layerId and
+        // the joinLayerId through source.honua-layer and joins them in one dispatched job.
+        "analytics.spatial-join",
         // Layer-aware overlay tool pack (#2206, #2139): managed NTS, two
         // FeatureCollections in, one FeatureCollection/table out.
         "overlay.clip",
@@ -139,12 +142,12 @@ public sealed class CatalogExecutableConformanceTests
     // Processes that execute ONLY through the synchronous PostGIS SpatialAnalytics
     // protocol or another non-dispatcher surface (layer-scoped, Pro-gated, or
     // destructive edit paths). NOT job-dispatchable; MUST be absent from the
-    // dispatcher. analytics.spatial-join lives here — its job-executable managed
-    // counterpart is analytics.spatial-join-managed above.
+    // dispatcher. analytics.spatial-join is NO LONGER here: #2322 added a layer-aware
+    // job executor (LayerSpatialJoinExecutor) that resolves both the target and join
+    // layers through source.honua-layer, so it is now job-executable above.
     private static readonly string[] ProtocolOnlyProcessIds =
     {
         "analytics.cluster",
-        "analytics.spatial-join",
         "analytics.density",
         "data-management.copy-features",
         "data-management.delete-features",
@@ -396,6 +399,7 @@ public sealed class CatalogExecutableConformanceTests
             new LayerFeatureProjectExecutor(scopeFactory, monitor, NullLogger<LayerFeatureProjectExecutor>.Instance),
             new LayerDissolveExecutor(scopeFactory, monitor, NullLogger<LayerDissolveExecutor>.Instance),
             new LayerSimplifyExecutor(scopeFactory, monitor, NullLogger<LayerSimplifyExecutor>.Instance),
+            new LayerSpatialJoinExecutor(scopeFactory, monitor, NullLogger<LayerSpatialJoinExecutor>.Instance),
             new OverlayClipExecutor(monitor),
             new OverlayIntersectExecutor(monitor),
             new OverlayUnionExecutor(monitor),
