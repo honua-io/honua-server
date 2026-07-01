@@ -116,6 +116,22 @@ internal sealed class McpJobResultsResource
     [JsonPropertyName("artifacts")]
     public IReadOnlyList<McpArtifactRef> Artifacts { get; set; } = [];
 
+    /// <summary>
+    /// Total number of artifacts in the underlying result package. When this
+    /// exceeds the number of entries in <see cref="Artifacts"/>, the list was
+    /// capped for agent consumption and <see cref="ArtifactsTruncated"/> is true.
+    /// </summary>
+    [JsonPropertyName("totalArtifactCount")]
+    public int TotalArtifactCount { get; set; }
+
+    /// <summary>
+    /// True when <see cref="Artifacts"/> was truncated to a bounded page so the
+    /// response stays within an agent-friendly token budget. Retrieve the full
+    /// artifact set from the job's workspace(s) rather than this resource.
+    /// </summary>
+    [JsonPropertyName("artifactsTruncated")]
+    public bool ArtifactsTruncated { get; set; }
+
     [JsonPropertyName("workspaceRefs")]
     public IReadOnlyList<McpWorkspaceRef> WorkspaceRefs { get; set; } = [];
 

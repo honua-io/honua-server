@@ -20,6 +20,16 @@ internal sealed class JobResultsResource : IMcpResource
     public const string Template =
         McpResourceUris.JobsPrefix + "{jobId}" + McpResourceUris.JobResultsSuffix;
 
+    /// <summary>
+    /// Upper bound on the number of artifacts embedded in a single results read.
+    /// Per-artifact payloads are already capped upstream (<c>MaxArtifactBytes</c>);
+    /// this bounds the aggregate so a job producing hundreds of artifacts cannot
+    /// return an unbounded blob to an agent. Overflow is signalled via
+    /// <see cref="McpJobResultsResource.ArtifactsTruncated"/> and the caller can
+    /// enumerate the full set through the job's workspace(s).
+    /// </summary>
+    internal const int MaxArtifacts = 50;
+
     private readonly IGeoprocessingJobService _jobService;
 
     private readonly ILogger<JobResultsResource> _logger;
@@ -93,7 +103,10 @@ internal sealed class JobResultsResource : IMcpResource
             Title = package.Summary.Title,
             Description = package.Summary.Description
         },
+        TotalArtifactCount = package.Artifacts.Count,
+        ArtifactsTruncated = package.Artifacts.Count > MaxArtifacts,
         Artifacts = package.Artifacts
+            .Take(MaxArtifacts)
             .Select(artifact => new McpArtifactRef
             {
                 ArtifactId = artifact.ArtifactId,
