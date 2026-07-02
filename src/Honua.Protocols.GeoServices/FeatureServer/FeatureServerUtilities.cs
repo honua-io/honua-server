@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using System.Globalization;
 using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
@@ -347,6 +348,16 @@ internal static partial class FeatureServerEndpoints
             return;
         }
 
+        // T6 (#2342): do not advertise a format the capability registry reports as gated
+        // off (an experimental format with its flag unset, or one the edition is not
+        // entitled to), so the advertised supportedQueryFormats stays consistent with what
+        // the query seam will actually serve. No-op while every format is Implemented.
+        if (RegistryFormatByWireToken.TryGetValue(format, out var registryFormatName) &&
+            FormatCapabilityGate.Evaluate(registryFormatName).IsBlocked)
+        {
+            return;
+        }
+
         formats.Add(format.ToUpperInvariant());
     }
 
@@ -458,6 +469,23 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
+    // Maps a GeoServices query output wire token to its unified-registry data-format
+    // name (the segment after CapabilityRegistry.DataFormatIdPrefix). Tokens without a
+    // format.* descriptor (pbf/geobuf/arrow are encoded exports with no import-format
+    // descriptor) are absent and stay ungated. Used only to consult the capability
+    // gate (T6 / #2342) after the static supported-set check; it does not change which
+    // tokens are accepted while every format is still Implemented.
+    private static readonly FrozenDictionary<string, string> RegistryFormatByWireToken =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["json"] = "esrijson",
+            ["pjson"] = "esrijson",
+            ["geojson"] = "geojson",
+            ["parquet"] = "geoparquet",
+            ["fgb"] = "flatgeobuf",
+        }
+        .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
     internal static bool TryValidateOutputFormat(
         string? format,
         FrozenSet<string> supportedFormats,
@@ -477,6 +505,23 @@ internal static partial class FeatureServerEndpoints
         {
             error = $"Output format '{trimmed}' is not supported. Supported formats: {string.Join(", ", supportedFormats)}.";
             return false;
+        }
+
+        // T6 (#2342): consult the unified capability registry BEFORE dispatch, so a
+        // format that is flipped experimental (T10 / #2346) with its flag unset — or one
+        // the active edition is not entitled to — returns a clear 400 on the `f` value
+        // rather than being served. In T6 every format is still Implemented, so this is a
+        // no-op today; it wires the seam. Tokens without a format.* descriptor stay ungated.
+        if (RegistryFormatByWireToken.TryGetValue(trimmed, out var registryFormatName))
+        {
+            var decision = FormatCapabilityGate.Evaluate(registryFormatName);
+            if (decision.IsBlocked)
+            {
+                error = decision.Status == FormatGateStatus.LicenseRequired
+                    ? $"Output format '{trimmed}' is not available for the active edition ({FormatCapabilityReasonCodes.LicenseRequired})."
+                    : $"Output format '{trimmed}' is experimental and disabled ({FormatCapabilityReasonCodes.ExperimentalDisabled}).";
+                return false;
+            }
         }
 
         normalizedFormat = string.Equals(trimmed, "pjson", StringComparison.OrdinalIgnoreCase)

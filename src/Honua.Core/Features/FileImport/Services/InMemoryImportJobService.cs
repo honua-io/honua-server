@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -18,6 +19,47 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
+
+/// <summary>
+/// Guards the import reader dispatch behind the unified capability registry (T6 /
+/// #2342). The import job services detect a file's format and then dispatch to the
+/// matching reader; this guard is consulted at that seam <b>before</b> dispatch so an
+/// unrecognised file — which previously silently fell back to
+/// <see cref="SupportedFileFormat.GeoJson"/> and was mis-read — is rejected, as is a
+/// format the registry reports as gated off (an experimental format with its flag
+/// unset, or one the active edition is not entitled to). The thrown
+/// <see cref="NotSupportedException"/> is mapped to an HTTP 400 by the import endpoints.
+/// </summary>
+internal static class ImportFormatDispatchGuard
+{
+    /// <summary>
+    /// Requires a supported, enabled import format: returns the detected format when it
+    /// is recognised and not gated off, otherwise throws <see cref="NotSupportedException"/>.
+    /// </summary>
+    /// <param name="detectedFormat">
+    /// The format detected from the filename, or <c>null</c> when the extension matched no
+    /// supported import format (previously silently coerced to GeoJSON).
+    /// </param>
+    /// <param name="fileName">The source filename, for the error message.</param>
+    public static SupportedFileFormat RequireGatedFormat(SupportedFileFormat? detectedFormat, string fileName)
+    {
+        if (detectedFormat is not { } format)
+        {
+            throw new NotSupportedException(
+                $"Unsupported file format for '{fileName}': the file does not match a supported import format " +
+                $"({FormatCapabilityReasonCodes.Unknown}).");
+        }
+
+        var decision = FormatCapabilityGate.Evaluate(format.ToString().ToLowerInvariant());
+        if (decision.IsBlocked)
+        {
+            throw new NotSupportedException(
+                $"Import format '{format}' is disabled ({decision.ReasonCode}).");
+        }
+
+        return format;
+    }
+}
 
 /// <summary>
 /// In-memory implementation of import job service for background processing.
@@ -57,7 +99,8 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         CleanupCompletedJobsIfNeeded();
         request.Validate();
 
-        var format = _importService.DetectFormat(request.FileName) ?? SupportedFileFormat.GeoJson;
+        var format = ImportFormatDispatchGuard.RequireGatedFormat(
+            _importService.DetectFormat(request.FileName), request.FileName);
         var formatName = format.ToString();
 
         ImportJobState state;
@@ -568,7 +611,8 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         using (var scope = _scopeFactory.CreateScope())
         {
             var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
-            format = importService.DetectFormat(request.FileName) ?? SupportedFileFormat.GeoJson;
+            format = ImportFormatDispatchGuard.RequireGatedFormat(
+                importService.DetectFormat(request.FileName), request.FileName);
         }
         var formatName = format.ToString();
 
