@@ -57,6 +57,12 @@
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.6" />
+    <!-- Pin Microsoft.OpenApi to the patched 2.7.5: Microsoft.AspNetCore.OpenApi 10.0.6
+         pulls Microsoft.OpenApi 2.0.0 transitively, which trips the NU1903 audit
+         (GHSA-v5pm-xwqc-g5wc, vulnerable <= 2.7.4, treated as an error). 2.7.5 is the
+         first patched release and stays API-compatible within the 2.x line. -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageVersion Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.6" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.2" />
