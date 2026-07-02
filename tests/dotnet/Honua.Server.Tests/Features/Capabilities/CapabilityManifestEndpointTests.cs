@@ -47,7 +47,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
     private static WebAppFixture CreateManifestFixture(
         string[]? entitlements = null,
-        HonuaEdition edition = HonuaEdition.Pro)
+        HonuaEdition edition = HonuaEdition.Pro,
+        bool manifestFromRegistry = false)
         => new WebAppFixture()
             .WithTestLicense(edition, entitlements: entitlements)
             .ConfigureServices(services =>
@@ -74,7 +75,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                         ["Limits:Analytics:MaxDensityCellSizeMeters"] = "34567.5",
                         ["Limits:Analytics:MaxDWithinDistanceMeters"] = "45678.5",
                         ["FeatureStreaming:MaxConcurrentSessions"] = "12",
-                        ["Grpc:StreamBatchSize"] = "42"
+                        ["Grpc:StreamBatchSize"] = "42",
+                        ["Capabilities:ManifestFromRegistry"] = manifestFromRegistry ? "true" : "false"
                     });
                 });
             });
@@ -353,6 +355,52 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("workspaceId contains unsupported characters.");
         body.Should().NotContain("CapabilityManifestService");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_RegistryDerived_MatchesHandCuratedComposition()
+    {
+        // #2335 (B3) golden before/after: the registry-derived composition
+        // (Capabilities:ManifestFromRegistry=true) must serialize a byte-identical
+        // Capabilities[] and Packages.Families[] to the legacy hand-curated path while
+        // every descriptor stays Implemented, proving entitlement/availability
+        // resolution is unchanged.
+        const string query = "/api/v1/capabilities/manifest?environment=test&workspaceId=field-team";
+
+        var legacyFixture = CreateManifestFixture();
+        var derivedFixture = CreateManifestFixture(manifestFromRegistry: true);
+        await legacyFixture.InitializeAsync();
+        await derivedFixture.InitializeAsync();
+
+        try
+        {
+            using var legacyClient = legacyFixture.CreateAdminClient();
+            using var derivedClient = derivedFixture.CreateAdminClient();
+            using var legacyResponse = await legacyClient.GetAsync(query);
+            using var derivedResponse = await derivedClient.GetAsync(query);
+
+            legacyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            derivedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var legacyDocument = await ReadDocumentAsync(legacyResponse);
+            using var derivedDocument = await ReadDocumentAsync(derivedResponse);
+
+            var derivedCapabilities = derivedDocument.RootElement.GetProperty("capabilities").GetRawText();
+            var legacyCapabilities = legacyDocument.RootElement.GetProperty("capabilities").GetRawText();
+            derivedCapabilities.Should().Be(legacyCapabilities);
+
+            var derivedFamilies = derivedDocument.RootElement
+                .GetProperty("packages").GetProperty("families").GetRawText();
+            var legacyFamilies = legacyDocument.RootElement
+                .GetProperty("packages").GetProperty("families").GetRawText();
+            derivedFamilies.Should().Be(legacyFamilies);
+        }
+        finally
+        {
+            await legacyFixture.DisposeAsync();
+            await derivedFixture.DisposeAsync();
+        }
     }
 
     private static async Task<JsonDocument> ReadDocumentAsync(HttpResponseMessage response)

@@ -35,7 +35,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<GrpcOptions> grpcOptions,
         IOptions<AlertOptions> alertOptions,
         IOptions<RbacOptions> rbacOptions,
-        IOptions<CapabilityFlagOptions> capabilityFlagOptions)
+        IOptions<CapabilityFlagOptions> capabilityFlagOptions,
+        IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions)
     {
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
@@ -48,6 +49,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ArgumentNullException.ThrowIfNull(alertOptions);
         ArgumentNullException.ThrowIfNull(rbacOptions);
         ArgumentNullException.ThrowIfNull(capabilityFlagOptions);
+        ArgumentNullException.ThrowIfNull(manifestFeatureOptions);
 
         Limits = limitsOptions.Value;
         Streaming = streamOptions.Value;
@@ -60,6 +62,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         Alerts = alertOptions.Value;
         Rbac = rbacOptions.Value;
         ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
+        ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
     }
 
     public LimitsOptions Limits { get; }
@@ -88,4 +91,12 @@ internal sealed class CapabilityManifestOptionsSnapshot
     /// acting on them in T4 (#2340).
     /// </summary>
     public CapabilityFlagOptions ExperimentalCapabilityFlags { get; }
+
+    /// <summary>
+    /// Whether the manifest's <c>Capabilities[]</c> and <c>Packages.Families[]</c> are
+    /// derived from the unified capability registry (#2335 / B3). Defaults to
+    /// <c>false</c> (staged); the legacy hand-curated composition is served until the
+    /// <c>Capabilities:ManifestFromRegistry</c> switch is turned on.
+    /// </summary>
+    public bool ManifestFromRegistry { get; }
 }
