@@ -60,6 +60,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0057](0057-geoprocessing-capability-boundaries.md) | Geoprocessing Capability Boundaries (Server-Canonical Engine, Thin SDKs, Cloud-Delegated ML) | Accepted | 2026-06 |
 | [0055](0055-optimistic-batch-merge-train.md) | Optimistic Batch Merge Train | Accepted | 2026-06 |
 | [0056](0056-mcp-redesign-unified-governed-surface.md) | MCP Redesign — Unified, Client-Agnostic, Governed Surface (Sequencing Plan) | Proposed | 2026-06 |
+| [0059](0059-first-release-scope-and-fix-forward-operate-model.md) | First-Release Scope and Fix-Forward Operate Model | Accepted | 2026-07 |
 
 ## Template
 
