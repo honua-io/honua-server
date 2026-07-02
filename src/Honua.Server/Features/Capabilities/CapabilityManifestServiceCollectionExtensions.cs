@@ -15,6 +15,10 @@ internal static class CapabilityManifestServiceCollectionExtensions
         // #2339 (T2): bind the experimental feature-flag options so the manifest
         // snapshot can carry them. T4 (#2340) is where the manifest acts on them.
         services.AddCapabilityFlagOptions(configuration);
+        // #2341 (T5): the unified capability registry (ADR-0058) is the single
+        // source of truth the shared CapabilityGateEndpointFilter resolves against.
+        // Register it here so the gate filter can resolve ICapabilityRegistry from DI.
+        services.AddCapabilityRegistry();
         services.AddSingleton<CapabilityManifestOptionsSnapshot>();
         services.AddScoped<ICapabilityManifestService, CapabilityManifestService>();
         return services;
