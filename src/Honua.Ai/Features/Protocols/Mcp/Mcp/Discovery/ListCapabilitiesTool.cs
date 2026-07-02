@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
@@ -92,12 +93,19 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         var surface = httpContext.RequestServices.GetService<McpOperatorSurface>();
         if (surface is not null)
         {
-            output.Tools = BuildToolManifest(surface);
+            // The unified capability registry (ADR-0058 B2, #2334) is the source of
+            // truth for the /mcp catalog roster: when present it governs which
+            // tools/resources are advertised, while the live handlers still supply
+            // the LLM-grade descriptions and read/write hints the wire carries. A
+            // lightweight host that did not register the registry falls back to the
+            // live surface unchanged.
+            var registry = httpContext.RequestServices.GetService<ICapabilityRegistry>();
+            output.Tools = BuildToolManifest(surface, registry);
             output.ToolCount = output.Tools.Count;
 
             if (includeResources || includeGroundingResources)
             {
-                var resources = BuildResourceManifest(surface);
+                var resources = BuildResourceManifest(surface, registry);
 
                 if (includeResources)
                 {
@@ -118,11 +126,29 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         return McpToolHelpers.SuccessResult(output, DiscoveryJsonContext.Default.McpListCapabilitiesOutput);
     }
 
-    private static List<McpCapabilityTool> BuildToolManifest(McpOperatorSurface surface)
+    private static List<McpCapabilityTool> BuildToolManifest(
+        McpOperatorSurface surface,
+        ICapabilityRegistry? registry)
     {
+        var registryToolNames = registry is null
+            ? null
+            : registry.All
+                .Where(d => d.McpToolName is not null)
+                .Select(d => d.McpToolName!)
+                .ToHashSet(StringComparer.Ordinal);
+
         var tools = new List<McpCapabilityTool>();
         foreach (var tool in surface.ToolHandlers)
         {
+            // Only advertise tools with capability-registry provenance. The startup
+            // composition check (Capabilities:RegistryBinding) fails fast if the
+            // served surface ever contains a tool the registry does not describe,
+            // so in a conformant host this filter drops nothing.
+            if (registryToolNames is not null && !registryToolNames.Contains(tool.Name))
+            {
+                continue;
+            }
+
             var descriptor = tool.Describe();
             tools.Add(new McpCapabilityTool
             {
@@ -138,11 +164,28 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         return tools;
     }
 
-    private static List<McpCapabilityResource> BuildResourceManifest(McpOperatorSurface surface)
+    private static List<McpCapabilityResource> BuildResourceManifest(
+        McpOperatorSurface surface,
+        ICapabilityRegistry? registry)
     {
+        var registryFamilies = registry is null
+            ? null
+            : registry.All
+                .Where(d => d.Id.StartsWith(CapabilityRegistry.McpResourceIdPrefix, StringComparison.Ordinal))
+                .Select(d => d.Id[CapabilityRegistry.McpResourceIdPrefix.Length..])
+                .ToHashSet(StringComparer.Ordinal);
+
         var resources = new List<McpCapabilityResource>();
         foreach (var resource in surface.Resources)
         {
+            // Only advertise resource families with capability-registry provenance
+            // (see BuildToolManifest); the registry-binding startup check guarantees
+            // the served families are a subset of the registry roster.
+            if (registryFamilies is not null && !registryFamilies.Contains(resource.Family))
+            {
+                continue;
+            }
+
             foreach (var descriptor in resource.Describe())
             {
                 resources.Add(new McpCapabilityResource
