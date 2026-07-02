@@ -769,6 +769,31 @@ sql:
       END;
       $$;
   - |
+      -- Mirrors migration 071_FixImportStagingTableNameLength.sql so the
+      -- migration-skipping integration fixture derives the staging-table name the
+      -- same length-safe way the runtime schema does. Without this, long-but-valid
+      -- physical names (e.g. imported_<requested> >= 55 chars, which the default
+      -- Replace load mode always uses) RAISEd 'Staging table name exceeds
+      -- PostgreSQL identifier limit of 63 characters' (P0001) and failed the
+      -- FileImport shard's ad-hoc/operational-schema import tests.
+      CREATE OR REPLACE FUNCTION honua.import_staging_table_name(table_name text)
+      RETURNS text
+      LANGUAGE plpgsql
+      IMMUTABLE
+      AS $$
+      DECLARE
+          staging_name text;
+      BEGIN
+          staging_name := table_name || '__staging';
+
+          IF length(staging_name) > 63 THEN
+              staging_name := 'stg_' || md5(table_name);
+          END IF;
+
+          RETURN staging_name;
+      END;
+      $$;
+  - |
       CREATE OR REPLACE FUNCTION honua.create_import_staging_table(
           schema_name text,
           table_name text,
@@ -786,10 +811,7 @@ sql:
               RAISE EXCEPTION 'Target SRID must be a positive integer';
           END IF;
 
-          staging_name := table_name || '__staging';
-          IF length(staging_name) > 63 THEN
-              RAISE EXCEPTION 'Staging table name exceeds PostgreSQL identifier limit of 63 characters';
-          END IF;
+          staging_name := honua.import_staging_table_name(table_name);
 
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
           EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
@@ -815,7 +837,7 @@ sql:
           PERFORM honua.assert_import_identifier(schema_name, 'Schema name');
           PERFORM honua.assert_import_identifier(table_name, 'Table name');
 
-          staging_name := table_name || '__staging';
+          staging_name := honua.import_staging_table_name(table_name);
 
           EXECUTE format('DROP TABLE IF EXISTS %I.%I CASCADE', schema_name, table_name);
           EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', schema_name, staging_name, table_name);

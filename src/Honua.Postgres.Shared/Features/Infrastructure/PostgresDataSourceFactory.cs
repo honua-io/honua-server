@@ -64,6 +64,18 @@ internal static class PostgresDataSourceFactory
 
         connectionStringBuilder.Pooling = true;
 
+        // Retain the password in the string exposed by NpgsqlDataSource.ConnectionString
+        // (surfaced through IDatabaseConnectionProvider.GetConnectionString()). The post-import
+        // canonical-snapshot refresh and layer-publish materialize paths take that string and
+        // open a *fresh* NpgsqlConnection from it. Npgsql strips the password by default
+        // (Persist Security Info=false), so those fresh connections failed SCRAM auth with
+        // "No password has been provided but the backend requires one (in SASL/SCRAM-SHA-256)"
+        // — swallowed as a warning in TryRefreshPublishedSnapshotAsync, leaving published MVT
+        // tiles silently stale after an import (honua-server#1628). This does NOT weaken auth:
+        // the backend still requires the password; it only stops Npgsql from redacting it from
+        // the string handed back to code that must reconnect.
+        connectionStringBuilder.PersistSecurityInfo = true;
+
         if (limits.MaxConnectionPoolSize > 0)
         {
             connectionStringBuilder.MaxPoolSize = limits.MaxConnectionPoolSize;
