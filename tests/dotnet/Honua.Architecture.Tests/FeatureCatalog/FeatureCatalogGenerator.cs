@@ -65,6 +65,12 @@ internal static class FeatureCatalogGenerator
     public const string MaturityImplemented = "implemented";
 
     /// <summary>
+    /// Maturity tier for a built-experimental route group flipped in T10 (#2346):
+    /// gated OFF the first-release surface, opt-in per capability.
+    /// </summary>
+    public const string MaturityExperimental = "experimental";
+
+    /// <summary>
     /// The unified capability registry (ADR-0058) the generator joins against for
     /// each entry's <c>maturity</c>. It is a pure, static-backed projection, so a
     /// single shared instance is safe.
@@ -109,7 +115,7 @@ internal static class FeatureCatalogGenerator
                     CodeLocation = surface?.CodeLocation ?? "src/Honua.Server/EndpointRegistry.cs",
                     ProvingTests = provingTests,
                     ProofLedgerSurface = surface?.SurfaceId ?? string.Empty,
-                    Maturity = ResolveMaturity(surface?.SurfaceId, id)
+                    Maturity = ResolveMaturity(surface?.SurfaceId, id, endpoint.Path)
                 };
             })
             .OrderBy(entry => entry.Method, StringComparer.Ordinal)
@@ -195,19 +201,75 @@ internal static class FeatureCatalogGenerator
     }
 
     /// <summary>
-    /// Joins an entry to its capability descriptor by id — first by the
-    /// proof-ledger surface id, then by the entry's own route slug — and returns
-    /// the descriptor's maturity. Falls back to <see cref="MaturityImplemented"/>
-    /// when no descriptor claims the route, which is every test-backed route in
-    /// the API-surface slice today.
+    /// Joins an entry to its capability descriptor and returns the descriptor's
+    /// maturity. The join is attempted, in order, by (1) the proof-ledger surface
+    /// id, (2) the entry's own route slug, and (3) the route → descriptor map
+    /// (<see cref="ResolveDescriptorIdForRoute"/>). The third join is the one T10
+    /// (#2346) wires: the proof-ledger surfaces and route slugs never equalled a
+    /// registry descriptor id (the <c>control-plane-admin</c> surface, for example,
+    /// is a coarse bucket spanning many unrelated admin routes), so the
+    /// surface/slug joins were inert; the route-prefix map connects the flipped
+    /// route groups to their descriptor so the catalog reflects <c>experimental</c>
+    /// for exactly the routes the T5 endpoint gate 404s. Falls back to
+    /// <see cref="MaturityImplemented"/> when no descriptor claims the route.
     /// </summary>
-    private static string ResolveMaturity(string? proofLedgerSurfaceId, string entryId)
+    private static string ResolveMaturity(string? proofLedgerSurfaceId, string entryId, string route)
     {
+        var routeDescriptorId = ResolveDescriptorIdForRoute(route);
         var descriptor =
             (string.IsNullOrEmpty(proofLedgerSurfaceId) ? null : Registry.Find(proofLedgerSurfaceId))
-            ?? Registry.Find(entryId);
+            ?? Registry.Find(entryId)
+            ?? (routeDescriptorId is null ? null : Registry.Find(routeDescriptorId));
 
         return descriptor is null ? MaturityImplemented : MaturityLabel(descriptor.Maturity);
+    }
+
+    /// <summary>
+    /// Maps a shipped route to the capability descriptor that gates it, for the
+    /// built-experimental feature groups flipped in T10 (#2346). This is the single
+    /// projection of the same route groups the <c>WithCapabilityGate(...)</c> calls
+    /// guard in <c>Honua.Server</c>, so the catalog's <c>experimental</c> tier and
+    /// the runtime 404 gate stay in lock-step. Returns <c>null</c> for every route
+    /// that is not part of a flipped group (the in-release surface), which then
+    /// falls back to <c>implemented</c>.
+    /// </summary>
+    internal static string? ResolveDescriptorIdForRoute(string route)
+    {
+        // Temporal / data-history — /api/v1/temporal/*
+        if (route.StartsWith("/api/v1/temporal/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "temporal.filtering";
+        }
+
+        // Geofence alerting — /api/v1/admin/alerts/*
+        if (route.StartsWith("/api/v1/admin/alerts", StringComparison.OrdinalIgnoreCase))
+        {
+            return "alerts.geofence";
+        }
+
+        // Native mTLS (client certificates) — /api/v1/admin/security/client-certificates/*
+        if (route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase))
+        {
+            return "security.mtls";
+        }
+
+        // Disconnected-sync replica / conflict review — /api/v1/admin/services/{serviceId}/replicas/*
+        if (route.StartsWith("/api/v1/admin/services/", StringComparison.OrdinalIgnoreCase) &&
+            route.Contains("/replicas", StringComparison.OrdinalIgnoreCase))
+        {
+            return "sync.offline";
+        }
+
+        // Realtime feature streaming — /api/v1/streaming/features*, the admin
+        // session-visibility and streaming-operations surfaces.
+        if (route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase) ||
+            route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase) ||
+            route.StartsWith("/api/v1/admin/operations/streaming", StringComparison.OrdinalIgnoreCase))
+        {
+            return "realtime.feature-streams";
+        }
+
+        return null;
     }
 
     /// <summary>

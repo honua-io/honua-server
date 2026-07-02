@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
@@ -34,6 +35,10 @@ internal static partial class FeatureStreamEndpoints
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var streamGroup = endpoints.MapGroup("/api/v{version:apiVersion}/streaming")
+            // T10 (#2346): realtime feature streaming is built-experimental and gated
+            // OFF the first-release surface (404 when realtime.feature-streams is
+            // experimental-disabled).
+            .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Streaming");
@@ -58,6 +63,7 @@ internal static partial class FeatureStreamEndpoints
 
         // Admin endpoints for session visibility
         var adminGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin/streaming/features")
+            .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Streaming")

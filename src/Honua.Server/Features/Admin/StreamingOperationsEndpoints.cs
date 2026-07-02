@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,6 +20,10 @@ internal static class StreamingOperationsEndpoints
     public static void MapStreamingOperationsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/operations/streaming")
+            // T10 (#2346): realtime streaming operations are built-experimental and
+            // gated OFF the first-release surface (404 when realtime.feature-streams
+            // is experimental-disabled).
+            .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Operations")

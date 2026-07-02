@@ -88,7 +88,7 @@ public sealed class FeatureCatalogDriftTests
     }
 
     [ArchitectureTest]
-    public void EveryCatalogEntry_IsImplementedMaturity_InSlice1()
+    public void EveryCatalogEntry_IsImplementedOrExperimentalMaturity()
     {
         var catalog = LoadCommittedCatalog();
 
@@ -97,10 +97,57 @@ public sealed class FeatureCatalogDriftTests
         catalog.Entries.Select(entry => entry.Id)
             .Should().OnlyHaveUniqueItems("the catalog id is the canonical per-entry key");
 
+        // T10 (#2346): the built-experimental route groups are flipped to the
+        // `experimental` tier; every other test-backed route stays `implemented`.
         catalog.Entries.Should().OnlyContain(
-            entry => entry.Maturity == FeatureCatalogGenerator.MaturityImplemented,
-            "slice 1 (#1946) projects only implemented, test-backed routes; "
-            + "status-from-CI and partial/deferred maturity are later slices.");
+            entry => entry.Maturity == FeatureCatalogGenerator.MaturityImplemented
+                || entry.Maturity == FeatureCatalogGenerator.MaturityExperimental,
+            "the catalog projects only implemented (in-release) or experimental "
+            + "(built-experimental, gated-off) test-backed routes.");
+    }
+
+    [ArchitectureTest]
+    public void ExperimentalEntries_AreExactlyTheGatedRouteGroups()
+    {
+        var catalog = LoadCommittedCatalog();
+
+        // The catalog `experimental` tier must be exactly the routes the T5
+        // endpoint gate 404s (the WithCapabilityGate route groups), no more and no
+        // less — the route → descriptor map is the single source both project from.
+        foreach (var entry in catalog.Entries)
+        {
+            var gatedDescriptorId = FeatureCatalogGenerator.ResolveDescriptorIdForRoute(entry.Route);
+            if (gatedDescriptorId is null)
+            {
+                entry.Maturity.Should().Be(
+                    FeatureCatalogGenerator.MaturityImplemented,
+                    "the in-release route {0} {1} is not part of a flipped experimental group",
+                    entry.Method,
+                    entry.Route);
+            }
+            else
+            {
+                entry.Maturity.Should().Be(
+                    FeatureCatalogGenerator.MaturityExperimental,
+                    "the built-experimental route {0} {1} is gated by {2}",
+                    entry.Method,
+                    entry.Route,
+                    gatedDescriptorId);
+            }
+        }
+
+        // Sanity: at least one experimental entry exists for every flipped family so
+        // a regression that silently stopped projecting `experimental` fails here.
+        var experimentalRoutes = catalog.Entries
+            .Where(entry => entry.Maturity == FeatureCatalogGenerator.MaturityExperimental)
+            .Select(entry => entry.Route)
+            .ToArray();
+
+        experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/temporal/", StringComparison.OrdinalIgnoreCase));
+        experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/alerts", StringComparison.OrdinalIgnoreCase));
+        experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase));
+        experimentalRoutes.Should().Contain(route => route.Contains("/replicas", StringComparison.OrdinalIgnoreCase));
+        experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
     }
 
     [ArchitectureTest]

@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Temporal.Abstractions;
 using Honua.Core.Features.Temporal.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
@@ -33,6 +34,10 @@ internal static partial class TemporalHistoryEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/temporal/services/{serviceId}/layers/{layerId:int}")
+            // T10 (#2346): temporal/data-history is built-experimental and gated OFF
+            // the first-release surface. The capability gate short-circuits with 404
+            // when temporal.filtering resolves experimental-disabled (the default).
+            .WithCapabilityGate("temporal.filtering")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Temporal")

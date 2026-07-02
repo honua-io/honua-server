@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Temporal.Abstractions;
 using Honua.Core.Features.Temporal.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
@@ -36,7 +37,10 @@ internal static partial class TemporalHistorySlicesEndpoints
         const string basePath = "/api/v{version:apiVersion}/temporal/services/{serviceId}/layers/{layerId:int}";
 
         // Diff: distinct diff-read permission (slice 2).
+        // T10 (#2346): temporal/data-history is built-experimental — gate every
+        // temporal group with a 404 short-circuit when it is experimental-disabled.
         var diffGroup = endpoints.MapGroup(basePath)
+            .WithCapabilityGate("temporal.filtering")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Temporal")
@@ -48,6 +52,7 @@ internal static partial class TemporalHistorySlicesEndpoints
 
         // Timeline + rollback planning: history-read permission (read-only analysis, slices 3 and 5).
         var readGroup = endpoints.MapGroup(basePath)
+            .WithCapabilityGate("temporal.filtering")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Temporal")
@@ -63,6 +68,7 @@ internal static partial class TemporalHistorySlicesEndpoints
 
         // Rollback execution: distinct rollback-execution permission (slice 5).
         var rollbackGroup = endpoints.MapGroup(basePath)
+            .WithCapabilityGate("temporal.filtering")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Temporal")

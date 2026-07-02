@@ -74,17 +74,60 @@ public sealed class CapabilityManifestRegistryProjectionTests
         manifestIds.Should().Equal(ExpectedManifestCapabilityIds);
     }
 
+    // T10 (#2346): the built-experimental manifest capabilities flipped to
+    // Experimental. With the default (flag-off) context these resolve
+    // experimental-disabled, so the registry-derived manifest omits them.
+    private static readonly string[] ExperimentalManifestCapabilityIds =
+    [
+        "temporal.filtering",
+        "temporal.extent-discovery",
+        "temporal.histogram",
+        "temporal.time-series-tiles",
+        "sync.offline",
+        "realtime.feature-streams",
+        "alerts.geofence",
+        "security.mtls",
+    ];
+
     [Fact]
-    public void Registry_AllManifestDescriptors_AreImplemented_SoNoneAreOmittedToday()
+    public void Registry_ExperimentalManifestDescriptors_AreOmittedWhenFlagOff()
     {
-        // B3 wires the mechanism only; nothing flips experimental until T10 (#2346).
-        // Every manifest descriptor must stay Implemented so the served manifest is
-        // unchanged (no capability is omitted).
+        // T10 flip: each built-experimental manifest descriptor is Experimental and,
+        // with flags off (default), resolves experimental-disabled so the manifest
+        // omits it. Customers opt in per capability via Capabilities:Experimental.
         var context = CapabilityGateContext.Default;
+
+        foreach (var id in ExperimentalManifestCapabilityIds)
+        {
+            var descriptor = Registry.Find(id);
+            descriptor.Should().NotBeNull($"{id} is a manifest capability");
+            descriptor!.Maturity.Should().Be(CapabilityMaturity.Experimental);
+
+            var resolution = CapabilityGateResolver.Resolve(descriptor, context);
+            resolution.Enabled.Should().BeFalse($"{id} is experimental and flag-off");
+            resolution.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
+        }
+    }
+
+    [Fact]
+    public void Registry_InReleaseManifestDescriptors_StayImplemented_AndAreNeverOmitted()
+    {
+        // Every manifest descriptor NOT in the built-experimental flip set stays
+        // Implemented and resolves enabled, so the in-release manifest surface is
+        // unaffected by T10.
+        var context = CapabilityGateContext.Default;
+        var experimental = ExperimentalManifestCapabilityIds.ToHashSet(StringComparer.Ordinal);
 
         foreach (var descriptor in Registry.All.Where(IsManifestCapability))
         {
-            descriptor.Maturity.Should().Be(CapabilityMaturity.Implemented);
+            if (experimental.Contains(descriptor.Id))
+            {
+                continue;
+            }
+
+            descriptor.Maturity.Should().Be(
+                CapabilityMaturity.Implemented,
+                $"{descriptor.Id} ships in the first release");
 
             var resolution = CapabilityGateResolver.Resolve(descriptor, context);
             resolution.Enabled.Should().BeTrue($"{descriptor.Id} must resolve enabled while Implemented");

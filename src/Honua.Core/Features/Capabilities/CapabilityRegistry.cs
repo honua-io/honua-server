@@ -184,54 +184,72 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         // honua.capability_manifest.v1 wire advertises for that family, and the null
         // seam B1 left. It mirrors CapabilityManifestService's package-family list so
         // the derived Packages.Families[] and the descriptors cannot diverge.
-        (string Id, string Category, string? EntitlementKey, CapabilityKind Kind, string? PackageSchemaVersion)[] capabilities =
+        // T10 (#2346): the built-experimental capabilities are flipped from
+        // Implemented to Experimental here. They are implemented server-side but
+        // gated OFF the first-release surface (ADR-0058): with the default config
+        // (Capabilities:Experimental:Enabled=false and no per-capability override)
+        // the T2 resolver reports them experimental-disabled, so the registry-derived
+        // manifest omits them (B3), the T5 endpoint gates 404 their route groups, and
+        // the feature catalog projects them as `experimental`. A customer opts in per
+        // capability via Capabilities:Experimental:{id}:Enabled=true. Concepts whose
+        // built-experimental surface has no distinct registry descriptor (versioned
+        // editing/VMS, SIEM/investigations, cross-environment promotion,
+        // rollback/auto-rollback, collaborative map sessions, governance auth
+        // SSO/OIDC/SAML/SCIM, forms/form-packages, mobile field-collection beyond
+        // offline sync) are intentionally left as-is — there is no descriptor to flip.
+        (string Id, string Category, string? EntitlementKey, CapabilityKind Kind, string? PackageSchemaVersion, CapabilityMaturity Maturity)[] capabilities =
         [
-            ("package.metadata-v2", "packages", null, CapabilityKind.Feature, MetadataV2Constants.SchemaVersion),
-            ("package.release-package", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion),
-            ("package.gitops-manifest", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion),
-            ("package.map", "packages", null, CapabilityKind.Feature, MapPackageSchemaVersion),
-            ("package.app", "packages", null, CapabilityKind.Feature, AppPackageSchemaVersion),
+            ("package.metadata-v2", "packages", null, CapabilityKind.Feature, MetadataV2Constants.SchemaVersion, CapabilityMaturity.Implemented),
+            ("package.release-package", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion, CapabilityMaturity.Implemented),
+            ("package.gitops-manifest", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion, CapabilityMaturity.Implemented),
+            ("package.map", "packages", null, CapabilityKind.Feature, MapPackageSchemaVersion, CapabilityMaturity.Implemented),
+            ("package.app", "packages", null, CapabilityKind.Feature, AppPackageSchemaVersion, CapabilityMaturity.Implemented),
 
-            ("temporal.filtering", "temporal", "temporal.filtering", CapabilityKind.Feature, null),
-            ("temporal.extent-discovery", "temporal", "temporal.extent-discovery", CapabilityKind.Feature, null),
-            ("temporal.histogram", "temporal", "temporal.histogram", CapabilityKind.Feature, null),
-            ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature, null),
+            // Temporal / data-versioning — built-experimental (T10 flip).
+            ("temporal.filtering", "temporal", "temporal.filtering", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("temporal.extent-discovery", "temporal", "temporal.extent-discovery", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("temporal.histogram", "temporal", "temporal.histogram", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
 
-            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null),
-            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null),
-            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null),
-            ("jobs.runner", "jobs", null, CapabilityKind.Feature, null),
-            ("ai.spec-apply", "ai", FeatureCatalog.AiSpecApplyKey, CapabilityKind.Feature, null),
-            ("ai.grounding", "ai", FeatureCatalog.AiGroundingKey, CapabilityKind.Feature, null),
-            ("ai.workflow-generation", "ai", FeatureCatalog.AiWorkflowGenerationKey, CapabilityKind.Feature, null),
-            ("gitops.release-manifest", "gitops", null, CapabilityKind.Feature, null),
+            // Disconnected-sync conflict review — built-experimental (T10 flip).
+            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            // Realtime feature streaming — built-experimental (T10 flip).
+            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            // Geofence enter/exit alerting — built-experimental (T10 flip).
+            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("jobs.runner", "jobs", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("ai.spec-apply", "ai", FeatureCatalog.AiSpecApplyKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("ai.grounding", "ai", FeatureCatalog.AiGroundingKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("ai.workflow-generation", "ai", FeatureCatalog.AiWorkflowGenerationKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("gitops.release-manifest", "gitops", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            ("transport.grpc", "transports", null, CapabilityKind.ProtocolOperation, null),
-            ("transport.grpc-web", "transports", null, CapabilityKind.ProtocolOperation, null),
-            ("transport.native-grpc", "transports", null, CapabilityKind.ProtocolOperation, null),
-            ("transport.mcp", "transports", null, CapabilityKind.ProtocolOperation, null),
-            ("transport.qgis", "transports", null, CapabilityKind.ProtocolOperation, null),
+            ("transport.grpc", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("transport.grpc-web", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("transport.native-grpc", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("transport.mcp", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("transport.qgis", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
 
-            ("security.mtls", "security", null, CapabilityKind.Feature, null),
-            ("preview.file-import", "preview", "import.file", CapabilityKind.Feature, null),
-            ("query.features", "query", null, CapabilityKind.Feature, null),
+            // Native mTLS (client-certificate) authentication — built-experimental (T10 flip).
+            ("security.mtls", "security", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("preview.file-import", "preview", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("query.features", "query", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             // analysis.spatial is gated by a composite of four analytics keys; the
             // single-key EntitlementKey field cannot represent it, so it is left
             // null (the manifest projection keeps the composite key set in B3).
-            ("analysis.spatial", "analysis", null, CapabilityKind.Feature, null),
-            ("publication.metadata-release", "publication", null, CapabilityKind.Feature, null),
-            ("upload.file", "upload", "import.file", CapabilityKind.Feature, null),
-            ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature, null),
+            ("analysis.spatial", "analysis", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("publication.metadata-release", "publication", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("upload.file", "upload", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
         ];
 
-        foreach (var (id, category, entitlementKey, kind, packageSchemaVersion) in capabilities)
+        foreach (var (id, category, entitlementKey, kind, packageSchemaVersion, maturity) in capabilities)
         {
             yield return new CapabilityDescriptor
             {
                 Id = id,
                 Category = category,
                 Kind = kind,
-                Maturity = CapabilityMaturity.Implemented,
+                Maturity = maturity,
                 EntitlementKey = entitlementKey,
                 MinimumEdition = ResolveMinimumEdition(entitlementKey),
                 PackageSchemaVersion = packageSchemaVersion,
