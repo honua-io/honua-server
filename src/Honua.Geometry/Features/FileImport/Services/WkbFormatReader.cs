@@ -27,7 +27,12 @@ internal static class WkbFormatReader
         // NTS WKBReader.Read(Stream) reads exactly one geometry and leaves the stream positioned
         // immediately after it. Buffer to a seekable MemoryStream so we can loop by byte position
         // (import sources are size-capped upstream) and reliably detect end-of-input.
-        using var buffer = new MemoryStream();
+        //
+        // WKBReader.Read wraps the stream in a BinaryReader and disposes it, which would otherwise
+        // close our buffer after the first geometry and make the next Position read throw
+        // ObjectDisposedException. Use a buffer whose Dispose/Close are no-ops so it survives the
+        // concatenated-geometry loop; the underlying managed byte array is reclaimed by the GC.
+        using var buffer = new NonClosingMemoryStream();
         await stream.CopyToAsync(buffer, cancellationToken);
         if (buffer.Length == 0)
         {
@@ -71,6 +76,31 @@ internal static class WkbFormatReader
             {
                 await Task.Yield();
             }
+        }
+    }
+
+    /// <summary>
+    /// A seekable in-memory buffer whose <see cref="Dispose(bool)"/> / <see cref="Close"/> are
+    /// no-ops. WKBReader.Read wraps the passed stream in a BinaryReader and disposes it after each
+    /// geometry; without this the buffer would close between concatenated geometries and the loop's
+    /// Position read would throw. The managed byte array is reclaimed by the GC once unreferenced.
+    /// </summary>
+    private sealed class NonClosingMemoryStream : MemoryStream
+    {
+        [System.Diagnostics.CodeAnalysis.SuppressMessage(
+            "Usage",
+            "CA2215:Dispose methods should call base class dispose",
+            Justification = "Intentional: not disposing keeps the buffer usable across concatenated "
+                + "reads; WKBReader.Read's BinaryReader must not close the shared buffer. The managed "
+                + "byte array is reclaimed by the GC.")]
+        protected override void Dispose(bool disposing)
+        {
+            // Intentionally do not dispose: keep the buffer usable across concatenated reads.
+        }
+
+        public override void Close()
+        {
+            // Intentionally no-op: BinaryReader.Dispose must not close the shared buffer.
         }
     }
 }

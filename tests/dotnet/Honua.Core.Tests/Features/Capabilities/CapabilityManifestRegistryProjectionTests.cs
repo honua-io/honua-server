@@ -20,7 +20,7 @@ namespace Honua.Core.Tests.Features.Capabilities;
 /// </summary>
 public sealed class CapabilityManifestRegistryProjectionTests
 {
-    private static readonly ICapabilityRegistry Registry = new CapabilityRegistry();
+    private static readonly CapabilityRegistry Registry = new CapabilityRegistry();
 
     // The frozen #1186 manifest roster, in the exact order the manifest serializes it.
     // Mirrors CapabilityManifestService's hand-curated list; the registry-derived path

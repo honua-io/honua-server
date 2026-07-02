@@ -347,7 +347,7 @@ internal sealed class CapabilityManifestService(
     /// id/kind the <c>honua.capability_manifest.v1</c> surface advertises. The iteration
     /// order of <see cref="ICapabilityRegistry.All"/> preserves the legacy family order.
     /// </summary>
-    private static readonly IReadOnlyDictionary<string, (string Id, string Kind)> PackageWireById =
+    private static readonly Dictionary<string, (string Id, string Kind)> PackageWireById =
         new Dictionary<string, (string Id, string Kind)>(StringComparer.Ordinal)
         {
             ["package.metadata-v2"] = ("metadata-v2-graph", "metadata"),

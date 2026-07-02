@@ -30,7 +30,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "delete-api-v1-admin-alerts-zones-zoneid",
@@ -44,7 +44,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "delete-api-v1-admin-cloud-rasters-id",
@@ -400,7 +400,7 @@
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.DisconnectSubscriber_UnknownId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "delete-api-v1-admin-performance-enhanced-cache-invalidate",
@@ -481,7 +481,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.DisableProfile_ExistingProfile_ReturnsDisabledProfile"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "delete-api-v1-admin-security-client-certificates-profiles-profileid-mappings-mappingid",
@@ -494,7 +494,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.DisableMapping_ExistingMapping_ReturnsDisabledMapping"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "delete-api-v1-admin-security-client-certificates-profiles-profileid-revocations-revocationid",
@@ -507,7 +507,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.RemoveRevocation_ExistingRevocation_ReturnsOk"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "delete-api-v1-admin-share-exports-exportid",
@@ -534,7 +534,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.DisconnectSession_UnknownId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "delete-api-v1-admin-tenants-tenantid",
@@ -910,7 +910,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRules_WithServiceAndLayerFilter_ReturnsSuccessEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-alerts-rules-ruleid",
@@ -923,7 +923,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-alerts-rules-ruleid-events",
@@ -938,7 +938,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRuleEvents_WithUnknownStatus_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-alerts-rules-ruleid-health",
@@ -952,7 +952,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.GetRuleHealth_WithUnavailableDeliveryChannel_ReturnsPolicyState"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-alerts-zones",
@@ -966,7 +966,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListZones_WithServiceFilter_ReturnsSuccessEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-alerts-zones-zoneid",
@@ -979,7 +979,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-api-keys",
@@ -1466,6 +1466,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetFeatureOverview_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ProEdition_ShowsUpgradeMessagesForEnterprise",
+        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ReturnsCapabilityRegistryProjection",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetFeatureOverview_ReturnsEditionAndFeatures"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -2848,7 +2849,7 @@
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.StreamAlerts_WithoutWebSocketUpgrade_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-operations-streaming-subscribers",
@@ -2863,7 +2864,7 @@
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_WhenNone_ReturnsEmptyList"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-operations-type-operationtype",
@@ -3213,7 +3214,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithAdminAuth_ReturnsConfiguredProfiles"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-security-client-certificates-profiles-profileid",
@@ -3226,7 +3227,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.GetProfile_ExistingProfile_ReturnsProfile"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-security-client-certificates-profiles-profileid-mappings",
@@ -3239,7 +3240,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListMappings_ExistingProfile_ReturnsMappings"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-security-client-certificates-profiles-profileid-revocations",
@@ -3252,7 +3253,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListRevocations_ExistingProfile_ReturnsRevocations"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-services",
@@ -3284,7 +3285,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_WithoutAdminAuthorization_IsRejected"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-services-serviceid-replicas-replicaid",
@@ -3302,7 +3303,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.GetReplica_WithoutAdminAuthorization_IsRejected"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-services-serviceid-replicas-replicaid-conflicts",
@@ -3318,7 +3319,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ListConflicts_WhenProviderDoesNotSupportReview_ReturnsNotImplemented"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-services-serviceid-replicas-replicaid-conflicts-conflictid",
@@ -3332,7 +3333,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.GetConflict_ForResolvedConflict_ReturnsResolutionEvidence"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-services-servicename-layers-layerid-export",
@@ -3506,7 +3507,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ListSessions_WithFilter_ReturnsSessionFilterInfo"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-admin-tenants",
@@ -3795,6 +3796,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAdminWithEnvironmentAndWorkspace_ReturnsFilteredManifest",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAnonymous_ReturnsPublicTenantManifestAndNoStoreHeaders",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RegistryDerived_MatchesHandCuratedComposition",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithCommunityLicense_MarksOfflineSyncAndAiOperationsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithInvalidScopeIdentifier_ReturnsSafeBadRequest",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithPartialSpatialAnalysisEntitlements_MarksAnalysisUnavailable",
@@ -4627,7 +4629,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_WhenSessionLimitReached_ReturnsServiceUnavailable"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-streaming-features-capabilities",
@@ -4643,7 +4645,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ProEdition_AdvertisesTransportsFiltersAndLayers"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-studio-content-items-itemid-versions",
@@ -4713,7 +4715,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.AsOf_WithTimestampCursor_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-temporal-services-serviceid-layers-layerid-capabilities",
@@ -4728,7 +4730,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForUnknownLayer_ReturnsNotFound"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-temporal-services-serviceid-layers-layerid-diff",
@@ -4743,7 +4745,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistorySliceEndpointsTests.Diff_MissingFrom_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-temporal-services-serviceid-layers-layerid-features-featureid-timeline",
@@ -4756,7 +4758,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistorySliceEndpointsTests.Timeline_ForFeature_ReturnsOrderedRevisions"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-api-v1-tiles-pmtiles-artifactid",
@@ -8656,6 +8658,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Geoprocessing.GpJobWorkerCompositionRootTests.SubmitJob_WithProductionWiredWorker_DrainsQueueToTerminalSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_SubmitsPollsAndReadsNamedResult",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDefaultServiceTests.DefaultGpService_DrivesGeometryBufferToTerminalResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobStatus_SucceededJobWithResultPackage_ReturnsNamedResultReferences",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobStatus_WithInvalidJobId_Returns404",
@@ -8692,6 +8695,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Geoprocessing.GpJobWorkerCompositionRootTests.SubmitJob_WithProductionWiredWorker_DrainsQueueToTerminalSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_SubmitsPollsAndReadsNamedResult",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDefaultServiceTests.DefaultGpService_DrivesGeometryBufferToTerminalResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobResult_WithInvalidJobId_ReturnsError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobResult_WithResultPackage_ReturnsNamedOutput"
@@ -11397,7 +11401,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-api-v1-admin-alerts-rules-test",
@@ -11413,7 +11417,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.TestRule_WithZoneIdOnThresholdRule_ReturnsValidationError"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-api-v1-admin-alerts-zones",
@@ -11428,7 +11432,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-api-v1-admin-api-keys",
@@ -12510,17 +12514,20 @@
         "Honua.Server.Tests.Import.StreamingImportTests.Import_CsvFile_WithSemicolonDelimiter_StreamsRows",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_CsvFile_WithTabDelimiter_StreamsRows",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_EmptyFeatureCollection_ReturnsStructuredValidationAndDoesNotCreateTable",
+        "Honua.Server.Tests.Import.StreamingImportTests.Import_EsriJsonFeatureSet_AutoDetectsAndImports",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_FlatGeobufFile_StreamsFeaturesAndDetectsFormat",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonMissingGeometry_ReturnsStructuredValidationAndDoesNotCreateTable",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonWithDifferentSourceAndTargetSrid_TransformsAtImport",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonWithMultipleFeatureTypes_StreamsCorrectly",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonWithUnsupportedTargetSrid_ReturnsStructuredValidationAndDoesNotCreateTable",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GpxFile_StreamsTracks",
+        "Honua.Server.Tests.Import.StreamingImportTests.Import_GpxWithGdalExtensions_ImportsWaypoints",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_InvalidGeoJson_ReturnsStructuredValidationAndDoesNotCreateTable",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_KmlFile_StreamsPlacemarks",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_KmzFile_StreamsPlacemarks",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_LargeGeoJsonFile_StreamsWithConstantMemory",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_WithForceBackground_QueuesJob",
+        "Honua.Server.Tests.Import.StreamingImportTests.Import_WkbPayload_AutoDetectsAndImports",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_WktFile_StreamsLineByLine"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -13297,7 +13304,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_WithMalformedCustomTrustAnchor_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-api-v1-admin-security-client-certificates-profiles-profileid-mappings",
@@ -13313,7 +13320,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateMapping_WithInvertedValidityWindow_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-api-v1-admin-security-client-certificates-profiles-profileid-revocations",
@@ -13326,7 +13333,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AddRevocation_ValidRequest_ReturnsCreated"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-api-v1-admin-security-client-certificates-validate",
@@ -13340,7 +13347,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ValidateCertificate_WithMappedCertificate_ReturnsValidResult"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-api-v1-admin-services-serviceid-replicas-replicaid-conflicts-conflictid-resolve",
@@ -13356,7 +13363,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WithUnknownAction_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-api-v1-admin-share-exports",
@@ -14297,7 +14304,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistorySliceEndpointsTests.Rollback_WithoutApproval_ReturnsConflict"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-api-v1-temporal-services-serviceid-layers-layerid-rollback-plan",
@@ -14310,7 +14317,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistorySliceEndpointsTests.RollbackPlan_ForTemporalLayer_ReportsState"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-csp-violation-report",
@@ -15897,8 +15904,10 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_FeatureAllowedByPlugin_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_FeatureRejectedByPlugin_IsNotWritten",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_RollbackOnFailure_PluginRejection_RollsBackEntireBatch",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.ApplyEdits_WithGenuinelyDifferentSrid_AgainstWebMercatorLayer_ReturnsError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.ApplyEdits_WithLineGeometry_MismatchedSrid_ReturnsError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.ApplyEdits_WithPolygonHole_MismatchedSrid_ReturnsError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.ApplyEdits_WithWebMercatorAliasSrid_AgainstWebMercatorLayer_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTrueCurveTests.ApplyEdits_WithCurvePathsBezier_DensifiesAndRoundTripsAsLinearPolyline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithLineStringGeometryOnPointLayer_Rejected",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithNullAttributeValues_Succeeds",
@@ -16346,6 +16355,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.GpJobWorkerCompositionRootTests.SubmitJob_WithProductionWiredWorker_DrainsQueueToTerminalSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_SubmitsPollsAndReadsNamedResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_UnsupportedEnvironmentControlsReturnEsriError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDefaultServiceTests.DefaultGpService_DrivesGeometryBufferToTerminalResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJobPost_WithEnvInQueryString_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_CatalogStorageUnavailable_ReturnsServiceUnavailable",
@@ -17622,7 +17632,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.UpdateRule_NonexistentRuleId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "put-api-v1-admin-alerts-rules-ruleid-enabled",
@@ -17635,7 +17645,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "put-api-v1-admin-alerts-zones-zoneid",
@@ -17649,7 +17659,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "put-api-v1-admin-config",
@@ -18097,7 +18107,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.UpdateProfile_ExistingProfile_ReturnsUpdatedRevision"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "put-api-v1-admin-security-client-certificates-profiles-profileid-mappings-mappingid",
@@ -18110,7 +18120,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.UpdateMapping_ExistingMapping_ReturnsUpdatedMapping"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "put-api-v1-admin-services-servicename-access-policy",

@@ -112,6 +112,11 @@ public sealed class VerticalSliceIsolationTests
             "Analytics",
             "AuditLog",
             "Authentication",   // Lives in Honua.Hosting under the preserved namespace.
+            "Capabilities",     // Hosting-resident shared capability-gate seam (ADR-0058):
+                                // the CapabilityGateEndpointFilter + OpenAPI document
+                                // transformer that gate/prune experimental routes via the
+                                // unified capability registry, shared by the protocol
+                                // assemblies and Server so neither owns the gate logic.
             "Caching",          // Lives in Honua.Hosting under the preserved namespace.
             "Compression",
             "Configuration",
