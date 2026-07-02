@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Security.Claims;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
@@ -53,6 +54,7 @@ internal sealed class CapabilityManifestService(
     IEnumerable<IBatchComputeBackend> batchBackends,
     IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
     IWebHostEnvironment hostEnvironment,
+    ICapabilityRegistry capabilityRegistry,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
     private const string AuthorizationNotice =
@@ -94,7 +96,18 @@ internal sealed class CapabilityManifestService(
             request.WorkspaceId);
         var batchCapabilities = await ResolveBatchCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
 
-        var capabilities = BuildCapabilities(policyContext);
+        // #2335 (B3): the registry-derived composition resolves each descriptor through
+        // the shared gate resolver (edition/experimental precedence). All descriptors
+        // stay Implemented today, so this produces the same wire document as the legacy
+        // hand-curated composition; the gate context is the seam T10 (#2346) flips.
+        var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
+
+        var capabilities = options.ManifestFromRegistry
+            ? BuildCapabilitiesFromRegistry(policyContext, gateContext)
+            : BuildCapabilities(policyContext);
+        var packages = options.ManifestFromRegistry
+            ? BuildPackagesFromRegistry(gateContext)
+            : BuildPackages();
         var unavailableCount = capabilities.Count(static c => !c.Available);
         var manifest = new CapabilityManifestDocument
         {
@@ -113,7 +126,7 @@ internal sealed class CapabilityManifestService(
             },
             Server = BuildServerInfo(),
             Environment = environment,
-            Packages = BuildPackages(),
+            Packages = packages,
             Capabilities = capabilities,
             Transports = BuildTransports(),
             Limits = BuildLimits(batchCapabilities),
@@ -217,14 +230,7 @@ internal sealed class CapabilityManifestService(
     {
         return new CapabilityManifestPackages
         {
-            SchemaVersions =
-            [
-                CapabilityManifestConstants.SchemaVersion,
-                MetadataV2Constants.ApiVersion,
-                MetadataV2Constants.SchemaVersion,
-                "honua_map_package.v1",
-                "honua_app_package.v1"
-            ],
+            SchemaVersions = BuildPackageSchemaVersions(),
             Families =
             [
                 new CapabilityManifestPackageFamily
@@ -263,16 +269,93 @@ internal sealed class CapabilityManifestService(
                     Supported = true
                 }
             ],
-            StorageFamilies = Enum.GetValues<MetadataV2StorageType>()
-                .Select(ToWireValue)
-                .Order(StringComparer.Ordinal)
-                .ToArray(),
-            PublicationFamilies = Enum.GetValues<MetadataV2PublicationType>()
-                .Select(ToWireValue)
-                .Order(StringComparer.Ordinal)
-                .ToArray()
+            StorageFamilies = BuildStorageFamilies(),
+            PublicationFamilies = BuildPublicationFamilies()
         };
     }
+
+    /// <summary>
+    /// The #2335 (B3) registry-derived <c>Packages</c> block: the <c>Families[]</c> are
+    /// derived by iterating the <c>packages</c>-category descriptors of the unified
+    /// capability registry through the gate resolver. The wire family id/kind come from
+    /// <see cref="PackageWireById"/> and the schema version from the descriptor's
+    /// <see cref="CapabilityDescriptor.PackageSchemaVersion"/> (the null seam B1 left);
+    /// an experimental-disabled family is omitted (wire-compatible). The schema-version,
+    /// storage-family and publication-family lists are identical to the legacy path.
+    /// </summary>
+    private CapabilityManifestPackages BuildPackagesFromRegistry(CapabilityGateContext gateContext)
+    {
+        var families = new List<CapabilityManifestPackageFamily>();
+        foreach (var descriptor in capabilityRegistry.All)
+        {
+            if (!PackageWireById.TryGetValue(descriptor.Id, out var wire))
+            {
+                continue;
+            }
+
+            var resolution = CapabilityGateResolver.Resolve(descriptor, gateContext);
+            if (IsExperimentalDisabled(resolution))
+            {
+                // Experimental-and-flag-off package family: omit it (wire-compatible).
+                continue;
+            }
+
+            families.Add(new CapabilityManifestPackageFamily
+            {
+                Id = wire.Id,
+                Kind = wire.Kind,
+                SchemaVersion = descriptor.PackageSchemaVersion
+                    ?? throw new InvalidOperationException(
+                        $"Package capability '{descriptor.Id}' is missing a PackageSchemaVersion."),
+                Supported = resolution.Enabled
+            });
+        }
+
+        return new CapabilityManifestPackages
+        {
+            SchemaVersions = BuildPackageSchemaVersions(),
+            Families = families.ToArray(),
+            StorageFamilies = BuildStorageFamilies(),
+            PublicationFamilies = BuildPublicationFamilies()
+        };
+    }
+
+    private static string[] BuildPackageSchemaVersions()
+        =>
+        [
+            CapabilityManifestConstants.SchemaVersion,
+            MetadataV2Constants.ApiVersion,
+            MetadataV2Constants.SchemaVersion,
+            "honua_map_package.v1",
+            "honua_app_package.v1"
+        ];
+
+    private static string[] BuildStorageFamilies()
+        => Enum.GetValues<MetadataV2StorageType>()
+            .Select(ToWireValue)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    private static string[] BuildPublicationFamilies()
+        => Enum.GetValues<MetadataV2PublicationType>()
+            .Select(ToWireValue)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    /// <summary>
+    /// Maps each <c>packages</c>-category registry descriptor id to the wire family
+    /// id/kind the <c>honua.capability_manifest.v1</c> surface advertises. The iteration
+    /// order of <see cref="ICapabilityRegistry.All"/> preserves the legacy family order.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, (string Id, string Kind)> PackageWireById =
+        new Dictionary<string, (string Id, string Kind)>(StringComparer.Ordinal)
+        {
+            ["package.metadata-v2"] = ("metadata-v2-graph", "metadata"),
+            ["package.release-package"] = ("metadata-release-package", "publication"),
+            ["package.gitops-manifest"] = ("gitops-metadata-release-manifest", "gitops"),
+            ["package.map"] = ("map-package", "map"),
+            ["package.app"] = ("app-package", "app"),
+        };
 
     private CapabilityManifestCapability[] BuildCapabilities(CapabilityPolicyContext context)
     {
@@ -324,6 +407,139 @@ internal sealed class CapabilityManifestService(
             Capability("edit.features", "edit", context, entitlementKey: FeatureCatalog.FeatureServerEditsKey, policyCapability: "features.edit")
         ];
     }
+
+    /// <summary>
+    /// The #2335 (B3) registry-derived <c>Capabilities[]</c>. Instead of the
+    /// hand-curated roster in <see cref="BuildCapabilities"/>, this iterates the unified
+    /// capability registry's manifest descriptors (in their frozen order), resolves each
+    /// through the shared <see cref="CapabilityGateResolver"/>, and omits any descriptor
+    /// the gate turns off as experimental-and-flag-off (wire-compatible — the entry is
+    /// simply absent). The per-capability config knobs the registry does not carry
+    /// (supported/configured/requires*/policy/composite entitlement keys) come from
+    /// <see cref="BuildManifestCapabilitySpecs"/>; the availability computation is the
+    /// same <see cref="Capability"/> factory, so while every descriptor stays
+    /// <see cref="CapabilityMaturity.Implemented"/> the wire document is unchanged.
+    /// </summary>
+    private CapabilityManifestCapability[] BuildCapabilitiesFromRegistry(
+        CapabilityPolicyContext context,
+        CapabilityGateContext gateContext)
+    {
+        var specs = BuildManifestCapabilitySpecs();
+        var capabilities = new List<CapabilityManifestCapability>(specs.Count);
+        foreach (var descriptor in capabilityRegistry.All)
+        {
+            if (!IsManifestCapability(descriptor))
+            {
+                continue;
+            }
+
+            var resolution = CapabilityGateResolver.Resolve(descriptor, gateContext);
+            if (IsExperimentalDisabled(resolution))
+            {
+                continue;
+            }
+
+            var spec = specs.GetValueOrDefault(descriptor.Id, ManifestCapabilitySpec.Default);
+            capabilities.Add(Capability(
+                descriptor.Id,
+                descriptor.Category,
+                context,
+                supported: spec.Supported,
+                configured: spec.Configured,
+                entitlementKey: spec.EntitlementKey,
+                entitlementKeys: spec.EntitlementKeys,
+                policyCapability: spec.PolicyCapability,
+                requiresAuthentication: spec.RequiresAuthentication,
+                requiresEnvironment: spec.RequiresEnvironment,
+                requiresWorkspace: spec.RequiresWorkspace));
+        }
+
+        return capabilities.ToArray();
+    }
+
+    /// <summary>
+    /// The per-capability config knobs the registry descriptor does not carry, keyed by
+    /// descriptor id. Ids absent from the map use <see cref="ManifestCapabilitySpec.Default"/>.
+    /// Mirrors the hand-curated arguments in <see cref="BuildCapabilities"/> exactly so the
+    /// two composition paths stay wire-identical.
+    /// </summary>
+    private Dictionary<string, ManifestCapabilitySpec> BuildManifestCapabilitySpecs()
+    {
+        var syncSupported = IsFieldCollectionSyncSupported();
+        var jobsSupported = options.ControlPlane.ExecutionWorkloads.Count > 0 || batchBackends.Any();
+        var alertsConfigured = options.Alerts.Enabled;
+        var gitopsConfigured = options.ControlPlane.DeployTargets.Count > 0;
+        var mtlsConfigured = options.ClientCertificate.Mode != ClientCertificateAuthenticationMode.Disabled;
+
+        return new Dictionary<string, ManifestCapabilitySpec>(StringComparer.Ordinal)
+        {
+            ["package.release-package"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
+            ["package.gitops-manifest"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
+            ["package.map"] = new() { PolicyCapability = "studio.edit" },
+            ["package.app"] = new() { PolicyCapability = "studio.edit" },
+
+            ["temporal.filtering"] = new() { EntitlementKey = "temporal.filtering" },
+            ["temporal.extent-discovery"] = new() { EntitlementKey = "temporal.extent-discovery" },
+            ["temporal.histogram"] = new() { EntitlementKey = "temporal.histogram" },
+            ["temporal.time-series-tiles"] = new() { EntitlementKey = "temporal.time-series-tiles" },
+
+            ["sync.offline"] = new()
+            {
+                Supported = syncSupported,
+                EntitlementKey = FeatureCatalog.FieldOpsOfflineSyncKey,
+                PolicyCapability = "features.edit",
+                RequiresWorkspace = true,
+            },
+            ["realtime.feature-streams"] = new() { EntitlementKey = "streaming.feature-subscriptions" },
+            ["alerts.geofence"] = new() { EntitlementKey = "alerts.enter-exit", Configured = alertsConfigured },
+            ["jobs.runner"] = new() { Supported = jobsSupported, RequiresAuthentication = true },
+            ["ai.spec-apply"] = new() { EntitlementKey = FeatureCatalog.AiSpecApplyKey },
+            ["ai.grounding"] = new() { EntitlementKey = FeatureCatalog.AiGroundingKey },
+            ["ai.workflow-generation"] = new() { EntitlementKey = FeatureCatalog.AiWorkflowGenerationKey },
+            ["gitops.release-manifest"] = new()
+            {
+                Configured = gitopsConfigured,
+                PolicyCapability = "catalog.publish",
+                RequiresEnvironment = true,
+            },
+
+            ["security.mtls"] = new() { Configured = mtlsConfigured },
+            ["preview.file-import"] = new() { EntitlementKey = "import.file", PolicyCapability = "metadata.write" },
+            ["analysis.spatial"] = new()
+            {
+                EntitlementKeys = SpatialAnalyticsEntitlementKeys,
+                PolicyCapability = "features.query",
+            },
+            ["publication.metadata-release"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
+            ["upload.file"] = new() { EntitlementKey = "import.file", PolicyCapability = "metadata.write" },
+            ["edit.features"] = new() { EntitlementKey = FeatureCatalog.FeatureServerEditsKey, PolicyCapability = "features.edit" },
+        };
+    }
+
+    private CapabilityGateContext BuildGateContext(HonuaEdition edition, string? environment)
+        => new()
+        {
+            Edition = edition,
+            DeploymentEnvironment = string.IsNullOrWhiteSpace(environment) ? null : environment,
+            ExperimentalFlags = options.ExperimentalCapabilityFlags,
+        };
+
+    /// <summary>
+    /// A registry descriptor participates in the #1186 manifest <c>Capabilities[]</c>
+    /// when it is neither an <c>/mcp</c> tool/resource nor a data-format descriptor —
+    /// those roster kinds project onto other surfaces, not the manifest.
+    /// </summary>
+    private static bool IsManifestCapability(CapabilityDescriptor descriptor)
+        => !descriptor.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal)
+            && !descriptor.Id.StartsWith(CapabilityRegistry.McpResourceIdPrefix, StringComparison.Ordinal)
+            && !descriptor.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal);
+
+    private static bool IsExperimentalDisabled(CapabilityResolution resolution)
+        => !resolution.Enabled
+            && string.Equals(
+                resolution.ReasonCode,
+                Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
+                StringComparison.Ordinal);
 
     private CapabilityManifestCapability Capability(
         string id,
@@ -793,6 +1009,31 @@ internal sealed class CapabilityManifestService(
             ClientCertificateAuthenticationMode.RequiredForEnvironment => "required-for-environment",
             _ => mode.ToString()
         };
+
+    /// <summary>
+    /// The manifest-specific config knobs a registry descriptor does not carry, layered
+    /// onto the registry roster by <see cref="BuildCapabilitiesFromRegistry"/> (#2335 / B3).
+    /// </summary>
+    private sealed record ManifestCapabilitySpec
+    {
+        public static ManifestCapabilitySpec Default { get; } = new();
+
+        public bool Supported { get; init; } = true;
+
+        public bool Configured { get; init; } = true;
+
+        public string? EntitlementKey { get; init; }
+
+        public string[]? EntitlementKeys { get; init; }
+
+        public string? PolicyCapability { get; init; }
+
+        public bool RequiresAuthentication { get; init; }
+
+        public bool RequiresEnvironment { get; init; }
+
+        public bool RequiresWorkspace { get; init; }
+    }
 
     private sealed record CapabilityPolicyContext(
         LicenseSnapshot LicenseSnapshot,

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Capabilities;
 
@@ -178,47 +179,52 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     // -----------------------------------------------------------------------
     private static IEnumerable<CapabilityDescriptor> BuildManifestCapabilityDescriptors()
     {
-        (string Id, string Category, string? EntitlementKey, CapabilityKind Kind)[] capabilities =
+        // PackageSchemaVersion is populated only for the `packages`-category
+        // capabilities (#2335 / B3): it is the package-family schema version the
+        // honua.capability_manifest.v1 wire advertises for that family, and the null
+        // seam B1 left. It mirrors CapabilityManifestService's package-family list so
+        // the derived Packages.Families[] and the descriptors cannot diverge.
+        (string Id, string Category, string? EntitlementKey, CapabilityKind Kind, string? PackageSchemaVersion)[] capabilities =
         [
-            ("package.metadata-v2", "packages", null, CapabilityKind.Feature),
-            ("package.release-package", "packages", null, CapabilityKind.Feature),
-            ("package.gitops-manifest", "packages", null, CapabilityKind.Feature),
-            ("package.map", "packages", null, CapabilityKind.Feature),
-            ("package.app", "packages", null, CapabilityKind.Feature),
+            ("package.metadata-v2", "packages", null, CapabilityKind.Feature, MetadataV2Constants.SchemaVersion),
+            ("package.release-package", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion),
+            ("package.gitops-manifest", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion),
+            ("package.map", "packages", null, CapabilityKind.Feature, MapPackageSchemaVersion),
+            ("package.app", "packages", null, CapabilityKind.Feature, AppPackageSchemaVersion),
 
-            ("temporal.filtering", "temporal", "temporal.filtering", CapabilityKind.Feature),
-            ("temporal.extent-discovery", "temporal", "temporal.extent-discovery", CapabilityKind.Feature),
-            ("temporal.histogram", "temporal", "temporal.histogram", CapabilityKind.Feature),
-            ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature),
+            ("temporal.filtering", "temporal", "temporal.filtering", CapabilityKind.Feature, null),
+            ("temporal.extent-discovery", "temporal", "temporal.extent-discovery", CapabilityKind.Feature, null),
+            ("temporal.histogram", "temporal", "temporal.histogram", CapabilityKind.Feature, null),
+            ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature, null),
 
-            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature),
-            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature),
-            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature),
-            ("jobs.runner", "jobs", null, CapabilityKind.Feature),
-            ("ai.spec-apply", "ai", FeatureCatalog.AiSpecApplyKey, CapabilityKind.Feature),
-            ("ai.grounding", "ai", FeatureCatalog.AiGroundingKey, CapabilityKind.Feature),
-            ("ai.workflow-generation", "ai", FeatureCatalog.AiWorkflowGenerationKey, CapabilityKind.Feature),
-            ("gitops.release-manifest", "gitops", null, CapabilityKind.Feature),
+            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null),
+            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null),
+            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null),
+            ("jobs.runner", "jobs", null, CapabilityKind.Feature, null),
+            ("ai.spec-apply", "ai", FeatureCatalog.AiSpecApplyKey, CapabilityKind.Feature, null),
+            ("ai.grounding", "ai", FeatureCatalog.AiGroundingKey, CapabilityKind.Feature, null),
+            ("ai.workflow-generation", "ai", FeatureCatalog.AiWorkflowGenerationKey, CapabilityKind.Feature, null),
+            ("gitops.release-manifest", "gitops", null, CapabilityKind.Feature, null),
 
-            ("transport.grpc", "transports", null, CapabilityKind.ProtocolOperation),
-            ("transport.grpc-web", "transports", null, CapabilityKind.ProtocolOperation),
-            ("transport.native-grpc", "transports", null, CapabilityKind.ProtocolOperation),
-            ("transport.mcp", "transports", null, CapabilityKind.ProtocolOperation),
-            ("transport.qgis", "transports", null, CapabilityKind.ProtocolOperation),
+            ("transport.grpc", "transports", null, CapabilityKind.ProtocolOperation, null),
+            ("transport.grpc-web", "transports", null, CapabilityKind.ProtocolOperation, null),
+            ("transport.native-grpc", "transports", null, CapabilityKind.ProtocolOperation, null),
+            ("transport.mcp", "transports", null, CapabilityKind.ProtocolOperation, null),
+            ("transport.qgis", "transports", null, CapabilityKind.ProtocolOperation, null),
 
-            ("security.mtls", "security", null, CapabilityKind.Feature),
-            ("preview.file-import", "preview", "import.file", CapabilityKind.Feature),
-            ("query.features", "query", null, CapabilityKind.Feature),
+            ("security.mtls", "security", null, CapabilityKind.Feature, null),
+            ("preview.file-import", "preview", "import.file", CapabilityKind.Feature, null),
+            ("query.features", "query", null, CapabilityKind.Feature, null),
             // analysis.spatial is gated by a composite of four analytics keys; the
             // single-key EntitlementKey field cannot represent it, so it is left
             // null (the manifest projection keeps the composite key set in B3).
-            ("analysis.spatial", "analysis", null, CapabilityKind.Feature),
-            ("publication.metadata-release", "publication", null, CapabilityKind.Feature),
-            ("upload.file", "upload", "import.file", CapabilityKind.Feature),
-            ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature),
+            ("analysis.spatial", "analysis", null, CapabilityKind.Feature, null),
+            ("publication.metadata-release", "publication", null, CapabilityKind.Feature, null),
+            ("upload.file", "upload", "import.file", CapabilityKind.Feature, null),
+            ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature, null),
         ];
 
-        foreach (var (id, category, entitlementKey, kind) in capabilities)
+        foreach (var (id, category, entitlementKey, kind, packageSchemaVersion) in capabilities)
         {
             yield return new CapabilityDescriptor
             {
@@ -228,9 +234,16 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Maturity = CapabilityMaturity.Implemented,
                 EntitlementKey = entitlementKey,
                 MinimumEdition = ResolveMinimumEdition(entitlementKey),
+                PackageSchemaVersion = packageSchemaVersion,
             };
         }
     }
+
+    /// <summary>The map-package family schema version advertised by the manifest wire.</summary>
+    private const string MapPackageSchemaVersion = "honua_map_package.v1";
+
+    /// <summary>The app-package family schema version advertised by the manifest wire.</summary>
+    private const string AppPackageSchemaVersion = "honua_app_package.v1";
 
     // -----------------------------------------------------------------------
     // Data formats — the shared format readers/writers. The import formats mirror
