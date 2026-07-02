@@ -75,7 +75,7 @@ internal static class FeatureCatalogGenerator
     /// each entry's <c>maturity</c>. It is a pure, static-backed projection, so a
     /// single shared instance is safe.
     /// </summary>
-    private static readonly ICapabilityRegistry Registry = new CapabilityRegistry();
+    private static readonly CapabilityRegistry Registry = new CapabilityRegistry();
 
     /// <summary>
     /// Builds the catalog model deterministically (stable ordering by method then

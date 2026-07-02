@@ -61,7 +61,7 @@ public sealed class WktFormatReaderTests
     public async Task ReadStreamingAsync_WkbHexLine_ParsesFeature()
     {
         var expected = new Point(-122.4194, 37.7749) { SRID = 4326 };
-        var writer = new WKBWriter { HandleSRID = true };
+        var writer = new WKBWriter { Strict = false, HandleSRID = true };
         var hex = Convert.ToHexString(writer.Write(expected));
 
         var features = await ReadAllAsync(hex);

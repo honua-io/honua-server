@@ -36,7 +36,7 @@ public sealed class CsvFormatReaderTests
     public async Task ReadStreamingAsync_PostgisEwkbHexExport_ImportsWithGeometry()
     {
         // #2361: PostGIS also exports geometry as WKB/EWKB hex. This must parse too.
-        var writer = new WKBWriter { HandleSRID = true };
+        var writer = new WKBWriter { Strict = false, HandleSRID = true };
         var hex = Convert.ToHexString(writer.Write(new Point(-122.4194, 37.7749) { SRID = 4326 }));
         var csv = $"""
             id,name,geom
