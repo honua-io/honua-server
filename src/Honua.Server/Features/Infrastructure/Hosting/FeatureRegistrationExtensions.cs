@@ -11,6 +11,7 @@ using Honua.Server.Features.Admin;
 using Honua.ControlPlane;
 using Honua.Ai.AnalysisContent;
 using Honua.Server.Features.Capabilities;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Scene;
 using Honua.Alerts;
 using Honua.Server.Features.CloudDemo;
@@ -156,6 +157,13 @@ internal static class FeatureRegistrationExtensions
         services.AddTemporalHistory();
         services.AddAnalysisReporting(configuration);
         services.AddCapabilityManifest(configuration);
+        // #2343 (T7): register the capability-gate OpenAPI document transformer into
+        // the AddOpenApi pipeline so operations gated on a disabled-experimental
+        // capability are pruned from the generated OpenAPI document, keeping the
+        // published contract in agreement with the runtime gate (T5). No-op until an
+        // experimental capability is flipped off-by-default (T10 / #2346). Depends on
+        // the ICapabilityRegistry registered by AddCapabilityManifest above.
+        services.AddCapabilityGatedOpenApi();
         services.AddPackageReview();
         services.AddMcpOperatorSurface(configuration);
         services.AddSpecGrounding();

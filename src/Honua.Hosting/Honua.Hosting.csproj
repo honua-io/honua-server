@@ -31,6 +31,14 @@
          (JWT bearer, OIDC, JWT handler) compiles standalone. -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <!-- Microsoft.AspNetCore.OpenApi provides the IOpenApiDocumentTransformer seam
+         (and the AddOpenApi/OpenApiOptions pipeline) the capability-gate transformer
+         registers into so disabled-experimental endpoints are pruned from the
+         generated OpenAPI document (Track T7 / #2343). -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <!-- Direct reference pins the transitive Microsoft.OpenApi up to the patched
+         2.7.5 (clears the NU1903 audit error from the 2.0.0 AspNetCore.OpenApi pulls). -->
+    <PackageReference Include="Microsoft.OpenApi" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <!-- NetTopologySuite is required by the carved Events / Validation surfaces
          (FeatureChangeEventEnrichment's WKB→GeoJSON envelope extraction,
