@@ -8,6 +8,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
@@ -104,11 +105,9 @@ internal sealed partial class GeoservicesImportService
     }
 
     private static int? NormalizeArcGisWkid(int? wkid)
-        => wkid switch
-        {
-            102100 or 102113 or 900913 or 3785 => 3857,
-            _ => wkid
-        };
+        => wkid.HasValue
+            ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(wkid.Value)
+            : null;
 
     private static bool IsKnownArcGisAlias(int? wkid)
         => wkid is 102100 or 102113 or 900913 or 3785;
