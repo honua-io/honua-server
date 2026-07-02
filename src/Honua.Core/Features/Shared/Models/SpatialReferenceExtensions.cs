@@ -126,6 +126,28 @@ public static class SpatialReferenceExtensions
         => from.Wkid != to.Wkid;
 
     /// <summary>
+    /// Normalizes well-known WGS 84 / Web Mercator SRID aliases
+    /// (<c>102100</c>, <c>102113</c>, <c>900913</c>, <c>3785</c>) to the canonical
+    /// EPSG code <c>3857</c>. All other SRIDs are returned unchanged.
+    /// </summary>
+    /// <remarks>
+    /// ArcGIS Pro and the ArcGIS JS API send <c>{wkid:102100, latestWkid:3857}</c> for
+    /// content Honua stores and advertises as EPSG:3857. These identifiers denote the
+    /// same coordinate system with identical coordinate values, so callers comparing an
+    /// incoming SRID against a stored/layer SRID must normalize both sides through this
+    /// method to treat them as equivalent. This is the shared canonical mapping used by
+    /// the query, import, and edit paths.
+    /// </remarks>
+    /// <param name="srid">SRID to normalize.</param>
+    /// <returns>EPSG:3857 for any Web Mercator alias; otherwise the input SRID.</returns>
+    public static int NormalizeWebMercatorSrid(int srid)
+        => srid switch
+        {
+            102100 or 102113 or 900913 or 3785 => 3857,
+            _ => srid
+        };
+
+    /// <summary>
     /// Creates a minimal spatial reference with just the WKID
     /// </summary>
     /// <param name="wkid">Well-known ID (EPSG code)</param>
