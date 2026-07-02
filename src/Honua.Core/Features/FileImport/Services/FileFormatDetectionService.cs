@@ -32,6 +32,8 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         {
             [".geojson"] = SupportedFileFormat.GeoJson,
             [".json"] = SupportedFileFormat.GeoJson,
+            [".esrijson"] = SupportedFileFormat.EsriJson,
+            [".wkb"] = SupportedFileFormat.Wkb,
             [".kml"] = SupportedFileFormat.Kml,
             [".kmz"] = SupportedFileFormat.Kml,
             [".gml"] = SupportedFileFormat.Gml,
@@ -167,6 +169,16 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
     {
         var trimmed = textContent.TrimStart();
 
+        // Esri JSON detection MUST run before GeoJSON: an Esri feature set is a JSON object
+        // whose features carry an "attributes" object and an Esri geometry ("rings"/"paths"/
+        // "points"/"x","y"), plus Esri markers such as "geometryType":"esriGeometry..." or
+        // "spatialReference". These payloads must never fall through to the GeoJSON branch and
+        // be silently misinterpreted (honua-server#2352).
+        if (trimmed.StartsWith('{') && LooksLikeEsriJson(trimmed))
+        {
+            return SupportedFileFormat.EsriJson;
+        }
+
         // GeoJSON detection
         if (trimmed.StartsWith('{') &&
             (trimmed.Contains("\"type\"") &&
@@ -231,5 +243,35 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Heuristically decide whether a JSON document is an Esri feature set rather than GeoJSON.
+    /// Esri payloads use <c>attributes</c> (not GeoJSON <c>properties</c>) and Esri geometry
+    /// shapes (<c>x</c>/<c>y</c>, <c>points</c>, <c>paths</c>, <c>rings</c>), and never carry a
+    /// GeoJSON <c>"type":"Feature"</c>/<c>"FeatureCollection"</c> discriminator.
+    /// </summary>
+    private static bool LooksLikeEsriJson(string trimmed)
+    {
+        // A GeoJSON document is unambiguously identified by its "type" discriminator; if present,
+        // this is not Esri JSON.
+        if (trimmed.Contains("\"type\"", StringComparison.Ordinal) &&
+            (trimmed.Contains("\"FeatureCollection\"", StringComparison.Ordinal) ||
+             trimmed.Contains("\"Feature\"", StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        var hasEsriMarker =
+            trimmed.Contains("esriGeometry", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Contains("\"geometryType\"", StringComparison.Ordinal) ||
+            trimmed.Contains("\"spatialReference\"", StringComparison.Ordinal);
+
+        var hasEsriGeometry =
+            trimmed.Contains("\"rings\"", StringComparison.Ordinal) ||
+            trimmed.Contains("\"paths\"", StringComparison.Ordinal) ||
+            trimmed.Contains("\"attributes\"", StringComparison.Ordinal);
+
+        return hasEsriMarker && hasEsriGeometry;
     }
 }

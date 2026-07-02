@@ -181,6 +181,8 @@ internal sealed partial class StreamingFileImportService
             var featureStream = format.Value switch
             {
                 SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
+                SupportedFileFormat.EsriJson => EsriJsonFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Wkb => WkbFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),

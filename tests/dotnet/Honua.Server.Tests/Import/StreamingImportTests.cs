@@ -231,6 +231,110 @@ public class StreamingImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_EsriJsonFeatureSet_AutoDetectsAndImports()
+    {
+        // Regression: honua-server#2352 — Esri JSON must auto-detect and import (not be silently
+        // parsed as GeoJSON). Mirrors the e2e format-harness sample.esrijson feature set.
+        const string esriJson = """
+            {"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"features":[
+            {"attributes":{"zone_code":"030","zone_name":"Residential"},"geometry":{"x":-156.30,"y":20.80}},
+            {"attributes":{"zone_code":"500","zone_name":"Commercial"},"geometry":{"x":-156.40,"y":20.90}}]}
+            """;
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new StringContent(esriJson, Encoding.UTF8, "application/json");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "sample.esrijson"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("esrijson_import_table"), "TableName");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.BeSuccessful();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("EsriJson");
+        responseContent.Should().Contain("\"featureCount\":2");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_WkbPayload_AutoDetectsAndImports()
+    {
+        // Regression: honua-server#2353 — a WKB payload (concatenated WKB points) must auto-detect
+        // and import rather than failing with "Multipart import request is invalid."
+        using var buffer = new MemoryStream();
+        WriteWkbPoint(buffer, -156.30, 20.80);
+        WriteWkbPoint(buffer, -156.40, 20.90);
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(buffer.ToArray());
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "sample.wkb"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("wkb_import_table"), "TableName");
+        content.Add(new StringContent("4326"), "SourceSrid");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.BeSuccessful();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("Wkb");
+        responseContent.Should().Contain("\"featureCount\":2");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_GpxWithGdalExtensions_ImportsWaypoints()
+    {
+        // Regression: honua-server#2354 — GPX waypoints whose attributes live under <extensions>
+        // (GDAL GPX_USE_EXTENSIONS output) must import instead of yielding zero features.
+        const string gpx = """
+            <?xml version="1.0"?>
+            <gpx version="1.1" creator="GDAL" xmlns:ogr="http://osgeo.org/gdal" xmlns="http://www.topografix.com/GPX/1/1">
+            <wpt lat="20.8" lon="-156.3"><extensions><ogr:zone_code>030</ogr:zone_code></extensions></wpt>
+            <wpt lat="20.9" lon="-156.4"><extensions><ogr:zone_code>500</ogr:zone_code></extensions></wpt>
+            </gpx>
+            """;
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new StringContent(gpx, Encoding.UTF8, "application/gpx+xml");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "sample.gpx"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("gpx_import_table"), "TableName");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.BeSuccessful();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("Gpx");
+        responseContent.Should().Contain("\"featureCount\":2");
+    }
+
+    private static void WriteWkbPoint(Stream stream, double x, double y)
+    {
+        // Little-endian WKB Point: byteOrder(1) + geometryType(uint32=1) + x(double) + y(double).
+        stream.WriteByte(0x01);
+        stream.Write(BitConverter.GetBytes((uint)1));
+        stream.Write(BitConverter.GetBytes(x));
+        stream.Write(BitConverter.GetBytes(y));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_CsvFile_WithLongitudeLatitudeColumns_StreamsRows()
     {
         var csvContent = """
