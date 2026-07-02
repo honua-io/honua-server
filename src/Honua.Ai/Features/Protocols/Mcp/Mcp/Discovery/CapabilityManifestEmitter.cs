@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Capabilities;
 
 namespace Honua.Ai.Protocols.Mcp.Discovery;
 
@@ -135,33 +136,22 @@ internal static class CapabilityManifestEmitter
     public const string ImplementationName = "Honua /mcp";
 
     /// <summary>
-    /// The advertised tool projection: <c>advertisedName -&gt; (standardName,
-    /// workflowFamily)</c>. Title-cased workflow families mirror the live
-    /// <see cref="McpTelemetry.WorkflowFamily"/> telemetry tags.
+    /// The unified capability registry (ADR-0058, Decision B) is the single source
+    /// of truth for the <c>/mcp</c> tool roster. B2 (#2334) re-points this emitter
+    /// to project its advertised tools from the registry rather than a
+    /// hand-maintained list, so the emitted manifest cannot drift from the registry
+    /// the live surface is bound to.
     /// </summary>
-    public static IReadOnlyList<CapabilityManifestTool> Tools { get; } =
-    [
-        Tool("honua_plan_analysis", "plan_analysis", "Planning"),
-        Tool("honua_ground_candidates", "ground_candidates", "Planning"),
-        Tool("honua_clarify_intent", "clarify_intent", "Planning"),
-        Tool("honua_validate_plan", "validate_plan", "Planning"),
-        Tool("honua_dry_run_plan", "validate_plan", "Planning"),
-        Tool("honua_execute_plan", "execute_plan", "Execution"),
-        Tool("honua_cancel_job", "cancel_job", "Lifecycle"),
-        Tool("honua_propose_operation", "propose_operation", "Lifecycle"),
-        Tool("honua_publish_service", "publish_service", "Lifecycle"),
-        Tool("honua_create_map_package", "create_map_package", "Execution"),
-        Tool("honua_create_app_package", "create_app_package", "Execution"),
-        Tool("honua_validate_package", "validate_package", "Planning"),
-        Tool("honua_preview_package", "preview_package", "Planning"),
-        Tool("honua_geocode_address", "geocode_address", "Execution"),
-        Tool("honua_solve_route", "solve_route", "Execution"),
-        Tool("honua_list_layers", "list_layers", "Results"),
-        Tool("honua_query_features", "query_features", "Results"),
-        Tool("honua_render_map", "render_map", "Results"),
-        Tool("honua_resolve_entity", "resolve_entity", "Results"),
-        Tool("honua_list_capabilities", "list_capabilities", "Results"),
-    ];
+    private static readonly ICapabilityRegistry Registry = new CapabilityRegistry();
+
+    /// <summary>
+    /// The advertised tool projection: <c>advertisedName -&gt; (standardName,
+    /// workflowFamily)</c>, projected from the capability registry's <c>/mcp</c>
+    /// tool descriptors. Title-cased workflow families mirror the live
+    /// <see cref="McpTelemetry.WorkflowFamily"/> telemetry tags (the registry stores
+    /// the lower-cased family in <see cref="CapabilityDescriptor.Category"/>).
+    /// </summary>
+    public static IReadOnlyList<CapabilityManifestTool> Tools { get; } = BuildTools(Registry);
 
     /// <summary>
     /// The served resource-family projection keyed by the live
@@ -218,6 +208,25 @@ internal static class CapabilityManifestEmitter
             CapabilityManifestJsonContext.Default.CapabilityManifest);
         return json + "\n";
     }
+
+    /// <summary>
+    /// Projects the advertised-tool manifest entries from the capability registry's
+    /// <c>/mcp</c> tool descriptors (those that carry an
+    /// <see cref="CapabilityDescriptor.McpToolName"/>). This is the provenance move
+    /// in ADR-0058 B2 (#2334): the tool roster is the registry's, not a local list.
+    /// </summary>
+    /// <param name="registry">The capability registry to project the roster from.</param>
+    internal static IReadOnlyList<CapabilityManifestTool> BuildTools(ICapabilityRegistry registry)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        return registry.All
+            .Where(d => d.McpToolName is not null)
+            .Select(d => Tool(d.McpToolName!, d.StandardName ?? d.McpToolName!, TitleCase(d.Category)))
+            .ToList();
+    }
+
+    private static string TitleCase(string value) =>
+        string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value[1..];
 
     private static CapabilityManifestTool Tool(string advertisedName, string standardName, string workflowFamily) =>
         new()

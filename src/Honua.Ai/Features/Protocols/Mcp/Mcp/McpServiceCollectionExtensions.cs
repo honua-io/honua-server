@@ -7,6 +7,8 @@ using Honua.Ai.Grounding;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Reporting.Abstractions;
 
 namespace Honua.Ai.Protocols.Mcp;
@@ -174,6 +176,18 @@ internal static class McpServiceCollectionExtensions
         // the job. Both are process-wide singletons.
         services.TryAddSingleton<IMcpNotificationPublisher, McpNotificationPublisher>();
         services.TryAddSingleton<McpJobProgressBridge>();
+
+        // ADR-0058 B2 (#2334): bind the served /mcp catalog to the unified
+        // capability registry as its single source of truth. The registry is the
+        // provenance the honua_list_capabilities projection and the geospatial-mcp
+        // manifest emitter read; the startup composition check
+        // (Capabilities:RegistryBinding, default on) fails fast if the served
+        // surface ever diverges from the registry roster.
+        services.AddCapabilityRegistry();
+        services.AddOptions<CapabilityRegistryBindingOptions>()
+            .Bind(configuration.GetSection(CapabilityRegistryBindingOptions.SectionName));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, McpRegistryBindingStartupCheck>());
 
         return services;
     }
