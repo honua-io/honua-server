@@ -355,6 +355,99 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         applyResponse.AddResults[0].Error!.Description.Should().Contain("does not match layer SRID");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithWebMercatorAliasSrid_AgainstWebMercatorLayer_Succeeds()
+    {
+        // Regression for #2360: ArcGIS Pro / the ArcGIS JS API send the Web Mercator
+        // spatial reference as {wkid:102100, latestWkid:3857}. The srid-test point layer is
+        // stored as 3857, so this edit must be accepted (102100 is an alias of 3857) rather
+        // than rejected as a SRID mismatch (which, with rollbackOnFailure, failed the batch).
+        var request = new ApplyEditsRequest
+        {
+            Adds =
+            [
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Web Mercator Alias Point"
+                    },
+                    Geometry = new GeoServicesGeometry
+                    {
+                        // San Francisco expressed in EPSG:3857 metres.
+                        X = -13627361.0,
+                        Y = 4547675.0,
+                        SpatialReference = new GeoServicesSpatialReference { Wkid = 102100, LatestWkid = 3857 }
+                    }
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/applyEdits",
+            content);
+
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var applyResponse = JsonSerializer.Deserialize(responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+
+        applyResponse.Should().NotBeNull();
+        applyResponse!.Success.Should().BeTrue();
+        applyResponse.AddResults.Should().NotBeNull();
+        applyResponse.AddResults![0].Success.Should().BeTrue();
+        applyResponse.AddResults[0].ObjectId.Should().BePositive();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithGenuinelyDifferentSrid_AgainstWebMercatorLayer_ReturnsError()
+    {
+        // Guard for #2360: normalizing Web Mercator aliases must not weaken genuine
+        // SRID-mismatch rejection. A truly different CRS (EPSG:4326) against the 3857 layer
+        // is still rejected because the edit path does not reproject geometry.
+        var request = new ApplyEditsRequest
+        {
+            Adds =
+            [
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Mismatched SRID Point"
+                    },
+                    Geometry = new GeoServicesGeometry
+                    {
+                        X = -122.4194,
+                        Y = 37.7749,
+                        SpatialReference = new GeoServicesSpatialReference { Wkid = 4326 }
+                    }
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/applyEdits",
+            content);
+
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var applyResponse = JsonSerializer.Deserialize(responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+
+        applyResponse.Should().NotBeNull();
+        applyResponse!.Success.Should().BeFalse();
+        applyResponse.AddResults.Should().NotBeNull();
+        applyResponse.AddResults![0].Success.Should().BeFalse();
+        applyResponse.AddResults[0].Error.Should().NotBeNull();
+        applyResponse.AddResults[0].Error!.Description.Should().Contain("does not match layer SRID");
+    }
+
     private static bool IsClockwise(double[][] ring)
     {
         var area = 0.0;
