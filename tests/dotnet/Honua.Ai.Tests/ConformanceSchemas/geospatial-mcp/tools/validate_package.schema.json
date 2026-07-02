@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/validate_package.schema.json",
+  "title": "validate_package inputSchema",
+  "description": "Argument shape for the read-only composition-review tool (advertised name honua_validate_package). Inspects a map/app package's requirement coverage (data bindings, permissions, schema, CRS, capabilities, dependencies, approvals) and returns canonical findings without mutating server state. x-honua-reference-shape: tracks the reference implementation; the bare taxonomy models package review as a CapabilityCatalog + resource read.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {
+    "contractVersion": {
+      "type": "string",
+      "description": "Package-review contract version. Current value is honua.package_review.v1."
+    },
+    "packageFamily": {
+      "type": "string",
+      "description": "Supported values are query, analysis_plan, map_package, dashboard_report, form, app_package, workflow, gp, and etl. Missing or unknown values are returned as canonical missing_package_family or unsupported_package_family findings rather than rejected by the schema."
+    },
+    "packageId": { "type": "string" },
+    "requestedAction": { "type": "string" },
+    "format": { "type": "string" },
+    "packagePayload": {
+      "type": ["object", "array", "string", "number", "boolean", "null"],
+      "description": "Opaque package payload inspected only by the matching package-family adapter."
+    },
+    "requirements": {
+      "type": ["object", "null"],
+      "description": "Shared data binding, permission, schema, CRS, capability, dependency, and approval requirements. An explicit null is normalized to an empty requirement set."
+    },
+    "includePassFindings": { "type": "boolean" },
+    "resourceRefs": {
+      "type": ["object", "null"],
+      "additionalProperties": { "type": "string" },
+      "description": "Safe caller-visible resource references. An explicit null is normalized to an empty map."
+    }
+  }
+}

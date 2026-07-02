@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/preview_package.schema.json",
+  "title": "preview_package inputSchema",
+  "description": "Argument shape for the read-only composition-review tool (advertised name honua_preview_package). Computes a read-only preview plan for a map/app package before publishing, in addition to the requirement-coverage review; it never mutates server state. x-honua-reference-shape: tracks the reference implementation; the bare taxonomy models package preview as a CapabilityCatalog + resource read.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {
+    "contractVersion": {
+      "type": "string",
+      "description": "Package-review contract version. Current value is honua.package_review.v1."
+    },
+    "packageFamily": {
+      "type": "string",
+      "description": "Supported values are query, analysis_plan, map_package, dashboard_report, form, app_package, workflow, gp, and etl. Missing or unknown values are returned as canonical missing_package_family or unsupported_package_family findings rather than rejected by the schema."
+    },
+    "packageId": { "type": "string" },
+    "requestedAction": { "type": "string" },
+    "format": { "type": "string" },
+    "packagePayload": {
+      "type": ["object", "array", "string", "number", "boolean", "null"],
+      "description": "Opaque package payload inspected only by the matching package-family adapter."
+    },
+    "requirements": {
+      "type": ["object", "null"],
+      "description": "Shared data binding, permission, schema, CRS, capability, dependency, and approval requirements. An explicit null is normalized to an empty requirement set."
+    },
+    "estimate": {
+      "type": "object",
+      "description": "Optional upstream estimate echoed in the shared package-review response."
+    },
+    "includePreviewPlan": { "type": "boolean" },
+    "includePassFindings": { "type": "boolean" },
+    "resourceRefs": {
+      "type": ["object", "null"],
+      "additionalProperties": { "type": "string" },
+      "description": "Safe caller-visible resource references. An explicit null is normalized to an empty map."
+    }
+  }
+}
