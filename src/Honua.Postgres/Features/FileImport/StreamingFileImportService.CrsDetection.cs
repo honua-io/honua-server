@@ -31,6 +31,7 @@ internal sealed partial class StreamingFileImportService
             return format switch
             {
                 SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(stream, cancellationToken),
+                SupportedFileFormat.EsriJson => await EsriJsonFormatReader.TryDetectSridAsync(stream, cancellationToken) ?? 4326,
                 SupportedFileFormat.Kml => 4326,
                 SupportedFileFormat.Gpx => 4326,
                 SupportedFileFormat.Csv => 4326,
@@ -102,6 +103,7 @@ internal sealed partial class StreamingFileImportService
         return format switch
         {
             SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(headerStream, cancellationToken),
+            SupportedFileFormat.EsriJson => await EsriJsonFormatReader.TryDetectSridAsync(headerStream, cancellationToken) ?? 4326,
             SupportedFileFormat.Kml => 4326,
             SupportedFileFormat.Gpx => 4326,
             SupportedFileFormat.Csv => 4326,

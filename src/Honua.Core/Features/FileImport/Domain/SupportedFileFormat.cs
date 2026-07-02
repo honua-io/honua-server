@@ -72,5 +72,16 @@ public enum SupportedFileFormat
     /// <summary>
     /// GeoParquet format (.parquet, .geoparquet)
     /// </summary>
-    GeoParquet = 11
+    GeoParquet = 11,
+
+    /// <summary>
+    /// Esri JSON feature set (.esrijson) — features with an <c>attributes</c> object and an
+    /// Esri geometry (<c>x</c>/<c>y</c>, <c>points</c>, <c>paths</c>, or <c>rings</c>).
+    /// </summary>
+    EsriJson = 12,
+
+    /// <summary>
+    /// Well-Known Binary geometry (.wkb) — one or more concatenated WKB/EWKB geometries.
+    /// </summary>
+    Wkb = 13
 }
