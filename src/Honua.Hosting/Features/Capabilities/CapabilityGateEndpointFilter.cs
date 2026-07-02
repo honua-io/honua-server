@@ -89,7 +89,7 @@ internal sealed partial class CapabilityGateEndpointFilter : IEndpointFilter
         if (!resolution.Enabled &&
             string.Equals(resolution.ReasonCode, CapabilityReasonCodes.ExperimentalDisabled, StringComparison.Ordinal))
         {
-            Log.ExperimentalDisabled(_logger, gate.DescriptorId, httpContext.Request.Path);
+            Log.ExperimentalDisabled(_logger, gate.DescriptorId, httpContext.Request.Path.Value ?? string.Empty);
             return ValueTask.FromResult<object?>(CreateExperimentalDisabledProblem(httpContext, gate.DescriptorId));
         }
 
