@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
@@ -60,6 +61,10 @@ internal static class ReplicaManagementEndpoints
     public static void MapReplicaManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceId}/replicas")
+            // T10 (#2346): disconnected-sync replica/conflict review is
+            // built-experimental and gated OFF the first-release surface (404 when
+            // sync.offline is experimental-disabled).
+            .WithCapabilityGate("sync.offline")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Replicas")

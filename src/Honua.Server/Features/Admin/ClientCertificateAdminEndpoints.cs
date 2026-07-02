@@ -6,6 +6,7 @@ using System.Security.Cryptography.X509Certificates;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -24,6 +25,10 @@ internal static class ClientCertificateAdminEndpoints
     public static void MapClientCertificateAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/security/client-certificates")
+            // T10 (#2346): native mTLS / client-certificate authentication is
+            // built-experimental and gated OFF the first-release surface (404 when
+            // security.mtls is experimental-disabled).
+            .WithCapabilityGate("security.mtls")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Security", "Client Certificates")

@@ -10,6 +10,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.IO;
@@ -36,6 +37,9 @@ internal static class AlertAdminEndpoints
     public static void MapAlertAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/alerts")
+            // T10 (#2346): geofence alerting is built-experimental and gated OFF the
+            // first-release surface (404 when alerts.geofence is experimental-disabled).
+            .WithCapabilityGate("alerts.geofence")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Alerts")
