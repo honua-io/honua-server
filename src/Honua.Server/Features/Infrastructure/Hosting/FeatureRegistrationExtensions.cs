@@ -20,6 +20,7 @@ using Honua.Server.Features.Protocols.Coverages.Multidimensional;
 using Honua.Server.Features.Protocols.Zarr;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Forms;
 using Honua.Server.Features.Mobile.FieldCollection.Automations;
 using Honua.Server.Features.FieldWorkflows;
@@ -96,6 +97,9 @@ internal static class FeatureRegistrationExtensions
         // via the AddHonuaPlugins(configuration, plugins => plugins.Add<...>()) overload.
         services.AddHonuaPlugins(configuration);
         services.AddCloudDemoServices(configuration);
+        // Seed a default GPServer-capable service on a bare instance so the
+        // geoprocessing facade is usable out of the box (honua-server#2349).
+        services.AddGeoprocessingDefaultServiceSeeding(configuration);
         services.AddGeocoding(configuration);
         services.AddForms(configuration);
         services.AddFieldWorkflows();

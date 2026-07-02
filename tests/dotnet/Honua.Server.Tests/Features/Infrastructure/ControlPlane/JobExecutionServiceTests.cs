@@ -417,6 +417,117 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression (#2348): when an executor returns a curated failure detail and
+    /// no retries remain, the terminal failed record must persist that detail on
+    /// <see cref="ExecutionJobRecord.ErrorMessage"/> — not the generic safe
+    /// message — so GP job failures (e.g. missing/misconfigured output sink) are
+    /// diagnosable through the OGC Processes / GPServer status surfaces instead of
+    /// failing opaquely with "Job execution failed.".
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_PersistsExecutorFailureDetail_WhenExecutorReturnsFailure_NoRetries()
+    {
+        const string curatedDetail =
+            "The sink.honua-layer sink is unavailable in this deployment: it requires a Honua catalog database.";
+
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 1,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
+            .Returns(provisioning.OperationId, (string?)null);
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed(curatedDetail));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        // The terminal failed record must surface the executor's curated detail.
+        await jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Failed &&
+                j.ErrorMessage == curatedDetail),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression (#2348): an unexpected thrown exception must still be genericized
+    /// to the safe failure message on the record (info-leak guard) — raw exception
+    /// text is never persisted, unlike a curated <see cref="JobExecutionResult.Failed(string, System.Collections.Generic.IReadOnlyList{string})"/> detail.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_PersistsGenericMessage_WhenExecutorThrows_NoRetries()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 1,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
+            .Returns(provisioning.OperationId, (string?)null);
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<JobExecutionResult>>(_ => throw new InvalidOperationException("raw connection string leak s3cr3t"));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        // The raw exception text (containing "s3cr3t") must never reach the durable
+        // record; the generic safe message is persisted instead.
+        await jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Failed &&
+                j.ErrorMessage == "Job execution failed."),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Regression: when retries are exhausted and the job transitions to terminal
     /// Failed, the execution log retention must be set so structured logs remain
     /// accessible for post-mortem inspection.
