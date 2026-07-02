@@ -544,7 +544,13 @@ public sealed class EvalRunner
         EvalScenario scenario,
         CancellationToken cancellationToken)
     {
-        var expectedExecutable = scenario.ExpectedOutcome.IsExecutable;
+        // OGC API Processes execution is a direct single-job submit surface, so it
+        // enforces the same direct-submit executability gate as gRPC SubmitJob:
+        // multi-step DAGs are rejected here (execution routes through the workflow
+        // orchestration engine instead). Measure parity against the direct-submit
+        // expectation so a multi-step plan's correct 400 rejection scores as a
+        // matched rejection rather than a false failure.
+        var expectedExecutable = scenario.ExpectedOutcome.ExpectsDirectSubmitExecution;
 
         try
         {
@@ -811,6 +817,21 @@ public sealed class EvalRunner
             return new ExecutionSkipReason(
                 "plan-non-executable",
                 "Scenario expected IsExecutable=false; skipping SubmitJob because the canonical runtime rejects non-executable plans via EnsurePlanExecutable.");
+        }
+
+        // A multi-step DAG is a valid, catalog-clean plan (ValidatePlan/DryRun accept
+        // it, so IsExecutable=true) that the direct single-job submit path rejects by
+        // design — a job runs exactly one process, so EnsurePlanExecutable throws for
+        // >1 step. Real execution routes through the workflow orchestration engine
+        // (one single-step job per node), which is not wired into the harness yet
+        // (see the execution-engine-pending PollJob/GetJobResult skips). The OGC
+        // parity probe positively asserts the 400 rejection; skip the redundant gRPC
+        // SubmitJob call rather than record its correct InvalidArgument as a failure.
+        if (!expected.ExpectsDirectSubmitExecution)
+        {
+            return new ExecutionSkipReason(
+                "multi-step-direct-submit-unsupported",
+                "Scenario plan is a valid multi-step DAG but the direct single-job submit path rejects it by design; execution is routed through the workflow orchestration engine (one single-step job per node), not yet wired into the eval harness.");
         }
 
         if (expected.RequiresApproval)

@@ -43,6 +43,7 @@
   },
   "expectedOutcome": {
     "isExecutable": true,
+    "directSubmitExecutable": false,
     "requiresApproval": false,
     "estimatedArtifactKinds": ["FeatureLayer"],
     "terminalWorkflowStatus": "Completed",
