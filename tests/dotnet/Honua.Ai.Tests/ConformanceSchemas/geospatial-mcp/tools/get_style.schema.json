@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/get_style.schema.json",
+  "title": "get_style inputSchema",
+  "description": "Argument shape for get_style (Analyze, Publish Data, Build App). Read-only style inspection: with styleId, resolves a single canonical StyleRef (style_id/title/encodings) from the server OGC API – Styles surface; without styleId, lists the available styles (honua://styles). Like every MCP tool it is read-only and never mutates server-side styles. See taxonomy.md §Style inspection and resources.md §honua://styles/{style_id}.",
+  "type": "object",
+  "properties": {
+    "styleId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "StyleRef identifier (style_…) to resolve. When omitted, the tool lists the available styles (honua://styles)."
+    },
+    "encoding": {
+      "type": "string",
+      "description": "Optional StyleEncoding to select from StyleRef.encodings when resolving a single style.",
+      "enum": [
+        "mapbox-style",
+        "sld-1.0.0",
+        "sld-1.1.0",
+        "esri-drawing-info",
+        "esri-image-renderer",
+        "3d-tiles-styling"
+      ]
+    },
+    "includeStylesheet": {
+      "type": "boolean",
+      "description": "When true and styleId is set, include the resolved stylesheet body (inlineBody) for the selected encoding; otherwise the StyleRef projection advertises derived encodings by reference (storageRef)."
+    }
+  }
+}

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "geospatial-mcp JSON Schema index",
-  "description": "Machine-readable map from standard MCP tool names and resource family URIs to their JSON Schema (draft 2020-12) files. 'standardName' is the bare taxonomy.md tool name; 'referenceToolName' is the name the reference implementation (Honua /mcp) advertises. 'implementationStatus' records whether the reference implementation ships the tool today (implemented) or whether it is a standard family not yet implemented as a discrete tool (known-gap).",
-  "date": "2026-06-21",
+  "description": "Machine-readable map from standard MCP tool names and resource family URIs to their JSON Schema (draft 2020-12) files. 'standardName' is the bare taxonomy.md tool name; 'referenceToolName' is the name the reference implementation (Honua /mcp) advertises. 'implementationStatus' records whether the reference implementation ships the tool/resource family today (implemented) or whether it is a standard family not yet served by the reference (known-gap). For resources, 'implementationStatus' gates the FULL conformance level the same way it does for tools: a manifest must advertise every 'implemented' resource family to reach FULL; 'known-gap' families are reported as informational notes only.",
+  "date": "2026-07-01",
   "dialect": "https://json-schema.org/draft/2020-12/schema",
   "tools": [
     {
@@ -43,16 +43,24 @@
     },
     {
       "standardName": "create_map_package",
-      "referenceToolName": null,
+      "referenceToolName": "honua_create_map_package",
       "family": "Map composition",
       "schema": "tools/create_map_package.schema.json",
-      "implementationStatus": "known-gap"
+      "implementationStatus": "implemented",
+      "notes": "Reference implementation (#1951): routes through the canonical IMapGenerationService pipeline."
     },
     {
       "standardName": "refine_map_package",
       "referenceToolName": null,
       "family": "Map composition",
       "schema": "tools/refine_map_package.schema.json",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "standardName": "get_style",
+      "referenceToolName": null,
+      "family": "Style inspection",
+      "schema": "tools/get_style.schema.json",
       "implementationStatus": "known-gap"
     },
     {
@@ -78,10 +86,11 @@
     },
     {
       "standardName": "create_app_package",
-      "referenceToolName": null,
+      "referenceToolName": "honua_create_app_package",
       "family": "App composition",
       "schema": "tools/create_app_package.schema.json",
-      "implementationStatus": "known-gap"
+      "implementationStatus": "implemented",
+      "notes": "Reference implementation (#1951): routes through the canonical IAppGenerationService pipeline."
     },
     {
       "standardName": "preview_app_package",
@@ -96,13 +105,6 @@
       "family": "Publishing",
       "schema": "tools/publish_result.schema.json",
       "implementationStatus": "known-gap"
-    },
-    {
-      "standardName": "publish_service",
-      "referenceToolName": "honua_publish_service",
-      "family": "Publishing",
-      "schema": "tools/publish_service.schema.json",
-      "implementationStatus": "implemented"
     },
     {
       "standardName": "list_layers",
@@ -155,12 +157,36 @@
       "implementationStatus": "implemented"
     },
     {
+      "standardName": "publish_service",
+      "referenceToolName": "honua_publish_service",
+      "family": "Publishing",
+      "schema": "tools/publish_service.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Native divergence from publish_result: honua_publish_service publishes a source table as a new hosted service (connectionId/schema/table/layerName), whereas the standard publish_result promotes an existing result/package (sourceId). publish_result stays a known-gap until the standard finalizes a service-publish contract (honua-server#730/#732)."
+    },
+    {
+      "standardName": "validate_package",
+      "referenceToolName": "honua_validate_package",
+      "family": "Composition review (reference shape)",
+      "schema": "tools/validate_package.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Reference-shape review tool: read-only inspection of a map/app package's requirement coverage."
+    },
+    {
+      "standardName": "preview_package",
+      "referenceToolName": "honua_preview_package",
+      "family": "Composition review (reference shape)",
+      "schema": "tools/preview_package.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Reference-shape review tool: read-only preview plan for a map/app package before publishing."
+    },
+    {
       "standardName": "resolve_entity",
       "referenceToolName": "honua_resolve_entity",
       "family": "Discovery and grounding (Honua extension)",
       "schema": "tools/resolve_entity.schema.json",
       "implementationStatus": "implemented",
-      "notes": "Honua extension (#1949): NL/text -> ranked service/layer references grounded in the live catalog. Pending formalization in the geospatial-mcp standard; schema marks x-honua-extension."
+      "notes": "Honua extension (#1949): NL/text -> ranked service/layer references grounded in the live catalog. Pending formalization in the standard; schema marks x-honua-extension."
     },
     {
       "standardName": "list_capabilities",
@@ -168,7 +194,7 @@
       "family": "Discovery and grounding (Honua extension)",
       "schema": "tools/list_capabilities.schema.json",
       "implementationStatus": "implemented",
-      "notes": "Honua extension (#1949): self-describing manifest of the live tool/resource surface for a cold client LLM. Pending formalization in the geospatial-mcp standard; schema marks x-honua-extension."
+      "notes": "Honua extension (#1949): self-describing manifest of the live tool/resource surface for a cold client LLM. Pending formalization in the standard; schema marks x-honua-extension."
     }
   ],
   "resources": [
@@ -176,73 +202,96 @@
       "family": "Result package",
       "uriForm": "honua://results/{result_package_id}",
       "schema": "resources/result-package.schema.json",
-      "shapeFidelity": "concrete"
+      "shapeFidelity": "concrete",
+      "implementationStatus": "known-gap",
+      "notes": "The reference implementation does not serve a stand-alone result-package URI keyed by result_package_id; result data is reached through the owning job at honua://jobs/{job_id}/results (job-keyed), which is outside the standard resource vocabulary. Known-gap until the standard reconciles the addressing model."
     },
     {
       "family": "Result artifact",
       "uriForm": "honua://results/{result_package_id}/artifacts/{artifact_id}",
       "schema": "resources/artifact.schema.json",
-      "shapeFidelity": "concrete"
+      "shapeFidelity": "concrete",
+      "implementationStatus": "known-gap",
+      "notes": "Per-artifact result sub-resource is not served by the reference implementation; artifacts are inspected inline on the job results view. Known-gap."
     },
     {
       "family": "Result provenance",
       "uriForm": "honua://results/{result_package_id}/provenance",
       "schema": "resources/provenance.schema.json",
-      "shapeFidelity": "concrete"
+      "shapeFidelity": "concrete",
+      "implementationStatus": "known-gap",
+      "notes": "Result-provenance sub-resource is not served as a stand-alone URI; provenance is inlined on the job results view. Known-gap."
     },
     {
       "family": "Workspace",
       "uriForm": "honua://workspaces/{workspace_id}",
       "schema": "resources/workspace.schema.json",
-      "shapeFidelity": "concrete-reference"
+      "shapeFidelity": "concrete-reference",
+      "implementationStatus": "implemented"
     },
     {
       "family": "Workspace artifact",
       "uriForm": "honua://workspaces/{workspace_id}/artifacts/{artifact_id}",
       "schema": "resources/artifact.schema.json",
-      "shapeFidelity": "concrete"
+      "shapeFidelity": "concrete",
+      "implementationStatus": "known-gap",
+      "notes": "Per-artifact workspace sub-resource is not served as a stand-alone URI by the reference implementation. Known-gap."
     },
     {
       "family": "Map package",
-      "uriForm": "honua://maps/{map_package_id}",
+      "uriForm": "honua://map-packages/{map_package_id}",
       "schema": "resources/map-package.schema.json",
-      "shapeFidelity": "responsibility-level"
+      "shapeFidelity": "responsibility-level",
+      "implementationStatus": "implemented"
     },
     {
       "family": "App package",
-      "uriForm": "honua://apps/{app_package_id}",
+      "uriForm": "honua://app-packages/{app_package_id}",
       "schema": "resources/app-package.schema.json",
-      "shapeFidelity": "responsibility-level"
+      "shapeFidelity": "responsibility-level",
+      "implementationStatus": "implemented"
     },
     {
       "family": "Style",
       "uriForm": "honua://styles/{style_id}",
       "schema": "resources/style.schema.json",
-      "shapeFidelity": "responsibility-level"
+      "shapeFidelity": "responsibility-level",
+      "implementationStatus": "known-gap"
     },
     {
       "family": "Theme",
       "uriForm": "honua://themes/{theme_id}",
       "schema": "resources/theme.schema.json",
-      "shapeFidelity": "responsibility-level"
+      "shapeFidelity": "responsibility-level",
+      "implementationStatus": "known-gap"
     },
     {
       "family": "Map template",
       "uriForm": "honua://templates/maps/{map_template_id}",
       "schema": "resources/map-template.schema.json",
-      "shapeFidelity": "responsibility-level"
+      "shapeFidelity": "responsibility-level",
+      "implementationStatus": "known-gap"
+    },
+    {
+      "family": "App template",
+      "uriForm": "honua://templates/apps/{app_template_id}",
+      "schema": "resources/app-template.schema.json",
+      "shapeFidelity": "responsibility-level",
+      "implementationStatus": "known-gap"
     },
     {
       "family": "Published service",
-      "uriForm": "honua://services/{published_service_id}",
+      "uriForm": "honua://published-services/{published_service_id}",
       "schema": "resources/published-service.schema.json",
-      "shapeFidelity": "responsibility-level"
+      "shapeFidelity": "responsibility-level",
+      "implementationStatus": "implemented"
     },
     {
       "family": "Deployment",
       "uriForm": "honua://deployments/{deployment_id}",
       "schema": "resources/deployment.schema.json",
-      "shapeFidelity": "responsibility-level"
+      "shapeFidelity": "responsibility-level",
+      "implementationStatus": "implemented"
     }
   ],
   "common": [
@@ -250,6 +299,13 @@
       "name": "GeoprocessingError",
       "schema": "common/geoprocessing-error.schema.json",
       "role": "Canonical error envelope reused by all tool/resource failure paths."
+    }
+  ],
+  "conformance": [
+    {
+      "name": "ConformanceManifest",
+      "schema": "conformance/manifest.schema.json",
+      "role": "Static declaration of the MCP tool/resource surface an implementation advertises, checked against this index by conformance/check_manifest.py. See /CONFORMANCE.md."
     }
   ]
 }
