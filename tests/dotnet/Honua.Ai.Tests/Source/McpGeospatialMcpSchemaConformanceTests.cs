@@ -2,11 +2,18 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Discovery;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Core.Features.PackageReview.Abstractions;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Schema;
+using NSubstitute;
 using StandardSchema = Newtonsoft.Json.Schema.JSchema;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -373,6 +380,197 @@ public sealed partial class McpTaxonomyAlignmentTests
         // families; assert the roster is non-trivial so the wiring is real.
         BuildResources().Should().NotBeEmpty();
     }
+
+    // -------------------------------------------------------------------
+    // Resource-URI-TEMPLATE conformance (Track A, #2323): the live resource
+    // grammar IS the contract. Every live URI template that maps onto a
+    // standard resource family must match the vendored index.json uriForm
+    // (Decision A grammar), and every standard family the index marks
+    // 'implemented' must be served by a live template. This makes any URI
+    // drift — e.g. reverting honua://map-packages/{id} to honua://maps/{id} —
+    // a build failure rather than a silent spec/server divergence.
+    // -------------------------------------------------------------------
+
+    private static string VendoredIndexPath => Path.Combine(SchemaRoot, "index.json");
+
+    /// <summary>
+    /// Normalizes a URI template by collapsing every <c>{token}</c> placeholder
+    /// to <c>{}</c> so the server's domain token names
+    /// (<c>{packageId}</c>) compare equal to the standard's snake_case tokens
+    /// (<c>{map_package_id}</c>): Decision A pins the path grammar, not the
+    /// placeholder spelling.
+    /// </summary>
+    private static string NormalizeUriTemplate(string uri) =>
+        Regex.Replace(uri, "\\{[^}]*\\}", "{}");
+
+    private static Dictionary<string, (string UriForm, string Status)> ReadIndexResourceUriForms()
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(VendoredIndexPath));
+        var map = new Dictionary<string, (string, string)>(StringComparer.Ordinal);
+        foreach (var resource in doc.RootElement.GetProperty("resources").EnumerateArray())
+        {
+            var family = resource.GetProperty("family").GetString()!;
+            var uriForm = resource.GetProperty("uriForm").GetString()!;
+            var status = resource.TryGetProperty("implementationStatus", out var s)
+                ? s.GetString()!
+                : "implemented";
+            map[family] = (uriForm, status);
+        }
+
+        return map;
+    }
+
+    [UnitTest]
+    public void LiveResourceTemplates_MatchVendoredIndexUriForms_AndCoverEveryImplementedFamily()
+    {
+        var indexResources = ReadIndexResourceUriForms();
+
+        // live resource-family tag -> standard family label. Sourced from the
+        // emitter's canonical projection so the emitter, the live catalog, and
+        // the vendored index cannot drift apart independently.
+        var liveFamilyToStandard = CapabilityManifestEmitter.ResourcesByLiveFamily;
+
+        var coveredStandardFamilies = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var resource in BuildResources())
+        {
+            if (!liveFamilyToStandard.TryGetValue(resource.Family, out var projection))
+            {
+                // Honua-native families with no standard analog (jobs, proposals,
+                // process/feature catalog, job report) are outside the standard
+                // resource vocabulary and are intentionally not projected.
+                continue;
+            }
+
+            var standardFamily = projection.Family;
+            indexResources.TryGetValue(standardFamily, out var indexEntry).Should().BeTrue(
+                $"standard family '{standardFamily}' must exist in the vendored index.json");
+            indexEntry.Status.Should().Be("implemented",
+                $"family '{standardFamily}' is served by the live surface, so the index must mark it implemented");
+
+            var templates = resource.DescribeTemplates();
+            templates.Should().NotBeEmpty(
+                $"served family '{standardFamily}' must advertise a URI template");
+
+            foreach (var template in templates)
+            {
+                NormalizeUriTemplate(template.UriTemplate).Should().Be(
+                    NormalizeUriTemplate(indexEntry.UriForm),
+                    $"live URI template '{template.UriTemplate}' for family '{standardFamily}' must match "
+                    + $"the Decision A uriForm '{indexEntry.UriForm}' pinned in the vendored index.json");
+            }
+
+            coveredStandardFamilies.Add(standardFamily);
+        }
+
+        // Every standard family the index marks 'implemented' must be served by a
+        // live template — a spec family flipped to implemented without a backing
+        // live resource fails here.
+        var implementedIndexFamilies = indexResources
+            .Where(kvp => kvp.Value.Status == "implemented")
+            .Select(kvp => kvp.Key)
+            .ToArray();
+
+        coveredStandardFamilies.Should().BeEquivalentTo(implementedIndexFamilies,
+            "every index resource family marked 'implemented' must be served by a live URI template, "
+            + "and every served family must be marked implemented");
+    }
+
+    // -------------------------------------------------------------------
+    // Emitted-manifest conformance (Track A, #2323): the CapabilityManifestEmitter
+    // projection must stay bound to the live tool catalog and score FULL against
+    // the vendored index — the same coverage check conformance/check_manifest.py
+    // runs in geospatial-mcp CI.
+    // -------------------------------------------------------------------
+
+    private static IReadOnlyList<IMcpTool> BuildLiveToolRoster()
+    {
+        // BuildTools() omits the package-review tools because they take extra
+        // service dependencies; the live /mcp DI registration advertises them, so
+        // the full advertised roster includes them here.
+        var reviewService = Substitute.For<IPackageReviewService>();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        return
+        [
+            .. BuildTools(),
+            new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
+            new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
+        ];
+    }
+
+    [UnitTest]
+    public void EmittedManifest_ToolRoster_MatchesLiveCatalog_AndTitleCasesLiveWorkflowFamily()
+    {
+        var manifest = CapabilityManifestEmitter.EmitManifest();
+        var liveTools = BuildLiveToolRoster();
+
+        // 1. The emitted advertised-name set is exactly the live advertised roster.
+        var emittedNames = manifest.Tools.Select(t => t.AdvertisedName).ToHashSet(StringComparer.Ordinal);
+        var liveNames = liveTools.Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+        emittedNames.Should().BeEquivalentTo(liveNames,
+            "the emitter projection must advertise exactly the live /mcp tool roster — add or remove "
+            + "the tool in CapabilityManifestEmitter.Tools when the catalog changes");
+
+        // 2. Every emitted workflowFamily is the title-cased live telemetry family.
+        var liveFamilyByName = liveTools.ToDictionary(t => t.Name, t => t.WorkflowFamily, StringComparer.Ordinal);
+        foreach (var tool in manifest.Tools)
+        {
+            var expected = TitleCase(liveFamilyByName[tool.AdvertisedName]);
+            tool.WorkflowFamily.Should().Be(expected,
+                $"emitted workflowFamily for '{tool.AdvertisedName}' must be the title-cased live telemetry family");
+        }
+    }
+
+    [UnitTest]
+    public void EmittedManifest_ScoresFull_AgainstVendoredIndex()
+    {
+        // Mirrors conformance/check_manifest.py: every advertised standardName maps
+        // onto the index, every 'implemented' index tool/resource family is
+        // advertised, and every advertised resource uriForm equals the index.
+        var manifest = CapabilityManifestEmitter.EmitManifest();
+
+        using var doc = JsonDocument.Parse(File.ReadAllText(VendoredIndexPath));
+        var indexTools = doc.RootElement.GetProperty("tools").EnumerateArray()
+            .ToDictionary(
+                t => t.GetProperty("standardName").GetString()!,
+                t => t.TryGetProperty("implementationStatus", out var s) ? s.GetString()! : "implemented",
+                StringComparer.Ordinal);
+        var indexResources = ReadIndexResourceUriForms();
+
+        // Every advertised tool maps onto a standard name.
+        var advertisedStd = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tool in manifest.Tools)
+        {
+            indexTools.ContainsKey(tool.StandardName).Should().BeTrue(
+                $"advertised tool '{tool.AdvertisedName}' maps to standardName '{tool.StandardName}' "
+                + "which must exist in the vendored index.json");
+            advertisedStd.Add(tool.StandardName);
+        }
+
+        // Every 'implemented' index tool is advertised (FULL tool coverage).
+        var implementedIndexTools = indexTools.Where(kvp => kvp.Value == "implemented").Select(kvp => kvp.Key);
+        advertisedStd.Should().Contain(implementedIndexTools,
+            "every standard tool marked 'implemented' in the index must be advertised by the emitted manifest");
+
+        // Every advertised resource family maps onto the index with an equal uriForm.
+        var advertisedFamilies = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var resource in manifest.Resources)
+        {
+            indexResources.TryGetValue(resource.Family, out var indexEntry).Should().BeTrue(
+                $"advertised resource family '{resource.Family}' must exist in the vendored index.json");
+            resource.UriForm.Should().Be(indexEntry.UriForm,
+                $"advertised uriForm for '{resource.Family}' must equal the index-pinned uriForm");
+            advertisedFamilies.Add(resource.Family);
+        }
+
+        // Every 'implemented' index resource family is advertised (FULL resource coverage).
+        var implementedIndexFamilies = indexResources.Where(kvp => kvp.Value.Status == "implemented").Select(kvp => kvp.Key);
+        advertisedFamilies.Should().Contain(implementedIndexFamilies,
+            "every standard resource family marked 'implemented' in the index must be advertised by the emitted manifest");
+    }
+
+    private static string TitleCase(string value) =>
+        string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value[1..];
 
     // -------------------------------------------------------------------
     // JSON-schema loading + fixture helpers
