@@ -102,8 +102,14 @@ internal sealed class QueryFormatter : IQueryFormatter
                     returnM,
                     effectiveLimits,
                     outFields)),
-            _ => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, suppressObjectId, returnCentroid))
+            // T6 (#2342): do NOT silently fall back to GeoServices JSON for an unknown or
+            // gated-off output format. The `f`/output-format value is validated (and
+            // capability-gated) at the endpoint seam (TryValidateOutputFormat) before dispatch,
+            // so only a supported format reaches here; an unrecognised token is a programming
+            // error, not a request to coerce to JSON. Fail loudly instead of returning a
+            // wrong-format 200.
+            _ => throw new NotSupportedException(
+                $"Output format '{format}' is not a supported GeoServices query output format.")
         };
     }
 
