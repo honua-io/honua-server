@@ -4,6 +4,7 @@
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Capabilities;
 using Honua.Server;
 using Honua.TestKit.Attributes;
 
@@ -36,11 +37,20 @@ namespace Honua.Architecture.Tests.FeatureCatalog;
 ///   </description></item>
 /// </list>
 /// <para>
-/// Slice 1 (#1946) projects the API surface only. <c>maturity</c> is
-/// <c>"implemented"</c> for every registry route that has at least one proving
-/// test. Status-from-CI, partial/deferred maturity wiring, OperationRegistry /
-/// MCP-tool coverage, and the <c>geoservices-parity.md</c> retirement are later
-/// slices (see ADR-0054 / #1946).
+/// Slice 1 (#1946) projects the API surface only. <c>maturity</c> is read from
+/// the unified capability registry (<see cref="ICapabilityRegistry"/>,
+/// ADR-0058) rather than hard-coded: each entry's proof-ledger surface / route
+/// id is joined to a <see cref="CapabilityDescriptor"/> and the descriptor's
+/// <see cref="CapabilityMaturity"/> is emitted (#2345 / T9). A route with no
+/// matching descriptor falls back to <c>"implemented"</c>, which — given the
+/// API-surface coverage gate — is every route that has at least one proving
+/// test. Because the registry currently marks every descriptor
+/// <see cref="CapabilityMaturity.Implemented"/>, this wiring is value-preserving
+/// today; flipping a descriptor to <see cref="CapabilityMaturity.Experimental"/>
+/// (T10 / #2346) now flows through to the catalog and, via the drift guard,
+/// requires regeneration. Status-from-CI, partial/deferred maturity wiring,
+/// OperationRegistry / MCP-tool coverage, and the <c>geoservices-parity.md</c>
+/// retirement are later slices (see ADR-0054 / #1946).
 /// </para>
 /// </remarks>
 internal static class FeatureCatalogGenerator
@@ -48,8 +58,18 @@ internal static class FeatureCatalogGenerator
     /// <summary>Catalog schema version. Bump when the entry shape changes.</summary>
     public const string SchemaVersion = "1.0.0";
 
-    /// <summary>Slice 1 maturity tier for every implemented, test-backed route.</summary>
+    /// <summary>
+    /// Fallback maturity tier for a test-backed route that has no matching
+    /// capability descriptor in the registry.
+    /// </summary>
     public const string MaturityImplemented = "implemented";
+
+    /// <summary>
+    /// The unified capability registry (ADR-0058) the generator joins against for
+    /// each entry's <c>maturity</c>. It is a pure, static-backed projection, so a
+    /// single shared instance is safe.
+    /// </summary>
+    private static readonly ICapabilityRegistry Registry = new CapabilityRegistry();
 
     /// <summary>
     /// Builds the catalog model deterministically (stable ordering by method then
@@ -77,10 +97,11 @@ internal static class FeatureCatalogGenerator
                     : [];
 
                 var surface = ledger.ResolveSurface(endpoint.Path);
+                var id = SlugFor(endpoint.Method, endpoint.Path);
 
                 return new FeatureCatalogEntry
                 {
-                    Id = SlugFor(endpoint.Method, endpoint.Path),
+                    Id = id,
                     Route = endpoint.Path,
                     Method = endpoint.Method.ToUpperInvariant(),
                     Family = surface?.Protocol ?? "uncategorized",
@@ -88,7 +109,7 @@ internal static class FeatureCatalogGenerator
                     CodeLocation = surface?.CodeLocation ?? "src/Honua.Server/EndpointRegistry.cs",
                     ProvingTests = provingTests,
                     ProofLedgerSurface = surface?.SurfaceId ?? string.Empty,
-                    Maturity = MaturityImplemented
+                    Maturity = ResolveMaturity(surface?.SurfaceId, id)
                 };
             })
             .OrderBy(entry => entry.Method, StringComparer.Ordinal)
@@ -172,6 +193,37 @@ internal static class FeatureCatalogGenerator
 
         return slug.Trim('-');
     }
+
+    /// <summary>
+    /// Joins an entry to its capability descriptor by id — first by the
+    /// proof-ledger surface id, then by the entry's own route slug — and returns
+    /// the descriptor's maturity. Falls back to <see cref="MaturityImplemented"/>
+    /// when no descriptor claims the route, which is every test-backed route in
+    /// the API-surface slice today.
+    /// </summary>
+    private static string ResolveMaturity(string? proofLedgerSurfaceId, string entryId)
+    {
+        var descriptor =
+            (string.IsNullOrEmpty(proofLedgerSurfaceId) ? null : Registry.Find(proofLedgerSurfaceId))
+            ?? Registry.Find(entryId);
+
+        return descriptor is null ? MaturityImplemented : MaturityLabel(descriptor.Maturity);
+    }
+
+    /// <summary>
+    /// Projects the shared <see cref="CapabilityMaturity"/> enum onto the catalog's
+    /// lower-case maturity-tier string (matching the ADR-0054 tier names).
+    /// </summary>
+    private static string MaturityLabel(CapabilityMaturity maturity)
+        => maturity switch
+        {
+            CapabilityMaturity.Planned => "planned",
+            CapabilityMaturity.Deferred => "deferred",
+            CapabilityMaturity.Experimental => "experimental",
+            CapabilityMaturity.Partial => "partial",
+            CapabilityMaturity.Implemented => MaturityImplemented,
+            _ => MaturityImplemented,
+        };
 }
 
 /// <summary>Normalizes endpoint keys shared by the generator and the drift guard.</summary>
@@ -246,7 +298,11 @@ internal sealed class FeatureCatalogEntry
     /// <summary>Proof-ledger surface id this route maps to.</summary>
     public string ProofLedgerSurface { get; init; } = string.Empty;
 
-    /// <summary>Maturity tier. Slice 1 is always <c>implemented</c>.</summary>
+    /// <summary>
+    /// Maturity tier, read from the matching capability-registry descriptor
+    /// (ADR-0058) and falling back to <c>implemented</c> for routes with no
+    /// descriptor.
+    /// </summary>
     public string Maturity { get; init; } = string.Empty;
 }
 
