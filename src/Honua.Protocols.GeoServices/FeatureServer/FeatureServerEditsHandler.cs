@@ -1239,7 +1239,15 @@ internal sealed class FeatureServerEditsHandler(
             var layerSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
             var geometrySrid = feature.Geometry.SpatialReference?.Wkid
                 ?? feature.Geometry.SpatialReference?.LatestWkid;
-            if (geometrySrid.HasValue && geometrySrid.Value != layerSrid)
+            // Treat Web Mercator aliases as equivalent. ArcGIS Pro / the ArcGIS JS API send
+            // {wkid:102100, latestWkid:3857} against a layer stored as 3857; these are the same
+            // CRS with identical coordinate values. Normalize both sides through the shared
+            // Web Mercator alias table (the same normalization the query and import paths use)
+            // before comparing so the edit is accepted. A genuinely different CRS still fails
+            // here because the edit path does not reproject geometry.
+            if (geometrySrid.HasValue &&
+                SpatialReferenceExtensions.NormalizeWebMercatorSrid(geometrySrid.Value)
+                    != SpatialReferenceExtensions.NormalizeWebMercatorSrid(layerSrid))
             {
                 var safeError = SanitizeEditErrorMessage(
                     $"Geometry spatial reference {geometrySrid.Value} does not match layer SRID {layerSrid}.",
@@ -1247,10 +1255,11 @@ internal sealed class FeatureServerEditsHandler(
                 throw new ArgumentException(safeError);
             }
 
-            geometrySrid ??= layerSrid;
+            // The incoming spatial reference either matches the layer or is a Web Mercator
+            // alias of it, so store the geometry tagged with the layer's canonical SRID.
             try
             {
-                geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, geometrySrid);
+                geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, layerSrid);
             }
             catch (ArgumentException ex)
             {
