@@ -88,8 +88,10 @@ internal static class FileUploadSecurity
             ".csv", ".tsv", ".txt",
             ".xls", ".xlsx",
             ".geojson", ".json",
+            ".esrijson", // Esri JSON feature set (honua-server#2352)
             ".gpkg",
             ".wkt",
+            ".wkb", // Well-Known Binary geometry (honua-server#2353)
             ".gpx",
             ".kml", ".kmz",
             ".gml", ".xml",
