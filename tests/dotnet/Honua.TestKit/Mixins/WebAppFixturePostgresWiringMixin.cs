@@ -215,6 +215,13 @@ internal static class WebAppFixturePostgresWiringMixin
         {
             var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
             dataSourceBuilder.ConnectionStringBuilder.Multiplexing = false;
+            // Mirror production (PostgresDataSourceFactory): keep the password in the string
+            // exposed by NpgsqlDataSource.ConnectionString so IDatabaseConnectionProvider
+            // .GetConnectionString() returns a value that can open a fresh connection. Without
+            // this, the import snapshot-refresh / publish-materialize paths reconnect with a
+            // passwordless string and fail SCRAM auth ("No password has been provided but the
+            // backend requires one (in SASL/SCRAM-SHA-256)") in the FileImport integration shard.
+            dataSourceBuilder.ConnectionStringBuilder.PersistSecurityInfo = true;
             return dataSourceBuilder.Build();
         });
     }
