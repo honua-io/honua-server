@@ -27,14 +27,16 @@ their own, pin the release line:
   back**, without ever touching Git"* and *"failure auto-rolls-back."*
 
 That operate floor cannot be honestly certified for the first release.
-**Rollback / auto-rollback was never certified**: the health-gated
-auto-rollback path is not exercised in CI and does not run as part of any
-release gate (per the release-readiness audits under `_release-audit/` and the
-safe-rollout audit notes). Asserting a rollback floor we cannot prove
-contradicts the evidence-based posture of ADR-0054 ("implemented with no test is
-structurally impossible"). Cross-environment promotion (the dev→staging→prod
-fleet path, honua-io/honua-devops#57/#58) is likewise not part of the
-single-environment release and was already flagged gated exotic.
+**Automatic rollback was never certified as an operate floor.** A rollback
+path *is* built (approve → apply → rollback), but it is approval-gated and
+disabled by default; there is no certified, health-gated *automatic* revert
+that runs unattended as part of a release gate (per the release-readiness audits
+under `_release-audit/` and the safe-rollout audit notes). Asserting an
+*auto*-rollback floor we cannot prove contradicts the evidence-based posture of
+ADR-0054 ("implemented with no test is structurally impossible").
+Cross-environment promotion (the dev→staging→prod fleet path,
+honua-io/honua-devops#58) is likewise built but not part of the
+single-environment release and stays gated off.
 
 We need to (a) fix the in-scope/out-of-scope line, (b) give the catalog a tier
 that means "in the binary but off," and (c) replace the rollback operate floor
@@ -64,37 +66,50 @@ advertised in the capability manifest):
   northbound interop (sufficient, not exhaustive parity).
 - **AI operator surface with fix-forward** — the operate model below.
 
-### 2. Experimental + disabled set (present in code, held back)
+### 2. Experimental + disabled set (built server-side, gated off)
 
-The following are **experimental for the first release**: they carry
-`maturity: experimental` in the feature catalog, are **NOT advertised in the
-capability manifest**, and their surfaces/endpoints are **disabled / gated off**.
-They may be present in the binary but must not appear in the manifest, `/mcp`,
-Studio availability, or Console. Each links its tracking issue:
+The following are **built server-side and gated OFF for the first release**.
+They carry `maturity: experimental` in the feature catalog, are **NOT advertised
+in the capability manifest**, and their surfaces/endpoints are **disabled by
+default** — reachable only as a **customer opt-in via the capability flag**.
+Present, wired, and tested in the binary, they still must not appear in the
+manifest, `/mcp`, Studio availability, or Console in a default deployment. This
+is a "built, gated off, customer-opt-in" posture — **not** "deferred / not
+built." Each links its tracking issue:
 
-- **Mobile** (honua-mobile) — mobile / offline capabilities.
-- **Forms + field collection** — `form.package` / forms authoring and field
-  data collection (honua-collect).
+- **Mobile** (honua-mobile) — mobile / offline SDK + field-collection foundation.
+- **Forms + field collection** — `form.package` authoring and field data
+  collection (server form-package endpoints + `IFieldCollectionSyncStore` /
+  the `sync.offline` capability).
 - **Temporal / data-versioning** — honua-io/honua-server#1166.
 - **Versioned editing** — honua-io/honua-server#371.
 - **Disconnected-sync conflict review** — honua-io/honua-server#1167.
 - **Realtime / geofence alerting** — honua-io/honua-server#1169.
-- **SIEM / investigations** — honua-io/honua-devops#59.
-- **Native MAUI host + mTLS** — honua-io/honua-server#1171.
+- **SIEM / investigations** — honua-io/honua-server#1168 /
+  honua-io/honua-devops#59.
+- **Native MAUI host + mTLS** — honua-io/honua-server#1171 (caveat: client
+  certificate trust is currently in-memory).
 - **Exhaustive GP/ETL node breadth + custom script/model tools** —
-  honua-io/honua-server#1185.
+  honua-io/honua-server#1185 (96 built-in nodes present).
 - **Cross-environment deploy / promotion** (dev→staging→prod fleet) —
-  honua-io/honua-devops#57 / #58.
-- **Rollback / auto-rollback** — the propose→preflight→approve→apply→**rollback**
-  operate loop, including health-gated auto-rollback (superseded by fix-forward,
-  see §4).
-- **Governance auth** — SAML / CAC / PIV / FIPS (honua-io/honua-server#1275) and
-  SSO / OIDC (honua-io/honua-server#3240, #1372).
-- **Collaborative map sessions** — honua-io/honua-server#971.
+  honua-io/honua-devops#58.
+- **Rollback** — the approve → apply → **rollback** operate loop
+  (honua-io/honua-server#133). Built, but approval-gated and flag-off; the
+  shipped safety model is fix-forward (see §4). It is **not** an unattended
+  auto-rollback.
+- **SSO / OIDC / SAML / SCIM** — honua-io/honua-server#348 (built; issue closed).
+- **Collaborative map sessions** — honua-io/honua-server#971 (session transport
+  built).
 
-"Experimental + disabled" is a deliberate ship-it-off posture, not a "not built"
-claim: the code may exist and even be exercised in isolation, but it is not
-certified for this release and is not reachable by a default deployment.
+These are certified-off, not absent: the code is present, wired, and tested, but
+it is not certified for this release and is not reachable by a default
+deployment. It lights up when a customer opts in via the capability flag.
+
+**Genuinely not built (`planned`).** The only items in this space that are *not*
+built are the federal smart-card auth paths — **CAC / PIV**
+(honua-io/honua-server#1275 / #1273) — which are `planned`. **FIPS**
+(honua-io/honua-server#1275) is **attestation-only, with no enforcement**, so it
+is `planned` / caveated, not `experimental`.
 
 ### 3. Feature-catalog `experimental` tier
 
@@ -120,27 +135,31 @@ registry work — **honua-io/honua-server#2335 (Track B3)** — which gates the
 deferred/experimental endpoints off the manifest. The `FeatureCatalogGenerator`
 / drift-guard changes (ADR-0054 slices) land there, not here.
 
-### 4. Operate model: health-gated fix-forward, not rollback
+### 4. Operate model: health-gated fix-forward, not auto-rollback
 
-The first release operates as **single-environment deploy with NO rollback**.
-Safety is delivered by **health-gated AI fix-forward** (roll-forward
-convergence) via the AI operator surface: when a change degrades health, the AI
-operator proposes and applies a *forward* corrective change that converges the
-system back to a healthy state, rather than reverting to a prior state.
+The first release's **shipped safety model is health-gated AI fix-forward**
+(roll-forward convergence) via the AI operator surface: when a change degrades
+health, the AI operator proposes and applies a *forward* corrective change that
+converges the system back to a healthy state, rather than reverting to a prior
+state. A rollback path **is built**, but it ships **approval-gated and disabled
+by default**; it is not the shipped operate floor and is **not** an unattended
+*auto*-rollback.
 
 This **replaces** the cut-line's
 "propose → preflight → approve → apply → **rollback**" operate floor and its
 "failure auto-rolls-back" exit criterion.
 
-**Rationale — rollback was never certified.** The health-gated auto-rollback
-path is not tested or run in CI and is not exercised by any release gate (per
-the release-readiness / safe-rollout audits). Shipping a rollback floor we
-cannot prove would violate the evidence-based posture of ADR-0054. Fix-forward
-is the safety model we can actually certify for a single environment, and it is
-already the convergence model the merge-train / operator surface uses
-elsewhere ("roll-forward-first convergence"). Rollback / auto-rollback and
-cross-environment promotion therefore move to the experimental + disabled set
-(§2) and can light up post-release when they are tested and gated in.
+**Rationale — automatic rollback was never certified.** No health-gated,
+unattended *auto*-rollback path is tested or run in CI or exercised by any
+release gate (per the release-readiness / safe-rollout audits); the built
+rollback loop is approval-gated and off by default. Shipping an auto-rollback
+floor we cannot prove would violate the evidence-based posture of ADR-0054.
+Fix-forward is the safety model we can actually certify for a single
+environment, and it is already the convergence model the merge-train / operator
+surface uses elsewhere ("roll-forward-first convergence"). The built rollback
+loop and cross-environment promotion therefore sit in the experimental +
+disabled set (§2 — built + gated off) and can light up post-release when they
+are tested and gated in.
 
 ## Consequences
 
