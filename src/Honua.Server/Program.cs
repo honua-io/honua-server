@@ -109,6 +109,33 @@ var registerInfrastructureInTestEnvironment =
         Environment.GetEnvironmentVariable("HONUA_REGISTER_TEST_INFRASTRUCTURE"),
         "true",
         StringComparison.OrdinalIgnoreCase);
+// Standalone Test images (e.g. the honua-console live lane's Testcontainers image) expose the
+// Operate observability fixture seed endpoint and must register the real data providers the
+// seeder resolves. They run their own migrations, unlike in-process WebAppFixture hosts which
+// set HONUA_SKIP_MIGRATIONS and wire isolated providers themselves (honua-server#2350).
+var operateObservabilityFixtureEnabled =
+    Honua.Server.Features.Admin.OperateFixtures.OperateObservabilityFixtureOptions.ResolveEnabled(
+        builder.Configuration,
+        builder.Configuration.GetValue<bool>(
+            $"{Honua.Server.Features.Admin.OperateFixtures.OperateObservabilityFixtureOptions.SectionName}:Enabled"));
+var hostManagesOwnMigrations = !builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS");
+
+// A standalone fixture host (Development/Test only) needs the connection-encryption master key
+// the Postgres secure-connection provider requires; the honua-console Testcontainers harness does
+// not supply it. Fill deterministic dev defaults for any keys not already configured so the seed
+// endpoint — and the audit-log/connection-provider path every request hits — works out of the box
+// (honua-server#2350). Skipped in Production because the fixture validator forbids it there.
+if (operateObservabilityFixtureEnabled &&
+    (builder.Environment.IsDevelopment() || isTestEnvironment))
+{
+    var operateFixtureHostDefaults =
+        Honua.Server.Features.Admin.OperateFixtures.OperateObservabilityFixtureHostDefaults
+            .CreateMissingDefaults(builder.Configuration);
+    if (operateFixtureHostDefaults.Count > 0)
+    {
+        builder.Configuration.AddInMemoryCollection(operateFixtureHostDefaults);
+    }
+}
 var serveStacOpsDemo = builder.Configuration.GetValue(
     "ServeStacOpsDemo",
     builder.Configuration.GetValue(
@@ -287,8 +314,14 @@ builder.Host.UseSerilog((context, services, config) =>
 // This is the only place where Server directly references Infrastructure
 // Rest of Server code uses only Core abstractions (IFeatureReader/Writer, ITileProvider, IRelationshipStore, IDatabaseHealthChecker)
 // Skip infrastructure registration in test environment by default - WebAppFixture handles it.
-// Standalone Python/JS harnesses can opt back in with HONUA_REGISTER_TEST_INFRASTRUCTURE=true.
-if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
+// Standalone Python/JS harnesses can opt back in with HONUA_REGISTER_TEST_INFRASTRUCTURE=true;
+// a self-migrating standalone Test image that enables the Operate observability fixture also
+// opts in automatically so the seed endpoint's providers resolve (honua-server#2350).
+if (Honua.Server.Startup.TestInfrastructureRegistrationPolicy.ShouldRegisterInfrastructure(
+        isTestEnvironment,
+        registerInfrastructureInTestEnvironment,
+        operateObservabilityFixtureEnabled,
+        hostManagesOwnMigrations))
 {
     InfrastructureCompositionRoot.RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
