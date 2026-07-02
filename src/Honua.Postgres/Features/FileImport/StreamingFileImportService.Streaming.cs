@@ -98,6 +98,10 @@ internal sealed partial class StreamingFileImportService
             throw new InvalidOperationException("Shapefile scratch directory was not prepared.");
         }
 
+        // Collects CSV rows whose mapped geometry column held a value that could not be parsed
+        // (e.g. malformed WKT). Surfaced as a completion warning so the loss is never silent.
+        var csvGeometryDiagnostics = format == SupportedFileFormat.Csv ? new CsvGeometryDiagnostics() : null;
+
         var featureStream = format switch
         {
             SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
@@ -107,7 +111,7 @@ internal sealed partial class StreamingFileImportService
             SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gml => GmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, delimiterOverride: null, csvGeometryDiagnostics, cancellationToken),
             SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
             SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
@@ -218,6 +222,12 @@ internal sealed partial class StreamingFileImportService
         if (format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0)
         {
             completionWarningsBuilder.Add(string.Format(null, _nullGeometryWarningFormat, nullGeometrySkipped));
+        }
+
+        if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
+        {
+            completionWarningsBuilder.Add(string.Format(
+                null, _csvUnparseableGeometryWarningFormat, csvGeometryDiagnostics.UnparseableGeometryRows));
         }
 
         if (_limits.ContinueOnError && totalFailed > 0)

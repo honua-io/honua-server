@@ -70,14 +70,29 @@ internal static class CsvFormatReader
     internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         CancellationToken cancellationToken)
-        => ReadStreamingAsync(stream, delimiterOverride: null, cancellationToken);
+        => ReadStreamingAsync(stream, delimiterOverride: null, diagnostics: null, cancellationToken);
 
     /// <summary>
     /// Stream features from a CSV file with an optional explicit delimiter override.
     /// </summary>
+    internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
+        Stream stream,
+        char? delimiterOverride,
+        CancellationToken cancellationToken)
+        => ReadStreamingAsync(stream, delimiterOverride, diagnostics: null, cancellationToken);
+
+    /// <summary>
+    /// Stream features from a CSV file with an optional explicit delimiter override and an
+    /// optional <see cref="CsvGeometryDiagnostics"/> sink. When a row has a mapped geometry
+    /// column whose value is present but cannot be parsed as WKT/EWKT/WKB, the raw value is
+    /// preserved as an attribute (so the data is never discarded) and the occurrence is
+    /// recorded on <paramref name="diagnostics"/> so the caller can surface a warning rather
+    /// than silently importing a null geometry.
+    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         char? delimiterOverride,
+        CsvGeometryDiagnostics? diagnostics,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
@@ -86,6 +101,7 @@ internal static class CsvFormatReader
         CsvColumnMapping mapping = default;
         var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
         var wktReader = new WKTReader();
+        var wkbReader = GeometryValueParser.CreateWkbReader();
         var sampleRecords = await ReadSampleRecordsAsync(reader, cancellationToken);
         var delimiter = delimiterOverride ?? DetectDelimiter(sampleRecords);
 
@@ -104,7 +120,7 @@ internal static class CsvFormatReader
                 return null;
             }
 
-            return BuildFeature(headers, fields, mapping, geometryFactory, wktReader);
+            return BuildFeature(headers, fields, mapping, geometryFactory, wktReader, wkbReader, diagnostics);
         }
 
         foreach (var sampleRecord in sampleRecords)
@@ -144,7 +160,9 @@ internal static class CsvFormatReader
         IReadOnlyList<string> fields,
         CsvColumnMapping mapping,
         GeometryFactory geometryFactory,
-        WKTReader wktReader)
+        WKTReader wktReader,
+        WKBReader wkbReader,
+        CsvGeometryDiagnostics? diagnostics)
     {
         var attributes = new AttributesTable();
 
@@ -164,7 +182,23 @@ internal static class CsvFormatReader
             attributes.Add(headers[i], value);
         }
 
-        var geometry = ParseGeometry(fields, mapping, geometryFactory, wktReader);
+        var geometry = ParseGeometry(
+            fields, mapping, geometryFactory, wktReader, wkbReader, out var unparseableGeometryValue);
+
+        // A geometry column was mapped and carried a value, but none of the supported
+        // encodings (WKT/EWKT/WKB hex) could parse it. Rather than silently dropping the
+        // geometry to NULL and reporting success (data loss), preserve the raw value as an
+        // attribute so it is never discarded and record the occurrence so the import surfaces
+        // a warning. Mirrors GeoParquet's skip/warn behaviour for null geometry.
+        if (geometry == null && unparseableGeometryValue != null)
+        {
+            diagnostics?.RecordUnparseableGeometry();
+            if (mapping.WktIndex.HasValue)
+            {
+                attributes.Add(headers[mapping.WktIndex.Value], unparseableGeometryValue);
+            }
+        }
+
         if (geometry == null && attributes.GetNames().Length == 0)
         {
             return null;
@@ -177,21 +211,29 @@ internal static class CsvFormatReader
         IReadOnlyList<string> fields,
         CsvColumnMapping mapping,
         GeometryFactory geometryFactory,
-        WKTReader wktReader)
+        WKTReader wktReader,
+        WKBReader wkbReader,
+        out string? unparseableGeometryValue)
     {
+        unparseableGeometryValue = null;
+
         if (mapping.WktIndex.HasValue)
         {
             var wktValue = GetField(fields, mapping.WktIndex.Value);
             if (!string.IsNullOrWhiteSpace(wktValue))
             {
-                try
+                // Handles plain WKT, EWKT (SRID=<n>; prefix — the standard PostGIS export
+                // form) and WKB/EWKB hex. This is what previously fell into a bare catch{}
+                // and silently produced a NULL geometry.
+                var geometry = GeometryValueParser.TryParse(wktValue, wktReader, wkbReader);
+                if (geometry != null)
                 {
-                    return wktReader.Read(wktValue.Trim());
+                    return geometry;
                 }
-                catch
-                {
-                    // Ignore malformed WKT and try other geometry encodings.
-                }
+
+                // Remember the raw value so the caller can preserve it and warn; fall through
+                // to the lon/lat encoding in case the file also carries coordinate columns.
+                unparseableGeometryValue = wktValue.Trim();
             }
         }
 
@@ -203,6 +245,8 @@ internal static class CsvFormatReader
             if (double.TryParse(longitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude) &&
                 double.TryParse(latitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude))
             {
+                // A parseable coordinate pair supersedes an unparseable WKT column.
+                unparseableGeometryValue = null;
                 return geometryFactory.CreatePoint(new Coordinate(longitude, latitude));
             }
         }
@@ -525,4 +569,22 @@ internal static class CsvFormatReader
         int? WktIndex,
         int? LongitudeIndex,
         int? LatitudeIndex);
+}
+
+/// <summary>
+/// Collects diagnostics emitted while streaming a CSV so the import pipeline can surface
+/// warnings instead of silently importing rows with dropped geometry. A single instance is
+/// passed to <see cref="CsvFormatReader"/> and read after enumeration completes.
+/// </summary>
+internal sealed class CsvGeometryDiagnostics
+{
+    /// <summary>
+    /// Number of rows whose mapped geometry column held a value that could not be parsed as
+    /// WKT, EWKT, or WKB/EWKB hex. Such rows are imported without geometry but with the raw
+    /// value preserved as an attribute.
+    /// </summary>
+    public int UnparseableGeometryRows { get; private set; }
+
+    /// <summary>Records that a row had an unparseable geometry value.</summary>
+    public void RecordUnparseableGeometry() => UnparseableGeometryRows++;
 }
