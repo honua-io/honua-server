@@ -155,7 +155,7 @@ internal static class FeatureRegistrationExtensions
         services.AddAnalysisContent(configuration);
         services.AddTemporalHistory();
         services.AddAnalysisReporting(configuration);
-        services.AddCapabilityManifest();
+        services.AddCapabilityManifest(configuration);
         services.AddPackageReview();
         services.AddMcpOperatorSurface(configuration);
         services.AddSpecGrounding();

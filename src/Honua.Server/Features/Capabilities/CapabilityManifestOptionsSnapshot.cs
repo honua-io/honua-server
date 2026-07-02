@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.ControlPlane;
 using Honua.Import.FileImport;
 using Honua.Infrastructure.Authentication;
@@ -33,7 +34,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<FileUploadSecurityOptions> fileUploadSecurityOptions,
         IOptions<GrpcOptions> grpcOptions,
         IOptions<AlertOptions> alertOptions,
-        IOptions<RbacOptions> rbacOptions)
+        IOptions<RbacOptions> rbacOptions,
+        IOptions<CapabilityFlagOptions> capabilityFlagOptions)
     {
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
@@ -45,6 +47,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ArgumentNullException.ThrowIfNull(grpcOptions);
         ArgumentNullException.ThrowIfNull(alertOptions);
         ArgumentNullException.ThrowIfNull(rbacOptions);
+        ArgumentNullException.ThrowIfNull(capabilityFlagOptions);
 
         Limits = limitsOptions.Value;
         Streaming = streamOptions.Value;
@@ -56,6 +59,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         Grpc = grpcOptions.Value;
         Alerts = alertOptions.Value;
         Rbac = rbacOptions.Value;
+        ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
     }
 
     public LimitsOptions Limits { get; }
@@ -77,4 +81,11 @@ internal sealed class CapabilityManifestOptionsSnapshot
     public AlertOptions Alerts { get; }
 
     public RbacOptions Rbac { get; }
+
+    /// <summary>
+    /// The config-bound experimental feature-flag switches (#2339 / T2). Carried on the
+    /// snapshot so the per-environment manifest honours the flags; the manifest begins
+    /// acting on them in T4 (#2340).
+    /// </summary>
+    public CapabilityFlagOptions ExperimentalCapabilityFlags { get; }
 }

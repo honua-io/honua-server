@@ -29,8 +29,16 @@ public sealed record CapabilityGateContext
     public string? DeploymentEnvironment { get; init; }
 
     /// <summary>
-    /// A default context (Community edition, no environment scope) for callers
-    /// that have no richer context — primarily the B1 pass-through and tests.
+    /// The config-bound experimental feature-flag switches evaluated against
+    /// <see cref="CapabilityMaturity.Experimental"/> capabilities (#2339 / T2).
+    /// Defaults to all-off (no experimental capability enabled), so a default
+    /// context leaves the B1 non-experimental roster unchanged.
+    /// </summary>
+    public CapabilityFlagOptions ExperimentalFlags { get; init; } = new();
+
+    /// <summary>
+    /// A default context (Community edition, no environment scope, experimental
+    /// flags off) for callers that have no richer context — primarily tests.
     /// </summary>
     public static CapabilityGateContext Default { get; } = new();
 }
