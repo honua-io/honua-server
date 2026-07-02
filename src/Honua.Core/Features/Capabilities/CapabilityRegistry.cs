@@ -34,7 +34,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     public const string DataFormatIdPrefix = "format.";
 
     /// <summary>Reason code returned by <see cref="Resolve"/> for an unregistered id.</summary>
-    public const string NotRegisteredReasonCode = "capability-not-registered";
+    public const string NotRegisteredReasonCode = CapabilityReasonCodes.NotRegistered;
 
     private static readonly Dictionary<string, HonuaEdition> EditionByEntitlementKey =
         FeatureCatalog.All.ToDictionary(
@@ -63,14 +63,10 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(context);
 
-        // B1 pass-through seam: every registered capability resolves enabled (no
-        // capability is disabled in this PR), and an unknown id resolves disabled.
-        // #2339 (T2) replaces this with CapabilityGateContext-driven precedence
-        // (edition + environment + config) that can disable Experimental
-        // capabilities with a specific ReasonCode.
-        return ById.ContainsKey(id)
-            ? new CapabilityResolution(true, null)
-            : new CapabilityResolution(false, NotRegisteredReasonCode);
+        // #2339 (T2): the config-driven experimental feature-flag precedence. The
+        // registry supplies the descriptor (or null for an unknown id) and defers the
+        // maturity/flag/edition precedence to CapabilityGateResolver.
+        return CapabilityGateResolver.Resolve(Find(id), context);
     }
 
     private static List<CapabilityDescriptor> BuildAll()
