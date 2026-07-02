@@ -394,6 +394,50 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Features)]
     [Endpoint("GET /api/v1/admin/features")]
+    public async Task GetFeatureOverview_ReturnsCapabilityRegistryProjection()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/features");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+
+        // T8: the read-only projection of the unified capability registry.
+        var capabilities = data.GetProperty("capabilities");
+        capabilities.GetArrayLength().Should().BeGreaterThan(0);
+
+        // Each capability carries id + kind + maturity + resolved enabled state.
+        var firstCapability = capabilities[0];
+        firstCapability.GetProperty("id").GetString().Should().NotBeNullOrEmpty();
+        firstCapability.GetProperty("kind").GetString().Should().NotBeNullOrEmpty();
+        firstCapability.GetProperty("maturity").GetString().Should().NotBeNullOrEmpty();
+        firstCapability.TryGetProperty("enabled", out _).Should().BeTrue();
+
+        // Every disabled capability must carry a machine-readable reason code, and
+        // every enabled one must omit it (WhenWritingNull) — operators can always
+        // see WHY a capability is off.
+        foreach (var capability in capabilities.EnumerateArray())
+        {
+            var enabled = capability.GetProperty("enabled").GetBoolean();
+            var hasReason = capability.TryGetProperty("reasonCode", out var reason)
+                && reason.ValueKind == JsonValueKind.String
+                && !string.IsNullOrEmpty(reason.GetString());
+
+            if (enabled)
+            {
+                hasReason.Should().BeFalse("an enabled capability has no disable reason");
+            }
+            else
+            {
+                hasReason.Should().BeTrue("a disabled capability must explain why");
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Features)]
+    [Endpoint("GET /api/v1/admin/features")]
     public async Task GetFeatureOverview_ProEdition_ShowsUpgradeMessagesForEnterprise()
     {
         var response = await _client.GetAsync("/api/v1/admin/features");

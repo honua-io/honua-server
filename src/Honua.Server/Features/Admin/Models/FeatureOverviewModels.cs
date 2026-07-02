@@ -17,6 +17,53 @@ public sealed class FeatureOverviewResponse
     /// All platform features with their enabled/disabled state.
     /// </summary>
     public required FeatureOverviewItem[] Features { get; init; }
+
+    /// <summary>
+    /// The full unified capability roster (ADR-0058, Decision B) projected from
+    /// <see cref="Honua.Core.Features.Capabilities.ICapabilityRegistry"/>, resolved
+    /// for the current edition/environment through the T2 gate resolver so operators
+    /// can see every capability and <b>why</b> each is on or off. Read-only — there
+    /// is deliberately no mutable toggle endpoint (the flag design defers writes to
+    /// the config-bound experimental switches).
+    /// </summary>
+    public required CapabilityOverviewItem[] Capabilities { get; init; }
+}
+
+/// <summary>
+/// One capability from the unified registry, projected with its resolved
+/// enabled/reason state for the current edition and environment.
+/// </summary>
+public sealed class CapabilityOverviewItem
+{
+    /// <summary>
+    /// Stable, unique capability identifier (for example <c>format.geoparquet</c>
+    /// or <c>protocol.mcp.tool.plan_analysis</c>).
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// The broad kind of capability (<c>Feature</c>, <c>ProtocolOperation</c>, or
+    /// <c>DataFormat</c>).
+    /// </summary>
+    public required string Kind { get; init; }
+
+    /// <summary>
+    /// The product-lifecycle maturity (<c>Planned</c>, <c>Deferred</c>,
+    /// <c>Experimental</c>, <c>Partial</c>, or <c>Implemented</c>).
+    /// </summary>
+    public required string Maturity { get; init; }
+
+    /// <summary>
+    /// Whether the capability resolves enabled for the current edition/environment.
+    /// </summary>
+    public required bool Enabled { get; init; }
+
+    /// <summary>
+    /// The stable machine-readable reason the capability is disabled (for example
+    /// <c>experimental-disabled</c> or <c>license-required</c>), or <c>null</c> when
+    /// the capability is enabled.
+    /// </summary>
+    public string? ReasonCode { get; init; }
 }
 
 /// <summary>

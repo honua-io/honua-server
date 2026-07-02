@@ -18,6 +18,8 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(FeatureOverviewResponse))]
 [JsonSerializable(typeof(FeatureOverviewItem))]
 [JsonSerializable(typeof(FeatureOverviewItem[]))]
+[JsonSerializable(typeof(CapabilityOverviewItem))]
+[JsonSerializable(typeof(CapabilityOverviewItem[]))]
 internal sealed partial class FeatureOverviewJsonContext : JsonSerializerContext
 {
 }
