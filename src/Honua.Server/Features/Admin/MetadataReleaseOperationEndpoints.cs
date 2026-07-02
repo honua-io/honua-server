@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -21,6 +22,12 @@ internal static class MetadataReleaseOperationEndpoints
     public static void MapMetadataReleaseOperationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata/releases")
+            // T5 (#2341): representative group-level capability gate wiring. The
+            // shared CapabilityGateEndpointFilter short-circuits with 404 when the
+            // gated descriptor resolves experimental-disabled; publication.metadata-release
+            // is Implemented today, so this is behaviour-neutral. Attaching the gate to
+            // the deferred-feature groups is deferred to T10 (#2346).
+            .WithCapabilityGate("publication.metadata-release")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Metadata")
