@@ -87,29 +87,74 @@ internal static class GpxFormatReader
         using (var subtree = reader.ReadSubtree())
         {
             await subtree.ReadAsync();
-            while (await subtree.ReadAsync())
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (subtree.NodeType != XmlNodeType.Element)
-                {
-                    continue;
-                }
-
-                var name = subtree.LocalName;
-                if (subtree.IsEmptyElement)
-                {
-                    attributes.Add(name, string.Empty);
-                    continue;
-                }
-
-                var value = await subtree.ReadElementContentAsStringAsync();
-                attributes.Add(name, value);
-            }
+            await ReadLeafAttributesAsync(subtree, attributes, cancellationToken);
         }
 
         return new Feature(geometry, attributes);
     }
+
+    /// <summary>
+    /// Walks the already-opened element subtree and records leaf (simple-text) descendants as
+    /// attributes keyed by their local name. Container elements such as GPX <c>&lt;extensions&gt;</c>
+    /// (which GDAL uses to carry source fields, e.g. <c>&lt;ogr:zone_code&gt;030&lt;/ogr:zone_code&gt;</c>)
+    /// are descended into rather than read as text. This avoids the
+    /// <see cref="System.Xml.XmlException"/> that <c>ReadElementContentAsString</c> throws on an
+    /// element that has child elements (honua-server#2354).
+    /// </summary>
+    private static async Task ReadLeafAttributesAsync(
+        XmlReader reader,
+        AttributesTable attributes,
+        CancellationToken cancellationToken)
+    {
+        string? pendingName = null;
+
+        while (await reader.ReadAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            switch (reader.NodeType)
+            {
+                case XmlNodeType.Element:
+                    if (reader.IsEmptyElement)
+                    {
+                        // A self-closing leaf (e.g. <name/>). The <extensions> wrapper carries no
+                        // value of its own, so it is never recorded as an attribute.
+                        if (!IsContainerElement(reader.LocalName) && !attributes.Exists(reader.LocalName))
+                        {
+                            attributes.Add(reader.LocalName, string.Empty);
+                        }
+
+                        pendingName = null;
+                    }
+                    else
+                    {
+                        // Candidate leaf. If this turns out to be a container, the next Element
+                        // read overwrites pendingName before any Text arrives, so container
+                        // wrappers never produce a spurious attribute.
+                        pendingName = reader.LocalName;
+                    }
+
+                    break;
+
+                case XmlNodeType.Text:
+                case XmlNodeType.CDATA:
+                    if (pendingName != null && !attributes.Exists(pendingName))
+                    {
+                        attributes.Add(pendingName, reader.Value);
+                    }
+
+                    pendingName = null;
+                    break;
+
+                case XmlNodeType.EndElement:
+                    pendingName = null;
+                    break;
+            }
+        }
+    }
+
+    private static bool IsContainerElement(string localName) =>
+        string.Equals(localName, "extensions", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<IFeature?> ParseTrackAsync(
         XmlReader reader,

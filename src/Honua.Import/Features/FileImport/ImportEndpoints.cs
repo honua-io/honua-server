@@ -198,6 +198,8 @@ internal static partial class ImportEndpoints
         {
             [".geojson"] = "GeoJSON - Web-standard JSON format",
             [".json"] = "JSON - May contain GeoJSON data",
+            [".esrijson"] = "Esri JSON - ArcGIS feature set (attributes + Esri geometry)",
+            [".wkb"] = "WKB - Well-Known Binary geometry (one or more concatenated geometries)",
             [".zip"] = "Zipped Shapefile - contains .shp/.dbf/.shx/.prj components",
             [".gpkg"] = "GeoPackage - OGC SQLite-based format",
             [".gpx"] = "GPX - GPS Exchange format",
