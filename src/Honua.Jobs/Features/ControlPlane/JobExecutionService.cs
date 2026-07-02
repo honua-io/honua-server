@@ -308,7 +308,19 @@ internal sealed partial class JobExecutionService(
                     Log.JobExecutorReturnedFailure(logger, operationId, result.ErrorMessage);
                 }
 
-                await AbandonJobAsync(running, workerId, SafeExecutionFailureMessage,
+                // Surface the executor-authored failure detail on the durable job
+                // record instead of collapsing it to the generic safe message
+                // (#2348). An executor's JobExecutionResult.Failed(...) message is
+                // a curated, client-safe reason (e.g. "missing required input",
+                // "sink.honua-layer is unavailable in this deployment"), unlike a
+                // raw thrown exception; persisting it makes GP jobs diagnosable
+                // through the OGC/GPServer status surfaces. Falls back to the
+                // generic message only when the executor supplied no detail.
+                var failureReason = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? SafeExecutionFailureMessage
+                    : result.ErrorMessage!;
+
+                await AbandonJobAsync(running, workerId, failureReason,
                     CancellationToken.None, result.Warnings).ConfigureAwait(false);
             }
         }
@@ -673,7 +685,10 @@ internal sealed partial class JobExecutionService(
                 Status = ExecutionJobStatus.Failed,
                 UpdatedAt = now,
                 CompletedAt = now,
-                ErrorMessage = SafeExecutionFailureMessage,
+                // Persist the caller-supplied reason: a curated, client-safe
+                // executor failure detail (#2348) or the generic safe message for
+                // unexpected thrown exceptions. Never a raw exception string.
+                ErrorMessage = reason,
                 Warnings = warnings ?? latestBeforeFail.Warnings,
                 CurrentPhase = "Failed (abandoned)"
             };
