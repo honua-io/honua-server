@@ -169,6 +169,28 @@ public sealed record EvalExpectedOutcome
     [JsonPropertyName("isExecutable")]
     public bool IsExecutable { get; init; } = true;
 
+    /// <summary>
+    /// Expected executability on the <em>direct single-job submit path</em> (gRPC
+    /// <c>SubmitJob</c> and OGC API Processes <c>execution</c>). This is deliberately
+    /// distinct from <see cref="IsExecutable"/>: a multi-step DAG is a valid,
+    /// catalog-clean plan — so <c>ValidatePlan</c>/<c>DryRun</c> accept it and
+    /// <see cref="IsExecutable"/> is <c>true</c> — yet the direct submit path
+    /// intentionally rejects it (400 / gRPC <c>InvalidArgument</c>) because a single
+    /// job runs exactly one process. Multi-step DAGs are executed by the workflow
+    /// orchestration engine (one single-step job per node), not the direct submit
+    /// path. When <c>null</c> this defaults to <see cref="IsExecutable"/>, so
+    /// existing single-step scenarios are unaffected.
+    /// </summary>
+    [JsonPropertyName("directSubmitExecutable")]
+    public bool? DirectSubmitExecutable { get; init; }
+
+    /// <summary>
+    /// Resolved expectation for the direct single-job submit path, defaulting to
+    /// <see cref="IsExecutable"/> when <see cref="DirectSubmitExecutable"/> is unset.
+    /// </summary>
+    [JsonIgnore]
+    public bool ExpectsDirectSubmitExecution => DirectSubmitExecutable ?? IsExecutable;
+
     /// <summary>Expected <see cref="PlanValidationResult.RequiresApproval"/> value.</summary>
     [JsonPropertyName("requiresApproval")]
     public bool RequiresApproval { get; init; }

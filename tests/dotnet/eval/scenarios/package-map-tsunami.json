@@ -50,6 +50,7 @@
   },
   "expectedOutcome": {
     "isExecutable": true,
+    "directSubmitExecutable": false,
     "requiresApproval": false,
     "estimatedArtifactKinds": ["Map", "Report"],
     "terminalWorkflowStatus": "Completed",
