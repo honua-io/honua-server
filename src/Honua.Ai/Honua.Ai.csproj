@@ -97,6 +97,9 @@
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
+    <!-- Standalone geospatial-mcp reference-manifest generator
+         (scripts/conformance/mcp/manifest-gen, not part of Honua.sln). -->
+    <InternalsVisibleTo Include="Honua.Mcp.ManifestGen" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
