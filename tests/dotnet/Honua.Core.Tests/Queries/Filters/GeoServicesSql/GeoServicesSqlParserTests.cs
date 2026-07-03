@@ -106,15 +106,46 @@ public class GeoServicesSqlParserTests
     }
 
     [Fact]
-    public void Parse_HashDatetimeLiteralWithoutOffset_StillRejected()
+    public void Parse_HashDatetimeLiteralWithoutOffset_AcceptedAsUtc()
     {
-        // Without the explicit TIMESTAMP keyword, a #...# date+time literal carrying a
-        // time component but no offset remains ambiguous and must still be rejected;
-        // only the explicit TIMESTAMP keyword relaxes the offset requirement.
-        var act = () => _parser.Parse("event_date > #2024-06-01T12:30:00#");
+        // PA-026: mirror ArcGIS Server behaviour — bare date+time literals without an explicit
+        // timezone offset (including the #...# hash form) are accepted and treated as UTC
+        // instead of being rejected.  The old test ("StillRejected") encoded the wrong behaviour.
+        var expression = _parser.Parse("event_date > #2024-06-01T12:30:00#");
+
+        var binary = (BinaryExpression)expression;
+        var literal = (Literal)binary.Right;
+        literal.Type.Should().Be(LiteralType.DateTime);
+        var value = (DateTimeOffset)literal.Value!;
+        value.Offset.Should().Be(TimeSpan.Zero);
+        value.UtcDateTime.Should().Be(new DateTime(2024, 6, 1, 12, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void Parse_TimestampKeywordWithoutOffset_AcceptedAsUtc()
+    {
+        // PA-026: ArcGIS clients emit TIMESTAMP 'value' literals without a timezone offset.
+        // Previously the parser threw "missing a timezone offset"; now they are accepted
+        // as UTC to mirror ArcGIS Server's AssumeUniversal behaviour.
+        var expression = _parser.Parse("event_date > TIMESTAMP '2024-01-01 12:00:00'");
+
+        var binary = (BinaryExpression)expression;
+        var literal = (Literal)binary.Right;
+        literal.Type.Should().Be(LiteralType.DateTime);
+        var value = (DateTimeOffset)literal.Value!;
+        value.Offset.Should().Be(TimeSpan.Zero);
+        value.UtcDateTime.Should().Be(new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void Parse_UnknownFunction_ThrowsArgumentException()
+    {
+        // PA-013: the parser allowlist should reject unknown function names before an AST node
+        // is created so that future providers cannot inherit the parser's permissiveness.
+        var act = () => _parser.Parse("pg_sleep(600) > 0");
 
         act.Should().Throw<ArgumentException>()
-            .WithMessage("*missing a timezone offset*");
+            .WithMessage("*Unknown or unsupported function*");
     }
 
     [Fact]

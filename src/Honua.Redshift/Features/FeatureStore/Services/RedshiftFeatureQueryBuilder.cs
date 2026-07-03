@@ -494,7 +494,11 @@ internal static partial class RedshiftFeatureQueryBuilder
             return num;
         }
 
-        return valueToken;
+        // Defense-in-depth: ComparisonRegex constrains the 'value' group to a quoted string or
+        // numeric literal, so this branch is currently unreachable. Throw explicitly so any
+        // future code path that calls this function with an unexpected token fails loudly rather
+        // than silently returning a raw string that could produce unparameterized SQL.
+        throw new ArgumentException($"Unrecognized value token: {valueToken}");
     }
 
     [GeneratedRegex(

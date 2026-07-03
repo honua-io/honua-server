@@ -105,16 +105,35 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
     /// <inheritdoc />
     public void Dispose() => _gate.Dispose();
 
-    private string PathFor(string runId) => Path.Combine(_rootDirectory, $"{SafePathSegment(runId)}.json");
+    private string PathFor(string runId)
+    {
+        var segment = SafePathSegment(runId);
+        var candidate = Path.GetFullPath(Path.Combine(_rootDirectory, $"{segment}.json"));
+        // Containment check: reject any path that escapes the root directory (symlinks,
+        // future encoding tricks, etc. are caught here even if SafePathSegment missed them).
+        var root = Path.GetFullPath(_rootDirectory) + Path.DirectorySeparatorChar;
+        if (!candidate.StartsWith(root, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Path traversal detected: the resolved path escapes the checkpoint root directory.");
+        }
+
+        return candidate;
+    }
 
     private static string SafePathSegment(string runId)
     {
-        var invalid = Path.GetInvalidFileNameChars();
+        // Explicitly reject path-separator characters in addition to OS-reported invalid
+        // file-name characters. On Linux, Path.GetInvalidFileNameChars() only contains
+        // '\0', so '/' would pass through unchanged and Path.Combine would then discard
+        // the root because the second argument looks absolute.
         Span<char> buffer = stackalloc char[runId.Length];
+        var invalid = Path.GetInvalidFileNameChars();
         for (var i = 0; i < runId.Length; i++)
         {
             var character = runId[i];
-            buffer[i] = Array.IndexOf(invalid, character) >= 0 ? '_' : character;
+            buffer[i] = (Array.IndexOf(invalid, character) >= 0 || character == '/' || character == '\\')
+                ? '_'
+                : character;
         }
 
         var sanitized = new string(buffer);
