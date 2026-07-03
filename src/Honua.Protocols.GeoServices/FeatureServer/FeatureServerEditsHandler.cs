@@ -216,10 +216,18 @@ internal sealed class FeatureServerEditsHandler(
             if (!editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
             {
-                await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, CancellationToken.None);
-                await PublishFeatureChangeEventsAsync(serviceId, layerId, editContext, CancellationToken.None);
-                await RunPluginAfterHooksAsync(serviceId, layerId, resource, editContext, CancellationToken.None)
-                    .ConfigureAwait(false);
+                using var postCommitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                try
+                {
+                    await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, postCommitCts.Token);
+                    await PublishFeatureChangeEventsAsync(serviceId, layerId, editContext, postCommitCts.Token);
+                    await RunPluginAfterHooksAsync(serviceId, layerId, resource, editContext, postCommitCts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (postCommitCts.IsCancellationRequested)
+                {
+                    FeatureServerLog.PostCommitSideEffectsTimedOut(_logger, serviceId, layerId);
+                }
             }
 
             // Build and return final response

@@ -116,10 +116,11 @@ internal sealed class McpJobProgressBridge
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // The job vanished or the read failed; stop tracking rather than
                 // spinning. The client can still read honua://jobs/{id} directly.
+                McpLog.ProgressBridgeJobReadFailed(_logger, sessionId, jobId, ex);
                 McpLog.ProgressBridgeStopped(_logger, sessionId, jobId, "job-unreadable");
                 return;
             }

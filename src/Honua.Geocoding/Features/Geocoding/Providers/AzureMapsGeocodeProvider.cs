@@ -132,6 +132,8 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
         catch (TaskCanceledException ex)
         {
+            if (cancellationToken.IsCancellationRequested)
+                throw new OperationCanceledException(ex.Message, ex, cancellationToken);
             throw new GeocodeProviderException($"Azure Maps request timed out: {ex.Message}", ex)
             {
                 ProviderName = Name,
@@ -194,6 +196,8 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
         catch (TaskCanceledException ex)
         {
+            if (cancellationToken.IsCancellationRequested)
+                throw new OperationCanceledException(ex.Message, ex, cancellationToken);
             throw new GeocodeProviderException($"Azure Maps request timed out: {ex.Message}", ex)
             {
                 ProviderName = Name,
@@ -253,6 +257,8 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         }
         catch (TaskCanceledException ex)
         {
+            if (cancellationToken.IsCancellationRequested)
+                throw new OperationCanceledException(ex.Message, ex, cancellationToken);
             throw new GeocodeProviderException($"Azure Maps request timed out: {ex.Message}", ex)
             {
                 ProviderName = Name,

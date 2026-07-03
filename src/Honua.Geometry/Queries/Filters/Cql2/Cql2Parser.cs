@@ -54,6 +54,10 @@ public sealed class Cql2Parser
         {
             throw new ArgumentException("Failed to parse CQL2 expression.", nameof(cql2Text), ex);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex) when (ex is not ArgumentException)
         {
             throw new ArgumentException("Failed to parse CQL2 expression.", nameof(cql2Text), ex);
@@ -733,6 +737,10 @@ public sealed class Cql2Parser
             var wkb = writer.Write(geometry);
 
             return new GeometryLiteral(wkb, geometry.SRID <= 0 ? 4326 : geometry.SRID, wktText);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
