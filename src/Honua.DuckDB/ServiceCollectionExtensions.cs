@@ -6,11 +6,13 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
+using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.DuckDB.Features.FeatureStore;
 using Honua.DuckDB.Features.FeatureStore.Services;
+using Honua.DuckDB.Features.HealthCheck;
 using DuckDB.NET.Data;
 using Honua.DuckDB.Features.Infrastructure;
 using Honua.DuckDB.Queries.Filters;
@@ -129,6 +131,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("DuckDB"));
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("DuckDB"));
+
+        // ReadinessCheckService requires IDatabaseHealthChecker; without this registration
+        // resolving /healthz/ready under DataSource:Provider=duckdb fails DI activation
+        // with InvalidOperationException (PA-158). The checker drives a SELECT 1 through
+        // the same scoped connection provider the feature store uses.
+        services.AddScoped<IDatabaseHealthChecker, DuckDBDatabaseHealthChecker>();
 
         // Capability provider for the feature-change transactional outbox (#692). DuckDB is
         // read-only so it reports SupportsTransactionalOutbox = false. The dispatcher will
