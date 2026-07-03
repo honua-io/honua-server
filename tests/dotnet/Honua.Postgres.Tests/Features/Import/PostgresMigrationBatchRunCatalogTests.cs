@@ -94,7 +94,7 @@ public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixtur
     }
 
     private PostgresMigrationBatchRunCatalog CreateCatalog()
-        => new(fixture.ConnectionString, NullLogger<PostgresMigrationBatchRunCatalog>.Instance);
+        => new(Task.FromResult(fixture.ConnectionString), NullLogger<PostgresMigrationBatchRunCatalog>.Instance);
 
     private static MigrationBatchRunRecord NewBatch(string batchId, int total) => new()
     {
