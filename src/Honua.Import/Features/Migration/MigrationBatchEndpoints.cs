@@ -54,6 +54,10 @@ internal static partial class MigrationBatchEndpoints
                 MigrationBatchJsonContext.Default.MigrationBatchStartApiRequest,
                 cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception)
         {
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);

@@ -122,6 +122,8 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         }
         catch (TaskCanceledException ex)
         {
+            if (cancellationToken.IsCancellationRequested)
+                throw new OperationCanceledException(ex.Message, ex, cancellationToken);
             throw new GeocodeProviderException($"Nominatim request timed out: {ex.Message}", ex)
             {
                 ProviderName = Name,
@@ -180,6 +182,8 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         }
         catch (TaskCanceledException ex)
         {
+            if (cancellationToken.IsCancellationRequested)
+                throw new OperationCanceledException(ex.Message, ex, cancellationToken);
             throw new GeocodeProviderException($"Nominatim request timed out: {ex.Message}", ex)
             {
                 ProviderName = Name,

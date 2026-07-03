@@ -76,6 +76,7 @@ internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvid
         CancellationToken cancellationToken = default)
     {
         // DuckDB is single-writer; deadlocks are not expected for read-only workloads.
+        cancellationToken.ThrowIfCancellationRequested();
         return await operation().ConfigureAwait(false);
     }
 
@@ -84,6 +85,7 @@ internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvid
         Func<Task> operation,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await operation().ConfigureAwait(false);
     }
 }

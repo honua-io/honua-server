@@ -140,6 +140,10 @@ internal static class ArcGisMigrationEvidenceEndpoints
                 ImportJsonContext.Default.ArcGisMigrationManifestIngestionRequest,
                 context.RequestAborted).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception)
         {
             await AdminResponseWriter.WriteErrorAsync(
@@ -227,6 +231,10 @@ internal static class ArcGisMigrationEvidenceEndpoints
             request = await context.Request.ReadFromJsonAsync(
                 ImportJsonContext.Default.ArcGisMigrationParityIngestionRequest,
                 context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception)
         {

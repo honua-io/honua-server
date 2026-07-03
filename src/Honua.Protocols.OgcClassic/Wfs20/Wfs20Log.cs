@@ -145,4 +145,10 @@ internal static partial class Wfs20Log
     /// </summary>
     [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 feature type schema validation failed for {TypeName}: {Error}")]
     public static partial void FeatureTypeSchemaValidationFailed(ILogger logger, string typeName, string error);
+
+    /// <summary>
+    /// Logs when WFS Transaction post-commit side-effects time out. The transaction was committed successfully.
+    /// </summary>
+    [LoggerMessage(Level = LogLevel.Warning, Message = "WFS Transaction post-commit side-effects timed out for request {TraceId}; transaction was committed successfully.")]
+    public static partial void PostCommitSideEffectsTimedOut(ILogger logger, string traceId);
 }

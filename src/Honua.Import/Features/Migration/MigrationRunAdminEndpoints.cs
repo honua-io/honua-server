@@ -113,6 +113,10 @@ internal static class MigrationRunAdminEndpoints
                 ImportJsonContext.Default.MigrationRunStartRequest,
                 context.RequestAborted).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception)
         {
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
@@ -283,6 +287,10 @@ internal static class MigrationRunAdminEndpoints
                 ImportJsonContext.Default.MigrationRunCompletionRequest,
                 cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception)
         {
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
@@ -353,6 +361,10 @@ internal static class MigrationRunAdminEndpoints
                 ImportJsonContext.Default.MigrationReconciliationScorecard,
                 cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception)
         {
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
@@ -422,6 +434,10 @@ internal static class MigrationRunAdminEndpoints
                 request = await context.Request.ReadFromJsonAsync(
                     ImportJsonContext.Default.MigrationRunCancelRequest,
                     cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception)
             {

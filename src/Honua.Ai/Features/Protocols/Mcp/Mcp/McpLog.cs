@@ -74,4 +74,7 @@ internal static partial class McpLog
 
     [LoggerMessage(8171, LogLevel.Debug, "MCP job progress bridge stopped: SessionId={SessionId}, JobId={JobId}, Reason={Reason}")]
     public static partial void ProgressBridgeStopped(ILogger logger, string sessionId, string jobId, string reason);
+
+    [LoggerMessage(8172, LogLevel.Warning, "MCP progress bridge stopped for session {SessionId} job {JobId}: job read failed.")]
+    public static partial void ProgressBridgeJobReadFailed(ILogger logger, string sessionId, string jobId, Exception exception);
 }

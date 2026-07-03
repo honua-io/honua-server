@@ -91,6 +91,10 @@ internal static partial class AttachmentHandler
 
             return Results.Ok(response);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             var featureId = featureIds.Count > 0 ? featureIds[0] : 0;
@@ -123,6 +127,10 @@ internal static partial class AttachmentHandler
                 response,
                 FeatureServerJsonContext.Default.AttachmentInfosResponse,
                 contentType: "application/json");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -226,6 +234,10 @@ internal static partial class AttachmentHandler
 
             LogAddAttachmentSuccess(logger, layerId, featureId, attachment.Id);
             return Results.Ok(response);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -353,6 +365,10 @@ internal static partial class AttachmentHandler
             return StandardErrorHelpers.CreateNotFound(context,
                 $"Attachment {attachmentId} not found for feature {featureId}");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             LogUpdateAttachmentError(logger, layerId, featureId, attachmentId, ex);
@@ -397,6 +413,10 @@ internal static partial class AttachmentHandler
             LogDeleteAttachmentsSuccess(logger, layerId, featureId, successCount, attachmentIds.Length);
 
             return Results.Ok(response);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -445,6 +465,10 @@ internal static partial class AttachmentHandler
                 attachment.ContentType,
                 attachment.Filename,
                 enableRangeProcessing: true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

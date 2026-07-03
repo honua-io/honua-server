@@ -1562,7 +1562,8 @@ async Task RunDatabaseMigrationsAsync()
             if (!app.Environment.IsDevelopment()
                 && !TryEnterDegradedStart("migrations", error, migrationsPending: true))
             {
-                throw error;
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+                return; // unreachable; satisfies the compiler
             }
 
             return;

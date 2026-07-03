@@ -106,17 +106,25 @@ internal sealed partial class Wfs20Handler
                     prepared,
                     cancellationToken).ConfigureAwait(false);
 
-                foreach (var (layerId, serviceId) in serviceIdsByLayer)
+                using var postCommitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                try
                 {
-                    await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, CancellationToken.None).ConfigureAwait(false);
-                }
+                    foreach (var (layerId, serviceId) in serviceIdsByLayer)
+                    {
+                        await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, postCommitCts.Token).ConfigureAwait(false);
+                    }
 
-                await PublishTransactionEventsAsync(
-                    context,
-                    prepared,
-                    editResult,
-                    serviceIdsByLayer,
-                    CancellationToken.None).ConfigureAwait(false);
+                    await PublishTransactionEventsAsync(
+                        context,
+                        prepared,
+                        editResult,
+                        serviceIdsByLayer,
+                        postCommitCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (postCommitCts.IsCancellationRequested)
+                {
+                    Wfs20Log.PostCommitSideEffectsTimedOut(_logger, context.TraceIdentifier);
+                }
             }
 
             if (editResult.HasErrors)
@@ -187,6 +195,10 @@ internal sealed partial class Wfs20Handler
         catch (RequestBodyTooLargeException)
         {
             return StandardErrorHelpers.CreatePayloadTooLarge(context, "Request payload is too large.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
