@@ -13,6 +13,13 @@ namespace Honua.Infrastructure.Services;
 /// </summary>
 internal sealed class GeometryConverter : IGeometryConverter
 {
+    // GeometryConverter is registered scoped (per-request) and its methods are
+    // called sequentially within a request, so a single reader/writer pair per
+    // instance is safe and avoids allocating a new WKBReader/GeoJsonWriter on
+    // every conversion call (PA-101).
+    private readonly WKBReader _wkbReader = new();
+    private readonly GeoJsonWriter _geoJsonWriter = new();
+
     /// <summary>
     /// Converts GeoServices JSON geometry to Well-Known Binary (WKB) format
     /// </summary>
@@ -49,14 +56,12 @@ internal sealed class GeometryConverter : IGeometryConverter
 
         try
         {
-            var reader = new WKBReader();
-            var geometry = reader.Read(wkbGeometry);
+            var geometry = _wkbReader.Read(wkbGeometry);
 
             if (geometry == null)
                 return null;
 
-            var writer = new GeoJsonWriter();
-            var geoJsonString = writer.Write(geometry);
+            var geoJsonString = _geoJsonWriter.Write(geometry);
 
             // Return the GeoJSON string directly to avoid JsonElement AOT issues
             // The caller can parse this as needed for their specific JSON context
@@ -81,14 +86,12 @@ internal sealed class GeometryConverter : IGeometryConverter
 
         try
         {
-            var reader = new WKBReader();
-            var geometry = reader.Read(wkbGeometry.Span.ToArray());
+            var geometry = _wkbReader.Read(wkbGeometry.Span.ToArray());
 
             if (geometry == null)
                 return null;
 
-            var writer = new GeoJsonWriter();
-            var geoJsonString = writer.Write(geometry);
+            var geoJsonString = _geoJsonWriter.Write(geometry);
 
             return geoJsonString;
         }

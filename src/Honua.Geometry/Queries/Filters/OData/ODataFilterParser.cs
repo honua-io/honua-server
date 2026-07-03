@@ -500,7 +500,7 @@ public sealed class ODataFilterParser
             var geometry = new WKBReader().Read(literal.Wkb);
             return IsGeographyCompatible(geometry);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Unreadable literal: fall back to the planar path rather than reject.
             return false;

@@ -1784,20 +1784,27 @@ internal sealed partial class FeatureServerQueryHandler(
         if (validatedParams.ReturnExtentOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            var extent = await _queryExecutor.GetExtentAsync(
+
+            // GetExtentAsync and CountAsync are independent reads over the same query
+            // (neither depends on the other's result), so run them concurrently instead
+            // of as two sequential round trips.
+            var extentTask = _queryExecutor.GetExtentAsync(
                 queryLayer.Service,
                 queryLayer.Resource,
                 queryLayer.Publication,
                 queryLayer.StorageLayerId,
                 query,
-                cancellationToken).ConfigureAwait(false);
-            var extentCount = await _queryExecutor.CountAsync(
+                cancellationToken);
+            var extentCountTask = _queryExecutor.CountAsync(
                 queryLayer.Service,
                 queryLayer.Resource,
                 queryLayer.Publication,
                 queryLayer.StorageLayerId,
                 query,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken);
+            await Task.WhenAll(extentTask, extentCountTask).ConfigureAwait(false);
+            var extent = extentTask.Result;
+            var extentCount = extentCountTask.Result;
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
             extent ??= await ResolveExtentFallbackAsync(context, validatedParams, queryLayer.Resource, outputSrid, cancellationToken).ConfigureAwait(false);

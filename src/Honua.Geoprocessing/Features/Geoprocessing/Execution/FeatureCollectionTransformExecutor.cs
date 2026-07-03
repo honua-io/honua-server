@@ -230,7 +230,13 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
 /// Signals a caller-supplied parameter error inside a transform body. Mapped by
 /// <see cref="FeatureCollectionTransformExecutor"/> to a classified job failure.
 /// </summary>
-internal sealed class TransformInputException(string message) : Exception(message)
+/// <remarks>
+/// <paramref name="innerException"/> is optional and never surfaced to the caller — only
+/// <see cref="PublicMessage"/> is — but it lets call sites attach the original failure for
+/// logging/diagnostics instead of discarding it (#2404 PA-211).
+/// </remarks>
+internal sealed class TransformInputException(string message, Exception? innerException = null)
+    : Exception(message, innerException)
 {
     public string PublicMessage { get; } = message;
 }

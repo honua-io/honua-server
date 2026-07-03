@@ -161,7 +161,10 @@ internal sealed partial class ArcGisRestClient
                 cancellationToken);
             featureCount = countResponse.Count;
         }
-        catch (Exception ex)
+        // Best-effort enrichment only: a failed count query still surfaces the rest of the
+        // layer metadata. Cancellation must propagate rather than be swallowed as a
+        // "count unavailable" result.
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.FeatureCountFailed(_logger, layerId, ex);
         }

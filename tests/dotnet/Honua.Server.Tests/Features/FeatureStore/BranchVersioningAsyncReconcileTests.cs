@@ -161,6 +161,29 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AsyncReconcileJob_HostShuttingDown_TerminatesAsFailedWithShutdownMessage()
+    {
+        // PA-030: the detached background job must observe IHostApplicationLifetime and
+        // record a clear terminal state (not sit unobserved past process teardown) when the
+        // host shuts down mid-run. A lifetime whose ApplicationStopping is already
+        // cancelled simulates the job starting just as shutdown begins.
+        var lifetime = new AlreadyStoppingApplicationLifetime();
+        await using var provider = BuildServiceProvider(lifetime);
+        var runner = provider.GetRequiredService<IVersionJobRunner>();
+
+        var versionManager = CreateVersionManager();
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("AsyncShutdown", "sde", VersionAccess.Public), CancellationToken.None);
+
+        var job = await runner.StartReconcileAsync(
+            "svc", version.VersionId, VersionReconcilePolicy.None, cancellationToken: CancellationToken.None);
+
+        var terminal = await PollJobAsync(runner, job.JobId);
+        terminal.Status.Should().Be(VersionJobStatus.Failed);
+        terminal.ErrorMessage.Should().Contain("shutting down");
+    }
+
+    [Fact]
     public async Task Reconcile_AfterRestart_IsIdempotentAndResumesPendingConflicts()
     {
         var store = CreateFeatureStore();
@@ -213,15 +236,40 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
         throw new TimeoutException($"Version job {jobId} did not reach a terminal state.");
     }
 
-    private ServiceProvider BuildServiceProvider()
+    private ServiceProvider BuildServiceProvider(Microsoft.Extensions.Hosting.IHostApplicationLifetime? lifetime = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IVersionLock>(_sharedLock);
         services.AddSingleton<IVersionJobStore, InMemoryVersionJobStore>();
         services.AddScoped<IVersionManager>(_ => CreateVersionManager());
+        if (lifetime is not null)
+        {
+            services.AddSingleton(lifetime);
+        }
+
         services.AddSingleton<IVersionJobRunner, VersionJobRunner>();
         return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Minimal <see cref="Microsoft.Extensions.Hosting.IHostApplicationLifetime"/> test double whose
+    /// <see cref="ApplicationStopping"/> is already cancelled, simulating a background job that starts
+    /// just as the host begins a graceful shutdown.
+    /// </summary>
+    private sealed class AlreadyStoppingApplicationLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime
+    {
+        private readonly CancellationTokenSource _stoppingCts = new(0);
+
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+
+        public CancellationToken ApplicationStopping => _stoppingCts.Token;
+
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication()
+        {
+        }
     }
 
     private static Feature BuildFeature(string name, double x, double y, long id = 0)

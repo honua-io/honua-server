@@ -40,8 +40,7 @@ public sealed class SplunkHecAuditSinkTests
     public async Task SendAsync_Http200_ReturnsSuccess()
     {
         var handler = new StubHandler(HttpStatusCode.OK);
-        using var client = new HttpClient(handler);
-        var sink = new SplunkHecAuditSink(client, Options());
+        var sink = new SplunkHecAuditSink(new SingleHandlerHttpClientFactory(handler), "splunk", Options());
 
         var result = await sink.SendAsync(new[] { SampleEvent() }, CancellationToken.None);
 
@@ -54,8 +53,7 @@ public sealed class SplunkHecAuditSinkTests
     public async Task SendAsync_Http503_ReturnsRetryable()
     {
         var handler = new StubHandler(HttpStatusCode.ServiceUnavailable);
-        using var client = new HttpClient(handler);
-        var sink = new SplunkHecAuditSink(client, Options());
+        var sink = new SplunkHecAuditSink(new SingleHandlerHttpClientFactory(handler), "splunk", Options());
 
         var result = await sink.SendAsync(new[] { SampleEvent() }, CancellationToken.None);
 
@@ -67,13 +65,30 @@ public sealed class SplunkHecAuditSinkTests
     public async Task SendAsync_Http400_ReturnsPermanentFailure()
     {
         var handler = new StubHandler(HttpStatusCode.BadRequest);
-        using var client = new HttpClient(handler);
-        var sink = new SplunkHecAuditSink(client, Options());
+        var sink = new SplunkHecAuditSink(new SingleHandlerHttpClientFactory(handler), "splunk", Options());
 
         var result = await sink.SendAsync(new[] { SampleEvent() }, CancellationToken.None);
 
         result.Succeeded.Should().BeFalse();
         result.Retryable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SendAsync_ResolvesClientFromFactoryOnEverySend()
+    {
+        // PA-081: the sink must not capture a single HttpClient at construction — it should
+        // resolve a fresh client from the factory on every send so a rotated/replaced
+        // primary handler (e.g. after a DNS change) is observed.
+        var handler = new StubHandler(HttpStatusCode.OK);
+        var factory = new SingleHandlerHttpClientFactory(handler);
+        var sink = new SplunkHecAuditSink(factory, "splunk", Options());
+
+        await sink.SendAsync(new[] { SampleEvent() }, CancellationToken.None);
+        await sink.SendAsync(new[] { SampleEvent() }, CancellationToken.None);
+
+        factory.CreateClientCallCount.Should().BeGreaterThanOrEqualTo(2,
+            "each send should resolve the named client from the factory rather than reusing one captured at construction");
+        factory.LastRequestedName.Should().Be("splunk");
     }
 
     private sealed class StubHandler : HttpMessageHandler
@@ -95,6 +110,32 @@ public sealed class SplunkHecAuditSinkTests
                 ? string.Join(' ', values)
                 : null;
             return Task.FromResult(new HttpResponseMessage(_status));
+        }
+    }
+
+    /// <summary>
+    /// Minimal <see cref="IHttpClientFactory"/> test double that hands back a client wired
+    /// to a fixed handler on every call, recording how many times (and with what name) it
+    /// was asked — used to assert sinks resolve a client per send instead of caching one.
+    /// </summary>
+    private sealed class SingleHandlerHttpClientFactory : IHttpClientFactory
+    {
+        private readonly HttpMessageHandler _handler;
+
+        public SingleHandlerHttpClientFactory(HttpMessageHandler handler)
+        {
+            _handler = handler;
+        }
+
+        public int CreateClientCallCount { get; private set; }
+
+        public string? LastRequestedName { get; private set; }
+
+        public HttpClient CreateClient(string name)
+        {
+            CreateClientCallCount++;
+            LastRequestedName = name;
+            return new HttpClient(_handler, disposeHandler: false);
         }
     }
 }

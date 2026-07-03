@@ -73,32 +73,38 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         }
 
         var output = new byte[totalBytes];
-        var chunkIndex = new int[rank];
-        Array.Copy(startChunk, chunkIndex, rank);
-
         var arrayPath = JoinKey(rootPath, array.RelativePath);
 
-        var done = false;
-        while (!done)
+        // Enumerate every required chunk index upfront, then dispatch the cloud reads with
+        // bounded parallelism instead of one chunk at a time: a subset spanning many chunks
+        // previously made up to MaxChunksPerRequest (4096) serial cloud round trips. Each
+        // chunk's copy targets a disjoint region of the grid, so concurrent writes into
+        // `output` never overlap and require no synchronization.
+        var chunkIndices = new List<int[]>();
+        var cursor = new int[rank];
+        Array.Copy(startChunk, cursor, rank);
+        var enumerating = true;
+        while (enumerating)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            await CopyChunkIntoSubsetAsync(
-                    reader,
-                    bucket,
-                    arrayPath,
-                    array,
-                    request,
-                    subsetShape,
-                    elementSize,
-                    chunkIndex,
-                    output,
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            // Increment chunkIndex within the [startChunk, stopChunk) range, row-major.
-            done = !TryIncrement(chunkIndex, startChunk, stopChunk);
+            chunkIndices.Add((int[])cursor.Clone());
+            enumerating = TryIncrement(cursor, startChunk, stopChunk);
         }
+
+        await Parallel.ForEachAsync(
+            chunkIndices,
+            new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
+            (chunkIndex, ct) => new ValueTask(CopyChunkIntoSubsetAsync(
+                reader,
+                bucket,
+                arrayPath,
+                array,
+                request,
+                subsetShape,
+                elementSize,
+                chunkIndex,
+                output,
+                ct)))
+            .ConfigureAwait(false);
 
         return new ZarrSubsetResult(
             Variable: array.Name,

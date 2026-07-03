@@ -17,6 +17,8 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
 
     private readonly IMemoryCache _cache;
     private readonly ConcurrentDictionary<string, byte> _keys = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Regex> _compiledPatterns = new(StringComparer.Ordinal);
     private readonly int _maxEntries;
     private bool _disposed;
 
@@ -96,11 +98,37 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
             return existing;
         }
 
-        var created = await factory();
-        ArgumentNullException.ThrowIfNull(created, nameof(factory));
+        // Stampede protection: serialize concurrent misses on the same key so only
+        // one caller runs the (potentially expensive) factory; other callers wait
+        // and reuse the result instead of all invoking the factory independently.
+        var gate = _keyLocks.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            existing = await GetAsync<T>(key, cancellationToken);
+            if (existing is not null)
+            {
+                return existing;
+            }
 
-        await SetAsync(key, created, expiration, cancellationToken);
-        return created;
+            var created = await factory();
+            ArgumentNullException.ThrowIfNull(created, nameof(factory));
+
+            await SetAsync(key, created, expiration, cancellationToken);
+            return created;
+        }
+        finally
+        {
+            gate.Release();
+
+            // Best-effort cleanup of idle locks. TryRemove only succeeds if the
+            // dictionary still holds this exact instance, so a concurrent
+            // GetOrAdd racing with this removal cannot corrupt another waiter's view.
+            if (gate.CurrentCount == 1)
+            {
+                _keyLocks.TryRemove(new KeyValuePair<string, SemaphoreSlim>(key, gate));
+            }
+        }
     }
 
     public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
@@ -122,10 +150,13 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
         Regex? regex = null;
         if (prefix == null)
         {
-            regex = new Regex(
-                "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$",
+            // Cache the compiled Regex per pattern string: RemoveByPatternAsync can be
+            // called repeatedly with the same non-prefix pattern (e.g. namespace
+            // invalidation), and compiling a new Regex per call is wasted work.
+            regex = _compiledPatterns.GetOrAdd(pattern, static p => new Regex(
+                "^" + Regex.Escape(p).Replace("\\*", ".*") + "$",
                 RegexOptions.CultureInvariant,
-                TimeSpan.FromMilliseconds(50));
+                TimeSpan.FromMilliseconds(50)));
         }
 
         foreach (var key in _keys.Keys)
@@ -165,6 +196,11 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
         }
 
         _keys.Clear();
+        foreach (var gate in _keyLocks.Values)
+        {
+            gate.Dispose();
+        }
+        _keyLocks.Clear();
         _disposed = true;
     }
 

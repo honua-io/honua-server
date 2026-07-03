@@ -866,7 +866,10 @@ public static class GpCli
             throw new GpCliUsageException($"Invalid --server URL: '{options.Server}'.");
         }
 
-        var http = new HttpClient { BaseAddress = baseAddress };
+        // Publishing a workflow package can involve a non-trivial upload; use a generous
+        // but bounded timeout rather than none (the CLI would otherwise hang indefinitely
+        // on an unresponsive/unreachable --server).
+        var http = new HttpClient { BaseAddress = baseAddress, Timeout = TimeSpan.FromMinutes(5) };
         return new WorkflowPackagePublishClient(http, options.ApiKey, options.BearerToken);
     }
 

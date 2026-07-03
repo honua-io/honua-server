@@ -138,7 +138,12 @@ public sealed class EditProcessor : IEditProcessor
 
             return EditValidationResult.Success(warnings.Count > 0 ? warnings : null);
         }
-        catch (Exception ex)
+        // Narrowed to the exception shapes that can genuinely arise from malformed input
+        // reaching the validation helpers above (e.g. a default/uninitialized field
+        // collection on a malformed resource). Anything else is an unexpected bug, not a
+        // client validation failure, so it propagates to the shared global exception
+        // middleware instead of being disguised as "your edit request is invalid".
+        catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
         {
             EditLog.ValidateEditFailed(_logger, resource.Metadata.Id, ex);
             return EditValidationResult.Failure("Failed to validate edit request");
@@ -179,7 +184,10 @@ public sealed class EditProcessor : IEditProcessor
 
             return optimizedRequest;
         }
-        catch (Exception ex)
+        // Narrowed to the exception shapes an optimization pass could plausibly raise from
+        // malformed/edge-case input. Anything else is an unexpected bug and should not be
+        // silently masked by falling back to the unoptimized request.
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             EditLog.OptimizeEditFailed(_logger, resource.Metadata.Id, ex);
             return editRequest;
