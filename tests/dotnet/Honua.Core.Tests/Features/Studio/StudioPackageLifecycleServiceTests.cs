@@ -147,6 +147,107 @@ public sealed class StudioPackageLifecycleServiceTests
     }
 
     [UnitTest]
+    public async Task CreateDraft_WithNullCollections_CoalescesToEmptyWithoutError()
+    {
+        // Regression: honua-server#2351 — a client sending an explicit JSON null for
+        // bindings/dependencies/provenance must be treated identically to omitting them
+        // (empty), not persisted as a null collection that later triggers a spurious
+        // ArgumentNullException ("source") on the otherwise-successful path.
+        var provider = BuildServiceProvider();
+        var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
+
+        const string envelopeJson = """
+        {
+          "family": 0,
+          "schemaVersion": "1.0",
+          "format": "studio_query_package.v1",
+          "bindings": null,
+          "dependencies": null,
+          "provenance": null,
+          "body": {"where":"1=1"}
+        }
+        """;
+        var envelope = JsonSerializer.Deserialize(envelopeJson, StudioJsonContext.Default.StudioPackageEnvelope)!;
+        Assert.Null(envelope.Bindings);
+        Assert.Null(envelope.Dependencies);
+        Assert.Null(envelope.Provenance);
+
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-query",
+            WorkspaceId = "studio",
+            Envelope = envelope,
+            ActorId = "tester",
+        });
+
+        // Null collections are coalesced to empty and never persisted as null.
+        Assert.NotNull(draft.Envelope.Bindings);
+        Assert.NotNull(draft.Envelope.Dependencies);
+        Assert.NotNull(draft.Envelope.Provenance);
+        Assert.Empty(draft.Envelope.Bindings);
+        Assert.Empty(draft.Envelope.Dependencies);
+        Assert.Empty(draft.Envelope.Provenance);
+
+        // Behaves like omitted collections: no spurious "must be an array" diagnostics.
+        Assert.DoesNotContain(draft.Validation.Diagnostics, d => d.Code == "studio.bindings.array");
+        Assert.DoesNotContain(draft.Validation.Diagnostics, d => d.Code == "studio.dependencies.array");
+        Assert.DoesNotContain(draft.Validation.Diagnostics, d => d.Code == "studio.provenance.array");
+        Assert.Equal(StudioPackageValidationStatus.Valid, draft.Validation.Status);
+
+        // The immutable version sidecar path enumerates these collections; with the null
+        // coalesced away it completes without throwing.
+        var version = await service.SaveDraftAsVersionAsync(draft.DraftId, "first save", "tester");
+        Assert.NotNull(version);
+        Assert.Empty(version!.Dependencies);
+        Assert.Empty(version.Provenance);
+    }
+
+    [UnitTest]
+    public async Task UpdateDraft_WithNullCollections_CoalescesToEmptyWithoutError()
+    {
+        var provider = BuildServiceProvider();
+        var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-query",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+
+        const string envelopeJson = """
+        {
+          "family": 0,
+          "schemaVersion": "1.0",
+          "format": "studio_query_package.v1",
+          "bindings": null,
+          "dependencies": null,
+          "provenance": null,
+          "body": {"where":"POPULATION > 1000"}
+        }
+        """;
+        var envelope = JsonSerializer.Deserialize(envelopeJson, StudioJsonContext.Default.StudioPackageEnvelope)!;
+
+        var updated = await service.UpdateDraftAsync(draft.DraftId, new UpdateStudioPackageDraftCommand
+        {
+            PackageKey = draft.PackageKey,
+            WorkspaceId = draft.WorkspaceId,
+            OwnerId = draft.OwnerId,
+            Envelope = envelope,
+            Generation = draft.Generation,
+            ActorId = "tester",
+        });
+
+        Assert.NotNull(updated);
+        Assert.NotNull(updated!.Envelope.Bindings);
+        Assert.NotNull(updated.Envelope.Dependencies);
+        Assert.NotNull(updated.Envelope.Provenance);
+        Assert.Empty(updated.Envelope.Bindings);
+        Assert.Empty(updated.Envelope.Dependencies);
+        Assert.Empty(updated.Envelope.Provenance);
+    }
+
+    [UnitTest]
     public void Validate_WithDuplicateBindingsAndInvalidCrs_ReturnsInvalidDiagnostics()
     {
         var provider = BuildServiceProvider();

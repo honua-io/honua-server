@@ -271,11 +271,13 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var createdAt = DateTimeOffset.UtcNow;
         var envelopeJson = SerializeEnvelope(draft.Envelope);
         var validationJson = SerializeValidation(draft.Validation);
+        var dependencies = draft.Envelope.Dependencies ?? Array.Empty<StudioPackageDependency>();
+        var provenance = draft.Envelope.Provenance ?? Array.Empty<StudioProvenanceRef>();
         var dependenciesJson = JsonSerializer.Serialize(
-            draft.Envelope.Dependencies.ToArray(),
+            dependencies.ToArray(),
             StudioJsonContext.Default.StudioPackageDependencyArray);
         var provenanceJson = JsonSerializer.Serialize(
-            draft.Envelope.Provenance.ToArray(),
+            provenance.ToArray(),
             StudioJsonContext.Default.StudioProvenanceRefArray);
         var contentHash = StudioPackageHash.Compute(draft.Envelope);
         var versionId = Guid.NewGuid();
@@ -355,7 +357,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await InsertDependencySidecarsAsync(connection, transaction, draft.ItemId, versionId, draft.Envelope.Dependencies, cancellationToken).ConfigureAwait(false);
+            await InsertDependencySidecarsAsync(connection, transaction, draft.ItemId, versionId, dependencies, cancellationToken).ConfigureAwait(false);
             await UpdatePointersAsync(
                 connection,
                 transaction,

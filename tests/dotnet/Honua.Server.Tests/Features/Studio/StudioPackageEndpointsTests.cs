@@ -219,6 +219,55 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/package-drafts")]
+    public async Task CreateDraft_WithNullCollections_Returns201WithEmptyCollections()
+    {
+        // Regression: honua-server#2351 — an explicit JSON null for bindings/dependencies/
+        // provenance must be treated like an omitted (empty) collection: a clean 201 with
+        // empty collections and no spurious ArgumentNullException logged on the success path.
+        const string requestJson = """
+        {
+          "packageKey": "null-collections-query",
+          "workspaceId": "studio",
+          "envelope": {
+            "family": 0,
+            "schemaVersion": "1.0",
+            "format": "studio_query_package.v1",
+            "bindings": null,
+            "dependencies": null,
+            "provenance": null,
+            "body": { "where": "1=1" }
+          }
+        }
+        """;
+
+        using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+        var createResponse = await _client.PostAsync("/api/v1/studio/package-drafts", content);
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(
+            createResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        draft.Envelope.Bindings.Should().NotBeNull().And.BeEmpty();
+        draft.Envelope.Dependencies.Should().NotBeNull().And.BeEmpty();
+        draft.Envelope.Provenance.Should().NotBeNull().And.BeEmpty();
+        draft.Validation.Status.Should().Be(StudioPackageValidationStatus.Valid);
+        draft.Validation.Diagnostics.Should().NotContain(d =>
+            d.Code == "studio.bindings.array"
+            || d.Code == "studio.dependencies.array"
+            || d.Code == "studio.provenance.array");
+
+        // Saving the draft as an immutable version enumerates the (now non-null) collections;
+        // this completes cleanly rather than throwing on the success path.
+        var saveResponse = await PostAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions",
+            new SaveStudioContentVersionRequest { ChangeNote = "first save" },
+            StudioApiJsonContext.Default.SaveStudioContentVersionRequest);
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/studio/package-drafts/{draftId}")]
     public async Task UpdateDraft_WithStaleGeneration_ReturnsConflictProblem()
     {
