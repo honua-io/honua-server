@@ -19,8 +19,10 @@ their own, pin the release line:
 - ADR-0058 (capability registry — the `ICapabilityRegistry` /
   `CapabilityDescriptor` single-source-of-truth recorded in
   honua-io/honua-release#32) makes the registry-derived **capability manifest**
-  the single lever that decides what is advertised and reachable, but does not
-  itself enumerate the first-release in/out split.
+  the lever that decides what is advertised and reachable **for its route-bearing
+  capabilities**, but does not itself enumerate the first-release in/out split
+  (and is not the only gate — see §2 for the entitlement/UI mechanism that holds
+  the rest of the disabled set off).
 - honua-console `docs/roadmap/FIRST_RELEASE_STRATEGY_AND_CUT_LINE.md` draws the
   depth cut-line and, critically, asserts a **"non-negotiable operate floor"**
   whose exit criterion is *"propose → preflight → approve → apply → **roll
@@ -71,7 +73,9 @@ advertised in the capability manifest):
 The following are **built server-side and gated OFF for the first release**.
 They carry `maturity: experimental` in the feature catalog, are **NOT advertised
 in the capability manifest**, and their surfaces/endpoints are **disabled by
-default** — reachable only as a **customer opt-in via the capability flag**.
+default** — reachable only as a **customer opt-in** (via the registry capability
+flag for the route-bearing capabilities, or via edition/entitlement + Console-UI
+for the rest — see the two-mechanism note below).
 Present, wired, and tested in the binary, they still must not appear in the
 manifest, `/mcp`, Studio availability, or Console in a default deployment. This
 is a "built, gated off, customer-opt-in" posture — **not** "deferred / not
@@ -103,7 +107,23 @@ built." Each links its tracking issue:
 
 These are certified-off, not absent: the code is present, wired, and tested, but
 it is not certified for this release and is not reachable by a default
-deployment. It lights up when a customer opts in via the capability flag.
+deployment. It lights up when the customer opts in.
+
+**Two mechanisms hold this set OFF — not one uniform registry flag.** The
+route-bearing experimental capabilities — **temporal** analytics/versioning
+(`/api/v1/temporal/*`), **disconnected-sync / replicas**, **realtime
+feature-streams**, **geofence alerting** (`/api/v1/admin/alerts/*`), and **mTLS
+client-certificate validation** — are gated by the **registry capability flag**:
+flipping them off in the registry drops them from the manifest, `/mcp`, Studio,
+and Console at once (the single-lever behavior ADR-0058 gives the registry, over
+exactly the descriptors whose routes are in the catalog's `experimental` tier).
+The remainder — **SSO/OIDC/SAML/SCIM**, **forms + field data collection**,
+**mobile / offline**, **branch / versioned editing**, **SIEM / investigations**,
+**cross-environment promotion**, the **rollback** operate loop, and
+**collaborative map sessions** — are held OFF by **edition/entitlement checks and
+Console-UI availability**, not by the registry manifest flag. Folding more of the
+entitlement/UI-gated set behind the registry flag is post-first-release registry
+work (see ADR-0058, "Two mechanisms hold the experimental + disabled set OFF").
 
 **Genuinely not built (`planned`).** The only items in this space that are *not*
 built are the federal smart-card auth paths — **CAC / PIV**
