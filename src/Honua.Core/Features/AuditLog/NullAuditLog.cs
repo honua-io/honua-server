@@ -23,6 +23,9 @@ public sealed class NullAuditLog : IAuditLog
     public static readonly NullAuditLog Instance = new();
 
     /// <inheritdoc />
+    public bool IsPersisted => false;
+
+    /// <inheritdoc />
     public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(auditEvent);
