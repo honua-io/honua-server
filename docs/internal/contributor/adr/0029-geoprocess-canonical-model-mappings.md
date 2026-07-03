@@ -183,7 +183,12 @@ model. Must not add domain types to `Honua.Core`.
   seeds 34 built-in processes across seven categories (10 `geometry.*`,
   4 `analytics.*`, 6 `surface.*`, 5 `raster.*`, 4 `conversion.*`,
   2 `generalization.*`, 3 `data-management.*`) that plan validation checks
-  `AnalysisPlanStep.ProcessId` against. For heavyweight `surface.*` and
+  `AnalysisPlanStep.ProcessId` against. (Point-in-time snapshot as of
+  #735-#737; the catalog has grown substantially since — treat
+  `tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/ProcessCatalogTests.cs`
+  and [the geoprocessing operations reference](../../../reference/geoprocessing-operations.md)
+  as the current authoritative count and per-family breakdown, not this ADR.)
+  For heavyweight `surface.*` and
   `raster.*` workloads this ticket adds the PostGIS-backed execution
   primitives (`ISurfaceAnalysisService`, `IRasterStore.ComputeZonalStatisticsAsync`)
   that will sit behind the canonical worker boundary; the handler/executor
