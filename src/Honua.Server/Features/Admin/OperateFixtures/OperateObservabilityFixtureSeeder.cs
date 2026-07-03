@@ -49,47 +49,68 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
         }
 
         var seededAt = timeProvider.GetUtcNow();
-        var alertAdminStore = services.GetRequiredService<IAlertAdminStore>();
-        var geometryService = services.GetRequiredService<IGeometryService>();
-        var alertEventStore = services.GetRequiredService<IAlertEventStore>();
-        var lifecycleStore = services.GetRequiredService<IAlertLifecycleStore>();
         var connectionProvider = services.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
         var jobStore = services.GetRequiredService<IExecutionJobStore>();
         var logStore = services.GetRequiredService<IExecutionLogStore>();
         var recentErrors = services.GetRequiredService<RecentErrorBuffer>();
 
-        var zone = await EnsureZoneAsync(alertAdminStore, geometryService, profile, cancellationToken)
-            .ConfigureAwait(false);
-        var rule = await EnsureRuleAsync(alertAdminStore, zone, profile, cancellationToken).ConfigureAwait(false);
-        var alertSeed = await EnsureAlertEventsAsync(
-                alertEventStore,
-                lifecycleStore,
-                connectionProvider,
-                rule,
-                zone,
-                profile,
-                seededAt,
-                cancellationToken)
-            .ConfigureAwait(false);
+        // The geofence alert stores back the alerts.geofence capability, which is Experimental and
+        // disabled by default (AlertOptions.Enabled = false). A host that omits the alerts subsystem
+        // never registers these stores, so resolve them optionally: when any is absent the seeder
+        // skips the alert-fixture slice and still hydrates the rest of the Operate observability
+        // surface (jobs, logs, audit, investigation) instead of failing the whole seed with a 500.
+        // The Console observability page already renders a disabled/empty state for the gated alert
+        // surface (honua-server#2350).
+        var alertAdminStore = services.GetService<IAlertAdminStore>();
+        var alertEventStore = services.GetService<IAlertEventStore>();
+        var lifecycleStore = services.GetService<IAlertLifecycleStore>();
 
-        await EnsureAuditEventsAsync(connectionProvider, zone, rule, alertSeed, profile, seededAt, cancellationToken)
+        OperateObservabilityAlertFixtureSeed? seededAlerts = null;
+        if (alertAdminStore is not null && alertEventStore is not null && lifecycleStore is not null)
+        {
+            var geometryService = services.GetRequiredService<IGeometryService>();
+            var zone = await EnsureZoneAsync(alertAdminStore, geometryService, profile, cancellationToken)
+                .ConfigureAwait(false);
+            var rule = await EnsureRuleAsync(alertAdminStore, zone, profile, cancellationToken).ConfigureAwait(false);
+            seededAlerts = await EnsureAlertEventsAsync(
+                    alertEventStore,
+                    lifecycleStore,
+                    connectionProvider,
+                    rule,
+                    zone,
+                    profile,
+                    seededAt,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            await EnsureAlertAuditEventsAsync(connectionProvider, zone, rule, seededAlerts, profile, seededAt, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            AlertFixtureSkipped(logger, profile);
+        }
+
+        await EnsureInvestigationAuditEventAsync(connectionProvider, profile, seededAt, cancellationToken)
             .ConfigureAwait(false);
         SeedRecentLogs(recentErrors, seededAt);
 
-        var jobs = await EnsureJobsAsync(jobStore, logStore, alertSeed.OpenAlertEventId, profile, seededAt, cancellationToken)
+        var openAlertEventId = seededAlerts?.OpenAlertEventId;
+        var jobs = await EnsureJobsAsync(jobStore, logStore, openAlertEventId, profile, seededAt, cancellationToken)
             .ConfigureAwait(false);
         var investigation = await EnsureInvestigationAsync(
                 connectionProvider,
-                alertSeed.OpenAlertEventId,
+                openAlertEventId,
                 seededAt,
                 cancellationToken)
             .ConfigureAwait(false);
 
+        var alertSeed = seededAlerts ?? OperateObservabilityAlertFixtureSeed.Skipped;
         FixtureSeeded(
             logger,
             profile,
-            zone.ZoneId,
-            rule.RuleId,
+            alertSeed.ZoneId,
+            alertSeed.RuleId,
             jobs.Length,
             investigation.InvestigationId);
 
@@ -315,7 +336,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task EnsureAuditEventsAsync(
+    private static async Task EnsureAlertAuditEventsAsync(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         AlertZoneDefinition zone,
         AlertRuleDefinition rule,
@@ -346,16 +367,6 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
             .ConfigureAwait(false);
         await InsertAuditIfMissingAsync(
                 connectionProvider,
-                seededAt.AddMinutes(-6),
-                "AdminAction",
-                "investigation",
-                OperateObservabilityFixtureConstants.InvestigationId,
-                "investigation.create",
-                BuildAuditDetails(profile, "investigation", OperateObservabilityFixtureConstants.InvestigationId),
-                cancellationToken)
-            .ConfigureAwait(false);
-        await InsertAuditIfMissingAsync(
-                connectionProvider,
                 seededAt.AddMinutes(-5),
                 "AdminAction",
                 "alert_event",
@@ -365,6 +376,24 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
                 cancellationToken)
             .ConfigureAwait(false);
     }
+
+    // Investigation-create audit is independent of the gated alert stores, so it is seeded even when
+    // the alert-fixture slice is skipped — the Operate observability events surface still shows an
+    // audit trail for the seeded investigation.
+    private static Task EnsureInvestigationAuditEventAsync(
+        IAdoNetDatabaseConnectionProvider connectionProvider,
+        string profile,
+        DateTimeOffset seededAt,
+        CancellationToken cancellationToken)
+        => InsertAuditIfMissingAsync(
+            connectionProvider,
+            seededAt.AddMinutes(-6),
+            "AdminAction",
+            "investigation",
+            OperateObservabilityFixtureConstants.InvestigationId,
+            "investigation.create",
+            BuildAuditDetails(profile, "investigation", OperateObservabilityFixtureConstants.InvestigationId),
+            cancellationToken);
 
     private static async Task InsertAuditIfMissingAsync(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -431,12 +460,14 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
     private async Task<OperateObservabilityJobFixtureSeed[]> EnsureJobsAsync(
         IExecutionJobStore jobStore,
         IExecutionLogStore logStore,
-        long alertEventId,
+        long? alertEventId,
         string profile,
         DateTimeOffset seededAt,
         CancellationToken cancellationToken)
     {
-        var alertRef = "alert/" + alertEventId.ToString(CultureInfo.InvariantCulture);
+        var alertRef = alertEventId is { } eventId
+            ? "alert/" + eventId.ToString(CultureInfo.InvariantCulture)
+            : "alert/unavailable";
         var succeeded = BuildJob(
             OperateObservabilityFixtureConstants.SucceededJobId,
             ExecutionJobStatus.Succeeded,
@@ -651,7 +682,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
 
     private static async Task<OperateObservabilityInvestigationFixtureSeed> EnsureInvestigationAsync(
         IAdoNetDatabaseConnectionProvider connectionProvider,
-        long openAlertEventId,
+        long? openAlertEventId,
         DateTimeOffset seededAt,
         CancellationToken cancellationToken)
     {
@@ -693,63 +724,70 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
             command => command.Parameters.Add(Parameter("investigation_id", NpgsqlDbType.Text, OperateObservabilityFixtureConstants.InvestigationId)),
             cancellationToken).ConfigureAwait(false);
 
-        var pinIds = new List<long>(capacity: 2)
+        // The alert pin/link are only seeded when the alert-fixture slice ran; the job/release/change-set
+        // pins and links are always seeded so the investigation surface stays populated even when the
+        // gated alert stores are absent.
+        var pinIds = new List<long>(capacity: 2);
+        if (openAlertEventId is { } pinnedAlertId)
         {
-            await InsertPinAsync(
+            pinIds.Add(await InsertPinAsync(
                 connection,
                 transaction,
-                "alert:" + openAlertEventId.ToString(CultureInfo.InvariantCulture),
+                "alert:" + pinnedAlertId.ToString(CultureInfo.InvariantCulture),
                 OperateEventKind.Alert,
                 seededAt.AddMinutes(-9),
                 "Open harbor alert pinned by fixture.",
                 seededAt.AddMinutes(-5),
-                cancellationToken).ConfigureAwait(false),
-            await InsertPinAsync(
-                connection,
-                transaction,
-                "job:" + OperateObservabilityFixtureConstants.FailedJobId,
-                OperateEventKind.Job,
-                seededAt.AddMinutes(-8),
-                "Failed artifact publishing job pinned by fixture.",
-                seededAt.AddMinutes(-4),
-                cancellationToken).ConfigureAwait(false)
-        };
+                cancellationToken).ConfigureAwait(false));
+        }
 
-        var linkIds = new List<long>(capacity: 4)
+        pinIds.Add(await InsertPinAsync(
+            connection,
+            transaction,
+            "job:" + OperateObservabilityFixtureConstants.FailedJobId,
+            OperateEventKind.Job,
+            seededAt.AddMinutes(-8),
+            "Failed artifact publishing job pinned by fixture.",
+            seededAt.AddMinutes(-4),
+            cancellationToken).ConfigureAwait(false));
+
+        var linkIds = new List<long>(capacity: 4);
+        if (openAlertEventId is { } linkedAlertId)
         {
-            await InsertLinkAsync(
+            linkIds.Add(await InsertLinkAsync(
                 connection,
                 transaction,
                 InvestigationResourceKind.Alert,
-                openAlertEventId.ToString(CultureInfo.InvariantCulture),
+                linkedAlertId.ToString(CultureInfo.InvariantCulture),
                 "Open alert event.",
                 seededAt.AddMinutes(-5),
-                cancellationToken).ConfigureAwait(false),
-            await InsertLinkAsync(
-                connection,
-                transaction,
-                InvestigationResourceKind.Job,
-                OperateObservabilityFixtureConstants.FailedJobId,
-                "Failed durable job.",
-                seededAt.AddMinutes(-4),
-                cancellationToken).ConfigureAwait(false),
-            await InsertLinkAsync(
-                connection,
-                transaction,
-                InvestigationResourceKind.Release,
-                FixtureReleaseId,
-                "Synthetic fixture release.",
-                seededAt.AddMinutes(-3),
-                cancellationToken).ConfigureAwait(false),
-            await InsertLinkAsync(
-                connection,
-                transaction,
-                InvestigationResourceKind.ChangeSet,
-                FixtureChangeSetId,
-                "Synthetic fixture change-set.",
-                seededAt.AddMinutes(-2),
-                cancellationToken).ConfigureAwait(false)
-        };
+                cancellationToken).ConfigureAwait(false));
+        }
+
+        linkIds.Add(await InsertLinkAsync(
+            connection,
+            transaction,
+            InvestigationResourceKind.Job,
+            OperateObservabilityFixtureConstants.FailedJobId,
+            "Failed durable job.",
+            seededAt.AddMinutes(-4),
+            cancellationToken).ConfigureAwait(false));
+        linkIds.Add(await InsertLinkAsync(
+            connection,
+            transaction,
+            InvestigationResourceKind.Release,
+            FixtureReleaseId,
+            "Synthetic fixture release.",
+            seededAt.AddMinutes(-3),
+            cancellationToken).ConfigureAwait(false));
+        linkIds.Add(await InsertLinkAsync(
+            connection,
+            transaction,
+            InvestigationResourceKind.ChangeSet,
+            FixtureChangeSetId,
+            "Synthetic fixture change-set.",
+            seededAt.AddMinutes(-2),
+            cancellationToken).ConfigureAwait(false));
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -874,4 +912,10 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
         long ruleId,
         int jobCount,
         string investigationId);
+
+    [LoggerMessage(
+        EventId = 120907,
+        Level = LogLevel.Information,
+        Message = "Skipped Operate observability alert fixture for profile {Profile}: the geofence alert stores (IAlertAdminStore/IAlertEventStore/IAlertLifecycleStore) are not registered because the alerts.geofence capability is disabled; seeding the remaining observability surface only.")]
+    private static partial void AlertFixtureSkipped(ILogger logger, string profile);
 }
