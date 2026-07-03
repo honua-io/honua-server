@@ -32,7 +32,12 @@ namespace Honua.Server.Tests.Features.Admin;
 [Operation(Operations.OperationsProgress)]
 public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    // Production registers a durable IExecutionJobStore/IJobQueue only when Redis is configured
+    // (GeoprocessingServiceCollectionExtensions); the fixture runs without Redis, so register
+    // functional in-memory doubles here to exercise the durable operation cancel/retry endpoints.
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ReplaceService<IExecutionJobStore>(new InMemoryExecutionJobStore())
+        .ReplaceService<IJobQueue>(new InMemoryJobQueue());
     private readonly List<string> _operationIds = [];
     private HttpClient _client = null!;
     private IUniversalProgressStore _progressStore = null!;
@@ -281,7 +286,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenProgressAlreadyCancelledAndDurableJobClaimed_PersistsSignalWithoutRemovingClaim()
     {
-        var fixture = new WebAppFixture();
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(new InMemoryExecutionJobStore());
         var jobQueue = Substitute.For<IJobQueue>();
         fixture.ReplaceService<IJobQueue>(jobQueue);
 
@@ -486,6 +492,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     public async Task CancelOperation_WhenQueueRemovalFailsAfterDurableCancel_StillReturns200AndUpdatesProgress()
     {
         var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(new InMemoryExecutionJobStore())
             .ReplaceService<IJobQueue>(new ThrowingRemoveJobQueue());
 
         await fixture.InitializeAsync();
