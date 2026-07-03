@@ -421,7 +421,7 @@ TokenRequired = "Authentication token is required.";
         /// <summary>
         /// Required parameter missing error message
         /// </summary>
-        public const string RequiredParameterMissing = "A required parameter was not provided.";
+        public const string RequiredParameterMissing = Validation.RequiredParameterMissing;
         private static readonly CompositeFormat _invalidSpatialParametersFormat = CompositeFormat.Parse(InvalidSpatialParameters);
         private static readonly CompositeFormat _invalidTemporalParametersFormat = CompositeFormat.Parse(InvalidTemporalParameters);
         private static readonly CompositeFormat _invalidTimeParameterFormatValue = CompositeFormat.Parse(InvalidTimeParameter);

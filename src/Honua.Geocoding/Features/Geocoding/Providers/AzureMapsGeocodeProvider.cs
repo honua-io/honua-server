@@ -105,13 +105,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 throw new GeocodeProviderException($"Azure Maps API returned {response.StatusCode}: {response.ReasonPhrase}")
                 {
                     ProviderName = Name,
-                    ErrorCode = response.StatusCode switch
-                    {
-                        System.Net.HttpStatusCode.TooManyRequests => GeocodeErrorCodes.RateLimitExceeded,
-                        System.Net.HttpStatusCode.Unauthorized => GeocodeErrorCodes.AuthenticationFailed,
-                        System.Net.HttpStatusCode.Forbidden => GeocodeErrorCodes.AuthenticationFailed,
-                        _ => GeocodeErrorCodes.ServiceUnavailable
-                    }
+                    ErrorCode = MapHttpStatus(response.StatusCode)
                 };
             }
 
@@ -169,13 +163,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 throw new GeocodeProviderException($"Azure Maps API returned {response.StatusCode}: {response.ReasonPhrase}")
                 {
                     ProviderName = Name,
-                    ErrorCode = response.StatusCode switch
-                    {
-                        System.Net.HttpStatusCode.TooManyRequests => GeocodeErrorCodes.RateLimitExceeded,
-                        System.Net.HttpStatusCode.Unauthorized => GeocodeErrorCodes.AuthenticationFailed,
-                        System.Net.HttpStatusCode.Forbidden => GeocodeErrorCodes.AuthenticationFailed,
-                        _ => GeocodeErrorCodes.ServiceUnavailable
-                    }
+                    ErrorCode = MapHttpStatus(response.StatusCode)
                 };
             }
 
@@ -230,13 +218,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 throw new GeocodeProviderException($"Azure Maps API returned {response.StatusCode}: {response.ReasonPhrase}")
                 {
                     ProviderName = Name,
-                    ErrorCode = response.StatusCode switch
-                    {
-                        System.Net.HttpStatusCode.TooManyRequests => GeocodeErrorCodes.RateLimitExceeded,
-                        System.Net.HttpStatusCode.Unauthorized => GeocodeErrorCodes.AuthenticationFailed,
-                        System.Net.HttpStatusCode.Forbidden => GeocodeErrorCodes.AuthenticationFailed,
-                        _ => GeocodeErrorCodes.ServiceUnavailable
-                    }
+                    ErrorCode = MapHttpStatus(response.StatusCode)
                 };
             }
 
@@ -287,12 +269,7 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 throw new GeocodeProviderException($"Azure Maps health check failed: {response.StatusCode}")
                 {
                     ProviderName = Name,
-                    ErrorCode = response.StatusCode switch
-                    {
-                        System.Net.HttpStatusCode.Unauthorized => GeocodeErrorCodes.AuthenticationFailed,
-                        System.Net.HttpStatusCode.Forbidden => GeocodeErrorCodes.AuthenticationFailed,
-                        _ => GeocodeErrorCodes.ServiceUnavailable
-                    }
+                    ErrorCode = MapHttpStatus(response.StatusCode)
                 };
             }
         }
@@ -485,6 +462,18 @@ internal sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
         return url;
     }
+
+    // Maps an unsuccessful Azure Maps HTTP status to a Honua geocode error code.
+    // Shared by the forward/reverse/suggest/health paths so 429 (TooManyRequests)
+    // consistently surfaces as RateLimitExceeded rather than ServiceUnavailable.
+    private static string MapHttpStatus(System.Net.HttpStatusCode status)
+        => status switch
+        {
+            System.Net.HttpStatusCode.TooManyRequests => GeocodeErrorCodes.RateLimitExceeded,
+            System.Net.HttpStatusCode.Unauthorized => GeocodeErrorCodes.AuthenticationFailed,
+            System.Net.HttpStatusCode.Forbidden => GeocodeErrorCodes.AuthenticationFailed,
+            _ => GeocodeErrorCodes.ServiceUnavailable
+        };
 
     // Maps Esri feature-type tokens to the Azure Maps reverse `entityType` values.
     // Tokens Azure does not model are passed through unchanged so callers using

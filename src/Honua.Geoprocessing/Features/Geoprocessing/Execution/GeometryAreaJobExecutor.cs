@@ -219,6 +219,7 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
 
     private static string BuildDataUri(byte[] payload)
     {
+        ArgumentNullException.ThrowIfNull(payload);
         var sb = new StringBuilder(payload.Length * 2 + ScalarDataUriPrefix.Length);
         sb.Append(ScalarDataUriPrefix);
         sb.Append(Convert.ToBase64String(payload));

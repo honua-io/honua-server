@@ -213,8 +213,15 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         }
         finally
         {
-            UploadCancellationTokens.TryRemove(uploadId, out _);
-            linkedCancellationSource.Dispose();
+            // Only dispose the linked CTS when this code path successfully removes it
+            // from the shared dictionary (transfer of ownership). If the cancel path
+            // already removed it and is between TryRemove and CancelAsync, disposing
+            // here would cause ObjectDisposedException on the cancel path's CancelAsync
+            // call. The cancel path is responsible for disposing when it removes the CTS.
+            if (UploadCancellationTokens.TryRemove(uploadId, out var removedSource))
+            {
+                removedSource.Dispose();
+            }
         }
     }
 

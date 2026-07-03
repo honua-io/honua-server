@@ -56,12 +56,16 @@ public static class SpatialReferenceExtensions
 
         return crsUri switch
         {
+            // Preserve the original WKT-populated WGS84 instance for the canonical CRS84 URI.
             "http://www.opengis.net/def/crs/OGC/1.3/CRS84" => SpatialReference.WGS84,
-            var uri when uri.StartsWith("http://www.opengis.net/def/crs/EPSG/0/", StringComparison.Ordinal) =>
-                int.TryParse(uri.AsSpan("http://www.opengis.net/def/crs/EPSG/0/".Length), out int epsgCode)
-                    ? SpatialReference.Create(epsgCode)
-                    : null,
-            _ => null
+            var uri when uri.StartsWith("http://www.opengis.net/def/crs/EPSG/0/", StringComparison.Ordinal)
+                && int.TryParse(uri.AsSpan("http://www.opengis.net/def/crs/EPSG/0/".Length), out int epsgCode)
+                    => SpatialReference.Create(epsgCode),
+            // Delegate everything else to the shared, more complete CRS parser
+            // (case-insensitive prefixes, CRS84/OGC:CRS84/EPSG: short forms, /EPSG/ variants).
+            _ => ExtentExtensions.TryExtractSridFromCrs(crsUri, out var srid)
+                    ? SpatialReference.Create(srid)
+                    : null
         };
     }
 

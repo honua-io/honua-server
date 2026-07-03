@@ -33,11 +33,4 @@ internal sealed class PostgresSqlDialect : ISqlDialect
 
         return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
     }
-
-    /// <inheritdoc />
-    public string QuoteLiteral(string literal)
-    {
-        ArgumentNullException.ThrowIfNull(literal);
-        return "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
-    }
 }

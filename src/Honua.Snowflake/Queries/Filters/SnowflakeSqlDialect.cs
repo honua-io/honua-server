@@ -38,11 +38,4 @@ internal sealed class SnowflakeSqlDialect : ISqlDialect
 
         return SnowflakeIdentifier.Quote(identifier);
     }
-
-    /// <inheritdoc />
-    public string QuoteLiteral(string literal)
-    {
-        ArgumentNullException.ThrowIfNull(literal);
-        return "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
-    }
 }

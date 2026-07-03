@@ -72,5 +72,11 @@ public interface ISqlDialect
     /// quotes; they MAY also reject backslash-escape modes the provider supports but the
     /// project does not enable.
     /// </remarks>
-    string QuoteLiteral(string literal);
+    /// <param name="literal">The literal value to quote.</param>
+    /// <returns>The quoted SQL string literal.</returns>
+    string QuoteLiteral(string literal)
+    {
+        ArgumentNullException.ThrowIfNull(literal);
+        return "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
+    }
 }

@@ -5,7 +5,6 @@ using System.Buffers;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
-using System.Text.RegularExpressions;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -568,7 +567,7 @@ internal static class SearchEndpoints
 
         if (requestedItemIds is { Length: > 0 } itemIds)
         {
-            query = query with { SqlFilter = CombineSqlFilters(query.SqlFilter, BuildItemIdsSqlFilter(itemIds)) };
+            query = query with { SqlFilter = SqlFragmentHelpers.CombineSqlFilters(query.SqlFilter, BuildItemIdsSqlFilter(itemIds)) };
         }
 
         if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)
@@ -837,11 +836,7 @@ internal static class SearchEndpoints
         // are projected so datetime population still works under fields selection.
         if (!requiresUnprojectedAttributes && string.IsNullOrWhiteSpace(timeField))
         {
-            ReadOnlySpan<string> fallbackCandidates =
-            [
-                "datetime", "created_at", "updated_at", "start_datetime",
-                "end_datetime", "timestamp", "event_date", "date"
-            ];
+            ReadOnlySpan<string> fallbackCandidates = TemporalFieldDefaults.TemporalFallbackFieldNames;
             foreach (var candidate in fallbackCandidates)
             {
                 if (availableFields.TryGetValue(candidate, out var field) &&
@@ -1388,26 +1383,6 @@ internal static class SearchEndpoints
 
         return new SqlFragment($"({string.Join(" OR ", clauses)})", parameters);
     }
-
-    private static SqlFragment CombineSqlFilters(SqlFragment? left, SqlFragment right)
-    {
-        if (left is null)
-        {
-            return right;
-        }
-
-        var rightSql = RenumberSqlFragmentParameters(right.Sql, left.Parameters.Count);
-        return new SqlFragment(
-            $"({left.Sql}) AND ({rightSql})",
-            left.Parameters.Concat(right.Parameters).ToArray());
-    }
-
-    private static string RenumberSqlFragmentParameters(string sql, int offset)
-        => Regex.Replace(
-            sql,
-            @"@p(\d+)",
-            match => "@p" + (int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) + offset).ToString(CultureInfo.InvariantCulture),
-            RegexOptions.CultureInvariant);
 
     private static bool TryNormalizePropertyName(string name, out string normalized)
     {

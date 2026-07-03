@@ -37,11 +37,4 @@ internal sealed class RedshiftSqlDialect : ISqlDialect
 
         return RedshiftIdentifier.Quote(identifier);
     }
-
-    /// <inheritdoc />
-    public string QuoteLiteral(string literal)
-    {
-        ArgumentNullException.ThrowIfNull(literal);
-        return "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
-    }
 }

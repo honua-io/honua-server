@@ -2,8 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Globalization;
-using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -121,7 +119,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
             }
 
             QueryFilter? queryFilter = null;
-            var sqlFilter = CombineSqlFilters(filterResult.SqlFilter, idsSqlFilter);
+            var sqlFilter = SqlFragmentHelpers.CombineSqlFilters(filterResult.SqlFilter, idsSqlFilter);
             if (sqlFilter != null)
             {
                 queryFilter = QueryFilter.FromSql(sqlFilter);
@@ -165,31 +163,6 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
             return QueryAdapterResult.Failure("Invalid query parameters.");
         }
     }
-
-    private static SqlFragment? CombineSqlFilters(SqlFragment? left, SqlFragment? right)
-    {
-        if (left == null)
-        {
-            return right;
-        }
-
-        if (right == null)
-        {
-            return left;
-        }
-
-        var rightSql = RenumberSqlFragmentParameters(right.Sql, left.Parameters.Count);
-        return new SqlFragment(
-            $"({left.Sql}) AND ({rightSql})",
-            left.Parameters.Concat(right.Parameters).ToArray());
-    }
-
-    private static string RenumberSqlFragmentParameters(string sql, int offset)
-        => Regex.Replace(
-            sql,
-            @"@p(\d+)",
-            match => "@p" + (int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) + offset).ToString(CultureInfo.InvariantCulture),
-            RegexOptions.CultureInvariant);
 
     private static bool TryParseProperties(
         string? rawProperties,

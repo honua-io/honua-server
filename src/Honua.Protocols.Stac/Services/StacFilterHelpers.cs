@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Infrastructure.Filtering;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using NetTopologySuite.Geometries;
@@ -266,11 +267,7 @@ internal static class StacFilterHelpers
             return configured;
         }
 
-        ReadOnlySpan<string> fallbackCandidates =
-        [
-            "datetime", "created_at", "updated_at", "start_datetime",
-            "end_datetime", "timestamp", "event_date", "date"
-        ];
+        ReadOnlySpan<string> fallbackCandidates = TemporalFieldDefaults.TemporalFallbackFieldNames;
 
         foreach (var candidate in fallbackCandidates)
         {
