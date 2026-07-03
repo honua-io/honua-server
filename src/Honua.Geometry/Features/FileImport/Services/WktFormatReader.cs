@@ -35,6 +35,22 @@ internal static class WktFormatReader
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        await foreach (var feature in ReadStreamingAsync(stream, diagnostics: null, cancellationToken))
+        {
+            yield return feature;
+        }
+    }
+
+    /// <summary>
+    /// Streams features from a WKT file, recording any record that cannot be parsed into the
+    /// supplied <paramref name="diagnostics"/> sink so the loss is surfaced as an import warning
+    /// rather than silently swallowed (honua-server#2363).
+    /// </summary>
+    internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
+        Stream stream,
+        WktGeometryDiagnostics? diagnostics,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         var wktReader = new WKTReader();
         var wkbReader = GeometryValueParser.CreateWkbReader();
         using var reader = new StreamReader(stream, leaveOpen: true);
@@ -60,7 +76,7 @@ internal static class WktFormatReader
             // "POINT EMPTY"): it is a complete geometry, so parse and reset.
             if (depth <= 0)
             {
-                var feature = BuildFeature(buffer, wktReader, wkbReader);
+                var feature = BuildFeature(buffer, wktReader, wkbReader, diagnostics);
                 buffer.Clear();
                 depth = 0;
                 if (feature != null)
@@ -72,20 +88,31 @@ internal static class WktFormatReader
         // unbalanced tail we still attempt to parse rather than silently drop).
         if (buffer.Length > 0)
         {
-            var feature = BuildFeature(buffer, wktReader, wkbReader);
+            var feature = BuildFeature(buffer, wktReader, wkbReader, diagnostics);
             if (feature != null)
                 yield return feature;
         }
     }
 
-    private static Feature? BuildFeature(StringBuilder buffer, WKTReader wktReader, WKBReader wkbReader)
+    private static Feature? BuildFeature(
+        StringBuilder buffer,
+        WKTReader wktReader,
+        WKBReader wkbReader,
+        WktGeometryDiagnostics? diagnostics)
     {
         var text = buffer.ToString().Trim();
         if (text.Length == 0)
             return null;
 
         var geometry = GeometryValueParser.TryParse(text, wktReader, wkbReader);
-        return geometry != null ? new Feature(geometry, new AttributesTable()) : null;
+        if (geometry != null)
+            return new Feature(geometry, new AttributesTable());
+
+        // A non-empty record that parses to nothing is unparseable content (bad WKT, a stray
+        // header line, a truncated multi-line tail). Record it so the import surfaces a warning
+        // instead of silently dropping the record.
+        diagnostics?.RecordUnparseableRecord();
+        return null;
     }
 
     private static int ParenDelta(string line)
@@ -101,4 +128,21 @@ internal static class WktFormatReader
 
         return delta;
     }
+}
+
+/// <summary>
+/// Collects diagnostics emitted while streaming a WKT file so the import pipeline can surface a
+/// warning instead of silently dropping records it cannot parse. A single instance is passed to
+/// <see cref="WktFormatReader"/> and read after enumeration completes (honua-server#2363).
+/// </summary>
+internal sealed class WktGeometryDiagnostics
+{
+    /// <summary>
+    /// Number of non-empty records whose content could not be parsed as WKT, EWKT, or WKB/EWKB
+    /// hex. Such records are skipped; counting them keeps the loss visible.
+    /// </summary>
+    public int UnparseableRecords { get; private set; }
+
+    /// <summary>Records that a WKT record could not be parsed.</summary>
+    public void RecordUnparseableRecord() => UnparseableRecords++;
 }

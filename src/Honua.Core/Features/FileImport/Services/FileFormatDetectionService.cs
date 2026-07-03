@@ -122,6 +122,16 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
             }
         }
 
+        // Well-Known Binary has no fixed magic string; it is identified structurally by a leading
+        // byte-order flag (0x00 XDR / 0x01 NDR) followed by a valid geometry-type uint32 (also
+        // EWKB with its SRID/Z/M flag bits). This runs before the text-decode branch because a WKB
+        // payload's low bytes are not printable text (honua-server#2353).
+        if (LooksLikeWkb(fileContent))
+        {
+            FileFormatDetectionLog.DetectedFromContentAnalysis(_logger, SupportedFileFormat.Wkb, fileName);
+            return SupportedFileFormat.Wkb;
+        }
+
         // Check for text-based formats
         var textContent = TryDecodeAsText(fileContent);
         if (!string.IsNullOrEmpty(textContent))
@@ -243,6 +253,39 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Structurally recognises a Well-Known Binary (WKB/EWKB) geometry payload from its leading
+    /// bytes: a byte-order flag (<c>0x00</c> big-endian/XDR or <c>0x01</c> little-endian/NDR)
+    /// followed by a geometry-type <c>uint32</c>. Standard WKB uses base types 1-7
+    /// (Point..GeometryCollection); ISO WKB adds Z/M variants (e.g. 1001, 2001, 3001); PostGIS
+    /// EWKB sets the high flag bits <c>0x80000000</c> (Z), <c>0x40000000</c> (M), and
+    /// <c>0x20000000</c> (SRID). After stripping the EWKB flag bits and normalising the ISO
+    /// thousands offset, the base type must fall in 1-7 for the payload to be WKB.
+    /// </summary>
+    private static bool LooksLikeWkb(ReadOnlySpan<byte> content)
+    {
+        if (content.Length < 5)
+        {
+            return false;
+        }
+
+        var byteOrder = content[0];
+        if (byteOrder is not (0x00 or 0x01))
+        {
+            return false;
+        }
+
+        // Read the 4-byte geometry type honouring the declared byte order.
+        uint geometryType = byteOrder == 0x01
+            ? (uint)(content[1] | (content[2] << 8) | (content[3] << 16) | (content[4] << 24))
+            : (uint)((content[1] << 24) | (content[2] << 16) | (content[3] << 8) | content[4]);
+
+        // Strip the EWKB Z/M/SRID flag bits (top three bits), then fold the ISO thousands offset
+        // (1000 = Z, 2000 = M, 3000 = ZM) so every representation reduces to a base type 1-7.
+        var baseType = (geometryType & 0x1FFFFFFF) % 1000;
+        return baseType is >= 1 and <= 7;
     }
 
     /// <summary>

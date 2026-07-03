@@ -73,6 +73,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         CompositeFormat.Parse("{0} row(s) failed while continue-on-error was enabled; previously imported rows were retained.");
     private static readonly CompositeFormat _csvUnparseableGeometryWarningFormat =
         CompositeFormat.Parse("{0} row(s) had a geometry value that could not be parsed as WKT, EWKT, or WKB; each raw value was preserved as an attribute and the row was imported without geometry.");
+    private static readonly CompositeFormat _wktUnparseableGeometryWarningFormat =
+        CompositeFormat.Parse("{0} record(s) could not be parsed as WKT, EWKT, or WKB and were skipped.");
     private static readonly Regex _wktSridRegex = new(
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
