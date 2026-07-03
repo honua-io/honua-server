@@ -21,19 +21,27 @@ namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 /// </remarks>
 internal sealed class S3AuditSink : IAuditSink
 {
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly string _httpClientName;
     private readonly S3SinkOptions _options;
 
     /// <summary>
     /// Initializes a new S3 sink.
     /// </summary>
-    /// <param name="httpClient">The HTTP client (typically named, from <see cref="IHttpClientFactory"/>).</param>
+    /// <param name="httpClientFactory">
+    /// Factory used to resolve a fresh named <see cref="HttpClient"/> per send — see
+    /// <see cref="SplunkHecAuditSink"/> for why capturing a single client at construction
+    /// would bypass <see cref="IHttpClientFactory"/> handler rotation.
+    /// </param>
+    /// <param name="httpClientName">The named client to resolve on each send.</param>
     /// <param name="options">S3 configuration.</param>
-    public S3AuditSink(HttpClient httpClient, S3SinkOptions options)
+    public S3AuditSink(IHttpClientFactory httpClientFactory, string httpClientName, S3SinkOptions options)
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(httpClientFactory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(httpClientName);
         ArgumentNullException.ThrowIfNull(options);
-        _httpClient = httpClient;
+        _httpClientFactory = httpClientFactory;
+        _httpClientName = httpClientName;
         _options = options;
     }
 
@@ -60,7 +68,7 @@ internal sealed class S3AuditSink : IAuditSink
                 request.Headers.TryAddWithoutValidation("Authorization", _options.AuthHeaderValue);
             }
 
-            using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            using var response = await _httpClientFactory.CreateClient(_httpClientName).SendAsync(request, ct).ConfigureAwait(false);
             return AuditHttpResultMapper.FromStatus(SinkType, response.StatusCode);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

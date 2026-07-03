@@ -4,6 +4,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Honua.Core.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
@@ -13,8 +15,9 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// Provides real-time system performance data without external dependencies.
 /// Designed for self-hosted installations with minimal overhead.
 /// </summary>
-public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposable
+public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, IDisposable
 {
+    private readonly ILogger<SystemMetricsCollector> _logger;
     private readonly Timer _metricsTimer;
     private readonly ConcurrentQueue<(DateTime Timestamp, bool IsError)> _recentRequests = new();
     private readonly TimeSpan _errorWindow;
@@ -32,8 +35,11 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
     /// <summary>
     /// Initializes a new SystemMetricsCollector with 10-second collection intervals.
     /// </summary>
-    public SystemMetricsCollector(IOptions<AdaptiveSamplingOptions>? options = null)
+    public SystemMetricsCollector(
+        IOptions<AdaptiveSamplingOptions>? options = null,
+        ILogger<SystemMetricsCollector>? logger = null)
     {
+        _logger = logger ?? NullLogger<SystemMetricsCollector>.Instance;
         var windowMinutes = options?.Value.Error.ErrorWindowMinutes ?? 5;
         _errorWindow = TimeSpan.FromMinutes(Math.Max(1, windowMinutes));
         _metricsTimer = new Timer(CollectMetrics, null, TimeSpan.Zero, TimeSpan.FromSeconds(10));
@@ -151,10 +157,13 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
                 Timestamp = DateTime.UtcNow
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Don't let metrics collection crash the application
-            // Keep the previous metrics if collection fails
+            // Don't let metrics collection crash the application (this runs on a Timer
+            // callback thread with no caller to observe an exception) — keep the previous
+            // metrics if collection fails, but log it: a silently-stuck metrics snapshot
+            // would otherwise degrade adaptive sampling with no operator-visible signal.
+            Log.MetricsCollectionFailed(_logger, ex);
         }
     }
 
@@ -295,6 +304,15 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
             _disposed = true;
             _collector.EndRequest();
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = 8300,
+            Level = LogLevel.Warning,
+            Message = "System metrics collection failed; the previous metrics snapshot is retained.")]
+        public static partial void MetricsCollectionFailed(ILogger logger, Exception exception);
     }
 }
 

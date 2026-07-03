@@ -222,6 +222,7 @@ internal static partial class ComplianceAdminEndpoints
             NewVersion = outcome.NewVersion,
             RotatedAt = outcome.RotatedAt,
             Message = outcome.Message,
+            AuditRecorded = outcome.AuditRecorded,
         };
 
         return Results.Json(

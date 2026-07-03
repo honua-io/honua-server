@@ -5,6 +5,7 @@ using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.FeatureStore.Services;
@@ -28,19 +29,29 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IVersionJobStore _jobStore;
     private readonly ILogger<VersionJobRunner> _logger;
+    private readonly IHostApplicationLifetime? _lifetime;
 
     /// <summary>Initializes the runner.</summary>
     /// <param name="scopeFactory">Factory used to resolve a fresh DI scope for each background job.</param>
     /// <param name="jobStore">Durable job store used to record and poll job state.</param>
     /// <param name="logger">Logger.</param>
+    /// <param name="lifetime">
+    /// Optional host lifetime (matches the <c>InProcessTemporalCorrectiveJobSink</c> pattern).
+    /// When supplied, <see cref="IHostApplicationLifetime.ApplicationStopping"/> is observed by
+    /// the detached background job so a graceful shutdown records a terminal state instead of
+    /// leaving the job silently abandoned mid-flight. Optional so the runner still works in
+    /// hosts/tests that do not register <see cref="IHostApplicationLifetime"/>.
+    /// </param>
     public VersionJobRunner(
         IServiceScopeFactory scopeFactory,
         IVersionJobStore jobStore,
-        ILogger<VersionJobRunner> logger)
+        ILogger<VersionJobRunner> logger,
+        IHostApplicationLifetime? lifetime = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _jobStore = jobStore ?? throw new ArgumentNullException(nameof(jobStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _lifetime = lifetime;
     }
 
     /// <inheritdoc />
@@ -105,6 +116,12 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
 
         var running = job with { Status = VersionJobStatus.Running, StartedAt = DateTimeOffset.UtcNow };
 
+        // Observed only by the manager call below (not by the Running/terminal-state saves,
+        // which must always be attempted best-effort): lets a real host shutdown interrupt a
+        // long-running reconcile/post cooperatively instead of the job running unobserved
+        // against a process that is already tearing down.
+        var shutdownToken = _lifetime?.ApplicationStopping ?? CancellationToken.None;
+
         // The whole body — including scope creation, service resolution, and the Running-state save —
         // must sit inside the try: this task is detached (fire-and-forget), so an exception escaping
         // here would be unobserved and the job would sit in Pending forever with no log line.
@@ -117,8 +134,8 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             await store.SaveAsync(running, CancellationToken.None).ConfigureAwait(false);
 
             VersionJob completed = job.Kind == VersionJobKind.Reconcile
-                ? await RunReconcileAsync(manager, running, CancellationToken.None).ConfigureAwait(false)
-                : await RunPostAsync(manager, running, CancellationToken.None).ConfigureAwait(false);
+                ? await RunReconcileAsync(manager, running, shutdownToken).ConfigureAwait(false)
+                : await RunPostAsync(manager, running, shutdownToken).ConfigureAwait(false);
 
             activity?.SetTag("honua.version.conflict_count", completed.ConflictCount);
             activity?.SetTag("honua.version.auto_resolved_count", completed.AutoResolvedCount);
@@ -126,6 +143,22 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             activity?.SetTag("honua.version.outcome", "succeeded");
             activity?.SetStatus(ActivityStatusCode.Ok);
             await store.SaveAsync(completed, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+        {
+            // The host is shutting down: record a well-understood terminal state (not a stack
+            // trace) so an operator/poller sees a clear reason and knows to resubmit after
+            // restart, rather than the job sitting unobserved past process teardown.
+            activity?.SetTag("honua.version.outcome", "shutdown");
+            activity?.SetStatus(ActivityStatusCode.Error, "Server shutting down");
+            Log.JobAbortedForShutdown(_logger, job.Kind.ToString(), job.VersionId, job.JobId);
+            var aborted = running with
+            {
+                Status = VersionJobStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "The reconcile/post job was aborted because the server is shutting down. Resubmit after restart.",
+            };
+            await SaveTerminalStateAsync(aborted).ConfigureAwait(false);
         }
         catch (VersionLockedException)
         {
@@ -226,5 +259,11 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             Level = LogLevel.Error,
             Message = "Failed to persist terminal state for version {JobKind} job {JobId} (version {VersionId}); polling clients may see a stale status.")]
         public static partial void TerminalSaveFailed(ILogger logger, string jobKind, Guid versionId, Guid jobId, Exception exception);
+
+        [LoggerMessage(
+            EventId = 7103,
+            Level = LogLevel.Warning,
+            Message = "Version {JobKind} job for version {VersionId} (job {JobId}) aborted: server is shutting down.")]
+        public static partial void JobAbortedForShutdown(ILogger logger, string jobKind, Guid versionId, Guid jobId);
     }
 }
