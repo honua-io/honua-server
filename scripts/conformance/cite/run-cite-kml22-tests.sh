@@ -218,10 +218,23 @@ HONUA_BASE_URL="http://localhost:${HONUA_CITE_KML22_SERVER_PORT}"
 KML_URL_HOST="$HONUA_BASE_URL/rest/services/cite/MapServer/generateKml"
 
 echo -e "${YELLOW}Verifying KML endpoint...${NC}"
-if ! curl -s -f "$KML_URL_HOST" > /dev/null; then
-    echo -e "${RED}KML generateKml endpoint not accessible${NC}"
-    exit 1
-fi
+# The container healthcheck is /healthz/ready, which gates on migrations + database + cache health
+# but NOT on the in-memory service catalog being warm. After the post-seed server restart there is a
+# brief window where /healthz/ready returns 200 while the seeded `cite` MapServer service has not yet
+# been loaded, so a single-shot probe of generateKml can race the catalog warm-up and 404. Poll the
+# endpoint until it actually serves (bounded) instead of probing once. If it never becomes accessible
+# the loop still fails after the timeout, so a genuine endpoint break is not masked.
+KML_ENDPOINT_TIMEOUT="${KML_ENDPOINT_TIMEOUT:-60}"
+kml_start_time=$(date +%s)
+until curl -s -f "$KML_URL_HOST" > /dev/null; do
+    if [[ $(( $(date +%s) - kml_start_time )) -ge $KML_ENDPOINT_TIMEOUT ]]; then
+        echo -e "${RED}KML generateKml endpoint not accessible after ${KML_ENDPOINT_TIMEOUT}s${NC}"
+        echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs honua-server"
+        exit 1
+    fi
+    echo "Waiting for KML generateKml endpoint (service catalog warm-up)..."
+    sleep 2
+done
 
 echo -e "${GREEN}KML endpoint is accessible${NC}"
 
