@@ -107,15 +107,15 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return false;
         }
 
-        foreach (var ns in namespaces)
-        {
-            await _cacheService.SetAsync(
-                    VersionPrefix + ns,
-                    Guid.NewGuid().ToString("N"),
-                    VersionTtl,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
+        // Each namespace token bumps an independent version key, so the writes have
+        // no ordering dependency on one another; issue them concurrently instead of
+        // one round trip at a time.
+        await Task.WhenAll(namespaces.Select(ns => _cacheService.SetAsync(
+                VersionPrefix + ns,
+                Guid.NewGuid().ToString("N"),
+                VersionTtl,
+                cancellationToken)))
+            .ConfigureAwait(false);
 
         return true;
     }

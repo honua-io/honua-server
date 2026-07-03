@@ -158,6 +158,56 @@ public class InMemoryContentHashArtifactCacheTests
         Assert.NotNull(await cache.TryGetAsync("fresh"));
     }
 
+    [Fact]
+    public async Task PutAsync_ExceedsMaxEntries_EvictsDownToBudget()
+    {
+        // Regression for the review finding: EnforceBudget's over-budget eviction
+        // loop used to re-sum every resident entry's byte length on every single
+        // eviction step (O(n^2) for a heavily over-budget cache). It now tracks a
+        // running total incrementally, so this also exercises that bookkeeping
+        // stays correct across many distinct-key inserts.
+        var cache = new InMemoryContentHashArtifactCache();
+        const int overBudgetBy = 64;
+
+        for (var i = 0; i < InMemoryContentHashArtifactCache.MaxEntries + overBudgetBy; i++)
+        {
+            await cache.PutAsync(new SpecArtifactPayload
+            {
+                ContentHash = $"entry-{i}",
+                Bytes = new byte[] { 1 }
+            });
+        }
+
+        var survivingCount = 0;
+        for (var i = 0; i < InMemoryContentHashArtifactCache.MaxEntries + overBudgetBy; i++)
+        {
+            if (await cache.TryGetAsync($"entry-{i}") is not null)
+            {
+                survivingCount++;
+            }
+        }
+
+        Assert.True(
+            survivingCount <= InMemoryContentHashArtifactCache.MaxEntries,
+            $"expected at most {InMemoryContentHashArtifactCache.MaxEntries} surviving entries, found {survivingCount}");
+    }
+
+    [Fact]
+    public async Task PutAsync_OverwriteThenEvict_RunningByteTotalStaysConsistent()
+    {
+        // Overwriting a key must replace its contribution to the running byte
+        // total (not add to it) before eviction accounting runs, otherwise the
+        // budget check would drift and either over-evict or never evict.
+        var cache = new InMemoryContentHashArtifactCache();
+
+        await cache.PutAsync(new SpecArtifactPayload { ContentHash = "grows", Bytes = new byte[16] });
+        await cache.PutAsync(new SpecArtifactPayload { ContentHash = "grows", Bytes = new byte[4096] });
+
+        var got = await cache.TryGetAsync("grows");
+        Assert.NotNull(got);
+        Assert.Equal(4096, got!.Bytes);
+    }
+
     private sealed class TestTimeProvider : TimeProvider
     {
         private DateTimeOffset _now = new(2026, 4, 18, 12, 0, 0, TimeSpan.Zero);

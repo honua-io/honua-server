@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -250,23 +251,44 @@ internal static class FeatureStreamArtifact
 
         await using (var fileStream = new FileStream(
             path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 1 << 16, useAsync: true))
-        await using (var textWriter = new StreamWriter(fileStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
         {
             await foreach (var feature in features.WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var line = SerializeLine(writer, feature);
-                await textWriter.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
+                bytes += await WriteNdjsonLineAsync(fileStream, line, cancellationToken).ConfigureAwait(false);
                 count++;
-                // '\n' line terminator is one byte; the line itself is single-byte-per-char
-                // for ASCII but may be multi-byte for UTF-8 — Encoding.UTF8 gives the true count.
-                bytes += Encoding.UTF8.GetByteCount(line) + 1;
             }
 
-            await textWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await fileStream.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return BuildStreamReference(path, count, bytes);
+    }
+
+    /// <summary>
+    /// Encodes an NDJSON line plus its trailing <c>'\n'</c> terminator to UTF-8 exactly
+    /// once and writes the bytes directly to <paramref name="fileStream"/>, returning the
+    /// byte count written. Shared by <see cref="WriteStreamAsync"/> and the publisher's
+    /// incremental spill writer so both avoid encoding each line twice — once via
+    /// <c>Encoding.UTF8.GetByteCount</c> purely to track spill-file size, and again inside
+    /// a <see cref="StreamWriter"/> to actually write it.
+    /// </summary>
+    internal static async Task<int> WriteNdjsonLineAsync(FileStream fileStream, string line, CancellationToken cancellationToken)
+    {
+        var maxByteCount = Encoding.UTF8.GetMaxByteCount(line.Length) + 1;
+        var buffer = ArrayPool<byte>.Shared.Rent(maxByteCount);
+        try
+        {
+            var written = Encoding.UTF8.GetBytes(line, 0, line.Length, buffer, 0);
+            buffer[written] = (byte)'\n';
+            await fileStream.WriteAsync(buffer.AsMemory(0, written + 1), cancellationToken).ConfigureAwait(false);
+            return written + 1;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// <summary>

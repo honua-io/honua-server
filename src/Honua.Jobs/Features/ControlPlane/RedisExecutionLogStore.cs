@@ -33,15 +33,19 @@ internal sealed partial class RedisExecutionLogStore(
 
         var payload = JsonSerializer.Serialize(entry, ControlPlaneJsonContext.Default.ExecutionLogEntry);
         var key = GetLogKey(operationId);
-        await _database.ListRightPushAsync(key, payload).ConfigureAwait(false);
 
         // Ensure the key has a TTL so logs don't persist indefinitely if
-        // SetRetentionAsync is never called.
-        var ttl = await _database.KeyTimeToLiveAsync(key).ConfigureAwait(false);
-        if (!ttl.HasValue)
-        {
-            await _database.KeyExpireAsync(key, DefaultRetention).ConfigureAwait(false);
-        }
+        // SetRetentionAsync is never called. Rather than probing with
+        // KeyTimeToLiveAsync then conditionally calling KeyExpireAsync (2-3
+        // sequential round trips per append), dispatch the push and an
+        // ExpireWhen.NX expire (only takes effect if the key has no TTL yet)
+        // together without awaiting between them. Both go out on the same
+        // multiplexed connection in call order, so the push always reaches
+        // Redis first and the NX expire is a correct, idempotent no-op once
+        // the TTL has been set by an earlier append or SetRetentionAsync.
+        var pushTask = _database.ListRightPushAsync(key, payload);
+        var expireTask = _database.KeyExpireAsync(key, DefaultRetention, ExpireWhen.HasNoExpiry);
+        await Task.WhenAll(pushTask, expireTask).ConfigureAwait(false);
 
         Log.LogEntryAppended(logger, operationId, entry.Level.ToString());
     }

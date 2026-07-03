@@ -36,6 +36,14 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
     private readonly ConcurrentDictionary<string, OperationPattern> _operationPatterns;
 
     /// <summary>
+    /// Caps the number of distinct raw operation names tracked in
+    /// <see cref="_operationPatterns"/>. Operation names are caller-supplied and not from a
+    /// fixed enum, so without a cap a workload with high-cardinality/unbounded operation
+    /// names would grow this dictionary without bound.
+    /// </summary>
+    private const int MaxOperationPatterns = 1000;
+
+    /// <summary>
     /// Initializes a new adaptive sampler with configuration and metrics collection.
     /// WEEK 5 FIX: Enhanced with ML-based intelligence components
     /// </summary>
@@ -376,9 +384,21 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         // Mutating a shared pattern inside AddOrUpdate is not thread-safe (the update factory can
         // run concurrently and provides no mutual exclusion), so record through Interlocked
         // counters on the pattern instance instead.
-        var pattern = _operationPatterns.GetOrAdd(
-            operationName,
-            static name => new OperationPattern { OperationName = name });
+        if (!_operationPatterns.TryGetValue(operationName, out var pattern))
+        {
+            if (_operationPatterns.Count >= MaxOperationPatterns)
+            {
+                // At capacity: skip tracking further new operation names rather than
+                // growing _operationPatterns without bound. Already-tracked operations
+                // keep accumulating normally.
+                return;
+            }
+
+            pattern = _operationPatterns.GetOrAdd(
+                operationName,
+                static name => new OperationPattern { OperationName = name });
+        }
+
         pattern.Record(samplingRate, wasSampled);
     }
 
