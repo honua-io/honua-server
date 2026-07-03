@@ -697,6 +697,10 @@ public sealed class QueryProcessor : IQueryProcessor
             var featureQuery = ToFeatureQuery(query, resource);
             return await _featureReader.CountAsync(storageLayerId.Value, featureQuery, cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             QueryLog.EstimateResultCountFailed(_logger, storageLayerId.Value, ex);
