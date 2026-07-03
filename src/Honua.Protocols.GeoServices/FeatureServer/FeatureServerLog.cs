@@ -404,4 +404,14 @@ internal static partial class FeatureServerLog
         Level = LogLevel.Information,
         Message = "datumTransformation honored ({DatumTransformation}); applying selected datum pipeline")]
     public static partial void DatumTransformationRequested(ILogger logger, string datumTransformation);
+
+    /// <summary>
+    /// Logs when post-commit side-effects (cache invalidation, event publish, plugin hooks)
+    /// time out. The data was committed successfully.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="layerId">The layer identifier.</param>
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Post-commit side-effects timed out for service {ServiceId} layer {LayerId}; data was committed successfully.")]
+    public static partial void PostCommitSideEffectsTimedOut(ILogger logger, string serviceId, int layerId);
 }
