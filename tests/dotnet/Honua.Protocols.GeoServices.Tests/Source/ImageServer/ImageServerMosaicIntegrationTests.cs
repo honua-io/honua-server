@@ -272,6 +272,68 @@ public sealed class ImageServerMosaicIntegrationTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{id}/ImageServer/exportImage")]
+    [Operation(Operations.Export)]
+    public async Task ExportImagePost_WithTime_SelectsTemporalSliceAndAgreesWithGet()
+    {
+        // Regression for #2364: CreateExportImageRequest (the POST body/query merge builder)
+        // did not map the `time` parameter, so POST exportImage silently ignored it and always
+        // returned the default (newest) mosaic — diverging from the GET path, which binds time.
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro);
+        try
+        {
+            // bbox=1,0,3,2 straddles the overlap-newest raster (value 5, Feb 1). At time
+            // 2024-01-20 that raster is excluded, so the slice shows the older west/east
+            // rasters (values 20/40) instead — a visibly different mosaic than the default.
+            const string bbox = "?bbox=1,0,3,2&size=64,32&format=png&f=image";
+            const string time = "2024-01-20T00:00:00Z";
+
+            var getWithTime = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{bbox}&time={time}");
+            getWithTime.StatusCode.Should().Be(HttpStatusCode.OK);
+            var getWithTimeBytes = await getWithTime.Content.ReadAsByteArrayAsync();
+
+            using var postWithTimeContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("bbox", "1,0,3,2"),
+                new KeyValuePair<string, string>("size", "64,32"),
+                new KeyValuePair<string, string>("format", "png"),
+                new KeyValuePair<string, string>("time", time),
+                new KeyValuePair<string, string>("f", "image"),
+            });
+            var postWithTime = await fixture.Client.PostAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage",
+                postWithTimeContent);
+            postWithTime.StatusCode.Should().Be(HttpStatusCode.OK);
+            var postWithTimeBytes = await postWithTime.Content.ReadAsByteArrayAsync();
+
+            using var postNewestContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("bbox", "1,0,3,2"),
+                new KeyValuePair<string, string>("size", "64,32"),
+                new KeyValuePair<string, string>("format", "png"),
+                new KeyValuePair<string, string>("f", "image"),
+            });
+            var postNewest = await fixture.Client.PostAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage",
+                postNewestContent);
+            postNewest.StatusCode.Should().Be(HttpStatusCode.OK);
+            var postNewestBytes = await postNewest.Content.ReadAsByteArrayAsync();
+
+            // POST with time must honor the requested slice: it agrees with GET for the same
+            // time, and differs from the default (newest) mosaic. Before the fix POST dropped
+            // `time`, so postWithTime == postNewest and postWithTime != getWithTime.
+            postWithTimeBytes.Should().NotBeEmpty();
+            postWithTimeBytes.Should().Equal(getWithTimeBytes, "POST and GET exportImage must honor time identically");
+            postWithTimeBytes.Should().NotEqual(postNewestBytes, "POST exportImage must apply the requested temporal slice, not the default newest mosaic");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query, Operations.PerformanceTesting)]
     public async Task QueryRasters_ForTenOverlappingRasters_CompletesWithinTwoSeconds()
     {
