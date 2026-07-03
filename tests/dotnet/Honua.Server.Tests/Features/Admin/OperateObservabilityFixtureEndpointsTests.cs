@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Server.Features.Admin.OperateFixtures;
@@ -14,6 +15,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -439,5 +441,95 @@ public sealed class OperateObservabilityFixtureEnvAliasEndpointTests : IAsyncLif
             items.Should().Contain(job => job.GetProperty("jobId").GetString() == SucceededJobId);
             items.Should().Contain(job => job.GetProperty("jobId").GetString() == FailedJobId);
         }
+    }
+}
+
+/// <summary>
+/// Verifies the seed endpoint degrades gracefully when the geofence alert stores are not
+/// registered (alerts.geofence experimental-disabled). The seeder must skip the alert-fixture
+/// slice and still hydrate jobs/logs/investigation instead of returning 500 with
+/// "No service for type 'IAlertAdminStore' has been registered." (honua-server#2350).
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.Configuration)]
+public sealed class OperateObservabilityFixtureMissingAlertStoreEndpointTests : IAsyncLifetime
+{
+    private const string Profile = "console-testcontainers-v1";
+    private const string SeedRoute = "/api/v1/admin/dev/fixtures/operate-observability/console-testcontainers-v1";
+    private const string SucceededJobId = "operate-fixture-job-succeeded";
+    private const string FailedJobId = "operate-fixture-job-failed";
+    private const string InvestigationId = "inv-operate-fixture-console";
+
+    private readonly WebAppFixture _fixture;
+    private HttpClient _client = null!;
+
+    public OperateObservabilityFixtureMissingAlertStoreEndpointTests()
+    {
+        _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("OperateObservabilityFixture:Enabled", "true");
+                builder.UseSetting("OperateObservabilityFixture:Profile", Profile);
+                builder.UseSetting("OperateObservabilityFixture:SeedOnStartup", "false");
+            })
+            // Simulate a host where the alerts.geofence capability is disabled: the geofence alert
+            // admin store the seeder resolves is never registered. Removing it triggers the seeder's
+            // graceful-skip guard (which requires all three alert stores to be present).
+            .ConfigureServices(services => services.RemoveAll<IAlertAdminStore>());
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _client = _fixture.CreateAdminClient();
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/dev/fixtures/operate-observability/{profile}")]
+    public async Task SeedOperateObservabilityFixture_WhenAlertStoreAbsent_SkipsAlertsAndSeedsObservability()
+    {
+        var seedResponse = await _client.PostAsync(SeedRoute, content: null);
+
+        var seedBody = await seedResponse.Content.ReadAsStringAsync();
+        seedResponse.StatusCode.Should().Be(HttpStatusCode.OK, seedBody);
+        using var seed = JsonDocument.Parse(seedBody);
+
+        // Alert slice is skipped: the sentinel seed reports zero ids / empty zone so the Console
+        // observability page renders the alert surface in its disabled state.
+        seed.RootElement.GetProperty("sourceHydrated").GetBoolean().Should().BeTrue();
+        var alerts = seed.RootElement.GetProperty("alerts");
+        alerts.GetProperty("openAlertEventId").GetInt64().Should().Be(0);
+        alerts.GetProperty("resolvedAlertEventId").GetInt64().Should().Be(0);
+        alerts.GetProperty("zoneName").GetString().Should().BeEmpty();
+
+        // The rest of the observability surface is still seeded.
+        seed.RootElement.GetProperty("jobs").GetArrayLength().Should().Be(2);
+
+        var jobs = await _client.GetAsync("/api/v1/admin/jobs?correlationId=corr-operate-fixture-001&limit=10");
+        jobs.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = JsonDocument.Parse(await jobs.Content.ReadAsStringAsync()))
+        {
+            var items = doc.RootElement.GetProperty("items").EnumerateArray().ToArray();
+            items.Should().Contain(job => job.GetProperty("jobId").GetString() == SucceededJobId);
+            items.Should().Contain(job => job.GetProperty("jobId").GetString() == FailedJobId);
+        }
+
+        var investigation = await _client.GetAsync("/api/v1/admin/investigations/inv-operate-fixture-console");
+        investigation.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = JsonDocument.Parse(await investigation.Content.ReadAsStringAsync()))
+        {
+            doc.RootElement.GetProperty("investigationId").GetString().Should().Be(InvestigationId);
+            // Job link is present; the alert link is omitted because the alert slice was skipped.
+            doc.RootElement.GetProperty("links").EnumerateArray()
+                .Should()
+                .Contain(link => link.GetProperty("resourceId").GetString() == FailedJobId);
+        }
+
+        // Re-seeding stays idempotent under the skip path.
+        var repeat = await _client.PostAsync(SeedRoute, content: null);
+        repeat.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }
