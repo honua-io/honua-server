@@ -166,16 +166,6 @@ internal sealed class Cql2FilterProcessor(
         return RewriteNode(expression, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId);
     }
 
-    // STAC populates an Item's `datetime` from the configured temporal StartTimeField, or—when no
-    // temporal role is configured—from the first matching well-known date/time schema field. The
-    // `datetime` queryable must resolve to that same column. This mirrors the fallback list used
-    // by the STAC mapping/search layer so the filter targets the field the Item actually exposes.
-    private static readonly string[] TemporalFallbackFieldNames =
-    [
-        "datetime", "created_at", "updated_at", "start_datetime",
-        "end_datetime", "timestamp", "event_date", "date"
-    ];
-
     private static string? ResolveTemporalFieldName(MetadataV2Resource resource)
     {
         var configured = resource.ReadTemporalFields().StartTimeField;
@@ -184,7 +174,7 @@ internal sealed class Cql2FilterProcessor(
             return configured;
         }
 
-        foreach (var candidate in TemporalFallbackFieldNames)
+        foreach (var candidate in TemporalFieldDefaults.TemporalFallbackFieldNames)
         {
             foreach (var field in resource.SchemaFields)
             {

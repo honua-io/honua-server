@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -147,7 +146,7 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
                 "Reduce the buffer distance or simplify the input geometry.");
         }
 
-        var artifactUri = BuildDataUri(payload);
+        var artifactUri = GeometryFeatureWriter.BuildDataUri(payload);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
@@ -266,14 +265,6 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
         }
 
         return buffer.ToArray();
-    }
-
-    private static string BuildDataUri(byte[] payload)
-    {
-        var sb = new StringBuilder(payload.Length * 2 + 64);
-        sb.Append("data:application/geo+json;base64,");
-        sb.Append(Convert.ToBase64String(payload));
-        return sb.ToString();
     }
 
     private readonly record struct BufferInputs(byte[] WkbBytes, int Srid, double Distance, bool Geodesic);

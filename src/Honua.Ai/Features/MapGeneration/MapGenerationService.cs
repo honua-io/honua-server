@@ -181,13 +181,23 @@ public sealed class MapGenerationService : IMapGenerationService
             {
                 var status = (int)response.StatusCode;
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                GenerationProviderLog.ProviderHttpError(_logger, providerId, status, Truncate(errorBody));
+                GenerationProviderLog.ProviderHttpError(_logger, providerId, status, GenerationStringHelpers.Truncate(errorBody));
                 return ErrorProposal($"Provider returned HTTP {status}.");
             }
 
             var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var chatResponse = JsonSerializer.Deserialize(responseJson, WorkflowGenerationJsonContext.Default.OpenAiChatCompletionResponse);
-            var content = chatResponse?.Choices is { Length: > 0 } ? chatResponse.Choices[0].Message?.Content : null;
+            // Guard a null first element ("choices":[null]) — length check is not a null check (#1986).
+            var choice = chatResponse?.Choices is { Length: > 0 } choices ? choices[0] : null;
+
+            // Surface max_tokens truncation explicitly instead of failing later with the opaque
+            // generic deserialize error on a truncated JSON body (#1979).
+            if (string.Equals(choice?.FinishReason, "length", StringComparison.Ordinal))
+            {
+                return ErrorProposal("Provider response was truncated (finish_reason=length / max_tokens reached); try a higher MaxTokens.");
+            }
+
+            var content = choice?.Message?.Content;
             if (string.IsNullOrWhiteSpace(content))
             {
                 return ErrorProposal("Provider returned an empty response.");
@@ -216,9 +226,6 @@ public sealed class MapGenerationService : IMapGenerationService
             return ErrorProposal("Provider response could not be parsed.");
         }
     }
-
-    private static string Truncate(string value, int maxLength = 500) =>
-        value.Length <= maxLength ? value : string.Concat(value.AsSpan(0, maxLength), "...");
 
     private static MapGenerationResult Unsupported(string reason) => new()
     {

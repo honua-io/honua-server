@@ -143,38 +143,13 @@ public readonly record struct SpatialReference
           Wkt.Contains("AXIS[\"Longitude\"", StringComparison.OrdinalIgnoreCase) ||
           Wkt.Contains("AXIS[\"Latitude\"", StringComparison.OrdinalIgnoreCase)));
 
+    // Keep the numeric fallback deliberately narrow. The EPSG 4xxx block contains a
+    // mix of geographic, geocentric, and projected CRSes, so treating the whole range
+    // as lat/lon causes wrong axis order and scale math. The canonical geographic
+    // EPSG-code list lives in BoundingBox.IsGeographicSrid (single source of truth);
+    // this WKID fallback delegates to it with the non-null value.
     private static bool IsGeographicByWkid(int wkid)
-        => wkid switch
-        {
-            // Keep the numeric fallback deliberately narrow. The EPSG 4xxx block
-            // contains a mix of geographic, geocentric, and projected CRSes, so
-            // treating the whole range as lat/lon causes wrong axis order and scale math.
-            // This list drives protocol axis-order decisions (WMS 1.3.0 BBOX, WFS 2.0 CRS,
-            // FES filter geometries) as well as BoundingBox geographic/projected branching,
-            // so every entry must be a confirmed geographic 2D CRS.
-            //
-            // Core global datums
-            4326 or 4979                                           // WGS 84 (2D / 3D)
-            or 4258                                                // ETRS89 (Europe)
-            or 4230                                                // ED50 (Europe historic)
-            or 4267 or 4269                                        // NAD27 / NAD83 (North America)
-            or 4277                                                // OSGB 1936 (UK)
-            // National geographic datums commonly used with WMS/WFS — lat,lon axis order required
-            or 4283                                                // GDA94 (Australia)
-            or 7844                                                // GDA2020 (Australia)
-            or 4490                                                // CGCS2000 (China)
-            or 4171                                                // RGF93 (France)
-            or 4167                                                // NZGD2000 (New Zealand)
-            or 6668                                                // JGD2011 (Japan)
-            or 4612                                                // JGD2000 (Japan)
-            or 4674                                                // SIRGAS2000 (South America)
-            or 4618                                                // SAD69 (South America)
-            or 4617                                                // NAD83(CSRS) (Canada)
-            or 4275                                                // NTF (France historic)
-            or 4149                                                // CH1903 (Switzerland)
-                => true,
-            _ => false
-        };
+        => BoundingBox.IsGeographicSrid(wkid);
 
     /// <summary>
     /// Whether this is a projected coordinate system

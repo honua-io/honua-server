@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Queries.Filters;
 using Honua.Snowflake.Features.FeatureStore.Services;
 using Honua.Snowflake.Queries.Filters;
 
@@ -43,7 +44,8 @@ public class SnowflakeSqlDialectTests
     [Fact]
     public void QuoteLiteral_EscapesSingleQuotes()
     {
-        var dialect = SnowflakeSqlDialect.Instance;
+        // QuoteLiteral is a default interface member on ISqlDialect; call through the interface.
+        ISqlDialect dialect = SnowflakeSqlDialect.Instance;
 
         Assert.Equal("'O''Brien'", dialect.QuoteLiteral("O'Brien"));
     }

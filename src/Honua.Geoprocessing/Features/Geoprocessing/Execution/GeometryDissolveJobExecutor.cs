@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -32,7 +31,6 @@ namespace Honua.Geoprocessing.Execution;
 /// </summary>
 internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
 {
-    private const string FeatureCollectionDataUriPrefix = "data:application/geo+json;base64,";
     private const string DefaultGroupKey = "__all__";
 
     /// <summary>
@@ -193,7 +191,7 @@ internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
                 "Reduce the input collection size or simplify the inputs before dissolving.");
         }
 
-        var artifactUri = BuildDataUri(payload);
+        var artifactUri = GeometryFeatureWriter.BuildDataUri(payload);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
@@ -247,14 +245,6 @@ internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
         }
 
         return buffer.ToArray();
-    }
-
-    private static string BuildDataUri(byte[] payload)
-    {
-        var sb = new StringBuilder(payload.Length * 2 + FeatureCollectionDataUriPrefix.Length);
-        sb.Append(FeatureCollectionDataUriPrefix);
-        sb.Append(Convert.ToBase64String(payload));
-        return sb.ToString();
     }
 
     private static bool TryReadInputs(

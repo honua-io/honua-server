@@ -194,7 +194,7 @@ public sealed class QueryGenerationService : IQueryGenerationService
             {
                 var status = (int)response.StatusCode;
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                GenerationProviderLog.ProviderHttpError(_logger, providerId, status, Truncate(errorBody));
+                GenerationProviderLog.ProviderHttpError(_logger, providerId, status, GenerationStringHelpers.Truncate(errorBody));
                 return ErrorProposal($"Provider returned HTTP {status}.");
             }
 
@@ -240,9 +240,6 @@ public sealed class QueryGenerationService : IQueryGenerationService
             return ErrorProposal("Provider response could not be parsed.");
         }
     }
-
-    private static string Truncate(string value, int maxLength = 500) =>
-        value.Length <= maxLength ? value : string.Concat(value.AsSpan(0, maxLength), "...");
 
     private static QueryGenerationResult Unsupported(string reason) => new()
     {

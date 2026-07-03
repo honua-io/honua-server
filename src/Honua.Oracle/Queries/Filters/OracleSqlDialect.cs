@@ -36,11 +36,4 @@ internal sealed class OracleSqlDialect : ISqlDialect
 
         return OracleIdentifier.Quote(identifier);
     }
-
-    /// <inheritdoc />
-    public string QuoteLiteral(string literal)
-    {
-        ArgumentNullException.ThrowIfNull(literal);
-        return "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
-    }
 }

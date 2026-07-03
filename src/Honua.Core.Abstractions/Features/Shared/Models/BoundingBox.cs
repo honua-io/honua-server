@@ -460,9 +460,14 @@ public readonly record struct BoundingBox
     /// <summary>
     /// Returns true when <paramref name="srid"/> is a known geographic (lat/lon) CRS.
     /// Only applied when no WKT is available; keeps the check narrow to confirmed
-    /// geographic 2D codes so projected CRSes are never mis-classified.
+    /// geographic 2D codes so projected CRSes are never mis-classified. A null SRID
+    /// is treated as geographic. This is the single source of truth for the geographic
+    /// EPSG-code list; <see cref="SpatialReference.IsGeographic"/>'s WKID fallback
+    /// delegates here. Every entry must be a confirmed geographic 2D CRS because the
+    /// list also drives protocol axis-order decisions (WMS 1.3.0 BBOX, WFS 2.0 CRS,
+    /// FES filter geometries).
     /// </summary>
-    private static bool IsGeographicSrid(int? srid)
+    internal static bool IsGeographicSrid(int? srid)
         => srid is null
            || srid == 4326 || srid == 4979                       // WGS 84
            || srid == 4258                                        // ETRS89

@@ -37,11 +37,4 @@ internal sealed class SqlServerSqlDialect : ISqlDialect
 
         return SqlServerIdentifier.Quote(identifier);
     }
-
-    /// <inheritdoc />
-    public string QuoteLiteral(string literal)
-    {
-        ArgumentNullException.ThrowIfNull(literal);
-        return "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
-    }
 }

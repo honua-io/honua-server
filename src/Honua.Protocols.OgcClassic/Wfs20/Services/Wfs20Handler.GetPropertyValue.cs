@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -255,7 +256,7 @@ internal sealed partial class Wfs20Handler
         var spatialFilter = ParseBboxFilterForResource(bbox, descriptor.Resource);
         var resourceIds = ParseResourceIds(normalizedResourceId, descriptor, enforceResourceIdTypeMatch, requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
-            ? CombineSqlFilters(sqlFilter, FalseSqlFilter)
+            ? SqlFragmentHelpers.CombineSqlFilters(sqlFilter, FalseSqlFilter)
             : sqlFilter;
         var outputSrid = await ResolveRequestedOutputSridAsync(descriptor.Resource, srsName, cancellationToken).ConfigureAwait(false);
         var outputAxisOrder = await ResolveOutputAxisOrderAsync(srsName, outputSrid, cancellationToken).ConfigureAwait(false);

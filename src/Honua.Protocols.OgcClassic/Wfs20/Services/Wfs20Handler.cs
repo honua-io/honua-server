@@ -227,7 +227,7 @@ internal sealed partial class Wfs20Handler
             enforceResourceIdTypeMatch,
             requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
-            ? CombineSqlFilters(sqlFilter, FalseSqlFilter)
+            ? SqlFragmentHelpers.CombineSqlFilters(sqlFilter, FalseSqlFilter)
             : sqlFilter;
         var orderBy = ParseSortBy(resource, sortBy);
         var outputSrid = await ResolveRequestedOutputSridAsync(resource, srsName, cancellationToken).ConfigureAwait(false);
@@ -364,18 +364,6 @@ internal sealed partial class Wfs20Handler
         normalizedFilter = null;
         resourceIds = string.Join(',', values);
         return true;
-    }
-
-    private static SqlFragment CombineSqlFilters(SqlFragment? left, SqlFragment right)
-    {
-        if (left is null)
-        {
-            return right;
-        }
-
-        return new SqlFragment(
-            $"({left.Sql}) AND ({right.Sql})",
-            left.Parameters.Concat(right.Parameters).ToArray());
     }
 
     private static ImmutableArray<string>? ResolveProjectedFields(MetadataV2Resource resource, string? propertyName)
