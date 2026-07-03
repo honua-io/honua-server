@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Diagnostics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.ControlPlane;
+using Honua.ServiceDefaults;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -79,17 +81,29 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 
         var processId = GeoprocessingDispatchHelper.ResolveProcessId(job.Spec.Parameters);
 
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.GeoprocessingDispatch, ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.JobId, job.OperationId);
+        activity?.SetTag("honua.gp.process_id", processId ?? "<none>");
+        activity?.SetTag("honua.gp.backend", job.Spec.Backend);
+
         if (string.IsNullOrWhiteSpace(processId)
             || !_handlers.TryGetValue(processId, out var handler))
         {
             var supported = string.Join(", ", _handlers.Keys.OrderBy(id => id, StringComparer.Ordinal));
             Log.UnsupportedProcessId(_logger, job.OperationId, processId ?? "<none>");
+            activity?.SetStatus(ActivityStatusCode.Error, "Unsupported process id");
             return JobExecutionResult.Failed(
                 $"Process id '{processId ?? "<none>"}' is not supported by the geoprocessing runtime. " +
                 $"Supported ids in this slice: {supported}.");
         }
 
         var result = await handler.ExecuteAsync(job, context, cancellationToken).ConfigureAwait(false);
+
+        if (result.Status != ExecutionJobStatus.Succeeded)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, result.ErrorMessage);
+        }
 
         // Usage-ranked tiering (#2144): record every dispatched invocation with its
         // outcome. Recording never throws, so it cannot affect the job result.
