@@ -1289,12 +1289,23 @@ internal sealed partial class OgcFeaturesQueryHandler(
             return;
         }
 
+        // Build a case-insensitive name->value lookup once per feature instead of doing a
+        // linear EnumerateObject() scan per schema field: the previous approach was
+        // O(fields * json properties) per feature, which dominates raw fast-path encoding
+        // cost for wide schemas. TryAdd keeps the first occurrence of a duplicate-case
+        // property name, matching the original scan's "first match wins" semantics.
+        var lookup = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in propertiesElement.Value.EnumerateObject())
+        {
+            lookup.TryAdd(candidate.Name, candidate.Value);
+        }
+
         foreach (var fieldName in propertyFields)
         {
-            if (TryGetJsonPropertyIgnoreCase(propertiesElement.Value, fieldName, out var property))
+            if (lookup.TryGetValue(fieldName, out var value))
             {
                 writer.WritePropertyName(fieldName);
-                property.Value.WriteTo(writer);
+                value.WriteTo(writer);
             }
         }
 

@@ -26,6 +26,13 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
 
+    // Running total of resident bytes, maintained incrementally on every add/overwrite/
+    // remove so EnforceBudget can check the byte budget in O(1) instead of re-summing
+    // every entry's Bytes.LongLength on every eviction step (which made a heavily
+    // over-budget PutAsync O(n^2)). Best-effort/approximate under concurrent writers,
+    // consistent with this cache's documented "OOM prevention, not cache optimality" goal.
+    private long _totalBytes;
+
     public InMemoryContentHashArtifactCache(TimeProvider? timeProvider = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -43,7 +50,7 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
 
         if (IsExpired(entry))
         {
-            _entries.TryRemove(contentHash, out _);
+            RemoveEntry(contentHash, entry);
             return Task.FromResult<CachedArtifactRef?>(null);
         }
 
@@ -62,7 +69,7 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
 
         if (IsExpired(entry))
         {
-            _entries.TryRemove(contentHash, out _);
+            RemoveEntry(contentHash, entry);
             return Task.FromResult<Stream?>(null);
         }
 
@@ -92,7 +99,16 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
         };
 
         var entry = new CacheEntry(reference, bytes);
-        _entries[payload.ContentHash] = entry;
+        var previousBytes = 0L;
+        _entries.AddOrUpdate(
+            payload.ContentHash,
+            entry,
+            (_, existing) =>
+            {
+                previousBytes = existing.Bytes.LongLength;
+                return entry;
+            });
+        Interlocked.Add(ref _totalBytes, bytes.LongLength - previousBytes);
 
         // Opportunistically reclaim TTL-expired entries on write. Without this
         // sweep, a workload that keeps producing unique mutable-source hashes
@@ -130,7 +146,10 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
                 // writers that replaced the slot with a fresh entry keep it
                 // untouched, because the record equality over a new byte[] and
                 // fresh CachedArtifactRef will not match the captured one.
-                _entries.TryRemove(kvp);
+                if (_entries.TryRemove(kvp))
+                {
+                    Interlocked.Add(ref _totalBytes, -kvp.Value.Bytes.LongLength);
+                }
             }
         }
     }
@@ -143,8 +162,11 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
     /// </summary>
     private void EnforceBudget()
     {
-        // Fast-path: most calls are under budget.
-        if (_entries.Count <= MaxEntries && TotalBytes() <= MaxTotalBytes)
+        // Fast-path: most calls are under budget. TotalBytes is an O(1) running
+        // total (see _totalBytes) rather than a full re-sum of every entry, so
+        // this check — and the loop below — no longer turn eviction into an
+        // O(n^2) scan when heavily over budget.
+        if (_entries.Count <= MaxEntries && TotalBytes <= MaxTotalBytes)
         {
             return;
         }
@@ -153,24 +175,29 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
         // the keys once so that the loop terminates even under concurrent writes.
         foreach (var kvp in _entries)
         {
-            if (_entries.Count <= MaxEntries && TotalBytes() <= MaxTotalBytes)
+            if (_entries.Count <= MaxEntries && TotalBytes <= MaxTotalBytes)
             {
                 break;
             }
 
-            _entries.TryRemove(kvp);
+            if (_entries.TryRemove(kvp))
+            {
+                Interlocked.Add(ref _totalBytes, -kvp.Value.Bytes.LongLength);
+            }
         }
     }
 
-    private long TotalBytes()
-    {
-        long total = 0;
-        foreach (var kvp in _entries)
-        {
-            total += kvp.Value.Bytes.LongLength;
-        }
+    /// <summary>Current running total of resident bytes across all entries; see <see cref="_totalBytes"/>.</summary>
+    private long TotalBytes => Interlocked.Read(ref _totalBytes);
 
-        return total;
+    private void RemoveEntry(string contentHash, CacheEntry expected)
+    {
+        // Conditional remove keyed on the exact (contentHash, entry) pair so a
+        // concurrent overwrite of this key is never double-subtracted.
+        if (_entries.TryRemove(new KeyValuePair<string, CacheEntry>(contentHash, expected)))
+        {
+            Interlocked.Add(ref _totalBytes, -expected.Bytes.LongLength);
+        }
     }
 
     private sealed record CacheEntry(CachedArtifactRef Reference, byte[] Bytes);

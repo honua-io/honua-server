@@ -384,36 +384,37 @@ internal sealed partial class RedisExecutionJobStore(
     private async Task UpdateQueryIndexesAsync(ExecutionJobRecord? previous, ExecutionJobRecord job)
     {
         var jobId = (RedisValue)job.OperationId;
+
+        // Each key's remove/add targets an independent sorted set, so within a phase
+        // the calls have no ordering dependency on one another and can be dispatched
+        // concurrently (StackExchange.Redis pipelines them over the shared
+        // multiplexer connection instead of issuing ~30 sequential round trips).
+        // The removal phase still fully completes before the addition phase starts,
+        // preserving remove-before-add ordering for any key present in both sets.
         if (previous != null)
         {
             var previousKeys = GetQueryIndexKeys(previous);
-            foreach (var key in previousKeys)
-            {
-                await _database.SortedSetRemoveAsync(key, jobId).ConfigureAwait(false);
-            }
+            await Task.WhenAll(previousKeys.Select(key => _database.SortedSetRemoveAsync(key, jobId)))
+                .ConfigureAwait(false);
         }
 
         var score = job.CreatedAt.ToUnixTimeMilliseconds();
-        foreach (var key in GetQueryIndexKeys(job))
-        {
-            await _database.SortedSetAddAsync(key, jobId, score).ConfigureAwait(false);
-        }
+        var newKeys = GetQueryIndexKeys(job);
+        await Task.WhenAll(newKeys.Select(key => _database.SortedSetAddAsync(key, jobId, score)))
+            .ConfigureAwait(false);
     }
 
     private async Task RemoveStaleMembersAsync(string activeKey, IReadOnlyList<RedisValue> staleIds)
     {
-        foreach (var staleId in staleIds)
-        {
-            await _database.SetRemoveAsync(activeKey, staleId).ConfigureAwait(false);
-        }
+        // SREM accepts a variadic member list, so the whole batch removes in a
+        // single round trip instead of one RTT per stale member.
+        await _database.SetRemoveAsync(activeKey, [.. staleIds]).ConfigureAwait(false);
     }
 
     private async Task RemoveStaleSortedMembersAsync(string key, IReadOnlyList<RedisValue> staleIds)
     {
-        foreach (var staleId in staleIds)
-        {
-            await _database.SortedSetRemoveAsync(key, staleId).ConfigureAwait(false);
-        }
+        // ZREM accepts a variadic member list; see RemoveStaleMembersAsync above.
+        await _database.SortedSetRemoveAsync(key, [.. staleIds]).ConfigureAwait(false);
     }
 
     private static HashSet<string> GetQueryIndexKeys(ExecutionJobRecord job)

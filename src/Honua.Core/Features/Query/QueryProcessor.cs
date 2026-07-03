@@ -333,20 +333,17 @@ public sealed class QueryProcessor : IQueryProcessor
         };
     }
 
-    private static bool IsSystemField(string fieldName)
+    private static readonly HashSet<string> SystemFields = new(StringComparer.OrdinalIgnoreCase)
     {
-        var systemFields = new[]
-        {
-            FieldNames.ObjectId,
-            "object_id",
-            "id",
-            "created_at",
-            "updated_at",
-            "geometry"
-        };
+        FieldNames.ObjectId,
+        "object_id",
+        "id",
+        "created_at",
+        "updated_at",
+        "geometry"
+    };
 
-        return systemFields.Contains(fieldName, StringComparer.OrdinalIgnoreCase);
-    }
+    private static bool IsSystemField(string fieldName) => SystemFields.Contains(fieldName);
 
     /// <inheritdoc />
     public QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource)
@@ -354,6 +351,9 @@ public sealed class QueryProcessor : IQueryProcessor
         ArgumentNullException.ThrowIfNull(resource);
 
         var warnings = new List<string>();
+        Dictionary<string, MetadataV2Field>? availableFieldsCache = null;
+        Dictionary<string, MetadataV2Field> GetAvailableFields() =>
+            availableFieldsCache ??= BuildV2FieldIndex(resource);
 
         // Validate pagination
         if (query.Offset.HasValue && query.Offset.Value < 0)
@@ -379,7 +379,7 @@ public sealed class QueryProcessor : IQueryProcessor
         // Validate field selection
         if (query.OutFields?.IsDefaultOrEmpty == false)
         {
-            var availableFields = BuildV2FieldIndex(resource);
+            var availableFields = GetAvailableFields();
 
             var invalidFields = query.OutFields.Value
                 .Where(field => !availableFields.ContainsKey(field))
@@ -395,7 +395,7 @@ public sealed class QueryProcessor : IQueryProcessor
         // Validate ordering fields
         if (query.OrderBy?.IsDefaultOrEmpty == false)
         {
-            var availableFields = BuildV2FieldIndex(resource);
+            var availableFields = GetAvailableFields();
 
             var invalidOrderFields = query.OrderBy.Value
                 .Where(order => !availableFields.ContainsKey(order.Field) &&
@@ -437,7 +437,7 @@ public sealed class QueryProcessor : IQueryProcessor
 
             if (aggregation.GroupByFields?.IsDefaultOrEmpty == false)
             {
-                var availableFields = BuildV2FieldIndex(resource);
+                var availableFields = GetAvailableFields();
 
                 var invalidGroupFields = aggregation.GroupByFields.Value
                     .Where(field => !availableFields.ContainsKey(field))
@@ -452,7 +452,7 @@ public sealed class QueryProcessor : IQueryProcessor
 
             if (aggregation.Statistics?.IsDefaultOrEmpty == false)
             {
-                var availableFields = BuildV2FieldIndex(resource);
+                var availableFields = GetAvailableFields();
 
                 foreach (var stat in aggregation.Statistics.Value)
                 {
@@ -659,15 +659,20 @@ public sealed class QueryProcessor : IQueryProcessor
         }
 
         // Check if format supports streaming
-        var streamableFormats = new[] { "application/geo+json", "application/json", "application/gml+xml" };
-        if (!streamableFormats.Any(format =>
-            string.Equals(format, outputFormat, StringComparison.OrdinalIgnoreCase)))
+        if (!StreamableFormats.Contains(outputFormat))
         {
             return false;
         }
 
         return true;
     }
+
+    private static readonly HashSet<string> StreamableFormats = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/geo+json",
+        "application/json",
+        "application/gml+xml"
+    };
 
     /// <inheritdoc />
     public async Task<long> EstimateResultCountAsync(

@@ -1116,7 +1116,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             writer.WriteEndObject();
         }
 
-        return Convert.ToHexString(SHA256.HashData(buffer.ToArray())).ToLowerInvariant();
+        // Hash the MemoryStream's internal buffer directly via the span overload instead
+        // of buffer.ToArray(), which would copy the whole written payload just to hand it
+        // to SHA256.HashData.
+        return Convert.ToHexString(SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length))).ToLowerInvariant();
     }
 
     private static void EnsureMatchingIdempotentRequest(

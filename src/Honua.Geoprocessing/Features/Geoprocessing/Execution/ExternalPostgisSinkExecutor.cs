@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -353,11 +354,18 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
     {
         var wkbs = new byte[features.Count][];
         var attributes = new string[features.Count];
+
+        // Reuse a single buffer + Utf8JsonWriter across the whole batch instead of
+        // allocating a fresh MemoryStream/Utf8JsonWriter per feature: Reset()/Clear()
+        // let each iteration reuse the same backing buffer (growing it only if a
+        // feature's attributes exceed the current capacity).
+        var bufferWriter = new ArrayBufferWriter<byte>(256);
+        using var jsonWriter = new Utf8JsonWriter(bufferWriter);
         for (var i = 0; i < features.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             wkbs[i] = wkbWriter.Write(features[i].Geometry!);
-            attributes[i] = BuildAttributesJson(features[i], batchId);
+            attributes[i] = BuildAttributesJson(jsonWriter, bufferWriter, features[i], batchId);
         }
 
         var sql = $"""
@@ -374,28 +382,32 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static string BuildAttributesJson(IFeature feature, string batchId)
+    private static string BuildAttributesJson(
+        Utf8JsonWriter writer,
+        ArrayBufferWriter<byte> bufferWriter,
+        IFeature feature,
+        string batchId)
     {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
+        bufferWriter.Clear();
+        writer.Reset();
+
+        writer.WriteStartObject();
+        writer.WriteString(BatchIdPropertyKey, batchId);
+
+        if (feature.Attributes is { } table)
         {
-            writer.WriteStartObject();
-            writer.WriteString(BatchIdPropertyKey, batchId);
-
-            if (feature.Attributes is { } table)
+            var names = table.GetNames();
+            var values = table.GetValues();
+            for (var i = 0; i < names.Length; i++)
             {
-                var names = table.GetNames();
-                var values = table.GetValues();
-                for (var i = 0; i < names.Length; i++)
-                {
-                    WriteAttribute(writer, names[i], values[i]);
-                }
+                WriteAttribute(writer, names[i], values[i]);
             }
-
-            writer.WriteEndObject();
         }
 
-        return Encoding.UTF8.GetString(stream.ToArray());
+        writer.WriteEndObject();
+        writer.Flush();
+
+        return Encoding.UTF8.GetString(bufferWriter.WrittenSpan);
     }
 
     private static void WriteAttribute(Utf8JsonWriter writer, string name, object? value)
