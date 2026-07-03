@@ -521,7 +521,12 @@ builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
 
 // Federated-query planning and source configuration (#341).
-builder.Services.AddFederationServices(builder.Configuration);
+// Experimental gate (PA-001): federated query is off by default. Set
+// Experimental__Features__FederatedQuery=true to opt in.
+if (builder.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", false))
+{
+    builder.Services.AddFederationServices(builder.Configuration);
+}
 
 // Register configuration validators to ensure application fails fast on invalid configuration
 StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
@@ -1338,7 +1343,11 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
-app.MapFederationEndpoints();
+// Experimental gate (PA-001): only map federation endpoints when the feature is enabled.
+if (app.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", false))
+{
+    app.MapFederationEndpoints();
+}
 app.MapClientCertificateAdminEndpoints();
 
 // Configure control plane IAM endpoints (#511)
