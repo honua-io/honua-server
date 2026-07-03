@@ -14,6 +14,7 @@ using Honua.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -253,11 +254,26 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
     public async Task GetJobSteps_RequiresAdminAuthorization()
     {
-        using var anonymous = _fixture.CreateClient();
+        // The shared class fixture runs with dev-auth bypass (so the admin-keyed client used by
+        // the other tests is always allowed), which means an anonymous call against it returns
+        // 200. Admin gating (endpoints call .RequireAdminAuthorization()) is only exercised when
+        // real gating is enabled, so stand up a dedicated fixture with HONUA_DEV_AUTH=false and
+        // prove the endpoint rejects an unauthenticated caller.
+        var gatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+        await gatedFixture.InitializeAsync();
+        try
+        {
+            using var anonymous = gatedFixture.CreateClient();
 
-        var response = await anonymous.GetAsync("/api/v1/admin/jobs/job-running/steps");
+            var response = await anonymous.GetAsync("/api/v1/admin/jobs/job-running/steps");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+            response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await gatedFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

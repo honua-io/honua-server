@@ -135,6 +135,36 @@ sql:
               UNIQUE (role, service, layer, attribute)
       );
   - "CREATE INDEX IF NOT EXISTS idx_rbac_field_mask_policies_scope ON honua.rbac_field_mask_policies (service, layer);"
+  # Managed enrichment-dataset catalog (#2280, parent #374). Mirrors migration
+  # 072_CreateEnrichmentDatasets.sql so the migration-skipping integration fixture has
+  # the table; PostgresEnrichmentDatasetCatalogStore persists registered enrichment
+  # datasets here (GET /api/enrich/datasets, POST /api/enrich). Without it the
+  # EnrichmentDatasetCatalog/DataEnrichment endpoints 500 with 42P01 relation-missing.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.enrichment_datasets (
+          id                TEXT             NOT NULL PRIMARY KEY,
+          title             TEXT             NOT NULL,
+          category          TEXT             NOT NULL DEFAULT 'boundary',
+          layer_id          INTEGER          NOT NULL,
+          geometry_type     TEXT,
+          join_attributes   TEXT,
+          default_predicate TEXT             NOT NULL DEFAULT 'intersects',
+          distance_meters   DOUBLE PRECISION,
+          provenance        TEXT,
+          attribution       TEXT,
+          license           TEXT,
+          minimum_edition   TEXT             NOT NULL DEFAULT 'Pro',
+          created_at        TIMESTAMPTZ      NOT NULL DEFAULT now(),
+          updated_at        TIMESTAMPTZ      NOT NULL DEFAULT now(),
+          created_by        TEXT,
+          updated_by        TEXT,
+          CONSTRAINT enrichment_datasets_valid_category
+              CHECK (category IN ('boundary', 'demographic', 'poi')),
+          CONSTRAINT enrichment_datasets_valid_predicate
+              CHECK (default_predicate IN ('intersects', 'contains', 'within', 'dwithin'))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_enrichment_datasets_category ON honua.enrichment_datasets (category);"
+  - "CREATE INDEX IF NOT EXISTS idx_enrichment_datasets_layer_id ON honua.enrichment_datasets (layer_id);"
   # Persistent RBAC role/permission store (#1374). Mirrors migration
   # 041_CreateRbacRoleStore.sql so the migration-skipping integration fixture has
   # the honua.rbac_roles / rbac_role_permissions / rbac_role_memberships tables.

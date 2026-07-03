@@ -594,17 +594,26 @@ internal sealed partial class PostgresVersionManager
         // the JSONB concat operator (||) — overlay keys win for any non-changed field, DEFAULT's changed
         // fields are layered in. A field DEFAULT removed is rendered as a JSON null. A DEFAULT-only
         // geometry change is copied from the live row.
+        //
+        // Rebase the overlay's captured base image onto the live DEFAULT row in the SAME statement. An
+        // auto-merge accepts DEFAULT's current state (its disjoint field/geometry edits are layered in),
+        // so the merged overlay row's new base MUST be the live DEFAULT — otherwise the post-time drift
+        // guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) still sees the stale common-ancestor base,
+        // treats DEFAULT's now-merged divergence as drift, and blocks the post even though reconcile
+        // reported CanPost. This mirrors the "take version" rebase in ApplyResolutionToOverlayAsync and
+        // keeps reconcile's CanPost consistent with post's drift check (#2135/#2063).
         var patchJson = BuildMergePatchJson(merge.DefaultChangedFields, merge.DefaultFields);
-        var geometryClause = merge.MergeDefaultGeometry
-            ? ", geometry = (SELECT f.geometry FROM " + DatabaseSchema.GetFeaturesTableName(_schemaName) +
-              " f WHERE f.layer_id = @layer AND f.objectid = @objectid)"
-            : string.Empty;
+        var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
+        var geometryClause = merge.MergeDefaultGeometry ? ", geometry = f.geometry" : string.Empty;
 
         await using var command = new NpgsqlCommand(
-            "UPDATE honua.version_edits " +
-            "SET attributes = COALESCE(attributes, '{}'::jsonb) || @patch::jsonb, modified_at = now()" +
+            "UPDATE honua.version_edits ve " +
+            "SET attributes = COALESCE(ve.attributes, '{}'::jsonb) || @patch::jsonb, " +
+            "base_attributes = f.attributes, base_geometry = f.geometry, modified_at = now()" +
             geometryClause + " " +
-            "WHERE version_id = @version AND layer_id = @layer AND objectid = @objectid",
+            "FROM " + featuresTable + " f " +
+            "WHERE ve.version_id = @version AND ve.layer_id = @layer AND ve.objectid = @objectid " +
+            "AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid",
             connection);
         command.Parameters.AddWithValue("patch", patchJson);
         command.Parameters.AddWithValue("version", versionId);
@@ -749,7 +758,11 @@ internal sealed partial class PostgresVersionManager
         {
             // Take DEFAULT: if DEFAULT still has the row, set the overlay to an UPDATE carrying DEFAULT's
             // image (a no-op post against DEFAULT); if DEFAULT deleted it, drop the overlay row so the
-            // branch no longer shadows/posts the feature.
+            // branch no longer shadows/posts the feature. Rebase the overlay's base image onto DEFAULT too
+            // (base_geometry/base_attributes = DEFAULT's): the resolution accepts the live DEFAULT as the
+            // new base, so the post-time drift guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) sees no
+            // drift and the post proceeds — without this the stale common-ancestor base still differs from
+            // the diverged DEFAULT and the post is wrongly blocked even though reconcile reported CanPost.
             await using var command = new NpgsqlCommand($"""
                 WITH d AS (
                     SELECT geometry, attributes FROM {featuresTable}
@@ -757,7 +770,8 @@ internal sealed partial class PostgresVersionManager
                 ),
                 upd AS (
                     UPDATE honua.version_edits ve
-                    SET operation = 2, geometry = d.geometry, attributes = d.attributes, modified_at = now()
+                    SET operation = 2, geometry = d.geometry, attributes = d.attributes,
+                        base_geometry = d.geometry, base_attributes = d.attributes, modified_at = now()
                     FROM d
                     WHERE ve.version_id = @version AND ve.layer_id = @layer AND ve.objectid = @objectid
                     RETURNING 1

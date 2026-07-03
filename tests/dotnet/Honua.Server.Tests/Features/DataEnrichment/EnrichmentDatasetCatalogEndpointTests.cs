@@ -194,8 +194,24 @@ public sealed class EnrichmentDatasetCatalogEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/enrich/datasets")]
     public async Task Register_WithoutAdmin_IsRejected()
     {
-        var response = await _fixture.Client.PostAsync("/api/enrich/datasets", JsonBody(SampleRegister("noauth")));
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        // The shared class fixture runs with dev-auth bypass (so the admin-keyed clients used by the
+        // other tests are always allowed, and the public discovery reads succeed anonymously), which
+        // means an anonymous call against it returns 201. The /api/enrich/datasets mutation group is
+        // gated by .RequireAdminAuthorization(), so stand up a dedicated fixture with real gating
+        // (HONUA_DEV_AUTH=false) to prove an unauthenticated register is rejected.
+        var gatedFixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
+            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+        await gatedFixture.InitializeAsync();
+        try
+        {
+            var response = await gatedFixture.Client.PostAsync("/api/enrich/datasets", JsonBody(SampleRegister("noauth")));
+            response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await gatedFixture.DisposeAsync();
+        }
     }
 }
 
