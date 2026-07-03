@@ -272,7 +272,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<(string? ConnectionString, string? Error)> ResolveConnectionStringAsync(
+    private async Task<(string? ConnectionString, string? Error)> ResolveConnectionStringAsync(
         ISecureConnectionResolver resolver,
         bool hasId,
         string? connectionName,
@@ -308,8 +308,13 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            // Previously swallowed with no trace, which left an operator staring at a
+            // generic "could not be resolved" job failure with no way to diagnose why
+            // (bad credentials, unreachable secret store, etc.). Log the real exception.
+            var connectionRef = hasId ? $"connectionId={connectionIdText}" : $"connectionName={connectionName}";
+            Log.ConnectionResolutionFailed(_logger, connectionRef, ex);
             return (null, "secure connection could not be resolved.");
         }
     }
@@ -501,5 +506,10 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             "Sink executor failed job {OperationId} during {ProcessId} write")]
         public static partial void SinkWriteFailed(
             ILogger logger, string operationId, string processId, Exception exception);
+
+        [LoggerMessage(9261, LogLevel.Warning,
+            "Sink executor could not resolve the secure connection ({ConnectionRef})")]
+        public static partial void ConnectionResolutionFailed(
+            ILogger logger, string connectionRef, Exception exception);
     }
 }

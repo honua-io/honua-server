@@ -49,6 +49,7 @@ public sealed class EncryptionPostureProviderTests
             "the provider does not own encryption — that language belongs to IConnectionEncryptionService");
         outcome.Message.Should().NotContain("existing ciphertext remains decryptable",
             "no ciphertext is touched by this endpoint");
+        outcome.AuditRecorded.Should().BeTrue("the audit write succeeded");
 
         var posture = provider.GetPosture();
         posture.ActiveKeyVersion.Should().Be(2);
@@ -134,6 +135,25 @@ public sealed class EncryptionPostureProviderTests
     }
 
     [Fact]
+    public async Task Rotate_WhenAuditWriteFails_StillSucceedsButReportsAuditNotRecorded()
+    {
+        // PA-032: the in-memory posture must still advance (Succeeded = true) even when the
+        // audit trail write fails, but the outcome must distinguish "rotated" from "rotated
+        // AND auditable" instead of unconditionally claiming the audit event was recorded.
+        var audit = new ThrowingAuditLog();
+        var provider = CreateProvider(audit);
+
+        var outcome = await provider.RotateAsync("alice", CancellationToken.None);
+
+        outcome.Succeeded.Should().BeTrue("the in-memory posture always advances once committed");
+        outcome.AuditRecorded.Should().BeFalse("the audit-log write threw");
+        outcome.Message.Should().Contain("audit-log write failed");
+
+        var posture = provider.GetPosture();
+        posture.ActiveKeyVersion.Should().Be(2, "the posture advances independently of the audit write");
+    }
+
+    [Fact]
     public void OperatorAttestedFipsMode_IsHonoured()
     {
         var opts = new ComplianceOptions
@@ -191,4 +211,10 @@ internal sealed class TokenCapturingAuditLog : IAuditLog
         CapturedTokens.Add(cancellationToken);
         return Task.CompletedTask;
     }
+}
+
+internal sealed class ThrowingAuditLog : IAuditLog
+{
+    public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Simulated audit sink outage.");
 }

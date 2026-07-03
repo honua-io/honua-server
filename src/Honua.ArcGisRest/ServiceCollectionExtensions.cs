@@ -4,6 +4,7 @@
 using Honua.ArcGisRest.Features.FeatureStore;
 using Honua.ArcGisRest.Features.FeatureStore.Services;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -43,10 +44,17 @@ public static class ServiceCollectionExtensions
         // ULA/reserved ranges (incl. 169.254.169.254 cloud metadata). Without
         // this, the federated client would follow redirects and apply no IP
         // filtering at runtime — a full SSRF + DNS-rebinding exposure.
+        //
+        // A per-request timeout and the shared retry/circuit-breaker policy (reused from
+        // Honua.Core.Features.Infrastructure.Resilience rather than a bespoke policy here)
+        // guard against a slow/unresponsive federated ArcGIS endpoint hanging a request or
+        // hammering a downed one (#2404 PA-123).
         services
             .AddHttpClient<IArcGisRestFeatureClient, ArcGisRestFeatureClient>(ArcGisRestServiceClientName.Default)
             .ConfigurePrimaryHttpMessageHandler(
-                static () => ArcGisRestOutboundGuard.CreatePinnedDnsHttpMessageHandler());
+                static () => ArcGisRestOutboundGuard.CreatePinnedDnsHttpMessageHandler())
+            .ConfigureHttpClient(static client => client.Timeout = TimeSpan.FromSeconds(30))
+            .AddHttpResiliencePolicy("arcgis-rest");
 
         services.AddScoped<ArcGisRestFeatureStore>();
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<ArcGisRestFeatureStore>());

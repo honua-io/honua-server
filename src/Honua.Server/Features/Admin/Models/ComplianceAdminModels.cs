@@ -234,4 +234,12 @@ public sealed class ComplianceKeyRotationResponse
     /// <summary>Sanitized status message.</summary>
     [JsonPropertyName("message")]
     public required string Message { get; init; }
+
+    /// <summary>
+    /// Whether the rotation event was also persisted to the audit log. <c>false</c>
+    /// means the posture advanced (<see cref="Succeeded"/>) but the audit-trail write
+    /// failed — see <see cref="Message"/> and server logs to reconcile.
+    /// </summary>
+    [JsonPropertyName("auditRecorded")]
+    public required bool AuditRecorded { get; init; }
 }

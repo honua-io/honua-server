@@ -29,4 +29,13 @@ public sealed record KeyRotationOutcome
     /// exception text — call-sites translate exceptions to a sanitized reason.
     /// </summary>
     public required string Message { get; init; }
+
+    /// <summary>
+    /// Whether the rotation event was also persisted to the audit log. The in-memory
+    /// posture (<see cref="Succeeded"/>) always advances once the rotation is
+    /// committed; this flag is <c>false</c> when that commit's audit trail write
+    /// failed, so callers/operators can tell "rotated" apart from "rotated AND
+    /// auditable" and reconcile the missing audit event out-of-band.
+    /// </summary>
+    public bool AuditRecorded { get; init; } = true;
 }

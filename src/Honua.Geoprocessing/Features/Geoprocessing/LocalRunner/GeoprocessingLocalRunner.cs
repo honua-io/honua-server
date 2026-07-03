@@ -122,7 +122,10 @@ public sealed class GeoprocessingLocalRunner
         {
             throw;
         }
-        catch (Exception ex)
+        // Fatal CLR exceptions must keep unwinding rather than being converted into a
+        // "failed" run result — the process is not in a state where continuing to serve
+        // requests (or reporting a normal job failure) is meaningful.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             stopwatch.Stop();
             return new LocalRunResult

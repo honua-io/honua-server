@@ -86,11 +86,18 @@ internal static class AuditExportServiceCollectionExtensions
             return services;
         }
 
+        // Sinks resolve a fresh named HttpClient from IHttpClientFactory per send rather than
+        // capturing one at singleton construction (PA-081): calling CreateClient() once and
+        // holding the result forever bypasses the factory's primary-handler rotation, so a
+        // DNS change or broken pooled connection would wedge the sink for the process
+        // lifetime. Passing the factory + name keeps each sink long-lived while every send
+        // gets an up-to-date client.
         if (options.Splunk.Enabled)
         {
             services.AddHttpClient(SplunkClient);
             services.AddSingleton<IAuditSink>(sp => new SplunkHecAuditSink(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient(SplunkClient),
+                sp.GetRequiredService<IHttpClientFactory>(),
+                SplunkClient,
                 options.Splunk));
         }
 
@@ -98,7 +105,8 @@ internal static class AuditExportServiceCollectionExtensions
         {
             services.AddHttpClient(SentinelClient);
             services.AddSingleton<IAuditSink>(sp => new SentinelAuditSink(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient(SentinelClient),
+                sp.GetRequiredService<IHttpClientFactory>(),
+                SentinelClient,
                 options.Sentinel));
         }
 
@@ -106,7 +114,8 @@ internal static class AuditExportServiceCollectionExtensions
         {
             services.AddHttpClient(S3Client);
             services.AddSingleton<IAuditSink>(sp => new S3AuditSink(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient(S3Client),
+                sp.GetRequiredService<IHttpClientFactory>(),
+                S3Client,
                 options.S3));
         }
 

@@ -15,19 +15,27 @@ namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 /// </summary>
 internal sealed class SentinelAuditSink : IAuditSink
 {
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly string _httpClientName;
     private readonly SentinelSinkOptions _options;
 
     /// <summary>
     /// Initializes a new Sentinel sink.
     /// </summary>
-    /// <param name="httpClient">The HTTP client (typically named, from <see cref="IHttpClientFactory"/>).</param>
+    /// <param name="httpClientFactory">
+    /// Factory used to resolve a fresh named <see cref="HttpClient"/> per send — see
+    /// <see cref="SplunkHecAuditSink"/> for why capturing a single client at construction
+    /// would bypass <see cref="IHttpClientFactory"/> handler rotation.
+    /// </param>
+    /// <param name="httpClientName">The named client to resolve on each send.</param>
     /// <param name="options">Sentinel configuration.</param>
-    public SentinelAuditSink(HttpClient httpClient, SentinelSinkOptions options)
+    public SentinelAuditSink(IHttpClientFactory httpClientFactory, string httpClientName, SentinelSinkOptions options)
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(httpClientFactory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(httpClientName);
         ArgumentNullException.ThrowIfNull(options);
-        _httpClient = httpClient;
+        _httpClientFactory = httpClientFactory;
+        _httpClientName = httpClientName;
         _options = options;
     }
 
@@ -51,7 +59,7 @@ internal sealed class SentinelAuditSink : IAuditSink
             request.Headers.TryAddWithoutValidation("Authorization", _options.AuthHeaderValue);
             request.Headers.TryAddWithoutValidation("Log-Type", _options.LogType);
 
-            using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            using var response = await _httpClientFactory.CreateClient(_httpClientName).SendAsync(request, ct).ConfigureAwait(false);
             return AuditHttpResultMapper.FromStatus(SinkType, response.StatusCode);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

@@ -86,7 +86,7 @@ internal static class FlatGeobufFormatReader
             var count = header.FeaturesCount;
             return count > 0 ? (int)Math.Min(count, int.MaxValue) : null;
         }
-        catch (Exception) // Malformed or truncated header
+        catch (Exception ex) when (ex is not OperationCanceledException) // Malformed or truncated header
         {
             return null;
         }
@@ -110,7 +110,7 @@ internal static class FlatGeobufFormatReader
             var wkt = ExtractCrsWkt(header);
             return (null, wkt);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return (null, null);
         }
@@ -132,7 +132,7 @@ internal static class FlatGeobufFormatReader
             var wkt = ExtractCrsWkt(header);
             return (null, wkt);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return (null, null);
         }
