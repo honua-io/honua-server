@@ -96,6 +96,9 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         }
         catch (Exception ex)
         {
+            // PA-209: ensure the terminal-success gate sees the failure so a Succeeded job
+            // whose result package was never written does not report Completed to callers.
+            artifactPersistenceError = "Failed to persist the result package; results may be unavailable.";
             Log.ResultPackageSyncFailed(logger, job.OperationId, ex);
         }
 
