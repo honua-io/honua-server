@@ -55,11 +55,12 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
-        using var activity = Start("studio.package.draft.create", command.Envelope.Family, command.ItemId);
+        var envelope = NormalizeEnvelope(command.Envelope);
+        using var activity = Start("studio.package.draft.create", envelope.Family, command.ItemId);
         ValidatePackageKey(command.PackageKey);
 
         var now = _timeProvider.GetUtcNow();
-        var validation = _validator.Validate(command.Envelope);
+        var validation = _validator.Validate(envelope);
         var itemId = command.ItemId ?? Guid.NewGuid();
         var draft = new StudioPackageDraft
         {
@@ -68,8 +69,8 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             PackageKey = command.PackageKey.Trim(),
             WorkspaceId = NormalizeOptional(command.WorkspaceId),
             OwnerId = NormalizeOptional(command.OwnerId ?? command.ActorId),
-            Family = command.Envelope.Family,
-            Envelope = command.Envelope with { Validation = validation },
+            Family = envelope.Family,
+            Envelope = envelope with { Validation = validation },
             Validation = validation,
             BaseVersionId = command.BaseVersionId,
             Generation = 1,
@@ -101,7 +102,8 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
-        using var activity = Start("studio.package.draft.update", command.Envelope.Family, null);
+        var envelope = NormalizeEnvelope(command.Envelope);
+        using var activity = Start("studio.package.draft.update", envelope.Family, null);
         activity?.SetTag("studio.draft.id", draftId.ToString("D"));
         ValidatePackageKey(command.PackageKey);
 
@@ -112,14 +114,14 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         }
 
         var requestedGeneration = command.Generation ?? existing.Generation;
-        var validation = _validator.Validate(command.Envelope);
+        var validation = _validator.Validate(envelope);
         var updated = existing with
         {
             PackageKey = command.PackageKey.Trim(),
             WorkspaceId = NormalizeOptional(command.WorkspaceId),
             OwnerId = NormalizeOptional(command.OwnerId ?? existing.OwnerId),
-            Family = command.Envelope.Family,
-            Envelope = command.Envelope with { Validation = validation },
+            Family = envelope.Family,
+            Envelope = envelope with { Validation = validation },
             Validation = validation,
             Generation = requestedGeneration,
             UpdatedBy = command.ActorId,
@@ -458,6 +460,32 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// Coalesces optional envelope collections (bindings, dependencies, provenance) that a client
+    /// may send as an explicit JSON <c>null</c> to their empty defaults, so that a null collection
+    /// is treated identically to an omitted one. This keeps the envelope's non-null collection
+    /// contract intact through persistence and downstream enumeration (for example the immutable
+    /// version sidecar path), preventing a spurious <see cref="ArgumentNullException"/> on the
+    /// otherwise-successful create/update path (honua-server#2351).
+    /// </summary>
+    private static StudioPackageEnvelope NormalizeEnvelope(StudioPackageEnvelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        if (envelope.Bindings is not null
+            && envelope.Dependencies is not null
+            && envelope.Provenance is not null)
+        {
+            return envelope;
+        }
+
+        return envelope with
+        {
+            Bindings = envelope.Bindings ?? Array.Empty<StudioPackageBinding>(),
+            Dependencies = envelope.Dependencies ?? Array.Empty<StudioPackageDependency>(),
+            Provenance = envelope.Provenance ?? Array.Empty<StudioProvenanceRef>(),
+        };
+    }
 
     private static string FormatValidationFailure(
         string prefix,
