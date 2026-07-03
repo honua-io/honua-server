@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,6 +98,27 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         await context.ReportProgressAsync(5, $"Resolving {_processId} source", cancellationToken).ConfigureAwait(false);
 
         var inputs = new StepInputReader(job.Spec.Parameters);
+
+        // SSRF guard (PA-194): validate serviceUrl for remote HTTP sources before any
+        // DI scope or network activity. The Esri path (source.esri-featureserver) is
+        // guarded at configuration time via ArcGisRestUrlValidator; WFS and OGC-features
+        // receive a user-supplied URL per-submit and must be validated here.
+        if (_processId is "source.ogc-features" or "source.wfs")
+        {
+            if (!inputs.TryGet("serviceUrl", out var rawServiceUrl) || string.IsNullOrWhiteSpace(rawServiceUrl))
+            {
+                return JobExecutionResult.Failed($"Invalid {_processId} inputs: serviceUrl is required.");
+            }
+
+            var ssrfResult = await OutboundHttpUrlValidator.ValidateAsync(rawServiceUrl, cancellationToken)
+                .ConfigureAwait(false);
+            if (!ssrfResult.IsValid)
+            {
+                Log.SsrfRejected(_logger, job.OperationId, _processId, ssrfResult.ErrorMessage ?? "blocked URL");
+                return JobExecutionResult.Failed(
+                    $"Invalid {_processId} inputs: serviceUrl {ssrfResult.ErrorMessage}");
+            }
+        }
 
         using var scope = _serviceScopeFactory.CreateScope();
         var services = scope.ServiceProvider;
@@ -380,5 +402,9 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         [LoggerMessage(9281, LogLevel.Error,
             "Remote source executor failed job {OperationId} during {ProcessId} read")]
         public static partial void SourceReadFailed(ILogger logger, string operationId, string processId, Exception exception);
+
+        [LoggerMessage(9282, LogLevel.Warning,
+            "Remote source executor blocked job {OperationId} for {ProcessId}: SSRF guard rejected serviceUrl — {Reason}")]
+        public static partial void SsrfRejected(ILogger logger, string operationId, string processId, string reason);
     }
 }
