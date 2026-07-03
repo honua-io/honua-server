@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Validation;
+using Honua.Core.Features.Validation.Abstractions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
@@ -250,5 +251,34 @@ public class CommonQueryValidatorTests
         result.Value.Should().NotBeNull();
         result.Value!.MinX.Should().Be(-20000000);
         result.Value!.MaxX.Should().Be(20000000);
+    }
+
+    // PA-025: OGC API Features /req/core/fc-limit-definition (d) mandates that over-maximum limits
+    // are clamped to the server maximum, not rejected with a 400 error.
+
+    [Fact]
+    public void ValidateAndNormalizePagination_OgcFeaturesOptions_ClampsOverMaxLimit()
+    {
+        // OGC API Features spec: server must silently clamp limit to maximum instead of 400.
+        var result = _validator.ValidateAndNormalizePagination(
+            offset: 0,
+            limit: 999999,
+            PaginationValidationOptions.OgcFeatures);
+
+        result.IsValid.Should().BeTrue("over-max OGC Features limit should be clamped, not rejected");
+        result.Value!.Limit.Should().Be(_limitsOptions.Query.MaxRecordCount,
+            "limit should be clamped to the configured maximum");
+    }
+
+    [Fact]
+    public void ValidateAndNormalizePagination_DefaultOptions_RejectsOverMaxLimit()
+    {
+        // Non-OGC protocols still reject over-max limits with 400 (default behaviour).
+        var result = _validator.ValidateAndNormalizePagination(
+            offset: 0,
+            limit: 999999,
+            PaginationValidationOptions.Default);
+
+        result.IsValid.Should().BeFalse("over-max limit should be rejected with Default options");
     }
 }

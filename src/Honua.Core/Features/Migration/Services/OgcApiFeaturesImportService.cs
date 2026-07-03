@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -1056,7 +1057,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
     {
         if (IPAddress.TryParse(host, out var literalAddress))
         {
-            if (!allowUnsafeLocalUrls && IsPrivateOrReservedAddress(literalAddress))
+            if (!allowUnsafeLocalUrls && OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
             {
                 throw new HttpRequestException(DisallowedNetworkAddressMessage);
             }
@@ -1087,7 +1088,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         {
             foreach (var address in addresses)
             {
-                if (IsPrivateOrReservedAddress(address))
+                if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address))
                 {
                     throw new HttpRequestException(DisallowedNetworkAddressMessage);
                 }
@@ -1140,50 +1141,6 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         }
 
         throw new HttpRequestException("Unable to establish a connection to the OGC API Features host.", lastException);
-    }
-
-    private static bool IsPrivateOrReservedAddress(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-            return bytes[0] == 0 ||
-                   bytes[0] == 10 ||
-                   (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
-                   bytes[0] == 127 ||
-                   (bytes[0] == 169 && bytes[1] == 254) ||
-                   (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
-                   (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0) ||
-                   (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2) ||
-                   (bytes[0] == 192 && bytes[1] == 168) ||
-                   (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
-                   (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) ||
-                   bytes[0] >= 224;
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var bytes = address.GetAddressBytes();
-            return address.IsIPv6LinkLocal ||
-                   address.IsIPv6Multicast ||
-                   address.IsIPv6SiteLocal ||
-                   bytes.All(static value => value == 0) ||
-                   bytes[0] == 0xfc ||
-                   bytes[0] == 0xfd ||
-                   bytes[0] == 0xfe;
-        }
-
-        return true;
     }
 
     private static string ToSafeSourceUrl(Uri uri)

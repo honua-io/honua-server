@@ -31,7 +31,9 @@ internal static class ODataUtilityService
     private const string ODataMetadataMinimal = "minimal";
     private const string ODataMetadataFull = "full";
     private const string ODataMetadataNone = "none";
-    private const string ODataContentType = $"{ODataMediaType};metadata={ODataMetadataMinimal}";
+    // OData v4 spec (OASIS OData-JSON-Format-v4.0 §3.1) requires the parameter name to be
+    // "odata.metadata", not "metadata" (which is the OData 3.0 convention).
+    private const string ODataContentType = $"{ODataMediaType};odata.metadata={ODataMetadataMinimal}";
 
     /// <summary>
     /// GeoParquet content type emitted for <c>$format=parquet</c> exports.
@@ -372,7 +374,7 @@ internal static class ODataUtilityService
     public static string GetODataContentType(HttpRequest request, string? format)
     {
         var metadataLevel = ResolveMetadataLevel(request, format);
-        return $"{ODataMediaType};metadata={metadataLevel}";
+        return $"{ODataMediaType};odata.metadata={metadataLevel}";
     }
 
     public static bool HasTrackChangesPreference(string? preferHeader)
