@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using System.Globalization;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -209,7 +210,7 @@ internal sealed partial class GeoServerRestClient
     {
         if (IPAddress.TryParse(host, out var literalAddress))
         {
-            if (!allowUnsafeLocalUrls && IsPrivateOrReservedAddress(literalAddress))
+            if (!allowUnsafeLocalUrls && OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
             {
                 throw new HttpRequestException(DisallowedNetworkAddressMessage);
             }
@@ -240,7 +241,7 @@ internal sealed partial class GeoServerRestClient
         {
             foreach (var address in addresses)
             {
-                if (IsPrivateOrReservedAddress(address))
+                if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address))
                 {
                     throw new HttpRequestException(DisallowedNetworkAddressMessage);
                 }
@@ -293,51 +294,6 @@ internal sealed partial class GeoServerRestClient
         }
 
         throw new HttpRequestException("Unable to establish a secure connection to the GeoServer host.", lastException);
-    }
-
-    private static bool IsPrivateOrReservedAddress(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-            return bytes[0] == 0 ||
-                   bytes[0] == 10 ||
-                   (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
-                   bytes[0] == 127 ||
-                   (bytes[0] == 169 && bytes[1] == 254) ||
-                   (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
-                   (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0) ||
-                   (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2) ||
-                   (bytes[0] == 192 && bytes[1] == 168) ||
-                   (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
-                   (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) ||
-                   (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113) ||
-                   bytes[0] >= 224;
-        }
-
-        if (address.AddressFamily != AddressFamily.InterNetworkV6)
-        {
-            return false;
-        }
-
-        var bytesV6 = address.GetAddressBytes();
-        return address.Equals(IPAddress.IPv6None) ||
-               address.Equals(IPAddress.IPv6Loopback) ||
-               address.IsIPv6LinkLocal ||
-               address.IsIPv6SiteLocal ||
-               address.IsIPv6Multicast ||
-               (bytesV6[0] & 0xfe) == 0xfc ||
-               (bytesV6[0] == 0x20 && bytesV6[1] == 0x01 && bytesV6[2] == 0x0d && bytesV6[3] == 0xb8);
     }
 
     private async Task<(string? Version, string? BuildTimestamp, string? GitRevision)> GetServerVersionAsync(

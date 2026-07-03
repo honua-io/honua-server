@@ -172,7 +172,13 @@ internal static class StacV2Lookups
         return null;
     }
 
-    private static bool MatchesCollectionId(MetadataV2Publication publication, string collectionId, int? numericId)
+    /// <summary>
+    /// Returns <see langword="true"/> when the publication matches <paramref name="collectionId"/>
+    /// by any of the standard STAC collection identifier fields (ServiceLocalId, Path, Metadata.Name,
+    /// Metadata.Id, or the legacy numeric LayerIndex). Exposed as internal so the search path can
+    /// apply the same matching logic as the single-collection lookup path.
+    /// </summary>
+    internal static bool MatchesCollectionId(MetadataV2Publication publication, string collectionId, int? numericId)
     {
         if (string.Equals(publication.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(publication.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||

@@ -28,4 +28,12 @@ public sealed record PaginationValidationOptions(
     /// (surfaced as a 400) rather than being silently clamped.
     /// </summary>
     public static PaginationValidationOptions Default { get; } = new(0, 1, "Offset", "Limit");
+
+    /// <summary>
+    /// OGC API Features pagination options. OGC API - Features Part 1 requirement
+    /// /req/core/fc-limit-definition (d) mandates that over-maximum limits are silently clamped
+    /// to the server maximum rather than rejected with a 400.
+    /// </summary>
+    public static PaginationValidationOptions OgcFeatures { get; } =
+        new(0, 1, "offset", "limit") { ClampLimitToMaximum = true };
 }

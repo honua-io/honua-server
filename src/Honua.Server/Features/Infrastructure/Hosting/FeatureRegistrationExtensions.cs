@@ -126,7 +126,12 @@ internal static class FeatureRegistrationExtensions
         services.AddNlQuery(configuration);
         services.AddWorkflowGeneration(configuration);
         services.AddStac();
-        services.AddSensorThings();
+        // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
+        // Set Experimental__Features__SensorThings=true to opt in.
+        if (configuration.GetValue<bool>("Experimental:Features:SensorThings", false))
+        {
+            services.AddSensorThings();
+        }
         services.AddStaticMap();
         services.AddTerrain();
         services.AddScene(configuration);
@@ -291,7 +296,12 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapODataEndpoints();
         endpoints.MapGeometryServiceEndpoints();
         endpoints.MapStacEndpoints();
-        endpoints.MapSensorThingsEndpoints();
+        // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
+        var staConfig = endpoints.ServiceProvider.GetRequiredService<IConfiguration>();
+        if (staConfig.GetValue<bool>("Experimental:Features:SensorThings", false))
+        {
+            endpoints.MapSensorThingsEndpoints();
+        }
         endpoints.MapStaticMapEndpoints();
         endpoints.MapNAServerEndpoints();
         endpoints.MapPrintingToolsEndpoints();

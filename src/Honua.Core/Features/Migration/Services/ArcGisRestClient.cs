@@ -11,6 +11,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Honua.Core.Features.Import.Abstractions;
@@ -612,7 +613,7 @@ internal sealed partial class ArcGisRestClient
             throw new HttpRequestException("ArcGIS service URL must not include embedded credentials.");
         }
 
-        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
+        if (uri.IsLoopback || OutboundHttpUrlValidator.IsLocalhostHostName(uri.Host))
         {
             throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
@@ -630,14 +631,14 @@ internal sealed partial class ArcGisRestClient
             throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
-        if (IsLocalhostHostName(host))
+        if (OutboundHttpUrlValidator.IsLocalhostHostName(host))
         {
             throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
         if (IPAddress.TryParse(host, out var literalAddress))
         {
-            if (IsPrivateOrReservedAddress(literalAddress))
+            if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
             {
                 throw new HttpRequestException(DisallowedNetworkAddressMessage);
             }
@@ -662,7 +663,7 @@ internal sealed partial class ArcGisRestClient
 
         foreach (var address in addresses)
         {
-            if (IsPrivateOrReservedAddress(address))
+            if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address))
             {
                 throw new HttpRequestException(DisallowedNetworkAddressMessage);
             }
@@ -712,134 +713,6 @@ internal sealed partial class ArcGisRestClient
         }
 
         throw new HttpRequestException("Unable to establish a secure connection to the ArcGIS service host.", lastException);
-    }
-
-    private static bool IsLocalhostHostName(string host)
-        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsPrivateOrReservedAddress(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-
-            if (bytes[0] == 0)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 10)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 127)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 169 && bytes[1] == 254)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 192 && bytes[1] == 168)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19))
-            {
-                return true;
-            }
-
-            if (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113)
-            {
-                return true;
-            }
-
-            if (bytes[0] >= 224)
-            {
-                return true;
-            }
-        }
-        else if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var bytes = address.GetAddressBytes();
-
-            if (address.Equals(IPAddress.IPv6None))
-            {
-                return true;
-            }
-
-            if (address.Equals(IPAddress.IPv6Loopback))
-            {
-                return true;
-            }
-
-            if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0)
-            {
-                return true;
-            }
-
-            if ((bytes[0] & 0xfe) == 0xfc)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8)
-            {
-                return true;
-            }
-
-            if (bytes[0] == 0xff)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static string ExtractServiceName(string url)

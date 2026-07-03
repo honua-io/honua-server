@@ -101,20 +101,27 @@ public static class SpatialReferenceExtensions
         => spatialRef.Wkid is 4326 or 3857 or > 0;
 
     /// <summary>
-    /// Gets the authority name (e.g., "EPSG") for the spatial reference
+    /// Gets the authority name for the spatial reference. WKID 4326 (OGC CRS84) is governed
+    /// by the OGC, not EPSG, so this returns "OGC" for that CRS. All other WKIDs return "EPSG".
+    /// WFS 2.0, WCS, and OGC API conformance URNs of the form
+    /// <c>urn:ogc:def:crs:{authority}::{code}</c> must use "OGC" for CRS84.
     /// </summary>
     /// <param name="spatialRef">Spatial reference</param>
-    /// <returns>Authority name, typically "EPSG"</returns>
+    /// <returns>"OGC" for WKID 4326 (CRS84); "EPSG" for all other WKIDs.</returns>
     public static string GetAuthorityName(this SpatialReference spatialRef)
-        => "EPSG";
+        => spatialRef.Wkid == 4326 ? "OGC" : "EPSG";
 
     /// <summary>
-    /// Gets the authority code as a string
+    /// Gets the authority code as a string. For WKID 4326 (OGC CRS84) this returns the
+    /// correct OGC URN fragment "1.3:CRS84" so callers can form
+    /// <c>urn:ogc:def:crs:OGC:1.3:CRS84</c>. All other WKIDs return the numeric WKID.
     /// </summary>
     /// <param name="spatialRef">Spatial reference</param>
-    /// <returns>Authority code as string</returns>
+    /// <returns>"1.3:CRS84" for WKID 4326; the numeric WKID string for all other CRS.</returns>
     public static string GetAuthorityCode(this SpatialReference spatialRef)
-        => spatialRef.Wkid.ToString(CultureInfo.InvariantCulture);
+        => spatialRef.Wkid == 4326
+            ? "1.3:CRS84"
+            : spatialRef.Wkid.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Determines if transformation is needed between two spatial reference systems

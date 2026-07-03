@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -99,6 +100,31 @@ internal static class IdentityAdminEndpoints
         }
 
         var authority = provider.Authority;
+
+        // Guard against SSRF: reject private/reserved network addresses before fetching the
+        // discovery document. This mirrors the guard applied to alert-webhook, geocoding, and
+        // import outbound HTTP surfaces. If the authority resolves to an internal address an
+        // admin 400 is returned rather than the server making a stealthy internal HTTP request.
+        var ssrfCheck = await OutboundHttpUrlValidator
+            .ValidateAsync(authority, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!ssrfCheck.IsValid)
+        {
+            AdminLog.IdentityProviderTestCompleted(logger, providerType, false);
+
+            var blocked = new IdentityProviderTestResult
+            {
+                ProviderType = providerType,
+                IsReachable = false,
+                ErrorMessage = $"Authority URL validation failed: {ssrfCheck.ErrorMessage}"
+            };
+
+            return Results.Json(
+                ApiResponse<IdentityProviderTestResult>.CreateSuccess(blocked),
+                IdentityAdminJsonContext.Default.ApiResponseIdentityProviderTestResult);
+        }
+
         var discoveryUrl = $"{authority.TrimEnd('/')}/.well-known/openid-configuration";
 
         try

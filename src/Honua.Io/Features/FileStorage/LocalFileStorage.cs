@@ -84,7 +84,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 storagePath = BuildStoragePath(fileId, request.FileName, request.Folder);
             }
 
-            var fullPath = Path.Combine(_basePath, storagePath);
+            var fullPath = GetSafeFullPath(storagePath);
 
             // Ensure directory exists
             var directory = Path.GetDirectoryName(fullPath);
@@ -250,7 +250,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             return null;
         }
 
-        var fullPath = Path.Combine(_basePath, cloudFile.StoragePath);
+        var fullPath = GetSafeFullPath(cloudFile.StoragePath);
         if (!File.Exists(fullPath))
         {
             FileStorageLog.FileMissingOnDisk(Logger, fileId);
@@ -270,7 +270,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             return false;
         }
 
-        var fullPath = Path.Combine(_basePath, cloudFile.StoragePath);
+        var fullPath = GetSafeFullPath(cloudFile.StoragePath);
         var metadataFile = GetMetadataFilePath(fileId);
 
         try
@@ -361,7 +361,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             return Task.FromResult<string?>(null);
         }
 
-        var fullPath = Path.Combine(_basePath, cloudFile.StoragePath);
+        var fullPath = GetSafeFullPath(cloudFile.StoragePath);
         return Task.FromResult<string?>(ToAbsoluteFileUri(fullPath));
     }
 
@@ -379,7 +379,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // Real cloud implementations would provide presigned upload URLs
         var fileId = GenerateFileId();
         var storagePath = BuildStoragePath(fileId, fileName, folder);
-        var fullPath = Path.Combine(_basePath, storagePath);
+        var fullPath = GetSafeFullPath(storagePath);
 
         // Ensure directory exists
         var directory = Path.GetDirectoryName(fullPath);
@@ -523,6 +523,27 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         ValidateFolderPath(folder);
 
         return Path.Combine(folder, storageName);
+    }
+
+    /// <summary>
+    /// Combines <paramref name="storagePath"/> with the base path and verifies the result is
+    /// contained within the base directory. This is defence-in-depth: the denylist in
+    /// <see cref="ValidateObjectKeyOverride"/> and <see cref="ValidateFolderPath"/> already
+    /// blocks explicit traversal segments, but a GetFullPath containment check also catches
+    /// symlinks and any platform-specific path encoding tricks.
+    /// </summary>
+    private string GetSafeFullPath(string storagePath)
+    {
+        var combined = Path.GetFullPath(Path.Combine(_basePath, storagePath));
+        var root = Path.GetFullPath(_basePath) + Path.DirectorySeparatorChar;
+        if (!combined.StartsWith(root, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "The resolved storage path escapes the base directory.",
+                nameof(storagePath));
+        }
+
+        return combined;
     }
 
     private static string ToAbsoluteFileUri(string path)

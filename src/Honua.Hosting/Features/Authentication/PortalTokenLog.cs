@@ -39,4 +39,16 @@ internal static partial class PortalTokenLog
     [LoggerMessage(EventId = 7006, Level = LogLevel.Warning,
         Message = "Portal token store could not remove distributed cache entry {KeyHash}.")]
     public static partial void DistributedCacheRemoveFailed(ILogger logger, string keyHash, Exception exception);
+
+    /// <summary>
+    /// Emitted when a <c>generateToken</c> request carries credentials via the URL query
+    /// string rather than a POST form body. The password value is never included in the
+    /// log line; this entry is an audit signal for operators monitoring for insecure
+    /// credential transmission patterns.
+    /// </summary>
+    [LoggerMessage(EventId = 7007, Level = LogLevel.Warning,
+        Message = "Portal token request received credentials via URL query string; " +
+                  "POST with a form-encoded body is preferred to avoid credential exposure " +
+                  "in HTTP-layer logs.")]
+    public static partial void CredentialsFromQueryString(ILogger logger);
 }

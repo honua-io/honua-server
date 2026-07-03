@@ -234,13 +234,32 @@ internal static class SearchEndpoints
 
             if (request.Collections is { IsDefault: false } requestedCollections && requestedCollections.Length > 0)
             {
-                if (!TryParseIntegerTokenSet(requestedCollections, out var collectionIds, out var collectionError))
+                // STAC API Item Search spec: collections is an array of string collection IDs.
+                // Filter using the same multi-field matching logic as the single-collection lookup
+                // path (ServiceLocalId, Path, Metadata.Name, Metadata.Id, or legacy numeric ID)
+                // so human-readable slugs (e.g. "sentinel-2-l2a") and legacy numeric IDs both
+                // work without requiring integer parsing.
+                targets = targets.Where(t =>
                 {
-                    StacTelemetry.SetFailed(activity, "invalid_collections");
-                    return StandardErrorHelpers.CreateBadRequest(context, collectionError ?? "Invalid collections parameter.");
-                }
+                    var pub = t.Publication;
+                    foreach (var requestedId in requestedCollections)
+                    {
+                        int? numericId = int.TryParse(
+                            requestedId,
+                            System.Globalization.NumberStyles.Integer,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out var parsed)
+                            ? parsed
+                            : null;
 
-                targets = targets.Where(t => collectionIds.Contains(t.LayerIndex));
+                        if (StacV2Lookups.MatchesCollectionId(pub, requestedId, numericId))
+                        {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                });
             }
 
             if (request.Ids is { IsDefault: false } requestedIds && requestedIds.Length > 0)
@@ -958,15 +977,13 @@ internal static class SearchEndpoints
 
         if (!string.IsNullOrWhiteSpace(collections))
         {
-            if (!TryParseIntegerTokenSet(collections, out var collectionValues, out error))
+            // STAC API spec: collections are string IDs — accept any non-empty token, not just integers.
+            if (!TryParseStringTokens(collections, out var collectionValues, out error))
             {
                 return false;
             }
 
-            request = request with
-            {
-                Collections = collectionValues.Select(v => v.ToString(CultureInfo.InvariantCulture)).ToImmutableArray()
-            };
+            request = request with { Collections = collectionValues };
         }
 
         if (!string.IsNullOrWhiteSpace(ids))

@@ -28,15 +28,16 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     private const int MaxPageLimit = 100;
     private const int DefaultPageLimit = 25;
 
-    private readonly string _connectionString;
+    // Resolved once from PostgresConnectionStringCache (PA-077): awaiting an already-completed
+    // Task<string> is effectively free and avoids blocking the thread pool on secret calls.
+    private readonly Task<string> _connectionStringTask;
     private readonly ILogger<PostgresMigrationRunCatalog> _logger;
 
     public PostgresMigrationRunCatalog(
-        string connectionString,
+        Task<string> connectionStringTask,
         ILogger<PostgresMigrationRunCatalog> logger)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        _connectionString = connectionString;
+        _connectionStringTask = connectionStringTask ?? throw new ArgumentNullException(nameof(connectionStringTask));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -48,7 +49,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
         ArgumentException.ThrowIfNullOrWhiteSpace(record.RunId);
         ArgumentException.ThrowIfNullOrWhiteSpace(record.SourceKind);
 
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         // ON CONFLICT DO NOTHING keeps re-recording the same run id a no-op
@@ -123,7 +124,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
             throw new ArgumentException("RecordCompletedAsync requires a terminal status.", nameof(status));
         }
 
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         // Terminal state is sticky: the WHERE clause refuses to overwrite an
@@ -171,7 +172,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
 
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         const string sql = """
@@ -206,7 +207,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
 
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return await GetInternalAsync(connection, runId, cancellationToken).ConfigureAwait(false);
     }
@@ -222,7 +223,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
         var sourceKindFilter = string.IsNullOrWhiteSpace(query.SourceKind) ? null : query.SourceKind!.Trim().ToLowerInvariant();
         var statusFilter = query.Status.HasValue ? StatusToText(query.Status.Value) : null;
 
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         const string countSql = """
@@ -294,7 +295,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
 
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         const string sql = """
@@ -326,7 +327,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
         ArgumentException.ThrowIfNullOrWhiteSpace(scorecardFingerprint);
         ArgumentException.ThrowIfNullOrWhiteSpace(scorecardBody);
 
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         const string updateSql = """
@@ -355,7 +356,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
 
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         const string sql = """

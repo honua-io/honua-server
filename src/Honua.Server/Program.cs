@@ -521,7 +521,12 @@ builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
 
 // Federated-query planning and source configuration (#341).
-builder.Services.AddFederationServices(builder.Configuration);
+// Experimental gate (PA-001): federated query is off by default. Set
+// Experimental__Features__FederatedQuery=true to opt in.
+if (builder.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", false))
+{
+    builder.Services.AddFederationServices(builder.Configuration);
+}
 
 // Register configuration validators to ensure application fails fast on invalid configuration
 StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
@@ -1085,8 +1090,21 @@ app.UsePerformanceMonitoring();
 // Configure Serilog request logging before short-circuiting middleware so every request is observable.
 app.UseSerilogRequestLogging(options =>
 {
+    // PA-059: The default Serilog request-logging message template includes
+    // {RequestPath} (path only, no query string), which means sensitive query
+    // parameters such as "password" and "token" on /sharing/rest/generateToken
+    // are never written to the application log. Set this explicitly so that
+    // any future template change goes through a deliberate code review rather
+    // than silently inheriting a new format that might expose credentials.
+    options.MessageTemplate =
+        "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+
     options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
     {
+        // PA-059: Query-string parameters are intentionally excluded from every
+        // diagnostic property below. For the generateToken endpoint in particular,
+        // "password" and "token" values in the URL must never reach log sinks.
+        // The RequestPath property above carries only the path component.
         diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
         diagnosticContext.Set("UserAgent", httpContext.Request.Headers.UserAgent.ToString());
         diagnosticContext.Set("Protocol", httpContext.Request.Protocol);
@@ -1325,7 +1343,11 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
-app.MapFederationEndpoints();
+// Experimental gate (PA-001): only map federation endpoints when the feature is enabled.
+if (app.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", false))
+{
+    app.MapFederationEndpoints();
+}
 app.MapClientCertificateAdminEndpoints();
 
 // Configure control plane IAM endpoints (#511)
