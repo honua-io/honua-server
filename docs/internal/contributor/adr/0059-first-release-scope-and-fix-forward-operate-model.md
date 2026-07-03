@@ -66,6 +66,10 @@ advertised in the capability manifest):
   environment.
 - **Migration / interop** — live Esri REST migration, FileGDB import, Esri REST
   northbound interop (sufficient, not exhaustive parity).
+- **Data formats** — GeoParquet, GeoArrow, GeoBuf, and FileGDB read/serve
+  support are **supported (in-scope)** for the first release. They were never
+  gated (ungated = served), so they are neither registry-flag nor
+  entitlement/UI gated — they simply ship. Not experimental.
 - **AI operator surface with fix-forward** — the operate model below.
 
 ### 2. Experimental + disabled set (built server-side, gated off)
