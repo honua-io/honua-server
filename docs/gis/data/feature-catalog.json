@@ -963,7 +963,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetAlertZones_WithoutAuth_Returns401",
-        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListZones_WithServiceFilter_ReturnsSuccessEnvelope"
+        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListZones_WithServiceFilter_ReturnsSuccessEnvelope",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AlertsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental"
@@ -3801,7 +3802,9 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithInvalidScopeIdentifier_ReturnsSafeBadRequest",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithPartialSpatialAnalysisEntitlements_MarksAnalysisUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithUnknownEnvironment_ReturnsUnavailableManifestState",
-        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithWorkspaceClaimTypeDifferentCasing_MatchesRbacWorkspaceScope"
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithWorkspaceClaimTypeDifferentCasing_MatchesRbacWorkspaceScope",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalDisabled_OmitsEveryExperimentalCapability",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalEnabledPerCapability_IncludesExactlyThatCapability"
       ],
       "proof_ledger_surface": "capability-manifest",
       "maturity": "implemented"
@@ -4725,6 +4728,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.GatedEndpoints_WhenExperimentalEnabledPerCapability_OpenOnlyThatCapability",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.TemporalEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForNonTemporalLayer_ReportsHistoryUnsupported",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForTemporalLayer_ReportsHistorySupported",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForUnknownLayer_ReturnsNotFound"
@@ -11884,7 +11889,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OperateObservabilityFixtureDisabledEndpointTests.SeedOperateObservabilityFixture_DefaultConfiguration_IsNotMapped",
         "Honua.Server.Tests.Features.Admin.OperateObservabilityFixtureEndpointsTests.SeedOperateObservabilityFixture_WithEnabledProfile_HydratesLiveAdminSurfaces",
-        "Honua.Server.Tests.Features.Admin.OperateObservabilityFixtureEnvAliasEndpointTests.SeedOperateObservabilityFixture_EnabledViaFlatEnvAlias_SeedsAlertsAndJobs"
+        "Honua.Server.Tests.Features.Admin.OperateObservabilityFixtureEnvAliasEndpointTests.SeedOperateObservabilityFixture_EnabledViaFlatEnvAlias_SeedsAlertsAndJobs",
+        "Honua.Server.Tests.Features.Admin.OperateObservabilityFixtureMissingAlertStoreEndpointTests.SeedOperateObservabilityFixture_WhenAlertStoreAbsent_SkipsAlertsAndSeedsObservability"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
