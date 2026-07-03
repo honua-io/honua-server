@@ -132,15 +132,8 @@ internal sealed partial class DefaultComplianceDependencyGate : IComplianceDepen
     {
         try
         {
-            var auditLog = _services.GetService(typeof(IAuditLog));
-            if (auditLog is null)
-            {
-                failureReason = "Audit log sink falls back to NullAuditLog — events are not persisted.";
-                return false;
-            }
-
-            var typeName = auditLog.GetType().FullName ?? string.Empty;
-            if (typeName.Contains("NullAuditLog", StringComparison.Ordinal))
+            var auditLog = _services.GetService<IAuditLog>();
+            if (auditLog is null || !auditLog.IsPersisted)
             {
                 failureReason = "Audit log sink falls back to NullAuditLog — events are not persisted.";
                 return false;
