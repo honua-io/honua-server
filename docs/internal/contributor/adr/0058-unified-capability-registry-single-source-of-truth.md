@@ -126,9 +126,11 @@ route-level registry flag: SSO/OIDC/SAML/SCIM, **forms** authoring + **field
 data collection** (honua-collect), **mobile / offline**, **branch / versioned
 editing**, SIEM / investigations, **cross-environment** metadata-promotion
 (`/api/v1/admin/metadata` + deploy `MetadataRelease` ops) and dev→staging→prod
-promotion, the **rollback** operate loop, collaborative map sessions, and
-experimental format surfaces. These are held OFF by edition/entitlement checks
-and Console-UI availability, not by the registry manifest flag. Note only
+promotion, the **rollback** operate loop, and collaborative map sessions. These
+are held OFF by edition/entitlement checks and Console-UI availability, not by
+the registry manifest flag. (Format surfaces — GeoParquet / GeoArrow / GeoBuf /
+FileGDB — are **not** in either gating set; they are ungated and ship as
+supported for the first release, see ADR-0059 §1.) Note only
 **cross-environment** metadata-promotion is gated; **single-instance GitOps
 change-safety stays as the release operate floor.**
 
