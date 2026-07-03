@@ -81,7 +81,8 @@ internal sealed partial class NatsFeatureChangeEventSink : IFeatureChangeEventSi
         {
             // Dead-lettering disabled: surface to the broadcaster, which isolates
             // and meters the failure without affecting durable storage or siblings.
-            throw failure;
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+            return; // unreachable; satisfies the compiler
         }
 
         var dlqHeaders = new List<KeyValuePair<string, string>>(headers.Count + 3);
@@ -111,7 +112,8 @@ internal sealed partial class NatsFeatureChangeEventSink : IFeatureChangeEventSi
             // Both primary and dead-letter delivery failed: surface the original
             // failure so the broadcaster meters it. Record the DLQ failure too.
             LogDeadLetterFailed(_logger, featureEvent.EventId, _options.DeadLetterSubject!, dlqEx);
-            throw failure;
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+            throw; // unreachable; satisfies the compiler
         }
     }
 

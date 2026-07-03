@@ -145,7 +145,8 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
                 {
                     var error = result.Error
                         ?? new InvalidOperationException(result.ErrorMessage ?? "Database migration failed.");
-                    throw error;
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+                    return; // unreachable; satisfies the compiler
                 }
             }
         }
