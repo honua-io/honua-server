@@ -156,82 +156,81 @@ internal static class GpxFormatReader
     private static bool IsContainerElement(string localName) =>
         string.Equals(localName, "extensions", StringComparison.OrdinalIgnoreCase);
 
-    private static async Task<IFeature?> ParseTrackAsync(
+    private static Task<IFeature?> ParseTrackAsync(
         XmlReader reader,
         GeometryFactory factory,
-        CancellationToken cancellationToken)
-    {
-        var attributes = new AttributesTable();
-        var allCoordinates = new List<Coordinate>();
+        CancellationToken cancellationToken) =>
+        ParseLineFeatureAsync(reader, factory, "trkpt", cancellationToken);
 
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "trk")
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element)
-            {
-                if (reader.LocalName == "name")
-                {
-                    attributes.Add("name", await reader.ReadElementContentAsStringAsync());
-                }
-                else if (reader.LocalName == "trkpt")
-                {
-                    var lat = reader.GetAttribute("lat");
-                    var lon = reader.GetAttribute("lon");
-                    if (lat != null && lon != null &&
-                        double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) &&
-                        double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
-                    {
-                        allCoordinates.Add(new Coordinate(longitude, latitude));
-                    }
-                }
-            }
-        }
-
-        if (allCoordinates.Count >= 2)
-        {
-            var geometry = factory.CreateLineString(allCoordinates.ToArray());
-            return new Feature(geometry, attributes);
-        }
-
-        return null;
-    }
-
-    private static async Task<IFeature?> ParseRouteAsync(
+    private static Task<IFeature?> ParseRouteAsync(
         XmlReader reader,
         GeometryFactory factory,
+        CancellationToken cancellationToken) =>
+        ParseLineFeatureAsync(reader, factory, "rtept", cancellationToken);
+
+    /// <summary>
+    /// Parses a GPX line container (<c>&lt;trk&gt;</c> or <c>&lt;rte&gt;</c>) into a
+    /// <see cref="LineString"/> feature. The container's subtree is walked in a single forward
+    /// pass, collecting every <paramref name="pointElement"/> (<c>trkpt</c>/<c>rtept</c>) across
+    /// any nesting (e.g. multiple <c>&lt;trkseg&gt;</c>) and recording the first <c>&lt;name&gt;</c>
+    /// as an attribute. It deliberately avoids <c>ReadElementContentAsString</c>: that call
+    /// advances the reader past the element that follows <c>&lt;name&gt;</c>, and combined with the
+    /// caller's loop it silently skipped the first point — dropping a two-point route to zero
+    /// features (honua-server#2354).
+    /// </summary>
+    private static async Task<IFeature?> ParseLineFeatureAsync(
+        XmlReader reader,
+        GeometryFactory factory,
+        string pointElement,
         CancellationToken cancellationToken)
     {
         var attributes = new AttributesTable();
         var coordinates = new List<Coordinate>();
+        string? pendingName = null;
 
-        while (await reader.ReadAsync())
+        using var subtree = reader.ReadSubtree();
+        await subtree.ReadAsync(); // Position on the container root (trk/rte).
+
+        while (await subtree.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "rte")
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element)
+            switch (subtree.NodeType)
             {
-                if (reader.LocalName == "name")
-                {
-                    attributes.Add("name", await reader.ReadElementContentAsStringAsync());
-                }
-                else if (reader.LocalName == "rtept")
-                {
-                    var lat = reader.GetAttribute("lat");
-                    var lon = reader.GetAttribute("lon");
-                    if (lat != null && lon != null &&
-                        double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) &&
-                        double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
+                case XmlNodeType.Element:
+                    pendingName = null;
+                    if (string.Equals(subtree.LocalName, pointElement, StringComparison.Ordinal))
                     {
-                        coordinates.Add(new Coordinate(longitude, latitude));
+                        var lat = subtree.GetAttribute("lat");
+                        var lon = subtree.GetAttribute("lon");
+                        if (lat != null && lon != null &&
+                            double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) &&
+                            double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
+                        {
+                            coordinates.Add(new Coordinate(longitude, latitude));
+                        }
                     }
-                }
+                    else if (string.Equals(subtree.LocalName, "name", StringComparison.Ordinal) &&
+                             !subtree.IsEmptyElement && !attributes.Exists("name"))
+                    {
+                        pendingName = "name";
+                    }
+
+                    break;
+
+                case XmlNodeType.Text:
+                case XmlNodeType.CDATA:
+                    if (pendingName != null && !attributes.Exists(pendingName))
+                    {
+                        attributes.Add(pendingName, subtree.Value);
+                    }
+
+                    pendingName = null;
+                    break;
+
+                case XmlNodeType.EndElement:
+                    pendingName = null;
+                    break;
             }
         }
 

@@ -102,12 +102,16 @@ internal sealed partial class StreamingFileImportService
         // (e.g. malformed WKT). Surfaced as a completion warning so the loss is never silent.
         var csvGeometryDiagnostics = format == SupportedFileFormat.Csv ? new CsvGeometryDiagnostics() : null;
 
+        // Collects WKT records that could not be parsed (bad WKT/EWKT, stray header lines, a
+        // truncated multi-line tail). Surfaced as a completion warning so the loss is never silent.
+        var wktGeometryDiagnostics = format == SupportedFileFormat.Wkt ? new WktGeometryDiagnostics() : null;
+
         var featureStream = format switch
         {
             SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
             SupportedFileFormat.EsriJson => EsriJsonFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Wkb => WkbFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, wktGeometryDiagnostics, cancellationToken),
             SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gml => GmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
@@ -228,6 +232,12 @@ internal sealed partial class StreamingFileImportService
         {
             completionWarningsBuilder.Add(string.Format(
                 null, _csvUnparseableGeometryWarningFormat, csvGeometryDiagnostics.UnparseableGeometryRows));
+        }
+
+        if (wktGeometryDiagnostics is { UnparseableRecords: > 0 })
+        {
+            completionWarningsBuilder.Add(string.Format(
+                null, _wktUnparseableGeometryWarningFormat, wktGeometryDiagnostics.UnparseableRecords));
         }
 
         if (_limits.ContinueOnError && totalFailed > 0)

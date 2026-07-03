@@ -72,6 +72,45 @@ public sealed class WktFormatReaderTests
         point.SRID.Should().Be(4326);
     }
 
+    [Fact]
+    public async Task ReadStreamingAsync_UnparseableRecord_IsRecordedInDiagnostics()
+    {
+        // #2363: unparseable content must no longer be swallowed silently — the record is skipped
+        // but counted so the import pipeline can surface a warning.
+        var diagnostics = new WktGeometryDiagnostics();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("""
+            POINT(-122.4194 37.7749)
+            not-a-geometry
+            LINESTRING(0 0, 1 1)
+            """));
+
+        var features = new List<IFeature>();
+        await foreach (var feature in WktFormatReader.ReadStreamingAsync(stream, diagnostics, CancellationToken.None))
+        {
+            features.Add(feature);
+        }
+
+        features.Should().HaveCount(2);
+        diagnostics.UnparseableRecords.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ReadStreamingAsync_AllValidRecords_RecordsNoDiagnostics()
+    {
+        var diagnostics = new WktGeometryDiagnostics();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("""
+            POINT(-122.4194 37.7749)
+
+            LINESTRING(0 0, 1 1)
+            """));
+
+        await foreach (var _ in WktFormatReader.ReadStreamingAsync(stream, diagnostics, CancellationToken.None))
+        {
+        }
+
+        diagnostics.UnparseableRecords.Should().Be(0);
+    }
+
     private static async Task<List<IFeature>> ReadAllAsync(string content)
     {
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
