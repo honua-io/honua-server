@@ -2848,6 +2848,7 @@ internal static class ImageServerEndpoints
             BandIds = GetString(values, "bandIds"),
             MosaicRule = GetString(values, "mosaicRule"),
             RenderingRule = GetString(values, "renderingRule"),
+            Time = GetString(values, "time"),
             F = GetString(values, "f") ?? "json"
         };
 

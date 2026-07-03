@@ -534,6 +534,17 @@ internal sealed class OgcMapsRenderingHandler
                 statusCode: StatusCodes.Status501NotImplemented);
         }
 
+        // The styled-vector renderer is Skia-based and has no GeoTIFF encoder; TIFF output is
+        // only produced by the GDAL raster-coverage pipeline. Rather than silently emit PNG
+        // bytes mislabeled as image/tiff (#2365), reject the format honestly so the returned
+        // bytes always match the Content-Type.
+        if (renderRequest.Format == RasterFormat.TIFF)
+        {
+            return CreateBadRequestResult(
+                context,
+                "Format 'tiff' is not supported for styled vector collections. Supported formats: png, jpeg.");
+        }
+
         // Resolve the requested style (canonical MapLibre). A missing/unknown style renders
         // with the collection's default styling rather than failing the request.
         string? mapLibreStyleJson = null;
