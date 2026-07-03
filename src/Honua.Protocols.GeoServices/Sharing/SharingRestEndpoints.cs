@@ -68,6 +68,14 @@ public static class SharingRestEndpoints
             .WithDisplayName("ArcGIS Portal Generate Token (GET)")
             .WithName("SharingRestGenerateTokenGet")
             .WithSummary("Issue an ArcGIS-compatible portal token via query parameters")
+            .WithDescription(
+                "Issues an ArcGIS-compatible portal token using query-string parameters. " +
+                "Supported for ArcGIS client compatibility. " +
+                "POST with a form-encoded body is strongly preferred: credentials in URL " +
+                "query strings are recorded verbatim by web servers, reverse proxies, and " +
+                "load balancers. When the server enforces HTTPS (RequireHttps=true, the " +
+                "default) this endpoint rejects plaintext HTTP requests that carry " +
+                "credentials in the URL.")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .Produces<GenerateTokenResponse>(StatusCodes.Status200OK, JsonContentType)
@@ -185,6 +193,11 @@ public static class SharingRestEndpoints
         var (username, password, clientType, refererInput, expirationMinutes, format, formatValid) =
             await ReadParametersAsync(context).ConfigureAwait(false);
 
+        // Detect whether credentials arrived via query string (GET or non-form POST). This is
+        // used both for the HTTPS enforcement message and for the per-request audit log entry.
+        var credentialsInQueryString =
+            !HttpMethods.IsPost(context.Request.Method) || !context.Request.HasFormContentType;
+
         if (!formatValid)
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "unsupported response format");
@@ -194,9 +207,24 @@ public static class SharingRestEndpoints
         if (settings.RequireHttps && !IsHttpsRequest(context))
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "https required");
-            return StandardErrorHelpers.CreateForbidden(
-                context,
-                "Token issuance requires a secure (HTTPS) transport.");
+
+            // Give a more actionable error when the caller sent credentials in the URL:
+            // query-string passwords are recorded by every HTTP-layer observer (web
+            // server access logs, reverse proxies, load-balancer logs, browser history,
+            // and Referer headers). Direct the client to POST or HTTPS.
+            var httpsMessage = credentialsInQueryString
+                ? "Credentials in URL query strings are not safe over plaintext HTTP. " +
+                  "Use POST with a form-encoded body, or enable HTTPS."
+                : "Token issuance requires a secure (HTTPS) transport.";
+
+            return StandardErrorHelpers.CreateForbidden(context, httpsMessage);
+        }
+
+        // Emit a warning-level audit entry when credentials arrived via the query string
+        // even over a secure channel. The password value is never included in the log line.
+        if (credentialsInQueryString)
+        {
+            PortalTokenLog.CredentialsFromQueryString(logger);
         }
 
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
