@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -62,17 +63,17 @@ public sealed class GeoprocessingCatalogDocParityTests
         var totalMatch = Regex.Match(docText, @"catalog currently registers \*\*(?<count>\d+) processes\*\*");
         totalMatch.Success.Should().BeTrue(
             $"{DocRelativePath} should have a \"catalog currently registers **N processes**\" sentence to check against the catalog");
-        int.Parse(totalMatch.Groups["count"].Value).Should().Be(
+        int.Parse(totalMatch.Groups["count"].Value, CultureInfo.InvariantCulture).Should().Be(
             expectedTotal,
             $"the prose process count in {DocRelativePath} must match BuiltInProcessCatalog ({expectedTotal} processes)");
 
         var nativeMatch = Regex.Match(docText, @"(?<native>\d+) of the (?<total>\d+) processes are native");
         nativeMatch.Success.Should().BeTrue(
             $"{DocRelativePath} should have an \"N of the M processes are native\" sentence to check against the catalog");
-        int.Parse(nativeMatch.Groups["total"].Value).Should().Be(
+        int.Parse(nativeMatch.Groups["total"].Value, CultureInfo.InvariantCulture).Should().Be(
             expectedTotal,
             $"the native-fraction denominator in {DocRelativePath} must match BuiltInProcessCatalog ({expectedTotal} processes)");
-        int.Parse(nativeMatch.Groups["native"].Value).Should().Be(
+        int.Parse(nativeMatch.Groups["native"].Value, CultureInfo.InvariantCulture).Should().Be(
             expectedNative,
             $"the native-fraction numerator in {DocRelativePath} must match the catalog's native-profile process count ({expectedNative})");
     }
