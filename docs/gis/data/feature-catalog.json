@@ -5951,6 +5951,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetStyledMap_VectorCollectionTiff_ReturnsCleanErrorNeverPngLabeledTiff",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetStyledMap_VectorCollection_RendersPngInsteadOf501",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetStyledMap_WithValidStyle_ReachesStyledMapEndpoint",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetStyledMap_NonExistentCollection_ReturnsNotFound",
@@ -14227,6 +14228,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateDraft_WithNullCollections_Returns201WithEmptyCollections",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -15305,6 +15307,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_PostFormBody_ReturnsImageOrNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ExportImagePost_WithTime_SelectsTemporalSliceAndAgreesWithGet",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_PostFormBody_WithEsriJsonSpatialReferences_DoesNotReturnBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_PostJsonBody_WithEsriJsonSpatialReferences_DoesNotReturnBadRequest"
       ],
