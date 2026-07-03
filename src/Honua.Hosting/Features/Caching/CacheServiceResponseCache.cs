@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
@@ -12,6 +13,17 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private const string KeyPrefix = "response:";
     private const string VersionPrefix = "response-version:";
     private static readonly TimeSpan VersionTtl = TimeSpan.FromDays(30);
+
+    // Short-lived in-process cache for namespace version strings (PA-052).
+    // Reduces per-cache-operation Redis reads from O(N namespaces) sequential
+    // calls to zero for warm paths. A 30-second TTL is well within VersionTtl
+    // (30 days) and ensures invalidations from this node propagate immediately
+    // (eviction in TryInvalidateNamespaceAsync). Invalidations from remote nodes
+    // are visible within 30 s, which is safe because a stale version causes a
+    // cache miss (DB fetch) rather than stale data.
+    private static readonly TimeSpan VersionLocalCacheTtl = TimeSpan.FromSeconds(30);
+    private readonly ConcurrentDictionary<string, (string Version, DateTimeOffset Expiry)> _localVersionCache
+        = new(StringComparer.Ordinal);
     private static readonly Regex FeatureServerKeyPattern = new("^(?:response:)?query:featureserver:service:(?<service>[^:]+):layer:(?<layer>\\d+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex FeatureServerLayerPattern = new("^(?:response:)?query:featureserver:service:\\*:layer:(?<layer>\\d+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex FeatureServerServiceLayerPattern = new("^(?:response:)?query:featureserver:service:(?<service>[^:]+):layer:(?<layer>\\d+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -88,12 +100,42 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return [];
         }
 
-        var resolved = new List<string>(namespaces.Count);
+        var now = DateTimeOffset.UtcNow;
+        var resolved = new string[namespaces.Count];
+        List<int>? missIndices = null;
 
-        foreach (var ns in namespaces)
+        // Local-cache pass: O(N) dictionary lookups, zero Redis round-trips for warm namespaces.
+        for (var i = 0; i < namespaces.Count; i++)
         {
-            var version = await _cacheService.GetAsync<string>(VersionPrefix + ns, cancellationToken).ConfigureAwait(false);
-            resolved.Add(string.IsNullOrWhiteSpace(version) ? "0" : version);
+            if (_localVersionCache.TryGetValue(namespaces[i], out var entry) && entry.Expiry > now)
+            {
+                resolved[i] = entry.Version;
+            }
+            else
+            {
+                (missIndices ??= new List<int>(namespaces.Count - i)).Add(i);
+            }
+        }
+
+        if (missIndices is { Count: > 0 })
+        {
+            // Batch-fetch all missing namespace versions concurrently so that N misses
+            // result in a single Redis pipeline round-trip rather than N sequential ones.
+            var fetchTasks = new Task<string?>[missIndices.Count];
+            for (var j = 0; j < missIndices.Count; j++)
+            {
+                fetchTasks[j] = _cacheService.GetAsync<string>(VersionPrefix + namespaces[missIndices[j]], cancellationToken);
+            }
+
+            var versions = await Task.WhenAll(fetchTasks).ConfigureAwait(false);
+
+            for (var j = 0; j < missIndices.Count; j++)
+            {
+                var i = missIndices[j];
+                var version = string.IsNullOrWhiteSpace(versions[j]) ? "0" : versions[j]!;
+                resolved[i] = version;
+                _localVersionCache[namespaces[i]] = (version, now.Add(VersionLocalCacheTtl));
+            }
         }
 
         return resolved;
@@ -115,6 +157,10 @@ internal sealed class CacheServiceResponseCache : IResponseCache
                     VersionTtl,
                     cancellationToken)
                 .ConfigureAwait(false);
+
+            // Evict from the local in-process cache so this node sees the new version
+            // on the very next cache operation, without waiting for the 30 s local TTL.
+            _localVersionCache.TryRemove(ns, out _);
         }
 
         return true;

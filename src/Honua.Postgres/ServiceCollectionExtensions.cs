@@ -100,10 +100,32 @@ internal static class ServiceCollectionExtensions
         // Factory form so the DI container tracks the IDisposable for shutdown disposal.
         services.TryAddSingleton(_ => new QueryConcurrencyGate(connectionLimits));
 
+        // Singleton cache that resolves the connection string / secret exactly once (PA-077).
+        // Scoped factories must await ResolvedConnectionStringTask instead of calling the
+        // blocking ResolveConnectionString helper so that thread-pool threads are never
+        // blocked on a cloud secret call (AWS Secrets Manager / Azure Key Vault).
+        services.TryAddSingleton(serviceProvider =>
+        {
+            var rawConnectionString = configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrWhiteSpace(rawConnectionString))
+            {
+                throw new InvalidOperationException("DefaultConnection connection string is required for PostgreSQL services");
+            }
+            var resolver = serviceProvider.GetService<IConnectionSecretResolver>();
+            return new PostgresConnectionStringCache(rawConnectionString, resolver);
+        });
+
         // Register NpgsqlDataSource as specified in Issue #3
         services.TryAddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
-            var connectionString = ResolveConnectionString(serviceProvider, configuration);
+            // The NpgsqlDataSource singleton is created at startup (before requests).
+            // Block here is acceptable: this is a one-time startup cost on the
+            // dedicated startup thread, not the request thread pool. The singleton
+            // path is noted as lower-priority in PA-077.
+            var connectionString = serviceProvider.GetRequiredService<PostgresConnectionStringCache>()
+                .ResolvedConnectionStringTask
+                .GetAwaiter()
+                .GetResult();
             return PostgresDataSourceFactory.Create(connectionString, schemaHeadersEnabled, connectionLimits, defaultSchema);
         });
 
@@ -494,16 +516,18 @@ internal static class ServiceCollectionExtensions
         // Footprint-driven batch import run catalog (#1253). Persists batch
         // composition, ordering, and per-child status backing the batch
         // orchestration endpoints. Scoped to align with the scoped orchestrator.
+        // The Task<string> is sourced from the singleton PostgresConnectionStringCache so
+        // the secret is resolved once at startup and per-request awaits are free (PA-077).
         services.AddScoped<IMigrationBatchRunCatalog>(serviceProvider =>
             new PostgresMigrationBatchRunCatalog(
-                ResolveConnectionString(serviceProvider, configuration),
+                serviceProvider.GetRequiredService<PostgresConnectionStringCache>().ResolvedConnectionStringTask,
                 serviceProvider.GetRequiredService<ILogger<PostgresMigrationBatchRunCatalog>>()));
 
         // Migration run catalog (#1015/#1598). Persists lifecycle rows backing the
         // admin run-history write/read API.
         services.AddScoped<IMigrationRunCatalog>(serviceProvider =>
             new PostgresMigrationRunCatalog(
-                ResolveConnectionString(serviceProvider, configuration),
+                serviceProvider.GetRequiredService<PostgresConnectionStringCache>().ResolvedConnectionStringTask,
                 serviceProvider.GetRequiredService<ILogger<PostgresMigrationRunCatalog>>()));
 
         // Register the post-publish reconciliation service (issues #1247/#1380). It probes the
