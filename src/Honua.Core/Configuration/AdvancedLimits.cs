@@ -50,9 +50,12 @@ public class ImportLimits
 public class AnalyticsLimits
 {
     /// <summary>
-    /// Maximum number of input features processed by analytics queries.
+    /// Maximum number of input features processed by analytics queries. This is an upper cap that
+    /// gates synchronous analytics/enrichment (e.g. the #2282 enrichment over-limit 413 guard), so a
+    /// deployment may legitimately configure a low cap to force large jobs onto the async batch path.
+    /// The floor is 1 (not 100) to match the sibling analytics limits and to allow such low caps.
     /// </summary>
-    [Range(100, 1_000_000)]
+    [Range(1, 1_000_000)]
     public int MaxInputFeatures { get; set; } = 100_000;
 
     /// <summary>

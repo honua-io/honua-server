@@ -142,10 +142,15 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
 
         try
         {
-            // Capture a 'test'-category row's OBJECTID BEFORE the policy exists (unrestricted query).
+            // Capture a 'test'-category row's OBJECTID BEFORE the policy exists. The query is
+            // unrestricted (where=1=1, no policy yet), so it returns every feature; pick a row
+            // whose category is 'test' as the row that the policy will later hide from a
+            // 'sample' caller.
             var rowsBefore = await QueryObjectIdsByCategoryAsync(claimCategory: "test");
-            rowsBefore.Should().HaveCount(CategoryTestCount);
-            var hiddenObjectId = rowsBefore[0].ObjectId;
+            rowsBefore.Should().HaveCount(TestFeatureCount);
+            var testRowsBefore = rowsBefore.Where(r => r.Category == "test").ToList();
+            testRowsBefore.Should().HaveCount(CategoryTestCount);
+            var hiddenObjectId = testRowsBefore[0].ObjectId;
 
             policyId = await CreatePolicyAsync(adminClient);
 
