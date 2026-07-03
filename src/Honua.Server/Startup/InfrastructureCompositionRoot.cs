@@ -75,9 +75,24 @@ internal static class InfrastructureCompositionRoot
         // Metadata v2 publications whose connection resolves to provider 'redshift' are routed here through
         // the shared FeatureProviderQueryRouter. Disabled when Redshift:Enabled is explicitly false. Redshift
         // speaks the PostgreSQL wire protocol (Npgsql) and is AOT-friendly, so it needs no AOT carve-out.
-        if (configuration.GetValue("Redshift:Enabled", true))
+        // Experimental gate (PA-181): Redshift requires the experimental feature flag.
+        // Fail closed if the operator explicitly enables Redshift without opting into the experimental gate.
+        var redshiftExperimental = configuration.GetValue<bool>("Experimental:Features:RedshiftProvider", false);
+        var redshiftExplicitlyEnabled = string.Equals(configuration["Redshift:Enabled"], "true", StringComparison.OrdinalIgnoreCase);
+        if (redshiftExperimental)
         {
-            Honua.Redshift.ServiceCollectionExtensions.AddRedshiftFeatureProvider(services, configuration);
+            if (configuration.GetValue("Redshift:Enabled", true))
+            {
+                Honua.Redshift.ServiceCollectionExtensions.AddRedshiftFeatureProvider(services, configuration);
+            }
+        }
+        else if (redshiftExplicitlyEnabled)
+        {
+            throw new InvalidOperationException(
+                "Configuration conflict: Redshift:Enabled is set to true but the experimental gate " +
+                "'Experimental:Features:RedshiftProvider' is not enabled (PA-181). " +
+                "Set Experimental__Features__RedshiftProvider=true to opt in to this experimental provider, " +
+                "or set Redshift__Enabled=false to disable it.");
         }
 
         // Register the federated ArcGIS REST read-through provider (#1251). Metadata v2 publications whose
@@ -112,10 +127,25 @@ internal static class InfrastructureCompositionRoot
         // (HonuaSkipSnowflakeForAotVerification) drops the Honua.Snowflake ProjectReference and defines
         // HONUA_SKIP_SNOWFLAKE, so this registration is compiled out and the non-single-file-safe driver is
         // never linked into the AOT image.
+        // Experimental gate (PA-182): Snowflake requires the experimental feature flag.
+        // Fail closed if the operator explicitly enables Snowflake without opting into the experimental gate.
 #if !HONUA_SKIP_SNOWFLAKE
-        if (configuration.GetValue("Snowflake:Enabled", true))
+        var snowflakeExperimental = configuration.GetValue<bool>("Experimental:Features:SnowflakeProvider", false);
+        var snowflakeExplicitlyEnabled = string.Equals(configuration["Snowflake:Enabled"], "true", StringComparison.OrdinalIgnoreCase);
+        if (snowflakeExperimental)
         {
-            Honua.Snowflake.ServiceCollectionExtensions.AddSnowflakeFeatureProvider(services, configuration);
+            if (configuration.GetValue("Snowflake:Enabled", true))
+            {
+                Honua.Snowflake.ServiceCollectionExtensions.AddSnowflakeFeatureProvider(services, configuration);
+            }
+        }
+        else if (snowflakeExplicitlyEnabled)
+        {
+            throw new InvalidOperationException(
+                "Configuration conflict: Snowflake:Enabled is set to true but the experimental gate " +
+                "'Experimental:Features:SnowflakeProvider' is not enabled (PA-182). " +
+                "Set Experimental__Features__SnowflakeProvider=true to opt in to this experimental provider, " +
+                "or set Snowflake__Enabled=false to disable it.");
         }
 #endif
 
