@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -362,6 +362,60 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/generateToken")]
+    public async Task GenerateToken_CredentialsInQueryStringOverPlainHttp_Returns403WithHelpfulMessage()
+    {
+        // PA-059: When RequireHttps=true (the default), a GET request carrying
+        // credentials in the URL query string over plain HTTP must be rejected
+        // with an actionable error that directs the caller to POST or HTTPS.
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                // RequireHttps=true is the default; set it explicitly for clarity.
+                builder.UseSetting("Authentication:PortalToken:RequireHttps", "true");
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            var query = $"/sharing/rest/generateToken?username=admin" +
+                $"&password={Uri.EscapeDataString(AdminPassword)}&client=ip&f=json";
+            using var response = await client.GetAsync(query);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            var body = await response.Content.ReadAsStringAsync();
+            // The error body should mention POST or HTTPS as alternatives so the
+            // caller understands how to proceed without the credential exposure risk.
+            body.Should().ContainAny("POST", "HTTPS", "query string", "plaintext");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/generateToken")]
+    public async Task GenerateToken_CredentialsInQueryStringWithInsecureMode_Succeeds()
+    {
+        // PA-059: When RequireHttps=false (explicit dev/test opt-out), GET with
+        // credentials in the query string is still accepted — ArcGIS clients use
+        // this flow and the dev override must not break them.
+        using var client = _fixture.CreateClient();
+        var query = $"/sharing/rest/generateToken?username=admin" +
+            $"&password={Uri.EscapeDataString(AdminPassword)}&client=ip&f=json";
+        using var response = await client.GetAsync(query);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadTokenPayloadAsync(response);
+        payload.Token.Should().NotBeNullOrWhiteSpace();
     }
 
     private static async Task<HttpResponseMessage> PostFormAsync(HttpClient client, params (string Key, string Value)[] pairs)
