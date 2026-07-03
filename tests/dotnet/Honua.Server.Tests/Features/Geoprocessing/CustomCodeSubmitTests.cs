@@ -90,6 +90,56 @@ public sealed class CustomCodeSubmitTests
     }
 
     // -----------------------------------------------------------------------
+    // Open policy admin gate (PA-196)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_OpenPolicy_NonAdminPrincipal_Forbidden()
+    {
+        // Open policy accepts any HTTPS repo but must require admin elevation (PA-196) so
+        // the widest-policy execution surface is never reachable from a non-admin caller.
+        var sut = CreateService(options => options.RepoPolicy = CustomCodeRepoPolicy.Open);
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .Where(e => !e.RequiresAuthentication,
+                "a non-admin authenticated caller must be forbidden (403), not unauthenticated (401)");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_OpenPolicy_AdminPrincipal_Allowed()
+    {
+        // An admin caller should be permitted to submit under the Open policy.
+        var sut = CreateService(options => options.RepoPolicy = CustomCodeRepoPolicy.Open);
+
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, AdminPrincipal(), CustomCodeMetadata());
+
+        job.Spec.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_OrgAllowlistPolicy_NonAdminPrincipal_AllowedWhenOnList()
+    {
+        // OrgAllowlist must NOT be affected by the admin gate — only Open requires elevation.
+        var sut = CreateService(options =>
+        {
+            options.RepoPolicy = CustomCodeRepoPolicy.OrgAllowlist;
+            options.RepoAllowlist = ["github.com"];
+        });
+
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        job.Spec.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+    }
+
+    // -----------------------------------------------------------------------
     // repo_url: https + allowlist policy
     // -----------------------------------------------------------------------
 
@@ -112,10 +162,12 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_NonHttpsRepo_Rejected()
     {
+        // Use an admin principal so the Open-policy admin gate (PA-196) is satisfied and
+        // the URL scheme check is reached — the non-https rejection must still apply to admins.
         var sut = CreateService(options => options.RepoPolicy = CustomCodeRepoPolicy.Open);
         var metadata = CustomCodeMetadata(repoUrl: "http://github.com/honua-io/example.git");
 
-        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, AdminPrincipal(), metadata);
 
         await act.Should().ThrowAsync<Exception>()
             .Where(e => e.Message.Contains("https"));
@@ -759,6 +811,17 @@ public sealed class CustomCodeSubmitTests
                 new Claim(ClaimTypes.Name, "bob"),
                 new Claim(TenantClaimType, "tenant-A"),
                 new Claim(ClaimTypes.Role, "data-editor:parcels")
+            ],
+            "Test"));
+
+    // Admin carries the "admin" role that gates the Open repo policy (PA-196).
+    private static ClaimsPrincipal AdminPrincipal()
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "admin-user"),
+                new Claim(TenantClaimType, "tenant-A"),
+                new Claim(ClaimTypes.Role, "admin"),
+                new Claim("permission", "read:parcels")
             ],
             "Test"));
 
