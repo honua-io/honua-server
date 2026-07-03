@@ -12,6 +12,14 @@ services:
       - PUBLIC_BASE_URL=http://honua-server:8080
       - HONUA_DEV_AUTH=true
       - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
+      # The CITE seed writes the `cite` service directly into the legacy (v1) catalog
+      # tables after the server's first start. The default GPServer sample seeder
+      # (honua-server#2349/#2362) force-activates a geoprocessing-only Metadata v2
+      # snapshot on that empty first start, which then shadows the live v1-compat
+      # projection so the post-seed `cite` service never enters the v2 catalog that
+      # MapServer resolution reads (generateKml/WMS/WMTS would 404). Disable the sample
+      # seed so v1-compat projection stays authoritative for the directly-seeded service.
+      - HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false
       - Cache__Enabled=false
       - DataSource__Provider=postgres
       - HostValidation__Enabled=false
