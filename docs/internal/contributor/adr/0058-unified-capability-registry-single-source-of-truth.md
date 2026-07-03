@@ -100,25 +100,41 @@ is preserved**: consumers see the same manifest shape; only its source of truth
 changes from a hand-kept list to a registry projection. Per-env behavior (which
 capabilities an environment exposes) stays a property of the resolver layer.
 
-### The manifest is the single deferred-capability lever
+### Two mechanisms hold the experimental + disabled set OFF (the registry flag is one, not both)
 
-Because every surface derives from the registry, the registry-derived manifest
-is the **one lever** that controls advertised scope. First-release scope
-advertises **only in-first-release capabilities**; the deferred capabilities are
-marked `maturity:deferred` in the feature catalog and **gated / flag-off**:
-temporal (`/api/v1/temporal/*`), disconnected-sync (replica/conflict endpoints),
-realtime/geofence (`/api/v1/admin/alerts/*`), cross-env metadata-promotion
-(`/api/v1/admin/metadata` + deploy `MetadataRelease` ops), SIEM
-(`/api/v1/admin/investigations/*`), mTLS
-(`/api/v1/admin/security/client-certificates/validate`), and — per the
-release-owner scope update (2026-07) — **forms** (`form.package` / forms
-authoring + field forms), **mobile / offline**, and **field data collection**
-(honua-collect). Note only **cross-environment** metadata-promotion is deferred;
-**single-instance GitOps change-safety stays as the release operate floor**.
-Flipping a capability
-off in the registry removes it from the manifest, `/mcp`, Studio availability,
-and Console at once. This is the manifest lever the Console release gate
-(honua-io/honua-console#264) already consumes.
+The registry-derived manifest is **one of two** levers that keep the
+experimental + disabled set (ADR-0059 §2) out of a default deployment — not a
+single uniform lever over the whole set.
+
+**(a) Registry-flag gating** covers exactly the experimental-tier capabilities
+whose API routes are enumerated in the feature catalog's `experimental` tier —
+the route-bearing descriptors: **temporal** analytics/versioning
+(`/api/v1/temporal/*`, incl. as-of/diff/timeline and rollback/rollback-plan),
+**disconnected-sync / replicas** (`/api/v1/admin/services/{id}/replicas` +
+conflict-resolution), **realtime feature-streams**
+(`/api/v1/streaming/features` + `/api/v1/admin/(operations/)streaming/*`),
+**geofence alerting** (`/api/v1/admin/alerts/*`), and **mTLS client-certificate
+validation** (`/api/v1/admin/security/client-certificates/*`). For these,
+flipping the capability off in the registry removes it from the manifest,
+`/mcp`, Studio availability, and Console at once — the single-lever behavior this
+ADR gives the registry, and the manifest lever the Console release gate
+(honua-io/honua-console#264) consumes.
+
+**(b) Edition/entitlement + Console-UI gating** covers the remainder of the
+experimental + disabled set — the capabilities that are **not** held back by a
+route-level registry flag: SSO/OIDC/SAML/SCIM, **forms** authoring + **field
+data collection** (honua-collect), **mobile / offline**, **branch / versioned
+editing**, SIEM / investigations, **cross-environment** metadata-promotion
+(`/api/v1/admin/metadata` + deploy `MetadataRelease` ops) and dev→staging→prod
+promotion, the **rollback** operate loop, collaborative map sessions, and
+experimental format surfaces. These are held OFF by edition/entitlement checks
+and Console-UI availability, not by the registry manifest flag. Note only
+**cross-environment** metadata-promotion is gated; **single-instance GitOps
+change-safety stays as the release operate floor.**
+
+Folding more of the entitlement/UI-gated set (b) behind the registry flag (a) —
+so the manifest becomes the uniform advertised-scope lever — is
+post-first-release registry work, not a first-release claim.
 
 ### Studio stays REST; it binds via SDK projections
 
@@ -149,9 +165,12 @@ shared engines; only description/discovery is unified.
 - One conformance truth: the spec/`index.json` and the served `/mcp` catalog
   cannot disagree without failing CI — closing the gate-c false-pass
   (geospatial-mcp#25).
-- One scope lever: advertised-vs-served is governed by a single registry flag,
-  so first-release scoping (and the Console gate) is a data decision, not five
-  code edits.
+- Registry-flag scope lever (for the route-bearing experimental descriptors):
+  advertised-vs-served is governed by the registry flag, so scoping those (and
+  the Console gate) is a data decision, not five code edits. The rest of the
+  experimental + disabled set stays held back by edition/entitlement + Console-UI
+  gating (see "Two mechanisms hold the experimental + disabled set OFF") — a
+  second lever the registry does not yet subsume.
 - No re-fork: Console and the SDKs consume server-owned projections instead of
   local shim DTOs, ending the five-roster drift.
 - Studio and `/mcp` inherit new capabilities automatically once a descriptor is
