@@ -27,6 +27,8 @@ internal static class ControlPlaneTelemetry
         public const string ExecutionObserve = "honua.controlplane.execution.observe";
         public const string ExecutionCancel = "honua.controlplane.execution.cancel";
         public const string ExecutionReconcile = "honua.controlplane.execution.reconcile";
+        /// <summary>Activity name for the worker-side job execution loop (PA-159): claim through terminal finalize.</summary>
+        public const string ExecutionRun = "honua.controlplane.execution.run";
     }
 
     internal static class Tags
@@ -42,6 +44,13 @@ internal static class ControlPlaneTelemetry
         public const string ExecutionJobStatus = "honua.controlplane.execution.status";
         public const string ExecutionJobPreviousStatus = "honua.controlplane.execution.previous_status";
         public const string ExecutionResult = "honua.controlplane.execution.result";
+        /// <summary>
+        /// Outcome of a single <c>ExecutionReconcileCycles</c> tick (PA-165): one of
+        /// <c>changed</c>, <c>unchanged</c>, <c>not_found</c>, <c>terminal</c>,
+        /// <c>backend_missing</c>, <c>cas_conflict</c>, <c>lease_lost</c>, or <c>error</c>.
+        /// Lets the reconcile-cycle counter be sliced by outcome in addition to job kind.
+        /// </summary>
+        public const string ExecutionReconcileOutcome = "honua.controlplane.execution.reconcile_outcome";
     }
 
     // Instrument names as const strings so tests can subscribe to the same identifier

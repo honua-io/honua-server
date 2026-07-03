@@ -24,7 +24,6 @@ internal static class ProductionHealthChecks
     private static readonly string[] DatabaseTags = ["db", "sql", "postgres"];
     private static readonly string[] RedisTags = ["cache", "redis"];
     private static readonly string[] UploadTags = ["upload", "queue"];
-    private static readonly string[] ExternalServiceTags = ["external", "http"];
     private static readonly string[] MetricsTags = ["metrics", "monitoring"];
     private static readonly string[] OutboxTags = ["outbox", "events"];
     private static readonly string[] PluginTags = ["plugins", "extensibility"];
@@ -65,12 +64,6 @@ internal static class ProductionHealthChecks
             "file-upload",
             HealthStatus.Degraded,
             UploadTags);
-
-        // External service connectivity checks
-        healthChecksBuilder.AddCheck<ExternalServiceHealthCheck>(
-            "external-services",
-            HealthStatus.Degraded,
-            ExternalServiceTags);
 
         // Production metrics health check
         healthChecksBuilder.AddCheck<ProductionMetricsHealthCheck>(
@@ -396,50 +389,13 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
         => maxQueueDepth > 0 ? (double)queueDepth / maxQueueDepth : 0.0;
 }
 
-/// <summary>
-/// Health check for external service connectivity.
-/// </summary>
-internal sealed class ExternalServiceHealthCheck : IHealthCheck
-{
-    private readonly ILogger<ExternalServiceHealthCheck> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ExternalServiceHealthCheck"/> class.
-    /// </summary>
-    /// <param name="logger">Logger instance.</param>
-    public ExternalServiceHealthCheck(
-        ILogger<ExternalServiceHealthCheck> logger)
-    {
-        _logger = logger;
-    }
-
-    /// <inheritdoc/>
-    public Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            return Task.FromResult(HealthCheckResult.Healthy(
-                "No external service probes are configured",
-                new Dictionary<string, object>
-                {
-                    ["configuredProbes"] = 0
-                }));
-        }
-        catch (Exception ex)
-        {
-            ProductionHealthChecksLog.ExternalServiceHealthCheckFailed(_logger, ex);
-            return Task.FromResult(HealthCheckResult.Degraded(
-                "External service connectivity check failed",
-                ex,
-                new Dictionary<string, object>
-                {
-                    ["errorType"] = ex.GetType().Name
-                }));
-        }
-    }
-}
+// PA-065 / PA-162: removed the ExternalServiceHealthCheck no-op stub, which was registered as a
+// real health gate ("external-services") but its CheckHealthAsync always returned
+// HealthCheckResult.Healthy("No external service probes are configured") — it never actually
+// probed anything, so it manufactured false confidence rather than reporting real external
+// dependency state. No external-service probe list/config exists to implement a real check
+// against, so removing the stub (rather than inventing new probing logic) is the lower-risk fix;
+// a follow-up issue should define what external dependencies, if any, need a real health probe.
 
 /// <summary>
 /// Health check for production metrics collection.

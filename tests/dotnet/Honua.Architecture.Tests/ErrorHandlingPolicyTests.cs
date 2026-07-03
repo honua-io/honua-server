@@ -204,9 +204,14 @@ public sealed class ErrorHandlingPolicyTests
 
         // A pattern like `catch (Exception) { }` (optionally with `ex`) and a
         // body that holds nothing but whitespace is a smell — it silently
-        // swallows every failure mode.
+        // swallows every failure mode. A genuinely bare `catch { }` (no
+        // exception type in parens at all — valid C#, and functionally
+        // identical to `catch (Exception) { }`) is just as silent but does not
+        // match the typed-catch alternative, so it is matched as a second
+        // alternative below (PA-068 slipped past this test in exactly this
+        // form before it was hardened).
         var pattern = new Regex(
-            @"catch\s*\(\s*Exception(?:\s+\w+)?\s*\)\s*(?:when\s*\([^)]*\)\s*)?\{\s*\}",
+            @"catch\s*\(\s*Exception(?:\s+\w+)?\s*\)\s*(?:when\s*\([^)]*\)\s*)?\{\s*\}|catch\s*\{\s*\}",
             RegexOptions.CultureInvariant);
         var offenders = new List<string>();
 

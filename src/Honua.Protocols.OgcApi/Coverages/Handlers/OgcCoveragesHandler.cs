@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -211,6 +212,10 @@ internal sealed class OgcCoveragesHandler
         context.Items[RequestTelemetryClassifier.OperationItemKey] = "collections";
         OgcCoveragesLog.CollectionsRequested(_logger);
 
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.coverages.getcollections", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcCoverages);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "collections");
+
         try
         {
             if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
@@ -301,6 +306,7 @@ internal sealed class OgcCoveragesHandler
                 Links = links.ToImmutable()
             };
 
+            HonuaTelemetry.SetSuccess(activity, response.Collections.Length);
             return OgcCommonUtilities.FormatMetadataResponse(
                 response,
                 OgcCoveragesJsonContext.Default.OgcCoverageCollections,
@@ -314,6 +320,7 @@ internal sealed class OgcCoveragesHandler
         catch (Exception ex)
         {
             OgcCoveragesLog.RequestFailed(_logger, ex, "collections", null);
+            HonuaTelemetry.RecordException(activity, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving coverage collections.");
         }
     }

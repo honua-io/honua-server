@@ -107,7 +107,18 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
 
     private async Task ExecuteAsync(VersionJob job)
     {
-        using var activity = ActivitySource.StartActivity($"VersionJob.{job.Kind}", ActivityKind.Internal);
+        // PA-021: Task.Run flows the ambient ExecutionContext by default, so Activity.Current
+        // here would still be the HTTP request's activity — which ends when the response
+        // returns, long before this detached background job finishes. Capture it as a link
+        // instead of letting StartActivity implicitly parent to it. Passing default(ActivityContext)
+        // is NOT enough to force a root span: when it is the all-zero/invalid context the
+        // ActivitySource falls back to Activity.Current as the implicit parent, so we must null
+        // out the ambient activity first so the job span starts a fresh trace of its own.
+        var callerContext = Activity.Current?.Context;
+        var links = callerContext is { } ctx ? new[] { new ActivityLink(ctx) } : null;
+        Activity.Current = null;
+        using var activity = ActivitySource.StartActivity(
+            $"VersionJob.{job.Kind}", ActivityKind.Internal, default(ActivityContext), links: links);
         activity?.SetTag("honua.version.job_id", job.JobId.ToString());
         activity?.SetTag("honua.version.id", job.VersionId.ToString());
         activity?.SetTag("honua.version.service", job.Service);

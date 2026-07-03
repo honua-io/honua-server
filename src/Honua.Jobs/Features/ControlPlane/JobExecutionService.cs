@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
@@ -260,6 +261,13 @@ internal sealed partial class JobExecutionService(
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, running);
 
+        // PA-159: the worker-side execution loop (claim -> executor dispatch -> terminal
+        // finalize) had metrics and logging but no trace span, leaving the actual job
+        // execution invisible in traces even though ControlPlaneTelemetry already provides
+        // a StartExecutionActivity helper used by the submission-side backend calls.
+        using var activity = ControlPlaneTelemetry.StartExecutionActivity(
+            ControlPlaneTelemetry.Activities.ExecutionRun, "run", running);
+
         Log.JobExecutionStarted(logger, operationId, executor.Kind.ToString());
 
         // Create execution context with heartbeat pump.
@@ -296,10 +304,12 @@ internal sealed partial class JobExecutionService(
 
             if (result.Status == ExecutionJobStatus.Succeeded)
             {
+                activity?.SetStatus(ActivityStatusCode.Ok);
                 await FinalizeJobAsync(operationId, workerId, result, CancellationToken.None).ConfigureAwait(false);
             }
             else
             {
+                activity?.SetStatus(ActivityStatusCode.Error, result.ErrorMessage);
                 // Executor returned failure — route through retry policy.
                 // Thread executor warnings so they are persisted on terminal
                 // failure and logged to structured execution logs on retry.
@@ -332,6 +342,7 @@ internal sealed partial class JobExecutionService(
             // fail terminally per ADR-0031, even when shutdown also fired.
             if (timeoutCts.IsCancellationRequested)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, "Execution timed out.");
                 Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
                 await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
                     $"Execution timed out after {timeoutPolicy.MaxDuration}.", CancellationToken.None)
@@ -339,6 +350,7 @@ internal sealed partial class JobExecutionService(
             }
             else
             {
+                activity?.SetStatus(ActivityStatusCode.Error, "Worker shutdown.");
                 // Worker is shutting down; always requeue regardless of retry budget
                 // because this is an infrastructure event, not an execution failure.
                 // Use CancellationToken.None so store/queue cleanup can complete
@@ -350,6 +362,7 @@ internal sealed partial class JobExecutionService(
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Error, "Execution timed out.");
             Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
             // Timeout — terminal failure, do not retry.
             await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
@@ -359,6 +372,7 @@ internal sealed partial class JobExecutionService(
         catch (OperationCanceledException)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Error, "Cancelled by operator.");
             Log.JobCancelledByOperator(logger, operationId);
             // Operator cancellation — terminal cancelled state.
             await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled,
@@ -367,6 +381,7 @@ internal sealed partial class JobExecutionService(
         catch (Exception ex)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             Log.JobExecutionFailed(logger, operationId, ex);
             // Execution exception — route through retry policy.
             await AbandonJobAsync(running, workerId, SafeExecutionFailureMessage, CancellationToken.None).ConfigureAwait(false);

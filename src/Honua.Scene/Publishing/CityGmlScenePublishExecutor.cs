@@ -150,8 +150,9 @@ internal sealed partial class CityGmlScenePublishExecutor
                     outputDirectory,
                     stale => CityGmlIngestLog.PromotionOverwroteStaleFinalDir(_logger, stale));
             }
-            catch
+            catch (Exception ex)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 if (registeredDatasetId is { } datasetId)
                 {
                     await CompensateRegistrationAsync(datasetId, sceneId).ConfigureAwait(false);

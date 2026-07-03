@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -46,8 +47,10 @@ internal sealed partial class ExecutionJobReconciler(
 
         // Count every reconciliation attempt that acquires the lease: the metric reflects
         // how often this job is actually processed by the reconciler, not merely how often
-        // the background service surfaces it in the active list.
-        ControlPlaneTelemetry.ExecutionReconcileCycles.Add(1);
+        // the background service surfaces it in the active list. Tagged with job kind and
+        // outcome (PA-165) so cycles can be sliced instead of only totaled.
+        var reconcileJobKind = "unknown";
+        var reconcileOutcome = "error";
 
         using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var renewalTask = RenewLeaseUntilCancelledAsync(operationId, reconciliationCancellation);
@@ -55,14 +58,24 @@ internal sealed partial class ExecutionJobReconciler(
         try
         {
             var job = await jobStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
-            if (job == null || IsTerminal(job.Status))
+            if (job == null)
             {
+                reconcileOutcome = "not_found";
+                return;
+            }
+
+            reconcileJobKind = job.Spec.Kind.ToString();
+
+            if (IsTerminal(job.Status))
+            {
+                reconcileOutcome = "terminal";
                 return;
             }
 
             var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
             if (backend == null)
             {
+                reconcileOutcome = "backend_missing";
                 Log.BackendMissing(logger, operationId, job.Spec.Backend, job.Spec.TargetKind.ToString());
                 var failedAt = DateTimeOffset.UtcNow;
                 var missing = job with
@@ -117,22 +130,30 @@ internal sealed partial class ExecutionJobReconciler(
                 var persisted = await jobStore.TrySetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
                 if (!persisted)
                 {
+                    reconcileOutcome = "cas_conflict";
                     Log.ExecutionJobCasConflict(logger, operationId);
                     return;
                 }
 
+                reconcileOutcome = "changed";
                 ControlPlaneTelemetry.RecordExecutionTransition(job, updated);
                 await BridgeProgressAsync(job, updated, reconciliationCancellation.Token).ConfigureAwait(false);
                 Log.ExecutionJobReconciled(logger, operationId, updated.Status.ToString(), updated.PercentComplete ?? double.NaN);
             }
+            else
+            {
+                reconcileOutcome = "unchanged";
+            }
         }
         catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
+            reconcileOutcome = "lease_lost";
             Log.ExecutionJobLeaseLost(logger, operationId);
             return;
         }
         catch (Exception ex)
         {
+            reconcileOutcome = "error";
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (job != null && !IsTerminal(job.Status))
             {
@@ -156,6 +177,12 @@ internal sealed partial class ExecutionJobReconciler(
         }
         finally
         {
+            ControlPlaneTelemetry.ExecutionReconcileCycles.Add(1, new TagList
+            {
+                { ControlPlaneTelemetry.Tags.ExecutionJobKind, reconcileJobKind },
+                { ControlPlaneTelemetry.Tags.ExecutionReconcileOutcome, reconcileOutcome }
+            });
+
             reconciliationCancellation.Cancel();
             try
             {

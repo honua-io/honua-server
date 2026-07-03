@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,10 @@ namespace Honua.Core.Features.FeatureStore.Services;
 /// </remarks>
 public sealed partial class ReplicaSyncService : IReplicaSyncService
 {
+    // PA-020: replica conflict detection / edit application is a hot path (every replica
+    // upload) and previously had no telemetry span.
+    private static readonly ActivitySource _activitySource = new("Honua.Core.FeatureStore");
+
     private readonly IChangeTracker _changeTracker;
     private readonly IReplicaConflictRepository _conflictRepository;
     private readonly ILogger<ReplicaSyncService> _logger;
@@ -53,6 +58,12 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         ArgumentNullException.ThrowIfNull(editApplier);
 
         var layerEdits = request.LayerEdits;
+
+        using var activity = _activitySource.StartActivity("replicasync.apply_upload");
+        activity?.SetTag("replica.id", request.ReplicaId);
+        activity?.SetTag("service.id", request.ServiceId);
+        activity?.SetTag("replicasync.layer_count", layerEdits.IsDefault ? 0 : layerEdits.Length);
+
         if (layerEdits.IsDefaultOrEmpty)
         {
             var currentGen = await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
@@ -183,6 +194,12 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         if (conflicts.Count > 0)
         {
             Log.ConflictsDetected(_logger, request.ReplicaId, request.ServiceId, conflicts.Count, applyConflicting);
+        }
+
+        activity?.SetTag("replicasync.conflict_count", conflicts.Count);
+        if (anyFailure)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, firstFailure);
         }
 
         // The server generation produced once the uploaded edits applied. A subsequent download delta

@@ -38,7 +38,10 @@ public static partial class Extensions
         "Honua.Database.ConnectionPool",
         "Honua.Production.Metrics",
         FederationMetrics.MeterName,
-        LambdaTelemetry.MeterName
+        LambdaTelemetry.MeterName,
+        // PA-112: the SensorThings observation-stream slow-consumer drop counter was
+        // tracked in-memory but never exported as an OTel metric.
+        "Honua.SensorThings"
     ];
     private static readonly string[] _activitySourceNames =
     [
@@ -50,7 +53,26 @@ public static partial class Extensions
         StudioPackageLifecycleService.ActivitySourceName,
         "Honua.PackageReview",
         "Honua.Routing",
-        "Honua.Geocoding"
+        "Honua.Geocoding",
+        // PA-014 / PA-063: declared ActivitySources that were never registered with the
+        // OTel TracerProvider, so every span they emit was silently dropped.
+        "Honua.GeoServer.Import",
+        "Honua.Spec.Parse",
+        "Honua.Spec.Validation",
+        "Honua.Server.Reporting",
+        // PA-160: provider data-access ActivitySources (spans created but dropped).
+        "Honua.SqlServer.FeatureStore",
+        "Honua.Snowflake.FeatureStore",
+        "Honua.Redshift.FeatureStore",
+        "Honua.Oracle.FeatureStore",
+        // PA-016 / PA-017 / PA-018 / PA-019 / PA-020: hot-path ActivitySources added by the
+        // 2026-07 observability audit (#2401) that previously had no span coverage at all.
+        "Honua.Import.Jobs",
+        "Honua.Federation",
+        "Honua.Core.Edit",
+        "Honua.Core.FeatureStore",
+        // PA-108: federated ArcGIS REST provider query span (paging loop).
+        "Honua.ArcGisRest"
     ];
 
     /// <summary>

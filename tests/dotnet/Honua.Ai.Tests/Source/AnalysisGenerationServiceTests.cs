@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -207,6 +208,34 @@ public sealed class AnalysisGenerationServiceTests
         result.Status.Should().Be("unsupported");
         result.Analysis.Should().BeNull();
         result.UnmappedRequests.Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint(GenerateContract)]
+    public async Task GenerateAsync_BufferRequest_StartsAnalysisGenerationSpanTaggedWithProvider()
+    {
+        // PA-202: the outbound AI provider call was previously untraced. GenerateAsync must
+        // start a "honua.analysis_generation.generate" span tagged with the provider id (not
+        // the prompt/response content) so the AI generation hot path is visible in traces.
+        var service = CreateService(enabled: true, ProposalJson(BufferProposal()));
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "Honua",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        await service.GenerateAsync(new AnalysisGenerationRequest
+        {
+            Prompt = "buffer all parcels by 100 meters"
+        });
+
+        var span = activities.Should().ContainSingle(a => a.OperationName == "honua.analysis_generation.generate").Which;
+        span.TagObjects.Should().Contain(t => t.Key == "honua.ai.provider" && Equals(t.Value, "local"));
     }
 
     [UnitTest]

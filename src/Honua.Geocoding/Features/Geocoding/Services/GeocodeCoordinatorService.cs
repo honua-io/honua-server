@@ -282,11 +282,18 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.suggest");
+        activity?.SetTag("honua.geocoding.operation", "suggest");
+        activity?.SetTag("honua.geocoding.preferred_provider", providerName);
+        // Length only — never tag the raw query text (PII).
+        activity?.SetTag("honua.geocoding.query_length", request.Text?.Length ?? 0);
+
         var providers = GetProvidersToTry(providerName);
 
         var throttled = EnforceRateLimit<IReadOnlyList<GeocodeSuggestion>>(providers, static p => p.Capabilities.SupportsSuggest);
         if (throttled is not null)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, throttled.ErrorMessage);
             return throttled;
         }
 
@@ -325,6 +332,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     results.Count);
 
+                activity?.SetTag("honua.geocoding.provider", provider.Name);
+                activity?.SetTag("honua.geocoding.result_count", results.Count);
+
                 return GeocodeResults.Success<IReadOnlyList<GeocodeSuggestion>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
@@ -360,6 +370,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             string.Join(", ", attemptedProviders),
             lastException);
 
+        activity?.SetTag("honua.geocoding.provider", failedProviderName);
+        activity?.SetTag("honua.geocoding.result_count", 0);
+        activity?.SetStatus(ActivityStatusCode.Error, errorMessage);
+
         return GeocodeResults.Failure<IReadOnlyList<GeocodeSuggestion>>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
@@ -370,6 +384,11 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.batch");
+        activity?.SetTag("honua.geocoding.operation", "batch");
+        activity?.SetTag("honua.geocoding.preferred_provider", providerName);
+        activity?.SetTag("honua.geocoding.batch_size", request.Queries.Count);
 
         var providers = GetProvidersToTry(providerName);
 
@@ -383,8 +402,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             if (!batchDecision.Allowed)
             {
                 GeocodeCoordinatorLog.BatchSizeRejected(_logger, batchPrimary.Name, request.Queries.Count, batchDecision.EffectiveLimit ?? 0);
+                var rejection = batchDecision.Reason ?? "Batch size exceeds the maximum allowed batch size.";
+                activity?.SetStatus(ActivityStatusCode.Error, rejection);
                 return GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
-                    batchDecision.Reason ?? "Batch size exceeds the maximum allowed batch size.",
+                    rejection,
                     batchPrimary.Name,
                     attemptedProviders: [batchPrimary.Name]);
             }
@@ -393,6 +414,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         var throttled = EnforceRateLimit<IReadOnlyList<GeocodeCandidate>>(providers, static p => p.Capabilities.SupportsBatch);
         if (throttled is not null)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, throttled.ErrorMessage);
             return throttled;
         }
 
@@ -431,6 +453,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     results.Count);
 
+                activity?.SetTag("honua.geocoding.provider", provider.Name);
+                activity?.SetTag("honua.geocoding.result_count", results.Count);
+
                 return GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
@@ -465,6 +490,10 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             "batch geocoding",
             string.Join(", ", attemptedProviders),
             lastException);
+
+        activity?.SetTag("honua.geocoding.provider", failedProviderName);
+        activity?.SetTag("honua.geocoding.result_count", 0);
+        activity?.SetStatus(ActivityStatusCode.Error, errorMessage);
 
         return GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
