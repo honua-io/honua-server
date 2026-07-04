@@ -44,7 +44,8 @@ public sealed class FeatureServerSpatialLimitsTests : IClassFixture<FeatureServe
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
             "?geometry=-180,-90,180,90&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Geometry bounding box area");
         content.Should().Contain("exceeds maximum allowed area");
@@ -85,7 +86,8 @@ public sealed class FeatureServerSpatialLimitsTests : IClassFixture<FeatureServe
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
             "?geometry=0,0,10000,10000&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&inSR=2230&f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("projected SRID 2230");
         content.Should().Contain("linear units are unknown");

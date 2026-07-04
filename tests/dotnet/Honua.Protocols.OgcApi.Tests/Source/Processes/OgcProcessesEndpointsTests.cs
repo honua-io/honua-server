@@ -243,6 +243,58 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_PreferRespondSync_Returns422WithOgcExceptionType()
+    {
+        // OGC API Processes Part 1 §7.9.4: when the client sends Prefer: respond-sync
+        // but the process only supports async-execute, the server SHALL return 422
+        // Unprocessable Entity with a registered OGC exception type URI.
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-sync");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("type").GetString().Should()
+            .Contain("unsupported-execution-mode",
+                "OGC API Processes requires a registered exception type URI for 422 responses");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_AsyncJobCreated_EmitsPreferenceAppliedHeader()
+    {
+        // OGC API Processes Part 1 §7.9.4.2: the server SHALL include
+        // Preference-Applied: respond-async on every async 201 response.
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        if (response.StatusCode == HttpStatusCode.Created)
+        {
+            response.Headers.TryGetValues("Preference-Applied", out var values).Should().BeTrue(
+                "OGC API Processes §7.9.4.2 requires Preference-Applied: respond-async on every 201 async response");
+            values.Should().Contain("respond-async");
+        }
+        else
+        {
+            // 503 when Redis unavailable — skip header assertion
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_FirstSliceVectorProcess_SubmitsConcreteProcessId()
     {
         var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";

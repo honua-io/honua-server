@@ -109,4 +109,44 @@ internal static class ProtocolRequestClassifier
         path.StartsWithSegments("/tiles") ||
         path.StartsWithSegments("/sharing/rest") ||
         path.StartsWithSegments("/rest/info");
+
+    internal static bool IsWmsAlias(PathString path)
+    {
+        if (path.StartsWithSegments("/ogc/services", out var remaining))
+        {
+            var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return segments is { Length: >= 2 } &&
+                   string.Equals(segments[1], "wms", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (path.StartsWithSegments("/rest/services", out var restRemaining))
+        {
+            var segments = restRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return segments is { Length: >= 3 } &&
+                   string.Equals(segments[1], "MapServer", StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(segments[2], "wms", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    internal static bool IsWmtsAlias(PathString path)
+    {
+        if (path.StartsWithSegments("/ogc/services", out var remaining))
+        {
+            var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return segments is { Length: >= 2 } &&
+                   string.Equals(segments[1], "wmts", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (path.StartsWithSegments("/rest/services", out var restRemaining))
+        {
+            var segments = restRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return segments is { Length: >= 3 } &&
+                   string.Equals(segments[1], "MapServer", StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(segments[2], "wmts", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
 }
