@@ -328,7 +328,10 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             var indexPos = CompactV2HeaderSize + (i * 8);
             var indexValue = BinaryPrimitives.ReadInt64LittleEndian(bundle.AsSpan(indexPos, 8));
             var offset = indexValue & CompactV2OffsetMask;
-            var size = (int)(indexValue >> 40);
+            // Use a logical (unsigned) right shift so that tiles whose encoded size has bit 23
+            // set (≥ 8 MB) are not sign-extended into a negative Int32, which would cause the
+            // size <= 0 guard below to silently skip them.
+            var size = (int)((ulong)indexValue >> 40);
             if (size <= 0)
             {
                 continue;

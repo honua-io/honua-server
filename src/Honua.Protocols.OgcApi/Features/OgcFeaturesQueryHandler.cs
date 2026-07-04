@@ -882,7 +882,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
         int limit,
         int offset)
     {
-        var queryParts = new List<string>();
+        // Use QueryHelpers.AddQueryString so that both keys and values are properly
+        // percent-encoded.  IQueryCollection exposes URL-decoded keys; writing them
+        // back with bare string interpolation produces syntactically invalid URLs when
+        // a field name contains spaces, '&', '=', or other reserved characters.
+        var query = new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>(
+            StringComparer.OrdinalIgnoreCase);
 
         foreach (var (key, value) in request.Query)
         {
@@ -895,12 +900,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (!string.IsNullOrWhiteSpace(value))
             {
-                queryParts.Add($"{key}={Uri.EscapeDataString(value.ToString())}");
+                query[key] = value;
             }
         }
 
-        queryParts.Add(FormattableString.Invariant($"limit={limit}"));
-        queryParts.Add(FormattableString.Invariant($"offset={offset}"));
+        query["limit"] = limit.ToString(CultureInfo.InvariantCulture);
+        query["offset"] = offset.ToString(CultureInfo.InvariantCulture);
 
         var formatValue = outputFormat switch
         {
@@ -914,12 +919,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         if (!string.IsNullOrWhiteSpace(formatValue))
         {
-            queryParts.Add($"f={formatValue}");
+            query["f"] = formatValue;
         }
 
-        return queryParts.Count > 0
-            ? $"{basePath}?{string.Join("&", queryParts)}"
-            : basePath;
+        return Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(basePath, query);
     }
 
     private static string FormatContentCrs(string crsUri) => $"<{crsUri}>";

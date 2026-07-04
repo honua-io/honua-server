@@ -853,7 +853,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         HonuaTelemetry.Protocols.OgcFeatures,
                         CancellationToken.None,
                         mutationFeature: updated.Value,
-                        serviceProtocol: OgcFeaturesProtocolName).ConfigureAwait(false);
+                        serviceProtocol: OgcFeaturesProtocolName,
+                        geometryChanged: patchRequest.HasGeometry).ConfigureAwait(false);
                 }
                 catch (Exception publishEx)
                 {

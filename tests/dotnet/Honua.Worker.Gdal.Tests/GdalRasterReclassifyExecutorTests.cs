@@ -49,7 +49,7 @@ public sealed class GdalRasterReclassifyExecutorTests
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
             context.Artifacts.Single().Should().StartWith("data:image/tiff");
 
-            var args = runner.Invocations.Single().Arguments;
+            var args = runner.Invocations.Single(i => i.Tool == "gdal_calc.py").Arguments;
             args.Should().Contain("-A");
             var calcIndex = args.ToList().IndexOf("--calc");
             var calc = args[calcIndex + 1];
@@ -79,7 +79,7 @@ public sealed class GdalRasterReclassifyExecutorTests
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
-            var args = runner.Invocations.Single().Arguments;
+            var args = runner.Invocations.Single(i => i.Tool == "gdal_calc.py").Arguments;
             var calc = args[args.ToList().IndexOf("--calc") + 1];
             calc.Should().Contain("(A==1)");
             calc.Should().Contain("(A==2)");

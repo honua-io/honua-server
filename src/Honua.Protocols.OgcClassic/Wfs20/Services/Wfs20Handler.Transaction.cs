@@ -83,6 +83,14 @@ internal sealed partial class Wfs20Handler
 
             if (prepared.Operations.IsDefaultOrEmpty)
             {
+                if (prepared.HasAnyRecognisedActions)
+                {
+                    // All actions matched zero features — ISO 19142 §15.2.5.3 no-op: return
+                    // a valid TransactionResponse with all counts at zero rather than an error.
+                    var emptyResponse = BuildTransactionResponseXml(prepared, FeatureEditResult.Success(0, 0, 0));
+                    return Results.Content(emptyResponse, "application/xml", Encoding.UTF8);
+                }
+
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
                     "MissingParameterValue",
@@ -218,6 +226,15 @@ internal sealed partial class Wfs20Handler
         var operations = ImmutableArray.CreateBuilder<PreparedTransactionOperation>();
         var distinctLayerIds = new HashSet<int>();
         var validatedLayerIds = new HashSet<int>();
+        // Tracks whether the body contained at least one supported WFS action element.
+        // ISO 19142 §15.2.5.3: a Delete or Update whose filter matches zero features is a
+        // valid no-op that contributes zero operations but is still a recognised action.
+        var hasAnyRecognisedActions = false;
+        // Counts parsed Delete/Update action *elements*, regardless of how many features matched.
+        // Used by BuildTransactionResponseXml so that totalDeleted/totalUpdated appear in the
+        // TransactionSummary even when every filter matched zero features (count then = 0).
+        var parsedDeleteActions = 0;
+        var parsedUpdateActions = 0;
 
         foreach (var actionElement in root.Elements())
         {
@@ -267,6 +284,25 @@ internal sealed partial class Wfs20Handler
                     "request")
             };
 
+            switch (actionElement.Name.LocalName)
+            {
+                case "Insert":
+                case "Update":
+                case "Delete":
+                case "Replace":
+                    hasAnyRecognisedActions = true;
+                    break;
+            }
+
+            if (actionElement.Name.LocalName == "Delete")
+            {
+                parsedDeleteActions++;
+            }
+            else if (actionElement.Name.LocalName == "Update")
+            {
+                parsedUpdateActions++;
+            }
+
             if (errorResult != null)
             {
                 return TransactionPreparationResult.Failure(errorResult);
@@ -299,7 +335,10 @@ internal sealed partial class Wfs20Handler
         return TransactionPreparationResult.Success(
             operations.ToImmutable(),
             layerId,
-            distinctLayerIds.Count);
+            distinctLayerIds.Count,
+            hasAnyRecognisedActions,
+            parsedDeleteActions,
+            parsedUpdateActions);
     }
 
 
@@ -951,7 +990,9 @@ internal sealed partial class Wfs20Handler
 
         if (objectIds.IsDefaultOrEmpty)
         {
-            throw new ArgumentException("Transaction filter did not match any features.");
+            // ISO 19142 §15.2.5.3: a filter that matches zero features is a valid no-op;
+            // report totalDeleted/totalUpdated=0 rather than failing with a 400 error.
+            return ImmutableArray<long>.Empty;
         }
 
         return objectIds;
@@ -1458,7 +1499,23 @@ internal sealed partial class Wfs20Handler
             .FirstOrDefault(element => string.Equals(element.Name.LocalName, "posList", StringComparison.OrdinalIgnoreCase));
         if (posListElement != null)
         {
-            return ParseTransactionPosList(posListElement.Value, axisOrder);
+            // Read srsDimension from the posList element first, then from the containing geometry element.
+            // Default per GML 3.2 §9.2.4: 2.
+            var srsDimension = 2;
+            var srsDimensionAttr = posListElement
+                .Attributes()
+                .FirstOrDefault(a => string.Equals(a.Name.LocalName, "srsDimension", StringComparison.OrdinalIgnoreCase))
+                ?? geometryElement
+                    .Attributes()
+                    .FirstOrDefault(a => string.Equals(a.Name.LocalName, "srsDimension", StringComparison.OrdinalIgnoreCase));
+            if (srsDimensionAttr != null &&
+                int.TryParse(srsDimensionAttr.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedDim) &&
+                parsedDim >= 2)
+            {
+                srsDimension = parsedDim;
+            }
+
+            return ParseTransactionPosList(posListElement.Value, axisOrder, srsDimension);
         }
 
         var positions = geometryElement.Descendants()
@@ -1474,22 +1531,26 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static Coordinate[] ParseTransactionPosList(string rawPosList, AxisOrder axisOrder)
+    private static Coordinate[] ParseTransactionPosList(string rawPosList, AxisOrder axisOrder, int srsDimension = 2)
     {
         var ordinates = rawPosList
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(ParseTransactionOrdinate)
             .ToArray();
 
-        if (ordinates.Length < 2 || ordinates.Length % 2 != 0)
+        var stride = Math.Max(2, srsDimension);
+        if (ordinates.Length < stride || ordinates.Length % stride != 0)
         {
-            throw new ArgumentException("GML posList must contain an even number of ordinates.");
+            throw new ArgumentException(
+                $"GML posList ordinate count ({ordinates.Length.ToString(CultureInfo.InvariantCulture)}) " +
+                $"is not a multiple of srsDimension ({stride.ToString(CultureInfo.InvariantCulture)}).");
         }
 
-        var coordinates = new Coordinate[ordinates.Length / 2];
-        for (var index = 0; index < ordinates.Length; index += 2)
+        var coordinates = new Coordinate[ordinates.Length / stride];
+        for (var index = 0; index < ordinates.Length; index += stride)
         {
-            coordinates[index / 2] = CreateTransactionCoordinate(ordinates[index], ordinates[index + 1], axisOrder);
+            // Only X/Y are captured; Z (index+2) is read and discarded when srsDimension=3.
+            coordinates[index / stride] = CreateTransactionCoordinate(ordinates[index], ordinates[index + 1], axisOrder);
         }
 
         return coordinates;
@@ -1642,6 +1703,19 @@ internal sealed partial class Wfs20Handler
                 requestGeometryChangedFlags,
                 rollbackOnFailure,
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        // Multi-layer transactions cannot provide a single atomic cross-layer rollback:
+        // each layer is committed independently by the data layer.  If rollbackOnFailure=true
+        // is requested, reject before any data is committed rather than silently leaving a
+        // partially-committed state the client believes was rolled back (ISO 19142 §15.2.5.3).
+        if (rollbackOnFailure)
+        {
+            throw new WfsTransactionException(
+                "OperationProcessingFailed",
+                "Multi-layer transactions with rollbackOnFailure=true are not supported because cross-layer atomicity cannot be guaranteed. " +
+                "Submit each feature type in a separate Transaction or set rollbackOnFailure=false.",
+                "Transaction");
         }
 
         var createResultIndexes = new Dictionary<int, int>();
@@ -2075,7 +2149,9 @@ internal sealed partial class Wfs20Handler
                 writer.WriteElementString("wfs", "totalInserted", Wfs20Utilities.WfsNamespace, inserted.Count.ToString(CultureInfo.InvariantCulture));
             }
 
-            if (prepared.UpdateCount > 0)
+            // Use ParsedUpdateActions / ParsedDeleteActions (not UpdateCount / DeleteCount) so that
+            // zero-match operations still appear in the summary as required by ISO 19142 §15.2.5.3.
+            if (prepared.ParsedUpdateActions > 0)
             {
                 writer.WriteElementString("wfs", "totalUpdated", Wfs20Utilities.WfsNamespace, updatedCount.ToString(CultureInfo.InvariantCulture));
             }
@@ -2085,7 +2161,7 @@ internal sealed partial class Wfs20Handler
                 writer.WriteElementString("wfs", "totalReplaced", Wfs20Utilities.WfsNamespace, replaced.Count.ToString(CultureInfo.InvariantCulture));
             }
 
-            if (prepared.DeleteCount > 0)
+            if (prepared.ParsedDeleteActions > 0)
             {
                 writer.WriteElementString("wfs", "totalDeleted", Wfs20Utilities.WfsNamespace, deletedCount.ToString(CultureInfo.InvariantCulture));
             }
@@ -2207,14 +2283,23 @@ internal sealed partial class Wfs20Handler
         int InsertCount,
         int UpdateCount,
         int ReplaceCount,
-        int DeleteCount)
+        int DeleteCount,
+        bool HasAnyRecognisedActions,
+        // Count of parsed Delete/Update *action elements* in the XML body regardless of how many
+        // features matched.  Used by BuildTransactionResponseXml to decide whether to emit
+        // totalDeleted/totalUpdated even when the filter matched zero features (ISO 19142 §15.2.5.3).
+        int ParsedDeleteActions,
+        int ParsedUpdateActions)
     {
         public bool IsValid => ErrorResult is null;
 
         public static TransactionPreparationResult Success(
             ImmutableArray<PreparedTransactionOperation> operations,
             int layerId,
-            int layerIdCount)
+            int layerIdCount,
+            bool hasAnyRecognisedActions,
+            int parsedDeleteActions,
+            int parsedUpdateActions)
         {
             var insertCount = 0;
             var updateCount = 0;
@@ -2248,7 +2333,10 @@ internal sealed partial class Wfs20Handler
                 insertCount,
                 updateCount,
                 replaceCount,
-                deleteCount);
+                deleteCount,
+                hasAnyRecognisedActions,
+                parsedDeleteActions,
+                parsedUpdateActions);
         }
 
         public static TransactionPreparationResult Failure(IResult errorResult)
@@ -2259,6 +2347,9 @@ internal sealed partial class Wfs20Handler
                 errorResult,
                 0,
                 0,
+                0,
+                0,
+                false,
                 0,
                 0);
     }

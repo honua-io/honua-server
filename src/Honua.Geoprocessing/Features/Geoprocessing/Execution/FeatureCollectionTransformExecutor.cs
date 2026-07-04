@@ -99,8 +99,10 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
 
         // Open the input as a lazy feature stream. Spilled NDJSON streams are unbounded;
         // inline base64 data URIs remain bounded by MaxArtifactBytes for back-compat.
+        // Pass OutputRootDirectory so path-traversal injections in the reference are rejected.
         if (!FeatureStreamArtifact.TryOpenRead(
-                inputUri, out var parseError, out var inputStream, _options.CurrentValue.MaxArtifactBytes))
+                inputUri, out var parseError, out var inputStream, _options.CurrentValue.MaxArtifactBytes,
+                _options.CurrentValue.OutputRootDirectory))
         {
             return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: 'input' {parseError}");
         }

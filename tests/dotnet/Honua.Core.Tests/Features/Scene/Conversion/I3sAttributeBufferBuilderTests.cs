@@ -158,6 +158,48 @@ public sealed class I3sAttributeBufferBuilderTests
         I3sAttributeBufferBuilder.Build(features, field).Should().BeNull();
     }
 
+    // BH-S-03 regression: feature IDs > Int32.MaxValue (e.g. OSM building IDs) must not
+    // silently truncate to negative/wrong values. Both Build overloads must throw before
+    // packing any Oid32 value that does not fit in the 32-bit signed space.
+
+    [UnitTest]
+    public void Build_FromFeatures_ObjectIdExceedsInt32Max_Throws()
+    {
+        const ulong largeId = (ulong)int.MaxValue + 1;
+        var features = new List<SceneFeature>
+        {
+            FeatureWith((long)largeId, new Dictionary<string, object?>()),
+        };
+
+        var act = () => I3sAttributeBufferBuilder.Build(features, I3sAttributeSchemaBuilder.BuildObjectIdField());
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Oid32*");
+    }
+
+    [UnitTest]
+    public void Build_FromGeometry_ObjectIdExceedsInt32Max_Throws()
+    {
+        // Transcode a feature whose ID encodes into the geometry buffer, then
+        // attempt to read it back as an Oid32 attribute file.
+        const long largeId = (long)int.MaxValue + 1;
+        var features = new[]
+        {
+            new SceneFeature
+            {
+                Id = largeId,
+                Geometry = Square(largeId, -122.42, 37.77).Geometry,
+                Attributes = new Dictionary<string, object?>(),
+            },
+        };
+        var geometry = I3sGeometryTranscoder.Transcode(features);
+
+        var act = () => I3sAttributeBufferBuilder.Build(geometry, ObjectIdField());
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Oid32*");
+    }
+
     private static IReadOnlyList<SceneFeature> ThreeFeaturesWithAttributes() =>
     [
         FeatureWith(11, new Dictionary<string, object?> { ["HEIGHT"] = 12.5, ["NAME"] = "alpha" }),
