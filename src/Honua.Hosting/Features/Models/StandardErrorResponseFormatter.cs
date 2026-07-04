@@ -68,6 +68,11 @@ internal static class StandardErrorResponseFormatter
             return FormatODataError(context, errorResponse, options);
         }
 
+        if (ProtocolRequestClassifier.IsWmsAlias(path))
+        {
+            return FormatWmsAliasError(context, errorResponse, options);
+        }
+
         if (ProtocolRequestClassifier.IsOgcServiceAlias(path))
         {
             return FormatWfsError(context, errorResponse, options);
@@ -152,22 +157,87 @@ internal static class StandardErrorResponseFormatter
             ? string.Empty
             : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
 
-        // OWS 1.1 XSD (owsExceptionReport.xsd) declares `language` as use="required" on the
-        // ExceptionReport element. Omitting it causes schema-level rejection by strict validators.
-        var xmlContent = $$"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1" version="2.0.0" language="en">
-              <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
-                <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
-              </ows:Exception>
-            </ows:ExceptionReport>
-            """;
+        // PA-076: Select the version-appropriate exception envelope based on the VERSION query parameter.
+        // WFS 1.0.0 → ogc:ServiceExceptionReport; WFS 1.1.0 → OWS 1.0 ows:ExceptionReport;
+        // WFS 2.0.0 / absent → OWS 1.1 ows:ExceptionReport (current default, language required).
+        var wfsVersion = context.Request.Query.TryGetValue("VERSION", out var versionValue)
+            ? versionValue.ToString()
+            : context.Request.Query.TryGetValue("version", out var versionLowerValue)
+                ? versionLowerValue.ToString()
+                : null;
+
+        string xmlContent;
+        if (string.Equals(wfsVersion, "1.0.0", StringComparison.Ordinal))
+        {
+            xmlContent = $$"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <ogc:ServiceExceptionReport xmlns:ogc="http://www.opengis.net/ogc" version="1.2.0">
+                  <ogc:ServiceException code="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ogc:ServiceException>
+                </ogc:ServiceExceptionReport>
+                """;
+        }
+        else if (string.Equals(wfsVersion, "1.1.0", StringComparison.Ordinal))
+        {
+            xmlContent = $$"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows" version="1.1.0">
+                  <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
+                    <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
+                  </ows:Exception>
+                </ows:ExceptionReport>
+                """;
+        }
+        else
+        {
+            // WFS 2.0.0 or no version: OWS 1.1 namespace (language attr is required by the XSD).
+            xmlContent = $$"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1" version="2.0.0" language="en">
+                  <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
+                    <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
+                  </ows:Exception>
+                </ows:ExceptionReport>
+                """;
+        }
 
         return Results.Content(
             xmlContent,
             "application/xml",
             System.Text.Encoding.UTF8,
             errorResponse.StatusCode);
+    }
+
+    /// <summary>
+    /// Formats infrastructure errors on WMS alias paths (/ogc/services/{id}/wms,
+    /// /rest/services/{id}/MapServer/wms) as a WMS ServiceExceptionReport with HTTP 200,
+    /// matching the WMS 1.3.0 § 7.3.3.4 requirement.
+    /// </summary>
+    private static IResult FormatWmsAliasError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
+        AddResponseHeaders(context, options);
+        var exceptionCode = MapWmsAliasCode(errorResponse);
+        var xmlContent = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ServiceExceptionReport xmlns="http://www.opengis.net/ogc"
+                                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                    version="1.3.0">
+              <ServiceException code="{{EscapeForXml(exceptionCode)}}">{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ServiceException>
+            </ServiceExceptionReport>
+            """;
+        // WMS 1.3.0 §7.3.3.4: ServiceExceptionReport MUST be returned with HTTP 200 OK.
+        return Results.Content(xmlContent, "application/xml", System.Text.Encoding.UTF8, StatusCodes.Status200OK);
+    }
+
+    private static string MapWmsAliasCode(StandardErrorResponse errorResponse)
+    {
+        return errorResponse.StatusCode switch
+        {
+            StatusCodes.Status404NotFound => "LayerNotDefined",
+            StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden => "InvalidParameterValue",
+            StatusCodes.Status413PayloadTooLarge => "NoApplicableCode",
+            StatusCodes.Status400BadRequest => "InvalidParameterValue",
+            _ => "NoApplicableCode"
+        };
     }
 
     /// <summary>
@@ -190,11 +260,20 @@ internal static class StandardErrorResponseFormatter
     {
         var details = BuildGeoServicesDetails(context, errorResponse, options);
 
+        // PA-167: Use explicit GeoServices body code when provided (e.g. 498 InvalidToken / 499 TokenRequired).
+        // Otherwise map HTTP 401 → 499 (TokenRequired) per the Esri ArcGIS REST API spec; all other codes
+        // map 1-to-1 from the HTTP status. The HTTP 401 body code of plain 401 is never emitted in
+        // conformant Esri responses — clients rely on 498/499 to trigger credential-prompt flows.
+        var bodyCode = options.GeoServicesBodyCode ?? (
+            errorResponse.StatusCode == StatusCodes.Status401Unauthorized
+                ? GeoServicesErrorCodes.TokenRequired
+                : GeoServicesErrorCodes.FromHttpStatusCode(errorResponse.StatusCode));
+
         var apiErrorResponse = new ApiErrorResponse
         {
             Error = new GeoServicesError
             {
-                Code = GeoServicesErrorCodes.FromHttpStatusCode(errorResponse.StatusCode),
+                Code = bodyCode,
                 Message = errorResponse.Title,
                 Details = details?.Length > 0 ? details : null
             }
@@ -202,10 +281,12 @@ internal static class StandardErrorResponseFormatter
 
         AddResponseHeaders(context, options);
 
+        // PA-070/PA-117: Esri GeoServices REST spec: ALL responses (including errors) use HTTP 200 OK.
+        // The error is signalled exclusively through the JSON body {"error":{"code":N,...}}.
         return Results.Json(
             apiErrorResponse,
             LimitsEnforcementJsonContext.Default.ApiErrorResponse,
-            statusCode: errorResponse.StatusCode);
+            statusCode: StatusCodes.Status200OK);
     }
 
     /// <summary>

@@ -83,15 +83,21 @@ public static class ExtentExtensions
         }
 
         var trimmed = crsUri.Trim();
-        if (trimmed.Equals(GetDefaultCrsUri(), StringComparison.OrdinalIgnoreCase) ||
-            trimmed.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase))
+        // PA-028: Normalise https:// → http:// before any matching to handle servers that
+        // emit https:// Content-Crs headers (e.g. OgcMapsRenderingHandler.FormatContentCrsHeader).
+        var schemeNormalized = trimmed.StartsWith("https://www.opengis.net/", StringComparison.OrdinalIgnoreCase)
+            ? "http://" + trimmed["https://".Length..]
+            : trimmed;
+
+        if (schemeNormalized.Equals(GetDefaultCrsUri(), StringComparison.OrdinalIgnoreCase) ||
+            schemeNormalized.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
+            schemeNormalized.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase))
         {
             srid = 4326;
             return true;
         }
 
-        ReadOnlySpan<char> span = trimmed;
+        ReadOnlySpan<char> span = schemeNormalized;
         const string epsgMarker = "/EPSG/";
 
         var epsgIndex = span.IndexOf(epsgMarker.AsSpan(), StringComparison.OrdinalIgnoreCase);
