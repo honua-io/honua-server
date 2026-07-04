@@ -261,6 +261,15 @@ internal static class CollectionEndpoints
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
+            // BH-S-01: mirror HandleGetCollection's access check so the field schema of a
+            // private collection is not visible to unauthenticated / unauthorised callers.
+            var accessError = Honua.Infrastructure.Authentication.AccessPolicyHelpers
+                .RequireResourceAccess(context, resolved.Value.Resource, resolved.Value.Service);
+            if (accessError != null)
+            {
+                return accessError;
+            }
+
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var escapedCollectionId = Uri.EscapeDataString(collectionId);
             var queryablesId = $"{baseUrl}/stac/collections/{escapedCollectionId}/queryables";
