@@ -28,9 +28,11 @@ namespace Honua.Protocols.OData;
 /// </remarks>
 internal static class ODataErrorFormatter
 {
-    // OData v4 spec (OASIS OData-JSON-Format-v4.0 §3.1): parameter name must be "odata.metadata",
-    // not the OData 3.0 shorthand "metadata".
-    private const string ODataContentType = "application/json;odata.metadata=minimal";
+    // OData v4.01 protocol §9.3: error responses MUST use Content-Type: application/json.
+    // The odata.metadata preference parameter (OData JSON Format v4.01 §3.1) applies only
+    // to data-entity responses; it has no meaning on error payloads and strict OData clients
+    // (e.g. Microsoft OData client library, Azure Data Factory OData connector) may reject it.
+    private const string ODataErrorContentType = "application/json";
 
     /// <summary>
     /// Formats a <see cref="StandardErrorResponse"/> as an OData v4 error
@@ -69,7 +71,7 @@ internal static class ODataErrorFormatter
         return Results.Json(
             error,
             ODataJsonContext.Default.ODataError,
-            contentType: options.ContentType ?? ODataContentType,
+            contentType: options.ContentType ?? ODataErrorContentType,
             statusCode: errorResponse.StatusCode);
     }
 

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 
@@ -52,7 +53,7 @@ internal sealed class GmlSerializer : IGmlSerializer
         string featureTypeName,
         string namespaceUri,
         int? numberMatched = null,
-        int? numberReturned = null)
+        int numberReturned = 0)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(featureTypeName);
         ArgumentException.ThrowIfNullOrWhiteSpace(namespaceUri);
@@ -70,10 +71,8 @@ internal sealed class GmlSerializer : IGmlSerializer
             collection.Add(new XAttribute("numberMatched", numberMatched.Value.ToString(CultureInfo.InvariantCulture)));
         }
 
-        if (numberReturned.HasValue)
-        {
-            collection.Add(new XAttribute("numberReturned", numberReturned.Value.ToString(CultureInfo.InvariantCulture)));
-        }
+        // WFS 2.0 OGC 09-025r2 §11.3 Req 63: numberReturned is mandatory on all FeatureCollection responses.
+        collection.Add(new XAttribute("numberReturned", numberReturned.ToString(CultureInfo.InvariantCulture)));
 
         collection.Add(new XAttribute("timeStamp", FormatXmlDateTimeOffset(DateTimeOffset.UtcNow)));
 
@@ -98,8 +97,20 @@ internal sealed class GmlSerializer : IGmlSerializer
 
         try
         {
-            // Parse the GML fragment and wrap it in a geometry property element
-            var gmlElement = XElement.Parse(geometryGml);
+            // PA-107: use explicit XmlReaderSettings with DtdProcessing.Prohibit to make the
+            // DTD prohibition consistent with SecureXmlDocumentParser used elsewhere in the codebase,
+            // and to document the security decision at the call site rather than relying on runtime defaults.
+            var settings = new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null
+            };
+            XElement gmlElement;
+            using (var reader = XmlReader.Create(new System.IO.StringReader(geometryGml), settings))
+            {
+                gmlElement = XElement.Load(reader);
+            }
+
             var geometryProperty = new XElement(GmlNamespace + "geometryProperty");
             geometryProperty.Add(gmlElement);
             return geometryProperty;

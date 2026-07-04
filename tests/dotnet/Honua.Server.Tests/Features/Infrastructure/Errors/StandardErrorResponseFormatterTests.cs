@@ -190,11 +190,12 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
         await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(413);
+        // PA-069/PA-074: WMS alias paths return ServiceExceptionReport with HTTP 200 OK.
+        context.Response.StatusCode.Should().Be(200);
         context.Response.ContentType.Should().Be("application/xml; charset=utf-8");
 
         var responseBody = GetResponseBody(context);
-        responseBody.Should().Contain("<ows:ExceptionReport");
+        responseBody.Should().Contain("<ServiceExceptionReport");
         responseBody.Should().Contain("Request body is too large.");
         responseBody.Should().NotContain("\"error\"");
     }
@@ -217,7 +218,8 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        context.Response.StatusCode.Should().Be(400);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error is in the JSON body.
+        context.Response.StatusCode.Should().Be(200);
 
         var responseBody = GetResponseBody(context);
         var apiErrorResponse = JsonSerializer.Deserialize<JsonElement>(responseBody);
@@ -232,6 +234,54 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         detailStrings.Should().Contain("Syntax error near 'WHERE'");
         detailStrings.Should().Contain(detail => detail.StartsWith("CorrelationId:", StringComparison.OrdinalIgnoreCase));
         detailStrings.Should().Contain(detail => detail.StartsWith("Timestamp:", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/0/FeatureServer/0/query")]
+    public async Task FormatError_GeoServicesUnauthorized_EmitsTokenRequiredCode499()
+    {
+        // Arrange
+        var context = CreateContext("/rest/services/0/FeatureServer/0/query");
+        var errorResponse = StandardErrorResponse.Unauthorized("Authentication token is required.");
+
+        // Act
+        var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
+        await result.ExecuteAsync(context);
+
+        // Assert
+        // PA-167: HTTP 401 on GeoServices → body code 499 (TokenRequired), HTTP status 200.
+        context.Response.StatusCode.Should().Be(200);
+
+        var responseBody = GetResponseBody(context);
+        var apiErrorResponse = JsonSerializer.Deserialize<JsonElement>(responseBody);
+        apiErrorResponse.GetProperty("error").GetProperty("code").GetInt32().Should().Be(499);
+        apiErrorResponse.GetProperty("error").GetProperty("message").GetString().Should().Be("Unauthorized");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task FormatError_WmsAliasPath_ReturnsServiceExceptionReport()
+    {
+        // Arrange
+        var context = CreateContext("/ogc/services/test-service/wms");
+        var errorResponse = StandardErrorResponse.NotFound("Layer 'test-service' not found.");
+
+        // Act
+        var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
+        await result.ExecuteAsync(context);
+
+        // Assert
+        // PA-069/PA-074: WMS alias paths return ServiceExceptionReport with HTTP 200 OK.
+        context.Response.StatusCode.Should().Be(200);
+        context.Response.ContentType.Should().Be("application/xml; charset=utf-8");
+
+        var responseBody = GetResponseBody(context);
+        responseBody.Should().Contain("<ServiceExceptionReport");
+        responseBody.Should().Contain("LayerNotDefined");
+        responseBody.Should().Contain("Layer 'test-service' not found.");
+        responseBody.Should().NotContain("\"error\"");
     }
 
     #endregion
@@ -353,7 +403,8 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        context.Response.StatusCode.Should().Be(503);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error is in the JSON body.
+        context.Response.StatusCode.Should().Be(200);
         context.Response.Headers.Should().ContainKey("Retry-After");
         context.Response.Headers["Retry-After"].ToString().Should().Be("300");
 

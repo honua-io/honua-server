@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Infrastructure.Authentication;
+
 namespace Honua.Import;
 
 /// <summary>
@@ -16,9 +18,14 @@ internal static partial class CrossServerConsumeProbeEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapCrossServerConsumeProbeEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        // PA-155: defense-in-depth authorization even though this endpoint is only registered in
+        // Test environment. Prevents an unauthenticated caller from using it as a transparent
+        // proxy to localhost services if a container is accidentally started with
+        // ASPNETCORE_ENVIRONMENT=Test in a network-accessible configuration.
         _ = endpoints.MapGet("/__test/cross-server-consume/proxy", HandleProxyAsync)
             .WithName("CrossServerConsumeProxy")
-            .ExcludeFromDescription();
+            .ExcludeFromDescription()
+            .RequireAdminAuthorization();
 
         return endpoints;
     }

@@ -100,6 +100,7 @@ internal static class ProcessEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status403Forbidden)
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .Produces<OgcProcessError>(StatusCodes.Status409Conflict)
+            .Produces<OgcProcessError>(StatusCodes.Status422UnprocessableEntity)
             .Produces<OgcProcessError>(StatusCodes.Status501NotImplemented)
             .Produces<OgcProcessError>(StatusCodes.Status503ServiceUnavailable)
             .ExcludeFromDescription()
@@ -190,8 +191,27 @@ internal static class ProcessEndpoints
     {
         EnrichActivity("ExecuteProcess");
 
-        var preferAsync = context.Request.Headers.TryGetValue("Prefer", out var preferValues)
+        // OGC API Processes Part 1 §7.9.4: inspect the Prefer header once so
+        // both respond-async and respond-sync can be checked against the same
+        // header values.
+        var hasPreferHeader = context.Request.Headers.TryGetValue("Prefer", out var preferValues);
+        var preferAsync = hasPreferHeader
             && preferValues.Any(v => v != null && v.Contains("respond-async", StringComparison.OrdinalIgnoreCase));
+        var preferSync = hasPreferHeader
+            && preferValues.Any(v => v != null && v.Contains("respond-sync", StringComparison.OrdinalIgnoreCase));
+
+        // OGC API Processes Part 1 §7.9.4: when the client explicitly requests
+        // synchronous execution but this process only supports async-execute,
+        // respond with 422 Unprocessable Entity (SHALL requirement).
+        if (preferSync)
+        {
+            OgcProcessesLog.SyncExecutionNotSupported(logger, processId);
+            return OgcProcessesResults.Error(
+                StatusCodes.Status422UnprocessableEntity,
+                "Synchronous execution not supported",
+                "This process only supports asynchronous execution. Use 'Prefer: respond-async' or omit the Prefer header.",
+                "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/unsupported-execution-mode");
+        }
 
         try
         {
@@ -297,10 +317,11 @@ internal static class ProcessEndpoints
             var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(jobRecord, processId, baseUrl);
 
             context.Response.Headers.Location = $"{baseUrl}{BasePath}/jobs/{jobRecord.OperationId}";
-            if (preferAsync)
-            {
-                context.Response.Headers["Preference-Applied"] = "respond-async";
-            }
+
+            // OGC API Processes Part 1 §7.9.4.2: the server SHALL include
+            // Preference-Applied: respond-async on every async 201 response,
+            // regardless of whether the client sent a Prefer header.
+            context.Response.Headers["Preference-Applied"] = "respond-async";
 
             return Results.Json(
                 statusInfo,

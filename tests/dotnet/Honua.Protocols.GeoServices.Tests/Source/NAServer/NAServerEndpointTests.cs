@@ -136,7 +136,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var response = await _fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
 
         // Invalid input maps to the GeoServices error envelope, not a 500.
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -160,7 +161,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 payload);
 
             // Capability gate fires before solving: standard Esri error, not a solved result.
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var error = document.RootElement.GetProperty("error");
             error.GetProperty("code").GetInt32().Should().Be(400);
@@ -192,7 +194,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
 
             // Capability gate fires before solving: standard Esri error, not a solved route.
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var error = document.RootElement.GetProperty("error");
             error.GetProperty("code").GetInt32().Should().Be(400);
@@ -231,7 +234,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 "/rest/services/Routing/NAServer/ServiceArea/solveServiceArea",
                 payload);
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var error = document.RootElement.GetProperty("error");
             error.GetProperty("code").GetInt32().Should().Be(400);
@@ -293,7 +297,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
 
             var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var error = document.RootElement.GetProperty("error");
             error.GetProperty("code").GetInt32().Should().Be(400);
@@ -322,7 +327,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
 
         var response = await _fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var error = document.RootElement.GetProperty("error");
         error.GetProperty("code").GetInt32().Should().Be(400);
@@ -347,7 +353,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             "/rest/services/Routing/NAServer/ServiceArea/solveServiceArea",
             payload);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
             .Select(d => d.GetString()).Should().Contain(d => d!.Contains("travelMode"));
@@ -414,7 +421,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 "/rest/services/Routing/NAServer/ClosestFacility/solveClosestFacility",
                 payload);
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
                 .Select(d => d.GetString()).Should().Contain(d => d!.Contains("Closest-facility solves are not supported"));
@@ -472,7 +480,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 "/rest/services/Routing/NAServer/ODCostMatrix/solveODCostMatrix",
                 payload);
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
                 .Select(d => d.GetString()).Should().Contain(d => d!.Contains("OD cost matrix solves are not supported"));
@@ -534,7 +543,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             payload);
 
         // An unsupported problem type is rejected at parse time with a 400.
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -557,7 +567,8 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 "/rest/services/Routing/NAServer/LocationAllocation/solveLocationAllocation",
                 payload);
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
                 .Select(d => d.GetString()).Should().Contain(d => d!.Contains("Location-allocation solves are not supported"));
