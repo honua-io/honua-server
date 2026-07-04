@@ -1,4 +1,4 @@
-﻿﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
@@ -488,7 +488,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Forbidden);
     }
 
-        // ---- WFS GetFeature + Transaction ----
+    // ---- WFS GetFeature + Transaction ----
     //
     // WFS read (GetFeature / capabilities feature-type list) flows through the
     // shared GetPublishedFeatureTypesAsync filter, now resolver-aware via
