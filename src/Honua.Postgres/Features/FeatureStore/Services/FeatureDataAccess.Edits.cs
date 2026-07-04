@@ -30,8 +30,64 @@ internal sealed class FeatureEditPreconditionFailedException : Exception
     public long ObjectId { get; }
 }
 
+/// <summary>
+/// Internal signal that a create was rejected because the layer's geometry column is
+/// non-nullable (a database NOT NULL constraint fired) and the feature supplied no
+/// geometry. The edit paths translate this into a clean, actionable validation error
+/// ("Geometry is required for create operation on a spatial layer") instead of leaking a
+/// raw provider constraint violation.
+/// </summary>
+/// <remarks>
+/// BH-014 fix-forward (#2423 / reverted by #2433): the original fix added a blanket
+/// client-side pre-check that rejected null geometry on ANY spatial layer, which wrongly
+/// failed valid attribute-only creates on nullable geometry columns (Issue #45) and
+/// regressed ~10 CI shards. Mapping the actual database NOT NULL violation preserves the
+/// clean-error UX for genuinely non-nullable geometry columns while never rejecting a
+/// legitimate null-geometry create on a nullable column.
+/// </remarks>
+internal sealed class GeometryRequiredForCreateException : Exception
+{
+    public GeometryRequiredForCreateException(Exception innerException)
+        : base(FeatureDataAccess.GeometryRequiredForCreateMessage, innerException)
+    {
+    }
+}
+
 internal sealed partial class FeatureDataAccess
 {
+    /// <summary>
+    /// Client-safe validation message surfaced when a create supplies no geometry for a
+    /// layer whose geometry column is non-nullable (database NOT NULL constraint).
+    /// </summary>
+    internal const string GeometryRequiredForCreateMessage =
+        "Geometry is required for create operation on a spatial layer";
+
+    /// <summary>
+    /// Recognizes the common PostGIS geometry column names so a NOT NULL constraint
+    /// violation on the geometry column can be mapped to a clean validation error.
+    /// </summary>
+    internal static bool IsGeometryColumn(string? columnName)
+    {
+        if (string.IsNullOrEmpty(columnName))
+        {
+            return false;
+        }
+
+        return columnName.Equals("geometry", StringComparison.OrdinalIgnoreCase)
+            || columnName.Equals("geom", StringComparison.OrdinalIgnoreCase)
+            || columnName.Equals("shape", StringComparison.OrdinalIgnoreCase)
+            || columnName.Equals("the_geom", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True when a provider exception is a database NOT NULL constraint violation on the
+    /// geometry column, i.e. the layer's geometry column is non-nullable and the create
+    /// supplied no geometry. Used to map the raw provider error to a clean validation
+    /// message without a client-side pre-check (BH-014 fix-forward).
+    /// </summary>
+    internal static bool IsGeometryNotNullViolation(PostgresException ex)
+        => ex.SqlState == PostgresErrorCodes.NotNullViolation && IsGeometryColumn(ex.ColumnName);
+
     public async Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
     {
         // When an outbox scope is active and the provider supports transactional outbox,
@@ -728,6 +784,15 @@ internal sealed partial class FeatureDataAccess
         {
             throw new ResourceConflictException("Feature creation conflicted with existing data.", ex);
         }
+        catch (PostgresException ex) when (IsGeometryNotNullViolation(ex))
+        {
+            // BH-014 fix-forward: a null-geometry create against a non-nullable geometry
+            // column surfaces as a clean validation error rather than a raw provider
+            // constraint violation. This maps only the database's own decision (the
+            // NOT NULL constraint actually fired), so nullable geometry columns still
+            // accept valid attribute-only creates (Issue #45) with no client-side gate.
+            throw new GeometryRequiredForCreateException(ex);
+        }
     }
 
     private async Task<Feature> UpdateWithConnectionAsync(
@@ -1308,13 +1373,16 @@ internal sealed partial class FeatureDataAccess
         return result;
     }
 
-    private static string GetSafeEditOperationError(Exception ex, string operation)
+    internal static string GetSafeEditOperationError(Exception ex, string operation)
     {
         return ex switch
         {
             ResourceNotFoundException => "Feature not found.",
             FeatureEditPreconditionFailedException => "The feature was modified by another writer; the supplied precondition no longer matches.",
             ResourceConflictException => "The operation conflicted with existing data.",
+            // GeometryRequiredForCreateException carries a fixed, client-safe message
+            // (no provider internals) so it is surfaced verbatim.
+            GeometryRequiredForCreateException => GeometryRequiredForCreateMessage,
             ValidationException => "Invalid feature data.",
             ArgumentException or InvalidOperationException => "Invalid feature data.",
             _ => $"{operation} failed."
