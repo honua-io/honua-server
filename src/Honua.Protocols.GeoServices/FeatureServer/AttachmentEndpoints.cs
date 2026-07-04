@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -218,19 +219,37 @@ internal static partial class AttachmentEndpoints
         }
 
         // definitionExpression narrows the parent feature set with a SQL WHERE clause.
-        // Resolve it through the shared feature-query pipeline to the matching object IDs
-        // and intersect with the requested objectIds, so attachments are only returned for
-        // features that satisfy the expression (matching Esri queryAttachments semantics).
+        // Resolve it through the shared filter-expression pipeline so the SQL is safely
+        // parameterised and schema-validated before being sent to the feature reader.
         var definitionExpression = GetFirst(values, "definitionExpression", "definitionexpression");
         if (!string.IsNullOrWhiteSpace(definitionExpression))
         {
+            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, definitionExpression);
+            if (!parseResult.IsSuccess)
+            {
+                await RouteValidationHelpers.WriteValidationErrorAsync(
+                    context,
+                    "definitionExpression is not a valid WHERE clause for this layer.");
+                return;
+            }
+
+            var translationResult = filterService.Translate(parseResult.Expression, resource.Value.Resource);
+            if (!translationResult.IsSuccess)
+            {
+                await RouteValidationHelpers.WriteValidationErrorAsync(
+                    context,
+                    "definitionExpression is not a valid WHERE clause for this layer.");
+                return;
+            }
+
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             ImmutableArray<long> matchingIds;
             try
             {
                 matchingIds = await featureReader.QueryObjectIdsAsync(
                     layerId,
-                    new FeatureQuery { Where = definitionExpression, ExcludeAttributes = true },
+                    new FeatureQuery { SqlFilter = translationResult.SqlFilter, ExcludeAttributes = true },
                     cancellationToken);
             }
             catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)

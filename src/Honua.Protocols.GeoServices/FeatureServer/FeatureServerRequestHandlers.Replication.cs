@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -1101,8 +1101,11 @@ internal static partial class FeatureServerEndpoints
         // last-sync cursor to the live current generation once the server-to-client delta below has been
         // assembled, so the replica receives every change committed since its last sync exactly once.
         long currentGen;
-        if (didUpload && !isDownloadDirection)
+        if (didUpload)
         {
+            // BH-012: use the post-upload generation for both upload-only AND bidirectional
+            // syncs so concurrent server edits committed after the upload are captured by
+            // the NEXT sync rather than permanently skipped.
             currentGen = uploadServerGen;
         }
         else

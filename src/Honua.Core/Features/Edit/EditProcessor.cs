@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
@@ -450,6 +450,13 @@ public sealed class EditProcessor : IEditProcessor
             if (feature.Attributes?.IsEmpty != false && RequiresAttributes(resource))
             {
                 return EditValidationResult.Failure("Attributes required for create operation");
+            }
+
+            // BH-014: Validate geometry exists if the layer is spatial so the error surfaces
+            // as a clean validation failure rather than a DB NOT NULL constraint violation.
+            if (feature.Geometry is null && RequiresGeometry(resource))
+            {
+                return EditValidationResult.Failure("Geometry is required for create operation on a spatial layer");
             }
         }
 
