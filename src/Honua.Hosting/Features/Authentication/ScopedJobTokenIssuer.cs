@@ -248,9 +248,17 @@ internal sealed partial class ScopedJobTokenIssuer(
             }
             catch (Exception ex)
             {
-                _memoryCache.Remove(key);
                 ScopedJobTokenLog.DistributedCacheReadFailed(_logger, LogValueRedactor.Hash(key), ex);
-                return null;
+                // Distributed cache is unreachable; fall back to the in-process memory tier
+                // if a valid entry is present.  The memory entry was written atomically with
+                // the distributed entry at issuance time, so it remains consistent for its
+                // original TTL.  Evicting it would extend the auth outage beyond the Redis
+                // unavailability window and destroy warm in-process state unnecessarily (BH-028).
+                if (!_memoryCache.TryGetValue(key, out payload) || payload is null)
+                {
+                    return null;
+                }
+                // Fall through to deserialize the memory-cached payload.
             }
         }
         else if (!_memoryCache.TryGetValue(key, out payload) || payload is null)
