@@ -14,7 +14,7 @@ namespace Honua.Core.Features.Operations.Services;
 /// the workflow node registry's aggregation: providers are queried, descriptors are sorted
 /// for stable output, and a fingerprint version is computed over the descriptor ids.
 /// </summary>
-public sealed class OperationCatalog : IOperationCatalog
+public sealed class OperationCatalog : IOperationCatalog, IDisposable
 {
     // Every operation dispatch calls GetDescriptorAsync, which previously rebuilt the
     // whole catalog (querying every provider, re-sorting, re-hashing a version string)
@@ -149,4 +149,10 @@ public sealed class OperationCatalog : IOperationCatalog
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return "operation-catalog:" + Convert.ToHexString(hash)[..16].ToLowerInvariant();
     }
+
+    /// <summary>
+    /// Disposes the snapshot-cache lock. The catalog is registered as a singleton and owns the
+    /// <see cref="SemaphoreSlim"/> guarding its cached snapshot, so it must dispose it (CA1001).
+    /// </summary>
+    public void Dispose() => _snapshotLock.Dispose();
 }
