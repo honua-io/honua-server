@@ -245,13 +245,27 @@ internal sealed class OracleFeatureDataAccess
         // default LOB fetch size is in effect. Materialize the bytes eagerly so the caller
         // (which formats into protocol responses) does not need to know about the LOB stream.
         var raw = reader.GetValue(ordinal);
-        return raw switch
+        return DecodeWkbValue(raw, ordinal);
+    }
+
+    /// <summary>
+    /// Decodes a raw column value returned by <see cref="OracleDataReader.GetValue"/> at a
+    /// WKB geometry ordinal. Handles the two expected ODP.NET surface types (byte array and
+    /// OracleBlob) plus the null sentinel (DBNull). Throws for any other type so that driver
+    /// upgrades or unexpected server-side conversion failures surface immediately rather than
+    /// silently dropping geometry for the row.
+    /// </summary>
+    internal static byte[]? DecodeWkbValue(object raw, int ordinal)
+        => raw switch
         {
             byte[] bytes => bytes,
             OracleBlob blob => ReadBlob(blob),
-            _ => null
+            DBNull => null,
+            _ => throw new InvalidOperationException(
+                $"Unexpected WKB value type at ordinal {ordinal}: {raw.GetType().FullName}. " +
+                $"Expected byte[] or OracleBlob. This may indicate an SDO_UTIL.TO_WKBGEOMETRY " +
+                $"conversion failure on the server or a driver upgrade regression.")
         };
-    }
 
     private static byte[] ReadBlob(OracleBlob blob)
     {

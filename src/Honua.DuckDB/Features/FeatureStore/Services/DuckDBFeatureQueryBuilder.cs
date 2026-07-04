@@ -798,8 +798,11 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         {
             var startIndex = paramIndex++;
             var endIndex = paramIndex++;
-            parameters.Add(filter.Start.Value.UtcDateTime);
-            parameters.Add(filter.End.Value.UtcDateTime);
+            // DateTimeOffset.UtcDateTime yields Kind=Unspecified; DuckDB.NET binds an
+            // Unspecified DateTime as a naive TIMESTAMP that shifts the window when the
+            // DuckDB session timezone is non-UTC. Force UTC kind so it binds as TIMESTAMPTZ.
+            parameters.Add(DateTime.SpecifyKind(filter.Start.Value.UtcDateTime, DateTimeKind.Utc));
+            parameters.Add(DateTime.SpecifyKind(filter.End.Value.UtcDateTime, DateTimeKind.Utc));
 
             var startCast = TemporalParameterCast(filter.PropertyType);
             var rowEnd = endColumnExpr ?? startColumn;
@@ -808,7 +811,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         else if (filter.Start.HasValue)
         {
             var startIndex = paramIndex++;
-            parameters.Add(filter.Start.Value.UtcDateTime);
+            parameters.Add(DateTime.SpecifyKind(filter.Start.Value.UtcDateTime, DateTimeKind.Utc));
             var startCast = TemporalParameterCast(filter.PropertyType);
             var rowEnd = endColumnExpr ?? startColumn;
             predicate = $"{rowEnd} >= ${startIndex}{startCast}";
@@ -816,7 +819,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         else if (filter.End.HasValue)
         {
             var endIndex = paramIndex++;
-            parameters.Add(filter.End.Value.UtcDateTime);
+            parameters.Add(DateTime.SpecifyKind(filter.End.Value.UtcDateTime, DateTimeKind.Utc));
             var endCast = TemporalParameterCast(filter.PropertyType);
             predicate = $"{startColumn} <= ${endIndex}{endCast}";
         }
@@ -1018,21 +1021,37 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
     private static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
     {
-        // Preserve the original @pN indices so that repeated or out-of-order references
-        // bind to the correct positional slot. Each distinct @pN maps to $(startIndex + N)
-        // and the next paramIndex advances past the highest original index seen.
+        // Collect unique @pN indices in ascending order. SqlFragment.Parameters is always
+        // ordered by @pN index, so sorting unique indices gives the correct Parameters[rank]
+        // <-> positional-$index alignment. Using a dense mapping also prevents sparse
+        // filters (@p0, @p3 with only 2 entries) from advancing paramIndex by 4 and
+        // misaligning every subsequent temporal/pagination parameter.
         var current = paramIndex;
-        var max = -1;
+        var sortedIndices = new SortedSet<int>();
+        foreach (Match m in NamedParameterRegex().Matches(sql))
+        {
+            sortedIndices.Add(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture));
+        }
+
+        if (sortedIndices.Count == 0)
+        {
+            return sql;
+        }
+
+        // Build dense mapping: @pN -> current + rank(N)
+        var indexMap = new Dictionary<int, int>(sortedIndices.Count);
+        var rank = 0;
+        foreach (var paramN in sortedIndices)
+        {
+            indexMap[paramN] = current + rank++;
+        }
+
         var result = NamedParameterRegex().Replace(sql, m =>
         {
             var idx = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
-            if (idx > max)
-            {
-                max = idx;
-            }
-            return $"${current + idx}";
+            return $"${indexMap[idx]}";
         });
-        paramIndex = current + max + 1;
+        paramIndex = current + sortedIndices.Count;
         return result;
     }
 

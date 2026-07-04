@@ -292,6 +292,18 @@ internal static partial class SqlServerFeatureQueryBuilder
 
         // SQL Server's geometry/geography static parsers require an explicit SRID. Use the
         // filter's SRID when supplied; otherwise inherit the layer SRID for safe comparison.
+        // If neither is available the expression resolves to SRID 0, which causes SQL Server
+        // spatial predicates to return NULL (not false) for all rows -> silent zero-row result.
+        // Throw rather than silently returning nothing, mirroring the MySQL/cross-SRID contract.
+        if (filter.Srid is not > 0 && !mapping.Srid.HasValue)
+        {
+            throw new NotSupportedException(
+                "Spatial filter cannot be built: the filter geometry does not carry an SRID and the " +
+                "layer mapping does not specify a storage SRID. SQL Server spatial predicates return " +
+                "NULL (not false) when the geometry SRID is 0, silently producing zero rows. " +
+                "Set the layer SRID in the mapping or provide an explicit SRID on the spatial filter.");
+        }
+
         var srid = filter.Srid is > 0 ? filter.Srid.Value : mapping.Srid ?? 0;
         var sridLiteral = srid.ToString(CultureInfo.InvariantCulture);
 

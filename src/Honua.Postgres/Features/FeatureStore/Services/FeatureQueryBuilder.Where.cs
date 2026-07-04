@@ -342,6 +342,19 @@ internal sealed partial class FeatureQueryBuilder
     private static bool IsIdentifierChar(char value) =>
         char.IsLetterOrDigit(value) || value == '_';
 
+    private static bool IsAllIdentifierChars(string value)
+    {
+        foreach (var c in value)
+        {
+            if (!IsIdentifierChar(c))
+            {
+                return false;
+            }
+        }
+
+        return value.Length > 0;
+    }
+
     private static string? FindDangerousPattern(string whereClause)
     {
         var dangerousPatterns = new[]
