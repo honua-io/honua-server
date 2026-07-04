@@ -97,7 +97,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -167,7 +168,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/30/0/0.pbf");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -178,7 +180,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/tile/1/0/0.pbf");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -258,7 +261,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/styles/sprites/sprite.json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -269,7 +273,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/resources/styles");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -347,7 +352,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/99/0/0/2/2");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -358,7 +364,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/2/0/0/4096/4096");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -369,7 +376,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/tilemap/2/0/0/4/4");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -420,7 +428,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/sprites/sprite@3x.png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -431,7 +440,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/resources/sprites/sprite.json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -459,7 +469,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/fonts/Honua%20Default/99-1234.pbf");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -470,6 +481,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/resources/fonts/Honua%20Default/0-255.pbf");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }
