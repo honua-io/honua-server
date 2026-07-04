@@ -34,16 +34,35 @@ internal static class OgcServiceUrlValidation
     internal const string EmbeddedCredentialsMessage = "SourceUrl must not include embedded credentials.";
     internal const string DisallowedAddressMessage =
         "SourceUrl resolves to a private, loopback, or unresolvable network address, which is not allowed.";
+    internal const string DisallowedHostMessage =
+        "SourceUrl host is not in the configured Migration:AllowedServiceHostSuffixes allowlist.";
 
+    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
     public static Task<OgcServiceUrlValidationResult> ValidateAsync(
         string serviceUrl,
         bool allowUnsafeLocalUrls,
         CancellationToken cancellationToken = default)
-        => ValidateAsync(serviceUrl, allowUnsafeLocalUrls, ResolveHostAddressesAsync, cancellationToken);
+        => ValidateAsync(serviceUrl, allowUnsafeLocalUrls, allowedHostSuffixes: null, ResolveHostAddressesAsync, cancellationToken);
+
+    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
+    public static Task<OgcServiceUrlValidationResult> ValidateAsync(
+        string serviceUrl,
+        bool allowUnsafeLocalUrls,
+        IReadOnlyCollection<string>? allowedHostSuffixes,
+        CancellationToken cancellationToken = default)
+        => ValidateAsync(serviceUrl, allowUnsafeLocalUrls, allowedHostSuffixes, ResolveHostAddressesAsync, cancellationToken);
 
     internal static async Task<OgcServiceUrlValidationResult> ValidateAsync(
         string serviceUrl,
         bool allowUnsafeLocalUrls,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken = default)
+        => await ValidateAsync(serviceUrl, allowUnsafeLocalUrls, allowedHostSuffixes: null, hostAddressResolver, cancellationToken).ConfigureAwait(false);
+
+    internal static async Task<OgcServiceUrlValidationResult> ValidateAsync(
+        string serviceUrl,
+        bool allowUnsafeLocalUrls,
+        IReadOnlyCollection<string>? allowedHostSuffixes,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
         CancellationToken cancellationToken = default)
     {
@@ -78,6 +97,12 @@ internal static class OgcServiceUrlValidation
         if (await NetworkAddressValidator.IsDisallowedAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
         {
             return OgcServiceUrlValidationResult.Failure(DisallowedAddressMessage);
+        }
+
+        // PA-153: optional per-deployment host allowlist (see GeoservicesServiceUrlValidation for details).
+        if (allowedHostSuffixes is not null && !GeoservicesServiceUrlValidation.IsHostAllowed(uri.Host, allowedHostSuffixes))
+        {
+            return OgcServiceUrlValidationResult.Failure(DisallowedHostMessage);
         }
 
         return OgcServiceUrlValidationResult.Success();
