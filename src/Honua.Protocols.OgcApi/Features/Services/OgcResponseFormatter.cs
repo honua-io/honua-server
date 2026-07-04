@@ -297,6 +297,19 @@ internal static class OgcResponseFormatter
         AxisOrder outputAxisOrder,
         CancellationToken cancellationToken)
     {
+        // OGC API Features Part 1 §7.8.3 and WFS 2.0 §8.8.5.2 require numberReturned to
+        // equal the actual number of features in the document.  The pre-computed estimate
+        // can differ from the real stream count under concurrent writes (MVCC snapshot
+        // difference between the count query and the streaming query).  Buffer the features
+        // first so we can write the header with the accurate count.
+        var buffered = new List<GmlFeature>();
+        await foreach (var feature in features.WithCancellation(cancellationToken))
+        {
+            buffered.Add(feature);
+        }
+
+        var actualReturned = buffered.Count;
+
         await using var writer = new StreamWriter(
             bodyWriter.AsStream(),
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
@@ -310,10 +323,8 @@ internal static class OgcResponseFormatter
             header.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
         }
 
-        if (numberReturned.HasValue)
-        {
-            header.Append($" numberReturned=\"{numberReturned.Value.ToString(CultureInfo.InvariantCulture)}\"");
-        }
+        // Always write the actual streamed count, not the pre-computed estimate.
+        header.Append($" numberReturned=\"{actualReturned.ToString(CultureInfo.InvariantCulture)}\"");
 
         if (timeStamp.HasValue)
         {
@@ -324,7 +335,7 @@ internal static class OgcResponseFormatter
         await writer.WriteLineAsync(header.ToString());
 
         var writtenSinceFlush = 0;
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        foreach (var feature in buffered)
         {
             var escapedId = CreateGmlId(feature.Id, "feature_");
             await writer.WriteLineAsync("  <wfs:member>");
