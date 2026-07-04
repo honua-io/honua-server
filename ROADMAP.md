@@ -2,6 +2,8 @@
 
 This is the public roadmap for Honua Server. It's driven by real demand — **upvote the things you want.**
 
+**📋 [Live board — Now / Next / Later / Preview](https://github.com/orgs/honua-io/projects/3)**
+
 ## How to upvote
 - **Existing roadmap items:** react with 👍 on the issue. We sort by votes.
   → [All roadmap items, most-upvoted first](https://github.com/honua-io/honua-server/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc)
@@ -45,4 +47,4 @@ These are **implemented but gated off** the GA surface (`Capabilities:Experiment
 
 ---
 
-*Milestones (`v1.0 (GA)`, `v1.1`, `v1.2`) track release scheduling; the tiers above track priority. This file is a curated view — the [live roadmap query](https://github.com/honua-io/honua-server/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc) is always current.*
+*Milestones (`v1.0.0-rc.1` → `v1.0.0` → `v1.1.0` → `v1.2.0`) track release scheduling; the tiers above track priority. This file is a curated view — the [live roadmap query](https://github.com/honua-io/honua-server/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc) is always current.*
