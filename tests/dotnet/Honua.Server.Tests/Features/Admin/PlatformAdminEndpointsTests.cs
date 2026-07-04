@@ -226,7 +226,11 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
                     Generic = new GenericOidcProviderOptions
                     {
                         Enabled = true,
-                        Authority = "https://auth.example.com",
+                        // Use a publicly-resolvable authority so the SSRF pre-check
+                        // (added with the platform-audit hardening) passes and the
+                        // discovery HTTP call is actually reached; the throwing
+                        // client factory then exercises the sanitized-error path.
+                        Authority = "https://example.com",
                         ClientId = "generic-client-id",
                         ClientSecret = "generic-secret-value-minimum-length",
                         DisplayName = "External Provider"

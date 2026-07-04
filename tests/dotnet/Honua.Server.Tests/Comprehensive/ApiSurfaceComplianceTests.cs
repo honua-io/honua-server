@@ -200,7 +200,9 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
             ("/rest/services/test/FeatureServer/0/query?where=invalid sql syntax", HttpStatusCode.BadRequest, "Invalid SQL where clause"),
             ("/ogc/features/collections/0/items?bbox=invalid", HttpStatusCode.BadRequest, "Invalid bbox format"),
             ("/ogc/features/collections/0/items?limit=-1", HttpStatusCode.BadRequest, "Negative limit"),
-            ("/ogc/features/collections/0/items?limit=999999", HttpStatusCode.BadRequest, "Limit too large"),
+            // OGC API - Features Part 1 /req/core/fc-limit-definition (d): an over-maximum
+            // limit is clamped to the server maximum, not rejected with a 400.
+            ("/ogc/features/collections/0/items?limit=999999", HttpStatusCode.OK, "Limit too large (clamped)"),
         };
 
         foreach (var (endpoint, expectedStatus, description) in errorTestCases)

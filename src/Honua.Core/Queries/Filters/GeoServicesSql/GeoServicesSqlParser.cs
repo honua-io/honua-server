@@ -65,6 +65,11 @@ public sealed class GeoServicesSqlParser
         // and POSITION(needle IN haystack) — the comma form doesn't match the keyword-path
         // guard so it falls through here.  Both are safe, well-understood string functions.
         "SUBSTRING", "POSITION",
+        // CQL2 case-insensitive / accent-insensitive comparison functions. The FeatureServer
+        // where parameter accepts CQL2-Text, so CASEI(...) / ACCENTI(...) reach this parser as
+        // generic function calls; every ISqlFilterTranslator understands them (e.g. Postgres
+        // maps CASEI -> LOWER and ACCENTI -> UNACCENT(LOWER(...))).
+        "CASEI", "ACCENTI",
         // Null / conditional
         "COALESCE", "NULLIF", "IIF",
         // Numeric / math

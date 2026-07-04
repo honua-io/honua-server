@@ -636,16 +636,24 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_WithLimitExceedingMax_ReturnsBadRequest()
+    public async Task GetItems_WithLimitExceedingMax_ClampsToMaximum()
     {
-        // Arrange - Limit exceeding maximum allowed
-        var excessiveLimit = new Honua.Core.Configuration.LimitsOptions().Query.MaxRecordCount + 1;
+        // Arrange - Limit exceeding maximum allowed. Per OGC API - Features Part 1
+        // requirement /req/core/fc-limit-definition (d), an over-maximum limit is clamped
+        // to the server maximum rather than rejected with a 400.
+        var queryLimits = new Honua.Core.Configuration.LimitsOptions().Query;
+        var excessiveLimit = queryLimits.MaxRecordCount + 1;
 
         // Act
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?limit={excessiveLimit}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
+        numberReturned.Should().BeLessThanOrEqualTo(queryLimits.MaxRecordCount);
     }
 
     #endregion

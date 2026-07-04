@@ -16,10 +16,12 @@ public sealed record PaginationValidationOptions(
     /// When <see langword="true"/>, a limit above the configured maximum record count is clamped
     /// to the maximum instead of failing validation. When <see langword="false"/> (the default for
     /// every preset, including <see cref="Default"/>), an over-maximum limit fails validation and
-    /// the adapter surfaces a 400. Honua's protocol surfaces — GeoServices, OData, gRPC, and OGC
-    /// API - Features — all reject over-maximum limits with a 400 rather than silently clamping, so
-    /// that callers learn their page size was not honored. Values below <see cref="MinLimit"/>
-    /// always fail validation regardless of this flag.
+    /// the adapter surfaces a 400. Honua's GeoServices, OData, and gRPC surfaces reject
+    /// over-maximum limits with a 400 rather than silently clamping, so that callers learn their
+    /// page size was not honored. OGC API - Features is the exception: OGC API - Features Part 1
+    /// requirement /req/core/fc-limit-definition (d) mandates clamping to the server maximum, so
+    /// its preset sets this flag. Values below <see cref="MinLimit"/> always fail validation
+    /// regardless of this flag.
     /// </summary>
     public bool ClampLimitToMaximum { get; init; }
 
