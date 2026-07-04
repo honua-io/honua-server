@@ -221,3 +221,91 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
             => throw new NotSupportedException();
     }
 }
+
+/// <summary>
+/// Integration coverage for the OGC API Processes GET /jobs/{jobId}/results failed-job case.
+/// PA-205: results for a failed job must use a registered OGC exception type URI, not about:blank.
+/// </summary>
+[Collection("Database.OgcApiData")]
+[Protocol(TestProtocols.OgcApiProcesses)]
+public sealed class OgcProcessesFailedJobResultsTests : IClassFixture<OgcProcessesFailedJobResultsTestsFixture>
+{
+    private const string JobId = "ogc-gp-failed-job";
+
+    private readonly WebAppFixture _fixture;
+
+    public OgcProcessesFailedJobResultsTests(OgcProcessesFailedJobResultsTestsFixture fixture)
+        => _fixture = fixture.App;
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task JobResults_FailedJob_Returns500WithRegisteredOgcExceptionType()
+    {
+        // OGC API Processes Part 1 (OGC 18-062r2): a registered OGC exception type URI
+        // must be used so clients and CITE test runners can distinguish job failures from
+        // generic server errors. "about:blank" is not acceptable here.
+        using var response = await _fixture.Client.GetAsync($"/ogc/processes/jobs/{JobId}/results");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("type").GetString().Should()
+            .Be("http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-failed",
+                "failed job results must use a registered OGC exception type URI, not about:blank");
+    }
+}
+
+/// <summary>
+/// Fixture that seeds a single failed job for <see cref="OgcProcessesFailedJobResultsTests"/>.
+/// </summary>
+public sealed class OgcProcessesFailedJobResultsTestsFixture : IAsyncLifetime
+{
+    private const string JobId = "ogc-gp-failed-job";
+
+    public WebAppFixture App { get; }
+
+    public OgcProcessesFailedJobResultsTestsFixture()
+    {
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(CreateFailedJob());
+
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+
+        App = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.AddSingleton(jobStore);
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton(jobService);
+            });
+    }
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
+
+    private static ExecutionJobRecord CreateFailedJob()
+        => new()
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Failed,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-2),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = "Process execution failed due to invalid input geometry.",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geometry-buffer",
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.GeoprocessingPlanId] = "geometry-buffer-plan",
+                    [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "geometry.buffer",
+                    [ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds] = "FeatureLayer"
+                }
+            }
+        };
+}

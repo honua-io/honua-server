@@ -72,4 +72,38 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("<wfs:FeatureCollection");
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_StreamingResponse_DoesNotEmitNonStandardOgcNumberMatchedHeader()
+    {
+        // OGC API Features Part 1 (OGC 17-069r4) §7.14.4: numberMatched belongs in
+        // the FeatureCollection JSON body, not in an HTTP response header.
+        // OGC-NumberMatched is a non-standard header not defined in the spec or IANA
+        // registry; it was removed to prevent interference with CDN edge nodes and
+        // to avoid misleading clients that other OGC server implementations will not emit it.
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestLayerId}/items?limit=2000");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Contains("OGC-NumberMatched").Should().BeFalse(
+            "numberMatched must be carried in the JSON body (OGC 17-069r4 §7.14.4), not in a non-standard HTTP header");
+
+        // Verify numberMatched is present in the JSON body as the spec requires
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("numberMatched", out _).Should().BeTrue(
+            "numberMatched must be present in the FeatureCollection JSON body");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items?f=gml")]
+    public async Task GetItems_StreamingGmlResponse_DoesNotEmitNonStandardOgcNumberMatchedHeader()
+    {
+        // Same non-standard header removal for the GML streaming path.
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestLayerId}/items?limit=2000&f=gml");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Contains("OGC-NumberMatched").Should().BeFalse(
+            "OGC-NumberMatched is a non-standard header; numberMatched must be carried in the GML response body");
+    }
 }

@@ -1449,7 +1449,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             httpContext.Response.ContentType = _outputFormat;
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
-            httpContext.Response.Headers["OGC-NumberMatched"] = _numberMatched.ToString(CultureInfo.InvariantCulture);
+            // OGC-NumberMatched is a non-standard header; numberMatched is written
+            // into the FeatureCollection JSON body by StreamFeatureCollectionAsync,
+            // which is the spec-compliant location (OGC 17-069r4 §7.14.4).
             EnableChunkedEncodingIfHttp1(httpContext);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -1519,7 +1521,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             httpContext.Response.ContentType = MediaTypes.Gml;
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
-            httpContext.Response.Headers["OGC-NumberMatched"] = _numberMatched.ToString(CultureInfo.InvariantCulture);
+            // OGC-NumberMatched is a non-standard header; numberMatched and
+            // numberReturned are emitted as GML wfs:FeatureCollection attributes
+            // by OgcResponseFormatter.StreamGmlFeatureCollectionAsync, which is
+            // the spec-compliant location.
 
             // Emit pagination links as HTTP Link headers (standard for non-JSON formats)
             foreach (var link in _links)
