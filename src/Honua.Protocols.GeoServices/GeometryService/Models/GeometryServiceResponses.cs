@@ -208,18 +208,6 @@ public sealed class GeometryServiceFromGeoCoordinateStringResponse
 }
 
 /// <summary>
-/// Error response for geometry service operations.
-/// </summary>
-public sealed class GeometryServiceErrorResponse
-{
-    /// <summary>
-    /// Error details.
-    /// </summary>
-    [JsonPropertyName("error")]
-    public required GeometryServiceError Error { get; init; }
-}
-
-/// <summary>
 /// Spatial reference for geometry service responses.
 /// </summary>
 public sealed class GeometryServiceSpatialReference
@@ -235,28 +223,4 @@ public sealed class GeometryServiceSpatialReference
     /// </summary>
     [JsonPropertyName("latestWkid")]
     public int LatestWkid { get; init; }
-}
-
-/// <summary>
-/// Error details for geometry service operations.
-/// </summary>
-public sealed class GeometryServiceError
-{
-    /// <summary>
-    /// Numeric error code.
-    /// </summary>
-    [JsonPropertyName("code")]
-    public int Code { get; init; }
-
-    /// <summary>
-    /// Human-readable error message.
-    /// </summary>
-    [JsonPropertyName("message")]
-    public required string Message { get; init; }
-
-    /// <summary>
-    /// Additional error details.
-    /// </summary>
-    [JsonPropertyName("details")]
-    public string[]? Details { get; init; }
 }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Redshift.Queries.Filters;
 
 namespace Honua.Redshift.Tests;
@@ -29,7 +30,9 @@ public class RedshiftSqlDialectTests
     [Fact]
     public void Dialect_QuoteLiteral_EscapesSingleQuotes()
     {
-        Assert.Equal("'O''Brien'", RedshiftSqlDialect.Instance.QuoteLiteral("O'Brien"));
+        // QuoteLiteral is a default interface member on ISqlDialect; call through the interface.
+        ISqlDialect dialect = RedshiftSqlDialect.Instance;
+        Assert.Equal("'O''Brien'", dialect.QuoteLiteral("O'Brien"));
     }
 
     [Theory]

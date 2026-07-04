@@ -209,6 +209,27 @@ public sealed class ArcGisRestClientSecurityTests
         (settledDescriptors - baselineDescriptors).Should().BeLessThan(96);
     }
 
+    [Fact]
+    public async Task GetLayerInfoAsync_FeatureCountQueryCanceled_PropagatesCancellation()
+    {
+        // PA-034: the feature-count query is best-effort enrichment and its failures are
+        // swallowed into a null count — but a genuine cancellation must still propagate to
+        // the caller instead of being reported as "count unavailable".
+        var handler = new CancelingSecondRequestHandler("""
+            { "id": 0, "name": "Layer 0" }
+            """);
+        var client = CreateClient(handler, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        using var cts = new CancellationTokenSource();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            client.GetLayerInfoAsync(
+                "https://example.com/arcgis/rest/services/Test/FeatureServer",
+                layerId: 0,
+                timeoutSeconds: 5,
+                maxRetries: 0,
+                cts.Token));
+    }
+
     private static ArcGisRestClient CreateClient(
         HttpMessageHandler handler,
         Func<string, CancellationToken, Task<IPAddress[]>> resolver,
@@ -331,6 +352,31 @@ public sealed class ArcGisRestClientSecurityTests
                     Encoding.UTF8,
                     "application/json")
             });
+        }
+    }
+
+    private sealed class CancelingSecondRequestHandler : HttpMessageHandler
+    {
+        private readonly string _firstResponse;
+        private int _requestCount;
+
+        public CancelingSecondRequestHandler(string firstResponse)
+        {
+            _firstResponse = firstResponse;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _requestCount) == 1)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(_firstResponse, Encoding.UTF8, "application/json")
+                });
+            }
+
+            // Simulate the feature-count query observing its own cancellation.
+            throw new OperationCanceledException("Simulated cancellation of the feature-count query.");
         }
     }
 

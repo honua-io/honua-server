@@ -14,10 +14,22 @@ namespace Honua.Core.Features.Operations.Services;
 /// the workflow node registry's aggregation: providers are queried, descriptors are sorted
 /// for stable output, and a fingerprint version is computed over the descriptor ids.
 /// </summary>
-public sealed class OperationCatalog : IOperationCatalog
+public sealed class OperationCatalog : IOperationCatalog, IDisposable
 {
+    // Every operation dispatch calls GetDescriptorAsync, which previously rebuilt the
+    // whole catalog (querying every provider, re-sorting, re-hashing a version string)
+    // on every single call. Providers are typically static in-memory descriptor lists, so
+    // a short absolute-expiry cache avoids redundant rebuilds under dispatch bursts while
+    // still picking up provider changes (e.g. a future dynamic provider) within a bounded
+    // staleness window — capability/grounding metadata tolerates a few seconds of staleness
+    // far better than it tolerates rebuilding on every dispatch.
+    private static readonly TimeSpan SnapshotCacheTtl = TimeSpan.FromSeconds(5);
+
     private readonly IReadOnlyList<IOperationDescriptorProvider> _providers;
     private readonly TimeProvider _clock;
+    private readonly SemaphoreSlim _snapshotLock = new(1, 1);
+    private OperationCatalogSnapshot? _cachedSnapshot;
+    private DateTimeOffset _cachedAt;
 
     /// <summary>
     /// Initializes a new instance of <see cref="OperationCatalog"/>.
@@ -34,6 +46,35 @@ public sealed class OperationCatalog : IOperationCatalog
 
     /// <inheritdoc />
     public async Task<OperationCatalogSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        var cached = _cachedSnapshot;
+        if (cached is not null && _clock.GetUtcNow() - _cachedAt < SnapshotCacheTtl)
+        {
+            return cached;
+        }
+
+        await _snapshotLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Re-check: another caller may have refreshed the snapshot while we waited.
+            cached = _cachedSnapshot;
+            if (cached is not null && _clock.GetUtcNow() - _cachedAt < SnapshotCacheTtl)
+            {
+                return cached;
+            }
+
+            var snapshot = await BuildSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            _cachedSnapshot = snapshot;
+            _cachedAt = _clock.GetUtcNow();
+            return snapshot;
+        }
+        finally
+        {
+            _snapshotLock.Release();
+        }
+    }
+
+    private async Task<OperationCatalogSnapshot> BuildSnapshotAsync(CancellationToken cancellationToken)
     {
         var descriptors = new List<OperationDescriptor>();
         var providerIds = new List<string>();
@@ -108,4 +149,10 @@ public sealed class OperationCatalog : IOperationCatalog
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return "operation-catalog:" + Convert.ToHexString(hash)[..16].ToLowerInvariant();
     }
+
+    /// <summary>
+    /// Disposes the snapshot-cache lock. The catalog is registered as a singleton and owns the
+    /// <see cref="SemaphoreSlim"/> guarding its cached snapshot, so it must dispose it (CA1001).
+    /// </summary>
+    public void Dispose() => _snapshotLock.Dispose();
 }

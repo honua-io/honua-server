@@ -29,7 +29,7 @@ namespace Honua.Migration;
 /// adapter over <see cref="IMigrationRunCatalog"/>; all storage decisions
 /// (Postgres today, alternate backends tomorrow) live behind the catalog.
 /// </summary>
-internal static class MigrationRunAdminEndpoints
+internal static partial class MigrationRunAdminEndpoints
 {
     private const int DefaultPageLimit = 25;
     private const int MaxPageLimit = 100;
@@ -117,8 +117,9 @@ internal static class MigrationRunAdminEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestBodyReadFailed(GetLogger(context), "RecordMigrationRunStarted", ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
             return;
         }
@@ -291,8 +292,9 @@ internal static class MigrationRunAdminEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestBodyReadFailedForRun(GetLogger(context), "RecordMigrationRunCompleted", runId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
             return;
         }
@@ -365,8 +367,9 @@ internal static class MigrationRunAdminEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestBodyReadFailedForRun(GetLogger(context), "RecordMigrationRunScorecard", runId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
             return;
         }
@@ -439,8 +442,9 @@ internal static class MigrationRunAdminEndpoints
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Log.RequestBodyReadFailedForRun(GetLogger(context), "CancelMigrationRun", runId, ex);
                 await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
                 return;
             }
@@ -572,6 +576,25 @@ internal static class MigrationRunAdminEndpoints
 
         var trimmed = value.Trim();
         return trimmed.Length == 0 ? null : trimmed;
+    }
+
+    // PA-164: this class is static (no constructor/DI-injected ILogger<T> field is
+    // possible), so each catch resolves a logger from the current request's
+    // service provider instead — the same pattern used by the sibling
+    // GeoServerImportEndpoints/GeoservicesImportEndpoints static endpoint classes.
+    private static ILogger<MigrationRunAdminEndpointsLog> GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILogger<MigrationRunAdminEndpointsLog>>();
+
+    /// <summary>Log category marker for migration-run admin endpoint operations.</summary>
+    internal sealed class MigrationRunAdminEndpointsLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(7988, LogLevel.Warning, "Failed to read request body for {Operation}")]
+        public static partial void RequestBodyReadFailed(ILogger logger, string operation, Exception exception);
+
+        [LoggerMessage(7989, LogLevel.Warning, "Failed to read request body for {Operation} (run {RunId})")]
+        public static partial void RequestBodyReadFailedForRun(ILogger logger, string operation, string runId, Exception exception);
     }
 }
 

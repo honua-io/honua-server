@@ -23,6 +23,10 @@ namespace Honua.Core.Features.Federation.Services;
 /// </summary>
 internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
 {
+    // PA-017: remote federated source calls had metrics and structured logging but no
+    // distributed tracing span, so a slow/failing remote source was invisible in traces.
+    private static readonly ActivitySource _activitySource = new("Honua.Federation");
+
     private readonly IFederationQueryPlanner _planner;
     private readonly Dictionary<FederatedSourceKind, IFederatedSourceConnector> _connectors;
     private readonly ResiliencePolicyOptions _resilienceOptions;
@@ -67,9 +71,14 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
     {
         ArgumentNullException.ThrowIfNull(source);
 
+        using var activity = _activitySource.StartActivity("federation.execute", ActivityKind.Client);
+        activity?.SetTag("source.id", source.Id);
+        activity?.SetTag("source.kind", source.Kind.ToString());
+
         if (!_connectors.TryGetValue(source.Kind, out var connector))
         {
             _metrics.RecordUnavailable(source, FederatedSourceUnavailableReason.NoConnector, TimeSpan.Zero);
+            activity?.SetStatus(ActivityStatusCode.Error, "No connector registered for source kind.");
             throw new FederatedSourceUnavailableException(source.Id, FederatedSourceUnavailableReason.NoConnector);
         }
 
@@ -87,6 +96,7 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
         {
             stopwatch.Stop();
             _metrics.RecordUnavailable(source, ex.Reason, stopwatch.Elapsed);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
 
@@ -112,24 +122,39 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
-        var results = ImmutableArray.CreateBuilder<FederatedQueryResult>();
-        var failures = ImmutableArray.CreateBuilder<FederatedSourceFailure>();
+        var enabledSources = sources.Where(source => source is not null && source.Enabled).ToArray();
 
-        foreach (var source in sources)
+        // Sources are independent of one another (each has its own connector, per-source
+        // timeout, and circuit breaker via FetchWithResilienceAsync), so fetch them
+        // concurrently instead of one at a time; a slow or broken source no longer delays
+        // the others. Outcomes are folded back in original source order afterward so
+        // feature concatenation order (when no OrderBy is requested) and failure ordering
+        // stay identical to the previous sequential behavior.
+        var outcomes = await Task.WhenAll(enabledSources.Select(async source =>
         {
-            if (source is null || !source.Enabled)
-            {
-                continue;
-            }
-
             try
             {
-                results.Add(await ExecuteAsync(source, query, cancellationToken).ConfigureAwait(false));
+                var result = await ExecuteAsync(source, query, cancellationToken).ConfigureAwait(false);
+                return (Result: result, Failure: (FederatedSourceFailure?)null);
             }
             catch (FederatedSourceUnavailableException ex)
             {
                 FederationExecutionLog.SourceUnavailable(_logger, source.Id, ex.Reason.ToString(), ex);
-                failures.Add(new FederatedSourceFailure(source.Id, ex.Reason));
+                return (Result: (FederatedQueryResult?)null, Failure: (FederatedSourceFailure?)new FederatedSourceFailure(source.Id, ex.Reason));
+            }
+        })).ConfigureAwait(false);
+
+        var results = ImmutableArray.CreateBuilder<FederatedQueryResult>();
+        var failures = ImmutableArray.CreateBuilder<FederatedSourceFailure>();
+        foreach (var (result, failure) in outcomes)
+        {
+            if (result is not null)
+            {
+                results.Add(result);
+            }
+            else if (failure is { } sourceFailure)
+            {
+                failures.Add(sourceFailure);
             }
         }
 

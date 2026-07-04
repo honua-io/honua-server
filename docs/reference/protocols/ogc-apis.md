@@ -109,7 +109,7 @@ curl -o clip.tif "https://server.example.com/ogc/coverages/collections/0/coverag
 | GET | `/ogc/processes/jobs`, `.../jobs/{jobId}`, `.../jobs/{jobId}/results` | Job list (active only, `limit`), status, results. |
 | DELETE | `/ogc/processes/jobs/{jobId}` | Dismiss (cancel) a job. |
 
-V1 projects a single canonical process (`honua-geoprocessing`); plans are validated against the built-in 34-process catalog at submission. Synchronous execution returns 501; job endpoints require Redis-backed durable storage (503 otherwise).
+V1 projects a single canonical process (`honua-geoprocessing`); plans are validated against the built-in 96-process catalog at submission. Synchronous execution returns 501; job endpoints require Redis-backed durable storage (503 otherwise).
 
 ```bash
 curl -X POST "https://server.example.com/ogc/processes/processes/honua-geoprocessing/execution" \

@@ -5,6 +5,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
@@ -767,7 +768,7 @@ public static class OgcApiFeaturesMigrationInventoryScanner
                     Srid = srid,
                     CrsUri = NormalizeCrsUri(declaration.Value, srid),
                     AxisOrder = IsCrs84(declaration.Value) ? "east-north" : null,
-                    IsGeographic = IsCrs84(declaration.Value) || srid is >= 4000 and <= 4999
+                    IsGeographic = IsCrs84(declaration.Value) || (srid is int geographicWkid && SpatialReference.Create(geographicWkid).IsGeographic)
                 };
             })
             .ToArray();

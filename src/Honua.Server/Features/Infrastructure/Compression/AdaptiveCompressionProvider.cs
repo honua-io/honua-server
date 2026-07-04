@@ -163,11 +163,11 @@ internal sealed class AdaptiveBrotliStream : Stream
         var level = DetermineCompressionLevel(_buffer.Length);
         _compressionStream = new BrotliStream(_outputStream, level, leaveOpen: true);
 
-        // Write buffered data to compression stream
+        // Write buffered data to compression stream directly from the MemoryStream's
+        // internal buffer instead of copying it out via ToArray().
         if (_buffer.Length > 0)
         {
-            var bufferedData = _buffer.ToArray();
-            _compressionStream.Write(bufferedData, 0, bufferedData.Length);
+            _compressionStream.Write(_buffer.GetBuffer(), 0, (int)_buffer.Length);
             _buffer.SetLength(0);
         }
     }
@@ -184,8 +184,10 @@ internal sealed class AdaptiveBrotliStream : Stream
 
         if (_buffer.Length > 0)
         {
-            var bufferedData = _buffer.ToArray();
-            await _compressionStream.WriteAsync(bufferedData, cancellationToken);
+            // Write directly from the MemoryStream's internal buffer instead of copying
+            // it out via ToArray().
+            await _compressionStream.WriteAsync(
+                _buffer.GetBuffer().AsMemory(0, (int)_buffer.Length), cancellationToken);
             _buffer.SetLength(0);
         }
     }
@@ -334,10 +336,11 @@ internal sealed class AdaptiveGzipStream : Stream
         var level = DetermineCompressionLevel(_buffer.Length);
         _compressionStream = new GZipStream(_outputStream, level, leaveOpen: true);
 
+        // Write buffered data to compression stream directly from the MemoryStream's
+        // internal buffer instead of copying it out via ToArray().
         if (_buffer.Length > 0)
         {
-            var bufferedData = _buffer.ToArray();
-            _compressionStream.Write(bufferedData, 0, bufferedData.Length);
+            _compressionStream.Write(_buffer.GetBuffer(), 0, (int)_buffer.Length);
             _buffer.SetLength(0);
         }
     }
@@ -354,8 +357,10 @@ internal sealed class AdaptiveGzipStream : Stream
 
         if (_buffer.Length > 0)
         {
-            var bufferedData = _buffer.ToArray();
-            await _compressionStream.WriteAsync(bufferedData, cancellationToken);
+            // Write directly from the MemoryStream's internal buffer instead of copying
+            // it out via ToArray().
+            await _compressionStream.WriteAsync(
+                _buffer.GetBuffer().AsMemory(0, (int)_buffer.Length), cancellationToken);
             _buffer.SetLength(0);
         }
     }

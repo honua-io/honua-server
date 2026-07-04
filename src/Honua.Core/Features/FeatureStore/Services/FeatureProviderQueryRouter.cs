@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -14,6 +15,10 @@ namespace Honua.Core.Features.FeatureStore.Services;
 /// </summary>
 public sealed class FeatureProviderQueryRouter
 {
+    // PA-019: every query goes through this resolution hot path, and it previously emitted no
+    // telemetry at all (no span, no metrics, no logging).
+    private static readonly ActivitySource _activitySource = new("Honua.Core.FeatureStore");
+
     private readonly ISecureConnectionRegistry _connectionRegistry;
     private readonly IFeatureDataProviderRegistry _providerRegistry;
     private readonly string _defaultProviderName;
@@ -67,58 +72,73 @@ public sealed class FeatureProviderQueryRouter
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(publication);
-        var storageBinding = snapshot.ResolveStorageBinding(publication)
-            ?? throw new InvalidOperationException(
-                $"Publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}' does not resolve to a storage binding.");
-        var resolvedStorageLayerId = storageBinding.StorageLayerId ?? storageLayerId;
-        var storageMapping = FeatureStorageMapping.FromMetadata(resource, storageBinding);
 
-        DataConnection? connection = null;
-        var providerName = _defaultProviderName;
+        using var activity = _activitySource.StartActivity("featurestore.resolve_reader");
+        activity?.SetTag("service.id", service.Metadata.Id);
+        activity?.SetTag("resource.id", resource.Metadata.Id);
+        activity?.SetTag("publication.id", publication.Metadata.Id);
 
-        var v2Connection = snapshot.ResolveConnection(storageBinding);
-        if (v2Connection != null)
+        try
         {
-            connection = await _connectionRegistry
-                .GetConnectionAsync(v2Connection.Metadata.Id, cancellationToken)
-                .ConfigureAwait(false);
+            var storageBinding = snapshot.ResolveStorageBinding(publication)
+                ?? throw new InvalidOperationException(
+                    $"Publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}' does not resolve to a storage binding.");
+            var resolvedStorageLayerId = storageBinding.StorageLayerId ?? storageLayerId;
+            var storageMapping = FeatureStorageMapping.FromMetadata(resource, storageBinding);
 
-            if (connection != null)
+            DataConnection? connection = null;
+            var providerName = _defaultProviderName;
+
+            var v2Connection = snapshot.ResolveConnection(storageBinding);
+            if (v2Connection != null)
             {
-                providerName = connection.NormalizedProvider;
+                connection = await _connectionRegistry
+                    .GetConnectionAsync(v2Connection.Metadata.Id, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (connection != null)
+                {
+                    providerName = connection.NormalizedProvider;
+                }
+                else if (!string.IsNullOrWhiteSpace(v2Connection.Provider))
+                {
+                    providerName = DataProviderNames.Normalize(v2Connection.Provider!);
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"Connection '{v2Connection.Metadata.Id}' for publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}' was not found.");
+                }
             }
-            else if (!string.IsNullOrWhiteSpace(v2Connection.Provider))
-            {
-                providerName = DataProviderNames.Normalize(v2Connection.Provider!);
-            }
-            else
+
+            if (!_providerRegistry.TryGetProvider(providerName, out var provider))
             {
                 throw new InvalidOperationException(
-                    $"Connection '{v2Connection.Metadata.Id}' for publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}' was not found.");
+                    $"Feature provider '{providerName}' is not registered for publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}'.");
             }
-        }
 
-        if (!_providerRegistry.TryGetProvider(providerName, out var provider))
+            activity?.SetTag("provider.name", providerName);
+            EnsureOperationSupported(provider, operation);
+
+            var providerBinding = new FeatureProviderBinding(
+                service,
+                resource,
+                publication,
+                storageBinding,
+                storageMapping,
+                resolvedStorageLayerId,
+                provider,
+                connection);
+
+            return provider is IBindableFeatureDataProvider bindable
+                ? bindable.CreateReaderForBinding(providerBinding)
+                : provider.Reader;
+        }
+        catch (InvalidOperationException ex)
         {
-            throw new InvalidOperationException(
-                $"Feature provider '{providerName}' is not registered for publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}'.");
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
         }
-
-        EnsureOperationSupported(provider, operation);
-
-        var providerBinding = new FeatureProviderBinding(
-            service,
-            resource,
-            publication,
-            storageBinding,
-            storageMapping,
-            resolvedStorageLayerId,
-            provider,
-            connection);
-
-        return provider is IBindableFeatureDataProvider bindable
-            ? bindable.CreateReaderForBinding(providerBinding)
-            : provider.Reader;
     }
 
     private static void EnsureOperationSupported(

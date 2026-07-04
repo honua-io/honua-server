@@ -23,6 +23,16 @@ namespace Honua.Core.Features.AuditLog.Abstractions;
 public interface IAuditLog
 {
     /// <summary>
+    /// Whether this implementation durably persists recorded events. <c>false</c>
+    /// for fallback/no-op sinks (e.g. <see cref="NullAuditLog"/>) so callers that
+    /// need to know whether audit events are actually being retained (for example
+    /// a compliance dependency gate) can ask the abstraction directly instead of
+    /// inspecting the concrete implementation type. Defaults to <c>true</c> so
+    /// existing durable implementations (and test doubles) do not need to opt in.
+    /// </summary>
+    bool IsPersisted => true;
+
+    /// <summary>
     /// Record an audit event. Implementations should be best-effort and
     /// non-blocking with respect to the caller's critical path.
     /// </summary>

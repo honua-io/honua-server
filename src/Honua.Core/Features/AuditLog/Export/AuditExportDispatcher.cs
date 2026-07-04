@@ -123,6 +123,7 @@ public sealed partial class AuditExportDispatcher
             {
                 // Sink contract is non-throwing; defensively treat an escaped
                 // exception as a transient failure so it follows the retry path.
+                LogSinkThrew(sink.SinkType, ex);
                 result = AuditSinkResult.TransientFailure(ex.Message);
             }
 
@@ -197,4 +198,10 @@ public sealed partial class AuditExportDispatcher
         Level = LogLevel.Error,
         Message = "Audit export to sink {SinkType} blocked by data residency (region {Region}); dead-lettered {EventCount} event(s).")]
     partial void LogResidencyViolation(string sinkType, string region, int eventCount);
+
+    [LoggerMessage(
+        EventId = 5,
+        Level = LogLevel.Warning,
+        Message = "Audit export sink {SinkType} threw an unexpected exception; treating as a transient failure.")]
+    partial void LogSinkThrew(string sinkType, Exception exception);
 }

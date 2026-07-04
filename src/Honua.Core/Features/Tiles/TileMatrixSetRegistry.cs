@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
@@ -48,6 +49,12 @@ public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
     private readonly ImmutableArray<TileMatrixSetEntry> _entries;
     private readonly Dictionary<string, TileMatrixSetEntry> _entriesById;
     private readonly Dictionary<string, CustomTileMatrixSet> _customById;
+
+    // Built-in gridset geometry is a pure function of (id, maxLevel): WebMercatorQuad and
+    // WorldCRS84Quad never change after construction, so the ImmutableArray<GridLevel>
+    // rebuilt on every TryGetGeometry call (once per tile/capabilities request) is cached
+    // here instead of being recomputed on every call.
+    private readonly ConcurrentDictionary<(string Id, int MaxLevel), GridGeometry> _builtInGeometryCache = new();
 
     /// <summary>
     /// Creates a registry from the bound <see cref="TileMatrixSetDefinitionOptions"/>.
@@ -154,9 +161,11 @@ public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
 
         if (entry.IsBuiltIn)
         {
-            geometry = string.Equals(entry.Id, WorldCrs84QuadId, StringComparison.OrdinalIgnoreCase)
-                ? BuildWorldCrs84QuadGeometry(maxLevel)
-                : BuildWebMercatorQuadGeometry(maxLevel);
+            geometry = _builtInGeometryCache.GetOrAdd(
+                (entry.Id, maxLevel),
+                key => string.Equals(key.Id, WorldCrs84QuadId, StringComparison.OrdinalIgnoreCase)
+                    ? BuildWorldCrs84QuadGeometry(key.MaxLevel)
+                    : BuildWebMercatorQuadGeometry(key.MaxLevel));
             return true;
         }
 

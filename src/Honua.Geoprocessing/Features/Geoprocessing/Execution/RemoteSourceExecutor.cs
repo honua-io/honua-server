@@ -137,7 +137,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            Log.InvalidInputs(_logger, job.OperationId, _processId, ex.PublicMessage);
+            Log.InvalidInputs(_logger, job.OperationId, _processId, ex.PublicMessage, ex.InnerException);
             return JobExecutionResult.Failed($"Invalid {_processId} inputs: {ex.PublicMessage}");
         }
 
@@ -354,9 +354,12 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            throw new TransformInputException("secure connection could not be resolved.");
+            // Preserve the original failure as InnerException (never surfaced to the
+            // caller — only PublicMessage is) so BuildRequestAsync's catch can log the
+            // real cause instead of a bare "could not be resolved" with no diagnostic.
+            throw new TransformInputException("secure connection could not be resolved.", ex);
         }
     }
 
@@ -397,7 +400,8 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
     {
         [LoggerMessage(9280, LogLevel.Warning,
             "Remote source executor rejected job {OperationId} for {ProcessId}: {Reason}")]
-        public static partial void InvalidInputs(ILogger logger, string operationId, string processId, string reason);
+        public static partial void InvalidInputs(
+            ILogger logger, string operationId, string processId, string reason, Exception? exception = null);
 
         [LoggerMessage(9281, LogLevel.Error,
             "Remote source executor failed job {OperationId} during {ProcessId} read")]

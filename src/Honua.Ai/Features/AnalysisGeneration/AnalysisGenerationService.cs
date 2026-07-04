@@ -9,6 +9,7 @@ using Honua.Ai.WorkflowGeneration.Models;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Generation;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.AnalysisGeneration;
@@ -48,12 +49,16 @@ public sealed class AnalysisGenerationService : IAnalysisGenerationService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("honua.analysis_generation.generate");
+
         if (!_configuration.Enabled)
         {
             return Unsupported("AI analysis generation is disabled on this server.");
         }
 
         var providerId = string.IsNullOrWhiteSpace(request.Provider) ? _configuration.DefaultProvider : request.Provider!;
+        activity?.SetTag("honua.ai.provider", providerId);
+
         var options = _configuration.GetProvider(providerId);
         if (options is null || string.IsNullOrWhiteSpace(options.Endpoint) || string.IsNullOrWhiteSpace(options.Model))
         {
@@ -194,13 +199,23 @@ public sealed class AnalysisGenerationService : IAnalysisGenerationService
             {
                 var status = (int)response.StatusCode;
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                GenerationProviderLog.ProviderHttpError(_logger, providerId, status, Truncate(errorBody));
+                GenerationProviderLog.ProviderHttpError(_logger, providerId, status, GenerationStringHelpers.Truncate(errorBody));
                 return ErrorProposal($"Provider returned HTTP {status}.");
             }
 
             var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var chatResponse = JsonSerializer.Deserialize(responseJson, WorkflowGenerationJsonContext.Default.OpenAiChatCompletionResponse);
-            var content = chatResponse?.Choices is { Length: > 0 } ? chatResponse.Choices[0].Message?.Content : null;
+            // Guard a null first element ("choices":[null]) — length check is not a null check (#1986).
+            var choice = chatResponse?.Choices is { Length: > 0 } choices ? choices[0] : null;
+
+            // Surface max_tokens truncation explicitly instead of failing later with the opaque
+            // generic deserialize error on a truncated JSON body (#1979).
+            if (string.Equals(choice?.FinishReason, "length", StringComparison.Ordinal))
+            {
+                return ErrorProposal("Provider response was truncated (finish_reason=length / max_tokens reached); try a higher MaxTokens.");
+            }
+
+            var content = choice?.Message?.Content;
             if (string.IsNullOrWhiteSpace(content))
             {
                 return ErrorProposal("Provider returned an empty response.");
@@ -229,9 +244,6 @@ public sealed class AnalysisGenerationService : IAnalysisGenerationService
             return ErrorProposal("Provider response could not be parsed.");
         }
     }
-
-    private static string Truncate(string value, int maxLength = 500) =>
-        value.Length <= maxLength ? value : string.Concat(value.AsSpan(0, maxLength), "...");
 
     private static AnalysisGenerationResult Unsupported(string reason) => new()
     {

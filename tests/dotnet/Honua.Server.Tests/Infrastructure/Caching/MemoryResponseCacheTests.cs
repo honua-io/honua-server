@@ -100,6 +100,39 @@ public class MemoryResponseCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task GetOrCreateAsync_ConcurrentMissesOnSameKey_CallsFactoryOnce()
+    {
+        // Arrange: many concurrent callers race on the same cold key. Without
+        // stampede protection each one would independently invoke the (expensive)
+        // factory; with it, only the first caller runs the factory and the rest
+        // observe the value it cached.
+        var key = "stampede-key";
+        var factoryCallCount = 0;
+        var releaseFactory = new TaskCompletionSource();
+
+        async Task<string> Factory()
+        {
+            Interlocked.Increment(ref factoryCallCount);
+            await releaseFactory.Task;
+            return "stampede-value";
+        }
+
+        var callers = Enumerable.Range(0, 8)
+            .Select(_ => _cache.GetOrCreateAsync(key, Factory, TimeSpan.FromMinutes(5)))
+            .ToArray();
+
+        // Give every caller a chance to reach the factory gate before releasing it.
+        await Task.Delay(50);
+        releaseFactory.SetResult();
+
+        var results = await Task.WhenAll(callers);
+
+        // Assert
+        Assert.Equal(1, factoryCallCount);
+        Assert.All(results, r => Assert.Equal("stampede-value", r));
+    }
+
+    [Fact]
     public async Task RemoveAsync_ExistingKey_RemovesValue()
     {
         // Arrange

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Text.Json;
 using Honua.ArcGisRest.Features.FeatureStore.Models;
 using Honua.ArcGisRest.Features.FeatureStore.Services;
@@ -10,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.ArcGisRest.Features.FeatureStore;
 
@@ -31,6 +33,16 @@ namespace Honua.ArcGisRest.Features.FeatureStore;
 /// </remarks>
 internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
 {
+    /// <summary>
+    /// Dedicated ActivitySource for the federated ArcGIS REST provider (PA-108). One span
+    /// covers the entire paging loop in <see cref="QueryAsync"/> rather than per-page
+    /// spans, since a single query can issue up to <see cref="MaxPageIterations"/> outbound
+    /// HTTP calls and per-page spans would themselves become a cardinality problem. Must be
+    /// registered as <c>"Honua.ArcGisRest"</c> in <c>Honua.ServiceDefaults.Extensions._activitySourceNames</c>
+    /// or the spans are silently dropped by the tracer provider.
+    /// </summary>
+    private static readonly ActivitySource _activitySource = new("Honua.ArcGisRest");
+
     private static readonly FeatureProviderCapabilities _capabilities = new()
     {
         SupportsQuery = true,
@@ -68,16 +80,18 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     private const int MaxPageIterations = 10_000;
 
     private readonly IArcGisRestFeatureClient _client;
+    private readonly ILogger<ArcGisRestFeatureStore> _logger;
     private readonly FeatureProviderBinding? _binding;
 
-    public ArcGisRestFeatureStore(IArcGisRestFeatureClient client)
-        : this(client, binding: null)
+    public ArcGisRestFeatureStore(IArcGisRestFeatureClient client, ILogger<ArcGisRestFeatureStore> logger)
+        : this(client, logger, binding: null)
     {
     }
 
-    private ArcGisRestFeatureStore(IArcGisRestFeatureClient client, FeatureProviderBinding? binding)
+    private ArcGisRestFeatureStore(IArcGisRestFeatureClient client, ILogger<ArcGisRestFeatureStore> logger, FeatureProviderBinding? binding)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _binding = binding;
     }
 
@@ -97,7 +111,7 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        return new ArcGisRestFeatureStore(_client, binding);
+        return new ArcGisRestFeatureStore(_client, _logger, binding);
     }
 
     /// <inheritdoc />
@@ -118,8 +132,16 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
         var context = ResolveBinding(layerId);
         var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
 
+        // One span for the whole federated query, not one per page: the loop below can
+        // issue up to MaxPageIterations outbound HTTP calls, and a child span per page
+        // would itself become a cardinality/performance problem (PA-108).
+        using var activity = _activitySource.StartActivity("honua.arcgisrest.query", ActivityKind.Client);
+        activity?.SetTag("honua.arcgisrest.service_url", context.ServiceLocation.ServiceUrl);
+        activity?.SetTag("honua.arcgisrest.layer_id", context.ArcGisLayerId);
+
         var geometryType = ResolveDeclaredGeometryType(context.Resource);
         var items = ImmutableArray.CreateBuilder<Feature>();
+        var pageCount = 0;
 
         // The caller-supplied paging window. The upstream service truncates each
         // /query response at its own maxRecordCount (commonly 1000–2000) and flags
@@ -161,6 +183,7 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
                 pageQuery);
 
             var response = await _client.QueryAsync(url, authHeader, cancellationToken).ConfigureAwait(false);
+            pageCount++;
             EnsureNoUpstreamError(response.Error);
 
             // The object-id field name only needs resolving once; later pages echo
@@ -215,6 +238,10 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
             EnsureNoUpstreamError(countResponse.Error);
             totalCount = countResponse.Count;
         }
+
+        activity?.SetTag("honua.arcgisrest.page_count", pageCount);
+        activity?.SetTag("honua.arcgisrest.feature_count", built.Length);
+        ArcGisRestFeatureStoreLog.QueryPagesFetched(_logger, context.ArcGisLayerId, pageCount, built.Length);
 
         return QueryResult<Feature>.Create(totalCount, built, exceededTransferLimit);
     }

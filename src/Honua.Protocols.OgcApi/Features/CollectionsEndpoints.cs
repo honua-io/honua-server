@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -16,6 +17,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features.Models;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -264,6 +266,7 @@ internal static class CollectionsEndpoints
         catch (Exception ex)
         {
             CollectionsEndpointLogging.LogCollectionsQueryFailed(logger, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "An error occurred while retrieving collections.");
@@ -387,6 +390,7 @@ internal static class CollectionsEndpoints
         catch (Exception ex)
         {
             CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "An error occurred while retrieving the collection.");
@@ -485,6 +489,7 @@ internal static class CollectionsEndpoints
         catch (Exception ex)
         {
             CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "An error occurred while retrieving the queryables schema.");

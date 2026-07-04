@@ -149,17 +149,20 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return false;
         }
 
+        // Each namespace token bumps an independent version key, so the writes have
+        // no ordering dependency on one another; issue them concurrently instead of
+        // one round trip at a time.
+        await Task.WhenAll(namespaces.Select(ns => _cacheService.SetAsync(
+                VersionPrefix + ns,
+                Guid.NewGuid().ToString("N"),
+                VersionTtl,
+                cancellationToken)))
+            .ConfigureAwait(false);
+
+        // Evict from the local in-process cache so this node sees the new version
+        // on the very next cache operation, without waiting for the 30 s local TTL.
         foreach (var ns in namespaces)
         {
-            await _cacheService.SetAsync(
-                    VersionPrefix + ns,
-                    Guid.NewGuid().ToString("N"),
-                    VersionTtl,
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            // Evict from the local in-process cache so this node sees the new version
-            // on the very next cache operation, without waiting for the 30 s local TTL.
             _localVersionCache.TryRemove(ns, out _);
         }
 

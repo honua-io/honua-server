@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.ArcGisRest.Features.FeatureStore;
@@ -11,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.ArcGisRest.Tests;
 
@@ -23,6 +25,7 @@ public sealed class ArcGisRestPaginationTests
 {
     private const int LayerId = 1;
     private const string ServiceUrl = "https://services.arcgis.com/org/arcgis/rest/services/parcels/FeatureServer";
+    private const string TestSourceName = "Honua.ArcGisRest.Tests.Pagination";
 
     [Fact]
     public async Task QueryAsync_NoCallerLimit_PagesUntilUpstreamStopsFlaggingMore()
@@ -141,10 +144,51 @@ public sealed class ArcGisRestPaginationTests
         Assert.Contains("resultOffset=" + ArcGisRestFeatureStore.DefaultPageSize, client.Requests[1], StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task QueryAsync_MultiPageResult_EmitsOneSpanTaggedWithPageAndFeatureCounts()
+    {
+        // PA-108: a single QueryAsync call can page many times, but must record exactly
+        // one "honua.arcgisrest.query" span (not one per page) tagged with the remote
+        // service/layer plus the total page and feature counts observed across the loop.
+        var client = new PagingArcGisRestFeatureClient(upstreamMaxRecordCount: 2, totalFeatures: 5);
+        var reader = CreateReader(client, out _);
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "Honua.ArcGisRest" || source.Name == TestSourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        // The ActivityListener is process-global, so a sibling test class that also queries the
+        // ArcGIS REST provider can emit "honua.arcgisrest.query" spans concurrently. Anchor this
+        // call under a test-local parent activity and filter captured spans by its trace id so the
+        // assertion sees only the span this test produced.
+        using var testSource = new ActivitySource(TestSourceName);
+        using var parent = testSource.StartActivity("test.arcgisrest.query", ActivityKind.Internal)!;
+
+        var result = await reader.QueryAsync(LayerId, new FeatureQuery());
+
+        var span = Assert.Single(
+            activities,
+            a => a.OperationName == "honua.arcgisrest.query" && a.TraceId == parent.TraceId);
+        Assert.Equal("honua.arcgisrest.query", span.OperationName);
+        Assert.Equal(ActivityKind.Client, span.Kind);
+        Assert.Equal(ServiceUrl, span.TagObjects.First(t => t.Key == "honua.arcgisrest.service_url").Value);
+        Assert.Equal(LayerId, span.TagObjects.First(t => t.Key == "honua.arcgisrest.layer_id").Value);
+        Assert.Equal(3, span.TagObjects.First(t => t.Key == "honua.arcgisrest.page_count").Value);
+        Assert.Equal(result.Items.Length, span.TagObjects.First(t => t.Key == "honua.arcgisrest.feature_count").Value);
+    }
+
     private static IFeatureReader CreateReader(IArcGisRestFeatureClient client)
+        => CreateReader(client, out _);
+
+    private static IFeatureReader CreateReader(IArcGisRestFeatureClient client, out ArcGisRestFeatureStore provider)
     {
         var connection = CreateConnection();
-        var provider = new ArcGisRestFeatureStore(client);
+        provider = new ArcGisRestFeatureStore(client, NullLogger<ArcGisRestFeatureStore>.Instance);
         return ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(CreateBinding(provider, connection));
     }
 

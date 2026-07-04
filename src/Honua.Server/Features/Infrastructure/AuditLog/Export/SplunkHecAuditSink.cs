@@ -17,19 +17,28 @@ namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 internal sealed class SplunkHecAuditSink : IAuditSink
 {
     private const string Path = "/services/collector/event";
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly string _httpClientName;
     private readonly SplunkHecSinkOptions _options;
 
     /// <summary>
     /// Initializes a new Splunk HEC sink.
     /// </summary>
-    /// <param name="httpClient">The HTTP client (typically named, from <see cref="IHttpClientFactory"/>).</param>
+    /// <param name="httpClientFactory">
+    /// Factory used to resolve a fresh named <see cref="HttpClient"/> per send. A sink that
+    /// captured a single <see cref="HttpClient"/> at construction (a singleton) would never
+    /// observe <see cref="IHttpClientFactory"/>'s primary-handler rotation, so a DNS change
+    /// or a broken pooled connection would wedge this sink for the life of the process.
+    /// </param>
+    /// <param name="httpClientName">The named client to resolve on each send.</param>
     /// <param name="options">Splunk HEC configuration.</param>
-    public SplunkHecAuditSink(HttpClient httpClient, SplunkHecSinkOptions options)
+    public SplunkHecAuditSink(IHttpClientFactory httpClientFactory, string httpClientName, SplunkHecSinkOptions options)
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(httpClientFactory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(httpClientName);
         ArgumentNullException.ThrowIfNull(options);
-        _httpClient = httpClient;
+        _httpClientFactory = httpClientFactory;
+        _httpClientName = httpClientName;
         _options = options;
     }
 
@@ -45,6 +54,7 @@ internal sealed class SplunkHecAuditSink : IAuditSink
         ArgumentNullException.ThrowIfNull(events);
 
         var requestUri = BuildRequestUri();
+        var httpClient = _httpClientFactory.CreateClient(_httpClientName);
         foreach (var evt in events)
         {
             var payload = BuildEnvelope(evt);
@@ -55,7 +65,7 @@ internal sealed class SplunkHecAuditSink : IAuditSink
                 using var request = new HttpRequestMessage(HttpMethod.Post, requestUri) { Content = content };
                 request.Headers.TryAddWithoutValidation("Authorization", $"Splunk {_options.Token}");
 
-                using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+                using var response = await httpClient.SendAsync(request, ct).ConfigureAwait(false);
                 var result = AuditHttpResultMapper.FromStatus(SinkType, response.StatusCode);
                 if (!result.Succeeded)
                 {

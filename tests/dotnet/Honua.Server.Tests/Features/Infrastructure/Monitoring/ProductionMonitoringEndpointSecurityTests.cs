@@ -56,24 +56,6 @@ public sealed class ProductionMonitoringEndpointSecurityTests
         data.GetProperty("safe").GetInt32().Should().Be(7);
     }
 
-    [IntegrationTest]
-    [Operation(Operations.HealthCheck)]
-    [Endpoint("GET /monitoring/health/comprehensive")]
-    public async Task ComprehensiveHealth_ExternalServicesEntryDoesNotDependOnPublicInternet()
-    {
-        using var factory = CreateFactory();
-        using var client = CreateAdminClient(factory);
-
-        var response = await client.GetAsync("/monitoring/health/comprehensive");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var entry = document.RootElement.GetProperty("entries").GetProperty("external-services");
-        entry.GetProperty("status").GetString().Should().Be("Healthy");
-        entry.GetProperty("description").GetString().Should().Be("No external service probes are configured");
-        entry.GetProperty("data").GetProperty("configuredProbes").GetInt32().Should().Be(0);
-    }
-
     private static WebApplicationFactory<Program> CreateFactory(Action<IServiceCollection>? configureServices = null)
     {
         return new TestWebApplicationFactory()

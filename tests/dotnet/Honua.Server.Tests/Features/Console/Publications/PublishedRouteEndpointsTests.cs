@@ -124,11 +124,11 @@ public sealed class PublishedRouteEndpointsTests : IAsyncLifetime
         var detail = await PublishAsync("linked-map", ContentPublicationKind.Map);
         var linkResult = await UpdatePolicyAsync(detail.Route.PublicationId, new UpdatePublicationPolicyRequest
         {
-            CreatePublicLink = new ContentPublicLinkRequest { Label = "share", Token = "link-token" },
+            CreatePublicLink = new ContentPublicLinkRequest { Label = "share", Token = "link-token-abcdef01" },
         });
         var linkId = linkResult.CreatedPublicLinkId;
 
-        var authorized = await _anonymousClient.GetAsync($"/api/v1/published/linked-map?link={linkId}&token=link-token");
+        var authorized = await _anonymousClient.GetAsync($"/api/v1/published/linked-map?link={linkId}&token=link-token-abcdef01");
         authorized.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var wrongToken = await _anonymousClient.GetAsync($"/api/v1/published/linked-map?link={linkId}&token=wrong");

@@ -5,6 +5,7 @@ using Azure.Messaging.EventGrid;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Alerts;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
@@ -19,7 +20,8 @@ public sealed class AzureEventGridAlertDeliverySinkTests
         var client = CreateDummyClient();
         var sink = new AzureEventGridAlertDeliverySink(
             client,
-            Options.Create(new AlertDeliveryOptions()));
+            Options.Create(new AlertDeliveryOptions()),
+            NullLogger<AzureEventGridAlertDeliverySink>.Instance);
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AzureEventGrid),
@@ -34,7 +36,10 @@ public sealed class AzureEventGridAlertDeliverySinkTests
     public void ChannelType_ReturnsAzureEventGrid()
     {
         var client = CreateDummyClient();
-        var sink = new AzureEventGridAlertDeliverySink(client, Options.Create(new AlertDeliveryOptions()));
+        var sink = new AzureEventGridAlertDeliverySink(
+            client,
+            Options.Create(new AlertDeliveryOptions()),
+            NullLogger<AzureEventGridAlertDeliverySink>.Instance);
 
         Assert.Equal(AlertChannelType.AzureEventGrid, sink.ChannelType);
     }

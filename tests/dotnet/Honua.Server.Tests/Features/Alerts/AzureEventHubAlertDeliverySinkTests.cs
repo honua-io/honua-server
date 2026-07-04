@@ -4,6 +4,8 @@
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Alerts;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
@@ -27,7 +29,10 @@ public sealed class AzureEventHubAlertDeliverySinkTests
     public async Task DeliverAsync_WithNoConnectionStringConfigured_ReturnsNonRetryableFailure()
     {
         var publisher = new FakeEventHubPublisher();
-        var sink = new AzureEventHubAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()));
+        var sink = new AzureEventHubAlertDeliverySink(
+            publisher,
+            Options.Create(new AlertDeliveryOptions()),
+            NullLogger<AzureEventHubAlertDeliverySink>.Instance);
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AzureEventHub),
@@ -46,7 +51,10 @@ public sealed class AzureEventHubAlertDeliverySinkTests
             SendAsyncHandler = static (_, _, _) => Task.FromResult(new EventHubPublishResult(true, false, null))
         };
 
-        var sink = new AzureEventHubAlertDeliverySink(publisher, Options.Create(CreateOptionsWithEventHub()));
+        var sink = new AzureEventHubAlertDeliverySink(
+            publisher,
+            Options.Create(CreateOptionsWithEventHub()),
+            NullLogger<AzureEventHubAlertDeliverySink>.Instance);
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AzureEventHub),
             AlertTestFixtures.CreateAlertEvent());
@@ -63,13 +71,43 @@ public sealed class AzureEventHubAlertDeliverySinkTests
             SendAsyncHandler = static (_, _, _) => Task.FromResult(new EventHubPublishResult(false, true, "Event Hub transient error: test"))
         };
 
-        var sink = new AzureEventHubAlertDeliverySink(publisher, Options.Create(CreateOptionsWithEventHub()));
+        var sink = new AzureEventHubAlertDeliverySink(
+            publisher,
+            Options.Create(CreateOptionsWithEventHub()),
+            NullLogger<AzureEventHubAlertDeliverySink>.Instance);
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AzureEventHub),
             AlertTestFixtures.CreateAlertEvent());
 
         Assert.False(result.Succeeded);
         Assert.True(result.Retryable);
+    }
+
+    [UnitTest]
+    public async Task DeliverAsync_WithUnhandledException_LogsAndReturnsRetryableFailure()
+    {
+        var publisher = new FakeEventHubPublisher
+        {
+            SendAsyncHandler = static (_, _, _) => throw new InvalidOperationException("boom")
+        };
+        var logger = new CapturingLogger<AzureEventHubAlertDeliverySink>();
+
+        var sink = new AzureEventHubAlertDeliverySink(
+            publisher,
+            Options.Create(CreateOptionsWithEventHub()),
+            logger);
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.AzureEventHub),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.True(result.Retryable);
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.LogLevel);
+        Assert.IsType<InvalidOperationException>(entry.Exception);
+        Assert.Equal("boom", entry.Exception!.Message);
     }
 
     [UnitTest]
@@ -80,7 +118,10 @@ public sealed class AzureEventHubAlertDeliverySinkTests
             SendAsyncHandler = static (_, _, _) => Task.FromResult(new EventHubPublishResult(false, false, "Event Hub not found: test"))
         };
 
-        var sink = new AzureEventHubAlertDeliverySink(publisher, Options.Create(CreateOptionsWithEventHub()));
+        var sink = new AzureEventHubAlertDeliverySink(
+            publisher,
+            Options.Create(CreateOptionsWithEventHub()),
+            NullLogger<AzureEventHubAlertDeliverySink>.Instance);
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AzureEventHub),
             AlertTestFixtures.CreateAlertEvent());
@@ -95,7 +136,10 @@ public sealed class AzureEventHubAlertDeliverySinkTests
     {
         var publisher = new FakeEventHubPublisher();
 
-        var sink = new AzureEventHubAlertDeliverySink(publisher, Options.Create(CreateOptionsWithEventHub()));
+        var sink = new AzureEventHubAlertDeliverySink(
+            publisher,
+            Options.Create(CreateOptionsWithEventHub()),
+            NullLogger<AzureEventHubAlertDeliverySink>.Instance);
         await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AzureEventHub),
             AlertTestFixtures.CreateAlertEvent());
@@ -112,7 +156,34 @@ public sealed class AzureEventHubAlertDeliverySinkTests
     public void ChannelType_ReturnsAzureEventHub()
     {
         var publisher = new FakeEventHubPublisher();
-        var sink = new AzureEventHubAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()));
+        var sink = new AzureEventHubAlertDeliverySink(
+            publisher,
+            Options.Create(new AlertDeliveryOptions()),
+            NullLogger<AzureEventHubAlertDeliverySink>.Instance);
         Assert.Equal(AlertChannelType.AzureEventHub, sink.ChannelType);
+    }
+}
+
+/// <summary>
+/// Captures log entries emitted to it for assertions; used to verify the
+/// previously-silent unhandled-exception path (PA-062) now emits a warning
+/// with the original exception attached.
+/// </summary>
+internal sealed class CapturingLogger<T> : ILogger<T>
+{
+    public List<(LogLevel LogLevel, EventId EventId, string Message, Exception? Exception)> Entries { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        Entries.Add((logLevel, eventId, formatter(state, exception), exception));
     }
 }

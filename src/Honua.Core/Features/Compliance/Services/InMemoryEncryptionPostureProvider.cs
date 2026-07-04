@@ -126,6 +126,7 @@ internal sealed partial class InMemoryEncryptionPostureProvider : IEncryptionPos
         // with no persisted audit trail (SOC 2 CC6 / FedRAMP IR-4 violation). Use a
         // bounded, request-independent token and treat failures as best-effort.
         using var auditCts = new CancellationTokenSource(AuditTimeout);
+        var auditRecorded = true;
         try
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
@@ -147,7 +148,10 @@ internal sealed partial class InMemoryEncryptionPostureProvider : IEncryptionPos
         catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
             // Don't roll back the in-memory rotation — it's already visible to GetPosture.
-            // Surface the failure as a high-signal log line so operators can reconcile.
+            // Surface the failure as a high-signal log line so operators can reconcile, and
+            // report it on the outcome (AuditRecorded = false) so callers can tell "rotated"
+            // apart from "rotated AND auditable" instead of seeing an unconditional success.
+            auditRecorded = false;
             LogAuditWriteFailed(previous, next, ex);
         }
 
@@ -157,7 +161,10 @@ internal sealed partial class InMemoryEncryptionPostureProvider : IEncryptionPos
             PreviousVersion = previous,
             NewVersion = next,
             RotatedAt = now,
-            Message = $"Compliance key-version posture advanced from v{previous} to v{next}. This records an auditor-facing rotation event; actual cipher key material is managed by IConnectionEncryptionService and is unaffected by this endpoint.",
+            AuditRecorded = auditRecorded,
+            Message = auditRecorded
+                ? $"Compliance key-version posture advanced from v{previous} to v{next}. This records an auditor-facing rotation event; actual cipher key material is managed by IConnectionEncryptionService and is unaffected by this endpoint."
+                : $"Compliance key-version posture advanced from v{previous} to v{next}, but the audit-log write failed; this rotation event is not yet recorded for auditor traceability. See server logs and reconcile the missing audit event.",
         };
     }
 

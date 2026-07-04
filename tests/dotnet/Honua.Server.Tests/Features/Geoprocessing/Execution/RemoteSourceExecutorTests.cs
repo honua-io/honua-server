@@ -85,6 +85,44 @@ public sealed class RemoteSourceExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
     }
 
+    [UnitTest]
+    public async Task RemoteSource_SecureConnectionResolverThrows_LogsInnerExceptionAndFailsCleanly()
+    {
+        // PA-211: the secure-connection resolution failure is wrapped in a
+        // TransformInputException with a sanitized PublicMessage, but the original
+        // exception must be preserved as InnerException and logged — not discarded —
+        // so an operator can diagnose why the connection could not be resolved.
+        var fake = new FakeDagFeatureSource("source.postgis", []);
+        var resolver = Substitute.For<Honua.Core.Features.Security.Abstractions.ISecureConnectionResolver>();
+        resolver
+            .ResolveConnectionStringAsync("broken-connection", Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string>(new InvalidOperationException("secret store unreachable")));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(fake as IDagFeatureSource);
+        services.AddSingleton(resolver);
+        var provider = services.BuildServiceProvider();
+        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+        var options = new GeoprocessingExecutorOptions
+        {
+            MaxArtifactBytes = 50L * 1024L * 1024L,
+            ResultRetention = TimeSpan.FromDays(7)
+        };
+        var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
+        monitor.CurrentValue.Returns(options);
+
+        var logger = new RecordingLogger<RemoteSourceExecutor>();
+        var executor = RemoteSourceExecutor.ForProcess("source.postgis", scopeFactory, monitor, logger);
+
+        var (status, _, _) = await RunExecutorAsync(executor, "source.postgis", ("connectionName", "broken-connection"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        logger.Entries
+            .Any(e => e.Exception is InvalidOperationException { Message: "secret store unreachable" })
+            .Should().BeTrue("the original resolver exception must be logged, not discarded");
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -196,6 +234,36 @@ public sealed class RemoteSourceExecutorTests
             }
 
             await Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
+    {
+        public List<(Microsoft.Extensions.Logging.LogLevel Level, Exception? Exception, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => NullScope.Instance;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, exception, formatter(state, exception)));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose()
+            {
+            }
         }
     }
 }

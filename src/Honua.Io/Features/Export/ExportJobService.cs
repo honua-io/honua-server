@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -11,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Io.Export.Writers;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Progress;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
@@ -202,6 +204,17 @@ internal sealed class ExportJobService(
             var scratchDir = Path.Combine(Path.GetTempPath(), "honua-export", job.JobId);
             Directory.CreateDirectory(scratchDir);
             var shouldRequeue = false;
+
+            // PA-161: the export processing hot path (queue -> stream -> write -> upload) had no
+            // OTel span. "Honua" is HonuaTelemetry's ActivitySource name, already registered with
+            // the TracerProvider and already used by the sibling ExportEndpoints.cs in this project.
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity("Export.ProcessQueuedJob");
+            activity?.SetTag("export.job_id", job.JobId);
+            activity?.SetTag("export.format", job.Format);
+            activity?.SetTag("export.service_name", job.ServiceName);
+            activity?.SetTag("export.layer_id", job.LayerId);
+            activity?.SetTag("export.total_features", job.TotalFeatures);
+
             try
             {
                 await using var scope = _scopeFactory.CreateAsyncScope();
@@ -241,10 +254,13 @@ internal sealed class ExportJobService(
 
                 _jobRequests.TryRemove(job.JobId, out _);
                 await RemovePersistedJobRequestAsync(job.JobId, processingToken).ConfigureAwait(false);
+                activity?.SetTag("export.output_size_bytes", fileInfo.Length);
+                activity?.SetStatus(ActivityStatusCode.Ok);
                 ExportLog.AsyncExportCompleted(_logger, job.JobId, job.TotalFeatures, fileInfo.Length);
             }
             catch (OperationCanceledException) when (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, "Lease lost; requeued for retry.");
                 var requeued = progress with
                 {
                     Status = OperationStatus.Queued,
@@ -259,6 +275,7 @@ internal sealed class ExportJobService(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 ExportLog.AsyncExportFailed(_logger, job.JobId, ex);
 
                 try
@@ -286,8 +303,10 @@ internal sealed class ExportJobService(
                 {
                     Directory.Delete(scratchDir, recursive: true);
                 }
-                catch
+                catch (Exception cleanupEx)
                 {
+                    // Cleanup failure must not fail the export job itself; log and continue.
+                    ExportJobServiceLog.ScratchDirCleanupFailed(_logger, job.JobId, scratchDir, cleanupEx);
                 }
             }
 

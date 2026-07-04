@@ -78,7 +78,9 @@ internal static class JobEndpoints
         [FromQuery] int? limit = null,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
-        EnrichActivity("GetJobList");
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjoblist");
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "GetJobList");
 
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
         var authDecision = await gate.CheckAuthorizationAsync(
@@ -168,7 +170,10 @@ internal static class JobEndpoints
         ILogger<OgcProcessesEndpointsLog> logger,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
-        EnrichActivity("GetJobStatus");
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjobstatus");
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "GetJobStatus");
+        activity?.SetTag(HonuaTelemetry.Tags.JobId, jobId);
 
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
         var authDecision = await gate.CheckAuthorizationAsync(
@@ -229,7 +234,10 @@ internal static class JobEndpoints
         [FromServices] IGeoprocessingJobService jobService,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
-        EnrichActivity("GetJobResults");
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjobresults");
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "GetJobResults");
+        activity?.SetTag(HonuaTelemetry.Tags.JobId, jobId);
 
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
         var authDecision = await gate.CheckAuthorizationAsync(
@@ -346,7 +354,10 @@ internal static class JobEndpoints
         [FromServices] IJobQueue? jobQueue = null,
         [FromServices] IEnumerable<IBatchComputeBackend>? backends = null)
     {
-        EnrichActivity("DismissJob");
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.dismissjob");
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "DismissJob");
+        activity?.SetTag(HonuaTelemetry.Tags.JobId, jobId);
 
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
 
@@ -856,14 +867,6 @@ internal static class JobEndpoints
             && !string.IsNullOrWhiteSpace(protocolProcessId)
                 ? protocolProcessId
                 : ProcessEndpoints.CanonicalProcessId;
-
-    private static void EnrichActivity(string operation)
-    {
-        var activity = Activity.Current;
-        if (activity == null) return;
-        activity.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
-        activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
-    }
 
 }
 

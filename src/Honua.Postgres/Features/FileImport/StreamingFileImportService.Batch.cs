@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data;
+using System.Diagnostics;
 using System.Text.Json;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
@@ -29,7 +30,7 @@ internal sealed partial class StreamingFileImportService
         NpgsqlConnection connection,
         string schemaName,
         string tableName,
-        IReadOnlyList<IFeature> features,
+        List<IFeature> features,
         int sourceSrid,
         int targetSrid,
         WKBWriter wkbWriter,
@@ -39,6 +40,11 @@ internal sealed partial class StreamingFileImportService
     {
         var imported = 0;
         var failed = 0;
+
+        using var activity = _activitySource.StartActivity("Import.InsertBatch");
+        activity?.SetTag("import.table", tableName);
+        activity?.SetTag("import.feature_count", features.Count);
+        activity?.SetTag("import.load_mode", loadMode.ToString());
 
         // Continue-on-error can't run inside a single transaction because any statement error aborts it.
         var useTransaction = _limits.UseTransactions && !_limits.ContinueOnError;
@@ -88,14 +94,18 @@ internal sealed partial class StreamingFileImportService
                 await transaction.CommitAsync(cancellationToken);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             if (transaction != null)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
             }
             throw;
         }
+
+        activity?.SetTag("import.imported_count", imported);
+        activity?.SetTag("import.failed_count", failed);
 
         return (imported, failed);
     }
@@ -105,7 +115,7 @@ internal sealed partial class StreamingFileImportService
         NpgsqlTransaction? transaction,
         string schemaName,
         string tableName,
-        IReadOnlyList<IFeature> features,
+        List<IFeature> features,
         int sourceSrid,
         int targetSrid,
         WKBWriter wkbWriter,
@@ -251,7 +261,7 @@ internal sealed partial class StreamingFileImportService
         NpgsqlTransaction? transaction,
         string schemaName,
         string tableName,
-        IReadOnlyList<IFeature> features,
+        List<IFeature> features,
         int sourceSrid,
         int targetSrid,
         WKBWriter wkbWriter,

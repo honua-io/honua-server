@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -8,6 +9,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.PointCloud;
 using Honua.Infrastructure.Scene;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -216,6 +218,40 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
 
         var ex = await act.Should().ThrowAsync<ValidationException>();
         ex.Which.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+    }
+
+    [UnitTest]
+    public async Task Ingest_PromotionFails_MarksActivityAsErrorAndRethrows()
+    {
+        // PA-203: IngestAsync already starts a span but never marked it failed when the
+        // stage -> register -> promote pipeline's final promote step throws. Force
+        // Directory.Move to fail by pre-occupying the final path with a plain file (not a
+        // directory), which is exactly what the promotion catch/compensation branch guards
+        // against, and assert the span now carries ActivityStatusCode.Error.
+        const string sceneId = "pcloud-promote-fail";
+        Directory.CreateDirectory(_outputRoot);
+        var finalDirectory = Path.Combine(_outputRoot, sceneId);
+        await File.WriteAllTextAsync(finalDirectory, "blocks Directory.Move");
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == HonuaTelemetry.ServiceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var act = async () => await _executor.IngestAsync(
+            new PointCloudSceneIngestRequest(PointCloudSceneFixtures.SinglePointGeographic(), SceneId: sceneId),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<IOException>();
+
+        var span = activities.Should().ContainSingle(a =>
+            a.OperationName == HonuaTelemetry.Activities.TileGeneration &&
+            (string?)a.GetTagItem("honua.scene.source_kind") == "pointcloud").Which;
+        span.Status.Should().Be(ActivityStatusCode.Error);
     }
 
     private static string FindFirstPnts(string assetRoot)

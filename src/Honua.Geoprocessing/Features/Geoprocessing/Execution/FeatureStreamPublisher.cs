@@ -138,7 +138,6 @@ internal static class FeatureStreamPublisher
     {
         private readonly NetTopologySuite.IO.GeoJsonWriter _writer = new();
         private FileStream? _fileStream;
-        private StreamWriter? _textWriter;
         private long _count;
         private long _bytes;
 
@@ -147,24 +146,22 @@ internal static class FeatureStreamPublisher
             _ = cancellationToken;
             _fileStream = new FileStream(
                 path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 1 << 16, useAsync: true);
-            _textWriter = new StreamWriter(
-                _fileStream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             await Task.CompletedTask.ConfigureAwait(false);
         }
 
         public async Task WriteAsync(IFeature feature, CancellationToken cancellationToken)
         {
             var line = FeatureStreamArtifact.SerializeLine(_writer, feature);
-            await _textWriter!.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
+            _bytes += await FeatureStreamArtifact.WriteNdjsonLineAsync(_fileStream!, line, cancellationToken)
+                .ConfigureAwait(false);
             _count++;
-            _bytes += System.Text.Encoding.UTF8.GetByteCount(line) + 1;
         }
 
         public async Task<(long Count, long Bytes)> CompleteAsync(CancellationToken cancellationToken)
         {
-            if (_textWriter is not null)
+            if (_fileStream is not null)
             {
-                await _textWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await _fileStream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
             return (_count, _bytes);
@@ -172,11 +169,6 @@ internal static class FeatureStreamPublisher
 
         public async ValueTask DisposeAsync()
         {
-            if (_textWriter is not null)
-            {
-                await _textWriter.DisposeAsync().ConfigureAwait(false);
-            }
-
             if (_fileStream is not null)
             {
                 await _fileStream.DisposeAsync().ConfigureAwait(false);

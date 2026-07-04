@@ -29,4 +29,9 @@ internal static partial class ExportJobServiceLog
         Level = LogLevel.Warning,
         Message = "Export job lease renewal was lost while processing a background export.")]
     public static partial void LeaseRenewalLost(ILogger logger);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Failed to delete scratch directory {ScratchDir} for export job {JobId}; leaking temp files.")]
+    public static partial void ScratchDirCleanupFailed(ILogger logger, string jobId, string scratchDir, Exception exception);
 }

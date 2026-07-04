@@ -17,7 +17,7 @@ internal static partial class FeatureServerLog
     /// <param name="serviceId">The service identifier.</param>
     [LoggerMessage(
         EventId = 2001,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Service metadata requested: {ServiceId}")]
     public static partial void ServiceMetadataRequested(ILogger logger, string serviceId);
 
@@ -67,7 +67,7 @@ internal static partial class FeatureServerLog
     /// <param name="layerId">The layer identifier.</param>
     [LoggerMessage(
         EventId = 2101,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Layer metadata requested: {ServiceId}/FeatureServer/{LayerId}")]
     public static partial void LayerMetadataRequested(ILogger logger, string serviceId, int layerId);
 
@@ -121,7 +121,7 @@ internal static partial class FeatureServerLog
     /// <param name="hasWhereClause">Whether the request supplied a WHERE clause.</param>
     [LoggerMessage(
         EventId = 2201,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Query requested: {ServiceId}/FeatureServer/{LayerId}/query (WHERE clause present: {HasWhereClause})")]
     public static partial void QueryRequested(ILogger logger, string serviceId, int layerId, bool hasWhereClause);
 
@@ -229,7 +229,7 @@ internal static partial class FeatureServerLog
     /// <param name="addCount">The number of features to add.</param>
     /// <param name="updateCount">The number of features to update.</param>
     /// <param name="deleteCount">The number of features to delete.</param>
-    [LoggerMessage(Level = LogLevel.Information, Message = "ApplyEdits requested for service '{ServiceId}' layer {LayerId} with {AddCount} adds, {UpdateCount} updates, {DeleteCount} deletes")]
+    [LoggerMessage(Level = LogLevel.Debug, Message = "ApplyEdits requested for service '{ServiceId}' layer {LayerId} with {AddCount} adds, {UpdateCount} updates, {DeleteCount} deletes")]
     public static partial void ApplyEditsRequested(ILogger logger, string serviceId, int layerId, int addCount, int updateCount, int deleteCount);
 
     /// <summary>
@@ -344,7 +344,7 @@ internal static partial class FeatureServerLog
     /// <param name="relationshipId">The relationship identifier.</param>
     [LoggerMessage(
         EventId = 2401,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Related records query requested: {ServiceId}/FeatureServer/{LayerId}/queryRelatedRecords with objectIdCount: {ObjectIdCount}, objectIdSample: {ObjectIdSample}, relationshipId: {RelationshipId}")]
     public static partial void RelatedRecordsQueryRequested(
         ILogger logger,

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.SensorThings.Abstractions;
@@ -24,6 +25,13 @@ namespace Honua.Protocols.SensorThings.Streaming;
 /// </summary>
 internal sealed class ObservationStreamSessionManager : IObservationChangeEventPublisher, IDisposable
 {
+    /// <summary>
+    /// The <see cref="Meter"/> name emitted for OpenTelemetry. Must be registered in the
+    /// service defaults meter allow-list (<c>Honua.ServiceDefaults.Extensions._meterNames</c>)
+    /// or the drop counter below is silently excluded from export (PA-112).
+    /// </summary>
+    internal const string MeterName = "Honua.SensorThings";
+
     private static readonly RedisChannel BroadcastChannel =
         new("sta:observation:stream:broadcast", RedisChannel.PatternMode.Literal);
 
@@ -31,6 +39,8 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
     private readonly ILogger<ObservationStreamSessionManager> _logger;
     private readonly IConnectionMultiplexer? _redis;
     private readonly ISubscriber? _subscriber;
+    private readonly Meter _meter;
+    private readonly Counter<long> _observationStreamDrops;
     private readonly string _instanceId = Guid.NewGuid().ToString("N");
     private readonly int _maxConcurrentSessions;
     private readonly int _maxBufferPerConnection;
@@ -48,6 +58,10 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
         _redis = redis;
         _maxConcurrentSessions = maxConcurrentSessions;
         _maxBufferPerConnection = maxBufferPerConnection;
+        _meter = new Meter(MeterName);
+        _observationStreamDrops = _meter.CreateCounter<long>(
+            "honua_sensorthings_observation_stream_drops_total",
+            description: "Observation-stream frames dropped because a slow consumer's bounded channel was full.");
 
         if (_redis is null)
         {
@@ -69,6 +83,13 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
 
     /// <summary>Number of slow-consumer disconnects since startup.</summary>
     public long SlowConsumerDrops => Interlocked.Read(ref _slowConsumerDrops);
+
+    /// <summary>
+    /// The underlying <see cref="Meter"/> instance. Exposed to tests so a per-instance
+    /// <see cref="MeterListener"/> can scope capture to this object rather than the shared
+    /// meter name, which prevents cross-test contamination under parallel execution.
+    /// </summary>
+    internal Meter Meter => _meter;
 
     /// <summary>Current active session count.</summary>
     public int SessionCount => Volatile.Read(ref _activeSessionCount);
@@ -207,9 +228,19 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
 
             // DropWrite bounded channel: a full buffer drops the frame and the reader
             // observes the gap. Track the drop for slow-consumer visibility.
+            //
+            // NOTE (found while wiring PA-112's OTel export): ChannelWriter<T>.TryWrite
+            // returns true for BoundedChannelFullMode.DropWrite even when the item is
+            // silently discarded — it only returns false once the writer is completed,
+            // which this manager never does. That means this branch, and therefore both
+            // counters below, are effectively unreachable via the current code path. Fixing
+            // the drop-detection itself (e.g. checking channel occupancy around the write) is
+            // a separate, more invasive change and is out of scope here; the counter is wired
+            // correctly so it starts reporting real drops once that detection bug is fixed.
             if (!entry.Channel.Writer.TryWrite(frame))
             {
                 Interlocked.Increment(ref _slowConsumerDrops);
+                _observationStreamDrops.Add(1, new KeyValuePair<string, object?>("datastream.id", frame.DatastreamId));
             }
         }
     }
@@ -234,9 +265,10 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
             {
                 _subscriber.Unsubscribe(BroadcastChannel, HandleClusterBroadcast);
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort shutdown.
+                // Best-effort shutdown: Dispose() must not throw, so log and continue.
+                ObservationStreamLog.ClusterUnsubscribeFailed(_logger, ex);
             }
         }
 
@@ -248,6 +280,7 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
 
         _sessions.Clear();
         Interlocked.Exchange(ref _activeSessionCount, 0);
+        _meter.Dispose();
     }
 
     private sealed class SessionEntry

@@ -132,11 +132,15 @@ internal sealed partial class Wfs20Handler
         CancellationToken cancellationToken)
     {
         var plans = ImmutableArray.CreateBuilder<LayerQueryPlan>(featureTypes.Count);
-        var remainingOffset = offset;
-        var remainingCount = count;
-        long totalMatched = 0;
 
-        foreach (var featureType in featureTypes)
+        // The per-feature-type query build + count has no cross-type dependency, so run
+        // every feature type's build+count pair concurrently instead of one at a time
+        // (previously a serial CountAsync round trip per feature type in the multi-type
+        // GetFeature path). The offset/limit distribution below IS sequential (each
+        // type's share depends on how much of the offset/count budget prior types in
+        // request order consumed), so that accounting still runs as a second,
+        // I/O-free pass over the precomputed results in the original order.
+        var perTypeResults = await Task.WhenAll(featureTypes.Select(async featureType =>
         {
             var query = await BuildFeatureQueryAsync(
                 featureType,
@@ -151,6 +155,15 @@ internal sealed partial class Wfs20Handler
                 cancellationToken: cancellationToken);
 
             var layerMatched = await _featureReader.CountAsync(featureType.StorageLayerId, query, cancellationToken);
+            return (featureType, query, layerMatched);
+        })).ConfigureAwait(false);
+
+        var remainingOffset = offset;
+        var remainingCount = count;
+        long totalMatched = 0;
+
+        foreach (var (featureType, query, layerMatched) in perTypeResults)
+        {
             totalMatched += layerMatched;
 
             if (layerMatched == 0)
@@ -214,7 +227,7 @@ internal sealed partial class Wfs20Handler
             enforceResourceIdTypeMatch,
             requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
-            ? CombineSqlFilters(sqlFilter, FalseSqlFilter)
+            ? SqlFragmentHelpers.CombineSqlFilters(sqlFilter, FalseSqlFilter)
             : sqlFilter;
         var orderBy = ParseSortBy(resource, sortBy);
         var outputSrid = await ResolveRequestedOutputSridAsync(resource, srsName, cancellationToken).ConfigureAwait(false);
@@ -351,18 +364,6 @@ internal sealed partial class Wfs20Handler
         normalizedFilter = null;
         resourceIds = string.Join(',', values);
         return true;
-    }
-
-    private static SqlFragment CombineSqlFilters(SqlFragment? left, SqlFragment right)
-    {
-        if (left is null)
-        {
-            return right;
-        }
-
-        return new SqlFragment(
-            $"({left.Sql}) AND ({right.Sql})",
-            left.Parameters.Concat(right.Parameters).ToArray());
     }
 
     private static ImmutableArray<string>? ResolveProjectedFields(MetadataV2Resource resource, string? propertyName)
