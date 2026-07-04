@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -53,7 +54,9 @@ public sealed class GdalRasterMapAlgebraExecutorTests
             context.Artifacts.Should().ContainSingle();
             context.Artifacts[0].Should().StartWith("data:image/tiff");
 
-            var invocation = runner.Invocations.Single();
+            // GdalNoData.TryReadSourceNoDataAsync adds a gdalinfo invocation before gdal_calc.py;
+            // filter to the actual gdal_calc.py call.
+            var invocation = runner.Invocations.Single(i => i.Tool == "gdal_calc.py");
             invocation.Tool.Should().Be("gdal_calc.py");
             invocation.Arguments.Should().Contain(a => a.StartsWith("-A"));
             invocation.Arguments.Should().Contain(a => a.StartsWith("-B"));
@@ -83,7 +86,8 @@ public sealed class GdalRasterMapAlgebraExecutorTests
 
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
 
-            var args = runner.Invocations.Single().Arguments;
+            // GdalNoData.TryReadSourceNoDataAsync adds a gdalinfo invocation before gdal_calc.py.
+            var args = runner.Invocations.Single(i => i.Tool == "gdal_calc.py").Arguments;
             // The expression is a single "--calc=-A" token so argparse cannot mistake
             // the leading minus for a separate option. (The band-variable flag "-A" is
             // a separate, expected argument.)
@@ -112,7 +116,8 @@ public sealed class GdalRasterMapAlgebraExecutorTests
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
-            runner.Invocations.Single().Arguments.Should().ContainInOrder("--type", "Float32");
+            // GdalNoData.TryReadSourceNoDataAsync adds a gdalinfo invocation before gdal_calc.py.
+            runner.Invocations.Single(i => i.Tool == "gdal_calc.py").Arguments.Should().ContainInOrder("--type", "Float32");
         }
         finally
         {
@@ -212,6 +217,68 @@ public sealed class GdalRasterMapAlgebraExecutorTests
             result.Status.Should().Be(ExecutionJobStatus.Failed);
             result.ErrorMessage.Should().Contain("total");
             runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    /// <summary>
+    /// Regression tests for BH-021: a bare exponent character ('e'/'E') with no
+    /// following digits is not a valid Python literal and must be rejected by the
+    /// allow-list validator before reaching gdal_calc.py.  Previously "1e" passed
+    /// the scanner and produced a Python SyntaxError at runtime.
+    /// </summary>
+    [Theory]
+    [InlineData("A + 1e")]       // trailing bare exponent
+    [InlineData("1E + A")]       // leading bare exponent (not a valid numeric start)
+    [InlineData("A * 2e")]       // bare exponent at end of expression
+    public async Task MapAlgebra_ExpressionWithOrphanedExponent_FailsBeforeReachingTheCli(string expression)
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterMapAlgebraJobExecutor.HandledProcessId,
+                ("sources", Sources("raster-a")),
+                ("expression", expression));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().NotBeNullOrEmpty();
+            runner.Invocations.Should().BeEmpty("the CLI must never be reached for an invalid expression");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    /// <summary>
+    /// Regression test for BH-021 (positive case): valid scientific notation with a
+    /// digit after the exponent character must be accepted.
+    /// </summary>
+    [Theory]
+    [InlineData("A * 1e3")]      // valid: 1000
+    [InlineData("A + 2E6")]      // valid: 2,000,000
+    [InlineData("A * 1e10")]     // valid: multi-digit exponent
+    public async Task MapAlgebra_ExpressionWithValidSciNotation_Succeeds(string expression)
+    {
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterMapAlgebraJobExecutor.HandledProcessId,
+                ("sources", Sources("raster-a")),
+                ("expression", expression));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
         }
         finally
         {

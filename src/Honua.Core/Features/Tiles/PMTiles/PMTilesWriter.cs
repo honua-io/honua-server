@@ -144,13 +144,13 @@ public sealed class PMTilesWriter
             TileType = PMTilesTileType.Mvt,
             MinZoom = (byte)metadata.MinZoom,
             MaxZoom = (byte)metadata.MaxZoom,
-            MinLonE7 = ToE7(metadata.MinLon),
-            MinLatE7 = ToE7(metadata.MinLat),
-            MaxLonE7 = ToE7(metadata.MaxLon),
-            MaxLatE7 = ToE7(metadata.MaxLat),
+            MinLonE7 = ToE7Lon(metadata.MinLon),
+            MinLatE7 = ToE7Lat(metadata.MinLat),
+            MaxLonE7 = ToE7Lon(metadata.MaxLon),
+            MaxLatE7 = ToE7Lat(metadata.MaxLat),
             CenterZoom = (byte)(metadata.CenterZoom ?? (metadata.MinZoom + metadata.MaxZoom) / 2),
-            CenterLonE7 = ToE7(metadata.CenterLon ?? (metadata.MinLon + metadata.MaxLon) / 2.0),
-            CenterLatE7 = ToE7(metadata.CenterLat ?? (metadata.MinLat + metadata.MaxLat) / 2.0),
+            CenterLonE7 = ToE7Lon(metadata.CenterLon ?? (metadata.MinLon + metadata.MaxLon) / 2.0),
+            CenterLatE7 = ToE7Lat(metadata.CenterLat ?? (metadata.MinLat + metadata.MaxLat) / 2.0),
         };
 
         // Phase 6: Write everything
@@ -197,9 +197,15 @@ public sealed class PMTilesWriter
         return stream.ToArray();
     }
 
-    private static int ToE7(double value)
+    private static int ToE7Lon(double value)
     {
         var scaled = Math.Clamp(value, -180.0, 180.0) * 10_000_000;
+        return (int)Math.Round(scaled);
+    }
+
+    private static int ToE7Lat(double value)
+    {
+        var scaled = Math.Clamp(value, -90.0, 90.0) * 10_000_000;
         return (int)Math.Round(scaled);
     }
 

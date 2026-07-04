@@ -201,6 +201,16 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         {
             throw new InvalidDataException($"Zarr dtype '{dtype}' has an invalid element size suffix.");
         }
+
+        // All supported numeric dtypes fit within 16 bytes (f16 / complex128 is the largest).
+        // Reject unrealistic values early to prevent oversized allocation.
+        const int MaxSupportedElementBytes = 16;
+        if (bytes > MaxSupportedElementBytes)
+        {
+            throw new InvalidDataException(
+                $"Zarr dtype '{dtype}' has an element size of {bytes} bytes, which exceeds the maximum of {MaxSupportedElementBytes}.");
+        }
+
         return bytes;
     }
 
@@ -233,6 +243,13 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         }
 
         var chunkBytes = ComputeChunkBytes(array, elementSize);
+        if (chunkBytes > MaxBytesPerRequest)
+        {
+            throw new InvalidOperationException(
+                $"Zarr chunk size of {chunkBytes:N0} bytes exceeds the per-chunk cap of {MaxBytesPerRequest:N0} bytes. " +
+                $"Re-chunk the Zarr store with smaller chunk dimensions before serving it.");
+        }
+
         var chunkBuffer = new byte[chunkBytes];
         if (raw is null || raw.Length == 0)
         {

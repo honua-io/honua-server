@@ -275,12 +275,16 @@ internal static partial class SqlServerFeatureQueryBuilder
         // query to silently return zero rows. The MySQL provider throws NotSupportedException for
         // cross-SRID filters. Mirror that contract here so callers receive a clear error instead
         // of an empty result set.
-        if (filter.Srid is > 0 && mapping.Srid.HasValue && filter.Srid.Value != mapping.Srid.Value)
+        if ((filter.Srid is > 0 && mapping.Srid.HasValue && filter.Srid.Value != mapping.Srid.Value)
+            || (filter.Srid is > 0 && !mapping.Srid.HasValue))
         {
+            var layerSridDescription = mapping.Srid.HasValue
+                ? mapping.Srid.Value.ToString(CultureInfo.InvariantCulture)
+                : "unset (null)";
             throw new NotSupportedException(
                 $"Cross-SRID spatial filter is not supported by the SQL Server provider: " +
-                $"filter SRID {filter.Srid.Value} differs from layer SRID {mapping.Srid.Value}. " +
-                $"Pre-project the filter geometry to SRID {mapping.Srid.Value} before submitting the request.");
+                $"filter SRID {filter.Srid.Value} differs from layer SRID {layerSridDescription}. " +
+                $"Pre-project the filter geometry to the layer's SRID before submitting the request.");
         }
 
         var wkbParam = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
