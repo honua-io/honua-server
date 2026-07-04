@@ -26,6 +26,7 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 [Protocol(TestProtocols.Stac)]
 public sealed class StacSearchTests : IAsyncLifetime
 {
+    private static readonly string[] NonNumericCollectionIds = ["sentinel-2-l2a"];
     private static readonly double[] ValidThreeDimensionalBbox = [100.0, 0.0, 0.0, 105.0, 1.0, 1.0];
     private static readonly double[] InvalidThreeDimensionalBbox = [100.0, 0.0, 2.0, 105.0, 1.0, 1.0];
     private static readonly double[] OutOfRangeBbox = [200.0, 95.0, 210.0, 100.0];
@@ -178,6 +179,50 @@ public sealed class StacSearchTests : IAsyncLifetime
         {
             item.GetProperty("collection").GetString().Should().Be(collectionId);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithNonNumericCollectionId_IsAcceptedAndReturnsEmpty()
+    {
+        // STAC API Item Search: "collections" is an array of Collection ID STRINGS.
+        // A non-numeric collection id that matches nothing must yield an empty result
+        // set with HTTP 200 - it must NOT be rejected with 400 by integer-parsing the
+        // token (the old TryParseIntegerTokenSet behaviour). This guards the GET search
+        // filter path (TryParseStringTokens + MatchesCollectionId).
+        var response = await _fixture.Client.GetAsync(
+            "/stac/search?collections=this-collection-id-is-not-numeric");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("features").GetArrayLength().Should().Be(0,
+            "a non-numeric collection id that matches no collection must return an empty set, not a 400");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("POST /stac/search")]
+    public async Task SearchPost_WithNonNumericCollectionId_IsAcceptedAndReturnsEmpty()
+    {
+        // Same contract for the POST search body path (MatchesCollectionId over string ids).
+        var body = JsonSerializer.Serialize(new
+        {
+            collections = NonNumericCollectionIds
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/stac/search",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("features").GetArrayLength().Should().Be(0,
+            "a non-numeric string collection id must be accepted and filter to empty, not rejected with 400");
     }
 
     [IntegrationTest]
