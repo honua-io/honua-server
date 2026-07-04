@@ -242,19 +242,24 @@ public sealed class StacFilterHelpersTests
         return await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, CancellationToken.None);
     }
 
-    // BH-S-02 regression: datetime=../.. (doubly-open interval) is syntactically valid
-    // per OGC STAC spec and must not return 400. IsValidDatetimeSyntax must accept it;
-    // ParseDatetime must return a no-op TemporalFilter (Start/End both null) rather than
-    // null (which would have triggered a 400 from the caller's syntax guard).
+    // A doubly-open / empty datetime interval (datetime=../.., /, /..) is NOT a valid
+    // OGC API-Features / STAC value — an interval must have at least one bounded end. The
+    // STAC API conformance validator requires these to be rejected with 400, so the syntax
+    // check must fail and ParseDatetime must return null. (Reverts BH-S-02 from #2423, which
+    // accepted them as a no-op filter and regressed STAC item-search conformance.)
 
     [UnitTest]
-    public void IsValidDatetimeSyntax_WithDoublyOpenInterval_ReturnsTrue()
+    public void IsValidDatetimeSyntax_WithDoublyOpenInterval_ReturnsFalse()
     {
-        StacFilterHelpers.IsValidDatetimeSyntax("../..").Should().BeTrue();
+        foreach (var datetime in new[] { "../..", "/", "/..", "../" })
+        {
+            StacFilterHelpers.IsValidDatetimeSyntax(datetime)
+                .Should().BeFalse("'{0}' is a doubly-open interval and must be rejected", datetime);
+        }
     }
 
     [UnitTest]
-    public void ParseDatetime_WithDoublyOpenInterval_ReturnsNoOpFilter()
+    public void ParseDatetime_WithDoublyOpenInterval_ReturnsNull()
     {
         var resource = CreateResource(
             [
@@ -265,11 +270,7 @@ public sealed class StacFilterHelpersTests
         const string openInterval = "../..";
         var filter = StacFilterHelpers.ParseDatetime(openInterval, resource);
 
-        // The filter must be non-null so the syntax guard does not return 400 …
-        filter.Should().NotBeNull();
-        // … but both temporal bounds must be null so the query pipeline applies no predicate.
-        filter!.Value.Start.Should().BeNull();
-        filter!.Value.End.Should().BeNull();
+        filter.Should().BeNull();
     }
 
     private static MetadataV2Resource CreateResource(MetadataV2Field[] fields)
