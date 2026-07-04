@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -259,7 +259,7 @@ public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&sqlFormat=bogus");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("sqlFormat");
     }

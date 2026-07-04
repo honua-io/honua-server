@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -38,7 +38,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{TestLayerId}/ImageServer?f=xml");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Only JSON format is supported");
     }
@@ -52,7 +52,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{TestLayerId}/ImageServer?f=html");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Only JSON format is supported");
     }
@@ -66,7 +66,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=xml&bbox=-180,-90,180,90");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Only JSON and image formats are supported");
     }
@@ -80,7 +80,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{TestLayerId}/ImageServer/identify?geometry=0,0&f=xml");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Only JSON format is supported");
     }
@@ -94,7 +94,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{TestLayerId}/ImageServer/tile/0/0/0?format=bmp");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     #endregion
@@ -110,7 +110,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{NonExistentLayerId}/ImageServer?f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -122,7 +122,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{NonExistentLayerId}/ImageServer/exportImage?f=json&bbox=-180,-90,180,90");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -134,7 +134,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{NonExistentLayerId}/ImageServer/identify?geometry=0,0&f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -146,7 +146,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{NonExistentLayerId}/ImageServer/tile/0/0/0");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     #endregion
@@ -163,7 +163,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
 
         // Missing required geometry parameter
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

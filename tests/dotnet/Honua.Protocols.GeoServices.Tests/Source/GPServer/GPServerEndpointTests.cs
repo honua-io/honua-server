@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -117,7 +117,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer", content);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -140,7 +140,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer?f=html");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -263,7 +263,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer", content);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -274,7 +274,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/BufferAnalysis");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -403,7 +403,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/analytics.cluster/execute", content);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("submitJob");
         body.Should().Contain("asynchronous");
@@ -465,7 +465,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/conversion.geometry-format/execute", content);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("target");
         body.Should().Contain("not-a-real-format");
@@ -509,7 +509,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob", content);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -533,7 +533,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob?f=json&input=test");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -964,7 +964,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/AnyTask/jobs?num=0&f=json");
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private static ExecutionJobRecord BoundJob(
@@ -1033,7 +1033,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/AnyService/GPServer/AnyTask/jobs/{jobId}?f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // -----------------------------------------------------------------------
@@ -1058,7 +1058,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1080,7 +1080,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?env:outSR=4326", content);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1092,7 +1092,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10&env:processSR=3857");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // -----------------------------------------------------------------------

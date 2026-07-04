@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -30,7 +30,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
 
         // Assert
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -51,7 +51,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
 
         // Assert
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -72,7 +72,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
 
         // Assert
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -93,7 +93,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
 
         // Assert
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
@@ -114,7 +114,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
 
         // Assert
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
@@ -134,7 +134,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
 
         // Assert
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
@@ -154,7 +154,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
 
         // Assert
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Should include correlation ID header for request tracing
         response.Headers.Should().ContainKey("X-Correlation-ID");

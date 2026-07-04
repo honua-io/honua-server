@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -98,7 +98,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             "/rest/services/does-not-exist/VectorTileServer?f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -169,7 +169,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/30/0/0.pbf");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -181,7 +181,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             "/rest/services/does-not-exist/VectorTileServer/tile/1/0/0.pbf");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -262,7 +262,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/styles/sprites/sprite.json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -274,7 +274,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             "/rest/services/does-not-exist/VectorTileServer/resources/styles");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -353,7 +353,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/99/0/0/2/2");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -365,7 +365,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/2/0/0/4096/4096");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -377,7 +377,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             "/rest/services/does-not-exist/VectorTileServer/tilemap/2/0/0/4/4");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -429,7 +429,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/sprites/sprite@3x.png");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -441,7 +441,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             "/rest/services/does-not-exist/VectorTileServer/resources/sprites/sprite.json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -470,7 +470,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/fonts/Honua%20Default/99-1234.pbf");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -482,6 +482,6 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             "/rest/services/does-not-exist/VectorTileServer/resources/fonts/Honua%20Default/0-255.pbf");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -71,7 +71,7 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?bin={Uri.EscapeDataString(bin)}&f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("binField");
@@ -86,7 +86,7 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?binField=timestamp&f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("bin");
@@ -106,7 +106,7 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
             $"/rest/services/nonexistent/FeatureServer/0/queryDateBins?binField=timestamp&bin={Uri.EscapeDataString(bin)}&f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

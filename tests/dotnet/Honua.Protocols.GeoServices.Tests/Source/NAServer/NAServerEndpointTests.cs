@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -137,7 +137,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
 
         // Invalid input maps to the GeoServices error envelope, not a 500.
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -328,7 +328,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var response = await _fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var error = document.RootElement.GetProperty("error");
         error.GetProperty("code").GetInt32().Should().Be(400);
@@ -354,7 +354,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             payload);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
             .Select(d => d.GetString()).Should().Contain(d => d!.Contains("travelMode"));
@@ -544,7 +544,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
 
         // An unsupported problem type is rejected at parse time with a 400.
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
