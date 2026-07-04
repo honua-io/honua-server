@@ -87,6 +87,18 @@ internal sealed partial class ODataQueryHandler(
                     "$select contains an empty field expression.");
             }
 
+            // BH-S-04: /Layers uses $skip (not $skiptoken) for continuation; the server never
+            // emits a $skiptoken nextLink for the catalog layer list.  Accepting an inbound
+            // $skiptoken here would validate it against a null-fingerprint, which accepts any
+            // token issued by any Features endpoint with no filter/orderby — an isolation bug.
+            if (!string.IsNullOrWhiteSpace(skiptoken))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$skiptoken is not supported on /Layers. Use $skip for catalog layer pagination.");
+            }
+
             var pagingError = ODataRequestValidation.TryGetPagingValues(
                 context,
                 _validationService,

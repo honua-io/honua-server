@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
@@ -152,6 +152,60 @@ public sealed class EditProcessorPreconditionTests
             activity.TagObjects.Any(tag => tag.Key == "honua.resource.id"));
     }
 
+
+    [UnitTest]
+    public void ValidateCreate_SpatialLayerWithNullGeometry_ReturnsFailure()
+    {
+        // BH-014: Adding a feature to a spatial layer without geometry must return a
+        // clean validation failure rather than hitting a DB NOT NULL constraint.
+        var processor = CreateProcessor();
+
+        var resource = new MetadataV2Resource
+        {
+            Spatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+            {
+                GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point
+            }
+        };
+
+        var feature = EditFeature.ForCreate(
+            geometry: null,
+            ImmutableDictionary<string, object?>.Empty);
+
+        var request = UnifiedEditRequest.WithCreates(ImmutableArray.Create(feature));
+
+        var result = processor.ValidateEdit(request, resource);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Geometry is required");
+    }
+
+    [UnitTest]
+    public void ValidateCreate_SpatialLayerWithGeometry_Succeeds()
+    {
+        // BH-014 complement: a create with geometry on a spatial layer must still pass.
+        var processor = CreateProcessor();
+
+        var resource = new MetadataV2Resource
+        {
+            Spatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+            {
+                GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point
+            }
+        };
+
+        // Minimal WKB for a point (not validated in this test path)
+        var wkb = new byte[] { 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+        var feature = EditFeature.ForCreate(
+            geometry: wkb,
+            ImmutableDictionary<string, object?>.Empty);
+
+        var request = UnifiedEditRequest.WithCreates(ImmutableArray.Create(feature));
+
+        var result = processor.ValidateEdit(request, resource);
+
+        result.IsValid.Should().BeTrue();
+    }
     [UnitTest]
     public void ValidateEdit_EmptyRequest_EmitsErrorStatusOnSpan()
     {

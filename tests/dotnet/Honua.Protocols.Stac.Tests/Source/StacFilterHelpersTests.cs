@@ -242,6 +242,36 @@ public sealed class StacFilterHelpersTests
         return await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, CancellationToken.None);
     }
 
+    // BH-S-02 regression: datetime=../.. (doubly-open interval) is syntactically valid
+    // per OGC STAC spec and must not return 400. IsValidDatetimeSyntax must accept it;
+    // ParseDatetime must return a no-op TemporalFilter (Start/End both null) rather than
+    // null (which would have triggered a 400 from the caller's syntax guard).
+
+    [UnitTest]
+    public void IsValidDatetimeSyntax_WithDoublyOpenInterval_ReturnsTrue()
+    {
+        StacFilterHelpers.IsValidDatetimeSyntax("../..").Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithDoublyOpenInterval_ReturnsNoOpFilter()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        const string openInterval = "../..";
+        var filter = StacFilterHelpers.ParseDatetime(openInterval, resource);
+
+        // The filter must be non-null so the syntax guard does not return 400 …
+        filter.Should().NotBeNull();
+        // … but both temporal bounds must be null so the query pipeline applies no predicate.
+        filter!.Value.Start.Should().BeNull();
+        filter!.Value.End.Should().BeNull();
+    }
+
     private static MetadataV2Resource CreateResource(MetadataV2Field[] fields)
     {
         return new MetadataV2Resource

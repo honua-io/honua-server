@@ -8,8 +8,10 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
@@ -418,6 +420,47 @@ public sealed class ScopedJobTokenIssuerTests
             CancellationToken.None))
             .Should().ThrowAsync<ArgumentException>();
     }
+
+    // ─── BH-028 regression ──────────────────────────────────────────────────────
+
+    [UnitTest]
+    public async Task ValidateAsync_DistributedCacheThrows_FallsBackToMemoryCache()
+    {
+        // Regression test for BH-028: when distributedCache.GetAsync throws (Redis outage),
+        // the store previously evicted the memory cache entry and returned null, causing
+        // every in-flight geoprocessing job callback to be rejected for the duration of
+        // the outage.  After the fix, the memory tier is preserved as a fallback.
+        var mockDistCache = NSubstitute.Substitute.For<IDistributedCache>();
+        mockDistCache
+            .GetAsync(NSubstitute.Arg.Any<string>(), NSubstitute.Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<byte[]?>(new InvalidOperationException("Redis cluster failover")));
+
+        var memCache = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new ScopedJobTokenIssuer(memCache, NullLogger<ScopedJobTokenIssuer>.Instance, mockDistCache);
+
+        var issuance = await issuer.IssueAsync(
+            new ScopedJobTokenRequest(
+                PrincipalId: "alice",
+                TenantId: "tenant-A",
+                Roles: ["data-editor:parcels"],
+                Grants: [],
+                JobId: "gp-bh028-1",
+                ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Read)],
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
+
+        // Distributed cache throws → before the fix: memory entry evicted, null returned.
+        // After the fix: falls back to the memory tier.
+        var validation = await issuer.ValidateAsync(
+            issuance.Token, "gp-bh028-1", CancellationToken.None);
+
+        validation.Should().NotBeNull(
+            "the token must validate from memory cache during a Redis outage (BH-028)");
+        validation!.JobId.Should().Be("gp-bh028-1");
+        validation.Principal.Identity!.IsAuthenticated.Should().BeTrue();
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
 
     private static List<string> PermissionsOf(ClaimsPrincipal principal)
         => principal.FindAll(PermissionClaimType).Select(c => c.Value).ToList();

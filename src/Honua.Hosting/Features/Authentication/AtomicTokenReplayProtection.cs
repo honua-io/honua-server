@@ -72,40 +72,14 @@ internal static class AtomicTokenReplayProtection
     {
         try
         {
-            // Use Redis SETNX operation or equivalent atomic SET IF NOT EXISTS
-            // Most distributed cache implementations support this via SetAsync with specific options
-            var options = new DistributedCacheEntryOptions
-            {
-                AbsoluteExpiration = expiresOn
-            };
-
-            // Use Redis for true atomicity if available
+            // Use Redis for true atomicity if available.
             if (cache is Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache redisCache)
             {
                 return await TryMarkTokenAsUsedRedisAsync(redisCache, cacheKey, expiresOn, cancellationToken);
             }
 
-            // For non-Redis caches, implement a more robust fallback with unique identifier verification
-            var uniqueMarker = Guid.NewGuid().ToString();
-            var timestampedValue = $"{DateTimeOffset.UtcNow:O}|{uniqueMarker}";
-
-            // First attempt to get existing value
-            var existing = await cache.GetStringAsync(cacheKey, cancellationToken);
-            if (existing != null)
-            {
-                // Token already exists, this is a replay
-                return false;
-            }
-
-            // Set our unique marker
-            await cache.SetStringAsync(cacheKey, timestampedValue, options, cancellationToken);
-
-            // Brief delay to allow any concurrent operations to complete
-            await Task.Delay(1, cancellationToken);
-
-            // Verify our unique marker is still there - if not, another request won the race
-            var verification = await cache.GetStringAsync(cacheKey, cancellationToken);
-            return verification == timestampedValue; // Only allow if our exact value is present
+            var options = new DistributedCacheEntryOptions { AbsoluteExpiration = expiresOn };
+            return await TryMarkTokenAsUsedNonAtomicAsync(cache, cacheKey, options, cancellationToken);
         }
         catch (Exception)
         {
@@ -122,7 +96,9 @@ internal static class AtomicTokenReplayProtection
     {
         try
         {
-            // Use reflection to access the underlying Redis database for atomic operations
+            // Use reflection to access the underlying Redis database for atomic operations.
+            // The IDatabase field is lazily initialized; it is null before the first cache
+            // operation completes (i.e. on cold-start before any Redis I/O has occurred).
             var type = redisCache.GetType();
             var connectionField = type.GetField("_cache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             var connection = connectionField?.GetValue(redisCache) as StackExchange.Redis.IDatabase;
@@ -139,11 +115,51 @@ internal static class AtomicTokenReplayProtection
         }
         catch (Exception)
         {
-            // If reflection or Redis operation fails, fall back to less atomic method
+            // If reflection or Redis operation fails, fall back to less atomic method below.
         }
 
-        // Fallback to standard distributed cache (less atomic but still functional)
-        return await TryMarkTokenAsUsedDistributedAsync(redisCache, cacheKey, expiresOn, cancellationToken);
+        // Fallback: use the non-atomic distributed path, passing the RedisCache as a plain
+        // IDistributedCache.  IMPORTANT: do NOT call TryMarkTokenAsUsedDistributedAsync here
+        // — it re-dispatches to this method because the argument is still a RedisCache,
+        // causing infinite mutual recursion and a StackOverflowException (BH-027).
+        try
+        {
+            var fallbackOptions = new DistributedCacheEntryOptions { AbsoluteExpiration = expiresOn };
+            return await TryMarkTokenAsUsedNonAtomicAsync(redisCache, cacheKey, fallbackOptions, cancellationToken);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<bool> TryMarkTokenAsUsedNonAtomicAsync(
+        IDistributedCache cache,
+        string cacheKey,
+        DistributedCacheEntryOptions options,
+        CancellationToken cancellationToken)
+    {
+        // For non-Redis caches, implement a more robust fallback with unique identifier verification
+        var uniqueMarker = Guid.NewGuid().ToString();
+        var timestampedValue = $"{DateTimeOffset.UtcNow:O}|{uniqueMarker}";
+
+        // First attempt to get existing value
+        var existing = await cache.GetStringAsync(cacheKey, cancellationToken);
+        if (existing != null)
+        {
+            // Token already exists, this is a replay
+            return false;
+        }
+
+        // Set our unique marker
+        await cache.SetStringAsync(cacheKey, timestampedValue, options, cancellationToken);
+
+        // Brief delay to allow any concurrent operations to complete
+        await Task.Delay(1, cancellationToken);
+
+        // Verify our unique marker is still there - if not, another request won the race
+        var verification = await cache.GetStringAsync(cacheKey, cancellationToken);
+        return verification == timestampedValue; // Only allow if our exact value is present
     }
 
     private static bool TryMarkTokenAsUsedMemory(

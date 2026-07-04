@@ -342,6 +342,16 @@ internal sealed partial class Wfs20Handler
             .ToArray();
         var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
 
+        // Collect per-query FILTER and PROPERTYNAME values as semicolon-delimited strings,
+        // matching the KVP multi-query encoding (WFS 2.0 §8.8.6.5).  Paging links built
+        // from these values correctly re-apply the original filter predicates on page 2+.
+        var xmlQueryFilter = xmlQueries.Any(q => !string.IsNullOrEmpty(q.Filter))
+            ? string.Join(";", xmlQueries.Select(q => q.Filter ?? string.Empty))
+            : null;
+        var xmlQueryPropertyName = xmlQueries.Any(q => !string.IsNullOrEmpty(q.PropertyName))
+            ? string.Join(";", xmlQueries.Select(q => q.PropertyName ?? string.Empty))
+            : null;
+
         if (planSet.TotalMatched == 0)
         {
             var emptyMetadata = BuildFeatureCollectionResponseMetadata(
@@ -351,9 +361,9 @@ internal sealed partial class Wfs20Handler
                 maxFeatures.ToString(CultureInfo.InvariantCulture),
                 sortBy,
                 bbox,
-                null,
+                xmlQueryFilter,
                 resourceId,
-                null,
+                xmlQueryPropertyName,
                 fallbackSrsName,
                 normalizedResultType,
                 offset,
@@ -372,9 +382,9 @@ internal sealed partial class Wfs20Handler
             maxFeatures.ToString(CultureInfo.InvariantCulture),
             sortBy,
             bbox,
-            null,
+            xmlQueryFilter,
             resourceId,
-            null,
+            xmlQueryPropertyName,
             fallbackSrsName,
             normalizedResultType,
             offset,

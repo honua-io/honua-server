@@ -74,11 +74,31 @@ internal static class MapAlgebraExpression
 
             if (char.IsDigit(c) || c == '.')
             {
-                // Skip a numeric literal (digits, decimal point, exponent sign).
-                while (i < expr.Length && (char.IsDigit(expr[i]) || expr[i] == '.' || expr[i] == 'e' || expr[i] == 'E'))
+                // Skip a numeric literal (digits, decimal point, optional exponent).
+                while (i < expr.Length && (char.IsDigit(expr[i]) || expr[i] == '.'))
                 {
                     i++;
                 }
+
+                // Consume an optional exponent ('e' or 'E') only when immediately followed
+                // by at least one digit. A bare 'e' (e.g. "1e" or "1eA") is not a valid
+                // Python literal and would produce a SyntaxError in gdal_calc.py.
+                if (i < expr.Length && (expr[i] == 'e' || expr[i] == 'E'))
+                {
+                    var exponentStart = i;
+                    i++; // advance past 'e'/'E'
+                    if (i >= expr.Length || !char.IsDigit(expr[i]))
+                    {
+                        // No digit follows the exponent character — reject the expression.
+                        error = $"'expression' contains an incomplete numeric exponent near position {exponentStart}";
+                        return false;
+                    }
+                    while (i < expr.Length && char.IsDigit(expr[i]))
+                    {
+                        i++;
+                    }
+                }
+
                 continue;
             }
 

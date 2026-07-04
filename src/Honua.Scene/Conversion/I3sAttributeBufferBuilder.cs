@@ -154,9 +154,18 @@ public static class I3sAttributeBufferBuilder
             var ids = new int[features.Count];
             for (var i = 0; i < features.Count; i++)
             {
-                // Oid32 narrows the 64-bit feature id to the 32-bit object-id
-                // space Esri identify uses (hosted scene object ids fit in 32 bits).
-                ids[i] = unchecked((int)features[i].Id);
+                var rawId = features[i].Id;
+                // BH-S-03: guard against silent truncation — Oid32 only holds values in
+                // [0, Int32.MaxValue]. A feature ID that exceeds this range (e.g. OSM building
+                // IDs) would previously silently wrap to a negative/wrong value, causing ArcGIS
+                // identify to return wrong attributes. Fail loudly so the caller can remap IDs.
+                if (rawId < 0 || rawId > int.MaxValue)
+                {
+                    throw new InvalidOperationException(
+                        $"Feature ID {rawId} exceeds the I3S Oid32 range (0–{int.MaxValue}). " +
+                        "Publish the scene with a remapped integer ID field to serve it via I3S.");
+                }
+                ids[i] = (int)rawId;
             }
 
             return PackOid32(ids);
@@ -202,9 +211,16 @@ public static class I3sAttributeBufferBuilder
         {
             var recordOffset = featureSectionOffset + (i * I3sGeometryTranscoder.FeatureRecordBytes);
             var id = BinaryPrimitives.ReadUInt64LittleEndian(span.Slice(recordOffset, 8));
-            // Oid32 narrows the 64-bit feature id to the 32-bit object-id space
-            // Esri identify uses; hosted scene object ids fit in 32 bits.
-            ids[i] = unchecked((int)id);
+            // BH-S-03: guard against silent truncation — Oid32 only holds values up to
+            // Int32.MaxValue. Fail loudly if a geometry transcoded with a large ID was
+            // somehow persisted so the caller can diagnose the mismatch.
+            if (id > (ulong)int.MaxValue)
+            {
+                throw new InvalidOperationException(
+                    $"Feature ID {id} exceeds the I3S Oid32 range (0–{int.MaxValue}). " +
+                    "Publish the scene with a remapped integer ID field to serve it via I3S.");
+            }
+            ids[i] = (int)id;
         }
 
         return ids;

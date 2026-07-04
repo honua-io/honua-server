@@ -36,7 +36,10 @@ internal sealed class DedupTransformExecutor(
     // Unit-separator control char between key parts so distinct field boundaries never
     // collide (for example {"ab","c"} versus {"a","bc"}).
     private const char Separator = '\u001F';
-    private const char NullMarker = '\u00A0';
+    // NullMarker: U+001E (escape prefix) + U+0000 (NUL). Provably out-of-band in the
+    // key encoding: EscapeKeyComponent emits U+001E only before U+001E or U+001F,
+    // never before NUL, so no serialized attribute value can produce this sequence.
+    private const string NullMarker = "\u001E\u0000";
 
     protected override string ProcessId => HandledProcessId;
 
@@ -67,10 +70,14 @@ internal sealed class DedupTransformExecutor(
 
         foreach (var field in keys)
         {
-            var value = attributes is not null && attributes.Exists(field)
+            var raw = attributes is not null && attributes.Exists(field)
                 ? Convert.ToString(attributes.GetOptionalValue(field), CultureInfo.InvariantCulture)
                 : null;
-            builder.Append(value ?? NullMarker.ToString());
+            // Use the out-of-band NullMarker so a no-break-space attribute value cannot
+            // collide with the null representation (BH-026). Escape U+001E and U+001F
+            // within non-null values so the inter-field separator is always unambiguous
+            // (BH-025 sister fix).
+            builder.Append(raw is not null ? EscapeKeyComponent(raw) : NullMarker);
             builder.Append(Separator);
         }
 
@@ -88,6 +95,37 @@ internal sealed class DedupTransformExecutor(
         }
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Escapes the U+001E (escape prefix) and U+001F (unit-separator delimiter) characters
+    /// within a single key component value so they cannot be mistaken for structural
+    /// delimiters in the composite key string. Encoding:
+    /// <list type="bullet">
+    ///   <item>U+001E in value -&gt; U+001E U+001E</item>
+    ///   <item>U+001F in value -&gt; U+001E U+001F</item>
+    /// </list>
+    /// A single unescaped U+001F therefore always means "field boundary".
+    /// </summary>
+    private static string EscapeKeyComponent(string value)
+    {
+        if (value.IndexOfAny(['\u001E', '\u001F']) < 0)
+        {
+            return value;
+        }
+
+        var sb = new StringBuilder(value.Length + 4);
+        foreach (var ch in value)
+        {
+            if (ch is '\u001E' or '\u001F')
+            {
+                sb.Append('\u001E'); // Escape prefix before any structural character.
+            }
+
+            sb.Append(ch);
+        }
+
+        return sb.ToString();
     }
 
     private static (IReadOnlyList<string> Keys, bool UseGeometry) ReadKeySpec(StepInputReader inputs)

@@ -68,14 +68,22 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
 
         try
         {
-            // Check queue capacity before accepting the request.
-            if (Volatile.Read(ref _queuedCount) >= _options.MaxQueuedUploads)
+            // Atomically check capacity and reserve a slot using a CAS loop.
+            // A plain read-then-increment is a TOCTOU race: multiple concurrent callers
+            // can each read a count below the limit, pass the guard, and each increment,
+            // exceeding MaxQueuedUploads by the number of concurrent callers.
+            var max = _options.MaxQueuedUploads;
+            int cur;
+            do
             {
-                StreamingFileUploadLog.UploadQueueFull(_logger, uploadJob.FileName);
-                return FileUploadResult.Failure("Upload queue is full. Please try again later.");
+                cur = Volatile.Read(ref _queuedCount);
+                if (cur >= max)
+                {
+                    StreamingFileUploadLog.UploadQueueFull(_logger, uploadJob.FileName);
+                    return FileUploadResult.Failure("Upload queue is full. Please try again later.");
+                }
             }
-
-            Interlocked.Increment(ref _queuedCount);
+            while (Interlocked.CompareExchange(ref _queuedCount, cur + 1, cur) != cur);
             try
             {
                 // Wait for a processing slot.
