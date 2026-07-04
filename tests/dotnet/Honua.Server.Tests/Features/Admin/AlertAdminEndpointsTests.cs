@@ -545,10 +545,15 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
             var response = await client.PostAsJsonAsync("/api/v1/admin/alerts/rules", payload);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            audit.Recorded.Should().ContainSingle();
-            audit.Recorded[0].Action.Should().Be("alert_rule.create");
-            audit.Recorded[0].ResourceType.Should().Be("alert_rule");
-            audit.Recorded[0].CorrelationId.Should().NotBeNullOrWhiteSpace();
+
+            // The shared AuditLogMiddleware also records a request-level "admin.post" event for
+            // the HTTP request itself, so the capturing sink holds that AND the domain event.
+            // Assert on the domain-specific alert_rule.create audit event rather than the total
+            // count (mirrors #2415/#2421); the middleware auditing is correct, the count was stale.
+            var ruleAudits = audit.Recorded.Where(e => e.Action == "alert_rule.create").ToList();
+            ruleAudits.Should().ContainSingle();
+            ruleAudits[0].ResourceType.Should().Be("alert_rule");
+            ruleAudits[0].CorrelationId.Should().NotBeNullOrWhiteSpace();
         }
         finally
         {

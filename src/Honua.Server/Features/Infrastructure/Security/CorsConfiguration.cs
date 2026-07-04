@@ -243,7 +243,16 @@ public static class CorsConfiguration
     /// </summary>
     private static void ConfigureEmbedPolicy(CorsPolicyBuilder policy, IConfiguration configuration)
     {
-        policy.AllowAnyOrigin()
+        // Reflect the request Origin instead of AllowAnyOrigin(): the preflight must still
+        // succeed from ANY origin (embed widgets load on arbitrary ISV pages), but the CORS
+        // result must echo the SPECIFIC request origin in Access-Control-Allow-Origin, not the
+        // "*" wildcard. AllowAnyOrigin() emits "*", and the CORS middleware applies that result
+        // via Response.OnStarting AFTER the handler runs — overwriting the handler's per-origin
+        // echo with "*" (a wildcard ACAO on the embed policy surface). SetIsOriginAllowed(_ => true)
+        // makes the middleware itself echo the request origin and add Vary: Origin. The per-embed-
+        // key origin allow-list remains the authoritative gate inside the handler (it returns 403
+        // for origins not approved for the presented key); credentials stay disabled (#1191).
+        policy.SetIsOriginAllowed(_ => true)
               .WithMethods("GET", "POST", "OPTIONS")
               .WithHeaders(ResolveAllowedHeaders(configuration))
               .WithExposedHeaders("Content-Length", "ETag")
