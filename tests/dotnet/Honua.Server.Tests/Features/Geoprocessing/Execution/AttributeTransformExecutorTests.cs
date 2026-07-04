@@ -177,6 +177,56 @@ public sealed class AttributeTransformExecutorTests
         ReadFeatures(uri!).Should().HaveCount(1);
     }
 
+    // ----- BH-022 regression: non-numeric values must FAIL all numeric comparisons -----
+
+    [UnitTest]
+    public async Task AttributeFilter_Lt_WithNonNumericField_ExcludesNonNumericRows()
+    {
+        // BH-022: int.MinValue was returned for non-numeric operands; because
+        // int.MinValue < 0 is true, every non-numeric row falsely passed 'lt'.
+        var executor = new AttributeFilterTransformExecutor(Options());
+        var input = BuildInputUri(
+            Feature(Point(0, 0), ("population", 500)),
+            Feature(Point(1, 1), ("population", "unknown")),    // non-numeric string
+            Feature(Point(2, 2), ("population", "null-like"))); // another non-numeric string
+
+        var (status, uri) = await RunAsync(
+            executor,
+            AttributeFilterTransformExecutor.HandledProcessId,
+            ("input", input),
+            ("field", "population"),
+            ("op", "lt"),
+            ("value", "1000"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().HaveCount(1, "only the numeric row 500 < 1000 should pass; non-numeric rows must be dropped");
+        Convert.ToDouble(features[0].Attributes.GetOptionalValue("population"), CultureInfo.InvariantCulture)
+            .Should().Be(500d);
+    }
+
+    [UnitTest]
+    public async Task AttributeFilter_Lte_WithNonNumericField_ExcludesNonNumericRows()
+    {
+        // BH-022: lte also used int.MinValue comparison and falsely admitted non-numeric rows.
+        var executor = new AttributeFilterTransformExecutor(Options());
+        var input = BuildInputUri(
+            Feature(Point(0, 0), ("score", 10.0)),
+            Feature(Point(1, 1), ("score", "N/A")));
+
+        var (status, uri) = await RunAsync(
+            executor,
+            AttributeFilterTransformExecutor.HandledProcessId,
+            ("input", input),
+            ("field", "score"),
+            ("op", "lte"),
+            ("value", "10"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().HaveCount(1, "the string 'N/A' is non-numeric and must not pass lte");
+    }
+
     [UnitTest]
     public async Task Transform_UnsupportedProcessId_FailsCleanly()
     {

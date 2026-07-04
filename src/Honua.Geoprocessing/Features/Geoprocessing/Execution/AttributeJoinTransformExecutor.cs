@@ -206,15 +206,53 @@ internal sealed class AttributeJoinTransformExecutor(
 
             if (i > 0)
             {
-                // Unit separator keeps composite keys unambiguous across columns.
-                sb.Append('\u001f');
+                // U+001F (unit separator) is the inter-column delimiter. Column values are
+                // escaped via EscapeKeyComponent before appending, so the single unescaped
+                // U+001F here is always unambiguously a column boundary.
+                sb.Append('\u001F');
             }
 
-            sb.Append(Convert.ToString(value, CultureInfo.InvariantCulture));
+            sb.Append(EscapeKeyComponent(Convert.ToString(value, CultureInfo.InvariantCulture)));
         }
 
         key = sb.ToString();
         return true;
+    }
+
+    /// <summary>
+    /// Escapes the U+001E (escape prefix) and U+001F (unit-separator delimiter) characters
+    /// within a single key component value so they cannot be mistaken for structural
+    /// delimiters in the composite key string. Encoding:
+    /// <list type="bullet">
+    ///   <item>U+001E in value -&gt; U+001E U+001E</item>
+    ///   <item>U+001F in value -&gt; U+001E U+001F</item>
+    /// </list>
+    /// A single unescaped U+001F therefore always means "column boundary".
+    /// </summary>
+    private static string? EscapeKeyComponent(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value.IndexOfAny(['\u001E', '\u001F']) < 0)
+        {
+            return value;
+        }
+
+        var sb = new StringBuilder(value.Length + 4);
+        foreach (var ch in value)
+        {
+            if (ch is '\u001E' or '\u001F')
+            {
+                sb.Append('\u001E'); // Escape prefix before any structural character.
+            }
+
+            sb.Append(ch);
+        }
+
+        return sb.ToString();
     }
 
     private static string[] SplitRequired(StepInputReader inputs, string name)

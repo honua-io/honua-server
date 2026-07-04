@@ -90,8 +90,10 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
 
         // Stream the input so a >50 MiB sink writes incrementally to the output file
         // without buffering the whole collection. Spilled NDJSON streams are unbounded.
+        // Pass OutputRootDirectory so path-traversal injections in the reference are rejected.
         if (!FeatureStreamArtifact.TryOpenRead(
-                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes))
+                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
+                _options.CurrentValue.OutputRootDirectory))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }

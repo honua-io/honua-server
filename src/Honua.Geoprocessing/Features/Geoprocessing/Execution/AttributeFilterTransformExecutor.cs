@@ -66,10 +66,10 @@ internal sealed class AttributeFilterTransformExecutor(
             "eq" => StringEquals(actual, value),
             "neq" => !StringEquals(actual, value),
             "contains" => actual?.ToString()?.Contains(value ?? "", StringComparison.OrdinalIgnoreCase) ?? false,
-            "gt" => CompareNumeric(actual, value) > 0,
-            "gte" => CompareNumeric(actual, value) >= 0,
-            "lt" => CompareNumeric(actual, value) < 0,
-            "lte" => CompareNumeric(actual, value) <= 0,
+            "gt" => CompareNumeric(actual, value) is int cgt && cgt > 0,
+            "gte" => CompareNumeric(actual, value) is int cgte && cgte >= 0,
+            "lt" => CompareNumeric(actual, value) is int clt && clt < 0,
+            "lte" => CompareNumeric(actual, value) is int clte && clte <= 0,
             _ => throw new TransformInputException($"attribute-filter operator '{op}' is not supported.")
         };
     }
@@ -80,13 +80,15 @@ internal sealed class AttributeFilterTransformExecutor(
             expected,
             StringComparison.Ordinal);
 
-    private static int CompareNumeric(object? actual, string? expected)
+    private static int? CompareNumeric(object? actual, string? expected)
     {
         if (!TryToDouble(actual, out var a) ||
             !double.TryParse(expected, NumberStyles.Float, CultureInfo.InvariantCulture, out var b))
         {
-            // Non-numeric operands never satisfy a numeric comparison.
-            return int.MinValue;
+            // Non-numeric operands never satisfy a numeric comparison: return null so
+            // all call sites (lt/lte/gt/gte) evaluate to false rather than accidentally
+            // passing because int.MinValue < 0 and int.MinValue <= 0 are both true.
+            return null;
         }
 
         return a.CompareTo(b);
