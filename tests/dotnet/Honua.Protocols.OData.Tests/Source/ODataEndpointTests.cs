@@ -79,7 +79,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
 
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -483,7 +483,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
 
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -517,7 +517,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]
@@ -533,7 +533,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
 
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -553,7 +553,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]

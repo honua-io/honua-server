@@ -5719,7 +5719,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithInvalidBboxValues_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithJsonAcceptHeader_ReturnsJsonResponse",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithJsonFormat_ReturnsJsonResponse",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithLimitExceedingMax_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithLimitExceedingMax_ClampsToMaximum",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithOutOfRangeBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithPagination_ReturnsNextAndPrevLinks",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_WithQueryableParameter_FiltersResults",
