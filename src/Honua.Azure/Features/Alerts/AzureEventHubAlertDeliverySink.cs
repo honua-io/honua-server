@@ -5,6 +5,7 @@ using Azure.Messaging.EventHubs;
 using Azure.Messaging.EventHubs.Producer;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
@@ -68,17 +69,20 @@ internal sealed class EventHubPublisher : IEventHubPublisher
     }
 }
 
-internal sealed class AzureEventHubAlertDeliverySink : IAlertDeliverySink
+internal sealed partial class AzureEventHubAlertDeliverySink : IAlertDeliverySink
 {
     private readonly IEventHubPublisher _publisher;
     private readonly AlertDeliveryOptions _options;
+    private readonly ILogger<AzureEventHubAlertDeliverySink> _logger;
 
     public AzureEventHubAlertDeliverySink(
         IEventHubPublisher publisher,
-        IOptions<AlertDeliveryOptions> options)
+        IOptions<AlertDeliveryOptions> options,
+        ILogger<AzureEventHubAlertDeliverySink> logger)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public AlertChannelType ChannelType => AlertChannelType.AzureEventHub;
@@ -117,8 +121,9 @@ internal sealed class AzureEventHubAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.DeliveryFailed(_logger, ex);
             return new AlertDeliveryResult
             {
                 Succeeded = false,
@@ -126,5 +131,11 @@ internal sealed class AzureEventHubAlertDeliverySink : IAlertDeliverySink
                 Error = "Event Hub alert delivery failed."
             };
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(10121, LogLevel.Warning, "Event Hub alert delivery failed with an unhandled exception.")]
+        public static partial void DeliveryFailed(ILogger logger, Exception ex);
     }
 }

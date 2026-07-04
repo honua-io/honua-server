@@ -78,14 +78,18 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
                 ResponseTimeMs = stopwatch.Elapsed.TotalMilliseconds
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             stopwatch.Stop();
 
+            // No ILogger is threaded through this abstract base (none of the five
+            // concrete providers currently accept one; PA-067/PA-201), so the
+            // exception detail is surfaced in the returned health record itself —
+            // that is the only diagnostic signal available to callers here.
             return new GeocodeProviderHealth(
                 ProviderName: Name,
                 IsHealthy: false,
-                ErrorMessage: "Provider health check failed.",
+                ErrorMessage: $"Provider health check failed: {ex.GetType().Name}: {ex.Message}",
                 LastChecked: DateTime.UtcNow)
             {
                 ResponseTimeMs = stopwatch.Elapsed.TotalMilliseconds

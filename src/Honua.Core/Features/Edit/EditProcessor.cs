@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -15,6 +16,13 @@ namespace Honua.Core.Features.Edit;
 /// </summary>
 public sealed class EditProcessor : IEditProcessor
 {
+    // PA-018: the feature-write pipeline (validate/optimize/convert) is called separately by
+    // every protocol adapter and previously emitted no telemetry at all. Honua.Core cannot
+    // depend on Honua.ServiceDefaults (see the dependency-direction rule), so this mirrors the
+    // local-ActivitySource convention already used elsewhere in this project (e.g.
+    // VersionJobRunner) rather than referencing HonuaTelemetry.ActivitySource.
+    private static readonly ActivitySource _activitySource = new("Honua.Core.Edit");
+
     private readonly ILogger<EditProcessor> _logger;
 
     /// <summary>
@@ -66,6 +74,9 @@ public sealed class EditProcessor : IEditProcessor
     {
         ArgumentNullException.ThrowIfNull(resource);
 
+        using var activity = _activitySource.StartActivity("edit.validate");
+        activity?.SetTag("honua.resource.id", resource.Metadata.Id);
+
         try
         {
             var warnings = new List<string>();
@@ -73,6 +84,7 @@ public sealed class EditProcessor : IEditProcessor
             // Check if edit request is empty
             if (editRequest.IsEmpty)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, "Edit request cannot be empty");
                 return EditValidationResult.Failure("Edit request cannot be empty");
             }
 
@@ -80,6 +92,7 @@ public sealed class EditProcessor : IEditProcessor
             var totalOperations = editRequest.TotalOperations;
             if (totalOperations > GetMaxOperationsForResource(resource))
             {
+                activity?.SetStatus(ActivityStatusCode.Error, "Too many operations");
                 return EditValidationResult.Failure(
                     $"Too many operations ({totalOperations}). Maximum allowed: {GetMaxOperationsForResource(resource)}");
             }
@@ -145,6 +158,7 @@ public sealed class EditProcessor : IEditProcessor
         // middleware instead of being disguised as "your edit request is invalid".
         catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             EditLog.ValidateEditFailed(_logger, resource.Metadata.Id, ex);
             return EditValidationResult.Failure("Failed to validate edit request");
         }
@@ -154,6 +168,9 @@ public sealed class EditProcessor : IEditProcessor
     public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
+
+        using var activity = _activitySource.StartActivity("edit.optimize");
+        activity?.SetTag("honua.resource.id", resource.Metadata.Id);
 
         try
         {
@@ -189,6 +206,7 @@ public sealed class EditProcessor : IEditProcessor
         // silently masked by falling back to the unoptimized request.
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             EditLog.OptimizeEditFailed(_logger, resource.Metadata.Id, ex);
             return editRequest;
         }
@@ -198,6 +216,9 @@ public sealed class EditProcessor : IEditProcessor
     public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
+
+        using var activity = _activitySource.StartActivity("edit.tofeaturebatch");
+        activity?.SetTag("honua.resource.id", resource.Metadata.Id);
 
         try
         {
@@ -230,6 +251,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             EditLog.FeatureEditBatchConversionFailed(_logger, resource.Metadata.Id, ex);
             throw;
         }
@@ -239,6 +261,9 @@ public sealed class EditProcessor : IEditProcessor
     public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
+
+        using var activity = _activitySource.StartActivity("edit.validatetransaction");
+        activity?.SetTag("honua.resource.id", resource.Metadata.Id);
 
         try
         {
@@ -304,6 +329,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             EditLog.ValidateTransactionFailed(_logger, transaction.TransactionId, resource.Metadata.Id, ex);
             return TransactionValidationResult.Failure("Failed to validate transaction");
         }

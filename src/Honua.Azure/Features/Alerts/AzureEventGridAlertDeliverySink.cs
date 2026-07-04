@@ -6,21 +6,25 @@ using Azure.Messaging;
 using Azure.Messaging.EventGrid;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-internal sealed class AzureEventGridAlertDeliverySink : IAlertDeliverySink
+internal sealed partial class AzureEventGridAlertDeliverySink : IAlertDeliverySink
 {
     private readonly EventGridPublisherClient _client;
     private readonly AlertDeliveryOptions _options;
+    private readonly ILogger<AzureEventGridAlertDeliverySink> _logger;
 
     public AzureEventGridAlertDeliverySink(
         EventGridPublisherClient client,
-        IOptions<AlertDeliveryOptions> options)
+        IOptions<AlertDeliveryOptions> options,
+        ILogger<AzureEventGridAlertDeliverySink> logger)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public AlertChannelType ChannelType => AlertChannelType.AzureEventGrid;
@@ -97,8 +101,9 @@ internal sealed class AzureEventGridAlertDeliverySink : IAlertDeliverySink
                 Error = "Event Grid topic not found."
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.DeliveryFailed(_logger, ex);
             return new AlertDeliveryResult
             {
                 Succeeded = false,
@@ -106,5 +111,11 @@ internal sealed class AzureEventGridAlertDeliverySink : IAlertDeliverySink
                 Error = "Event Grid alert delivery failed."
             };
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(10120, LogLevel.Warning, "Event Grid alert delivery failed with an unhandled exception.")]
+        public static partial void DeliveryFailed(ILogger logger, Exception ex);
     }
 }

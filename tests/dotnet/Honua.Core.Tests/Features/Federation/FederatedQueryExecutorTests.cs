@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -81,6 +82,54 @@ public sealed class FederatedQueryExecutorTests
             () => executor.ExecuteAsync(Source(FederatedSourceKind.EsriRest), new FeatureQuery()));
 
         Assert.Equal(FederatedSourceUnavailableReason.NoConnector, ex.Reason);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_EmitsSpanTaggedWithSourceIdAndKind()
+    {
+        // PA-017: remote federated source calls had metrics and structured logging but no
+        // distributed tracing span.
+        var rows = ImmutableArray.Create(Feature(1));
+        var executor = BuildExecutor(new StubConnector(FederatedSourceKind.HonuaGrpc, rows));
+        var source = Source(FederatedSourceKind.HonuaGrpc);
+
+        var activities = new System.Collections.Generic.List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static s => s.Name == "Honua.Federation",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        await executor.ExecuteAsync(source, new FeatureQuery());
+
+        Assert.Contains(activities, activity =>
+            activity.OperationName == "federation.execute" &&
+            activity.Kind == ActivityKind.Client &&
+            activity.Status != ActivityStatusCode.Error &&
+            activity.TagObjects.Any(t => t.Key == "source.id" && Equals(t.Value, source.Id)) &&
+            activity.TagObjects.Any(t => t.Key == "source.kind" && Equals(t.Value, source.Kind.ToString())));
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_NoConnector_SetsErrorStatusOnSpan()
+    {
+        var executor = BuildExecutor(new StubConnector(FederatedSourceKind.HonuaGrpc, ImmutableArray<Feature>.Empty));
+
+        var activities = new System.Collections.Generic.List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static s => s.Name == "Honua.Federation",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        await Assert.ThrowsAsync<FederatedSourceUnavailableException>(
+            () => executor.ExecuteAsync(Source(FederatedSourceKind.EsriRest), new FeatureQuery()));
+
+        Assert.Contains(activities, activity => activity.Status == ActivityStatusCode.Error);
     }
 
     [UnitTest]

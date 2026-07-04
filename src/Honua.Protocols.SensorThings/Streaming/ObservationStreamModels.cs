@@ -85,4 +85,7 @@ internal static partial class ObservationStreamLog
 
     [LoggerMessage(EventId = 5102, Level = LogLevel.Warning, Message = "Observation stream cluster publish failed.")]
     public static partial void ClusterPublishFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 5103, Level = LogLevel.Warning, Message = "Observation stream cluster unsubscribe failed during dispose; continuing shutdown.")]
+    public static partial void ClusterUnsubscribeFailed(ILogger logger, Exception exception);
 }

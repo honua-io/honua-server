@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using FluentAssertions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -125,5 +126,49 @@ public sealed class EditProcessorPreconditionTests
         var batch = CreateProcessor().ToFeatureEditBatch(request, Resource);
 
         batch.Preconditions.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void ToFeatureEditBatch_EmitsActivitySpan()
+    {
+        // PA-018: the feature-write pipeline (validate/optimize/convert) previously emitted no
+        // telemetry span at all.
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == "Honua.Core.Edit",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var request = UnifiedEditRequest.WithUpdates(
+            ImmutableArray.Create(EditFeature.ForUpdate(5, null, ImmutableDictionary<string, object?>.Empty)));
+
+        CreateProcessor().ToFeatureEditBatch(request, Resource);
+
+        activities.Should().ContainSingle(activity =>
+            activity.OperationName == "edit.tofeaturebatch" &&
+            activity.TagObjects.Any(tag => tag.Key == "honua.resource.id"));
+    }
+
+    [UnitTest]
+    public void ValidateEdit_EmptyRequest_EmitsErrorStatusOnSpan()
+    {
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == "Honua.Core.Edit",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var result = CreateProcessor().ValidateEdit(new UnifiedEditRequest(), Resource);
+
+        result.IsValid.Should().BeFalse();
+        activities.Should().ContainSingle(activity =>
+            activity.OperationName == "edit.validate" &&
+            activity.Status == ActivityStatusCode.Error);
     }
 }

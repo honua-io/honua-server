@@ -9,6 +9,7 @@ using Honua.Ai.WorkflowGeneration.Models;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Generation;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.AnalysisGeneration;
@@ -48,12 +49,16 @@ public sealed class AnalysisGenerationService : IAnalysisGenerationService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("honua.analysis_generation.generate");
+
         if (!_configuration.Enabled)
         {
             return Unsupported("AI analysis generation is disabled on this server.");
         }
 
         var providerId = string.IsNullOrWhiteSpace(request.Provider) ? _configuration.DefaultProvider : request.Provider!;
+        activity?.SetTag("honua.ai.provider", providerId);
+
         var options = _configuration.GetProvider(providerId);
         if (options is null || string.IsNullOrWhiteSpace(options.Endpoint) || string.IsNullOrWhiteSpace(options.Model))
         {

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -32,6 +33,76 @@ public sealed class FeatureProviderQueryRouterTests
             FeatureProviderReadOperation.Query);
 
         resolved.Should().BeSameAs(reader);
+    }
+
+    [Fact]
+    public async Task ResolveReaderAsync_EmitsSpanTaggedWithServiceResourcePublicationAndProvider()
+    {
+        // PA-019: this hot path previously emitted no telemetry at all.
+        var connectionId = Guid.NewGuid();
+        var reader = new Mock<IFeatureReader>(MockBehavior.Strict).Object;
+        var provider = CreateProvider(DataProviderNames.DuckDb, FeatureProviderCapabilities.ReadOnlyAnalytical, reader);
+        var router = CreateRouter(connectionId, DataProviderNames.DuckDb, provider);
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == "Honua.Core.FeatureStore",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        await router.ResolveReaderAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            storageLayerId: 1,
+            FeatureProviderReadOperation.Query);
+
+        activities.Should().ContainSingle(activity =>
+            activity.OperationName == "featurestore.resolve_reader" &&
+            activity.Status != ActivityStatusCode.Error &&
+            activity.TagObjects.Any(tag => tag.Key == "service.id" && Equals(tag.Value, "svc-maps")) &&
+            activity.TagObjects.Any(tag => tag.Key == "resource.id" && Equals(tag.Value, "res-roads")) &&
+            activity.TagObjects.Any(tag => tag.Key == "publication.id" && Equals(tag.Value, "pub-roads")) &&
+            activity.TagObjects.Any(tag => tag.Key == "provider.name" && Equals(tag.Value, DataProviderNames.DuckDb)));
+    }
+
+    [Fact]
+    public async Task ResolveReaderAsync_UnsupportedStatisticsOperation_SetsErrorStatusOnSpan()
+    {
+        var connectionId = Guid.NewGuid();
+        var reader = new Mock<IFeatureReader>(MockBehavior.Strict).Object;
+        var capabilities = FeatureProviderCapabilities.ReadOnlyAnalytical with
+        {
+            SupportsStatistics = false
+        };
+        var provider = CreateProvider(DataProviderNames.DuckDb, capabilities, reader);
+        var router = CreateRouter(connectionId, DataProviderNames.DuckDb, provider);
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == "Honua.Core.FeatureStore",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var action = () => router.ResolveReaderAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            storageLayerId: 1,
+            FeatureProviderReadOperation.Statistics);
+
+        await action.Should().ThrowAsync<InvalidOperationException>();
+        activities.Should().ContainSingle(activity => activity.Status == ActivityStatusCode.Error);
     }
 
     [Fact]

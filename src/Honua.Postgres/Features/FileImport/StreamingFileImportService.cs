@@ -32,6 +32,11 @@ namespace Honua.Postgres.Features.FileImport;
 /// </summary>
 internal sealed partial class StreamingFileImportService : IFileImportService
 {
+    // PA-161: the batch-insert hot path (InsertBatchAsync, StreamingFileImportService.Batch.cs)
+    // had no OTel span. Local ActivitySource named "Honua" for TracerProvider correlation,
+    // matching the convention already used by PostgresAnomalyAnalyzer in this project.
+    private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
+
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly IFileFormatDetectionService _formatDetectionService;

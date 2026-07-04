@@ -1829,6 +1829,7 @@ public sealed class ExecutionJobReconcilerTests
         // execution-job lifecycle. Reconcile-cycle counts every accepted lease; transition
         // counts each persisted status change (e.g., Queued -> Failed for missing backend).
         var cycles = new List<long>();
+        var cycleTags = new List<(string? JobKind, string? Outcome)>();
         var transitions = new List<(long Value, string? Status, string? PreviousStatus)>();
         using var listener = new MeterListener
         {
@@ -1853,6 +1854,25 @@ public sealed class ExecutionJobReconcilerTests
                 lock (cycles)
                 {
                     cycles.Add(measurement);
+                }
+
+                string? jobKind = null;
+                string? outcome = null;
+                foreach (var tag in tags)
+                {
+                    if (tag.Key == ControlPlaneTelemetry.Tags.ExecutionJobKind)
+                    {
+                        jobKind = tag.Value as string;
+                    }
+                    else if (tag.Key == ControlPlaneTelemetry.Tags.ExecutionReconcileOutcome)
+                    {
+                        outcome = tag.Value as string;
+                    }
+                }
+
+                lock (cycleTags)
+                {
+                    cycleTags.Add((jobKind, outcome));
                 }
             }
             else if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
@@ -1898,6 +1918,12 @@ public sealed class ExecutionJobReconcilerTests
         transitions.Should().Contain(t =>
             t.Value == 1 && t.PreviousStatus == nameof(ExecutionJobStatus.Queued) && t.Status == nameof(ExecutionJobStatus.Failed),
             "missing-backend path persists Queued -> Failed and must emit a transition sample");
+
+        // PA-165: the reconcile-cycle counter must carry job-kind and outcome tags so it
+        // can be sliced instead of only totaled. This run hits the missing-backend branch.
+        cycleTags.Should().Contain(
+            t => t.JobKind == nameof(ExecutionJobKind.Geoprocessing) && t.Outcome == "backend_missing",
+            "the missing-backend reconcile path must be tagged with the job kind and a backend_missing outcome");
     }
 
     private static ExecutionJobRecord CreateJobRecord(

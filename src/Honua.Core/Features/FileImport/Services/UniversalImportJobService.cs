@@ -20,6 +20,12 @@ namespace Honua.Core.Features.FileImport.Services;
 /// </summary>
 internal sealed partial class UniversalImportJobService : IImportJobService, IDisposable
 {
+    // PA-016: this is the DI-registered IImportJobService (see ServiceCollectionExtensions.cs) and
+    // its ProcessJobAsync is invoked fire-and-forget (`_ = ProcessJobAsync(...)`), so it needs its
+    // own ActivitySource plus the detach-from-caller idiom at the top of ProcessJobAsync. Registered
+    // as "Honua.Import.Jobs" in Honua.ServiceDefaults.Extensions._activitySourceNames.
+    private static readonly ActivitySource ActivitySource = new("Honua.Import.Jobs", "1.0.0");
+
     private const string SafeImportFailureMessage = "Import failed.";
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IUniversalProgressStore _progressStore;
@@ -184,6 +190,21 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         string? tempFilePath,
         CancellationToken cancellationToken)
     {
+        // PA-016: fire-and-forget (`_ = ProcessJobAsync(...)`) off the request handler. The
+        // continuation still flows the caller's ExecutionContext, so Activity.Current here would
+        // otherwise be the HTTP request's activity — which ends when the response returns, long
+        // before this background job finishes. Capture it as a link instead of an implicit
+        // parent. Passing default(ActivityContext) alone does NOT force a root span — the
+        // ActivitySource falls back to Activity.Current when the context is the all-zero/invalid
+        // value — so null out the ambient activity first for a fresh trace.
+        var callerContext = Activity.Current?.Context;
+        var links = callerContext is { } ctx ? new[] { new ActivityLink(ctx) } : null;
+        Activity.Current = null;
+        using var activity = ActivitySource.StartActivity(
+            "ImportJob.Process", ActivityKind.Internal, default(ActivityContext), links: links);
+        activity?.SetTag("honua.import.job_id", jobId);
+        activity?.SetTag("honua.import.table_name", request.TableName);
+
         var stopwatch = Stopwatch.StartNew();
         var status = "failed";
         int? featureCount = null;
@@ -196,6 +217,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         {
             if (_jobs.TryGetValue(jobId, out var state))
             {
+                activity?.SetTag("honua.import.format", state.Format);
                 var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, cancellationToken);
                 if (currentProgress != null)
                 {
@@ -252,6 +274,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
         catch (OperationCanceledException)
         {
+            activity?.SetTag("honua.import.outcome", "cancelled");
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 status = "cancelled";
@@ -278,6 +301,8 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
         catch (Exception ex)
         {
+            activity?.SetTag("honua.import.outcome", "failed");
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 status = "failed";

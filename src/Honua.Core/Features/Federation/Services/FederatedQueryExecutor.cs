@@ -23,6 +23,10 @@ namespace Honua.Core.Features.Federation.Services;
 /// </summary>
 internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
 {
+    // PA-017: remote federated source calls had metrics and structured logging but no
+    // distributed tracing span, so a slow/failing remote source was invisible in traces.
+    private static readonly ActivitySource _activitySource = new("Honua.Federation");
+
     private readonly IFederationQueryPlanner _planner;
     private readonly Dictionary<FederatedSourceKind, IFederatedSourceConnector> _connectors;
     private readonly ResiliencePolicyOptions _resilienceOptions;
@@ -67,9 +71,14 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
     {
         ArgumentNullException.ThrowIfNull(source);
 
+        using var activity = _activitySource.StartActivity("federation.execute", ActivityKind.Client);
+        activity?.SetTag("source.id", source.Id);
+        activity?.SetTag("source.kind", source.Kind.ToString());
+
         if (!_connectors.TryGetValue(source.Kind, out var connector))
         {
             _metrics.RecordUnavailable(source, FederatedSourceUnavailableReason.NoConnector, TimeSpan.Zero);
+            activity?.SetStatus(ActivityStatusCode.Error, "No connector registered for source kind.");
             throw new FederatedSourceUnavailableException(source.Id, FederatedSourceUnavailableReason.NoConnector);
         }
 
@@ -87,6 +96,7 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
         {
             stopwatch.Stop();
             _metrics.RecordUnavailable(source, ex.Reason, stopwatch.Elapsed);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
 

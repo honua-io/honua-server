@@ -9,6 +9,7 @@ using Honua.Core.Features.Grounding.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Geoprocessing;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -70,6 +71,8 @@ internal sealed class GroundingService : IGroundingService
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(principal);
+
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("honua.grounding.ground");
 
         if (string.IsNullOrWhiteSpace(request.Goal))
         {

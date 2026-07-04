@@ -13,6 +13,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.ArcGisRest.Tests;
 
@@ -93,7 +94,7 @@ public class ArcGisRestProviderResolutionTests
         {
             CountResponse = new ArcGisRestCountResponse { Count = 42 }
         };
-        var provider = new ArcGisRestFeatureStore(client);
+        var provider = new ArcGisRestFeatureStore(client, NullLogger<ArcGisRestFeatureStore>.Instance);
 
         var reader = ((IBindableFeatureDataProvider)provider)
             .CreateReaderForBinding(CreateBinding(provider, connection));
@@ -133,7 +134,7 @@ public class ArcGisRestProviderResolutionTests
             }
         };
 
-        var provider = new ArcGisRestFeatureStore(client);
+        var provider = new ArcGisRestFeatureStore(client, NullLogger<ArcGisRestFeatureStore>.Instance);
         var reader = ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(CreateBinding(provider, connection));
 
         var result = await reader.QueryAsync(LayerId, new FeatureQuery { Limit = 2, OutputSrid = 3857 });
@@ -168,7 +169,7 @@ public class ArcGisRestProviderResolutionTests
                 }
             }
         };
-        var provider = new ArcGisRestFeatureStore(client);
+        var provider = new ArcGisRestFeatureStore(client, NullLogger<ArcGisRestFeatureStore>.Instance);
         var reader = ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(CreateBinding(provider, connection));
 
         var extent = await reader.GetExtentAsync(LayerId);
@@ -190,7 +191,7 @@ public class ArcGisRestProviderResolutionTests
                 Error = new ArcGisRestError { Code = 400, Message = "Invalid where clause" }
             }
         };
-        var provider = new ArcGisRestFeatureStore(client);
+        var provider = new ArcGisRestFeatureStore(client, NullLogger<ArcGisRestFeatureStore>.Instance);
         var reader = ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(CreateBinding(provider, connection));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -208,7 +209,7 @@ public class ArcGisRestProviderResolutionTests
         {
             CountResponse = new ArcGisRestCountResponse { Count = 5 }
         };
-        var provider = new ArcGisRestFeatureStore(client);
+        var provider = new ArcGisRestFeatureStore(client, NullLogger<ArcGisRestFeatureStore>.Instance);
         var providerRegistry = new FeatureDataProviderRegistry([provider]);
         var router = new FeatureProviderQueryRouter(
             new FakeSecureConnectionRegistry(connection),
@@ -233,7 +234,7 @@ public class ArcGisRestProviderResolutionTests
     }
 
     private static ArcGisRestFeatureStore CreateProvider()
-        => new(new RecordingArcGisRestFeatureClient());
+        => new(new RecordingArcGisRestFeatureClient(), NullLogger<ArcGisRestFeatureStore>.Instance);
 
     private static DataConnection CreateConnection()
         => new()
