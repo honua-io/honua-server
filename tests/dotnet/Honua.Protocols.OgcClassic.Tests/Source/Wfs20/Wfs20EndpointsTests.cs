@@ -2250,4 +2250,67 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             .ToArray();
     }
 
+    // Regression tests for BH2-004 / BH2-005.
+
+    // BH2-004: an invalid FES 2.0 filter expression inside a WFS-T Transaction body
+    // previously caused a 500 Internal Server Error because the Fes20ParseException
+    // propagated out of HandleTransactionAsync unhandled.  After the fix the handler
+    // catches it and returns 400 InvalidParameterValue.
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Delete_WithInvalidFesFilter_ReturnsBadRequest()
+    {
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:Delete typeName="test_layer">
+                <fes:Filter>
+                  <fes:PropertyIsEqualTo>
+                    <fes:ValueReference>%%%INVALID%%%</fes:ValueReference>
+                    <fes:Literal>boom</fes:Literal>
+                    <fes:UnknownElement/>
+                  </fes:PropertyIsEqualTo>
+                </fes:Filter>
+              </wfs:Delete>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "an unparseable FES 2.0 filter must produce 400, not 500");
+    }
+
+    // BH2-005: a WFS-T Delete with an empty <fes:Filter/> element previously caused a
+    // TOCTOU: the filter was non-null but produced zero children, which (after the
+    // has-only-ResourceId check passed) was forwarded as an empty SQL WHERE clause,
+    // potentially deleting all rows in the type.  After the fix an empty filter is
+    // treated as null, which triggers the server's null-guard and returns 400.
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Delete_WithEmptyFesFilter_ReturnsBadRequest()
+    {
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:Delete typeName="test_layer">
+                <fes:Filter/>
+              </wfs:Delete>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "an empty <fes:Filter/> must be rejected with 400, not treated as a match-all");
+    }
+
 }

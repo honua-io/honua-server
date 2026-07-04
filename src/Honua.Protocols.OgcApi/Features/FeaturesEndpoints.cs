@@ -241,7 +241,8 @@ internal static partial class FeaturesEndpoints
         }
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        return await crudHandler.HandleDeleteFeatureAsync(collectionId, featureId, context, cancellationToken);
+        var ifMatch = context.Request.Headers.IfMatch.ToString();
+        return await crudHandler.HandleDeleteFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
     }
 
     /// <summary>

@@ -356,6 +356,66 @@ internal static class OgcResponseFormatter
     }
 
     /// <summary>
+    /// Writes a GML FeatureCollection from a pre-buffered list of features.
+    /// Use this overload when the caller has already buffered and truncated the list
+    /// (e.g. for cursor-paging: buffer limit+1 rows, detect hasMoreResults, truncate,
+    /// then pass the truncated list here to avoid double-buffering).
+    /// </summary>
+    public static async Task StreamGmlFeatureCollectionAsync(
+        IReadOnlyList<GmlFeature> features,
+        System.IO.Pipelines.PipeWriter bodyWriter,
+        long? numberMatched,
+        DateTimeOffset? timeStamp,
+        string? gmlApplicationSchemaUrl,
+        string? outputCrsUri,
+        AxisOrder outputAxisOrder,
+        CancellationToken cancellationToken)
+    {
+        await using var writer = new StreamWriter(
+            bodyWriter.AsStream(),
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            bufferSize: 8192,
+            leaveOpen: true);
+
+        var header = new StringBuilder()
+            .Append(CreateGmlFeatureCollectionStart(gmlApplicationSchemaUrl));
+        if (numberMatched.HasValue)
+        {
+            header.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
+        }
+
+        header.Append($" numberReturned=\"{features.Count.ToString(CultureInfo.InvariantCulture)}\"");
+
+        if (timeStamp.HasValue)
+        {
+            header.Append($" timeStamp=\"{timeStamp.Value.ToString("O", CultureInfo.InvariantCulture)}\"");
+        }
+
+        header.Append('>');
+        await writer.WriteLineAsync(header.ToString());
+
+        var writtenSinceFlush = 0;
+        foreach (var feature in features)
+        {
+            var escapedId = CreateGmlId(feature.Id, "feature_");
+            await writer.WriteLineAsync("  <wfs:member>");
+            await writer.WriteLineAsync($"    <app:Feature gml:id=\"{escapedId}\">");
+            WriteGmlGeometryProperty(writer, feature.GeometryGml, "      ", escapedId, outputCrsUri, outputAxisOrder);
+            WriteGmlProperties(writer, feature.Attributes, "      ");
+            await writer.WriteLineAsync("    </app:Feature>");
+            await writer.WriteLineAsync("  </wfs:member>");
+            if (++writtenSinceFlush >= StreamingFlushInterval)
+            {
+                await writer.FlushAsync(cancellationToken);
+                writtenSinceFlush = 0;
+            }
+        }
+
+        await writer.WriteLineAsync("</wfs:FeatureCollection>");
+        await writer.FlushAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Builds GML representation of a single feature.
     /// </summary>
     public static string BuildGmlSingleFeature(
