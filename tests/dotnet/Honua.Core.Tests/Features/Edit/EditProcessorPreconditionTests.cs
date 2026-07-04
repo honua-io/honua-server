@@ -154,10 +154,14 @@ public sealed class EditProcessorPreconditionTests
 
 
     [UnitTest]
-    public void ValidateCreate_SpatialLayerWithNullGeometry_ReturnsFailure()
+    public void ValidateCreate_SpatialLayerWithNullGeometry_Succeeds()
     {
-        // BH-014: Adding a feature to a spatial layer without geometry must return a
-        // clean validation failure rather than hitting a DB NOT NULL constraint.
+        // A spatial layer does not universally require geometry: a nullable geometry
+        // column legitimately accepts attribute-only ("null geometry") creates, which the
+        // GeoServices/OGC/OData edit paths all support (Issue #45). The edit-validation
+        // layer must not blanket-reject null geometry on a spatial layer; a NOT NULL
+        // geometry column is enforced by the database constraint instead. (Reverts the
+        // over-broad BH-014 gate from #2423 that regressed attribute-only creates.)
         var processor = CreateProcessor();
 
         var resource = new MetadataV2Resource
@@ -176,8 +180,7 @@ public sealed class EditProcessorPreconditionTests
 
         var result = processor.ValidateEdit(request, resource);
 
-        result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("Geometry is required");
+        result.IsValid.Should().BeTrue();
     }
 
     [UnitTest]
