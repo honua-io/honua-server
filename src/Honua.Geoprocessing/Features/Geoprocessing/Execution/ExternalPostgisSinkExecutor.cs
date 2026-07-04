@@ -102,8 +102,10 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         // Open the input as a streamed feature sequence so a >50 MiB load lands via
         // batched COPY/insert without materializing the whole collection. Spilled NDJSON
         // streams are unbounded; inline data URIs stay bounded by MaxArtifactBytes.
+        // Pass OutputRootDirectory so path-traversal injections in the reference are rejected.
         if (!FeatureStreamArtifact.TryOpenRead(
-                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes))
+                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
+                _options.CurrentValue.OutputRootDirectory))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -454,8 +456,17 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             case float floatValue when float.IsFinite(floatValue):
                 writer.WriteNumberValue(floatValue);
                 break;
+            case float:
+                // NaN / ±Infinity are not valid JSON numbers; write null to preserve the
+                // numeric column type in JSONB rather than silently coercing to a string.
+                writer.WriteNullValue();
+                break;
             case double doubleValue when double.IsFinite(doubleValue):
                 writer.WriteNumberValue(doubleValue);
+                break;
+            case double:
+                // Same as float: non-finite double → null in JSONB.
+                writer.WriteNullValue();
                 break;
             case decimal decimalValue:
                 writer.WriteNumberValue(decimalValue);

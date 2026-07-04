@@ -268,6 +268,56 @@ public sealed class StreamingTransformExecutorTests : IDisposable
         (await CountAsync(inlineStream)).Should().Be(1);
     }
 
+    // ----- BH-023 regression: path traversal in stream reference is rejected -----
+
+    [UnitTest]
+    public void TryOpenRead_WithPathOutsideRoot_RejectsWithError()
+    {
+        // BH-023: TryOpenRead accepted any path in the stream reference without
+        // validating it falls within the configured output root. An authenticated
+        // caller could craft a reference pointing at e.g. /etc/passwd or server
+        // config files. The outputRootDirectory parameter must reject such references.
+        var root = Path.Combine(Path.GetTempPath(), "honua-traversal-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            // Build a crafted reference with a path that escapes the root via "..".
+            var traversalPath = Path.GetFullPath(Path.Combine(root, "..", "etc", "passwd"));
+            var craftedRef = FeatureStreamArtifact.BuildStreamReference(traversalPath, count: 0, bytes: 0);
+
+            var accepted = FeatureStreamArtifact.TryOpenRead(
+                craftedRef,
+                out var error,
+                out _,
+                outputRootDirectory: root);
+
+            accepted.Should().BeFalse("a path outside the output root must be rejected");
+            error.Should().NotBeNullOrEmpty("a descriptive error must be returned");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    [UnitTest]
+    public async Task TryOpenRead_WithPathInsideRoot_Succeeds()
+    {
+        // BH-023: A legitimate stream reference whose path falls within the root must
+        // still be accepted — the guard must not over-reject.
+        var sourceRef = await BuildSpilledSourceAsync(10, includeDuplicates: false);
+
+        var accepted = FeatureStreamArtifact.TryOpenRead(
+            sourceRef,
+            out var openError,
+            out var stream,
+            outputRootDirectory: _outputRoot);
+
+        accepted.Should().BeTrue(openError);
+        (await CountAsync(stream)).Should().Be(10);
+    }
+
     [UnitTest]
     public async Task LargeOutput_SpillFileStaysBounded_RelativeToFeatureCount()
     {

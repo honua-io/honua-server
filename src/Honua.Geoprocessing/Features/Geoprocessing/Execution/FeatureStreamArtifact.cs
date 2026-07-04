@@ -91,11 +91,18 @@ internal static class FeatureStreamArtifact
     /// <see cref="FeatureCollectionArtifact.TryParseDataUri"/>). Spilled streams are
     /// unbounded — that is the whole point — so the ceiling does not apply to them.
     /// </param>
+    /// <param name="outputRootDirectory">
+    /// When non-null, the path carried by any spilled NDJSON stream reference must fall
+    /// within this directory. Pass the configured executor output root to prevent an
+    /// authenticated caller from injecting an arbitrary file-system path into the reference
+    /// and reading files outside the geoprocessing sandbox.
+    /// </param>
     public static bool TryOpenRead(
         string? reference,
         out string error,
         out IAsyncEnumerable<IFeature> stream,
-        long maxInlineDecodedBytes = long.MaxValue)
+        long maxInlineDecodedBytes = long.MaxValue,
+        string? outputRootDirectory = null)
     {
         error = "";
         stream = AsyncEnumerable.Empty<IFeature>();
@@ -111,6 +118,28 @@ internal static class FeatureStreamArtifact
             if (!TryParseStreamReference(reference, out var descriptor, out error))
             {
                 return false;
+            }
+
+            // Guard against path-traversal: reject any stream reference whose backing
+            // file path falls outside the configured output root directory. Legitimate
+            // spilled streams are always written under OutputRootDirectory/streams/ by
+            // AllocateSpillPath, so a path outside the root is always an injection attempt.
+            if (outputRootDirectory is not null)
+            {
+                var comparison = OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal;
+                var root = Path.GetFullPath(outputRootDirectory);
+                var candidate = Path.GetFullPath(descriptor.Path);
+                var rootPrefix = root.EndsWith(Path.DirectorySeparatorChar)
+                    ? root
+                    : root + Path.DirectorySeparatorChar;
+
+                if (!candidate.StartsWith(rootPrefix, comparison))
+                {
+                    error = "stream reference path is outside the output root";
+                    return false;
+                }
             }
 
             if (!File.Exists(descriptor.Path))
