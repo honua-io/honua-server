@@ -108,10 +108,13 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
             new { note = "watching" });
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        _audit.Recorded.Should().ContainSingle();
-        _audit.Recorded[0].Action.Should().Be("alert.acknowledge");
-        _audit.Recorded[0].ResourceType.Should().Be("alert_event");
-        _audit.Recorded[0].ResourceId.Should().Be("11");
+        // The shared AuditLogMiddleware also records an "admin.post" event for the request itself,
+        // so assert on the domain-specific alert audit event rather than the total count.
+        var alertAudits = _audit.Recorded.Where(e => e.Action.StartsWith("alert.", StringComparison.Ordinal)).ToList();
+        alertAudits.Should().ContainSingle();
+        alertAudits[0].Action.Should().Be("alert.acknowledge");
+        alertAudits[0].ResourceType.Should().Be("alert_event");
+        alertAudits[0].ResourceId.Should().Be("11");
     }
 
     [IntegrationTest]
@@ -121,7 +124,9 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/api/v1/admin/observability/alerts/4/suppress",
             new { suppressUntil = DateTimeOffset.UtcNow.AddHours(-1) });
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        _audit.Recorded.Should().BeEmpty();
+        // The request is rejected before the domain operation, so no alert.* audit event is recorded
+        // (the shared AuditLogMiddleware still records the request-level admin.post event).
+        _audit.Recorded.Should().NotContain(e => e.Action.StartsWith("alert.", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
@@ -134,7 +139,9 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/api/v1/admin/observability/alerts/999/resolve",
             new { note = (string?)null });
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        _audit.Recorded.Should().BeEmpty();
+        // Not found before the domain operation, so no alert.* audit event is recorded (the shared
+        // AuditLogMiddleware still records the request-level admin.post event).
+        _audit.Recorded.Should().NotContain(e => e.Action.StartsWith("alert.", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
