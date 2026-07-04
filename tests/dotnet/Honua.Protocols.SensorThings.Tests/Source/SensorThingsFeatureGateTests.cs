@@ -46,6 +46,8 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Things")]
     [Trait("Tier", "Fast")]
     public async Task StaThings_WhenFeatureDisabled_Returns404()
     {
@@ -56,6 +58,8 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /sta/v1.1/Observations")]
     [Trait("Tier", "Fast")]
     public async Task StaObservationsPost_WhenFeatureDisabled_Returns404()
     {
@@ -68,6 +72,8 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /sta/v1.1/Datastreams")]
     [Trait("Tier", "Fast")]
     public async Task StaDatastreamsPost_WhenFeatureDisabled_Returns404()
     {
@@ -80,6 +86,8 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Observations")]
     [Trait("Tier", "Fast")]
     public async Task StaObservations_WhenFeatureDisabled_Returns404()
     {
