@@ -5057,7 +5057,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown",
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProductionMonitoringEndpointSecurityTests.ComprehensiveHealth_ExternalServicesEntryDoesNotDependOnPublicInternet",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProductionMonitoringEndpointSecurityTests.ComprehensiveHealth_RedactsSensitiveHealthCheckDataAndExceptions",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.UploadQueueMonitoringEndpointsTests.ComprehensiveHealth_WithZeroMaxQueue_ReturnsFiniteFileUploadUtilization"
       ],
@@ -10209,6 +10208,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_CredentialsInQueryStringOverPlainHttp_Returns403WithHelpfulMessage",
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_CredentialsInQueryStringWithInsecureMode_Succeeds",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithClientIp_ReturnsToken",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithQueryStringCredentials_ReturnsToken"
       ],
