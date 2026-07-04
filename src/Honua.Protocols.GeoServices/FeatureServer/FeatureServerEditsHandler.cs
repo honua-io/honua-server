@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
@@ -164,6 +164,29 @@ internal sealed class FeatureServerEditsHandler(
                 return Results.Json(new ApplyEditsResponse { Success = true },
                     FeatureServerJsonContext.Default.ApplyEditsResponse,
                     contentType: "application/json");
+            }
+
+            // Per-edit-type authorization checks (BH-002): the pre-body gate uses Update as the
+            // coarsest write check; after the body is read, gate each present edit type on its
+            // specific operation so a delete-only payload requires Delete, not just Update.
+            if (request.Adds?.Length > 0)
+            {
+                var insertError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                    httpContext, resource, AuthorizationOperation.Insert, service, cancellationToken).ConfigureAwait(false);
+                if (insertError != null)
+                {
+                    return insertError;
+                }
+            }
+
+            if (request.Deletes?.Length > 0)
+            {
+                var deleteError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                    httpContext, resource, AuthorizationOperation.Delete, service, cancellationToken).ConfigureAwait(false);
+                if (deleteError != null)
+                {
+                    return deleteError;
+                }
             }
 
             // Resolve the authenticated principal once so owner-based edit policies
@@ -559,11 +582,34 @@ internal sealed class FeatureServerEditsHandler(
             slotObjectIds[i] = parsedObjectId;
         }
 
-        var existingFeatures = await ResolveFeaturesByGeoServicesObjectIdsAsync(
-            resource,
-            storageLayerId,
-            slotObjectIds,
-            cancellationToken).ConfigureAwait(false);
+        IReadOnlyDictionary<long, Feature> existingFeatures;
+        try
+        {
+            existingFeatures = await ResolveFeaturesByGeoServicesObjectIdsAsync(
+                resource,
+                storageLayerId,
+                slotObjectIds,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            // ObjectId field translation failed; this is schema-level and would have
+            // failed every slot under the previous per-feature resolve as well.
+            var description = SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage);
+            for (var i = 0; i < slotObjectIds.Length; i++)
+            {
+                if (slotObjectIds[i] is { } failedObjectId)
+                {
+                    context.HasValidationErrors = true;
+                    context.DeleteResults![i] = CreateFailureResult(
+                        code: GeoServicesEditErrorCodes.InvalidObjectId,
+                        description: description,
+                        objectId: failedObjectId);
+                }
+            }
+
+            return;
+        }
 
         for (var i = 0; i < request.Deletes.Length; i++)
         {
