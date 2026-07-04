@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Globalization;
 using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -330,34 +331,44 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
     private static void WriteFillScalar(byte[] buffer, string dtype, int elementSize, double value)
     {
         // Best-effort fill for f4/f8/i*/u*; out-of-range values silently clamp to defaults.
+        // BinaryPrimitives is used throughout to match Zarr's explicit < (little-endian)
+        // dtype prefix contract — BitConverter is platform-endian and would produce incorrect
+        // fill bytes on big-endian hosts.
+        // BH2-015: added <i8 / <u8 cases that were previously falling through to default:return.
         Span<byte> scratch = stackalloc byte[8];
         switch (dtype)
         {
             case "<f8":
-                BitConverter.TryWriteBytes(scratch, value);
+                BinaryPrimitives.WriteDoubleLittleEndian(scratch, value);
                 break;
             case "<f4":
-                BitConverter.TryWriteBytes(scratch, (float)value);
+                BinaryPrimitives.WriteSingleLittleEndian(scratch, (float)value);
+                break;
+            case "<i8":
+                BinaryPrimitives.WriteInt64LittleEndian(scratch, (long)value);
                 break;
             case "<i4":
             case "|i4":
-                BitConverter.TryWriteBytes(scratch, (int)value);
+                BinaryPrimitives.WriteInt32LittleEndian(scratch, (int)value);
                 break;
             case "<i2":
             case "|i2":
-                BitConverter.TryWriteBytes(scratch, (short)value);
+                BinaryPrimitives.WriteInt16LittleEndian(scratch, (short)value);
                 break;
             case "|i1":
             case "<i1":
                 scratch[0] = (byte)(sbyte)value;
                 break;
+            case "<u8":
+                BinaryPrimitives.WriteUInt64LittleEndian(scratch, (ulong)value);
+                break;
             case "<u4":
             case "|u4":
-                BitConverter.TryWriteBytes(scratch, (uint)value);
+                BinaryPrimitives.WriteUInt32LittleEndian(scratch, (uint)value);
                 break;
             case "<u2":
             case "|u2":
-                BitConverter.TryWriteBytes(scratch, (ushort)value);
+                BinaryPrimitives.WriteUInt16LittleEndian(scratch, (ushort)value);
                 break;
             case "|u1":
             case "<u1":
