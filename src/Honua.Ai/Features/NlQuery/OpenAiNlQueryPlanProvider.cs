@@ -177,8 +177,15 @@ internal sealed class OpenAiNlQueryPlanProvider : INlQueryPlanProvider
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                // PA-197: truncate raw provider error bodies before logging to avoid leaking deployment
+                // names, resource endpoints, quota-tier identifiers, or partial request echoes into
+                // production log streams (aggregation services with broad read access).
+                const int MaxErrorBodyLength = 256;
+                var sanitizedErrorBody = errorBody.Length > MaxErrorBodyLength
+                    ? string.Concat(errorBody.AsSpan(0, MaxErrorBodyLength), "... [truncated]")
+                    : errorBody;
                 NlQueryLog.PlanFailed(_logger, request.CollectionId ?? "unknown",
-                    $"HTTP {(int)response.StatusCode}: {errorBody}");
+                    $"HTTP {(int)response.StatusCode}: {sanitizedErrorBody}");
 
                 activity?.SetTag("nl.success", false);
                 return NlQueryPlanResult.Failure($"Provider returned HTTP {(int)response.StatusCode}.");

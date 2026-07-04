@@ -47,7 +47,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
                 new StringContent(payload, Encoding.UTF8, "application/json"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -257,7 +258,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("replicaName");
@@ -278,7 +280,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             "/rest/services/nonexistent/FeatureServer/createReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -297,7 +300,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         content.ToLowerInvariant().Should().Contain("invalid layer ids");
@@ -319,7 +323,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -492,7 +497,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -522,7 +528,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -581,7 +588,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("replicaID");
@@ -615,7 +623,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -673,7 +682,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/unRegisterReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -687,7 +697,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/unRegisterReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("replicaID");

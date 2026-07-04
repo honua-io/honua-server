@@ -123,6 +123,61 @@ public sealed class RemoteSourceExecutorTests
             .Should().BeTrue("the original resolver exception must be logged, not discarded");
     }
 
+    // PA-195: inline plaintext password must be rejected for OGC source types
+
+    [UnitTest]
+    public async Task RemoteSource_OgcFeatures_InlinePlaintextPassword_FailsWithTransformInputException()
+    {
+        // Supplying an inline 'password' key for source.ogc-features must be rejected at plan
+        // execution time so credentials are never persisted to the durable job spec in cleartext.
+        var fake = new FakeDagFeatureSource("source.ogc-features", []);
+        var executor = BuildExecutor("source.ogc-features", fake);
+
+        var (status, _, _) = await RunExecutorAsync(
+            executor,
+            "source.ogc-features",
+            ("serviceUrl", "https://example.com/ogc"),
+            ("collectionId", "buildings"),
+            ("password", "s3cr3t"));  // inline plaintext — must be rejected
+
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "an inline 'password' parameter must not be accepted for source.ogc-features");
+    }
+
+    [UnitTest]
+    public async Task RemoteSource_Wfs_InlinePlaintextPassword_FailsWithTransformInputException()
+    {
+        // Same guard for source.wfs.
+        var fake = new FakeDagFeatureSource("source.wfs", []);
+        var executor = BuildExecutor("source.wfs", fake);
+
+        var (status, _, _) = await RunExecutorAsync(
+            executor,
+            "source.wfs",
+            ("serviceUrl", "https://example.com/wfs"),
+            ("typeName", "ns:Layer"),
+            ("password", "s3cr3t"));
+
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "an inline 'password' parameter must not be accepted for source.wfs");
+    }
+
+    [UnitTest]
+    public async Task RemoteSource_OgcFeatures_NoPassword_Succeeds()
+    {
+        // Omitting any password credential (no inline, no reference) must succeed — anonymous access.
+        var fake = new FakeDagFeatureSource("source.ogc-features", []);
+        var executor = BuildExecutor("source.ogc-features", fake);
+
+        var (status, _, _) = await RunExecutorAsync(
+            executor,
+            "source.ogc-features",
+            ("serviceUrl", "https://example.com/ogc"),
+            ("collectionId", "buildings"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

@@ -34,21 +34,41 @@ internal static class GeoServerServiceUrlValidation
     internal const string EmbeddedCredentialsMessage = "GeoServerRestUrl must not include embedded credentials.";
     internal const string DisallowedAddressMessage =
         "GeoServerRestUrl resolves to a private, loopback, or unresolvable network address, which is not allowed.";
+    internal const string DisallowedHostMessage =
+        "GeoServerRestUrl host is not in the configured Migration:AllowedServiceHostSuffixes allowlist.";
 
+    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
     public static Task<GeoServerServiceUrlValidationResult> ValidateAsync(
         string geoServerRestUrl,
         CancellationToken cancellationToken = default)
-        => ValidateAsync(geoServerRestUrl, allowUnsafeLocalUrls: false, ResolveHostAddressesAsync, cancellationToken);
+        => ValidateAsync(geoServerRestUrl, allowUnsafeLocalUrls: false, allowedHostSuffixes: null, ResolveHostAddressesAsync, cancellationToken);
 
+    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
     public static Task<GeoServerServiceUrlValidationResult> ValidateAsync(
         string geoServerRestUrl,
         bool allowUnsafeLocalUrls,
         CancellationToken cancellationToken = default)
-        => ValidateAsync(geoServerRestUrl, allowUnsafeLocalUrls, ResolveHostAddressesAsync, cancellationToken);
+        => ValidateAsync(geoServerRestUrl, allowUnsafeLocalUrls, allowedHostSuffixes: null, ResolveHostAddressesAsync, cancellationToken);
+
+    /// <inheritdoc cref="GeoservicesServiceUrlValidation.ValidateAsync(string,IReadOnlyCollection{string}?,CancellationToken)"/>
+    public static Task<GeoServerServiceUrlValidationResult> ValidateAsync(
+        string geoServerRestUrl,
+        bool allowUnsafeLocalUrls,
+        IReadOnlyCollection<string>? allowedHostSuffixes,
+        CancellationToken cancellationToken = default)
+        => ValidateAsync(geoServerRestUrl, allowUnsafeLocalUrls, allowedHostSuffixes, ResolveHostAddressesAsync, cancellationToken);
 
     internal static async Task<GeoServerServiceUrlValidationResult> ValidateAsync(
         string geoServerRestUrl,
         bool allowUnsafeLocalUrls,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken = default)
+        => await ValidateAsync(geoServerRestUrl, allowUnsafeLocalUrls, allowedHostSuffixes: null, hostAddressResolver, cancellationToken).ConfigureAwait(false);
+
+    internal static async Task<GeoServerServiceUrlValidationResult> ValidateAsync(
+        string geoServerRestUrl,
+        bool allowUnsafeLocalUrls,
+        IReadOnlyCollection<string>? allowedHostSuffixes,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
         CancellationToken cancellationToken = default)
     {
@@ -85,10 +105,15 @@ internal static class GeoServerServiceUrlValidation
             return GeoServerServiceUrlValidationResult.Failure(DisallowedAddressMessage);
         }
 
+        // PA-153: optional per-deployment host allowlist (see GeoservicesServiceUrlValidation for details).
+        if (allowedHostSuffixes is not null && !GeoservicesServiceUrlValidation.IsHostAllowed(uri.Host, allowedHostSuffixes))
+        {
+            return GeoServerServiceUrlValidationResult.Failure(DisallowedHostMessage);
+        }
+
         return GeoServerServiceUrlValidationResult.Success();
     }
 
     private static Task<IPAddress[]> ResolveHostAddressesAsync(string host, CancellationToken cancellationToken)
         => Dns.GetHostAddressesAsync(host, cancellationToken);
-
 }
