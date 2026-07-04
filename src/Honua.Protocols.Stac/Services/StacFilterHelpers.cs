@@ -331,19 +331,13 @@ internal static class StacFilterHelpers
 
         if (start is null && end is null)
         {
-            // BH-S-02: datetime=../.. (doubly-open interval) is syntactically valid per
-            // the OGC STAC spec — it means "no temporal constraint". Return a TemporalFilter
-            // with null Start/End so IsValidDatetimeSyntax accepts it and the query pipeline
-            // treats it as a no-op temporal filter (the Postgres temporal builder skips the
-            // WHERE clause when both bounds are null).
-            return new TemporalFilter
-            {
-                PropertyName = timeField,
-                PropertyType = TemporalPropertyType.DateTime,
-                EndPropertyName = endTimeField,
-                Start = null,
-                End = null,
-            };
+            // A doubly-open / empty interval (datetime=../.., /, /.., ../) is not a valid
+            // OGC API-Features / STAC datetime value: an interval must have at least one
+            // bounded (closed) end. The STAC API conformance validator requires these to be
+            // rejected with 400, so return null here to fail the caller's syntax guard.
+            // (The earlier BH-S-02 no-op-filter behavior from #2423 accepted them with 200
+            // and regressed STAC item-search conformance.)
+            return null;
         }
         if (start > end)
         {
