@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -68,7 +68,8 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestLayerId}/ImageServer?f=xml");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -490,7 +491,8 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync($"/rest/services/{nonExistentLayerId}/ImageServer?f=json");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
 }

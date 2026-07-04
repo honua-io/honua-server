@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -421,7 +421,8 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
         // The sync is rejected because an edit failed and the batch rolled back.
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // State unchanged: the valid add was rolled back and never persisted.
         var matches = await CountFeaturesByNameAsync("rollback-should-not-persist");

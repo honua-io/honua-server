@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -345,7 +345,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -367,7 +368,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -596,7 +598,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=999&J=10&INFOFORMAT=application/json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("InvalidParameterValue");
         }
@@ -617,7 +620,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/gif&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("InvalidParameterValue");
@@ -696,7 +700,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/query?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -764,7 +769,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/query?f=json&outFields=Bogus");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -890,7 +896,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/find?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -1169,7 +1176,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -1327,7 +1335,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -1400,7 +1409,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/getSamples?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -1636,7 +1646,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&datumTransformation=108001&geometries={encoded}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -1660,7 +1671,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&transformation=1&geometries={encoded}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -2030,7 +2042,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/keyProperties?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -2163,7 +2176,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/legend?f=xml");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -2228,7 +2242,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -2299,7 +2314,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/multidimensionalInfo?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -2357,7 +2373,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/slices?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {

@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -104,7 +104,8 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{TestLayerId}/1/0/0.mvt?time=not-a-timestamp");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -133,7 +134,8 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{TestLayerId}/1/0/0.mvt?time={start},{end}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -146,7 +148,8 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/9999/1/0/0.mvt?time={start},{end}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -167,7 +170,8 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{TestLayerId}/1/0/0.mvt?time={start},{end}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
