@@ -5389,6 +5389,7 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataClientCertificationTests.CertDisc02_SingleEntitySetQuery",
         "Honua.Server.Tests.Features.Protocols.OData.ODataClientIntegrationTests.LayersQuery_ReturnsExpectedLayer_ViaODataClient",
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.Layers_ReturnsCollection",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.GetLayers_WithSkipToken_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Security.ODataServiceBoundaryTests.GetLayers_WithSharedLayerInSecondaryService_DoesNotLeakCanonicalBoundary"
       ],
       "proof_ledger_surface": "odata-v4",
@@ -10569,6 +10570,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesAuthorizationTests.GetCollectionQueryables_Unauthenticated_PrivateCollection_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesTests.GetCollectionQueryables_ById_ReturnsJsonSchemaDocument",
         "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesTests.GetCollectionQueryables_NotFound_Returns404"
       ],
@@ -15929,6 +15931,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithValidPointGeometry_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithZCoordinates_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.FeatureServerGdbVersionFlowTests.GdbVersionFlow_EditQueryReconcilePost_IsolatesThenMerges",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_DeletePayload_DeleteGrantAllowsDeletesWhenUpdateGrantDoesNot",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_NoGrant_FallsBackToCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_QueryOnlyGrant_DeniesWrite",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_UpdateGrant_OverridesCoarseDeny",
@@ -15974,7 +15977,8 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.DeleteFeatures_WithMalformedObjectIdsDelimiter_ReturnsBadRequest",
         "Honua.Server.Tests.FeatureServerEndpointTests.DeleteFeatures_WithObjectIdsPayload_ReturnsDeleteResults",
         "Honua.Server.Tests.FeatureServerEndpointTests.DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures",
-        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer"
+        "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.DeleteFeatures_DeleteGrantOverridesCoarseDenyForObjectIdsPath"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented"
@@ -17593,6 +17597,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_CreateStoredQuery_WithDuplicateId_ReturnsDuplicateIdLocator",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_CreateStoredQuery_WithSupportedQueryLanguage_ReturnsOk",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_ReturnsXmlWithTransactionOperation",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_XmlQueryWithFilter_PagingNextLinkPreservesFilter",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_GetCapabilities_ReturnsXml",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_GetCapabilities_XmlBody_ReturnsXml",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_GetFeature_AfterTimePeriodWithUtcZ_ReturnsLaterFeatures",
@@ -17607,11 +17612,15 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_XmlBodyWithDtd_ReturnsSanitizedExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_AnonymousWrite_AllowsInsertWithoutRbac",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Delete_DeletedFeatureStoredQueryReturns404ExceptionReport",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Delete_ZeroMatchFilter_ReturnsSuccessWithZeroDeleted",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Insert_3dGmlPosList_EvenVertexCount_StoresCorrectGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_MultiLayerWithoutRollback_ReturnsTransactionResponseAndCreatesFeatures",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_MultiLayer_DefaultRollbackOnFailure_ReturnsOperationProcessingFailed",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Replace_ReturnsReplaceSummaryAndUpdatesFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Replace_RoundTripsGmlDescriptionAndIdentifierCodeSpace",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_UpdateBoundedBy_WithInvalidValue_ReturnsInvalidValueException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_UpdateGmlNameXPathReference_UpdatesStoredQueryResult",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Update_ZeroMatchFilter_ReturnsSuccessWithZeroUpdated",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_WithInsertUpdateAndDelete_ReturnsTransactionSummary",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_WithXmlLockId_ReturnsExceptionReport",
