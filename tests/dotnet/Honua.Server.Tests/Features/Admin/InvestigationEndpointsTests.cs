@@ -68,9 +68,13 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
         id.Should().NotBeNullOrWhiteSpace();
         doc.RootElement.GetProperty("status").GetString().Should().Be("open");
 
-        _audit.Recorded.Should().ContainSingle();
-        _audit.Recorded[0].Action.Should().Be("investigation.create");
-        _audit.Recorded[0].ResourceId.Should().Be(id);
+        // The shared AuditLogMiddleware also records an "admin.post" event for the request itself,
+        // so filter to the investigation.* domain events before asserting.
+        var investigationAudits = _audit.Recorded
+            .Where(e => e.Action.StartsWith("investigation.", StringComparison.Ordinal)).ToList();
+        investigationAudits.Should().ContainSingle();
+        investigationAudits[0].Action.Should().Be("investigation.create");
+        investigationAudits[0].ResourceId.Should().Be(id);
     }
 
     [IntegrationTest]
@@ -110,8 +114,12 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
             new { resourceKind = "job", resourceId = "abc-123" });
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        _audit.Recorded.Should().ContainSingle();
-        _audit.Recorded[0].Action.Should().Be("investigation.link.add");
+        // The shared AuditLogMiddleware also records an "admin.post" event for the request itself,
+        // so filter to the investigation.* domain events before asserting.
+        var investigationAudits = _audit.Recorded
+            .Where(e => e.Action.StartsWith("investigation.", StringComparison.Ordinal)).ToList();
+        investigationAudits.Should().ContainSingle();
+        investigationAudits[0].Action.Should().Be("investigation.link.add");
     }
 
     [IntegrationTest]
@@ -242,9 +250,13 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("links")[0].GetProperty("resourceKind").GetString().Should().Be("changeSet");
 
-        _audit.Recorded.Should().ContainSingle();
+        // The shared AuditLogMiddleware also records an "admin.post" event for the request itself,
+        // so filter to the investigation.* domain events before asserting.
+        var investigationAudits = _audit.Recorded
+            .Where(e => e.Action.StartsWith("investigation.", StringComparison.Ordinal)).ToList();
+        investigationAudits.Should().ContainSingle();
         // Audit detail must be valid JSON with escaped operator input.
-        using var detailsDoc = JsonDocument.Parse(_audit.Recorded[0].Details);
+        using var detailsDoc = JsonDocument.Parse(investigationAudits[0].Details);
         detailsDoc.RootElement.GetProperty("resourceKind").GetString().Should().Be("changeSet");
         detailsDoc.RootElement.GetProperty("resourceId").GetString().Should().Be(hostileResourceId);
     }
@@ -283,8 +295,12 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("pins")[0].GetProperty("eventKind").GetString().Should().Be("syncConflict");
 
-        _audit.Recorded.Should().ContainSingle();
-        using var detailsDoc = JsonDocument.Parse(_audit.Recorded[0].Details);
+        // The shared AuditLogMiddleware also records an "admin.post" event for the request itself,
+        // so filter to the investigation.* domain events before asserting.
+        var investigationAudits = _audit.Recorded
+            .Where(e => e.Action.StartsWith("investigation.", StringComparison.Ordinal)).ToList();
+        investigationAudits.Should().ContainSingle();
+        using var detailsDoc = JsonDocument.Parse(investigationAudits[0].Details);
         detailsDoc.RootElement.GetProperty("eventRef").GetString().Should().Be(hostileEventRef);
     }
 

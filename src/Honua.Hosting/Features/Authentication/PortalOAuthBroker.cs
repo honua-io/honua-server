@@ -146,7 +146,13 @@ internal sealed class PortalOAuthBroker(
             return PortalOAuthCallbackResult.Failure("invalid_request", "Missing authorization response parameters.");
         }
 
-        var separator = combinedState.IndexOf('.', StringComparison.Ordinal);
+        // Split on the LAST '.' — the idpState half is drawn from the RFC 3986
+        // unreserved alphabet, which INCLUDES '.', so it can legitimately contain
+        // dots. The brokerSessionId half is always lowercase hex (see
+        // PortalOAuthStore.CreateValue) and never contains a '.', so the final dot
+        // is unambiguously the delimiter. Splitting on the first '.' corrupted the
+        // session id whenever the random idpState happened to contain a dot.
+        var separator = combinedState.LastIndexOf('.');
         if (separator <= 0 || separator >= combinedState.Length - 1)
         {
             PortalOAuthLog.CallbackRejected(_logger, "malformed state");
