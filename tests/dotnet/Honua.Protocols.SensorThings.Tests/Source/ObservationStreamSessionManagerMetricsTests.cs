@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using System.Threading.Channels;
 using Honua.Protocols.SensorThings.Streaming;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;

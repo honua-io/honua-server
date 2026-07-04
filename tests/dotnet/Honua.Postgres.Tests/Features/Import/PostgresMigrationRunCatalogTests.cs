@@ -176,7 +176,7 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
     }
 
     private PostgresMigrationRunCatalog CreateCatalog()
-        => new(fixture.ConnectionString, NullLogger<PostgresMigrationRunCatalog>.Instance);
+        => new(Task.FromResult(fixture.ConnectionString), NullLogger<PostgresMigrationRunCatalog>.Instance);
 
     /// <summary>
     /// The 031 migration creates honua.migration_runs; tests apply the same

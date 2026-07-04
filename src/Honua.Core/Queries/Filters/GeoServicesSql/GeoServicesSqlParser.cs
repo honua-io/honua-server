@@ -47,6 +47,37 @@ public sealed class GeoServicesSqlParser
         "EPOCH"
     };
 
+    // Allowlist of function names accepted by ParseIdentifierOrFunction for arbitrary
+    // call-syntax (i.e. not already handled as a dedicated keyword: CAST, EXTRACT,
+    // SUBSTRING, POSITION). Only names that every active ISqlFilterTranslator understands
+    // are listed here so that an unknown function name is rejected at parse time rather than
+    // silently producing an AST node that a future provider might execute without vetting.
+    // CURRENT_DATE / CURRENT_TIMESTAMP / CURRENT_TIME are handled as dedicated keywords
+    // (TokenType) and do not reach this path.
+    private static readonly HashSet<string> _allowedFunctions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // String functions
+        "UPPER", "LOWER", "TRIM", "LTRIM", "RTRIM", "LENGTH", "LEN",
+        "CONCAT", "REPLACE", "LEFT", "RIGHT",
+        "CONTAINS", "STARTSWITH", "ENDSWITH",
+        // SUBSTRING and POSITION are handled via dedicated SQL-standard keyword forms above,
+        // but ArcGIS clients also emit the comma-delimited form SUBSTRING(field, start, len)
+        // and POSITION(needle IN haystack) — the comma form doesn't match the keyword-path
+        // guard so it falls through here.  Both are safe, well-understood string functions.
+        "SUBSTRING", "POSITION",
+        // Null / conditional
+        "COALESCE", "NULLIF", "IIF",
+        // Numeric / math
+        "ABS", "CEILING", "FLOOR", "ROUND", "SIGN",
+        "POWER", "SQRT", "LOG", "EXP", "MOD",
+        // Date / time helpers (single-arg forms; multi-arg EXTRACT handled separately)
+        "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND",
+        // Spatial predicates
+        "ST_CONTAINS", "ST_WITHIN", "ST_INTERSECTS", "ST_DISJOINT",
+        "ST_TOUCHES", "ST_CROSSES", "ST_OVERLAPS", "ST_EQUALS",
+        "ST_DISTANCE", "ST_LENGTH", "ST_AREA", "ST_X", "ST_Y",
+    };
+
     /// <summary>
     /// Parses a GeoServices SQL WHERE expression into a filter AST.
     /// </summary>
@@ -463,6 +494,15 @@ public sealed class GeoServicesSqlParser
                 return ParseSqlStandardPosition();
             }
 
+            // Enforce a function-name allowlist so unknown identifiers are rejected at parse
+            // time before any AST node is created. This provides defense-in-depth: even if
+            // a future provider's ISqlFilterTranslator omits its own allowlist check, the
+            // unknown function will never reach it.
+            if (!_allowedFunctions.Contains(identifier))
+            {
+                throw new ArgumentException($"Unknown or unsupported function: '{identifier}'.");
+            }
+
             var args = new List<FilterExpression>();
             if (!Check(TokenType.RightParen))
             {
@@ -757,17 +797,13 @@ public sealed class GeoServicesSqlParser
                 var hasOffsetIndicator = value.Contains('Z', StringComparison.OrdinalIgnoreCase)
                     || value.LastIndexOf('+') > 0
                     || (value.LastIndexOf('-') > 8); // after the date portion
-                // The canonical SQL-92 `TIMESTAMP 'YYYY-MM-DD HH:MM:SS'` literal that the
-                // ArcGIS SDK emits carries no offset; real ArcGIS accepts it and treats it as
-                // naive/UTC. Mirror that for an explicit TIMESTAMP keyword (AssumeUniversal
-                // above already folds it to UTC). Only an unkeyworded date+time string in a
-                // bare comparison still requires an explicit offset to avoid ambiguity.
-                if (!hasOffsetIndicator && !explicitTimestampKeyword)
-                {
-                    throw new ArgumentException(
-                        $"Datetime literal '{value}' is missing a timezone offset. "
-                        + "Use an explicit 'Z' or '+hh:mm' suffix to disambiguate.");
-                }
+                // Mirror ArcGIS Server behaviour: bare datetime literals without a timezone
+                // offset (whether in #...# or quoted form, with or without the TIMESTAMP keyword)
+                // are accepted and treated as UTC. AssumeUniversal above already applied this.
+                // Rejecting them broke legacy ArcGIS client queries (honua-server#PA-026).
+                // The `explicitTimestampKeyword` branch was already accepted; now the bare form
+                // is too. Callers that need strict timezone enforcement should apply their own
+                // validation before reaching the parser.
             }
 
             if (dateOnly == null && timestamp.TimeOfDay == TimeSpan.Zero)

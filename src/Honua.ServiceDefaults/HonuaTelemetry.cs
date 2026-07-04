@@ -223,6 +223,9 @@ public static class HonuaTelemetry
         /// <summary>Operator execution admission evaluation activity.</summary>
         public const string ExecutionAdmission = "honua.execution.admission";
 
+        /// <summary>Geoprocessing job dispatch and execution activity.</summary>
+        public const string GeoprocessingDispatch = "honua.geoprocessing.dispatch";
+
         /// <summary>Share export trigger activity.</summary>
         public const string ShareExportTrigger = "honua.share.export.trigger";
     }

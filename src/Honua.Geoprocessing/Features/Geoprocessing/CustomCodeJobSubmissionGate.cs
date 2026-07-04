@@ -63,6 +63,15 @@ internal sealed class CustomCodeJobSubmissionGate
                 "Custom-code geoprocessing is not enabled on this server (no scoped-job token issuer is configured).");
         }
 
+        // Open-policy gate (PA-196): an unrestricted-repo execution surface requires admin
+        // elevation. A non-admin caller is rejected even when Open is configured so that
+        // arbitrary code execution from any HTTPS repo is never reachable by a normal user.
+        if (_customCodeOptions.CurrentValue.RepoPolicy == CustomCodeRepoPolicy.Open
+            && !principal.IsInRole("admin"))
+        {
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        }
+
         try
         {
             var result = await _coordinator.ValidateMintAndInjectAsync(

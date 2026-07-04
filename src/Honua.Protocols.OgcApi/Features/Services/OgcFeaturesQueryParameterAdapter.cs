@@ -91,7 +91,12 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
                 return QueryAdapterResult.Failure(filterResult.ErrorMessage ?? "Invalid query parameters.");
             }
 
-            var paginationResult = _queryValidator.ValidateAndNormalizePagination(parameters.Offset, parameters.Limit);
+            // OGC API - Features Part 1 /req/core/fc-limit-definition (d): over-maximum limits
+            // must be clamped to the server maximum, not rejected with 400.
+            var paginationResult = _queryValidator.ValidateAndNormalizePagination(
+                parameters.Offset,
+                parameters.Limit,
+                PaginationValidationOptions.OgcFeatures);
             if (!paginationResult.IsValid)
             {
                 return QueryAdapterResult.Failure(paginationResult.ErrorMessage ?? "Invalid paging parameters.");

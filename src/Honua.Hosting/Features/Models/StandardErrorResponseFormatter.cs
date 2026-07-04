@@ -152,9 +152,11 @@ internal static class StandardErrorResponseFormatter
             ? string.Empty
             : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
 
+        // OWS 1.1 XSD (owsExceptionReport.xsd) declares `language` as use="required" on the
+        // ExceptionReport element. Omitting it causes schema-level rejection by strict validators.
         var xmlContent = $$"""
             <?xml version="1.0" encoding="UTF-8"?>
-            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1" version="2.0.0">
+            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1" version="2.0.0" language="en">
               <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
                 <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
               </ows:Exception>

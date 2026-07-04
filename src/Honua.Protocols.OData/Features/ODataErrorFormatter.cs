@@ -28,7 +28,9 @@ namespace Honua.Protocols.OData;
 /// </remarks>
 internal static class ODataErrorFormatter
 {
-    private const string ODataContentType = "application/json;metadata=minimal";
+    // OData v4 spec (OASIS OData-JSON-Format-v4.0 §3.1): parameter name must be "odata.metadata",
+    // not the OData 3.0 shorthand "metadata".
+    private const string ODataContentType = "application/json;odata.metadata=minimal";
 
     /// <summary>
     /// Formats a <see cref="StandardErrorResponse"/> as an OData v4 error

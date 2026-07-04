@@ -47,6 +47,13 @@ internal static class ConfigurationValidationService
         LogFeatureStatus(configuration, logger, "HONUA_OPENTELEMETRY", "OpenTelemetry tracing");
         LogFeatureStatus(configuration, logger, "HONUA_SKIP_MIGRATIONS", "Skip migrations");
 
+        // Experimental feature gates (audit PA-096/PA-103/PA-116/PA-145/PA-001/PA-181/PA-182).
+        // Each is default-off; operators must explicitly opt in.
+        LogExperimentalFeatureStatus(configuration, logger, "Experimental:Features:SensorThings", "SensorThings API");
+        LogExperimentalFeatureStatus(configuration, logger, "Experimental:Features:FederatedQuery", "Federated Query");
+        LogExperimentalFeatureStatus(configuration, logger, "Experimental:Features:RedshiftProvider", "Redshift provider");
+        LogExperimentalFeatureStatus(configuration, logger, "Experimental:Features:SnowflakeProvider", "Snowflake provider");
+
         // Warn about dev-only settings in production
         var basicAuthCompatibilityEnabled = configuration.GetValue(
             "Authentication:BasicCompatibility:Enabled",
@@ -315,6 +322,18 @@ internal static class ConfigurationValidationService
     {
         var isEnabled = configuration.IsFeatureEnabled(featureName.Replace("HONUA_", ""));
         ConfigurationLog.FeatureStatus(logger, displayName, isEnabled ? "enabled" : "disabled");
+    }
+
+    /// <summary>
+    /// Logs an experimental feature flag using the same EventId 4010 log structure.
+    /// Experimental features are off by default; the status reflects whether the
+    /// opt-in configuration key is present and set to true.
+    /// </summary>
+    private static void LogExperimentalFeatureStatus(IConfiguration configuration, ILogger logger, string configKey, string displayName)
+    {
+        var isEnabled = configuration.GetValue<bool>(configKey, false);
+        var status = isEnabled ? "experimental (enabled)" : "disabled (experimental, default)";
+        ConfigurationLog.FeatureStatus(logger, displayName, status);
     }
 
     private static void LogConfigurationSummary(IConfiguration configuration, ILogger logger)

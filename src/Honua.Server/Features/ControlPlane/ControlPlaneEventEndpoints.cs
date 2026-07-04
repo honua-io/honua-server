@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+using Honua.Server.Features.CloudDemo;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -52,7 +54,7 @@ internal static class ControlPlaneEventEndpoints
 
         // HANDLER-AUTHORIZED (#1144): these internal event/backstop routes enforce their own
         // authorization in-handler via the shared-secret X-Honua-ControlPlane-Token check
-        // (see IsAuthorized) and are reachable only from the EventBridge-invoked Lambda inside
+        // (see CheckAuthorization) and are reachable only from the EventBridge-invoked Lambda inside
         // the deployment trust boundary — they are not a framework-policy surface. Marked
         // AllowAnonymous on the group so the audit architecture guard records the explicit,
         // intentional decision for both child mutation routes.
@@ -80,9 +82,10 @@ internal static class ControlPlaneEventEndpoints
         HttpRequest httpRequest,
         CancellationToken cancellationToken)
     {
-        if (!IsAuthorized(httpRequest, configuration))
+        var authResult = CheckAuthorization(httpRequest, configuration);
+        if (authResult is not null)
         {
-            return Results.Unauthorized();
+            return authResult;
         }
 
         await handler
@@ -103,9 +106,10 @@ internal static class ControlPlaneEventEndpoints
         HttpRequest httpRequest,
         CancellationToken cancellationToken)
     {
-        if (!IsAuthorized(httpRequest, configuration))
+        var authResult = CheckAuthorization(httpRequest, configuration);
+        if (authResult is not null)
         {
-            return Results.Unauthorized();
+            return authResult;
         }
 
         var staleThreshold = options.Value.StaleThreshold > TimeSpan.Zero
@@ -116,26 +120,54 @@ internal static class ControlPlaneEventEndpoints
         return Results.Ok();
     }
 
-    private static bool IsAuthorized(HttpRequest httpRequest, IConfiguration configuration)
+    /// <summary>
+    /// Returns <see langword="null"/> when the request is authorized; otherwise returns an
+    /// <see cref="IResult"/> to return immediately. Fails closed (503) when the token is not
+    /// configured (PA-060) so an unconfigured deployment cannot be invoked unauthenticated.
+    /// </summary>
+    internal static IResult? CheckAuthorization(HttpRequest httpRequest, IConfiguration configuration)
     {
         var expected = configuration["ControlPlane:EventToken"]
             ?? configuration["HONUA_CONTROL_PLANE_EVENT_TOKEN"];
 
-        // No token configured => the surface is reachable only inside the deployment trust boundary
-        // (private VPC, EventBridge-invoked Lambda). When a token IS configured it is required and
-        // compared in fixed time.
+        // No token configured => fail closed (PA-060). Previously this returned true (fail-open),
+        // allowing unauthenticated access on deployments that had not set a token. Now 503 is
+        // returned so operators discover a misconfiguration rather than silently getting no auth.
         if (string.IsNullOrEmpty(expected))
         {
-            return true;
+            return Problem(
+                StatusCodes.Status503ServiceUnavailable,
+                "control_plane_event_token_not_configured",
+                "Control-plane event token is not configured.");
         }
 
-        if (!httpRequest.Headers.TryGetValue(TokenHeader, out var provided) || provided.Count != 1)
+        if (!CloudDemoCredentials.TokenMatches(httpRequest, TokenHeader, expected))
         {
-            return false;
+            var statusCode = CloudDemoCredentials.HasPresentedToken(httpRequest, TokenHeader)
+                ? StatusCodes.Status403Forbidden
+                : StatusCodes.Status401Unauthorized;
+            return Problem(statusCode, "control_plane_event_token_invalid", "A valid control-plane token is required.");
         }
 
-        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.UTF8.GetBytes(provided.ToString()),
-            System.Text.Encoding.UTF8.GetBytes(expected));
+        return null; // authorized
     }
+
+    private static IResult Problem(int statusCode, string code, string message)
+        => Results.Json(
+            new ControlPlaneEventProblem(code, message),
+            ControlPlaneEventJsonContext.Default.ControlPlaneEventProblem,
+            statusCode: statusCode,
+            contentType: "application/json");
 }
+
+/// <summary>Problem response returned by the control-plane event endpoints.</summary>
+/// <param name="Code">Stable machine-readable error code.</param>
+/// <param name="Message">Human-readable message.</param>
+internal sealed record ControlPlaneEventProblem(
+    [property: JsonPropertyName("code")] string Code,
+    [property: JsonPropertyName("message")] string Message);
+
+/// <summary>Source-generated JSON context for the control-plane event endpoint payloads (AOT-safe).</summary>
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(ControlPlaneEventProblem))]
+internal sealed partial class ControlPlaneEventJsonContext : JsonSerializerContext;
