@@ -182,4 +182,23 @@ public sealed class ODataSkipTokenTests : IAsyncLifetime
         allFeatures.Should().HaveCount(15);
         pageCount.Should().Be(3); // 15 features / 5 per page = 3 pages
     }
+
+    // BH-S-04 regression: /Layers must reject inbound $skiptoken with 400. The server
+    // never emits a $skiptoken nextLink on the catalog layer list ($skip is the
+    // continuation mechanism there). Accepting a $skiptoken against a null fingerprint
+    // would allow a token minted by any Features endpoint with no filter/orderby to jump
+    // the Layers list to an arbitrary offset — an OData skiptoken isolation violation.
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Layers")]
+    public async Task GetLayers_WithSkipToken_ReturnsBadRequest()
+    {
+        // A legacy bare-integer token is the easiest crafted token with a null fingerprint.
+        var response = await _fixture.Client.GetAsync("/odata/Layers?$skiptoken=0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("skiptoken");
+    }
 }
