@@ -323,8 +323,46 @@ internal sealed class InputValidationMiddleware
         "edits"
     };
 
+    // OAuth2 credential parameters (RFC 7662 introspection, RFC 7009 revocation, and the
+    // token-exchange grant) carry opaque access/refresh tokens — including signed JWTs whose
+    // base64url segments legitimately contain "--" or "/*"/"*/"-like byte sequences. These
+    // values are validated by the portal token services (signature/lookup), never concatenated
+    // into SQL text, so the SQL-injection heuristic produces false positives that reject valid
+    // tokens (e.g. a JWT signature containing "--" → 400 on /sharing/rest/oauth2/introspect).
+    // This mirrors the opaque-credential handling for the Authorization / X-API-Key headers.
+    private static readonly HashSet<string> _oauth2CredentialFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "token",
+        "token_type_hint",
+        "refresh_token",
+        "code",
+        "client_secret",
+        "client_assertion",
+        "assertion",
+    };
+
     private static bool ShouldSkipSqlInspection(HttpRequest request, string paramType, string name)
-        => IsFeatureEditPayloadField(request, paramType, name);
+        => IsFeatureEditPayloadField(request, paramType, name)
+           || IsOAuth2CredentialParameter(request, paramType, name);
+
+    private static bool IsOAuth2CredentialParameter(HttpRequest request, string paramType, string name)
+    {
+        if (!paramType.Equals("form", StringComparison.Ordinal) &&
+            !paramType.Equals("query", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!_oauth2CredentialFields.Contains(name))
+        {
+            return false;
+        }
+
+        // Restrict to the Sharing OAuth2 credential endpoints so the exemption cannot be abused
+        // on unrelated routes. Every OAuth2 route lives under "/sharing/rest/oauth2/" (authorize,
+        // callback, token, revoke, introspect).
+        return request.Path.Value?.Contains("/sharing/rest/oauth2/", StringComparison.OrdinalIgnoreCase) == true;
+    }
 
     private static bool IsFeatureEditPayloadField(HttpRequest request, string paramType, string name)
     {
