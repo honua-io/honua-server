@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -271,6 +272,53 @@ public sealed class StacFilterHelpersTests
         var filter = StacFilterHelpers.ParseDatetime(openInterval, resource);
 
         filter.Should().BeNull();
+    }
+
+    // Boundary complement to the doubly-open rejection: a HALF-bounded (single-open)
+    // interval is valid per OGC API-Features / STAC and must still be accepted. Rejection
+    // is scoped strictly to the doubly-open/empty case; the revert must not over-reject
+    // '../date' or 'date/..'.
+
+    [UnitTest]
+    public void IsValidDatetimeSyntax_WithSingleOpenInterval_ReturnsTrue()
+    {
+        foreach (var datetime in new[] { "../2023-01-02T00:00:00Z", "2023-01-02T00:00:00Z/.." })
+        {
+            StacFilterHelpers.IsValidDatetimeSyntax(datetime)
+                .Should().BeTrue("'{0}' is a valid half-bounded interval", datetime);
+        }
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithOpenStartInterval_ReturnsUpperBoundedFilter()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        var filter = StacFilterHelpers.ParseDatetime("../2023-01-02T00:00:00Z", resource);
+
+        filter.Should().NotBeNull();
+        filter!.Value.Start.Should().BeNull();
+        filter.Value.End.Should().Be(DateTimeOffset.Parse("2023-01-02T00:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal));
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithOpenEndInterval_ReturnsLowerBoundedFilter()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z/..", resource);
+
+        filter.Should().NotBeNull();
+        filter!.Value.Start.Should().Be(DateTimeOffset.Parse("2023-01-02T00:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal));
+        filter.Value.End.Should().BeNull();
     }
 
     private static MetadataV2Resource CreateResource(MetadataV2Field[] fields)
