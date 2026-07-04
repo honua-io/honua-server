@@ -141,6 +141,40 @@ public sealed class EsriTileCachePackageReaderTests
         read.Should().ContainSingle(t => t.Z == 2 && t.Y == 10 && t.X == 20);
     }
 
+    /// <summary>
+    /// Regression test for BH-020: tiles whose encoded byte-size has bit 23 set
+    /// (≥ 8,388,608 bytes = 8 MB) must not be silently dropped.  The previous code
+    /// used an arithmetic right-shift on the signed Int64 index value, which sign-
+    /// extended negative Int64s into negative Int32 sizes, triggering the size-&lt;=0
+    /// guard and skipping the tile.
+    /// </summary>
+    [Fact]
+    public async Task ReadTiles_CompactV2_TilesLargerThan8MB_AreNotSilentlyDropped()
+    {
+        // 8,388,608 bytes (8 MiB exactly) sets bit 23 of the 24-bit size field.
+        // Combined with a typical offset, bit 63 of the Int64 index entry is set,
+        // making it negative — the arithmetic-shift bug produces a negative size.
+        var tileContent = new byte[8_388_608];
+        tileContent[0] = 0xAB;
+        tileContent[^1] = 0xCD;
+
+        var tiles = new (int Row, int Col, byte[] Bytes)[] { (0, 0, tileContent) };
+        using var package = BuildCompactV2Package(prefix: string.Empty, format: "PNG", wkid: 3857, name: "large", level: 0, tiles: tiles);
+        var reader = new EsriTileCachePackageReader();
+        var descriptor = await reader.ReadDescriptorAsync(package);
+
+        var read = new List<TileCachePackageTile>();
+        await foreach (var tile in reader.ReadTilesAsync(package, descriptor, 0, 24))
+        {
+            read.Add(tile);
+        }
+
+        read.Should().HaveCount(1, "a tile with size ≥ 8 MiB must not be silently skipped");
+        read[0].Content.Length.Should().Be(8_388_608);
+        read[0].Content[0].Should().Be(0xAB);
+        read[0].Content[^1].Should().Be(0xCD);
+    }
+
     [Fact]
     public async Task ReadDescriptor_MissingDescriptor_Throws()
     {

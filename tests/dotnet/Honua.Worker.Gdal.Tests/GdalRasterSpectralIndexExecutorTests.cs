@@ -50,7 +50,7 @@ public sealed class GdalRasterSpectralIndexExecutorTests
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
             context.Artifacts.Single().Should().StartWith("data:image/tiff");
 
-            var args = runner.Invocations.Single().Arguments;
+            var args = runner.Invocations.Single(i => i.Tool == "gdal_calc.py").Arguments;
             args.Should().Contain(a => a.StartsWith("-A")).And.Contain(a => a.StartsWith("-B"));
             args.Should().ContainInOrder("--calc", "(1.0*A-B)/(1.0*A+B)");
             args.Should().ContainInOrder("--type", "Float32");
@@ -78,7 +78,7 @@ public sealed class GdalRasterSpectralIndexExecutorTests
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
-            var args = runner.Invocations.Single().Arguments;
+            var args = runner.Invocations.Single(i => i.Tool == "gdal_calc.py").Arguments;
             var calcIndex = args.ToList().IndexOf("--calc");
             args[calcIndex + 1].Should().Contain("0.25");
         }

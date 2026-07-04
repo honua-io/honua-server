@@ -251,6 +251,76 @@ public class PMTilesWriterTests
         writer.TileCount.Should().Be(2);
     }
 
+    /// <summary>
+    /// Regression test for BH-018: latitude header fields must be clamped to [-90, 90],
+    /// not to the longitude range [-180, 180].  A swapped or out-of-range latitude (e.g.
+    /// 91°) must be clamped to 90° before being encoded as an E7 integer.
+    /// </summary>
+    [Fact]
+    public async Task WriteAsync_OutOfRangeLatitude_ClampsToLatitudeBounds()
+    {
+        var metadata = new PMTilesArchiveMetadata
+        {
+            MinLon = -180,
+            MinLat = -91,   // out of range — must be clamped to -90
+            MaxLon = 180,
+            MaxLat = 91,    // out of range — must be clamped to 90
+            MinZoom = 0,
+            MaxZoom = 1
+        };
+
+        var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
+        writer.AddTile(0, 0, 0, CreateFakeTileData(50));
+
+        using var stream = new MemoryStream();
+        await writer.WriteAsync(stream, metadata);
+
+        stream.Position = 0;
+        var headerBytes = new byte[PMTilesHeader.HeaderSize];
+        await stream.ReadExactlyAsync(headerBytes);
+        var header = PMTilesHeader.ReadFrom(headerBytes);
+
+        // Latitudes must be clamped to ±90 × 10^7.
+        header.MinLatE7.Should().Be(-900_000_000, "MinLat=-91 must be clamped to -90");
+        header.MaxLatE7.Should().Be(900_000_000, "MaxLat=91 must be clamped to 90");
+
+        // Longitudes must remain at their full ±180 × 10^7 encoding.
+        header.MinLonE7.Should().Be(-1_800_000_000);
+        header.MaxLonE7.Should().Be(1_800_000_000);
+    }
+
+    /// <summary>
+    /// Regression test for BH-018 (negative case): a longitude of 181 must be clamped
+    /// to 180, ensuring the longitude helper also enforces its own bounds.
+    /// </summary>
+    [Fact]
+    public async Task WriteAsync_OutOfRangeLongitude_ClampsToLongitudeBounds()
+    {
+        var metadata = new PMTilesArchiveMetadata
+        {
+            MinLon = -181,   // out of range — must be clamped to -180
+            MinLat = -85,
+            MaxLon = 181,    // out of range — must be clamped to 180
+            MaxLat = 85,
+            MinZoom = 0,
+            MaxZoom = 1
+        };
+
+        var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
+        writer.AddTile(0, 0, 0, CreateFakeTileData(50));
+
+        using var stream = new MemoryStream();
+        await writer.WriteAsync(stream, metadata);
+
+        stream.Position = 0;
+        var headerBytes = new byte[PMTilesHeader.HeaderSize];
+        await stream.ReadExactlyAsync(headerBytes);
+        var header = PMTilesHeader.ReadFrom(headerBytes);
+
+        header.MinLonE7.Should().Be(-1_800_000_000, "MinLon=-181 must be clamped to -180");
+        header.MaxLonE7.Should().Be(1_800_000_000, "MaxLon=181 must be clamped to 180");
+    }
+
     private static byte[] CreateFakeTileData(int size)
     {
         var data = new byte[size];

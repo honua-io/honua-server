@@ -354,6 +354,40 @@ public class DuckDBFeatureQueryBuilderTests
             _builder.BuildSelectQuery(999, new FeatureQuery()));
     }
 
+    /// <summary>
+    /// Regression test for BH-016: a WHERE clause that references a field not in the
+    /// layer mapping must produce ArgumentException (HTTP 400), not let the unknown
+    /// column reach DuckDB where it causes a DbException (HTTP 500).
+    /// </summary>
+    [Theory]
+    [InlineData("populaton > 1000")]          // misspelled — not in mapping
+    [InlineData("nonexistent = 'foo'")]        // entirely unknown field
+    [InlineData("nonexistent IS NULL")]        // null-check form
+    [InlineData("nonexistent IS NOT NULL")]    // null-check with NOT
+    public void BuildSelectQuery_WhereReferencesUnknownField_ThrowsArgumentException(string where)
+    {
+        var query = new FeatureQuery { Where = where };
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _builder.BuildSelectQuery(TestLayerId, query));
+
+        Assert.Contains("not defined on layer", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("name = 'foo'")]       // name is in mapping
+    [InlineData("area > 100")]         // area is in mapping
+    [InlineData("type IS NULL")]       // type is in mapping
+    [InlineData("NAME = 'foo'")]       // case-insensitive match
+    public void BuildSelectQuery_WhereReferencesKnownField_Succeeds(string where)
+    {
+        var query = new FeatureQuery { Where = where };
+
+        // Should not throw — known fields must pass the layer-membership check.
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+        Assert.NotEmpty(result.Sql);
+    }
+
     [Fact]
     public void BuildSelectQuery_WithOrderBy_GeneratesOrderClause()
     {
