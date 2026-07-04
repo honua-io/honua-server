@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
@@ -452,6 +452,21 @@ public sealed class EditProcessor : IEditProcessor
                 return EditValidationResult.Failure("Attributes required for create operation");
             }
 
+            // BH2-014: Validate that every required (non-nullable, non-geometry, non-id) field is
+            // present when the caller supplies a partial attribute dictionary. Previously only the
+            // fully-absent case was caught here; a feature that provides some attributes but omits a
+            // required field would pass validation and then fail with an opaque DB NOT NULL error.
+            // Mirror the BH-014 geometry check below so the error names the missing fields.
+            if (feature.Attributes?.IsEmpty == false)
+            {
+                var missingFields = FindMissingRequiredFields(resource, feature.Attributes);
+                if (missingFields.Count > 0)
+                {
+                    return EditValidationResult.Failure(
+                        $"Required attribute(s) missing for create operation: {string.Join(", ", missingFields)}");
+                }
+            }
+
             // BH-014: Validate geometry exists if the layer is spatial so the error surfaces
             // as a clean validation failure rather than a DB NOT NULL constraint violation.
             if (feature.Geometry is null && RequiresGeometry(resource))
@@ -758,6 +773,65 @@ public sealed class EditProcessor : IEditProcessor
         next:;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Returns the names of all required (non-nullable, non-geometry, non-id) schema fields
+    /// that are absent from the supplied attribute dictionary. Uses case-insensitive field-name
+    /// matching so the check is consistent regardless of how the caller built the dictionary.
+    /// </summary>
+    private static List<string> FindMissingRequiredFields(
+        MetadataV2Resource resource,
+        ImmutableDictionary<string, object?> attributes)
+    {
+        var missing = new List<string>();
+
+        foreach (var field in resource.SchemaFields)
+        {
+            if (field.Nullable)
+            {
+                continue;
+            }
+            if (field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
+            {
+                continue;
+            }
+
+            // Skip the primary id field — it is generated server-side on create.
+            var isPrimaryId = false;
+            for (var i = 0; i < field.SemanticRoles.Count; i++)
+            {
+                if (string.Equals(field.SemanticRoles[i], "id.primary", StringComparison.OrdinalIgnoreCase))
+                {
+                    isPrimaryId = true;
+                    break;
+                }
+            }
+
+            if (isPrimaryId)
+            {
+                continue;
+            }
+
+            // Check presence using case-insensitive comparison regardless of the dictionary's
+            // own key comparer (attributes may arrive from different protocol paths).
+            var present = false;
+            foreach (var key in attributes.Keys)
+            {
+                if (string.Equals(key, field.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    present = true;
+                    break;
+                }
+            }
+
+            if (!present)
+            {
+                missing.Add(field.Name);
+            }
+        }
+
+        return missing;
     }
 
     private static bool RequiresGeometry(MetadataV2Resource resource)

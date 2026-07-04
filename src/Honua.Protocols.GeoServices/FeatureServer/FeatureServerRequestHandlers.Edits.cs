@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
@@ -613,6 +613,13 @@ internal static partial class FeatureServerEndpoints
 
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
 
+        // BH2-013: Track whether any non-first layer returned an error response so the
+        // overall HTTP status code can be raised to 207 Multi-Status. Earlier layers'
+        // edits are already committed and their results are preserved in the per-layer
+        // entries, but a 200 response for a request that partially failed misleads
+        // HTTP-status-checking clients and monitoring systems.
+        var hasPartialFailure = false;
+
         for (var i = 0; i < orderedLayerIds.Count; i++)
         {
             var entry = mergedEdits[orderedLayerIds[i]];
@@ -676,11 +683,23 @@ internal static partial class FeatureServerEndpoints
                     UpdateResults = BuildFeatureFailureResults(entry.Updates, description) ?? [],
                     DeleteResults = BuildDeleteFailureResults(entry.Deletes, description) ?? []
                 };
+
+                // BH2-013: Any non-success status (4xx/5xx) on a non-first layer is a
+                // partial failure; raise the overall response to 207 Multi-Status so
+                // HTTP-status-checking clients (and monitoring) detect the partial failure.
+                if (statusCode >= 400)
+                {
+                    hasPartialFailure = true;
+                }
             }
         }
 
         var serviceResponse = new ServiceApplyEditsResponse { EditResults = results };
-        return Results.Json(serviceResponse, FeatureServerJsonContext.Default.ServiceApplyEditsResponse, contentType: "application/json");
+        var responseStatusCode = hasPartialFailure
+            ? StatusCodes.Status207MultiStatus
+            : StatusCodes.Status200OK;
+        return Results.Json(serviceResponse, FeatureServerJsonContext.Default.ServiceApplyEditsResponse,
+            statusCode: responseStatusCode, contentType: "application/json");
     }
 
     /// <summary>

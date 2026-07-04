@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
@@ -115,8 +115,12 @@ internal sealed class FeatureServerEditsHandler(
             var service = validationResult.Service!;
             var publication = validationResult.Publication!;
             var resource = validationResult.Resource!;
-            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                httpContext, resource, AuthorizationOperation.Update, service, cancellationToken).ConfigureAwait(false);
+            // BH2-012: Use OR-style coarse gate — allow if the principal holds any one of
+            // Update, Insert, or Delete so a Delete-only or Insert-only RBAC grant holder
+            // is not rejected before the request body has been inspected. Per-type checks
+            // below (lines ~172-190) remain the authoritative per-operation enforcers.
+            var accessError = await AccessPolicyHelpers.RequireAnyMutatingOperationAccessAsync(
+                httpContext, resource, service, cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
