@@ -187,4 +187,52 @@ public class ZarrSubsetReaderTests
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
+
+    /// <summary>
+    /// Regression test for BH-017: a Zarr store that declares chunk dimensions whose
+    /// product × element-size exceeds MaxBytesPerRequest must be rejected before any
+    /// per-chunk heap allocation is attempted.  With MaxDegreeOfParallelism=8, reading
+    /// 8 such chunks would otherwise allocate ~2 GB of heap before the caller receives
+    /// any error.
+    /// </summary>
+    [Fact]
+    public async Task ReadSubsetAsync_OversizedChunkDimensions_ThrowsBeforeAllocatingChunkBuffer()
+    {
+        // shape=[4,4] but chunks=[8200,8200] with dtype=<f4:
+        //   chunkBytes = 8200 * 8200 * 4 = 268,960,000 > MaxBytesPerRequest (256 MiB)
+        // The array total (4*4*4=64 bytes) is well under the total-bytes cap so
+        // only the per-chunk guard added by BH-017 stops the allocation.
+        var objects = new System.Collections.Generic.Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["datasets/huge/.zarray"] = System.Text.Encoding.UTF8.GetBytes(
+                """{"chunks":[8200,8200],"compressor":null,"dtype":"<f4","fill_value":0,"filters":null,"order":"C","shape":[4,4],"zarr_format":2}""")
+        };
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/huge");
+
+        var request = new ZarrSubsetRequest
+        {
+            Variable = "huge",
+            Start = new[] { 0, 0 },
+            Stop = new[] { 4, 4 }
+        };
+
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/huge", metadata, request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*chunk size*exceeds*");
+    }
+
+    /// <summary>
+    /// Regression test for BH-017: ResolveElementSize must reject unrealistically
+    /// large element-size suffixes (> 16) before any array-wide computation occurs.
+    /// </summary>
+    [Fact]
+    public void ResolveElementSize_ElementSizeExceedsMaxSupported_Throws()
+    {
+        var act = () => ZarrSubsetReader.ResolveElementSize("<f32");
+
+        act.Should().Throw<InvalidDataException>()
+            .WithMessage("*element size*exceeds*");
+    }
 }

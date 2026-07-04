@@ -148,15 +148,23 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
     }
 
     private static string BuildKey(ApplyEditsIdempotencyScope scope)
-        => string.Concat(
+    {
+        // Hash the principal to prevent colon-based key collisions: a principal name
+        // containing ":" would allow crafted names to collide with other key segments.
+        // SHA256.HashData is AOT-compatible and allocation-efficient in .NET 6+.
+        var principalBytes = System.Text.Encoding.UTF8.GetBytes(scope.Principal);
+        var hash = System.Security.Cryptography.SHA256.HashData(principalBytes);
+        var principalHash = Convert.ToHexString(hash);
+        return string.Concat(
             KeyPrefix,
             scope.ServiceId,
             ":",
             scope.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ":",
-            scope.Principal,
+            principalHash,
             ":",
             scope.IdempotencyKey);
+    }
 
     private static byte[] Serialize(ApplyEditsResponse response)
         => JsonSerializer.SerializeToUtf8Bytes(response, FeatureServerJsonContext.Default.ApplyEditsResponse);

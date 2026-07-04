@@ -988,6 +988,15 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
+    private static void EnsureFieldIsConfigured(string fieldName, DuckDBLayerMapping mapping)
+    {
+        if (!mapping.AttributeColumns.Contains(fieldName, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                $"Field '{fieldName}' is not defined on layer {mapping.LayerId}.");
+        }
+    }
+
     private static string ValidateCalendarUnit(string unit) =>
         unit.ToLowerInvariant() switch
         {
@@ -1064,6 +1073,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             {
                 var field = nullMatch.Groups["field"].Value;
                 ValidateFieldName(field);
+                EnsureFieldIsConfigured(field, mapping);
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
                 parameterizedExpressions.Add($"\"{field}\" IS {notClause}NULL");
@@ -1076,6 +1086,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             {
                 var field = compMatch.Groups["field"].Value;
                 ValidateFieldName(field);
+                EnsureFieldIsConfigured(field, mapping);
                 var op = NormalizeOperator(compMatch.Groups["op"].Value);
                 var valueToken = compMatch.Groups["value"].Value;
                 var value = ParseValueToken(valueToken);

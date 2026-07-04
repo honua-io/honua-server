@@ -185,7 +185,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
+        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken, AuthorizationOperation.Delete);
         if (authorizationError != null)
         {
             return authorizationError;
@@ -858,7 +858,8 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AuthorizationOperation operation = AuthorizationOperation.Update)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
@@ -876,7 +877,7 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var resource = validationResult.Resource!;
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource, AuthorizationOperation.Update, service, cancellationToken).ConfigureAwait(false);
+            context, resource, operation, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;

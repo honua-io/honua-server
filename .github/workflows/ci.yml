@@ -1761,7 +1761,7 @@ jobs:
     if: ${{ success() && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 

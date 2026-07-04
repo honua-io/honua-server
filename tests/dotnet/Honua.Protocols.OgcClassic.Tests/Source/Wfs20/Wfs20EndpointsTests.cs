@@ -2002,6 +2002,244 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         allowedValues.Should().Contain("FALSE");
     }
 
+    // ---- Regression tests for BH-008, BH-009, BH-010, BH-011 ----
+
+    /// <summary>
+    /// BH-008 regression: ISO 19142 §15.2.5.3 requires a zero-match Delete to succeed and
+    /// report totalDeleted=0, not return a 400 error.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Delete_ZeroMatchFilter_ReturnsSuccessWithZeroDeleted()
+    {
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:Delete typeName="test_layer">
+                <fes:Filter>
+                  <fes:ResourceId rid="test_layer.999999999" />
+                </fes:Filter>
+              </wfs:Delete>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        // Must be 200, not 400 — zero-match is a valid no-op per ISO 19142 §15.2.5.3.
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("TransactionResponse");
+        content.Should().Contain("<wfs:totalDeleted>0</wfs:totalDeleted>");
+    }
+
+    /// <summary>
+    /// BH-008 regression: a zero-match Update filter must also succeed with totalUpdated=0.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Update_ZeroMatchFilter_ReturnsSuccessWithZeroUpdated()
+    {
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:Update typeName="test_layer">
+                <wfs:Property>
+                  <wfs:ValueReference>name</wfs:ValueReference>
+                  <wfs:Value>should-not-be-written</wfs:Value>
+                </wfs:Property>
+                <fes:Filter>
+                  <fes:ResourceId rid="test_layer.999999999" />
+                </fes:Filter>
+              </wfs:Update>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("TransactionResponse");
+        content.Should().Contain("<wfs:totalUpdated>0</wfs:totalUpdated>");
+    }
+
+    /// <summary>
+    /// BH-009 regression: a multi-layer WFS Transaction with rollbackOnFailure=true (the
+    /// default) must be rejected before any data is committed because cross-layer atomicity
+    /// cannot be guaranteed.  Using rollbackOnFailure=false must still succeed (see the
+    /// existing Wfs_Transaction_MultiLayer_Insert test).
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_MultiLayer_DefaultRollbackOnFailure_ReturnsOperationProcessingFailed()
+    {
+        // rollbackOnFailure defaults to true when the attribute is omitted (ISO 19142 §15.2.5.2).
+        // A multi-layer transaction cannot provide cross-layer atomicity, so it must be rejected
+        // before committing anything to avoid partial-commit state.
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                xmlns:honua="http://honua.io/wfs">
+              <wfs:Insert handle="insert-primary">
+                <honua:test_layer>
+                  <honua:name>BH009 Primary Layer Feature</honua:name>
+                  <honua:shape>
+                    <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
+                      <gml:pos>37.150 -122.450</gml:pos>
+                    </gml:Point>
+                  </honua:shape>
+                </honua:test_layer>
+              </wfs:Insert>
+              <wfs:Insert handle="insert-related">
+                <honua:related_test_layer_1>
+                  <honua:name>BH009 Related Layer Feature</honua:name>
+                  <honua:related_id>1</honua:related_id>
+                  <honua:shape>
+                    <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
+                      <gml:pos>37.250 -122.550</gml:pos>
+                    </gml:Point>
+                  </honua:shape>
+                </honua:related_test_layer_1>
+              </wfs:Insert>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"OperationProcessingFailed\"");
+        content.Should().ContainAny(
+            "cross-layer atomicity",
+            "rollbackOnFailure",
+            "Multi-layer");
+    }
+
+    /// <summary>
+    /// BH-010 regression: a WFS GetFeature POST request with an XML query containing a
+    /// fes:Filter must carry that filter through into the 'next' paging link.  Before the
+    /// fix, following page 2 fetched the unfiltered result set.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_XmlQueryWithFilter_PagingNextLinkPreservesFilter()
+    {
+        // Insert two features with the same distinctive name so both match the filter and
+        // COUNT=1 forces a next-page link.
+        const string marker = "BH010PagingFilter";
+        await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"{marker} A");
+        await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"{marker} B");
+
+        var requestBody = $"""
+            <wfs:GetFeature service="WFS" version="2.0.0" count="1"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:Query typeNames="test_layer">
+                <fes:Filter>
+                  <fes:PropertyIsLike wildCard="%" singleChar="_" escapeChar="\\">
+                    <fes:ValueReference>name</fes:ValueReference>
+                    <fes:Literal>{marker}%</fes:Literal>
+                  </fes:PropertyIsLike>
+                </fes:Filter>
+              </wfs:Query>
+            </wfs:GetFeature>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        // Parse the XML response; wfs:FeatureCollection must have a 'next' attribute that
+        // includes the FILTER parameter so page 2 still applies the same predicate.
+        var doc = XDocument.Parse(content);
+        var featureCollection = doc.Root;
+        featureCollection.Should().NotBeNull();
+
+        var nextAttribute = featureCollection!
+            .Attributes()
+            .FirstOrDefault(a => string.Equals(a.Name.LocalName, "next", StringComparison.OrdinalIgnoreCase));
+        nextAttribute.Should().NotBeNull("a second page exists so a 'next' paging link must be present");
+
+        var nextHref = nextAttribute!.Value;
+        nextHref.Should().Contain("FILTER", "the paging link must carry the original per-query filter");
+    }
+
+    /// <summary>
+    /// BH-011 regression: a WFS Transaction inserting a 3D LineString (srsDimension=3) with
+    /// an even vertex count must succeed and store the correct 2-point geometry.  Before the
+    /// fix, 6 ordinates (2 vertices × 3) were mis-parsed as 3 2D coordinates.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Insert_3dGmlPosList_EvenVertexCount_StoresCorrectGeometry()
+    {
+        // 2-vertex 3D LineString: x1 y1 z1 x2 y2 z2 → 6 ordinates.
+        // Before the fix these were mis-parsed as 3 2D points with the wrong coordinates.
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                xmlns:honua="http://honua.io/wfs">
+              <wfs:Insert handle="insert-3d-line">
+                <honua:test_layer>
+                  <honua:name>BH011 3D LineString</honua:name>
+                  <honua:shape>
+                    <gml:LineString srsName="urn:ogc:def:crs:EPSG::4326" srsDimension="3">
+                      <gml:posList srsDimension="3">37.1 -122.1 10.0 37.2 -122.2 20.0</gml:posList>
+                    </gml:LineString>
+                  </honua:shape>
+                </honua:test_layer>
+              </wfs:Insert>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        // Before the fix this returned 400 or stored wrong geometry; now it must succeed.
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("TransactionResponse");
+        content.Should().Contain("<wfs:totalInserted>1</wfs:totalInserted>");
+
+        // Retrieve the feature and verify the geometry is a 2-vertex LineString, not 3.
+        var ridMatch = Regex.Match(content, "rid=\"(?<rid>test_layer\\.\\d+)\"", RegexOptions.CultureInvariant);
+        ridMatch.Success.Should().BeTrue(content);
+        var rid = ridMatch.Groups["rid"].Value;
+
+        var queryResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID={rid}&OUTPUTFORMAT=application%2Fjson");
+        var queryContent = await queryResponse.Content.ReadAsStringAsync();
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
+
+        using var json = JsonDocument.Parse(queryContent);
+        var coordinates = json.RootElement
+            .GetProperty("features")[0]
+            .GetProperty("geometry")
+            .GetProperty("coordinates");
+
+        // A correct 2-point LineString has exactly 2 coordinate pairs.
+        coordinates.GetArrayLength().Should().Be(2,
+            "a 3D GML posList with 2 vertices must produce a 2-point LineString, not 3");
+    }
+
     private static string?[] ReadGeoJsonFeatureNames(string responseBody)
     {
         using var document = JsonDocument.Parse(responseBody);

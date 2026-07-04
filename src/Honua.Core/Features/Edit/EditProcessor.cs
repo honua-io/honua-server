@@ -451,6 +451,15 @@ public sealed class EditProcessor : IEditProcessor
             {
                 return EditValidationResult.Failure("Attributes required for create operation");
             }
+
+            // A spatial layer does not universally require geometry: a nullable geometry
+            // column legitimately accepts attribute-only ("null geometry") creates, which
+            // ArcGIS FeatureServer and the OGC/OData edit paths all support (see
+            // GeometryValidationTests.ApplyEdits_WithNullGeometry_SucceedsWhenAllowed and
+            // Issue #45). The prior blanket "geometry required on a spatial layer" gate
+            // (BH-014, #2423) rejected those valid attribute-only creates; NOT NULL geometry
+            // columns are enforced by the database constraint, mapped through the shared
+            // error helpers rather than a client-side pre-check.
         }
 
         return EditValidationResult.Success(warnings.Count > 0 ? warnings : null);
@@ -751,11 +760,6 @@ public sealed class EditProcessor : IEditProcessor
         next:;
         }
         return false;
-    }
-
-    private static bool RequiresGeometry(MetadataV2Resource resource)
-    {
-        return resource.Spatial?.GeometryType is { } gt && gt != MetadataV2GeometryType.None;
     }
 
 }

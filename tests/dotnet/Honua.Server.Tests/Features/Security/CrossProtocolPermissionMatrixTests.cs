@@ -435,6 +435,59 @@ public sealed class CrossProtocolPermissionMatrixTests
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
 
+    // ---- FeatureServer deleteFeatures (BH-001 regression) ----
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
+    public async Task DeleteFeatures_DeleteGrantOverridesCoarseDenyForObjectIdsPath()
+    {
+        // BH-001: the deleteFeatures pre-body gate must gate on AuthorizationOperation.Delete,
+        // not Update. A principal with only a "delete" grant must pass the gate.
+        using var factory = CreateWriteFactory(Grant("delete"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var content = new StringContent(
+            "objectIds=1&f=json",
+            System.Text.Encoding.UTF8,
+            "application/x-www-form-urlencoded");
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/deleteFeatures",
+            content);
+
+        // 200 OK (no matching features) or 404; not 401/403 which would mean
+        // the wrong authorization operation was checked.
+        response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Forbidden);
+    }
+
+    // ---- FeatureServer applyEdits delete payload (BH-002 regression) ----
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_DeletePayload_DeleteGrantAllowsDeletesWhenUpdateGrantDoesNot()
+    {
+        // BH-002: the applyEdits handler must check AuthorizationOperation.Delete for a
+        // deletes-only payload. A principal with only a "delete" grant (no "update") must
+        // pass; if Update were the only check this would incorrectly deny.
+        using var factory = CreateWriteFactory(Grant("delete"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var applyEditsContent = new StringContent(
+            @"{""deletes"":[1,2]}",
+            System.Text.Encoding.UTF8,
+            "application/json");
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
+            applyEditsContent);
+
+        response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Forbidden);
+    }
+
     // ---- WFS GetFeature + Transaction ----
     //
     // WFS read (GetFeature / capabilities feature-type list) flows through the
