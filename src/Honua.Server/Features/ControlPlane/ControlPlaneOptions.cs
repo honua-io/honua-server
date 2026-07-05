@@ -39,6 +39,90 @@ internal sealed class ControlPlaneOptions
     /// Kubernetes is not used; populated when operators enable the adapter.
     /// </summary>
     public KubernetesExecutionOptions Kubernetes { get; set; } = new();
+
+    /// <summary>
+    /// Optional versioned platform release that co-versions the serving and geoprocessing planes
+    /// (ADR-0060 WS2). When declared, both catalogs project their artifact from it: deploy targets
+    /// without an explicit artifact inherit <see cref="PlatformReleaseOptions.ServingArtifactReference"/>
+    /// and execution workloads without an explicit artifact inherit the matching worker image, so an
+    /// upgrade is a single diff bumping both planes together.
+    /// </summary>
+    public PlatformReleaseOptions PlatformRelease { get; set; } = new();
+}
+
+/// <summary>
+/// Configuration model for the versioned platform release desired state.
+/// </summary>
+internal sealed class PlatformReleaseOptions
+{
+    /// <summary>
+    /// Stable release version that co-versions both planes (for example <c>2026.07.0</c>).
+    /// </summary>
+    public string Version { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Serving-plane artifact/image reference projected onto deploy targets that pin no explicit artifact.
+    /// </summary>
+    public string? ServingArtifactReference { get; set; }
+
+    /// <summary>
+    /// Geoprocessing worker images declared by this release, keyed by runtime profile.
+    /// </summary>
+    public List<PlatformReleaseWorkerImageOptions> Workers { get; set; } = [];
+
+    /// <summary>
+    /// Whether this section is at its declared-nothing default and should be treated as "no release".
+    /// </summary>
+    public bool IsEmpty =>
+        string.IsNullOrWhiteSpace(Version) &&
+        string.IsNullOrWhiteSpace(ServingArtifactReference) &&
+        Workers.Count == 0;
+
+    /// <summary>
+    /// Maps this configuration section into the shared <see cref="PlatformReleaseDefinition"/> domain
+    /// model, or returns null when no platform release is declared.
+    /// </summary>
+    /// <returns>The mapped release definition, or null when the section is empty.</returns>
+    public PlatformReleaseDefinition? ToDefinition()
+    {
+        if (IsEmpty)
+        {
+            return null;
+        }
+
+        return new PlatformReleaseDefinition
+        {
+            Version = Version.Trim(),
+            ServingArtifactReference = string.IsNullOrWhiteSpace(ServingArtifactReference)
+                ? null
+                : ServingArtifactReference.Trim(),
+            Workers = Workers
+                .Select(worker => new PlatformReleaseWorkerImage
+                {
+                    RuntimeProfile = string.IsNullOrWhiteSpace(worker.RuntimeProfile)
+                        ? null
+                        : worker.RuntimeProfile.Trim(),
+                    ArtifactReference = worker.ArtifactReference?.Trim() ?? string.Empty
+                })
+                .ToArray()
+        };
+    }
+}
+
+/// <summary>
+/// Configuration model for a single platform-release geoprocessing worker image.
+/// </summary>
+internal sealed class PlatformReleaseWorkerImageOptions
+{
+    /// <summary>
+    /// Runtime profile (workload family) this image serves; empty declares the default image.
+    /// </summary>
+    public string? RuntimeProfile { get; set; }
+
+    /// <summary>
+    /// Worker container image / artifact reference for this runtime profile.
+    /// </summary>
+    public string ArtifactReference { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -269,6 +353,11 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
     protected override void ValidateOptions(ControlPlaneOptions options, List<string> failures)
     {
         ValidateKubernetes(options.Kubernetes, failures);
+
+        PlatformReleaseValidation.Validate(
+            options.PlatformRelease.ToDefinition(),
+            $"{ControlPlaneOptions.SectionName}:PlatformRelease",
+            failures);
 
         var connectionIds = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < options.TelemetryConnections.Count; i++)
