@@ -608,8 +608,26 @@ internal static partial class ImportEndpoints
                     return;
                 }
 
+                // #2459 / ADR-0060: a background import is consumed by a worker in a later
+                // request, possibly on a different node. Its staged input must live in the
+                // shared object store (ICloudFileStorage), never on this node's local temp
+                // disk. cloudFileId is null only when no file storage is configured; refuse
+                // to queue in that case rather than stranding cross-request state on local
+                // disk that another node cannot read.
+                if (cloudFileId == null)
+                {
+                    await AdminResponseWriter.WriteErrorAsync(
+                        context,
+                        "Background import requires shared file storage. Configure FileStorage or retry as a synchronous import.",
+                        StatusCodes.Status503ServiceUnavailable);
+                    return;
+                }
+
                 var jobId = await jobService.QueueImportAsync(importRequest, request.File.SizeBytes, cancellationToken);
-                deleteLocalFile = cloudFileId != null;
+
+                // The local staging file is within-request scratch; the durable copy the worker
+                // reads lives in object storage (CloudFileId). Always delete the local temp.
+                deleteLocalFile = true;
 
                 var response = new BackgroundImportResponse
                 {
@@ -1170,6 +1188,12 @@ internal static partial class ImportEndpoints
            bool.TryParse(value, out var parsed) &&
            parsed;
 
+    // #2459 / ADR-0060: the staging directory is strictly WITHIN-REQUEST scratch. A staged
+    // file is consumed and deleted inside the same HTTP request: the synchronous import path
+    // reads it directly and the finally block deletes it, while the background path first
+    // copies it into the shared object store (ICloudFileStorage) and hands the worker a
+    // CloudFileId, then deletes the local temp. No durable, cross-request, or cross-node state
+    // may be left under this path — a background job must never be queued referencing it.
     private static string CreateStagedImportFilePath(string fileName)
     {
         var extension = Path.GetExtension(fileName);
@@ -1601,6 +1625,14 @@ internal sealed record StagedImportFile
 {
     public required string FileName { get; init; }
     public string? ContentType { get; init; }
+
+    /// <summary>
+    /// Path to the within-request staging scratch file under <c>honua-import-staging/</c>.
+    /// This is transient local scratch only (ADR-0060): it is read and deleted inside the
+    /// same HTTP request. Durable, cross-request handoff to a background worker goes through
+    /// the shared object store (<c>ICloudFileStorage</c> / <c>ImportRequest.CloudFileId</c>),
+    /// never this local path.
+    /// </summary>
     public required string LocalFilePath { get; init; }
     public long SizeBytes { get; init; }
 }

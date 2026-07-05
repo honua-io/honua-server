@@ -86,6 +86,16 @@ internal static class ImportExportTileOperationsRegistration
         services.TryAddScoped<IMigrationPerformanceEvidenceStore>(sp =>
             sp.GetRequiredService<InMemoryMigrationPerformanceEvidenceStore>());
 
+        // Migration-run checkpoint store (#2459, ADR-0060). Durable, cross-request resume
+        // state must not live on a compute node's local disk. The in-memory store is the
+        // default so stores-less dev/test profiles still resolve the dependency; it is a
+        // process-wide singleton (a per-scope instance would silently drop checkpoints
+        // between requests). The Postgres registration (AddPostgreSqlServices, which runs
+        // earlier) overrides it via TryAdd with the durable shared-store implementation.
+        services.AddSingleton<InMemoryMigrationRunCheckpointStore>();
+        services.TryAddScoped<IMigrationRunCheckpointStore>(sp =>
+            sp.GetRequiredService<InMemoryMigrationRunCheckpointStore>());
+
         // Export background service with durable request persistence and a bounded scheduler.
         services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<string>(
             new System.Threading.Channels.BoundedChannelOptions(4)
