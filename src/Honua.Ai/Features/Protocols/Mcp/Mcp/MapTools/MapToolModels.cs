@@ -248,3 +248,137 @@ internal sealed class McpRenderLayerRef
     [JsonPropertyName("layerId")]
     public int? LayerId { get; set; }
 }
+
+// -----------------------------------------------------------------------
+// honua_edit_features
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// Arguments for <c>honua_edit_features</c>. Carries the transactional
+/// add/update/delete edit sets against a single published editable layer. The
+/// tool is a thin adapter over the shared edit/transaction pipeline
+/// (<see cref="Honua.Core.Features.Edit.IEditProcessor"/> +
+/// <see cref="Honua.Core.Features.FeatureStore.Abstractions.IFeatureWriter"/>);
+/// it introduces no edit semantics of its own.
+/// </summary>
+internal sealed class McpEditFeaturesArgument
+{
+    [JsonPropertyName("serviceId")]
+    public string? ServiceId { get; set; }
+
+    [JsonPropertyName("layerId")]
+    public int? LayerId { get; set; }
+
+    /// <summary>Spatial reference (SRID/WKID) of the input feature geometries; defaults to 4326 (WGS 84).</summary>
+    [JsonPropertyName("srid")]
+    public int? Srid { get; set; }
+
+    /// <summary>Features to insert. Each carries GeoJSON geometry and an attribute map.</summary>
+    [JsonPropertyName("adds")]
+    public IReadOnlyList<McpEditFeature>? Adds { get; set; }
+
+    /// <summary>Features to update. Each MUST carry an <c>objectId</c> identifying the existing feature.</summary>
+    [JsonPropertyName("updates")]
+    public IReadOnlyList<McpEditFeature>? Updates { get; set; }
+
+    /// <summary>Object IDs of features to delete.</summary>
+    [JsonPropertyName("deletes")]
+    public IReadOnlyList<long>? Deletes { get; set; }
+
+    /// <summary>When true (default), any failed edit rolls back the entire transaction (all-or-nothing).</summary>
+    [JsonPropertyName("rollbackOnFailure")]
+    public bool? RollbackOnFailure { get; set; }
+
+    /// <summary>When true (default), per-edit results are returned; when false only the transaction summary is emitted.</summary>
+    [JsonPropertyName("returnEditResults")]
+    public bool? ReturnEditResults { get; set; }
+}
+
+/// <summary>
+/// A single feature in a <c>honua_edit_features</c> add/update set. Geometry is an
+/// RFC 7946 GeoJSON geometry object; <see cref="Attributes"/> is a flat
+/// attribute name/value map. <see cref="ObjectId"/> is required for updates
+/// (and <see cref="GlobalId"/> may accompany it); both are ignored for adds,
+/// where the store assigns the object ID.
+/// </summary>
+internal sealed class McpEditFeature
+{
+    [JsonPropertyName("objectId")]
+    public long? ObjectId { get; set; }
+
+    [JsonPropertyName("globalId")]
+    public string? GlobalId { get; set; }
+
+    /// <summary>RFC 7946 GeoJSON geometry object (e.g. <c>{"type":"Point","coordinates":[1,2]}</c>). Optional for attribute-only edits.</summary>
+    [JsonPropertyName("geometry")]
+    public System.Text.Json.Nodes.JsonNode? Geometry { get; set; }
+
+    /// <summary>Flat attribute name/value map applied to the feature.</summary>
+    [JsonPropertyName("attributes")]
+    public System.Text.Json.Nodes.JsonNode? Attributes { get; set; }
+}
+
+/// <summary>
+/// Output for <c>honua_edit_features</c>: per-edit results grouped by edit kind
+/// plus a transaction summary, projected from the shared pipeline's
+/// <see cref="Honua.Core.Features.FeatureStore.Domain.FeatureEditResult"/>.
+/// </summary>
+internal sealed class McpEditFeaturesOutput
+{
+    [JsonPropertyName("serviceId")]
+    public string ServiceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("layerId")]
+    public int LayerId { get; set; }
+
+    [JsonPropertyName("addResults")]
+    public IReadOnlyList<McpEditResult> AddResults { get; set; } = [];
+
+    [JsonPropertyName("updateResults")]
+    public IReadOnlyList<McpEditResult> UpdateResults { get; set; } = [];
+
+    [JsonPropertyName("deleteResults")]
+    public IReadOnlyList<McpEditResult> DeleteResults { get; set; } = [];
+
+    [JsonPropertyName("summary")]
+    public McpEditSummary Summary { get; set; } = new();
+}
+
+/// <summary>
+/// One per-edit result. <see cref="Index"/> is the zero-based position of the edit
+/// within its submitted array; <see cref="ObjectId"/> carries the assigned
+/// (create) or targeted (update/delete) object ID when known.
+/// </summary>
+internal sealed class McpEditResult
+{
+    [JsonPropertyName("index")]
+    public int Index { get; set; }
+
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("objectId")]
+    public long? ObjectId { get; set; }
+
+    [JsonPropertyName("globalId")]
+    public string? GlobalId { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// Transaction summary for a <c>honua_edit_features</c> call: how many edits were
+/// applied, how many failed, and whether the whole transaction was rolled back.
+/// </summary>
+internal sealed class McpEditSummary
+{
+    [JsonPropertyName("applied")]
+    public int Applied { get; set; }
+
+    [JsonPropertyName("failed")]
+    public int Failed { get; set; }
+
+    [JsonPropertyName("rolledBack")]
+    public bool RolledBack { get; set; }
+}
