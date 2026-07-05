@@ -376,7 +376,11 @@ public static class MediaTypes
     /// <summary>
     /// GML 3.2 media type.
     /// </summary>
-    public const string Gml = "application/gml+xml;version=3.2";
+    /// <remarks>
+    /// RFC 2045 §5.1 and RFC 9110 §5.6.6 require optional whitespace after
+    /// the semicolon separator in media-type parameter lists.
+    /// </remarks>
+    public const string Gml = "application/gml+xml; version=3.2";
 
     /// <summary>
     /// Mapbox Vector Tile media type.

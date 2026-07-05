@@ -108,7 +108,8 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/23/0/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -120,7 +121,8 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/2/10/10");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -158,6 +160,7 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             "/rest/services/%20/MapServer/tile/0/0/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

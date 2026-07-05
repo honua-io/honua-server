@@ -34,7 +34,7 @@ internal interface IGmlSerializer
         string featureTypeName,
         string namespaceUri,
         int? numberMatched = null,
-        int? numberReturned = null);
+        int numberReturned = 0);
 
     /// <summary>
     /// Serializes geometry to GML format.

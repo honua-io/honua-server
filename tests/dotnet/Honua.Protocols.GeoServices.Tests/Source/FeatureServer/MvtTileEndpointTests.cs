@@ -82,7 +82,8 @@ public class MvtTileEndpointTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync("/tiles/99999/1/0/0.mvt");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
