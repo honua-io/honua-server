@@ -30,7 +30,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "delete-api-v1-admin-alerts-zones-zoneid",
@@ -44,7 +44,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "delete-api-v1-admin-cloud-rasters-id",
@@ -715,7 +715,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.OData.ODataGeometryCrudTests.DeleteFeature_WithoutGeometry_ReturnsNoContent"
+        "Honua.Server.Tests.Features.Protocols.OData.ODataGeometryCrudTests.DeleteFeature_WithoutGeometry_ReturnsNoContent",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataDelete_InsertOnlyGrant_DeniesDelete"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented"
@@ -730,6 +731,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.DeleteFeature_WithoutApiKey_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.DeleteFeature_WhenEventPublishFails_ReturnsNoContent",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.DeleteFeature_WithMatchingIfMatch_ReturnsNoContent",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.DeleteFeature_WithStaleIfMatch_Returns412",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.DeleteFeature_WithValidId_ReturnsNoContent"
       ],
       "proof_ledger_surface": "ogc-api-features",
@@ -910,7 +913,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRules_WithServiceAndLayerFilter_ReturnsSuccessEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-alerts-rules-ruleid",
@@ -923,7 +926,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-alerts-rules-ruleid-events",
@@ -938,7 +941,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRuleEvents_WithUnknownStatus_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-alerts-rules-ruleid-health",
@@ -952,7 +955,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.GetRuleHealth_WithUnavailableDeliveryChannel_ReturnsPolicyState"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-alerts-zones",
@@ -964,10 +967,10 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetAlertZones_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListZones_WithServiceFilter_ReturnsSuccessEnvelope",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AlertsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled"
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AlertsEndpoint_AfterGaPromotion_IsNotExperimentalGated"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-alerts-zones-zoneid",
@@ -980,7 +983,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-api-keys",
@@ -5762,6 +5765,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetItems_WithOutputCrsAndNoBboxCrs_DefaultsBboxToCrs84",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetItems_WithProjectedBboxCrs_AllowsProjectedRange",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetItems_WithUnsupportedExplicitGeometryCrs_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStreamingTests.GetItems_LargeLimit_Streaming_ProvidesAdvisorySnapshotNumberMatched",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStreamingTests.GetItems_LargeLimit_UsesStreamingResponse",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.GetItems_WithNumericLookingStringCollectionId_ResolvesCollectionName",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.GetItems_WithStringCollectionId_ReturnsMatchingFeature",
@@ -10626,9 +10630,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_IncludeMode_PropertyOnlyInclude_RequiredFieldsAlwaysPresent",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_NoFilters_ReturnsItems",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_RecordsSharedTelemetryForSearchWork",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WhenFeatureReaderFails_RecordsSearchWorkException",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WhenMorePagesExist_GetNextLinkIsFollowable",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithCollections_FiltersResults",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithInvalidRfc3339DatetimeForms_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithInvalidThreeDimensionalBbox_ReturnsBadRequest",
@@ -11298,7 +11304,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.UpdateFeature_WithLayerPath_ReturnsUpdatedFeature"
+        "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.UpdateFeature_WithLayerPath_ReturnsUpdatedFeature",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataUpdate_InsertOnlyGrant_DeniesUpdate",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataUpdate_UpdateGrant_AllowsUpdate"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented"
@@ -11414,7 +11422,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "post-api-v1-admin-alerts-rules-test",
@@ -11430,7 +11438,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.TestRule_WithZoneIdOnThresholdRule_ReturnsValidationError"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "post-api-v1-admin-alerts-zones",
@@ -11445,7 +11453,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "post-api-v1-admin-api-keys",
@@ -14608,8 +14616,9 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataCrudExceptionMappingTests.CreateFeature_WhenWriterThrowsUnexpectedInvalidOperation_ReturnsInternalServerError",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.CreateFeature_ReturnsLocationAndEntityIdHeaders",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.CreateFeature_WithPreferMinimal_Returns204",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataCreate_InsertGrant_OverridesCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataCreate_QueryOnlyGrant_DeniesWrite",
-        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataCreate_UpdateGrant_OverridesCoarseDeny",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataCreate_UpdateOnlyGrant_DeniesCreate",
         "Honua.Server.Tests.Features.Security.ODataServiceAccessPolicyTests.CreateFeature_WithAdminRole_RespectsServiceWritePolicy",
         "Honua.Server.Tests.Features.Security.ODataServiceAccessPolicyTests.CreateFeature_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService",
         "Honua.Server.Tests.Features.Security.ODataServiceAccessPolicyTests.CreateFeature_WithLayerWriteRolePolicy_AllowsMatchingRole",
@@ -14686,8 +14695,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.CreateFeature_WhenEventPublishFails_ReturnsCreated",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.CreateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.CreateFeature_WithValidGeoJson_ReturnsCreated",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.OgcFeaturesCreate_InsertGrant_OverridesCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.OgcFeaturesCreate_QueryOnlyGrant_DeniesWrite",
-        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.OgcFeaturesCreate_UpdateGrant_OverridesCoarseDeny",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.OgcFeaturesCreate_UpdateOnlyGrant_DeniesCreate",
         "Honua.Server.Tests.Features.Security.OgcServiceAccessPolicyTests.CreateFeature_WithAdminRole_RespectsServiceWritePolicy",
         "Honua.Server.Tests.Features.Security.OgcServiceAccessPolicyTests.CreateFeature_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService",
         "Honua.Server.Tests.Features.Security.OgcServiceAccessPolicyTests.CreateFeature_WithLayerWriteRolePolicy_AllowsMatchingRole",
@@ -15934,6 +15944,9 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithZCoordinates_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.FeatureServerGdbVersionFlowTests.GdbVersionFlow_EditQueryReconcilePost_IsolatesThenMerges",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_DeletePayload_DeleteGrantAllowsDeletesWhenUpdateGrantDoesNot",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_UpdatePayload_DeleteOnlyGrantDeniesUpdate",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_UpdatePayload_InsertOnlyGrantDeniesUpdate",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_UpdatePayload_UpdateGrantAllowsUpdate",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_NoGrant_FallsBackToCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_QueryOnlyGrant_DeniesWrite",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_UpdateGrant_OverridesCoarseDeny",
@@ -17614,6 +17627,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_XmlBodyWithDtd_ReturnsSanitizedExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_AnonymousWrite_AllowsInsertWithoutRbac",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Delete_DeletedFeatureStoredQueryReturns404ExceptionReport",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Delete_WithEmptyFesFilter_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Delete_WithInvalidFesFilter_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Delete_ZeroMatchFilter_ReturnsSuccessWithZeroDeleted",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Insert_3dGmlPosList_EvenVertexCount_StoresCorrectGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_MultiLayerWithoutRollback_ReturnsTransactionResponseAndCreatesFeatures",
@@ -17657,7 +17672,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.UpdateRule_NonexistentRuleId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "put-api-v1-admin-alerts-rules-ruleid-enabled",
@@ -17670,7 +17685,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "put-api-v1-admin-alerts-zones-zoneid",
@@ -17684,7 +17699,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "put-api-v1-admin-config",
@@ -18439,7 +18454,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.UpdateFeature_WithGetItemEtagIfMatch_RoundTripsSuccessfully",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.UpdateFeature_WithMismatchedPayloadId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.UpdateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.UpdateFeature_WithValidGeoJson_ReturnsUpdated"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.UpdateFeature_WithValidGeoJson_ReturnsUpdated",
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.OgcFeaturesUpdate_InsertOnlyGrant_DeniesUpdate"
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented"
