@@ -251,8 +251,35 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features")]
-    public async Task ODataCreate_UpdateGrant_OverridesCoarseDeny()
+    public async Task ODataCreate_InsertGrant_OverridesCoarseDeny()
     {
+        // An OData POST authorizes as Insert (BH3-001/BH3-014), so a matching Insert grant must
+        // override the coarse data-editor deny. The in-memory fixture cannot complete the create
+        // (the layer requires an objectid the payload does not carry), so the assertion is that
+        // authorization is cleared — not Forbidden / not Unauthorized — rather than a 201.
+        // (An Update grant is separately proven NOT to authorize a create via the per-operation
+        // gate; before the fix the coarse any-write gate let any write grant through.)
+        using var factory = CreateWriteFactory(Grant("insert"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var response = await client.PostAsync(
+            $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features",
+            ServiceRbacTestFixture.CreateODataFeatureContent());
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden,
+            "a matching insert grant must clear per-operation authorization for an OData create; body: {0}",
+            await response.Content.ReadAsStringAsync());
+        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.ODataV4)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /odata/Layers({layerId})/Features")]
+    public async Task ODataCreate_UpdateOnlyGrant_DeniesCreate()
+    {
+        // BH3-001/BH3-014: an Update-only grantee must be denied an OData create (POST=Insert).
+        // Before the fix the coarse any-write gate accepted any write grant for any mutation.
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -260,7 +287,7 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features",
             ServiceRbacTestFixture.CreateODataFeatureContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Created);
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]
@@ -277,6 +304,76 @@ public sealed class CrossProtocolPermissionMatrixTests
             ServiceRbacTestFixture.CreateODataFeatureContent());
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    // ---- OData CRUD per-operation authorization (BH3-001 / BH3-014 regression) ----
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.ODataV4)]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /odata/Layers({layerId})/Features({objectId})")]
+    public async Task ODataUpdate_InsertOnlyGrant_DeniesUpdate()
+    {
+        // BH3-001 / BH3-014: an OData PATCH authorizes as Update. A principal holding only an
+        // Insert grant must be denied — before the fix the coarse any-write gate allowed it.
+        using var factory = CreateWriteFactory(Grant("insert"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var payload = new StringContent(
+            @"{""name"":""unauthorized-update""}",
+            System.Text.Encoding.UTF8,
+            "application/json");
+        var response = await client.PatchAsync(
+            $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features(1)",
+            payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "an insert-only principal must not execute an OData Update; body: {0}",
+            await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.ODataV4)]
+    [Operation(Operations.Delete)]
+    [Endpoint("DELETE /odata/Layers({layerId})/Features({objectId})")]
+    public async Task ODataDelete_InsertOnlyGrant_DeniesDelete()
+    {
+        // BH3-014: an OData DELETE authorizes as Delete. An Insert-only grantee must be denied.
+        using var factory = CreateWriteFactory(Grant("insert"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var response = await client.DeleteAsync(
+            $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features(1)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "an insert-only principal must not execute an OData Delete; body: {0}",
+            await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.ODataV4)]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /odata/Layers({layerId})/Features({objectId})")]
+    public async Task ODataUpdate_UpdateGrant_AllowsUpdate()
+    {
+        // BH3-001 / BH3-014: an Update grantee must not be over-blocked on a PATCH. The request
+        // may still 404 (no such feature in the in-memory fixture) but must clear authorization,
+        // so it must not be Forbidden or Unauthorized.
+        using var factory = CreateWriteFactory(Grant("update"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var payload = new StringContent(
+            @"{""name"":""authorized-update""}",
+            System.Text.Encoding.UTF8,
+            "application/json");
+        var response = await client.PatchAsync(
+            $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features(1)",
+            payload);
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden,
+            "an update grantee must clear per-operation authorization; body: {0}",
+            await response.Content.ReadAsStringAsync());
+        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
     }
 
     // ---- OData batch ----
@@ -723,6 +820,178 @@ public sealed class WfsReadVisibilitySeamTests
         };
 
     private sealed class SingleGrantRoleStore(string roleName, PermissionGrant grant) : IRoleStore
+    {
+        public Task<EffectivePermissions> GetEffectivePermissionsAsync(
+            string userId,
+            IReadOnlyList<string> roles,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new EffectivePermissions
+            {
+                UserId = userId,
+                Roles = roles,
+                Permissions = roles.Any(r => string.Equals(r, roleName, StringComparison.OrdinalIgnoreCase))
+                    ? [grant]
+                    : [],
+            });
+
+        public Task<IReadOnlyList<RoleDefinition>> ListRolesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<RoleDefinition>>([]);
+
+        public Task<RoleDefinition?> GetRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(null);
+
+        public Task<RoleDefinition> CreateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => Task.FromResult(role);
+
+        public Task<RoleDefinition?> UpdateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(role);
+
+        public Task<bool> DeleteRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<IReadOnlyList<PermissionGrant>> GetPermissionsAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PermissionGrant>>([]);
+
+        public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
+            => Task.FromResult(permissions);
+    }
+}
+
+/// <summary>
+/// Direct coverage of the WFS-T transaction write authorization seam
+/// (BH3-001 / BH3-014). WFS Transaction actions route through
+/// <c>ValidateTransactionLayerWriteAccessAsync</c>, which now calls
+/// <see cref="ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(HttpContext, MetadataV2Resource, MetadataV2Service?, AuthorizationOperation, CancellationToken)"/>
+/// with the action's specific operation (Insert / Update / Delete; Replace maps to
+/// Update). The ServiceRbacTestFixture cannot render a full WFS Transaction HTTP
+/// round-trip (it needs a PostGIS-backed store and non-admin principal injection),
+/// so these tests exercise that exact per-operation seam directly, mirroring the
+/// read-side <c>WfsReadVisibilitySeamTests</c> precedent. A service with no explicit
+/// write policy is used so the RBAC grant path (not an authoritative AccessPolicy)
+/// governs the decision.
+/// </summary>
+[Protocol(TestProtocols.Wfs20)]
+[Operation(Operations.Update)]
+public sealed class WfsTransactionWriteAuthorizationSeamTests
+{
+    private const string ServiceName = "alpha";
+    private const string GrantedRole = "wfs-write-grant-role";
+
+    [UnitTest]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task WfsTransactionSeam_InsertOnlyGrant_DeniesUpdate()
+    {
+        // An Insert-only grantee submitting a WFS-T Update action must be denied: the
+        // per-operation gate falls back to the data-editor role gate, which the principal fails.
+        var context = CreateContext(
+            grant: new PermissionGrant { Service = ServiceName, Layer = "*", Operation = "insert" });
+
+        var error = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context,
+            CreateResource(),
+            CreateService(),
+            AuthorizationOperation.Update,
+            CancellationToken.None);
+
+        error.Should().NotBeNull("an insert-only grantee must be denied a WFS-T Update action");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task WfsTransactionSeam_InsertOnlyGrant_DeniesDelete()
+    {
+        var context = CreateContext(
+            grant: new PermissionGrant { Service = ServiceName, Layer = "*", Operation = "insert" });
+
+        var error = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context,
+            CreateResource(),
+            CreateService(),
+            AuthorizationOperation.Delete,
+            CancellationToken.None);
+
+        error.Should().NotBeNull("an insert-only grantee must be denied a WFS-T Delete action");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task WfsTransactionSeam_InsertGrant_AllowsInsert()
+    {
+        // Positive control: the same Insert grant authorizes a WFS-T Insert action, proving the
+        // per-operation narrowing denies only the non-matching operations.
+        var context = CreateContext(
+            grant: new PermissionGrant { Service = ServiceName, Layer = "*", Operation = "insert" });
+
+        var error = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context,
+            CreateResource(),
+            CreateService(),
+            AuthorizationOperation.Insert,
+            CancellationToken.None);
+
+        error.Should().BeNull("an insert grantee must be allowed a WFS-T Insert action");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task WfsTransactionSeam_UpdateGrant_AllowsUpdate()
+    {
+        var context = CreateContext(
+            grant: new PermissionGrant { Service = ServiceName, Layer = "*", Operation = "update" });
+
+        var error = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context,
+            CreateResource(),
+            CreateService(),
+            AuthorizationOperation.Update,
+            CancellationToken.None);
+
+        error.Should().BeNull("an update grantee must be allowed a WFS-T Update (or Replace) action");
+    }
+
+    private static DefaultHttpContext CreateContext(PermissionGrant grant)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        services.Configure<RbacOptions>(opts => opts.RoleClaimType = "roles");
+        services.AddSingleton<IRoleStore>(new WfsSingleGrantRoleStore(GrantedRole, grant));
+        services.AddSingleton<IPermissionResolver>(sp =>
+            new PermissionResolver(sp.GetRequiredService<IRoleStore>()));
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, "wfs-write-user"),
+            new(ClaimTypes.Role, GrantedRole),
+            new("roles", GrantedRole),
+        };
+
+        return new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"))
+        };
+    }
+
+    private static MetadataV2Resource CreateResource()
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-alpha", Name = "Alpha Layer" }
+        };
+
+    // A service with NO explicit write policy: the RBAC grant path governs, so the per-operation
+    // narrowing is what decides. An explicit AllowedRoles/AllowedWriteRoles policy would be
+    // authoritative and bypass grants entirely, which is covered separately.
+    private static MetadataV2Service CreateService()
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "svc-alpha", Name = ServiceName }
+        };
+
+    private sealed class WfsSingleGrantRoleStore(string roleName, PermissionGrant grant) : IRoleStore
     {
         public Task<EffectivePermissions> GetEffectivePermissionsAsync(
             string userId,

@@ -12,6 +12,7 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -237,7 +238,11 @@ internal sealed partial class Wfs20Handler
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var operations = ImmutableArray.CreateBuilder<PreparedTransactionOperation>();
         var distinctLayerIds = new HashSet<int>();
-        var validatedLayerIds = new HashSet<int>();
+        // Keyed on (layerId, operation) so per-operation authorization (BH3-001/BH3-014)
+        // is enforced independently for each action type: a transaction that both inserts
+        // into and updates the same layer must clear both the Insert and Update gates,
+        // not just the first one seen.
+        var validatedLayerIds = new HashSet<(int LayerId, AuthorizationOperation Operation)>();
         // Tracks whether the body contained at least one supported WFS action element.
         // ISO 19142 §15.2.5.3: a Delete or Update whose filter matches zero features is a
         // valid no-op that contributes zero operations but is still a recognised action.
@@ -360,7 +365,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<int> validatedLayerIds,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
         var handle = insertElement.Attributes()
@@ -392,6 +397,7 @@ internal sealed partial class Wfs20Handler
             var validationError = await ValidateTransactionLayerWriteAccessAsync(
                 context,
                 descriptor.StorageLayerId,
+                AuthorizationOperation.Insert,
                 validatedLayerIds,
                 cancellationToken).ConfigureAwait(false);
             if (validationError != null)
@@ -428,7 +434,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<int> validatedLayerIds,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
         var handle = updateElement.Attributes()
@@ -452,6 +458,7 @@ internal sealed partial class Wfs20Handler
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
             descriptor.StorageLayerId,
+            AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
@@ -522,7 +529,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<int> validatedLayerIds,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
         var handle = deleteElement.Attributes()
@@ -546,6 +553,7 @@ internal sealed partial class Wfs20Handler
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
             descriptor.StorageLayerId,
+            AuthorizationOperation.Delete,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
@@ -607,7 +615,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<int> validatedLayerIds,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
         var handle = replaceElement.Attributes()
@@ -626,9 +634,11 @@ internal sealed partial class Wfs20Handler
         }
 
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, featureElement.Name.LocalName);
+        // Replace modifies an existing feature, so it authorizes as an Update (BH3-001/BH3-014).
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
             descriptor.StorageLayerId,
+            AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
@@ -1017,10 +1027,11 @@ internal sealed partial class Wfs20Handler
     private static async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
         HttpContext context,
         int layerId,
-        HashSet<int> validatedLayerIds,
+        AuthorizationOperation operation,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
-        if (!validatedLayerIds.Add(layerId))
+        if (!validatedLayerIds.Add((layerId, operation)))
         {
             return null;
         }
@@ -1041,10 +1052,14 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
+        // Per-operation authorization (BH3-001/BH3-014): each WFS-T action type is gated on its
+        // specific operation so an insert-only grantee cannot Update/Delete via a Transaction and
+        // vice-versa. Replace maps to Update since it modifies an existing feature.
         return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
             layerValidation.Resource!,
             layerValidation.Service,
+            operation,
             cancellationToken).ConfigureAwait(false);
     }
 

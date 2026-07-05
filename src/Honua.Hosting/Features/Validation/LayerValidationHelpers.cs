@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -682,6 +683,7 @@ internal static class LayerValidationHelpers
         var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
             context,
             validation,
+            operation: null,
             cancellationToken).ConfigureAwait(false);
         if (canonicalError != null)
         {
@@ -705,6 +707,7 @@ internal static class LayerValidationHelpers
     private static async Task<IResult?> EnforceCanonicalServiceWriteAccessAsync(
         HttpContext context,
         MetadataV2ValidationResult validation,
+        AuthorizationOperation? operation,
         CancellationToken cancellationToken)
     {
         if (!validation.IsValid || validation.Resource is null || validation.Publication is null)
@@ -749,12 +752,20 @@ internal static class LayerValidationHelpers
             ? cs
             : null;
 
-        // Re-evaluate data-editor authorization against the canonical service.
-        return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-            context,
-            validation.Resource,
-            canonicalService,
-            cancellationToken).ConfigureAwait(false);
+        // Re-evaluate data-editor authorization against the canonical service, preserving
+        // the per-operation narrowing (BH3-001/BH3-014) when the caller supplied an operation.
+        return operation is { } op
+            ? await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                validation.Resource,
+                canonicalService,
+                op,
+                cancellationToken).ConfigureAwait(false)
+            : await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                validation.Resource,
+                canonicalService,
+                cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -766,6 +777,7 @@ internal static class LayerValidationHelpers
         int layerId,
         ValidationProtocol protocol,
         string? requiredProtocol = null,
+        AuthorizationOperation? operation = null,
         CancellationToken cancellationToken = default)
     {
         var validation = await ValidateLayerWithAccessV2Async(
@@ -780,11 +792,22 @@ internal static class LayerValidationHelpers
             return validation;
         }
 
-        var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-            context,
-            validation.Resource!,
-            validation.Service,
-            cancellationToken).ConfigureAwait(false);
+        // Per-operation authorization (BH3-001/BH3-014): when the caller supplies the specific
+        // CRUD operation (OData POST=Insert / PATCH/PUT=Update / DELETE=Delete), the RBAC
+        // data-editor gate bypass is narrowed to that operation so an insert-only grantee cannot
+        // Update or Delete and vice-versa. Absent an operation, any write grant satisfies the gate.
+        var rbacError = operation is { } op
+            ? await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                validation.Resource!,
+                validation.Service,
+                op,
+                cancellationToken).ConfigureAwait(false)
+            : await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                validation.Resource!,
+                validation.Service,
+                cancellationToken).ConfigureAwait(false);
         if (rbacError != null)
         {
             return new MetadataV2ValidationResult(
@@ -798,6 +821,7 @@ internal static class LayerValidationHelpers
         var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
             context,
             validation,
+            operation,
             cancellationToken).ConfigureAwait(false);
         if (canonicalError != null)
         {
