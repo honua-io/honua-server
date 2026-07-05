@@ -642,7 +642,9 @@ teardown-guaranteed:
   absent, so the lane degrades cell-by-cell and forks / credential-less runs never fail.
 - **Budgeted** — each cell is tiny and short-lived: a register/deregister smoke, two smallest-tier
   Batch jobs (one polled to `SUCCEEDED` under a hard <8-minute budget, one cancelled), one small S3
-  object, and a no-op Lambda alias flip.
+  object, a no-op Lambda alias flip, and one same-revision ECS/ALB weighted cutover (shift → observe
+  → promote → rollback) against the standing smallest-Fargate cert service under a hard <5-minute
+  convergence budget, with the listener rule restored to `stable=100/canary=0` in a `finally`.
 - **Isolated + torn down** — `RealAwsCertificationFixture` mints a unique `honua-cert-{runId}`
   prefix and a `honua-cert-run=<runId>` tag; every cell tears its resources down in a `finally`
   block. A dedicated `always()` reaper step (`CertificationResourceReaper`, filtered by
@@ -656,13 +658,20 @@ teardown-guaranteed:
 `AwsBatchComputeBackend` + `AwsSdkBatchJobClient`), `S3ArtifactRealCertificationTests` (artifact
 round-trip through the production S3 client seam against `cert_artifact_bucket`), and
 `AwsLambdaAliasRealCertificationTests` (read→no-op-flip→restore through the production
-`AwsSdkLambdaAliasClient`, certifying the alias-flip primitive that cutover/rollback ride).
+`AwsSdkLambdaAliasClient`, certifying the alias-flip primitive that cutover/rollback ride), and
+`AwsEcsAlbRealCertificationTests` (weighted-cutover cell — drives the real `AwsEcsAlbDeployBackend`
+with its production `AwsSdkAlbClient` + `AwsSdkEcsClient` seams: resolves the listener's default rule,
+`StartAsync` shifts a 25% canary share, `ObserveAsync` polls to `PromotionRecommended`, `PromoteAsync`
+cuts to `canary=100/stable=0`, then `RollbackAsync` restores `stable=100/canary=0` and `ObserveAsync`
+settles `RolledBack`). It deploys the service's **current** task definition as the desired revision
+(same-revision) so ECS converges immediately and the cell certifies traffic-shift + convergence +
+rollback mechanics, not an image roll; it drives `StartAsync` directly (skipping `PlanAsync`, whose
+`telemetry.connection` gate is a workflow-orchestration concern the backend's unit tests cover); and
+it snapshots + restores the standing listener rule and task definition in a `finally` so the
+substrate stays pristine.
 
 **Deferred (`DeferredRealCertificationPlaceholders`, explicit skipped placeholders):** live
-failure-of-failure / double-fault certification (#2161 — covered today by reconciler unit tests),
-and the ECS/ALB weighted-cutover cell (ALB weight mechanics are heavily unit-tested and already have
-a Terraform-gated live path via `AwsEcsAlbDeployBackendLiveTests`; a live cutover in this lane needs
-standing ALB + dual target-group + ECS-service infrastructure).
+failure-of-failure / double-fault certification (#2161 — covered today by reconciler unit tests).
 
 **Stack-output → repo-variable → env-var contract** (set repo Actions *variables* from the
 `honua-iac examples/aws-cert` Terraform outputs; every input is optional/dormant-safe):
@@ -679,7 +688,7 @@ standing ALB + dual target-group + ECS-service infrastructure).
 | `cert_artifact_bucket` | `REALAWS_CERT_ARTIFACT_BUCKET` | `HONUA_REALAWS_CERT_ARTIFACT_BUCKET` |
 | (cert Lambda function) | `REALAWS_CERT_LAMBDA_FUNCTION` | `HONUA_REALAWS_CERT_LAMBDA_FUNCTION` |
 | (cert Lambda alias) | `REALAWS_CERT_LAMBDA_ALIAS` | `HONUA_REALAWS_CERT_LAMBDA_ALIAS` |
-| (cert ECS/ALB set — deferred cell) | `REALAWS_CERT_ECS_CLUSTER`, `REALAWS_CERT_ECS_SERVICE`, `REALAWS_CERT_ALB_LISTENER_ARN`, `REALAWS_CERT_CANARY_TARGET_GROUP_ARN`, `REALAWS_CERT_STABLE_TARGET_GROUP_ARN` | `HONUA_REALAWS_CERT_ECS_CLUSTER`, `HONUA_REALAWS_CERT_ECS_SERVICE`, `HONUA_REALAWS_CERT_ALB_LISTENER_ARN`, `HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN`, `HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN` |
+| (cert ECS/ALB set) | `REALAWS_CERT_ECS_CLUSTER`, `REALAWS_CERT_ECS_SERVICE`, `REALAWS_CERT_ALB_LISTENER_ARN`, `REALAWS_CERT_CANARY_TARGET_GROUP_ARN`, `REALAWS_CERT_STABLE_TARGET_GROUP_ARN` | `HONUA_REALAWS_CERT_ECS_CLUSTER`, `HONUA_REALAWS_CERT_ECS_SERVICE`, `HONUA_REALAWS_CERT_ALB_LISTENER_ARN`, `HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN`, `HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN` |
 
 **Maintainer bootstrap:** (1) apply `honua-iac examples/aws-cert`; (2) set `REALAWS_CERT_ROLE_ARN`
 to its `github_oidc_role_arn` output and the per-cell variables above from the matching outputs;
