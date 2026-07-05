@@ -140,3 +140,60 @@ jobs:
           name: cloud-integration-results
           path: tests/TestResults/
           retention-days: 14
+
+  local-substrate:
+    name: Local Substrate (YARP rolling + local process + migration gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # ADR-0060 substrate-neutral lane (#2166, #2457): proves the single-host, zero-cloud (containers
+    # only — no Kubernetes, no cloud) deploy / rolling-upgrade / expand-contract-migration / rollback
+    # story on BOTH planes. Serving = YarpRollingDeployBackend + real embedded YARP + real docker
+    # replica containers; GP = LocalProcessPoolBatchComputeBackend + real child processes; migration
+    # gate = the real PostgresDatabaseMigrationRunner over a Testcontainers Postgres. FREE (no cloud
+    # secrets), plain ubuntu runner with Docker. Every test [SkippableFact]-skips when Docker is absent.
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build cloud-integration test binaries
+        timeout-minutes: 15
+        run: dotnet build ${{ env.CSPROJ }} --no-restore --configuration Release
+
+      - name: Pre-pull local-substrate base images
+        shell: bash
+        run: |
+          # Warm the docker cache for the disposable images the lane builds/runs so provisioning does
+          # not pull mid-test:
+          #   busybox          -> the two-tag HTTP replica images the serving lane builds and runs.
+          #   postgres:alpine  -> the migration-gate Testcontainers database.
+          docker pull busybox:1.36 || echo "::warning::could not pre-pull busybox"
+          docker pull postgres:17-alpine || echo "::warning::could not pre-pull postgres"
+
+      - name: Run local-substrate tests
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: false
+        run: |
+          mkdir -p ./tests/TestResults
+          dotnet test ${{ env.CSPROJ }} \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=LocalSubstrate" \
+            --logger "trx;LogFileName=local-substrate.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Upload results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: local-substrate-results
+          path: tests/TestResults/
+          retention-days: 14

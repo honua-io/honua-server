@@ -47,6 +47,15 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Xunit.SkippableFact" />
     <PackageReference Include="Testcontainers" />
+    <!-- LocalSubstrate migration-gate lane (#2166 / #2457): a real Postgres via Testcontainers to
+         drive PostgresDatabaseMigrationRunner end-to-end, and Roslyn to compile synthetic migration
+         assemblies (embedded .sql resources) so the expand/contract fail-closed gate is exercised. -->
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <!-- LocalSubstrate serving lane: a real embedded-YARP reverse proxy fronts the rolling cutover so
+         the continuous request loop proves zero downtime through the atomic destination swap. -->
+    <PackageReference Include="Yarp.ReverseProxy" />
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
@@ -58,6 +67,11 @@
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Aws\Honua.Aws.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
+    <!-- LocalProcessPoolBatchComputeBackend (GP lane) lives in Honua.Jobs; the real
+         PostgresDatabaseMigrationRunner (migration-gate lane) lives in Honua.Postgres. Both are
+         internal and made visible via InternalsVisibleTo on those assemblies. -->
+    <ProjectReference Include="..\..\..\src\Honua.Jobs\Honua.Jobs.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
   </ItemGroup>
 
   <ItemGroup>
