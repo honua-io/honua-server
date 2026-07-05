@@ -652,6 +652,30 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_DuplicateLayerWithFilter_Returns200NotCrash()
+    {
+        // BH5-007 regression: LAYERS=X,X with a per-layer FILTER used to throw ArgumentException
+        // (duplicate key in ToDictionary) producing HTTP 500. After the fix the request must
+        // be handled gracefully — the first filter wins and the response is not a 500 error.
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>does-not-exist</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var twoFilters = Uri.EscapeDataString($"{filter};{filter}");
+        var duplicateLayers = $"{WebAppFixture.TestLayerId},{WebAppFixture.TestLayerId}";
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0" +
+            $"&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256" +
+            $"&LAYERS={duplicateLayers}&QUERY_LAYERS={WebAppFixture.TestLayerId}" +
+            $"&INFO_FORMAT=text/plain&I=41&J=74&FILTER={twoFilters}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        // Must not be a 500 internal server error — the duplicate-layer+filter path is now safe.
+        response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.InternalServerError, content);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_WithFilter_ReturnsDistinctImage()
     {
