@@ -171,4 +171,28 @@ public sealed class VersionAccessPolicyTests
         VersionAccessPolicy.CanManageVersion(version, callerName: "ALICE", isAdmin: false).Should().BeTrue(
             "owner name comparison must be case-insensitive for lifecycle operations");
     }
+
+    // ---- BH6-001 regression: HandleInspectConflicts Protected-version access leak ----------
+
+    [UnitTest]
+    public void CanManageVersion_ProtectedVersion_NonOwnerNonAdmin_CannotInspectConflicts()
+    {
+        // BH6-001 regression: HandleInspectConflicts previously only gated CanManageVersion on
+        // Private versions; Protected versions bypassed the check, exposing full conflict
+        // before/after attribute and geometry payloads to any query-authorized caller. The fix
+        // widens the condition to `Private or Protected`. This test pins the policy the fixed
+        // endpoint now applies for Protected versions: a non-owner, non-admin must be blocked.
+        var version = MakeVersion("alice", VersionAccess.Protected);
+
+        VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(
+            "BH6-001: a non-owner non-admin must not inspect conflicts on a Protected version");
+        VersionAccessPolicy.CanManageVersion(version, callerName: null, isAdmin: false).Should().BeFalse(
+            "BH6-001: an anonymous principal must not inspect conflicts on a Protected version");
+
+        // Only the owner and admins may inspect Protected version conflicts.
+        VersionAccessPolicy.CanManageVersion(version, callerName: "alice", isAdmin: false).Should().BeTrue(
+            "the version owner can always inspect their own version's conflicts");
+        VersionAccessPolicy.CanManageVersion(version, callerName: "admin", isAdmin: true).Should().BeTrue(
+            "an administrator can inspect conflicts on any version");
+    }
 }
