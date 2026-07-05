@@ -22,6 +22,10 @@
     "HONUA_JOB_TOKEN"
   ],
 
+  "_contract_version_comment": "Serving<->worker job-contract version (ADR-0060 #3b). Injected env-only as HONUA_CONTRACT_VERSION and re-checked by both harnesses (honua_customcode_harness/jobspec.py SUPPORTED_CONTRACT_VERSION and Honua.CustomCode.Harness JobSpec.SupportedContractVersion). Pins the server's CustomCodeJobContract.ContractVersion to the harness-supported version; bump all three together.",
+  "contract_version_env": "HONUA_CONTRACT_VERSION",
+  "contract_version": 1,
+
   "_harness_only_comment": "Optional harness input with a built-in default (1 GiB). The server has no customcode.output_max_bytes parameter today, so it is not emitted and the harness default applies. Listed here so the parity test treats its absence as intentional, not drift.",
   "harness_only_optional_env": [
     "CUSTOMCODE_OUTPUT_MAX_BYTES"

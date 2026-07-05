@@ -37,6 +37,7 @@ internal sealed class DeployPreflightProbe(
         var readyForCoordinatedDeploy = readiness.IsReady &&
             migration.PlanAvailable &&
             !migration.UpgradeRequired &&
+            !migration.HasPendingContractScripts &&
             databaseCompatible;
 
         return new DeployPreflightSnapshot
@@ -87,7 +88,10 @@ internal sealed class DeployPreflightProbe(
                 Message = GetMigrationStatusMessage(migrationState),
                 PlanAvailable = plan.Successful,
                 UpgradeRequired = plan.Successful && plan.UpgradeRequired,
+                HasPendingContractScripts = plan.Successful && plan.HasContractScripts,
+                HasUnannotatedContractScripts = plan.Successful && plan.HasUnannotatedBreakingScripts,
                 PendingScripts = plan.PendingScripts,
+                PendingContractScripts = plan.ContractScriptNames,
                 ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
                 PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage
             };
@@ -122,6 +126,12 @@ internal sealed class DeployPreflightProbe(
         if (!migration.PlanAvailable)
         {
             return migration.PlanError ?? "Migration planning is unavailable for this instance.";
+        }
+
+        if (migration.HasPendingContractScripts)
+        {
+            return "Pending contract-phase (backward-incompatible) migrations must run in a dedicated "
+                + "contract step, not alongside a rolling deployment.";
         }
 
         if (migration.UpgradeRequired)
@@ -230,7 +240,25 @@ internal sealed class DeployPreflightMigrationSnapshot
 
     public bool UpgradeRequired { get; init; }
 
+    /// <summary>
+    /// Whether any pending script is a contract-phase (potentially backward-incompatible) change.
+    /// Contract migrations must run in the contract phase (expand → deploy → migrate → contract)
+    /// and must not ride along a rolling deploy, so their presence blocks coordinated-deploy
+    /// readiness (ADR-0060 expand/contract discipline).
+    /// </summary>
+    public bool HasPendingContractScripts { get; init; }
+
+    /// <summary>
+    /// Whether any pending contract-phase script lacks the compatibility-review marker.
+    /// </summary>
+    public bool HasUnannotatedContractScripts { get; init; }
+
     public IReadOnlyList<string> PendingScripts { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Names of the pending contract-phase (breaking) scripts, whether or not annotated.
+    /// </summary>
+    public IReadOnlyList<string> PendingContractScripts { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> ExecutedButNotDiscoveredScripts { get; init; } = Array.Empty<string>();
 

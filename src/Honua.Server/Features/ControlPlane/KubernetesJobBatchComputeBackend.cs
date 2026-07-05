@@ -453,7 +453,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         var imagePullSecrets = ParseList(parameters.GetValueOrDefault(KubernetesJobParameterKeys.ImagePullSecrets))
             ?? snapshot.DefaultImagePullSecrets;
 
-        var environmentVariables = BuildEnvironmentVariables(parameters);
+        var environmentVariables = BuildEnvironmentVariables(job, parameters);
 
         return new KubernetesJobManifest
         {
@@ -482,9 +482,16 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         };
     }
 
-    private static Dictionary<string, string> BuildEnvironmentVariables(IReadOnlyDictionary<string, string> parameters)
+    private static Dictionary<string, string> BuildEnvironmentVariables(
+        ExecutionJobRecord job,
+        IReadOnlyDictionary<string, string> parameters)
     {
-        var env = new Dictionary<string, string>(StringComparer.Ordinal);
+        var env = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // Serving↔worker job-contract version (ADR-0060 #3b): the worker harness re-checks this
+            // and fails closed if it exceeds the version it can run.
+            ["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)
+        };
         foreach (var pair in parameters)
         {
             if (pair.Key.StartsWith(KubernetesJobParameterKeys.EnvironmentPrefix, StringComparison.Ordinal))
