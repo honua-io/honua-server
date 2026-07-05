@@ -1,7 +1,7 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
--- Migration: 073_AddAlertOpsSource.sql
+-- Migration: 075_AddAlertOpsSource.sql
 -- Description: Promotes the alert delivery outbox to a shared, consumer-agnostic
 --              notification pipeline (alerts GA, #2427). Adds an event `source`
 --              discriminator and relaxes `rule_id` to allow operations notifications

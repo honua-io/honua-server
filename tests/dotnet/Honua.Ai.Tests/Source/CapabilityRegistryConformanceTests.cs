@@ -108,9 +108,20 @@ public sealed class CapabilityRegistryConformanceTests
         foreach (var descriptor in Registry.All)
         {
             var resolution = Registry.Resolve(descriptor.Id, context);
-            resolution.Enabled.Should().BeTrue(
-                $"B1 is a pass-through — every registered capability ('{descriptor.Id}') resolves enabled");
-            resolution.ReasonCode.Should().BeNull();
+            if (descriptor.Maturity == CapabilityMaturity.Experimental)
+            {
+                // Since the #2346 T10 flip, experimental capabilities resolve disabled in the
+                // default context (no experimental flags set) with the dedicated reason code.
+                resolution.Enabled.Should().BeFalse(
+                    $"experimental capability '{descriptor.Id}' is off by default");
+                resolution.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
+            }
+            else
+            {
+                resolution.Enabled.Should().BeTrue(
+                    $"non-experimental capability '{descriptor.Id}' resolves enabled");
+                resolution.ReasonCode.Should().BeNull();
+            }
         }
 
         var unknown = Registry.Resolve("does.not.exist", context);
