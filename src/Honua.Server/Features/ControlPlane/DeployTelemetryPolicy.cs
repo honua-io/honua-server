@@ -223,6 +223,11 @@ internal sealed record DeployTelemetryPolicy
             DeployTargetKind.AwsLambda => HasCanarySignalConfiguration(spec.Parameters) ? "aws-lambda-canary" : "honua-http",
             DeployTargetKind.AzureContainerApps => HasCanarySignalConfiguration(spec.Parameters) ? "azure-aca-canary" : "honua-http",
             DeployTargetKind.AzureFunctions => "honua-http",
+            // Self-hosted rolling replace is gated purely on the synthetic /healthz/ready probe of the
+            // standby replica (ADR-0060): there is no cloud metrics substrate in the on-prem/air-gapped
+            // path, so it maps to the health-probe-only "honua-http" preset. Without this arm the gate
+            // would fall through to null and the health-probe signal would never be evaluated.
+            DeployTargetKind.SelfHostedRolling => "honua-http",
             _ => null
         };
 

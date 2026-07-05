@@ -439,6 +439,10 @@ builder.Services.AddResilientHttpClient(
 #endif
 // ---- Extracted: control-plane deploy + batch-compute backends (Startup/BatchAndDeployBackendsRegistration.cs)
 builder.Services.AddHonuaBatchAndDeployBackends();
+// Substrate-neutral single-host rolling-replace proxy seams (ADR-0060). The embedded reverse proxy is
+// only wired into the request pipeline when ControlPlane:SelfHosted:Enabled is true, so default
+// deployments are untouched.
+builder.Services.AddHonuaSelfHostedRollingProxy(builder.Configuration);
 // ---- End extracted block
 
 if (connectedRedis != null)
@@ -1484,6 +1488,14 @@ app.MapProductionMonitoringEndpoints();
 
 // Map enhanced performance monitoring endpoints
 app.MapEnhancedPerformanceEndpoints();
+
+// Substrate-neutral single-host rolling-replace front proxy (ADR-0060). Mapped only when the
+// self-hosted backend is enabled; the catch-all proxy route only handles paths not claimed by an
+// explicit endpoint, so the control-plane API and health endpoints keep their normal precedence.
+if (Honua.ControlPlane.SelfHostedRollingProxyRegistration.IsSelfHostedProxyEnabled(builder.Configuration))
+{
+    app.MapReverseProxy();
+}
 
 app.Run();
 
