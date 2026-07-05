@@ -486,6 +486,11 @@ if (connectedRedis != null)
         // deploy/metadata/coordinated operations and walks any wedged staged release forward.
         builder.Services.AddHostedService<Honua.ControlPlane.ExecutionJobBackstopSweepService>();
         builder.Services.AddHostedService<Honua.ControlPlane.WorkflowOperationBackstopSweepService>();
+
+        // GP-plane observability spine (#2463): sample the execution-job store on a low-frequency
+        // loop and publish per-(status, backend) queue depth for the honua.execution.queue.depth
+        // gauge. Runs in both trigger modes since it only reads state to emit telemetry.
+        builder.Services.AddHostedService<Honua.ControlPlane.ExecutionQueueDepthCollectorBackgroundService>();
     }
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +
