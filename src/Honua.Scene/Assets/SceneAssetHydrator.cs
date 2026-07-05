@@ -109,6 +109,7 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
                 if (bytes is null)
                 {
                     SceneAssetHydratorLog.AssetMissing(_logger, sceneId);
+                    TryDeleteDirectory(tempDirectory);
                     return;
                 }
 
