@@ -55,15 +55,11 @@ internal sealed partial class NotifyingWorkflowOperationStore : IWorkflowOperati
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operation);
 
-        // Authoritative CAS write first; notify only when this write actually won —
-        // a losing writer's terminal transition was not persisted, and the winning
-        // writer's own SetAsync/TrySetAsync raises the notification instead. The
-        // outbox dedupe key keeps repeated terminal writes idempotent regardless.
+        // Authoritative CAS write first; notify only when the write succeeded.
         var updated = await _inner.TrySetAsync(operation, ttl, cancellationToken).ConfigureAwait(false);
 
         if (updated

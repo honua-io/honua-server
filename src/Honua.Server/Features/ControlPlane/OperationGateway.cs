@@ -93,11 +93,13 @@ internal sealed partial class OperationGateway : IOperationGateway
         string? executionOperationId = null;
         var status = OperationProposalStatus.Submitted;
         string? failureMessage = null;
+        var executorFound = false;
 
         try
         {
             if (_executors.TryGetValue(proposal.Kind, out var executor))
             {
+                executorFound = true;
                 executionOperationId = await executor
                     .ExecuteAsync(request, proposal.Plan.ExecutionPayload, cancellationToken)
                     .ConfigureAwait(false);
@@ -112,6 +114,16 @@ internal sealed partial class OperationGateway : IOperationGateway
             Log.ProposalExecutionFailed(_logger, proposalId, ex);
             status = OperationProposalStatus.Failed;
             failureMessage = $"Execution failed ({ex.GetType().Name}).";
+        }
+
+        // BH6-033: if no executor was registered for this operation class, fail the proposal
+        // with a terminal Failed status rather than persisting the non-terminal Submitted state
+        // (which would leave the proposal stuck in the active index indefinitely).
+        if (!executorFound && failureMessage == null)
+        {
+            Log.NoExecutorRegisteredForApproval(_logger, proposalId, proposal.Kind.ToString());
+            status = OperationProposalStatus.Failed;
+            failureMessage = $"No executor is registered for operation kind '{proposal.Kind}'; the operation was not performed.";
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -177,13 +189,22 @@ internal sealed partial class OperationGateway : IOperationGateway
         GuardrailDecision decision,
         CancellationToken cancellationToken)
     {
-        string? executionOperationId = null;
-        if (_executors.TryGetValue(request.Kind, out var executor))
+        // BH6-032: if no executor is registered for this operation class, return NotSupported
+        // rather than silently claiming Executed with no work performed.
+        if (!_executors.TryGetValue(request.Kind, out var executor))
         {
-            executionOperationId = await executor
-                .ExecuteAsync(request, request.ExecutionPayload, cancellationToken)
-                .ConfigureAwait(false);
+            Log.NoExecutorRegisteredForDirect(_logger, request.Kind.ToString());
+            return new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.NotSupported,
+                Decision = decision,
+                Message = $"No executor is registered for operation kind '{request.Kind}'; the operation was not performed."
+            };
         }
+
+        var executionOperationId = await executor
+            .ExecuteAsync(request, request.ExecutionPayload, cancellationToken)
+            .ConfigureAwait(false);
 
         return new OperationGatewayResult
         {
@@ -399,5 +420,11 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         [LoggerMessage(9201, LogLevel.Error, "Execution of approved proposal {ProposalId} failed")]
         public static partial void ProposalExecutionFailed(ILogger logger, string proposalId, Exception exception);
+
+        [LoggerMessage(9202, LogLevel.Warning, "No executor registered for direct-execute of operation kind {Kind}; returning NotSupported")]
+        public static partial void NoExecutorRegisteredForDirect(ILogger logger, string kind);
+
+        [LoggerMessage(9203, LogLevel.Warning, "No executor registered for approval of proposal {ProposalId} with kind {Kind}; failing proposal to terminal Failed")]
+        public static partial void NoExecutorRegisteredForApproval(ILogger logger, string proposalId, string kind);
     }
 }

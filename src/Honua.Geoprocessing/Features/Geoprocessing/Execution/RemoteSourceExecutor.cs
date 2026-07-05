@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -148,11 +149,32 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         var features = new List<IFeature>();
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
 
+        // BH6-024: track a running byte estimate from the raw source strings while
+        // streaming so the size guard fires before the full list is materialized and
+        // passed to WriteFeatureCollection. Without this guard a malicious or
+        // misconfigured remote can push arbitrarily large payloads into the worker's
+        // heap long before the post-loop payload.Length check ever runs.
+        long streamingByteEstimate = 0L;
+
         try
         {
             await foreach (var sourceFeature in source.ReadAsync(request, cancellationToken).ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                streamingByteEstimate +=
+                    (long)Encoding.UTF8.GetByteCount(sourceFeature.GeometryGeoJson ?? "null")
+                    + sourceFeature.Attributes.Sum(static kv =>
+                        (long)Encoding.UTF8.GetByteCount(kv.Key)
+                        + (long)Encoding.UTF8.GetByteCount(kv.Value?.ToString() ?? "null")
+                        + 10L); // per-attribute JSON punctuation overhead
+
+                if (streamingByteEstimate > maxBytes)
+                {
+                    return JobExecutionResult.Failed(
+                        $"{_processId} artifact size exceeds configured MaxArtifactBytes={maxBytes} during streaming.");
+                }
+
                 features.Add(ToNtsFeature(sourceFeature, geoJsonReader));
             }
         }

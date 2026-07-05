@@ -61,6 +61,34 @@ public class SqlServerProviderResolutionTests
     }
 
     [Fact]
+    public async Task GetEstimatesAsync_WithPermanentFilterConfigured_ThrowsNotSupportedException()
+    {
+        // BH6-021 regression: GetEstimatesAsync was missing the EnsureNoPermanentFilterAsync
+        // guard that all other public read methods call. A permanent (row-visibility) filter
+        // configured on a SQL Server layer must block estimates just as it blocks queries.
+        var provider = CreateSqlServerStore(v2Provider: new StubV2Provider(LayerId, permanentFilterExpression: "status = 'active'"));
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(
+            () => provider.Reader.GetEstimatesAsync(LayerId));
+
+        Assert.Contains("permanent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SQL Server", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetEstimatesAsync_WithoutPermanentFilter_DoesNotThrowFromGuard()
+    {
+        // When no permanent filter is configured the guard must pass through.
+        // GetEstimatesAsync will still fail downstream (no binding), but the
+        // guard itself must not interfere.
+        var provider = CreateSqlServerStore(v2Provider: new StubV2Provider(LayerId, permanentFilterExpression: null));
+
+        // Expect InvalidOperationException from the missing binding, NOT NotSupportedException.
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.Reader.GetEstimatesAsync(LayerId));
+    }
+
+    [Fact]
     public async Task QueryStatistics_OnSqlServerProvider_Throws()
     {
         var provider = CreateSqlServerStore();
@@ -258,14 +286,59 @@ public class SqlServerProviderResolutionTests
         return (new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow), service, resource, publication);
     }
 
-    private static SqlServerFeatureStore CreateSqlServerStore(ISqlServerConnectionFactory? factory = null)
+    private static SqlServerFeatureStore CreateSqlServerStore(
+        ISqlServerConnectionFactory? factory = null,
+        Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider? v2Provider = null)
     {
         var dataAccess = new SqlServerFeatureDataAccess(
             factory ?? new ThrowingConnectionFactory(),
             Options.Create(new SqlServerOptions()),
             NullLogger<SqlServerFeatureDataAccess>.Instance);
 
-        return new SqlServerFeatureStore(dataAccess);
+        return new SqlServerFeatureStore(dataAccess, v2Provider);
+    }
+
+    /// <summary>
+    /// Minimal <see cref="Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider"/>
+    /// stub that returns a single resource with an optional permanent filter for
+    /// BH6-021 regression tests.
+    /// </summary>
+    private sealed class StubV2Provider(int storageLayerId, string? permanentFilterExpression) :
+        Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+        {
+            var resource = new MetadataV2Resource
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "res-stub", Name = "Stub" },
+                Type = MetadataV2ResourceType.FeatureDataset,
+                PermanentFilter = permanentFilterExpression == null ? null : new MetadataV2PermanentFilter
+                {
+                    Expression = permanentFilterExpression,
+                    Language = MetadataV2PermanentFilterLanguages.ArcGisSql
+                }
+            };
+            var storageBinding = new MetadataV2StorageBinding
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "binding-stub", Name = "binding-stub" },
+                ResourceId = resource.Metadata.Id,
+                StorageLayerId = storageLayerId,
+                StorageType = MetadataV2StorageType.RelationalTable,
+                Locator = "dbo.stub_table"
+            };
+            var graph = new MetadataV2Graph
+            {
+                Revision = 1,
+                Environment = "test",
+                Resources = [resource],
+                StorageBindings = [storageBinding]
+            };
+            var snapshot = new MetadataV2GraphSnapshot(graph, "etag-stub", DateTimeOffset.UtcNow);
+            return ValueTask.FromResult(snapshot);
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(null);
     }
 
     private sealed class ThrowingConnectionFactory : ISqlServerConnectionFactory
