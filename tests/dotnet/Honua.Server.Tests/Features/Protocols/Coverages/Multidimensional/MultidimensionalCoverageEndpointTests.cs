@@ -403,7 +403,7 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
                 NextCursor = null
             });
 
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(
                 _jobs.Values.Where(job => !kind.HasValue || job.Spec.Kind == kind.Value).ToArray());
     }

@@ -10,7 +10,7 @@ namespace Honua.TestKit.Helpers;
 /// Functional in-memory <see cref="IExecutionJobStore"/> for integration tests. Production only
 /// registers a durable execution-job store when Redis (<c>IConnectionMultiplexer</c>) is present
 /// (see GeoprocessingServiceCollectionExtensions), and the <see cref="WebAppFixture"/> runs without
-/// Redis — so the durable-operation endpoint tests register this store to exercise the durable
+/// Redis â€” so the durable-operation endpoint tests register this store to exercise the durable
 /// cancel/retry paths (the endpoints resolve <see cref="IExecutionJobStore"/> optionally and take
 /// the durable path when it is present). State is a plain dictionary; not thread-optimised, but the
 /// per-test server is single-caller.
@@ -81,13 +81,20 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore
         }
     }
 
-    public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
     {
         lock (_gate)
         {
-            IReadOnlyList<ExecutionJobRecord> items = _jobs.Values
-                .Where(job => !kind.HasValue || job.Spec.Kind == kind.Value)
-                .ToArray();
+            var query = _jobs.Values
+                .Where(job => !kind.HasValue || job.Spec.Kind == kind.Value);
+            // BH7-009: apply 2x overfetch budget when a limit is supplied (mirrors
+            // the Redis store behaviour; authorization filters may discard some records).
+            if (limit.HasValue)
+            {
+                query = query.Take(limit.Value * 2);
+            }
+
+            IReadOnlyList<ExecutionJobRecord> items = query.ToArray();
             return Task.FromResult(items);
         }
     }

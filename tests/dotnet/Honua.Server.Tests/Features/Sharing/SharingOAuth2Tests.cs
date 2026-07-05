@@ -363,17 +363,18 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("GET /sharing/rest/oauth2/token")]
-    public async Task Token_AuthorizationCodeGrantViaQueryString_ReturnsAccessToken()
+    [Endpoint("POST /sharing/rest/oauth2/token")]
+    public async Task Token_AuthorizationCodeGrantViaGetQueryString_Returns405MethodNotAllowed()
     {
+        // BH7-001: The token endpoint must be POST-only per RFC 6749 §4.1.3.
+        // A GET registration exposed auth codes, client_secret, and refresh
+        // tokens in URL query strings — logged by proxies/CDN/access logs (CWE-598).
+        // Verify that GET requests are rejected with 405 Method Not Allowed.
         var verifier = "query-string-grant-verifier-value-abcdefghijklmnop";
         var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
         var code = await SeedAuthorizationCodeAsync(challenge, "S256");
 
         using var client = _fixture.CreateClient();
-        // Use the literal route path (not the TokenEndpoint const) so the
-        // endpoint-registry governance scanner recognises this as a same-method
-        // (GET) HTTP request that backs GET /sharing/rest/oauth2/token.
         var url = QueryHelpers.AddQueryString("/sharing/rest/oauth2/token", new Dictionary<string, string?>
         {
             ["grant_type"] = "authorization_code",
@@ -384,9 +385,8 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         });
         using var response = await client.GetAsync(url);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await ReadTokenAsync(response);
-        payload.AccessToken.Should().NotBeNullOrWhiteSpace();
+        // GET must be rejected — credentials must never travel in the URL.
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [IntegrationTest]
@@ -437,7 +437,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     {
         // RFC 7662 introspection (#1890) is off by default; opt in and drive the real
         // admin-guarded endpoint. An unknown/forged token must introspect as
-        // { active: false } per RFC 7662 §2.2 — no other detail is leaked.
+        // { active: false } per RFC 7662 Â§2.2 â€” no other detail is leaked.
         var fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
@@ -478,7 +478,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     public async Task Introspect_WhenDisabled_Returns404()
     {
         // The introspection surface is absent (404) unless explicitly enabled, so it is
-        // never a silent discovery surface (RFC 7662 §4). The default fixture does not
+        // never a silent discovery surface (RFC 7662 Â§4). The default fixture does not
         // enable it; the admin-authenticated request still 404s.
         using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
         using var response = await client.PostAsync(
@@ -605,7 +605,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/revoke")]
     public async Task Revoke_UnknownToken_Returns200()
     {
-        // RFC 7009 §2.2: a revocation request for an unknown/already-revoked token still
+        // RFC 7009 Â§2.2: a revocation request for an unknown/already-revoked token still
         // returns 200, so the endpoint can never be used to probe token validity.
         using var client = _fixture.CreateClient();
         using var response = await PostRevokeAsync(client, ("token", "00000000000000000000000000000000"));
