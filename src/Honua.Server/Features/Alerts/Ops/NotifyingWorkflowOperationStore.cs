@@ -55,6 +55,28 @@ internal sealed partial class NotifyingWorkflowOperationStore : IWorkflowOperati
         }
     }
 
+    /// <inheritdoc />
+    public async Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        // Authoritative CAS write first; notify only when this write actually won —
+        // a losing writer's terminal transition was not persisted, and the winning
+        // writer's own SetAsync/TrySetAsync raises the notification instead. The
+        // outbox dedupe key keeps repeated terminal writes idempotent regardless.
+        var updated = await _inner.TrySetAsync(operation, ttl, cancellationToken).ConfigureAwait(false);
+
+        if (updated
+            && _options.Ops.Enabled
+            && operation.Kind == WorkflowOperationKind.Deploy
+            && TryMapSeverity(operation.Status, out var severity))
+        {
+            await NotifyTerminalAsync(operation, severity, cancellationToken).ConfigureAwait(false);
+        }
+
+        return updated;
+    }
+
     private async Task NotifyTerminalAsync(WorkflowOperationRecord operation, AlertSeverity severity, CancellationToken cancellationToken)
     {
         var attributes = new Dictionary<string, string>(StringComparer.Ordinal)
