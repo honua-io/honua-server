@@ -53,6 +53,15 @@ On Azure Monitor managed Prometheus, define rule-group resources (ARM/Bicep/Terr
 helm install monitoring prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace
 ```
 
+5. (One-command Docker option) For local or single-node deployments, bring up the curated Grafana + Prometheus bundle — provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards — against a running server:
+
+```bash
+docker compose -f docker/monitoring/compose.yml up -d
+# Grafana http://localhost:3000 (admin/admin), Prometheus http://localhost:9090
+```
+
+Prometheus scrapes `/metrics` with `basic_auth` (the API-key handler accepts the admin key as the Basic password). Edit [`docker/monitoring/prometheus/prometheus.yml`](../../../docker/monitoring/prometheus/prometheus.yml) to set the scrape target/credentials, and see [`docker/monitoring/README.md`](../../../docker/monitoring/README.md) for details.
+
 ## Verify
 
 ```bash
