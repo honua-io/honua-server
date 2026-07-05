@@ -56,7 +56,7 @@ public sealed class ExecutionJobCancellationHelperTests
         result.Job.Should().BeSameAs(job,
             "identical nonterminal observations must preserve the original record reference");
         jobStore.TrySetInvocations.Should().Be(0,
-            "no-op observations must not touch the durable store — otherwise UpdatedAt gets refreshed");
+            "no-op observations must not touch the durable store â€” otherwise UpdatedAt gets refreshed");
 
         var stored = await jobStore.GetAsync("job-noop");
         stored!.UpdatedAt.Should().Be(updatedAt,
@@ -222,7 +222,7 @@ public sealed class ExecutionJobCancellationHelperTests
     public async Task TryStampRemoteCancelRequestedAtAsync_AlreadyStamped_ReturnsAlreadyStampedWithoutWrite()
     {
         // Idempotent: a repeat remote cancel on a record that already has
-        // CancellationRequestedAt set must not refresh UpdatedAt — the reconciler's
+        // CancellationRequestedAt set must not refresh UpdatedAt â€” the reconciler's
         // missing-registration grace window relies on an unchanged UpdatedAt for
         // repeated idempotent cancel observations.
         var updatedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
@@ -303,7 +303,7 @@ public sealed class ExecutionJobCancellationHelperTests
     {
         // The exact race the stamp protects against: a concurrent caller stamps
         // CancellationRequestedAt first. The losing CAS must re-read, see the stamp,
-        // and fall through as AlreadyStamped — not retry-and-overwrite. This is what
+        // and fall through as AlreadyStamped â€” not retry-and-overwrite. This is what
         // makes the downstream backend.CancelAsync see CancellationRequestedAt set
         // and map NotFound -> Cancelled instead of Failed.
         var stale = CreateJobRecord("job-race-stamped", ExecutionJobStatus.Running);
@@ -320,7 +320,7 @@ public sealed class ExecutionJobCancellationHelperTests
         result.Outcome.Should().Be(RemoteCancelStampOutcome.AlreadyStamped);
         result.Job!.CancellationRequestedAt.Should().Be(concurrentlyStamped.CancellationRequestedAt);
         result.Job.Status.Should().Be(ExecutionJobStatus.Running,
-            "the losing caller must not terminalize the record — only surface the durable intent");
+            "the losing caller must not terminalize the record â€” only surface the durable intent");
     }
 
     [Fact]
@@ -346,7 +346,7 @@ public sealed class ExecutionJobCancellationHelperTests
         var merged = ExecutionJobCancellationHelper.MergeBackendCancelObservation(job, observation, now);
 
         merged.Should().BeSameAs(job,
-            "the merge must return the same reference when all observable fields match — callers rely on ReferenceEquals to detect no-ops");
+            "the merge must return the same reference when all observable fields match â€” callers rely on ReferenceEquals to detect no-ops");
     }
 
     private static (MeterListener Listener, List<(string? Status, string? PreviousStatus)> Events) ListenForTransitions(string expectedBackend)
@@ -472,7 +472,7 @@ public sealed class ExecutionJobCancellationHelperTests
                     .ToArray()
             });
 
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }
 }

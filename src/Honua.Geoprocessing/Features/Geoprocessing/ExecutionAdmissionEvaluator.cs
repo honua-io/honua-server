@@ -95,7 +95,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
 
         if (_jobStore != null)
         {
-            var active = await _jobStore.ListActiveAsync(kind: null, cancellationToken)
+            var active = await _jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             activeGlobal = active.Count;
 
@@ -134,7 +134,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             _logger, request.JobKind.ToString(), partitionTag,
             activeInPartition, activeGlobal, submissionsInWindow, activeCostWeightInPartition);
 
-        // 1. Backpressure — cheapest short-circuit when the system is saturated.
+        // 1. Backpressure â€” cheapest short-circuit when the system is saturated.
         if (options.MaxConcurrentJobsGlobal > 0 && activeGlobal >= options.MaxConcurrentJobsGlobal)
         {
             return Deny(
@@ -145,7 +145,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
                 snapshot, request, activity, partitionTag, principalTag);
         }
 
-        // 2. Concurrency — per-partition active jobs for this kind.
+        // 2. Concurrency â€” per-partition active jobs for this kind.
         if (options.MaxConcurrentJobsPerPartition > 0 && activeInPartition >= options.MaxConcurrentJobsPerPartition)
         {
             return Deny(
@@ -156,7 +156,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
                 snapshot, request, activity, partitionTag, principalTag);
         }
 
-        // 3. Rate — per-principal sliding-window submissions.
+        // 3. Rate â€” per-principal sliding-window submissions.
         // Claim a slot so concurrent requests from the same principal cannot both pass.
         if (options.MaxSubmissionsPerWindow > 0 && !string.IsNullOrWhiteSpace(request.PrincipalId))
         {
@@ -175,7 +175,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             snapshot = snapshot with { SubmissionsInWindow = postClaimCount };
         }
 
-        // 4. Cost — aggregate cost weight within the partition.
+        // 4. Cost â€” aggregate cost weight within the partition.
         if (options.MaxCostWeightPerPartition > 0)
         {
             var requestCost = ResolveCostWeight(request);
