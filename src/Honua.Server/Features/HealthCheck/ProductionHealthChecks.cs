@@ -26,6 +26,7 @@ internal static class ProductionHealthChecks
     private static readonly string[] UploadTags = ["upload", "queue"];
     private static readonly string[] MetricsTags = ["metrics", "monitoring"];
     private static readonly string[] OutboxTags = ["outbox", "events"];
+    private static readonly string[] AlertsTags = ["alerts", "notifications"];
     private static readonly string[] PluginTags = ["plugins", "extensibility"];
 
     /// <summary>
@@ -78,6 +79,14 @@ internal static class ProductionHealthChecks
             "feature-change-outbox",
             HealthStatus.Degraded,
             OutboxTags);
+
+        // Alert delivery outbox (#2427): surfaces dispatch backlog growth and dead-letter
+        // accumulation on the readiness endpoint so notification-delivery stalls are visible
+        // before they become silent loss. Reports Healthy when the pipeline is disabled.
+        healthChecksBuilder.AddCheck<Honua.Alerts.AlertDispatchHealthCheck>(
+            "alert-dispatch",
+            HealthStatus.Degraded,
+            AlertsTags);
 
         // Plugin/extension SDK (#347): reports loaded plugins and whether the Enterprise
         // entitlement is active. Always healthy — plugins are optional.

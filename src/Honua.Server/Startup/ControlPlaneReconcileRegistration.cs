@@ -5,6 +5,8 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Startup;
 
@@ -33,7 +35,16 @@ internal static class ControlPlaneReconcileRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
+        // Decorate the workflow-operation store so deploy terminal transitions raise ops
+        // notifications through the shared alert outbox. SetAsync is the single choke point
+        // for every persisted transition (service + reconciler), so this one seam covers
+        // them all; the decorator no-ops when ops notifications are disabled (the default).
+        services.AddSingleton<RedisWorkflowOperationStore>();
+        services.AddSingleton<IWorkflowOperationStore>(sp => new Honua.Alerts.Ops.NotifyingWorkflowOperationStore(
+            sp.GetRequiredService<RedisWorkflowOperationStore>(),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<IOptions<Honua.Core.Features.Alerts.Domain.AlertOptions>>(),
+            sp.GetRequiredService<ILogger<Honua.Alerts.Ops.NotifyingWorkflowOperationStore>>()));
         services.AddSingleton<IWorkflowOperationReconciler, DeployWorkflowReconciler>();
         services.AddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
 

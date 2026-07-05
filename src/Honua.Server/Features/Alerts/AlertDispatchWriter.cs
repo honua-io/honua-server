@@ -66,7 +66,14 @@ internal sealed partial class AlertDispatchWriter
                 continue;
             }
 
+            AlertPipelineMetrics.RecordEventEmitted(pendingDispatch.AlertEvent.TriggerType);
+
             await _dispatchStore.EnqueueAsync(eventId.Value, pendingDispatch.Channels, cancellationToken).ConfigureAwait(false);
+
+            foreach (var channel in pendingDispatch.Channels.Distinct())
+            {
+                AlertPipelineMetrics.RecordDispatchEnqueued(channel);
+            }
         }
     }
 
