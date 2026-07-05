@@ -216,6 +216,140 @@ public sealed class ConfigurationOperationCatalogsTests
         workload.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task DeployTargetRegistry_ProjectsPlatformReleaseServingArtifact_WhenTargetHasNoExplicitArtifact()
+    {
+        var registry = new ConfigurationDeployTargetRegistry(
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                PlatformRelease = new PlatformReleaseOptions
+                {
+                    Version = "2026.07.0",
+                    ServingArtifactReference = "ghcr.io/honua/server:2026.07.0",
+                    Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "ghcr.io/honua/worker:2026.07.0" }]
+                },
+                DeployTargets =
+                [
+                    new DeployTargetOptions
+                    {
+                        TargetId = "serving-prod",
+                        Backend = "honua-gitops-kubernetes",
+                        Environment = "prod",
+                        TargetName = "honua-prod"
+                    }
+                ]
+            }));
+
+        var target = await registry.GetAsync("serving-prod");
+
+        target.Should().NotBeNull();
+        target!.ArtifactReference.Should().Be("ghcr.io/honua/server:2026.07.0");
+    }
+
+    [Fact]
+    public async Task DeployTargetRegistry_ExplicitArtifactWinsOverPlatformRelease()
+    {
+        var registry = new ConfigurationDeployTargetRegistry(
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                PlatformRelease = new PlatformReleaseOptions
+                {
+                    Version = "2026.07.0",
+                    ServingArtifactReference = "ghcr.io/honua/server:2026.07.0",
+                    Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "ghcr.io/honua/worker:2026.07.0" }]
+                },
+                DeployTargets =
+                [
+                    new DeployTargetOptions
+                    {
+                        TargetId = "serving-prod",
+                        Backend = "honua-gitops-kubernetes",
+                        Environment = "prod",
+                        TargetName = "honua-prod",
+                        ArtifactReference = "ghcr.io/honua/server:pinned"
+                    }
+                ]
+            }));
+
+        var target = await registry.GetAsync("serving-prod");
+
+        target!.ArtifactReference.Should().Be("ghcr.io/honua/server:pinned");
+    }
+
+    [Fact]
+    public async Task ExecutionJobRegistry_ProjectsPlatformReleaseWorkerImage_MatchedByRuntimeProfile()
+    {
+        var registry = new ConfigurationExecutionJobDefinitionRegistry(
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                PlatformRelease = new PlatformReleaseOptions
+                {
+                    Version = "2026.07.0",
+                    ServingArtifactReference = "ghcr.io/honua/server:2026.07.0",
+                    Workers =
+                    [
+                        new PlatformReleaseWorkerImageOptions { ArtifactReference = "ghcr.io/honua/worker:2026.07.0" },
+                        new PlatformReleaseWorkerImageOptions { RuntimeProfile = "gdal", ArtifactReference = "ghcr.io/honua/worker-gdal:2026.07.0" }
+                    ]
+                },
+                ExecutionWorkloads =
+                [
+                    new ExecutionWorkloadOptions
+                    {
+                        WorkloadId = "gp-gdal",
+                        TargetKind = global::Honua.Core.Features.ControlPlane.Domain.BatchComputeTargetKind.KubernetesJob,
+                        Backend = "local",
+                        WorkloadName = "GDAL GP",
+                        RuntimeProfile = "gdal"
+                    },
+                    new ExecutionWorkloadOptions
+                    {
+                        WorkloadId = "gp-default",
+                        TargetKind = global::Honua.Core.Features.ControlPlane.Domain.BatchComputeTargetKind.KubernetesJob,
+                        Backend = "local",
+                        WorkloadName = "Default GP"
+                    }
+                ]
+            }));
+
+        var gdal = await registry.GetAsync("gp-gdal");
+        var fallback = await registry.GetAsync("gp-default");
+
+        gdal!.ArtifactReference.Should().Be("ghcr.io/honua/worker-gdal:2026.07.0");
+        fallback!.ArtifactReference.Should().Be("ghcr.io/honua/worker:2026.07.0");
+    }
+
+    [Fact]
+    public async Task ExecutionJobRegistry_ExplicitWorkloadArtifactWinsOverPlatformRelease()
+    {
+        var registry = new ConfigurationExecutionJobDefinitionRegistry(
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                PlatformRelease = new PlatformReleaseOptions
+                {
+                    Version = "2026.07.0",
+                    ServingArtifactReference = "ghcr.io/honua/server:2026.07.0",
+                    Workers = [new PlatformReleaseWorkerImageOptions { RuntimeProfile = "gdal", ArtifactReference = "ghcr.io/honua/worker-gdal:2026.07.0" }]
+                },
+                ExecutionWorkloads =
+                [
+                    new ExecutionWorkloadOptions
+                    {
+                        WorkloadId = "gp-gdal",
+                        TargetKind = global::Honua.Core.Features.ControlPlane.Domain.BatchComputeTargetKind.KubernetesJob,
+                        Backend = "local",
+                        WorkloadName = "GDAL GP",
+                        RuntimeProfile = "gdal",
+                        ArtifactReference = "ghcr.io/honua/worker-gdal:pinned"
+                    }
+                ]
+            }));
+
+        var gdal = await registry.GetAsync("gp-gdal");
+
+        gdal!.ArtifactReference.Should().Be("ghcr.io/honua/worker-gdal:pinned");
+    }
+
     private sealed class TestControlPlaneOptionsMonitor(ControlPlaneOptions currentValue) : IOptionsMonitor<ControlPlaneOptions>
     {
         public ControlPlaneOptions CurrentValue => currentValue;
