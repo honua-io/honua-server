@@ -27,7 +27,7 @@
       "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
       "id": 10,
       "options": {
-        "content": "### Alert pipeline health\nThese panels consume `honua_alerts_*` metrics from the alerts-GA workstream (#2468). If they read **No data**, that build is not yet deployed — the panels are wired and will populate once the alert-dispatch meter is emitting. Metric names are the expected contract; adjust here if #2468 finalizes different names.",
+        "content": "### Alert pipeline health\nThese panels consume `honua_alerts_*` metrics from the alerts-GA workstream (#2468). If they read **No data**, that build is not yet deployed — the panels are wired and will populate once the alert-dispatch meter is emitting. Metric names match the #2468 implementation (honua.alerts.* on the shared Honua meter, exported with underscore conversion).",
         "mode": "markdown"
       },
       "title": "",
@@ -42,7 +42,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
-          "expr": "sum(honua_alerts_backlog) by (channel)",
+          "expr": "sum(honua_alerts_dispatch_backlog_count)",
           "legendFormat": "{{channel}}",
           "refId": "A"
         }
@@ -59,7 +59,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
-          "expr": "sum(rate(honua_alerts_dead_letter_total[5m])) by (channel)",
+          "expr": "sum(rate(honua_alerts_deliveries_dead_lettered_total[5m])) by (channel)",
           "legendFormat": "{{channel}}",
           "refId": "A"
         }
@@ -76,12 +76,12 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(honua_alerts_delivery_duration_ms_bucket[5m])) by (le, channel))",
+          "expr": "histogram_quantile(0.95, sum(rate(honua_alerts_delivery_latency_bucket[5m])) by (le, channel))",
           "legendFormat": "p95 {{channel}}",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(honua_alerts_delivery_duration_ms_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(honua_alerts_delivery_latency_bucket[5m])) by (le))",
           "legendFormat": "p99 (all)",
           "refId": "B"
         }
@@ -98,7 +98,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
-          "expr": "sum(rate(honua_alerts_dispatch_total[5m])) by (outcome)",
+          "expr": "sum(rate(honua_alerts_deliveries_succeeded_total[5m])) by (channel) or sum(rate(honua_alerts_deliveries_failed_total[5m])) by (channel)",
           "legendFormat": "{{outcome}}",
           "refId": "A"
         }
