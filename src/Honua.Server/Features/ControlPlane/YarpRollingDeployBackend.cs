@@ -475,7 +475,19 @@ internal sealed partial class YarpRollingDeployBackend(
             var replicas = await DiscoverReplicasAsync(operation, target, cancellationToken).ConfigureAwait(false);
             var standbyAddress = ReplicaAddress(target, target.StandbyPort);
             var activeAddress = ReplicaAddress(target, target.ActivePort);
-            var alreadyPromoted = string.Equals(proxySwapper.ActiveDestinationAddress, standbyAddress, StringComparison.OrdinalIgnoreCase);
+
+            // Classify from ground truth, not only in-memory proxy state. The in-memory
+            // ActiveDestinationAddress is reset to the configured active port when the front process
+            // restarts, so after a promote+restart it wrongly reads "not promoted". Container labels
+            // survive the restart: the new revision is serving when its standby replica is running and
+            // the previous active replica is gone (PromoteAsync removes it at cutover). Either signal
+            // (the live proxy address in-process, or the discovered container state after a restart)
+            // marks the cutover as done.
+            var proxyPointsAtStandby = string.Equals(
+                proxySwapper.ActiveDestinationAddress, standbyAddress, StringComparison.OrdinalIgnoreCase);
+            var newRevisionServing = replicas.Standby is { Running: true }
+                && (replicas.Active is null || !replicas.Active.Running);
+            var alreadyPromoted = proxyPointsAtStandby || newRevisionServing;
 
             if (!alreadyPromoted)
             {
