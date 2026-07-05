@@ -182,6 +182,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         var emptyQuery = new FeatureQuery();
