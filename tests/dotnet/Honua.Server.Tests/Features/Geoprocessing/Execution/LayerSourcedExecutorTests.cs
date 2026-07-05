@@ -271,6 +271,43 @@ public sealed class LayerSourcedExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
     }
 
+    [UnitTest]
+    public async Task BufferAggregate_MultiFieldGroupBy_AmbiguousValues_ProducesSeparateGroups()
+    {
+        // BH2-017 regression: BuildGroupKey previously used string.Join("", parts) with no
+        // separator, so {"San","Jose"} and {"Sa","nJose"} both produced key "SanJose" and
+        // were dissolved into the same geometry/group. With the fix they must dissolve separately.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId,
+        [
+            new DagSourceFeature
+            {
+                GeometryGeoJson = """{"type":"Point","coordinates":[0,0]}""",
+                Attributes = new Dictionary<string, object?> { ["first"] = "San", ["last"] = "Jose" },
+            },
+            new DagSourceFeature
+            {
+                GeometryGeoJson = """{"type":"Point","coordinates":[50,50]}""",
+                Attributes = new Dictionary<string, object?> { ["first"] = "Sa", ["last"] = "nJose" },
+            },
+        ]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "1"),
+            ("unit", "meters"),
+            ("dissolve", "true"),
+            ("groupByFields", "first,last"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().HaveCount(2, "distinct (first,last) combinations must produce separate dissolved groups even when the concatenated values would collide");
+        features.Should().AllSatisfy(f =>
+            Convert.ToInt64(f.Attributes.GetOptionalValue(LayerBufferAggregateExecutor.CountAttribute), CultureInfo.InvariantCulture)
+                .Should().Be(1, "each group has exactly one member"));
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
