@@ -136,6 +136,13 @@
       "implementationStatus": "implemented"
     },
     {
+      "standardName": "geocode_addresses",
+      "referenceToolName": "honua_geocode_addresses",
+      "family": "Analysis and geoprocessing (reference shape)",
+      "schema": "tools/geocode_addresses.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
       "standardName": "solve_route",
       "referenceToolName": "honua_solve_route",
       "family": "Analysis and geoprocessing (reference shape)",
@@ -155,6 +162,14 @@
       "family": "Control-plane proposal (reference shape)",
       "schema": "tools/propose_operation.schema.json",
       "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "ingest_dataset",
+      "referenceToolName": "honua_ingest_dataset",
+      "family": "Publishing",
+      "schema": "tools/ingest_dataset.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Publish Data ingest step of the reference implementation: inline CSV/GeoJSON to a catalog table whose {connectionId, schema, table} chains into publish_service. Closes the data-loading gap ahead of the standard's file/URL ingest contract."
     },
     {
       "standardName": "publish_service",

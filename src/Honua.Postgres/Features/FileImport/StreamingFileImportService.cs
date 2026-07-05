@@ -80,6 +80,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         CompositeFormat.Parse("{0} row(s) had a geometry value that could not be parsed as WKT, EWKT, or WKB; each raw value was preserved as an attribute and the row was imported without geometry.");
     private static readonly CompositeFormat _wktUnparseableGeometryWarningFormat =
         CompositeFormat.Parse("{0} record(s) could not be parsed as WKT, EWKT, or WKB and were skipped.");
+    private static readonly CompositeFormat _csvGeocodeFailureWarningFormat =
+        CompositeFormat.Parse("{0} row(s) had an address that could not be geocoded; each row was imported without geometry.");
     private static readonly Regex _wktSridRegex = new(
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -525,7 +527,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 warnings));
 
             // Stream features and insert in batches
-            (importedCount, failedCount, warnings) = await ImportStreamingAsync(
+            IReadOnlyList<ImportValidationIssue> rowIssues;
+            (importedCount, failedCount, warnings, rowIssues) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -558,7 +561,29 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 stopwatch.Elapsed,
                 warnings,
                 physicalTableName: GetAllowedTableName(request.TableName),
-                schema: ResolveTargetSchema(request.TargetSchema));
+                schema: ResolveTargetSchema(request.TargetSchema)) with
+            {
+                // Per-row issues (e.g. CSV address rows that failed to geocode) that did not
+                // block the import but should be relayed to the caller alongside the warnings.
+                ValidationErrors = rowIssues
+            };
+            return result;
+        }
+        catch (CsvImportOptionsException ex)
+        {
+            // The caller-supplied CSV options could not be applied (missing/conflicting
+            // columns or a geocoded-row cap overrun). The message is composed from the
+            // caller's own option values and CSV header names, so it is client-safe.
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+            errorMessage = ex.Message;
+            result = ImportResult.CreateFailure(
+                request.TableName,
+                format ?? SupportedFileFormat.Csv,
+                errorMessage,
+                stopwatch.Elapsed,
+                warnings,
+                ImportValidationErrorCodes.CsvOptionsInvalid,
+                [ImportValidationIssue.Create(ImportValidationErrorCodes.CsvOptionsInvalid, errorMessage)]);
             return result;
         }
         catch (OperationCanceledException)

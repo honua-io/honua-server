@@ -1,0 +1,12 @@
+{
+  "id": "ingest_dataset.geojson",
+  "schemaRef": "tools/ingest_dataset.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "format": "geojson",
+    "data": "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-97.7404,30.2747]},\"properties\":{\"name\":\"Capitol\"}}]}",
+    "datasetName": "austin_landmarks"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

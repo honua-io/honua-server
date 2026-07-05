@@ -6151,6 +6151,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesAuthorizationTests.JobResults_WithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDurableRuntimeTests.Execute_FirstSliceVectorProcess_CompletesAndReturnsDurableResultEvidence",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobResults_NonexistentJob_ReturnsNotFoundOrServiceUnavailable",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesFailedJobResultsTests.JobResults_FailedJob_Returns500WithRegisteredOgcExceptionType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobKindFilterTests.JobResults_NonGeoprocessingJob_Returns404",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobResultsTests.JobResults_SucceededArtifactBackedJob_ReturnsNonEmptyResultEvidence"
       ],
@@ -6306,6 +6307,7 @@
       "protocol": "nested-standard",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.Errors.StandardErrorResponseFormatterTests.FormatError_WmsAliasPath_ReturnsServiceExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetCapabilities_WithWmsEnabledAndMapServerDisabled_ReturnsXml",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcAlias_GetCapabilities_ReturnsXml"
       ],
@@ -10660,6 +10662,7 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithInvalidThreeDimensionalBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithLimit_RespectsLimit",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithNegativeLimit_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithNonNumericCollectionId_IsAcceptedAndReturnsEmpty",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithOutOfRangeBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithPropertiesPrefixedTopLevelName_ProjectsNestedProperty",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithRegistryBackedExplicitGeometryCrsInFilter_AcceptsNonDefaultCrs",
@@ -14805,6 +14808,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesAuthorizationTests.Execute_WithMalformedJsonWithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesAuthorizationTests.Execute_WithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDurableRuntimeTests.Execute_FirstSliceVectorProcess_CompletesAndReturnsDurableResultEvidence",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_AsyncJobCreated_EmitsPreferenceAppliedHeader",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_CyclicDependsOn_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_DestructivePlanWhenApprovalRequired_Returns403",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_DuplicateStepIds_Returns400",
@@ -14819,6 +14823,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_OutputsNotArray_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PlanEmptySteps_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PlanMissingPlanId_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PreferRespondSync_Returns422WithOgcExceptionType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeDocument_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeRaw_Returns501",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_StepMissingKind_Returns400",
@@ -17515,6 +17520,7 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithInvalidPaginationToken_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithInvalidSortDirection_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithInvalidThreeDimensionalBbox_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithNonNumericCollectionId_IsAcceptedAndReturnsEmpty",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithOutOfRangeBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithStringIds_FiltersByStacItemId",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithThreeDimensionalBbox_ReturnsItems"
