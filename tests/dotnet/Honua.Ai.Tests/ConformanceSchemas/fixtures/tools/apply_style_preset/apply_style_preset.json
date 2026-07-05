@@ -1,0 +1,13 @@
+{
+  "id": "apply_style_preset.layer",
+  "schemaRef": "tools/apply_style_preset.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "serviceId": "county_parcels",
+    "layerId": 0,
+    "styleId": "style_flood_depth"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["StyleRef"],
+  "notes": "x-honua-reference-shape: honua_apply_style_preset binds a catalog StyleRef preset as the primary/default style of a published layer, persisting through the OGC API – Styles authoring surface so subsequent render_map calls reflect it."
+}

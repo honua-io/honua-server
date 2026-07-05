@@ -2,11 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
@@ -43,7 +45,9 @@ internal sealed class RenderMapTool : IMcpTool
     {
         Name = ToolName,
         Title = "Render map",
-        Description = "Render a map image (PNG) for one or more published layers over a bbox and return it as an inline image. Layers draw bottom-to-top. Width/height are capped at 1024 px.",
+        Description = "Render a map image (PNG) for one or more published layers over a bbox and return it as an inline image. Layers draw bottom-to-top. Width/height are capped at 1024 px. "
+            + "Each layer renders with its primary/default style, which the caption reports; change a layer's style first with honua_apply_style_preset (discover presets with honua_get_style) and re-render to reflect it. "
+            + "To render analysis results as a styled map: run the analysis, then honua_publish_result to promote the result to a serviceId/layerId, then optionally honua_apply_style_preset, then render that layer here.",
         InputSchema = MapToolSchemas.RenderMapArgumentSchema,
         // Read-only render. No OutputSchema: this tool returns an image content
         // block, not a structuredContent payload, so there is no structured
@@ -84,12 +88,23 @@ internal sealed class RenderMapTool : IMcpTool
         var graphProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
+        // The styleId-keyed catalog is the canonical binding honua_apply_style_preset
+        // writes and the /ogc/styles surface authors. Resolving each layer's primary
+        // style here makes the applied preset observable in a subsequent render (the
+        // caption reports it). Rasterizing vector styles at the IRasterMapRenderer
+        // seam is not yet supported (RenderStyledMapAsync throws) and is out of scope
+        // for this tool; the pixels come from the raster mosaic path.
+        var styleCatalog = httpContext.RequestServices.GetService<IStyleCatalog>();
+
         var storageLayerIds = new int[argument.Layers.Count];
+        var effectiveStyleIds = new string?[argument.Layers.Count];
         for (var i = 0; i < argument.Layers.Count; i++)
         {
             var layerRef = argument.Layers[i];
             var resolved = MapToolLayerResolver.Resolve(snapshot, layerRef.ServiceId, layerRef.LayerId);
             storageLayerIds[i] = resolved.StorageLayerId;
+            effectiveStyleIds[i] = await ResolveEffectiveStyleIdAsync(styleCatalog, resolved.StorageLayerId, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var request = new MapRenderRequest
@@ -127,6 +142,12 @@ internal sealed class RenderMapTool : IMcpTool
             bbox[3],
             bboxSrid);
 
+        var styleNote = BuildStyleNote(effectiveStyleIds);
+        if (styleNote is not null)
+        {
+            caption = caption + " " + styleNote;
+        }
+
         return new McpToolsCallResult
         {
             IsError = false,
@@ -160,6 +181,43 @@ internal sealed class RenderMapTool : IMcpTool
         }
 
         return [minX, minY, maxX, maxY];
+    }
+
+    private static async Task<string?> ResolveEffectiveStyleIdAsync(
+        IStyleCatalog? styleCatalog,
+        int storageLayerId,
+        CancellationToken cancellationToken)
+    {
+        if (styleCatalog is null)
+        {
+            return null;
+        }
+
+        var styles = await styleCatalog.GetStylesForLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        // Ordinal 0 (first) is the primary/default style by convention.
+        return styles.Count > 0 ? styles[0].StyleId : null;
+    }
+
+    private static string? BuildStyleNote(string?[] effectiveStyleIds)
+    {
+        if (effectiveStyleIds.Length == 0 || Array.TrueForAll(effectiveStyleIds, id => id is null))
+        {
+            return null;
+        }
+
+        var builder = new StringBuilder("Layer styles: ");
+        for (var i = 0; i < effectiveStyleIds.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append(effectiveStyleIds[i] ?? "(default)");
+        }
+
+        builder.Append('.');
+        return builder.ToString();
     }
 
     private static int ResolveSize(int? requested, string field)

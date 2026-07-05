@@ -66,6 +66,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_query_features"] = "query_features",
             ["honua_edit_features"] = "edit_features",
             ["honua_render_map"] = "render_map",
+            ["honua_get_style"] = "get_style",
+            ["honua_apply_style_preset"] = "apply_style_preset",
             ["honua_publish_service"] = "publish_service",
             // Honua extensions over the bare taxonomy (#1949): the standard models
             // entity resolution and capability discovery as CapabilityCatalog reads;
@@ -87,7 +89,6 @@ public sealed partial class McpTaxonomyAlignmentTests
     private static readonly string[] KnownGapStandardTools =
     {
         "refine_map_package",
-        "apply_style_preset",
         "compose_mixed_protocol_map",
         "preview_map_package",
         "preview_app_package",

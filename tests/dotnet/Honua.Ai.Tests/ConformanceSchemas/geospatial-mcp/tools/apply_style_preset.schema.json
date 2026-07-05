@@ -2,22 +2,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/apply_style_preset.schema.json",
   "title": "apply_style_preset inputSchema",
-  "description": "Argument shape for apply_style_preset (Analyze, Build App; returns the updated MapPackage). Applies a reusable StyleRef preset to a map package, optionally scoped to a binding. Responsibility-level; concrete styling field set finalizes upstream. See taxonomy.md §Map composition and resources.md §honua://styles/{style_id}.",
+  "description": "Argument shape for apply_style_preset. x-honua-reference-shape: this shape tracks the reference implementation (advertised name honua_apply_style_preset), which applies a reusable StyleRef preset (a catalog styleId) as the primary/default style of a published layer, persisting through the server OGC API – Styles authoring surface (ADR-0048) so subsequent render_map calls reflect it. The bare taxonomy responsibility (map-package composition) is described in taxonomy.md §Map composition; the reference implementation binds presets to published layers rather than to an in-memory MapPackage. Applying a preset never edits feature records (ADR-0028); it authors presentation metadata on the hosted service. See taxonomy.md §Map composition and resources.md §honua://styles.",
+  "x-honua-reference-shape": true,
   "type": "object",
   "additionalProperties": true,
-  "required": ["mapPackageId", "styleId"],
+  "required": ["serviceId", "layerId", "styleId"],
   "properties": {
-    "mapPackageId": {
+    "serviceId": {
       "type": "string",
-      "description": "Identifier (map_…) of the MapPackage to style."
+      "minLength": 1,
+      "description": "Published service identifier or name whose layer is being styled."
+    },
+    "layerId": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Service-local layer index to apply the preset to."
     },
     "styleId": {
       "type": "string",
-      "description": "StyleRef preset identifier (style_…) to apply."
-    },
-    "targetBindingId": {
-      "type": "string",
-      "description": "Optional SourceBinding the preset is scoped to; applies map-wide when omitted."
+      "minLength": 1,
+      "description": "StyleRef preset identifier (style_…) to apply as the layer's primary/default style. Discover the available presets with get_style (no styleId lists honua://styles)."
     }
   }
 }

@@ -452,6 +452,66 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    /// <summary>
+    /// Schema for <c>McpGetStyleOutput</c>. Resolve mode carries the StyleRef
+    /// projection (styleId/title/encodings); list mode carries the styles
+    /// discovery catalog. Only one field set is populated per call.
+    /// </summary>
+    public static readonly JsonElement GetStyleOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "styleId": { "type": ["string", "null"] },
+            "title": { "type": ["string", "null"] },
+            "description": { "type": ["string", "null"] },
+            "styleVersion": { "type": ["integer", "null"] },
+            "encodings": {
+              "type": ["array", "null"],
+              "description": "Advertised encodings for the resolved style (resolve mode).",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "encoding": { "type": "string", "description": "mapbox-style, esri-drawing-info, sld-1.0.0, or sld-1.1.0." },
+                  "mediaType": { "type": "string" },
+                  "inlineBody": { "type": ["string", "null"], "description": "Inlined stylesheet body for the selected encoding, when includeStylesheet=true." },
+                  "storageRef": { "type": ["string", "null"], "description": "honua://styles/{styleId} reference when the encoding is advertised by reference." }
+                }
+              }
+            },
+            "styles": {
+              "type": ["array", "null"],
+              "description": "Discovery catalog of available styles (list mode).",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "styleId": { "type": "string" },
+                  "title": { "type": ["string", "null"] },
+                  "uri": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+        """);
+
+    /// <summary>Schema for <c>McpApplyStylePresetOutput</c>.</summary>
+    public static readonly JsonElement ApplyStylePresetOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["serviceId", "layerId", "styleId", "applied"],
+          "properties": {
+            "serviceId": { "type": "string" },
+            "layerId": { "type": "integer" },
+            "styleId": { "type": "string", "description": "The preset now bound as the layer's primary/default style." },
+            "title": { "type": ["string", "null"] },
+            "styleVersion": { "type": "integer" },
+            "applied": { "type": "boolean" }
+          }
+        }
+        """);
+
     /// <summary>Schema for <see cref="Models.McpNotImplementedOutput"/>.</summary>
     public static readonly JsonElement NotImplementedOutputSchema = Parse(
         """
