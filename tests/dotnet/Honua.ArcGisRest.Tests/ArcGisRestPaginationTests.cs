@@ -125,6 +125,27 @@ public sealed class ArcGisRestPaginationTests
     }
 
     [Fact]
+    public async Task QueryObjectIdsAsync_UpstreamMaxRecordCountLessThanDefaultPageSize_ReturnsAllIds()
+    {
+        // BH4-001: when the upstream maxRecordCount (e.g. 1000) is less than
+        // DefaultPageSize (2000), the old short-page sentinel fired on every page,
+        // causing the loop to terminate after page 1 and silently drop all IDs
+        // beyond the first page. The count-first strategy must return all IDs.
+        const int upstreamMaxRecordCount = 1000;
+        const int totalIds = 2000; // spans exactly two upstream pages
+        var client = new PagingArcGisRestFeatureClient(upstreamMaxRecordCount, totalIds);
+        var reader = CreateReader(client);
+
+        var ids = await reader.QueryObjectIdsAsync(LayerId, new FeatureQuery());
+
+        Assert.Equal(totalIds, ids.Length);
+        Assert.Equal(0L, ids[0]);
+        Assert.Equal((long)(totalIds - 1), ids[^1]);
+        Assert.Equal(2, client.ObjectIdsRequests.Count);
+        Assert.Contains("resultOffset=1000", client.ObjectIdsRequests[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task QueryObjectIdsAsync_FullPageUpstream_LoopsUntilShortPage()
     {
         // Some servers do honor resultRecordCount on returnIdsOnly. When a page
