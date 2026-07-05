@@ -2664,6 +2664,20 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-observability-findings",
+      "route": "/api/v1/admin/observability/findings",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetFindings_WithAdminAuth_ReturnsFindingsEnvelope",
+        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetFindings_WithoutAdminAuth_IsUnauthorized"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-observability-logs",
       "route": "/api/v1/admin/observability/logs",
       "method": "GET",
@@ -2688,6 +2702,20 @@
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_ReturnsInstanceScopedLifecycleAndPlan",
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_WhenPlanFails_ReturnsPlanErrorWithoutThrowing",
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_WhenPlanThrows_ReturnsProblemDetails"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-observability-ops-health",
+      "route": "/api/v1/admin/observability/ops-health",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_WithAdminAuth_ReturnsComposedSnapshot",
+        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_WithoutAdminAuth_IsUnauthorized"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -9155,6 +9183,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetCapabilities_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetCapabilities_WithTextXmlRejectedAndWildcardAllowed_ReturnsNotAcceptable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetCapabilities_WithUnsupportedAcceptAndWildcardFallback_ReturnsXml",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_BboxExtendingOutsideCrsBoundsButIntersecting_DoesNotReject400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_DuplicateLayerWithFilter_Returns200NotCrash",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_FiltersInternalAttributes",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_ReturnsPlainText",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_WithFilter_AppliesLayerFilter",
@@ -13030,6 +13060,20 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-admin-observability-findings-findingid-propose",
+      "route": "/api/v1/admin/observability/findings/{findingId}/propose",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.ProposeFinding_UnknownId_Returns404",
+        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.ProposeFinding_WithoutAdminAuth_IsUnauthorized"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-admin-oidc-providers",
       "route": "/api/v1/admin/oidc/providers",
       "method": "POST",
@@ -15800,8 +15844,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_AllEmptyPerLayerPayload_DoesNotInsertPhantomFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_AttributeConflict_RemainsClassifiedAsAttribute",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Bidirectional_AppliesUploadAndDeliversServerDelta",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Bidirectional_ConcurrentOtherClientEdit_IsDelivered",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ConcurrentServerEdit_RecordsConflictAndAppliesLastWriteWins",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Download_DeliversPostReplicaChangesAndAdvancesServerGen",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_GeometryOnlyConflict_ClassifiesAsGeometry",
