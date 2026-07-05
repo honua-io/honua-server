@@ -80,8 +80,11 @@ public sealed class ApplyEditsIdempotencyStoreTests
     {
         // After the response has been fully written via SetAsync, TryReserveAsync for the
         // same key must return false — the entry is occupied with the final response.
+        // Uses the in-process fallback (cache: null) because IDistributedCache has no
+        // atomic SET NX; atomic reservation semantics are only guaranteed via Redis or
+        // the in-process ConcurrentDictionary fallback.
         var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            cache: null,
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         var scope = Scope();
