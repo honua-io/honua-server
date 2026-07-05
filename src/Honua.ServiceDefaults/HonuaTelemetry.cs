@@ -77,6 +77,16 @@ public static class HonuaTelemetry
 
     private const int DefaultMaxExceptionDetailLength = 256;
 
+    // Serving-latency rolling-window aggregation defaults (Part 1, #2463).
+    private const int DefaultServingLatencyWindowSeconds = 300; // 5 minutes
+    private const int DefaultServingLatencySamplesPerProtocol = 4096;
+
+    // Volatile so a startup ConfigureServingLatency swap is visible to concurrent recorders.
+    // Bounded, lock-minimal per-protocol reservoirs; see ServingLatencyAggregator.
+    private static volatile ServingLatencyAggregator _servingLatency = new(
+        TimeSpan.FromSeconds(DefaultServingLatencyWindowSeconds),
+        DefaultServingLatencySamplesPerProtocol);
+
     // Serving-plane HTTP status boundaries for the coarse status_class tag.
     private const int HttpStatusClientErrorFloor = 400;
     private const int HttpStatusRedirectFloor = 300;
@@ -127,6 +137,27 @@ public static class HonuaTelemetry
         _includeExceptionStackTraces = includeStackTraces;
         _maxExceptionDetailLength = maxDetailLength > 0 ? maxDetailLength : DefaultMaxExceptionDetailLength;
     }
+
+    /// <summary>
+    /// Reconfigures the in-process serving-latency rolling-window aggregation. Invoked once at
+    /// startup from bound configuration; replacing the aggregator discards prior samples.
+    /// </summary>
+    /// <param name="window">The rolling window length (falls back to the 5-minute default when non-positive).</param>
+    /// <param name="samplesPerProtocol">The per-protocol reservoir capacity (falls back to the default when non-positive).</param>
+    public static void ConfigureServingLatency(TimeSpan window, int samplesPerProtocol)
+    {
+        var effectiveWindow = window > TimeSpan.Zero ? window : TimeSpan.FromSeconds(DefaultServingLatencyWindowSeconds);
+        var effectiveSamples = samplesPerProtocol > 0 ? samplesPerProtocol : DefaultServingLatencySamplesPerProtocol;
+        _servingLatency = new ServingLatencyAggregator(effectiveWindow, effectiveSamples);
+    }
+
+    /// <summary>
+    /// Returns a point-in-time snapshot of per-protocol serving latency (p50/p95/p99 plus
+    /// request/error counts) over the configured rolling window. Consumed by the admin
+    /// ops-health snapshot; the underlying histogram remains the source for OTLP/Prometheus.
+    /// </summary>
+    /// <returns>The current serving latency snapshot.</returns>
+    public static ServingLatencySnapshot GetServingLatencySnapshot() => _servingLatency.GetSnapshot();
 
     /// <summary>
     /// Records telemetry for a single produced error envelope. This is the one
@@ -206,6 +237,11 @@ public static class HonuaTelemetry
             { "status_class", ClassifyStatus(statusCode) },
         };
         ServingRequestDuration.Record(durationMs, tags);
+
+        // Also feed the in-process rolling-window aggregation that backs the admin
+        // ops-health snapshot (per-protocol p50/p95/p99 + error rate). Allocation-free
+        // hot path after the first sample per protocol; see ServingLatencyAggregator.
+        _servingLatency.Record(protocol, durationMs, statusCode);
     }
 
     private static string ClassifyStatus(int statusCode) => statusCode switch

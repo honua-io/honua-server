@@ -1309,6 +1309,9 @@ app.MapControlPlaneEventEndpoints();
 // Console approval surface for agent-proposed operations (#1694).
 app.MapProposalEndpoints();
 
+// Consolidated ops-health snapshot + deterministic ops-findings engine (ADR-0060 WS4 / #2457).
+app.MapOpsObservabilityEndpoints();
+
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
