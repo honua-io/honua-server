@@ -893,6 +893,15 @@ public sealed record ExecutionJobSpec
     public string? RuntimeProfile { get; init; }
 
     /// <summary>
+    /// The serving↔worker job-contract version this job requires (ADR-0060 principle #3b). The
+    /// dispatcher rejects submission when this exceeds the target backend's
+    /// <see cref="BatchComputeBackendCapabilities.MaxSupportedContractVersion"/> so a vX server never
+    /// submits a job a vY worker cannot run during a rolling version step. Defaults to 1 (the initial
+    /// contract) so existing/back-compat specs remain valid.
+    /// </summary>
+    public int ContractVersion { get; init; } = 1;
+
+    /// <summary>
     /// Opaque backend-specific parameters.
     /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
@@ -937,6 +946,12 @@ public sealed record ExecutionJobDefinition
     /// Optional specialized worker or runtime profile such as a Python/GDAL image family.
     /// </summary>
     public string? RuntimeProfile { get; init; }
+
+    /// <summary>
+    /// The serving↔worker job-contract version jobs built for this workload require (ADR-0060
+    /// principle #3b). Defaults to 1 (the initial contract).
+    /// </summary>
+    public int ContractVersion { get; init; } = 1;
 
     /// <summary>
     /// Provider-specific workload metadata such as queue, CPU, memory, or timeout.
@@ -1254,6 +1269,14 @@ public sealed record BatchComputeBackendCapabilities
     /// Whether the backend can stage or materialize workload artifacts.
     /// </summary>
     public bool SupportsArtifactStaging { get; init; }
+
+    /// <summary>
+    /// The highest serving↔worker job-contract version this backend's workers can run (ADR-0060
+    /// principle #3b). The dispatcher refuses to submit a job whose
+    /// <see cref="ExecutionJobSpec.ContractVersion"/> exceeds this. Defaults to 1 (the initial
+    /// contract) so backends that do not report a version are treated as v1-capable.
+    /// </summary>
+    public int MaxSupportedContractVersion { get; init; } = 1;
 }
 
 /// <summary>

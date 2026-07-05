@@ -4,8 +4,11 @@
 using System.Reflection;
 using DbUp;
 using DbUp.Engine;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Migrations;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Honua.Postgres.Features.Infrastructure.Migrations;
@@ -16,6 +19,13 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     private const string SafeMigrationFailureMessage = "Database migration failed.";
     private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
+
+    private readonly MigrationSafetyOptions _safetyOptions;
+
+    public PostgresDatabaseMigrationRunner(IOptions<MigrationSafetyOptions>? safetyOptions = null)
+    {
+        _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
+    }
 
     public Task<DatabaseMigrationPlan> PlanMigrationsAsync(
         string connectionString,
@@ -28,15 +38,52 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             cancellationToken.ThrowIfCancellationRequested();
 
             var upgrader = BuildUpgrader(BuildMigrationConnectionString(connectionString), migrationsAssembly);
-            var pendingScripts = upgrader.GetScriptsToExecute().Select(script => script.Name).ToArray();
+            var scripts = upgrader.GetScriptsToExecute();
+            var pendingScripts = scripts.Select(script => script.Name).ToArray();
+            var classifications = ClassifyScripts(scripts);
             var executedButNotDiscoveredScripts = upgrader.GetExecutedButNotDiscoveredScripts().ToArray();
 
-            return Task.FromResult(DatabaseMigrationPlan.Succeeded(pendingScripts, executedButNotDiscoveredScripts));
+            return Task.FromResult(
+                DatabaseMigrationPlan.Succeeded(pendingScripts, executedButNotDiscoveredScripts, classifications));
         }
         catch (Exception ex)
         {
             return Task.FromResult(DatabaseMigrationPlan.Failed(ex, SafeMigrationFailureMessage));
         }
+    }
+
+    private static MigrationScriptClassification[] ClassifyScripts(IEnumerable<SqlScript> scripts)
+        => scripts
+            .Select(script => MigrationSafetyClassifier.Classify(script.Name, script.Contents))
+            .ToArray();
+
+    /// <summary>
+    /// Fails closed on any pending contract-phase migration that lacks the compatibility-review
+    /// marker (ADR-0060 expand/contract gate). Returns <see langword="null"/> when enforcement is
+    /// disabled or every pending contract script is annotated.
+    /// </summary>
+    private InvalidOperationException? TryBuildSafetyRejection(UpgradeEngine upgrader)
+    {
+        if (!_safetyOptions.Enforce)
+        {
+            return null;
+        }
+
+        var unannotated = ClassifyScripts(upgrader.GetScriptsToExecute())
+            .Where(c => c.Classification == MigrationSafetyClassification.ContractUnannotated)
+            .Select(c => c.ScriptName)
+            .ToArray();
+
+        if (unannotated.Length == 0)
+        {
+            return null;
+        }
+
+        return new InvalidOperationException(
+            "Refusing to apply potentially backward-incompatible (contract-phase) migration(s) that are " +
+            $"not declared rollout-safe: {string.Join(", ", unannotated)}. Each must carry the marker " +
+            $"'{MigrationSafetyClassifier.CompatibilityReviewMarkerConvention}' so its expand/contract " +
+            "safety is reviewed, or set 'Database:MigrationSafety:Enforce=false' to override.");
     }
 
     public async Task<DatabaseMigrationResult> RunMigrationsAsync(
@@ -64,6 +111,11 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 
         try
         {
+            if (TryBuildSafetyRejection(upgrader) is { } rejection)
+            {
+                return DatabaseMigrationResult.Failed(rejection, rejection.Message);
+            }
+
             var result = upgrader.PerformUpgrade();
             var appliedScripts = result.Scripts.Select(script => script.Name).ToArray();
 

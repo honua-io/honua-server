@@ -115,6 +115,50 @@ public sealed class JobSpecTests
     }
 
     [Fact]
+    public void Load_NoContractVersion_DefaultsToOne()
+    {
+        var spec = JobSpec.Load(BaseEnv());
+
+        spec.ContractVersion.Should().Be(1);
+    }
+
+    [Fact]
+    public void Load_ContractVersionAtSupported_Accepted()
+    {
+        var env = BaseEnv();
+        env["HONUA_CONTRACT_VERSION"] = JobSpec.SupportedContractVersion.ToString();
+
+        var spec = JobSpec.Load(env);
+
+        spec.ContractVersion.Should().Be(JobSpec.SupportedContractVersion);
+    }
+
+    [Fact]
+    public void Load_ContractVersionAboveSupported_Rejected()
+    {
+        var env = BaseEnv();
+        env["HONUA_CONTRACT_VERSION"] = (JobSpec.SupportedContractVersion + 1).ToString();
+
+        var act = () => JobSpec.Load(env);
+
+        act.Should().Throw<JobSpecException>().WithMessage("*HONUA_CONTRACT_VERSION*exceeds*");
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("abc")]
+    public void Load_ContractVersionNonPositiveOrNonInteger_Rejected(string value)
+    {
+        var env = BaseEnv();
+        env["HONUA_CONTRACT_VERSION"] = value;
+
+        var act = () => JobSpec.Load(env);
+
+        act.Should().Throw<JobSpecException>().WithMessage("*HONUA_CONTRACT_VERSION*");
+    }
+
+    [Fact]
     public void Load_JobSpecFile_ReadsFields_ButAuthStaysEnvOnly()
     {
         var dir = Directory.CreateTempSubdirectory("ccnet-spec");

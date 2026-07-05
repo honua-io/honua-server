@@ -25,6 +25,22 @@ public static class CustomCodeJobContract
     /// </summary>
     public const string RuntimeProfile = "custom-code";
 
+    /// <summary>
+    /// The current integer version of the serving↔GP-worker job contract (ADR-0060 principle #3b).
+    /// Bumped whenever the shape of the job the server submits changes in a way an older worker
+    /// cannot run. A vX server must not submit a job to a worker whose
+    /// <see cref="Honua.Core.Features.ControlPlane.Domain.BatchComputeBackendCapabilities.MaxSupportedContractVersion"/>
+    /// is below this, and the worker harness re-checks the injected
+    /// <see cref="ContractVersionEnvName"/> as defense in depth.
+    /// </summary>
+    public const int ContractVersion = 1;
+
+    /// <summary>
+    /// The container environment variable carrying the job-contract version the submitting server
+    /// used. Absent is treated as version 1 for back-compat with pre-versioning workers.
+    /// </summary>
+    public const string ContractVersionEnvName = "HONUA_CONTRACT_VERSION";
+
     /// <summary>The Python custom-code runtime (Phase 1).</summary>
     public const string PythonRuntime = "python";
 
