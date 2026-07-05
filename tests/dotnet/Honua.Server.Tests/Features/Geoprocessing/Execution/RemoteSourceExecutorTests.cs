@@ -123,6 +123,48 @@ public sealed class RemoteSourceExecutorTests
             .Should().BeTrue("the original resolver exception must be logged, not discarded");
     }
 
+    [UnitTest]
+    public async Task RemoteSource_StreamingBytesExceedMaxArtifactBytes_FailsBeforeFullMaterialization()
+    {
+        // BH6-024 regression: the executor previously accumulated ALL features into a List<IFeature>
+        // before checking payload.Length against MaxArtifactBytes. A single feature whose attributes
+        // exceed a small ceiling must cause a Failed result during streaming, not after the full
+        // list has already been materialized and serialized.
+        //
+        // "overflow-trigger" as an attribute value is ~16 bytes; together with the geometry GeoJSON
+        // (~36 bytes), the estimate easily exceeds the 10-byte MaxArtifactBytes ceiling.
+        var fake = new FakeDagFeatureSource("source.ogc-features",
+        [
+            new DagSourceFeature
+            {
+                GeometryGeoJson = """{"type":"Point","coordinates":[1,2]}""",
+                Attributes = new Dictionary<string, object?> { ["name"] = "overflow-trigger" }
+            }
+        ]);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(fake as IDagFeatureSource);
+        var provider = services.BuildServiceProvider();
+        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+        var options = new GeoprocessingExecutorOptions { MaxArtifactBytes = 10 };
+        var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
+        monitor.CurrentValue.Returns(options);
+
+        var executor = RemoteSourceExecutor.ForProcess(
+            "source.ogc-features",
+            scopeFactory,
+            monitor,
+            NullLogger<RemoteSourceExecutor>.Instance);
+
+        var (status, _, _) = await RunExecutorAsync(executor, "source.ogc-features",
+            ("serviceUrl", "https://example.com/ogc"),
+            ("collectionId", "test-collection"));
+
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "the streaming byte-estimate guard must fire before the full feature list is serialized");
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

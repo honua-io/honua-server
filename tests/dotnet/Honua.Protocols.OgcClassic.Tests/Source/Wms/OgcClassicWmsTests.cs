@@ -676,6 +676,26 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_BboxExtendingOutsideCrsBoundsButIntersecting_DoesNotReject400()
+    {
+        // BH6-010 regression: GetFeatureInfo used IsExtentWithinCrsBounds (strict full-containment)
+        // while GetMap uses DoesExtentIntersectCrsBounds (lenient partial-overlap). A BBOX that
+        // extends outside CRS bounds by even one unit (here MaxX=190 > 180 for CRS:84) makes GetMap
+        // render successfully but caused GetFeatureInfo to return HTTP 400 with "BBOX is outside the
+        // valid range for the requested CRS." After the fix both operations use the same lenient check.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-10,-10,190,10&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=128&J=128");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest, content);
+        content.Should().NotContain("BBOX is outside the valid range",
+            "a BBOX that intersects but extends outside CRS bounds must not be rejected by GetFeatureInfo");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_WithFilter_ReturnsDistinctImage()
     {
