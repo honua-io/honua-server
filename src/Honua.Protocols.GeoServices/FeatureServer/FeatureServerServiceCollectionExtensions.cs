@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Geometry.Abstractions;
@@ -8,6 +8,7 @@ using Honua.Core.Features.Query;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using StackExchange.Redis;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -42,11 +43,13 @@ internal static class FeatureServerServiceCollectionExtensions
             serviceProvider.GetRequiredService<FeatureServerQueryHandler>());
         services.AddScoped<FeatureServerRelatedRecordsDependencies>();
         services.AddScoped<FeatureServerRelatedRecordsHandler>();
-        // At-most-once applyEdits store (#2250). Distributed (Redis) when an IDistributedCache is
-        // configured, otherwise an in-process fallback — mirroring DistributedReplicaStore. Singleton so
+        // At-most-once applyEdits store (#2250). Distributed (Redis) when an IConnectionMultiplexer is
+        // registered, with IDistributedCache fallback, otherwise an in-process fallback. Singleton so
         // the in-process fallback dictionary survives across requests.
+        // IConnectionMultiplexer is required for atomic SET NX reservation (BH5-001).
         services.TryAddSingleton<IApplyEditsIdempotencyStore>(static serviceProvider =>
             new DistributedApplyEditsIdempotencyStore(
+                serviceProvider.GetService<IConnectionMultiplexer>(),
                 serviceProvider.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
                 serviceProvider.GetRequiredService<ILogger<DistributedApplyEditsIdempotencyStore>>()));
 

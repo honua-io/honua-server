@@ -479,11 +479,11 @@ internal static partial class FeatureServerEndpoints
             replicaLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
             cancellationToken);
 
-        // Optional upper bound on the delta. A bidirectional sync caps the server-to-client delta at
-        // the generation observed just before the client's upload was applied, so the client receives
-        // every server-side change committed since its last sync (e.g. another client's edits made
-        // after createReplica) but NOT its own just-applied edits, which carry a later generation
-        // (#2136). Download-only syncs pass null and deliver the full delta up to the current generation.
+        // Optional upper bound on the delta. Currently always null (callers pass null) — the full
+        // delta from sinceGeneration to the current generation is delivered, including any edits the
+        // uploading client just applied. Clients reconcile their own edits using the objectIds
+        // returned in the upload response (BH5-015). The parameter is kept for backward compatibility
+        // with any future caller that needs a bounded window (e.g. a selective replay path).
         if (maxGeneration is { } upperBound)
         {
             changes = changes.Where(c => c.Generation <= upperBound).ToList();
@@ -1011,11 +1011,6 @@ internal static partial class FeatureServerEndpoints
         // non-conflicting edits via the shared edit pipeline, and writes durable conflict records
         // when supported. Download-only syncs and empty uploads skip the pipeline entirely (#1272).
         long uploadServerGen = 0;
-        // The server generation observed immediately before the client's upload is applied. A
-        // bidirectional download caps its server-to-client delta at this value so the client's own
-        // just-applied edits (which carry a later generation) are excluded while every server-side
-        // change committed since the replica's last sync is still delivered (#2136).
-        long preUploadGen = 0;
         var didUpload = false;
         if (isUploadDirection && !string.IsNullOrWhiteSpace(editsJson))
         {
@@ -1031,10 +1026,6 @@ internal static partial class FeatureServerEndpoints
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
                 var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
                 var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
-
-                // Capture the pre-upload generation so the bidirectional download below can exclude the
-                // client's own edits without skipping concurrent server-side changes.
-                preUploadGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
 
                 // Snapshot the pre-apply server state of every uploaded update/delete target so durable
                 // conflict records can carry the server side of the comparison for the review API
@@ -1127,14 +1118,17 @@ internal static partial class FeatureServerEndpoints
         {
             // The download lower bound is the generation the client already holds (replicaServerGen,
             // from its preceding extractChanges/createReplica) when supplied, otherwise the replica's
-            // recorded last-sync generation. A bidirectional upload in the same call does NOT advance
-            // this lower bound past concurrent server changes; instead the delta is capped at the
-            // pre-upload generation so the client receives every server-side change committed since its
-            // last sync but not its own just-applied edits (#2136, #1775).
+            // recorded last-sync generation. The upper bound is always the current (post-upload)
+            // generation so the delta window is (downloadSinceGen, currentGen] — covering every
+            // server-side change including edits committed by other clients during the upload window
+            // (BH5-015). A previous cap at preUploadGen permanently excluded those concurrent edits,
+            // because the cursor was then advanced to uploadServerGen (BH2-012), making them
+            // undeliverable to this replica forever. Clients that do not want to reapply their own
+            // just-committed edits can filter them by objectId from the upload response (#1775).
             var downloadSinceGen = acknowledgedServerGen is { } acknowledged
                 ? Math.Min(acknowledged, currentGen)
                 : replica.LastSyncGeneration;
-            long? downloadMaxGen = didUpload ? preUploadGen : null;
+            long? downloadMaxGen = null;
 
             var (assembledEdits, deltaError) = await BuildReplicaLayerChangesAsync(
                 context,
@@ -1405,6 +1399,12 @@ internal static partial class FeatureServerEndpoints
             .DistinctBy(layer => layer.PublicLayerId)
             .ToDictionary(layer => layer.PublicLayerId, layer => layer.StorageLayerId);
 
+        // BH5-014: build a per-layer resource lookup so TryReadObjectId can resolve the
+        // primary OID field name from the layer's schema rather than relying on hardcoded names.
+        var resourceByPublicId = replicaLayers
+            .DistinctBy(layer => layer.PublicLayerId)
+            .ToDictionary(layer => layer.PublicLayerId, layer => layer.Resource);
+
         var trimmed = editsJson.TrimStart();
 
         // The per-layer form is an array of objects ("[{...}]"); the legacy flat form is an array of
@@ -1428,11 +1428,13 @@ internal static partial class FeatureServerEndpoints
 
         var builder = ImmutableArray.CreateBuilder<ReplicaUploadLayerEdits>();
 
-        if (parsedPerLayer && perLayer is not null &&
-            perLayer.Any(static entry =>
-                entry.Adds is { Length: > 0 } ||
-                entry.Updates is { Length: > 0 } ||
-                entry.Deletes is { Length: > 0 }))
+        // BH5-013: route any successfully-parsed per-layer payload through the per-layer path,
+        // including no-op payloads where every layer has empty Adds/Updates/Deletes arrays (e.g.
+        // a client acknowledging receipt on a read-only replica). The Any() guard that was here
+        // caused all-empty per-layer payloads to fall through to the legacy flat-form branch,
+        // where the per-layer JSON objects were re-deserialized as GeoServicesFeature[] and
+        // submitted as phantom creates against the first replica layer.
+        if (parsedPerLayer && perLayer is not null)
         {
             foreach (var entry in perLayer)
             {
@@ -1453,11 +1455,14 @@ internal static partial class FeatureServerEndpoints
 
                 if (entry.Updates is not null)
                 {
+                    // BH5-014: resolve the OID field name from the layer's schema so updates on
+                    // layers with a custom ObjectId field name are correctly keyed for conflict detection.
+                    var layerResource = resourceByPublicId[entry.Id];
                     foreach (var update in entry.Updates)
                     {
                         edits.Add(new ReplicaUploadEdit(
                             FeatureEditOperationKind.Update,
-                            ObjectId: TryReadObjectId(update),
+                            ObjectId: TryReadObjectId(update, layerResource),
                             Payload: update));
                     }
                 }
@@ -1514,11 +1519,30 @@ internal static partial class FeatureServerEndpoints
     /// null when no recognizable object id attribute is present; conflict detection then treats the
     /// update as non-conflicting (the shared edit pipeline still rejects updates without an id).
     /// </summary>
-    private static long? TryReadObjectId(GeoServicesFeature feature)
+    /// <param name="feature">The uploaded update feature whose attributes are searched for an OID value.</param>
+    /// <param name="resource">
+    /// The layer's metadata resource used to resolve the actual OID field name via the
+    /// <c>id.primary</c> semantic role. This avoids false misses on layers whose primary key
+    /// column does not match the hardcoded fallback names (BH5-014).
+    /// </param>
+    private static long? TryReadObjectId(GeoServicesFeature feature, MetadataV2Resource resource)
     {
         if (feature.Attributes is null)
         {
             return null;
+        }
+
+        // BH5-014: resolve the canonical OID field name from the layer's schema first.
+        // FindPrimaryIdField returns the field with the 'id.primary' semantic role, falling back
+        // to fields named 'objectid' or 'id'. Only if the schema yields no match do we fall
+        // through to the legacy hardcoded name list for backward compatibility with ad-hoc payloads.
+        var schemaOidName = resource.FindPrimaryIdField()?.Name;
+        if (schemaOidName is not null && feature.Attributes.TryGetValue(schemaOidName, out var schemaValue))
+        {
+            if (FeatureServerValueParser.TryConvertToLong(schemaValue, out var schemaObjectId))
+            {
+                return schemaObjectId;
+            }
         }
 
         foreach (var (key, value) in feature.Attributes)
