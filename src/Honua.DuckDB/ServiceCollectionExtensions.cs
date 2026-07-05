@@ -116,8 +116,14 @@ internal static class ServiceCollectionExtensions
             new DuckDBFeatureCacheManager(
                 sp.GetRequiredService<DuckDBLayerRegistry>()));
 
-        // Register the main feature store composition
-        services.AddScoped<DuckDBFeatureStore>();
+        // Register the main feature store composition, wiring optional permanent-filter
+        // dependencies so row-visibility filters are enforced on DuckDB reads.
+        services.AddScoped<DuckDBFeatureStore>(sp => new DuckDBFeatureStore(
+            sp.GetRequiredService<IFeatureQueryBuilder>(),
+            sp.GetRequiredService<IFeatureDataAccess>(),
+            sp.GetRequiredService<IFeatureCacheManager>(),
+            sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
+            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>()));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
