@@ -267,6 +267,14 @@ internal static class FeatureCatalogGenerator
             return "realtime.feature-streams";
         }
 
+        // Branch versioning (VMS REST surface) — /rest/services/{serviceId}/VersionManagementServer/*
+        // Gated Preview in the BH6-001/BH6-002 fix batch (ADR-0058).
+        if (route.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase) &&
+            route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return "versioning.branch";
+        }
+
         return null;
     }
 

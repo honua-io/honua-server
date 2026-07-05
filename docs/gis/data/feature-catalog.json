@@ -2664,20 +2664,6 @@
       "maturity": "implemented"
     },
     {
-      "id": "get-api-v1-admin-observability-findings",
-      "route": "/api/v1/admin/observability/findings",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetFindings_WithAdminAuth_ReturnsFindingsEnvelope",
-        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetFindings_WithoutAdminAuth_IsUnauthorized"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
-    },
-    {
       "id": "get-api-v1-admin-observability-logs",
       "route": "/api/v1/admin/observability/logs",
       "method": "GET",
@@ -2702,20 +2688,6 @@
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_ReturnsInstanceScopedLifecycleAndPlan",
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_WhenPlanFails_ReturnsPlanErrorWithoutThrowing",
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_WhenPlanThrows_ReturnsProblemDetails"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
-    },
-    {
-      "id": "get-api-v1-admin-observability-ops-health",
-      "route": "/api/v1/admin/observability/ops-health",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_WithAdminAuth_ReturnsComposedSnapshot",
-        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_WithoutAdminAuth_IsUnauthorized"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -9183,7 +9155,6 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetCapabilities_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetCapabilities_WithTextXmlRejectedAndWildcardAllowed_ReturnsNotAcceptable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetCapabilities_WithUnsupportedAcceptAndWildcardFallback_ReturnsXml",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_BboxExtendingOutsideCrsBoundsButIntersecting_DoesNotReject400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_DuplicateLayerWithFilter_Returns200NotCrash",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_FiltersInternalAttributes",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_ReturnsPlainText",
@@ -9803,10 +9774,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.VmsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.ServiceInfo_ReturnsCapabilities"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-rest-services-serviceid-versionmanagementserver-versions",
@@ -9819,7 +9791,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.ListVersions_AfterCreate_ContainsVersion"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-rest-services-serviceid-versionmanagementserver-versions-versionguid",
@@ -9832,7 +9804,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionInfo_ReturnsSingleVersion"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-rest-services-serviceid-versionmanagementserver-versions-versionguid-inspectconflicts",
@@ -9845,7 +9817,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.InspectConflicts_CleanVersion_ReturnsNoConflicts"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-rest-services-serviceid-versionmanagementserver-versions-versionguid-jobs-jobid",
@@ -9858,7 +9830,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.JobStatus_UnknownJob_ReturnsNotFound"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "get-saml-metadata",
@@ -13055,20 +13027,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.SuppressAlert_RequiresFutureSuppressUntil"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented"
-    },
-    {
-      "id": "post-api-v1-admin-observability-findings-findingid-propose",
-      "route": "/api/v1/admin/observability/findings/{findingId}/propose",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.ProposeFinding_UnknownId_Returns404",
-        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.ProposeFinding_WithoutAdminAuth_IsUnauthorized"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -17095,7 +17053,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_NewVersion_ReturnsVersionInfo"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid-alter",
@@ -17108,7 +17066,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Alter_UpdatesDescription"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid-delete",
@@ -17118,10 +17076,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Delete_RemovesVersion"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Delete_RemovesVersion",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Delete_VersionMidReconcile_Returns409Conflict"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid-post",
@@ -17134,7 +17093,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Post_AfterReconcile_Succeeds"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid-reconcile",
@@ -17152,7 +17111,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Reconcile_WithPost_CleanVersion_PostsInline"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid-resolveconflicts",
@@ -17166,7 +17125,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.ResolveConflicts_NoPendingConflicts_ReturnsCanPost"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid-startediting",
@@ -17181,7 +17140,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StartEditing_VersionMidReconcile_Returns409Locked"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid-startreading",
@@ -17195,7 +17154,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StartReading_UnknownVersion_ReturnsNotFound"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid-stopediting",
@@ -17208,7 +17167,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StopEditing_AcknowledgesSession"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid-stopreading",
@@ -17221,7 +17180,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StopReading_AcknowledgesSession"
       ],
       "proof_ledger_surface": "version-management-server",
-      "maturity": "implemented"
+      "maturity": "experimental"
     },
     {
       "id": "post-saml-acs",

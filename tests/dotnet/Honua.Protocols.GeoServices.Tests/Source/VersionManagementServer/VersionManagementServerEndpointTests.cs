@@ -499,6 +499,37 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete")]
     [InterfaceOperation(TestProtocols.VersionManagementServer, "delete")]
+    public async Task Delete_VersionMidReconcile_Returns409Conflict()
+    {
+        // BH6-002 regression: before the fix HandleDelete called DeleteAsync without a
+        // VersionState guard, allowing deletion during an in-flight reconcile/post job.
+        // This caused the running reconcile to write its result to a deleted record and
+        // could corrupt the DEFAULT branch or leave dangling change rows.
+        var created = await CreateVersionAsync("admin.delete_midreconcile");
+        var guid = created.GetProperty("versionGuid").GetString();
+
+        // VersionState.Reconciling == 1; pin the version into that state via SQL,
+        // mirroring the pattern used by StartEditing_VersionMidReconcile_Returns409Locked.
+        // #2020: route the global honua.gdb_versions UPDATE through the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            $"UPDATE honua.gdb_versions SET state = 1 WHERE version_id = '{guid}'::uuid");
+
+        var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/delete",
+            ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict,
+            "BH6-002: deleting a reconciling version must return 409; body: {0}",
+            await response.Content.ReadAsStringAsync());
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeTrue(
+            "GeoServices protocol wraps errors in an 'error' envelope");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "delete")]
     public async Task Delete_RemovesVersion()
     {
         var created = await CreateVersionAsync("admin.delete_me");
