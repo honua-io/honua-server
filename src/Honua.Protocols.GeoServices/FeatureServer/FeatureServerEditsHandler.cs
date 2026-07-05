@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
@@ -236,6 +236,16 @@ internal sealed class FeatureServerEditsHandler(
                     scope.SetSuccess(0);
                     return Results.Json(replay, FeatureServerJsonContext.Default.ApplyEditsResponse,
                         contentType: "application/json");
+                }
+
+                // Atomic reserve: only one concurrent request carrying the same Idempotency-Key may
+                // proceed to execute the edit. The loser returns 409 so the client can retry after the
+                // winner has written the response; the retry will hit the replay path above (#2250, BH5-001).
+                var reserved = await _idempotencyStore.TryReserveAsync(replayScope, cancellationToken).ConfigureAwait(false);
+                if (!reserved)
+                {
+                    FeatureServerLog.ApplyEditsIdempotencyConflict(_logger, serviceId, layerId);
+                    return Results.Conflict(new { error = "A concurrent request with the same Idempotency-Key is already being processed. Retry after a brief delay." });
                 }
             }
 
