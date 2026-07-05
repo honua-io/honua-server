@@ -17,9 +17,19 @@ namespace Honua.Core.Features.Migration.Services;
 /// <summary>
 /// Simple file-backed implementation of <see cref="IMigrationRunCheckpointStore"/>
 /// that persists each run's checkpoint as a JSON file under the configured root
-/// directory. Designed for single-process migration runs (development, tests) and
-/// as a reference implementation for richer persistence backends.
+/// directory.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Development and test use only.</b> This store writes durable, cross-request
+/// checkpoint state to the compute node's local disk, so a run checkpointed on one
+/// node cannot resume on another. It is not the intended production persistence path
+/// (see ADR-0060, two-plane operability). Production hosts must register a shared-store
+/// implementation such as <c>PostgresMigrationRunCheckpointStore</c>; the default
+/// registration falls back to <see cref="InMemoryMigrationRunCheckpointStore"/> when no
+/// durable provider is active.
+/// </para>
+/// </remarks>
 public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpointStore, IDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -142,11 +152,17 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
     }
 }
 
+/// <summary>
+/// Source-generated, AOT-safe JSON serialization context for
+/// <see cref="MigrationRunCheckpoint"/> snapshots. Shared by every
+/// <see cref="IMigrationRunCheckpointStore"/> implementation so persisted checkpoint
+/// JSON round-trips through the same reflection-free contract.
+/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(MigrationRunCheckpoint))]
-internal sealed partial class MigrationRunCheckpointJsonContext : JsonSerializerContext
+public sealed partial class MigrationRunCheckpointJsonContext : JsonSerializerContext
 {
 }

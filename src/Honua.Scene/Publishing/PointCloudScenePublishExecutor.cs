@@ -4,10 +4,12 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Scene;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.PointCloud;
+using Honua.Scene.Assets;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -50,17 +52,20 @@ internal sealed partial class PointCloudScenePublishExecutor
     private readonly IOptions<SceneGenerationServerOptions> _options;
     private readonly ILogger<PointCloudScenePublishExecutor> _logger;
     private readonly ISceneRegistrationService? _registration;
+    private readonly ICloudFileStorage? _storage;
 
     public PointCloudScenePublishExecutor(
         IHostEnvironment environment,
         IOptions<SceneGenerationServerOptions> options,
         ILogger<PointCloudScenePublishExecutor> logger,
-        ISceneRegistrationService? registration = null)
+        ISceneRegistrationService? registration = null,
+        ICloudFileStorage? storage = null)
     {
         _environment = environment ?? throw new ArgumentNullException(nameof(environment));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _registration = registration;
+        _storage = storage;
     }
 
     /// <summary>Default scene cache <c>max-age</c> when the request omits one.</summary>
@@ -160,11 +165,27 @@ internal sealed partial class PointCloudScenePublishExecutor
                     cancellationToken).ConfigureAwait(false);
             }
 
+            // Replicate the staged point-cloud tileset to the shared object store
+            // before registering so the recorded storage prefix always implies the
+            // bytes exist and any node can hydrate it (#2459, ADR-0060).
+            var newDatasetId = Guid.NewGuid();
+            var storagePrefix = await SceneAssetStorageUploader.UploadTreeAsync(
+                _storage, stagingDirectory, sceneId, cancellationToken).ConfigureAwait(false);
+            if (storagePrefix is not null)
+            {
+                await SceneAssetHydration.WriteMarkerAsync(
+                    stagingDirectory,
+                    SceneAssetHydration.BuildToken(newDatasetId, storagePrefix),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             var registeredDatasetId = await TryRegisterSceneAsync(
+                newDatasetId,
                 sceneId,
                 displayName,
                 request.Description,
                 outputDirectory,
+                storagePrefix,
                 tileset.BoundsDegrees,
                 cacheMaxAge,
                 request.EditionGate,
@@ -335,10 +356,12 @@ internal sealed partial class PointCloudScenePublishExecutor
     }
 
     private async Task<Guid?> TryRegisterSceneAsync(
+        Guid datasetId,
         string sceneId,
         string displayName,
         string? description,
         string outputDirectory,
+        string? assetStoragePrefix,
         double[] bounds,
         int cacheMaxAgeSeconds,
         string? editionGate,
@@ -353,11 +376,12 @@ internal sealed partial class PointCloudScenePublishExecutor
 
         var record = new SceneDatasetRecord
         {
-            DatasetId = Guid.NewGuid(),
+            DatasetId = datasetId,
             Id = sceneId,
             Name = displayName,
             Description = description,
             AssetRoot = outputDirectory,
+            AssetStoragePrefix = assetStoragePrefix,
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
             Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),
