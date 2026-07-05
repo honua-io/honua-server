@@ -3,6 +3,7 @@
 
 using System.Text.RegularExpressions;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Xunit;
 
 namespace Honua.Architecture.Tests;
@@ -10,23 +11,9 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class DatabaseMigrationSafetyTests
 {
-    private static readonly Regex CompatibilityReviewMarker = new(
-        @"^\s*--\s*honua:compatibility-review\b.*\breason\s*=",
-        RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
     private static readonly Regex ConcurrentIndexPattern = new(
         @"\bCREATE\s+INDEX\s+CONCURRENTLY\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-
-    private static readonly (string RuleName, Regex Pattern)[] PotentiallyBreakingPatterns =
-    [
-        CreatePattern("drop-column", @"\bALTER\s+TABLE\b[\s\S]*?\bDROP\s+COLUMN\b"),
-        CreatePattern("rename-column", @"\bALTER\s+TABLE\b[\s\S]*?\bRENAME\s+COLUMN\b"),
-        CreatePattern("alter-column-type", @"\bALTER\s+TABLE\b[\s\S]*?\bALTER\s+COLUMN\b[\s\S]*?\bTYPE\b"),
-        CreatePattern("set-not-null", @"\bALTER\s+TABLE\b[\s\S]*?\bALTER\s+COLUMN\b[\s\S]*?\bSET\s+NOT\s+NULL\b"),
-        CreatePattern("drop-table", @"\bDROP\s+TABLE\b"),
-        CreatePattern("drop-schema", @"\bDROP\s+SCHEMA\b"),
-        CreatePattern("drop-sequence", @"\bDROP\s+SEQUENCE\b")
-    ];
 
     [ArchitectureTest]
     public void MigrationScripts_ShouldRequireExplicitCompatibilityReview_ForPotentiallyBreakingSchemaChanges()
@@ -38,7 +25,7 @@ public sealed class DatabaseMigrationSafetyTests
             var sql = File.ReadAllText(migrationFile);
             var matchedRules = AnalyzePotentiallyBreakingChanges(sql);
 
-            if (matchedRules.Count == 0 || CompatibilityReviewMarker.IsMatch(sql))
+            if (matchedRules.Count == 0 || MigrationSafetyClassifier.HasCompatibilityReviewMarker(sql))
             {
                 continue;
             }
@@ -94,43 +81,10 @@ public sealed class DatabaseMigrationSafetyTests
             "DbUp executes these migrations transactionally, so CREATE INDEX CONCURRENTLY will fail during startup and integration tests.");
     }
 
-    private static List<string> AnalyzePotentiallyBreakingChanges(string sql)
-    {
-        var normalized = StripCommentsAndQuotedBodies(sql);
-        var matchedRules = new List<string>();
-
-        foreach (var (ruleName, pattern) in PotentiallyBreakingPatterns)
-        {
-            if (pattern.IsMatch(normalized))
-            {
-                matchedRules.Add(ruleName);
-            }
-        }
-
-        return matchedRules;
-    }
-
-    private static string StripCommentsAndQuotedBodies(string sql)
-    {
-        var sanitized = Regex.Replace(sql, @"/\*[\s\S]*?\*/", " ", RegexOptions.CultureInvariant);
-        sanitized = Regex.Replace(
-            sanitized,
-            @"\$(?<tag>[A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\k<tag>\$",
-            " ",
-            RegexOptions.Singleline | RegexOptions.CultureInvariant);
-        sanitized = Regex.Replace(
-            sanitized,
-            @"'([^']|'')*'",
-            "''",
-            RegexOptions.Singleline | RegexOptions.CultureInvariant);
-        sanitized = Regex.Replace(
-            sanitized,
-            @"--.*?$",
-            string.Empty,
-            RegexOptions.Multiline | RegexOptions.CultureInvariant);
-
-        return sanitized;
-    }
+    // Delegates to the shared runtime classifier so the architecture gate and the runtime
+    // migration-safety enforcement (MigrationSafetyClassifier) share one source of truth.
+    private static IReadOnlyList<string> AnalyzePotentiallyBreakingChanges(string sql)
+        => MigrationSafetyClassifier.DetectBreakingRules(sql);
 
     private static IEnumerable<string> EnumerateMigrationFiles()
     {
@@ -162,7 +116,4 @@ public sealed class DatabaseMigrationSafetyTests
 
         throw new DirectoryNotFoundException("Could not locate Honua.sln from the current test directory.");
     }
-
-    private static (string RuleName, Regex Pattern) CreatePattern(string ruleName, string pattern) =>
-        (ruleName, new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant));
 }

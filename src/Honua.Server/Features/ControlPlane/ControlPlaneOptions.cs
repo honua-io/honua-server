@@ -240,6 +240,14 @@ internal sealed class ExecutionWorkloadOptions
 
     public string? RuntimeProfile { get; set; }
 
+    /// <summary>
+    /// The serving↔worker job-contract version jobs built for this workload require
+    /// (ADR-0060 principle #3b). Defaults to 1 (the initial contract); raise it only when the
+    /// workload's payload needs a newer worker, so the dispatcher can refuse to submit to a
+    /// backend whose workers cannot run it mid-upgrade.
+    /// </summary>
+    public int ContractVersion { get; set; } = 1;
+
     public Dictionary<string, string> Parameters { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>
