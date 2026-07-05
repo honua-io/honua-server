@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Abstractions;
@@ -13,6 +14,7 @@ using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.Generation;
 using Honua.Core.Features.Security.Domain;
+using Honua.Scene.Assets;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -58,6 +60,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     private readonly IHostEnvironment _environment;
     private readonly IOptions<SceneGenerationServerOptions> _options;
     private readonly ILogger<SceneTilesPublishExecutor> _logger;
+    private readonly ICloudFileStorage? _storage;
 
     public SceneTilesPublishExecutor(
         ISceneFeatureSource featureSource,
@@ -65,7 +68,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         IHostEnvironment environment,
         IOptions<SceneGenerationServerOptions> options,
         ILogger<SceneTilesPublishExecutor> logger,
-        ISceneRegistrationService? registration = null)
+        ISceneRegistrationService? registration = null,
+        ICloudFileStorage? storage = null)
     {
         _featureSource = featureSource ?? throw new ArgumentNullException(nameof(featureSource));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
@@ -73,6 +77,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _registration = registration;
+        _storage = storage;
     }
 
     /// <inheritdoc />
@@ -324,11 +329,31 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     tileCount = 1;
                 }
 
+                // Replicate the fully-staged tileset tree to the shared object
+                // store BEFORE registering so the recorded storage prefix always
+                // implies the bytes exist (#2459, ADR-0060). The dataset id is
+                // minted up front so the local hydration marker and the durable
+                // registry row agree on the content version. When no object store
+                // is available the prefix is null and the scene stays node-local
+                // (legacy behaviour).
+                var newDatasetId = Guid.NewGuid();
+                var storagePrefix = await SceneAssetStorageUploader.UploadTreeAsync(
+                    _storage, stagingDirectory, sceneId, cancellationToken).ConfigureAwait(false);
+                if (storagePrefix is not null)
+                {
+                    await SceneAssetHydration.WriteMarkerAsync(
+                        stagingDirectory,
+                        SceneAssetHydration.BuildToken(newDatasetId, storagePrefix),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
                 var registeredDatasetId = await TryRegisterSceneAsync(
+                    newDatasetId,
                     sceneId,
                     displayName,
                     description,
                     outputDirectory,
+                    storagePrefix,
                     bounds,
                     generationOptions.CacheMaxAgeSeconds,
                     editionGate,
@@ -1051,10 +1076,12 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             ex => SceneGenerationLog.StagingCleanupFailed(_logger, stagingDirectory, ex));
 
     private async Task<Guid?> TryRegisterSceneAsync(
+        Guid datasetId,
         string sceneId,
         string displayName,
         string? description,
         string outputDirectory,
+        string? assetStoragePrefix,
         double[] bounds,
         int cacheMaxAgeSeconds,
         string? editionGate,
@@ -1075,11 +1102,12 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
         var record = new SceneDatasetRecord
         {
-            DatasetId = Guid.NewGuid(),
+            DatasetId = datasetId,
             Id = sceneId,
             Name = displayName,
             Description = description,
             AssetRoot = outputDirectory,
+            AssetStoragePrefix = assetStoragePrefix,
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
             Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),

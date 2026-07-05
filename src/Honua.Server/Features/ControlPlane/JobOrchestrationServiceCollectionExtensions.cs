@@ -43,6 +43,11 @@ internal static class JobOrchestrationServiceCollectionExtensions
         // result-package store; its API-side cancel reconciliation is a separate follow-on.)
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, ShareExportJobTerminalCallback>());
 
+        // Ops-notification producer: emits an Error-severity ops notification when a job
+        // fails. Cheap singleton with always-registered deps, fired from every terminal
+        // loop (worker and API-side cancel); no-ops when ops notifications are disabled.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, Honua.Alerts.Ops.OpsJobTerminalCallback>());
+
         // Job store is already registered by AddGeoprocessing; guard for idempotency.
         // Queue and log store require Redis.
         if (!services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))

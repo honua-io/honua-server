@@ -68,6 +68,7 @@ internal static class DeployControlEndpoints
         [FromServices] IDeployPreflightProbe deployPreflightProbe,
         [FromServices] IOptions<DeploymentOptions> deploymentOptions,
         [FromServices] IHostEnvironment hostEnvironment,
+        [FromServices] IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
         HttpContext context)
     {
         var snapshot = await deployPreflightProbe.ProbeAsync(context.RequestAborted).ConfigureAwait(false);
@@ -116,11 +117,61 @@ internal static class DeployControlEndpoints
                     Warnings = snapshot.DatabaseCompatibility.Warnings,
                     ErrorMessage = snapshot.DatabaseCompatibility.ErrorMessage
                 }
+                : null,
+            PlatformRelease = includeDiagnostics
+                ? BuildPlatformReleaseView(controlPlaneOptions.CurrentValue)
                 : null
         };
 
         return Results.Json(response, DeployControlJsonContext.Default.DeployPreflightResponse);
     }
+
+    private static DeployPreflightPlatformRelease BuildPlatformReleaseView(ControlPlaneOptions options)
+    {
+        var release = options.PlatformRelease.ToDefinition();
+
+        var servingEntries = options.DeployTargets
+            .Where(target => !string.IsNullOrWhiteSpace(target.TargetId))
+            .Select(target => new PlatformReleasePlaneEntry
+            {
+                Id = target.TargetId,
+                RuntimeProfile = target.RuntimeProfile,
+                ExplicitArtifactReference = target.ArtifactReference
+            })
+            .ToArray();
+
+        var executionEntries = options.ExecutionWorkloads
+            .Where(workload => !string.IsNullOrWhiteSpace(workload.WorkloadId))
+            .Select(workload => new PlatformReleasePlaneEntry
+            {
+                Id = workload.WorkloadId,
+                RuntimeProfile = workload.RuntimeProfile,
+                ExplicitArtifactReference = workload.ArtifactReference
+            })
+            .ToArray();
+
+        var skew = PlatformReleaseProjection.BuildSkewSnapshot(release, servingEntries, executionEntries);
+
+        return new DeployPreflightPlatformRelease
+        {
+            ReleaseVersion = skew.ReleaseVersion,
+            ReleaseDeclared = skew.ReleaseDeclared,
+            IsCoVersioned = skew.IsCoVersioned,
+            Serving = skew.Serving.Select(MapPlaneProjection).ToArray(),
+            Execution = skew.Execution.Select(MapPlaneProjection).ToArray(),
+            SkewedIds = skew.SkewedIds
+        };
+    }
+
+    private static DeployPreflightPlaneProjection MapPlaneProjection(PlatformReleasePlaneProjection projection)
+        => new()
+        {
+            Id = projection.Id,
+            RuntimeProfile = projection.RuntimeProfile,
+            EffectiveArtifactReference = projection.EffectiveArtifactReference,
+            ProjectedFromRelease = projection.ProjectedFromRelease,
+            Skewed = projection.Skewed
+        };
 
     private static bool ShouldIncludeDiagnostics(HttpContext context)
         => context.Request.Query.TryGetValue("includeDiagnostics", out var values) &&

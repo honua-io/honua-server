@@ -44,6 +44,20 @@ public sealed class JobSpec
     /// <summary>The default output cap when the job declares none (1 GiB).</summary>
     public const long DefaultOutputMaxBytes = 1L * 1024 * 1024 * 1024;
 
+    /// <summary>
+    /// The highest serving↔worker job-contract version this harness can run (ADR-0060 principle
+    /// #3b). Must stay in lockstep with the server's <c>CustomCodeJobContract.ContractVersion</c>
+    /// (pinned by the CustomCodeJobContractDriftTests fixture). A submitted job whose injected
+    /// <c>HONUA_CONTRACT_VERSION</c> exceeds this is rejected — the vX-server / vY-worker safety gate.
+    /// </summary>
+    public const int SupportedContractVersion = 1;
+
+    /// <summary>
+    /// The container env var carrying the job-contract version the submitting server used.
+    /// Absent is treated as version 1 for back-compat with pre-versioning servers.
+    /// </summary>
+    public const string ContractVersionEnvName = "HONUA_CONTRACT_VERSION";
+
     // A git_ref MUST be a fully-pinned 40-hex commit SHA. The server resolves to a
     // pinned SHA before dispatch; the harness re-validates as defense-in-depth.
     private static readonly Regex GitShaRegex = new("^[0-9a-f]{40}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -64,7 +78,8 @@ public sealed class JobSpec
         IReadOnlyList<string> declaredScope,
         long outputMaxBytes,
         string baseUrl,
-        string jobToken)
+        string jobToken,
+        int contractVersion)
     {
         Runtime = runtime;
         RepoUrl = repoUrl;
@@ -77,6 +92,7 @@ public sealed class JobSpec
         OutputMaxBytes = outputMaxBytes;
         BaseUrl = baseUrl;
         JobToken = jobToken;
+        ContractVersion = contractVersion;
     }
 
     /// <summary>The runtime selector ("dotnet").</summary>
@@ -111,6 +127,9 @@ public sealed class JobSpec
 
     /// <summary>The scoped, job-bound bearer token (from <c>HONUA_JOB_TOKEN</c>).</summary>
     public string JobToken { get; }
+
+    /// <summary>The job-contract version the submitting server used (from <c>HONUA_CONTRACT_VERSION</c>).</summary>
+    public int ContractVersion { get; }
 
     /// <summary>The assembly simple name from the entrypoint ("Asm" in "Asm::Type").</summary>
     public string EntrypointAssembly => Entrypoint.Split("::", 2)[0];
@@ -152,6 +171,11 @@ public sealed class JobSpec
         // The auth spine is ALWAYS env-only — never sourced from the spec file.
         var baseUrl = TryGet(env, "HONUA_BASE_URL");
         var jobToken = TryGet(env, "HONUA_JOB_TOKEN");
+
+        // Serving↔worker job-contract gate (ADR-0060 #3b), env-only like the auth spine. Absent
+        // means a pre-versioning server (version 1). Fail closed if the server used a newer
+        // contract than this worker image can run — the defense-in-depth half of the submit gate.
+        var contractVersion = CoerceContractVersion(TryGet(env, ContractVersionEnvName));
 
         Require(repoUrl, "repo_url / CUSTOMCODE_REPO_URL");
         Require(gitRef, "git_ref / CUSTOMCODE_GIT_REF");
@@ -201,7 +225,30 @@ public sealed class JobSpec
             CoerceScope(field("declared_scope")),
             CoerceMaxBytes(field("output_max_bytes")),
             baseUrl!,
-            jobToken!);
+            jobToken!,
+            contractVersion);
+    }
+
+    private static int CoerceContractVersion(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+        {
+            return 1;
+        }
+
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) || value <= 0)
+        {
+            throw new JobSpecException($"{ContractVersionEnvName} must be a positive integer, got '{raw}'.");
+        }
+
+        if (value > SupportedContractVersion)
+        {
+            throw new JobSpecException(
+                $"{ContractVersionEnvName}={value} exceeds the version this worker can run " +
+                $"({SupportedContractVersion}). The worker image must be upgraded before it can run this job.");
+        }
+
+        return value;
     }
 
     private static IReadOnlyDictionary<string, string?> ReadProcessEnv()

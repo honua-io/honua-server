@@ -287,7 +287,16 @@ public enum DeployTargetKind
     /// <summary>
     /// Azure Functions target using deployment slots or revision swaps.
     /// </summary>
-    AzureFunctions
+    AzureFunctions,
+
+    /// <summary>
+    /// Substrate-neutral, single-host rolling-replace target (ADR-0060). The Honua process fronts
+    /// traffic with embedded YARP and owns the cutover: it starts a standby replica of the desired
+    /// revision on a co-located port, health-gates it, atomically swaps the reverse-proxy destination,
+    /// and keeps the old replica until the new one is healthy. Delivers the on-prem/air-gapped,
+    /// zero-cloud-dependency zero-downtime upgrade and rollback story.
+    /// </summary>
+    SelfHostedRolling
 }
 
 /// <summary>
@@ -308,7 +317,15 @@ public enum BatchComputeTargetKind
     /// <summary>
     /// Azure Batch backend.
     /// </summary>
-    AzureBatch
+    AzureBatch,
+
+    /// <summary>
+    /// Substrate-neutral, single-host local process pool (ADR-0060). Runs a run-to-completion
+    /// workload as a child process on the host, bounded by a configurable max-concurrency pool.
+    /// Delivers a true process-spawning geoprocessing executor for single-host/air-gapped
+    /// deployments with no container runtime or cloud batch service dependency.
+    /// </summary>
+    LocalProcess
 }
 
 /// <summary>
@@ -893,6 +910,15 @@ public sealed record ExecutionJobSpec
     public string? RuntimeProfile { get; init; }
 
     /// <summary>
+    /// The serving↔worker job-contract version this job requires (ADR-0060 principle #3b). The
+    /// dispatcher rejects submission when this exceeds the target backend's
+    /// <see cref="BatchComputeBackendCapabilities.MaxSupportedContractVersion"/> so a vX server never
+    /// submits a job a vY worker cannot run during a rolling version step. Defaults to 1 (the initial
+    /// contract) so existing/back-compat specs remain valid.
+    /// </summary>
+    public int ContractVersion { get; init; } = 1;
+
+    /// <summary>
     /// Opaque backend-specific parameters.
     /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
@@ -937,6 +963,12 @@ public sealed record ExecutionJobDefinition
     /// Optional specialized worker or runtime profile such as a Python/GDAL image family.
     /// </summary>
     public string? RuntimeProfile { get; init; }
+
+    /// <summary>
+    /// The serving↔worker job-contract version jobs built for this workload require (ADR-0060
+    /// principle #3b). Defaults to 1 (the initial contract).
+    /// </summary>
+    public int ContractVersion { get; init; } = 1;
 
     /// <summary>
     /// Provider-specific workload metadata such as queue, CPU, memory, or timeout.
@@ -1254,6 +1286,14 @@ public sealed record BatchComputeBackendCapabilities
     /// Whether the backend can stage or materialize workload artifacts.
     /// </summary>
     public bool SupportsArtifactStaging { get; init; }
+
+    /// <summary>
+    /// The highest serving↔worker job-contract version this backend's workers can run (ADR-0060
+    /// principle #3b). The dispatcher refuses to submit a job whose
+    /// <see cref="ExecutionJobSpec.ContractVersion"/> exceeds this. Defaults to 1 (the initial
+    /// contract) so backends that do not report a version are treated as v1-capable.
+    /// </summary>
+    public int MaxSupportedContractVersion { get; init; } = 1;
 }
 
 /// <summary>

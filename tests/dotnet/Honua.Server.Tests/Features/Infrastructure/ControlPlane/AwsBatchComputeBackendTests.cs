@@ -79,6 +79,9 @@ public sealed class AwsBatchComputeBackendTests
         client.LastSubmission.EnvironmentOverrides.Should()
             .Contain(entry => entry.Name == "CUSTOMCODE_REPO_URL"
                 && entry.Value == "https://github.com/honua-io/example.git");
+        // Serving↔worker job-contract version (ADR-0060 #3b) is injected so the worker can re-check it.
+        client.LastSubmission.EnvironmentOverrides.Should()
+            .Contain(entry => entry.Name == "HONUA_CONTRACT_VERSION" && entry.Value == "1");
     }
 
     [Fact]

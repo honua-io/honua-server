@@ -992,6 +992,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             // declared profile so a native gdal.* step still routes to the GDAL worker;
             // otherwise fall back to the workload's own runtime profile.
             RuntimeProfile = requiredRuntimeProfile ?? workload.RuntimeProfile,
+            // Carry the workload's required serving↔worker job-contract version onto the spec so the
+            // dispatcher can gate submission against the target backend's supported version (ADR-0060 #3b).
+            ContractVersion = workload.ContractVersion,
             Parameters = specParams
         };
     }

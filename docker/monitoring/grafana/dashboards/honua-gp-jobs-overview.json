@@ -1,0 +1,149 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Geoprocessing / execution-plane overview (#2463). Queue depth by status+backend from honua_execution_queue_depth, job duration percentiles from honua_execution_job_duration_ms, outcomes from honua_execution_job_transitions_total, submissions per backend, and reconcile-cycle outcomes.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Active jobs by status and backend. queued/provisioning/running growing without a matching completion rate signals a backlog or a stuck backend.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "jobs" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum(honua_execution_queue_depth) by (honua_controlplane_execution_status, honua_controlplane_backend)",
+          "legendFormat": "{{honua_controlplane_execution_status}} @ {{honua_controlplane_backend}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Queue Depth by Status + Backend",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Total queued+provisioning+running work in flight.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "jobs" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "expr": "sum(honua_execution_queue_depth)",
+          "legendFormat": "in flight",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Jobs In Flight",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Job duration percentiles (terminal jobs) by workload kind.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(honua_execution_job_duration_ms_bucket[5m])) by (le, honua_controlplane_execution_kind))",
+          "legendFormat": "p95 {{honua_controlplane_execution_kind}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(honua_execution_job_duration_ms_bucket[5m])) by (le))",
+          "legendFormat": "p99 (all)",
+          "refId": "B"
+        }
+      ],
+      "title": "Job Duration Percentiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Terminal job outcomes: rate of transitions into Succeeded / Failed / Cancelled.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum(rate(honua_execution_job_transitions_total{honua_controlplane_execution_status=~\"Succeeded|Failed|Cancelled\"}[5m])) by (honua_controlplane_execution_status)",
+          "legendFormat": "{{honua_controlplane_execution_status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Job Outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Jobs submitted to a batch-compute backend, by backend (worker contract).",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum(rate(honua_execution_job_submitted_total[5m])) by (honua_controlplane_backend, honua_controlplane_target_kind)",
+          "legendFormat": "{{honua_controlplane_backend}} ({{honua_controlplane_target_kind}})",
+          "refId": "A"
+        }
+      ],
+      "title": "Submissions by Backend",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Reconciler cycle outcomes. A rising error/cas_conflict/lease_lost rate indicates contention or a wedged reconciler.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum(rate(honua_execution_reconcile_cycle_total[5m])) by (honua_controlplane_execution_reconcile_outcome)",
+          "legendFormat": "{{honua_controlplane_execution_reconcile_outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Reconcile Cycle Outcomes",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["honua", "geoprocessing", "jobs", "observability"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"]
+  },
+  "timezone": "browser",
+  "title": "Honua GP / Jobs Overview",
+  "uid": "honua-gp-jobs-overview",
+  "version": 1
+}

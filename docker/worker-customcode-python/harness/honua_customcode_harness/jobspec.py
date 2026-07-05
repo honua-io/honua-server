@@ -45,6 +45,14 @@ _GIT_SHA_RE = re.compile(r"\A[0-9a-f]{40}\Z")
 
 _DEFAULT_OUTPUT_MAX_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB
 
+# The highest serving<->worker job-contract version this harness can run (ADR-0060
+# principle #3b). Must stay in lockstep with the server's
+# CustomCodeJobContract.ContractVersion (pinned by CustomCodeJobContractDriftTests).
+# A submitted job whose injected HONUA_CONTRACT_VERSION exceeds this is rejected —
+# the vX-server / vY-worker safety gate. Absent is treated as version 1 for back-compat.
+SUPPORTED_CONTRACT_VERSION = 1
+CONTRACT_VERSION_ENV = "HONUA_CONTRACT_VERSION"
+
 
 class JobSpecError(ValueError):
     """Raised when the job inputs are missing or malformed."""
@@ -65,6 +73,7 @@ class JobSpec:
     output_max_bytes: int
     base_url: str
     job_token: str
+    contract_version: int = 1
 
     @property
     def entrypoint_module(self) -> str:
@@ -141,6 +150,31 @@ def _coerce_scope(raw: Any) -> tuple[str, ...]:
     return tuple(s for s in items if s)
 
 
+def _coerce_contract_version(raw: Any) -> int:
+    """Parse HONUA_CONTRACT_VERSION and fail closed if it exceeds this worker's max.
+
+    Absent means a pre-versioning server (version 1). This is the defense-in-depth
+    half of the submit-side contract gate (ADR-0060 #3b).
+    """
+    if raw is None or raw == "":
+        return 1
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise JobSpecError(
+            f"{CONTRACT_VERSION_ENV} must be a positive integer, got {raw!r}."
+        ) from exc
+    if value <= 0:
+        raise JobSpecError(f"{CONTRACT_VERSION_ENV} must be a positive integer, got {raw!r}.")
+    if value > SUPPORTED_CONTRACT_VERSION:
+        raise JobSpecError(
+            f"{CONTRACT_VERSION_ENV}={value} exceeds the version this worker can run "
+            f"({SUPPORTED_CONTRACT_VERSION}). The worker image must be upgraded before it "
+            "can run this job."
+        )
+    return value
+
+
 def _coerce_max_bytes(raw: Any) -> int:
     if raw is None or raw == "":
         return _DEFAULT_OUTPUT_MAX_BYTES
@@ -181,6 +215,9 @@ def load_job_spec(env: Mapping[str, str] | None = None) -> JobSpec:
     base_url = env.get("HONUA_BASE_URL")
     job_token = env.get("HONUA_JOB_TOKEN")
 
+    # Serving<->worker job-contract gate (ADR-0060 #3b), env-only like the auth spine.
+    contract_version = _coerce_contract_version(env.get(CONTRACT_VERSION_ENV))
+
     _require(repo_url, "repo_url / CUSTOMCODE_REPO_URL")
     _require(git_ref, "git_ref / CUSTOMCODE_GIT_REF")
     _require(output_prefix, "output_prefix / CUSTOMCODE_OUTPUT_PREFIX")
@@ -211,6 +248,7 @@ def load_job_spec(env: Mapping[str, str] | None = None) -> JobSpec:
         output_max_bytes=_coerce_max_bytes(field("output_max_bytes")),
         base_url=str(base_url),
         job_token=str(job_token),
+        contract_version=contract_version,
     )
 
 

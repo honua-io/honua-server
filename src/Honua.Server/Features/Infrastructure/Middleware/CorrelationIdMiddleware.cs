@@ -55,6 +55,7 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
             var requestPath = context.Request.Path.Value ?? string.Empty;
             InfrastructureLog.CorrelationIdEstablished(_logger, correlationId, requestPath);
 
+            var startTimestamp = Stopwatch.GetTimestamp();
             try
             {
                 // Continue to next middleware
@@ -64,6 +65,11 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
             {
                 // Populate standardized tags once routing has resolved route values.
                 EnrichActivityWithRequestContext(context);
+
+                // Emit the GIS-aware serving latency histogram once per request, keyed by the
+                // classified protocol/operation. Skipped for non-Honua paths (health, metrics,
+                // static) so the metric stays low-cardinality.
+                RecordServingRequestMetric(context, startTimestamp);
             }
         }
     }
@@ -156,6 +162,23 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         {
             activity.SetTag(HonuaTelemetry.Tags.TileY, y);
         }
+    }
+
+    /// <summary>
+    /// Records the GIS-aware serving-plane latency histogram for the completed request. Only
+    /// requests that classify to a Honua protocol are recorded, keeping label cardinality bounded.
+    /// </summary>
+    private static void RecordServingRequestMetric(HttpContext context, long startTimestamp)
+    {
+        var protocol = RequestTelemetryClassifier.ResolveProtocol(context.Request.Path);
+        if (string.IsNullOrWhiteSpace(protocol))
+        {
+            return;
+        }
+
+        var operation = RequestTelemetryClassifier.ResolveOperation(context);
+        var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+        HonuaTelemetry.RecordServingRequest(protocol, operation, context.Response.StatusCode, elapsedMs);
     }
 
     private static bool TryGetRouteValue(

@@ -8,11 +8,13 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Scene;
+using Honua.Scene.Assets;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -274,6 +276,55 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         record.Extent.XMax.Should().BeGreaterThanOrEqualTo(-122.4);
         record.Extent.YMax.Should().BeGreaterThanOrEqualTo(37.8);
         outcome.Result.Summary.BoundingRegionDegrees.Should().HaveCount(4);
+    }
+
+    [UnitTest]
+    public async Task Execute_WithObjectStore_ReplicatesTreeAndRecordsStoragePrefix()
+    {
+        // WS0 statelessness (#2459, ADR-0060): when an object store is available
+        // the publish path must upload the promoted tileset tree under a stable
+        // scenes/{sceneId} prefix and record that prefix on the registration so
+        // any node can hydrate and serve it. The promoted local dir is stamped
+        // with a hydration marker so the publishing node treats it as a cache.
+        BuildLayer();
+        _featureSource.Features = SamplePolygons();
+        var storage = new InMemoryCloudFileStorage();
+        var executor = BuildExecutor(storage);
+
+        var outcome = await executor.RunDirectAsync(
+            BuildIntent(sceneId: "replicated"), CancellationToken.None);
+
+        var record = _registration.Records.Single(r => r.Id == "replicated");
+        record.AssetStoragePrefix.Should().Be("scenes/replicated",
+            "the registration must record the object-store prefix so other nodes can hydrate.");
+
+        storage.Keys.Should().Contain("scenes/replicated/tileset.json");
+        storage.Keys.Should().Contain("scenes/replicated/tile_0000.glb");
+        storage.Keys.Should().Contain($"scenes/replicated/{SceneAssetHydration.ManifestObjectName}");
+
+        File.Exists(Path.Combine(outcome.Result.AssetRoot, SceneAssetHydration.MarkerFileName))
+            .Should().BeTrue("the promoted local dir must be stamped so the publishing node treats it as a cache.");
+        // The marker is a local-only stamp; it must NOT be replicated to the store.
+        storage.Keys.Should().NotContain($"scenes/replicated/{SceneAssetHydration.MarkerFileName}");
+    }
+
+    [UnitTest]
+    public async Task Execute_WithoutObjectStore_RecordsNullStoragePrefix()
+    {
+        // Legacy path: with no object store configured the scene stays node-local
+        // and the registration carries no storage prefix, so serving hydration is
+        // skipped entirely — no behavioural change from before #2459.
+        BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var outcome = await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "node-local"), CancellationToken.None);
+
+        var record = _registration.Records.Single(r => r.Id == "node-local");
+        record.AssetStoragePrefix.Should().BeNull(
+            "with no object store the scene must remain filesystem-only.");
+        File.Exists(Path.Combine(outcome.Result.AssetRoot, SceneAssetHydration.MarkerFileName))
+            .Should().BeFalse("no hydration marker is written when there is nothing to hydrate from.");
     }
 
     [UnitTest]
@@ -1151,6 +1202,21 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             Options.Create(serverOptions),
             NullLogger<SceneTilesPublishExecutor>.Instance,
             _registration);
+
+    private SceneTilesPublishExecutor BuildExecutor(ICloudFileStorage storage)
+        => new(
+            _featureSource,
+            _metadataProvider,
+            new TestHostEnvironment(),
+            Options.Create(new SceneGenerationServerOptions
+            {
+                OutputRoot = _outputRoot,
+                MaxFeatureCount = 50_000,
+                GeneratorTag = "honua-test-generator/1.0"
+            }),
+            NullLogger<SceneTilesPublishExecutor>.Instance,
+            _registration,
+            storage);
 
     private static List<SceneFeature> PointGrid(int cols, int rows)
     {

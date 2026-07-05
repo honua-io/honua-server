@@ -98,6 +98,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         root.GetProperty("message").GetString().Should().Be("Instance is not ready for coordinated deployment.");
         root.TryGetProperty("migration", out _).Should().BeFalse();
         root.TryGetProperty("readiness", out _).Should().BeFalse();
+        root.TryGetProperty("platformRelease", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -130,6 +131,11 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         var migration = root.GetProperty("migration");
         migration.GetProperty("upgradeRequired").GetBoolean().Should().BeTrue();
         migration.GetProperty("pendingScripts").GetArrayLength().Should().Be(1);
+
+        // Cross-plane platform-release skew view is surfaced only under diagnostics (ADR-0060 WS2).
+        var platformRelease = root.GetProperty("platformRelease");
+        platformRelease.GetProperty("releaseDeclared").GetBoolean().Should().BeFalse();
+        platformRelease.GetProperty("isCoVersioned").GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTest]
