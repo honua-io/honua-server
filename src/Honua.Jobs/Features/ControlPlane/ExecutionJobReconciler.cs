@@ -598,7 +598,7 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
         {
             try
             {
-                var activeJobs = await jobStore.ListActiveAsync(kind: null, stoppingToken).ConfigureAwait(false);
+                var activeJobs = await jobStore.ListActiveAsync(kind: null, cancellationToken: stoppingToken).ConfigureAwait(false);
                 foreach (var job in activeJobs)
                 {
                     stoppingToken.ThrowIfCancellationRequested();

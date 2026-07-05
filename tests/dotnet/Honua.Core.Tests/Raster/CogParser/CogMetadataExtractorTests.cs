@@ -191,6 +191,52 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("uint8");
     }
 
+    [Fact]
+    public async Task ReadMetadataAsync_TiepointTagWithNonDoubleType_ReturnsDefaultOriginWithoutThrowing()
+    {
+        // Regression test for BH4-025: tag 33922 declared as SHORT (type 3) instead of DOUBLE (type 12).
+        // Without the type guard, GetValidatedExternalArrayByteCount returns 12 bytes (6 * 2) but
+        // ReadDouble(data, 24, ...) slices at offset 24 into that 12-byte span → ArgumentOutOfRangeException.
+        var tiffData = BuildSyntheticCogBytesWithShortTiepoint(
+            width: 100, height: 50,
+            scaleX: 0.01, scaleY: 0.01);
+
+        var reader = new InMemoryRangeReader(tiffData);
+        var extractor = new CogMetadataExtractor();
+
+        // Act — must complete without throwing
+        var metadata = await extractor.ReadMetadataAsync(reader, "test-bucket", "test.tif");
+
+        // Assert — tiepoint defaults to (0, 0); scale is DOUBLE and reads correctly
+        metadata.Extent.XMin.Should().BeApproximately(0.0, 1e-10);
+        metadata.Extent.YMax.Should().BeApproximately(0.0, 1e-10);
+        metadata.Extent.XMax.Should().BeApproximately(1.0, 1e-10);   // 0 + 0.01 * 100
+        metadata.Extent.YMin.Should().BeApproximately(-0.5, 1e-10);  // 0 - 0.01 * 50
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_PixelScaleTagWithNonDoubleType_ReturnsUnitScaleWithoutThrowing()
+    {
+        // Regression test for BH4-025: tag 33550 declared as SHORT (type 3) instead of DOUBLE (type 12).
+        // Without the type guard, GetValidatedExternalArrayByteCount returns 6 bytes (3 * 2) but
+        // ReadDouble(data, 8, ...) slices at offset 8 into that 6-byte span → ArgumentOutOfRangeException.
+        var tiffData = BuildSyntheticCogBytesWithShortPixelScale(
+            width: 100, height: 50,
+            tiepointX: -10.0, tiepointY: 50.0);
+
+        var reader = new InMemoryRangeReader(tiffData);
+        var extractor = new CogMetadataExtractor();
+
+        // Act — must complete without throwing
+        var metadata = await extractor.ReadMetadataAsync(reader, "test-bucket", "test.tif");
+
+        // Assert — pixel scale defaults to (1, 1); tiepoint is DOUBLE and reads correctly
+        metadata.Extent.XMin.Should().BeApproximately(-10.0, 1e-10);
+        metadata.Extent.YMax.Should().BeApproximately(50.0, 1e-10);
+        metadata.Extent.XMax.Should().BeApproximately(90.0, 1e-10);  // -10 + 1.0 * 100
+        metadata.Extent.YMin.Should().BeApproximately(0.0, 1e-10);   // 50  - 1.0 * 50
+    }
+
     /// <summary>
     /// Builds a synthetic classic TIFF (little-endian) with georeferencing tags
     /// in TIFF-spec ascending order. Tag 33550 comes before tag 33922.
@@ -405,6 +451,99 @@ public class CogMetadataExtractorTests
         WriteIfdEntry(writer, 339, 3, 2, PackInlineShortPair(sampleFormat, sampleFormat));   // SampleFormat[2]
 
         writer.Write((uint)0); // no next IFD
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a synthetic TIFF where the ModelTiepointTag (33922) uses SHORT type
+    /// instead of the required DOUBLE type. The ModelPixelScaleTag uses the correct DOUBLE type.
+    /// This exercises the BH4-025 type guard in ExtractTiepointAsync.
+    /// </summary>
+    private static byte[] BuildSyntheticCogBytesWithShortTiepoint(
+        int width, int height, double scaleX, double scaleY)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+
+        writer.Write((ushort)0x4949); // "II" little-endian
+        writer.Write((ushort)42);     // classic TIFF magic
+        writer.Write((uint)8);        // first IFD at offset 8
+
+        const int entryCount = 9;
+        writer.Write((ushort)entryCount);
+
+        // IFD ends at: 8 + 2 + 9*12 + 4 = 122
+        const uint scaleDataOffset = 122;          // 3 DOUBLEs = 24 bytes
+        const uint tiepointDataOffset = 122 + 24;  // 6 SHORTs = 12 bytes
+
+        WriteIfdEntry(writer, 256, 4, 1, (uint)width);
+        WriteIfdEntry(writer, 257, 4, 1, (uint)height);
+        WriteIfdEntry(writer, 259, 3, 1, 1);
+        WriteIfdEntry(writer, 322, 4, 1, 256);
+        WriteIfdEntry(writer, 323, 4, 1, 256);
+        WriteIfdEntry(writer, 324, 4, 1, 5000);
+        WriteIfdEntry(writer, 325, 4, 1, 1000);
+        WriteIfdEntry(writer, 33550, 12, 3, scaleDataOffset);   // PixelScale — correct DOUBLE type
+        WriteIfdEntry(writer, 33922, 3, 6, tiepointDataOffset); // Tiepoint — wrong SHORT type (BH4-025)
+
+        writer.Write((uint)0); // no next IFD
+
+        // External PixelScale data: 3 DOUBLEs
+        writer.Write(scaleX);
+        writer.Write(scaleY);
+        writer.Write(0.0);
+
+        // External Tiepoint data: 6 SHORTs (12 bytes — undersized vs. what ReadDouble expects)
+        for (var i = 0; i < 6; i++) writer.Write((ushort)0);
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a synthetic TIFF where the ModelPixelScaleTag (33550) uses SHORT type
+    /// instead of the required DOUBLE type. The ModelTiepointTag uses the correct DOUBLE type.
+    /// This exercises the BH4-025 type guard in ExtractPixelScaleAsync.
+    /// </summary>
+    private static byte[] BuildSyntheticCogBytesWithShortPixelScale(
+        int width, int height, double tiepointX, double tiepointY)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        writer.Write((uint)8);
+
+        const int entryCount = 9;
+        writer.Write((ushort)entryCount);
+
+        // IFD ends at: 8 + 2 + 9*12 + 4 = 122
+        const uint scaleDataOffset = 122;         // 3 SHORTs = 6 bytes
+        const uint tiepointDataOffset = 122 + 6;  // 6 DOUBLEs = 48 bytes
+
+        WriteIfdEntry(writer, 256, 4, 1, (uint)width);
+        WriteIfdEntry(writer, 257, 4, 1, (uint)height);
+        WriteIfdEntry(writer, 259, 3, 1, 1);
+        WriteIfdEntry(writer, 322, 4, 1, 256);
+        WriteIfdEntry(writer, 323, 4, 1, 256);
+        WriteIfdEntry(writer, 324, 4, 1, 5000);
+        WriteIfdEntry(writer, 325, 4, 1, 1000);
+        WriteIfdEntry(writer, 33550, 3, 3, scaleDataOffset);      // PixelScale — wrong SHORT type (BH4-025)
+        WriteIfdEntry(writer, 33922, 12, 6, tiepointDataOffset);  // Tiepoint — correct DOUBLE type
+
+        writer.Write((uint)0); // no next IFD
+
+        // External PixelScale data: 3 SHORTs (6 bytes — undersized vs. what ReadDouble expects)
+        for (var i = 0; i < 3; i++) writer.Write((ushort)0);
+
+        // External Tiepoint data: 6 DOUBLEs
+        writer.Write(0.0);         // I
+        writer.Write(0.0);         // J
+        writer.Write(0.0);         // K
+        writer.Write(tiepointX);   // X
+        writer.Write(tiepointY);   // Y
+        writer.Write(0.0);         // Z
+
         return ms.ToArray();
     }
 

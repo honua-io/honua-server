@@ -537,7 +537,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         using var request = new HttpRequestMessage(HttpMethod.Post,
             "/ogc/processes/processes/honua-geoprocessing/execution");
         request.Headers.Add("Prefer", "respond-async");
-        // queryFeatures is a non-geoprocess kind — catalog validation skips it,
+        // queryFeatures is a non-geoprocess kind â€” catalog validation skips it,
         // so this request exercises only response-mode handling, not catalog checks.
         request.Content = new StringContent(
             """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}},"response":"document"}""",
@@ -545,7 +545,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.SendAsync(request);
 
-        // Either 201 (job created) or 503 (no Redis) — not 501
+        // Either 201 (job created) or 503 (no Redis) â€” not 501
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
     }
 
@@ -644,7 +644,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             using var request = new HttpRequestMessage(HttpMethod.Post,
                 "/ogc/processes/processes/honua-geoprocessing/execution");
             request.Headers.Add("Prefer", "respond-async");
-            // queryFeatures is a non-geoprocess step kind — catalog validation skips it
+            // queryFeatures is a non-geoprocess step kind â€” catalog validation skips it
             // and the destructive classifier sees no Geoprocess step, so the submission
             // should not trigger the IsDestructive branch of the evaluator.
             request.Content = new StringContent(
@@ -653,7 +653,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
             var response = await client.SendAsync(request);
 
-            // Either 201 (job created) or 503 (no Redis) — never 403 (approval required),
+            // Either 201 (job created) or 503 (no Redis) â€” never 403 (approval required),
             // since the plan is non-destructive and the evaluator only gates destructive plans.
             response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
         }
@@ -758,7 +758,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
         {
-            // No Redis — 503 with problem document
+            // No Redis â€” 503 with problem document
             var err = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             err.RootElement.GetProperty("status").GetInt32().Should().Be(503);
             return;
@@ -821,5 +821,36 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     {
         var response = await _fixture.Client.DeleteAsync("/ogc/processes/jobs/nonexistent-job-id");
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
+    }
+
+    // -----------------------------------------------------------------------
+    // Job list — BH7-009 resource-cap regression
+    // -----------------------------------------------------------------------
+
+    // BH7-009 regression: before the fix, ListActiveAsync was called with no limit,
+    // so all active jobs were loaded into memory before applying the effectiveLimit
+    // break. The fix passes effectiveLimit to ListActiveAsync so the store applies
+    // a server-side cap. This test verifies that a positive limit= parameter is
+    // accepted and the response shape is valid (or 503 without Redis).
+    [IntegrationTest]
+    [Operation(Operations.JobStatus)]
+    [Endpoint("GET /ogc/processes/jobs")]
+    public async Task JobList_WithPositiveLimit_AcceptsLimitParameterAndReturnsValidResponse()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/processes/jobs?limit=5");
+
+        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+        {
+            // No Redis in this test environment; 503 is expected.
+            var err = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            err.RootElement.GetProperty("status").GetInt32().Should().Be(503);
+            return;
+        }
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.TryGetProperty("jobs", out var jobs).Should().BeTrue();
+        // With limit=5 and no active jobs in the test store, the array is empty.
+        jobs.GetArrayLength().Should().BeLessOrEqualTo(5, "the effective limit must be honoured");
     }
 }

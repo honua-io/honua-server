@@ -81,7 +81,12 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
 
-        if (!IsExtentWithinCrsBounds(requestedExtent, normalizedCrs))
+        // BH6-010: Use the same lenient intersection check GetMap uses rather than the
+        // strict containment check. A BBOX that extends outside CRS bounds but still
+        // intersects it renders fine in GetMap; GetFeatureInfo must not reject it with 400
+        // when GetMap would succeed. Any out-of-bounds click geometry is clamped during
+        // feature query rather than rejected at the validation gate.
+        if (!DoesExtentIntersectCrsBounds(requestedExtent, normalizedCrs))
         {
             return CreateWmsServiceException(context, "InvalidParameterValue", "BBOX is outside the valid range for the requested CRS.");
         }
@@ -137,12 +142,17 @@ internal static partial class WmsRequestHandlers
         {
             return filterResult.Error;
         }
+        // BH5-007: use GroupBy before ToDictionary to handle duplicate LAYERS tokens (e.g.
+        // LAYERS=X,X) without throwing ArgumentException on the duplicate StorageLayerId key.
+        // The temporal filter path below has always used this pattern; the spatial path is now
+        // consistent with it.
         var filtersByStorageLayerId = filterResult.Filters is null
             ? null
             : mapLayers
                 .Select((layer, index) => (layer.StorageLayerId, Filter: filterResult.Filters[index]))
                 .Where(item => item.Filter is not null)
-                .ToDictionary(item => item.StorageLayerId, item => item.Filter);
+                .GroupBy(item => item.StorageLayerId)
+                .ToDictionary(group => group.Key, group => group.First().Filter);
 
         // Apply the TIME dimension to identify, mirroring GetMap. Previously GetFeatureInfo
         // ignored TIME entirely, so on a time-enabled layer GetMap showed the selected instant

@@ -37,7 +37,15 @@ internal sealed partial class ODataBatchHandler
         // and the batch write would otherwise be silently overwritten (TOCTOU).
         var preconditionsByLayer = new Dictionary<int, List<FeatureEditPrecondition>>();
         var writeLayerIds = new HashSet<int>();
-        var layerCache = new Dictionary<int, ODataBatchLayerContext>();
+        // BH7-012: key by (layerId, normalizedMethod) so each distinct operation on the
+        // same layer triggers its own per-operation RBAC check via ResolveBatchLayerContextAsync.
+        // Caching only by layerId would let the second+ sub-request on the same layer skip the
+        // MapMethodToOperation / RequireResourceDataEditorAsync authorization check.
+        var layerCache = new Dictionary<(int layerId, string normalizedMethod), ODataBatchLayerContext>();
+        // Separate metadata-only cache keyed by layerId for the write-execution phase below,
+        // where we need the context but not per-operation auth (the per-request check above
+        // already enforced it, and the feature writer enforces data-write access server-side).
+        var layerMetaCache = new Dictionary<int, ODataBatchLayerContext>();
 
         foreach (var request in requests)
         {
@@ -112,7 +120,13 @@ internal sealed partial class ODataBatchHandler
                     continue;
                 }
                 var objectId = parsed.ObjectId;
-                if (!layerCache.TryGetValue(layerId.Value, out var layer))
+                // BH7-012: look up by (layerId, normalizedMethod) so each distinct operation
+                // on the same layer is authorized independently. The first POST-Insert is cached
+                // under ("POST"); a later DELETE-Delete on the same layer does NOT hit the cache
+                // and instead calls ResolveBatchLayerContextAsync with "DELETE" so
+                // MapMethodToOperation / RequireResourceDataEditorAsync runs again.
+                var normalizedMethod = request.Method.ToUpperInvariant();
+                if (!layerCache.TryGetValue((layerId.Value, normalizedMethod), out var layer))
                 {
                     var resolvedLayer = await ResolveBatchLayerContextAsync(
                         context,
@@ -132,10 +146,12 @@ internal sealed partial class ODataBatchHandler
                     }
 
                     layer = resolvedLayer.Layer;
-                    layerCache[layerId.Value] = layer;
+                    layerCache[(layerId.Value, normalizedMethod)] = layer;
+                    // Also populate the metadata cache for the write-execution phase.
+                    layerMetaCache.TryAdd(layerId.Value, layer);
                 }
 
-                switch (request.Method.ToUpperInvariant())
+                switch (normalizedMethod)
                 {
                     case "GET":
                         rollback = true;
@@ -484,7 +500,7 @@ internal sealed partial class ODataBatchHandler
 
             foreach (var layerId in layerIds)
             {
-                if (!layerCache.TryGetValue(layerId, out var layer))
+                if (!layerMetaCache.TryGetValue(layerId, out var layer))
                 {
                     continue;
                 }

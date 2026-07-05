@@ -26,6 +26,19 @@ internal static class CloudIntegrationTraits
     public const string CloudIntegration = "CloudIntegration";
 
     /// <summary>
+    /// Trait value applied to the ADR-0060 substrate-neutral local lane (#2166, #2457). These
+    /// tests prove the single-host, zero-cloud (containers only, no Kubernetes, no cloud) deploy /
+    /// rolling-upgrade / expand-contract-migration / rollback story on BOTH planes (serving via
+    /// <c>YarpRollingDeployBackend</c> + real embedded YARP; GP via
+    /// <c>LocalProcessPoolBatchComputeBackend</c>) plus the real
+    /// <c>PostgresDatabaseMigrationRunner</c> expand/contract gate. They are kept in a distinct
+    /// category so the dedicated <c>local-substrate</c> workflow job opts in with
+    /// <c>--filter "Category=LocalSubstrate"</c>, and every Docker-dependent test
+    /// <c>[SkippableFact]</c>-skips (never fails) when Docker is unavailable.
+    /// </summary>
+    public const string LocalSubstrate = "LocalSubstrate";
+
+    /// <summary>
     /// Trait value applied to the real-AWS certification lane (#2164). These tests target a
     /// LIVE AWS account (not an emulator) and are kept in a distinct category so neither the
     /// default PR run nor the emulated <c>cloud-integration-harness.yml</c>

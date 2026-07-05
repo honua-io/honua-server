@@ -48,6 +48,15 @@ internal static class ObservabilityServiceCollectionExtensions
 
         AddOperateObservability(services);
 
+        // Ops-health snapshot composer + deterministic ops-findings engine (ADR-0060 WS4 / #2457).
+        // Both are scoped because they compose the scoped deploy-preflight probe.
+        services.AddOptions<OpsFindingsOptions>()
+            .Bind(configuration.GetSection(OpsFindingsOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
+        services.AddScoped<IOpsFindingsService, OpsFindingsService>();
+
         return services;
     }
 

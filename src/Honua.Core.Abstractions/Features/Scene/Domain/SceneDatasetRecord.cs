@@ -42,6 +42,16 @@ public sealed record SceneDatasetRecord
     public required string AssetRoot { get; init; }
 
     /// <summary>
+    /// Optional object-store prefix (e.g. <c>scenes/{sceneId}</c>) under which the
+    /// promoted 3D Tiles tree is replicated for multi-node serving (#2459,
+    /// ADR-0060). <c>null</c> for legacy filesystem-only datasets, which stay
+    /// node-local and are never hydrated. When set, any node can read-through
+    /// hydrate a local materialization cache under <see cref="AssetRoot"/> from
+    /// this prefix before serving.
+    /// </summary>
+    public string? AssetStoragePrefix { get; init; }
+
+    /// <summary>
     /// Filename of the root tileset document under <see cref="AssetRoot"/>.
     /// Defaults to <c>tileset.json</c> per the OGC 3D Tiles specification.
     /// </summary>

@@ -61,7 +61,37 @@ public static class HonuaTelemetry
         "errors",
         "Total protocol error envelopes produced across all surfaces, tagged by service_type, operation, error_code, and in_band.");
 
+    /// <summary>
+    /// Histogram of serving-plane request latency in milliseconds, tagged with the GIS-aware
+    /// <c>protocol</c> and <c>operation</c> dimensions (plus a coarse <c>status_class</c>). The
+    /// stock ASP.NET Core <c>http.server.request.duration</c> instrument keys on route/method/status
+    /// which is route-shaped rather than protocol-shaped; this instrument lets dashboards compute
+    /// serving p95/p99 sliced by the GeoServices/OGC/WFS/OData protocol family and its logical
+    /// operation. Cardinality is bounded because both tags come from the fixed
+    /// <see cref="Protocols"/> set and the request classifier's finite operation vocabulary.
+    /// </summary>
+    public static readonly Histogram<double> ServingRequestDuration = Meter.CreateHistogram<double>(
+        "honua_serving_request_duration_ms",
+        "ms",
+        "Serving-plane request latency, tagged by protocol, operation, and status_class.");
+
     private const int DefaultMaxExceptionDetailLength = 256;
+
+    // Serving-latency rolling-window aggregation defaults (Part 1, #2463).
+    private const int DefaultServingLatencyWindowSeconds = 300; // 5 minutes
+    private const int DefaultServingLatencySamplesPerProtocol = 4096;
+
+    // Volatile so a startup ConfigureServingLatency swap is visible to concurrent recorders.
+    // Bounded, lock-minimal per-protocol reservoirs; see ServingLatencyAggregator.
+    private static volatile ServingLatencyAggregator _servingLatency = new(
+        TimeSpan.FromSeconds(DefaultServingLatencyWindowSeconds),
+        DefaultServingLatencySamplesPerProtocol);
+
+    // Serving-plane HTTP status boundaries for the coarse status_class tag.
+    private const int HttpStatusClientErrorFloor = 400;
+    private const int HttpStatusRedirectFloor = 300;
+    private const int HttpStatusSuccessFloor = 200;
+    private const int HttpStatusServerErrorFloor = 500;
 
     // Performance categorization thresholds
     private const double FastLatencyThresholdMs = 100.0;
@@ -107,6 +137,27 @@ public static class HonuaTelemetry
         _includeExceptionStackTraces = includeStackTraces;
         _maxExceptionDetailLength = maxDetailLength > 0 ? maxDetailLength : DefaultMaxExceptionDetailLength;
     }
+
+    /// <summary>
+    /// Reconfigures the in-process serving-latency rolling-window aggregation. Invoked once at
+    /// startup from bound configuration; replacing the aggregator discards prior samples.
+    /// </summary>
+    /// <param name="window">The rolling window length (falls back to the 5-minute default when non-positive).</param>
+    /// <param name="samplesPerProtocol">The per-protocol reservoir capacity (falls back to the default when non-positive).</param>
+    public static void ConfigureServingLatency(TimeSpan window, int samplesPerProtocol)
+    {
+        var effectiveWindow = window > TimeSpan.Zero ? window : TimeSpan.FromSeconds(DefaultServingLatencyWindowSeconds);
+        var effectiveSamples = samplesPerProtocol > 0 ? samplesPerProtocol : DefaultServingLatencySamplesPerProtocol;
+        _servingLatency = new ServingLatencyAggregator(effectiveWindow, effectiveSamples);
+    }
+
+    /// <summary>
+    /// Returns a point-in-time snapshot of per-protocol serving latency (p50/p95/p99 plus
+    /// request/error counts) over the configured rolling window. Consumed by the admin
+    /// ops-health snapshot; the underlying histogram remains the source for OTLP/Prometheus.
+    /// </summary>
+    /// <returns>The current serving latency snapshot.</returns>
+    public static ServingLatencySnapshot GetServingLatencySnapshot() => _servingLatency.GetSnapshot();
 
     /// <summary>
     /// Records telemetry for a single produced error envelope. This is the one
@@ -160,6 +211,47 @@ public static class HonuaTelemetry
         };
         PerformanceMetrics.ApplicationErrors.Add(1, appErrorTags);
     }
+
+    /// <summary>
+    /// Records a serving-plane request against <see cref="ServingRequestDuration"/> with the
+    /// GIS-aware <c>protocol</c> and <c>operation</c> dimensions. Callers pass the classified
+    /// protocol/operation (from the shared request classifier) so the metric stays low-cardinality;
+    /// requests that do not resolve to a Honua protocol are skipped by the caller. AOT-safe: no
+    /// reflection, statically-shaped tag list.
+    /// </summary>
+    /// <param name="protocol">The GIS protocol family from <see cref="Protocols"/>.</param>
+    /// <param name="operation">The logical operation, or "unknown".</param>
+    /// <param name="statusCode">The HTTP status code of the completed response.</param>
+    /// <param name="durationMs">The elapsed request duration in milliseconds.</param>
+    public static void RecordServingRequest(string protocol, string? operation, int statusCode, double durationMs)
+    {
+        if (string.IsNullOrWhiteSpace(protocol) || durationMs < 0)
+        {
+            return;
+        }
+
+        var tags = new TagList
+        {
+            { Tags.Protocol, protocol },
+            { Tags.Operation, string.IsNullOrWhiteSpace(operation) ? "unknown" : operation },
+            { "status_class", ClassifyStatus(statusCode) },
+        };
+        ServingRequestDuration.Record(durationMs, tags);
+
+        // Also feed the in-process rolling-window aggregation that backs the admin
+        // ops-health snapshot (per-protocol p50/p95/p99 + error rate). Allocation-free
+        // hot path after the first sample per protocol; see ServingLatencyAggregator.
+        _servingLatency.Record(protocol, durationMs, statusCode);
+    }
+
+    private static string ClassifyStatus(int statusCode) => statusCode switch
+    {
+        >= HttpStatusServerErrorFloor => "5xx",
+        >= HttpStatusClientErrorFloor => "4xx",
+        >= HttpStatusRedirectFloor => "3xx",
+        >= HttpStatusSuccessFloor => "2xx",
+        _ => "1xx"
+    };
 
     /// <summary>
     /// Well-known activity names for consistent tracing.

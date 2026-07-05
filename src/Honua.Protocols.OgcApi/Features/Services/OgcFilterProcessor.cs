@@ -357,7 +357,12 @@ internal sealed partial class OgcFilterProcessor
 
         if (!string.IsNullOrWhiteSpace(filter))
         {
-            fragments.Add(filter.Trim());
+            // BH6-007: Wrap the user filter in parentheses before combining with
+            // queryable field predicates. Without the parens, a top-level OR inside
+            // the user filter binds more tightly to the queryable AND than intended —
+            // e.g. `a OR b AND field = 'x'` is parsed as `a OR (b AND field = 'x')`
+            // instead of the correct `(a OR b) AND field = 'x'`.
+            fragments.Add($"({filter.Trim()})");
         }
 
         foreach (var (key, values) in request.Query)

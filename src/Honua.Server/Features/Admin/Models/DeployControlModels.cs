@@ -75,6 +75,93 @@ public sealed class DeployPreflightResponse
     /// </summary>
     [JsonPropertyName("databaseCompatibility")]
     public DeployPreflightDatabaseCompatibility? DatabaseCompatibility { get; init; }
+
+    /// <summary>
+    /// Cross-plane platform-release projection: the release version each plane currently projects and
+    /// whether the serving and geoprocessing worker images are co-versioned (ADR-0060 WS2).
+    /// </summary>
+    [JsonPropertyName("platformRelease")]
+    public DeployPreflightPlatformRelease? PlatformRelease { get; init; }
+}
+
+/// <summary>
+/// Cross-plane platform-release consistency summary embedded in deploy preflight responses. Lets a
+/// mid-upgrade operator see whether the serving deploy targets and the geoprocessing worker images
+/// are aligned on the same declared release version.
+/// </summary>
+public sealed class DeployPreflightPlatformRelease
+{
+    /// <summary>
+    /// Declared platform release version, or null when no release is configured.
+    /// </summary>
+    [JsonPropertyName("releaseVersion")]
+    public string? ReleaseVersion { get; init; }
+
+    /// <summary>
+    /// Whether a platform release is declared for this instance.
+    /// </summary>
+    [JsonPropertyName("releaseDeclared")]
+    public bool ReleaseDeclared { get; init; }
+
+    /// <summary>
+    /// Whether both planes are aligned on the declared release (no element pins a diverging artifact).
+    /// </summary>
+    [JsonPropertyName("isCoVersioned")]
+    public bool IsCoVersioned { get; init; }
+
+    /// <summary>
+    /// Serving-plane projections (one per deploy target).
+    /// </summary>
+    [JsonPropertyName("serving")]
+    public IReadOnlyList<DeployPreflightPlaneProjection> Serving { get; init; } = Array.Empty<DeployPreflightPlaneProjection>();
+
+    /// <summary>
+    /// Execution-plane projections (one per geoprocessing workload).
+    /// </summary>
+    [JsonPropertyName("execution")]
+    public IReadOnlyList<DeployPreflightPlaneProjection> Execution { get; init; } = Array.Empty<DeployPreflightPlaneProjection>();
+
+    /// <summary>
+    /// Identifiers of plane elements pinning an artifact that diverges from the release projection.
+    /// </summary>
+    [JsonPropertyName("skewedIds")]
+    public IReadOnlyList<string> SkewedIds { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>
+/// One plane element's platform-release projection embedded in deploy preflight responses.
+/// </summary>
+public sealed class DeployPreflightPlaneProjection
+{
+    /// <summary>
+    /// Stable identifier of the plane element (deploy target id or execution workload id).
+    /// </summary>
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Runtime profile of the element, if any.
+    /// </summary>
+    [JsonPropertyName("runtimeProfile")]
+    public string? RuntimeProfile { get; init; }
+
+    /// <summary>
+    /// Effective artifact reference after applying explicit-pin-wins precedence over the release.
+    /// </summary>
+    [JsonPropertyName("effectiveArtifactReference")]
+    public string? EffectiveArtifactReference { get; init; }
+
+    /// <summary>
+    /// Whether the effective artifact was projected from the release rather than an explicit pin.
+    /// </summary>
+    [JsonPropertyName("projectedFromRelease")]
+    public bool ProjectedFromRelease { get; init; }
+
+    /// <summary>
+    /// Whether the element pins an explicit artifact that diverges from the release projection.
+    /// </summary>
+    [JsonPropertyName("skewed")]
+    public bool Skewed { get; init; }
 }
 
 /// <summary>

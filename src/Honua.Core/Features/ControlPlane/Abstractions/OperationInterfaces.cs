@@ -100,6 +100,21 @@ public interface IWorkflowOperationStore : IOperationStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically persists the workflow operation record only when the stored version
+    /// matches the record's <see cref="WorkflowOperationRecord.Version"/>. The stored
+    /// version is incremented on success. Returns <c>false</c> on version conflict,
+    /// indicating a concurrent write was detected and the caller should re-read.
+    /// </summary>
+    /// <param name="operation">Workflow operation record with the expected version.</param>
+    /// <param name="ttl">Optional retention period.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True when updated; false when a concurrent write was detected.</returns>
+    Task<bool> TrySetAsync(
+        WorkflowOperationRecord operation,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists active workflow operations, optionally filtered by kind.
     /// </summary>
     /// <param name="kind">Optional workflow kind filter.</param>
@@ -177,10 +192,18 @@ public interface IExecutionJobStore : IOperationStore
     /// Lists active execution jobs, optionally filtered by job kind.
     /// </summary>
     /// <param name="kind">Optional execution job kind filter.</param>
+    /// <param name="limit">
+    /// Optional upper bound on the number of records materialised before authorization
+    /// filtering. When null the store returns all active jobs. Callers that display a
+    /// bounded page should supply <c>effectiveLimit</c> plus a small overfetch budget
+    /// so per-job authorization filters can discard some records without starving the
+    /// page (BH7-009).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Active execution jobs.</returns>
     Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
         ExecutionJobKind? kind = null,
+        int? limit = null,
         CancellationToken cancellationToken = default);
 }
 

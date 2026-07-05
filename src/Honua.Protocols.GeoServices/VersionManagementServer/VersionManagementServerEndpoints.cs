@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.FeatureServer;
@@ -61,96 +62,105 @@ public static class VersionManagementServerEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // versioning.branch is built-experimental (ADR-0058 / #2346): the VMS surface is
+        // implemented but gated OFF the GA surface by default. Routes return 404 when the
+        // capability resolves experimental-disabled (the production default). Opt in via
+        // Capabilities:Experimental:versioning.branch:Enabled=true (or the global master
+        // switch Capabilities:Experimental:Enabled=true). This does NOT affect the
+        // FeatureServer gdbVersion/replication paths — only the VMS REST surface.
+        var group = endpoints.MapGroup(BasePath)
+            .WithCapabilityGate("versioning.branch");
+
         // HANDLER-AUTHORIZED (#1144): every route below enforces authorization in its handler —
         // service read (Query) access for the read surface, plus the Enterprise branch-versioning
         // entitlement and service write authorization (Update + data-editor RBAC) for lifecycle
         // operations. Marked AllowAnonymous so the audit architecture guard records the
         // intentional decision, matching the sibling GeoServices endpoint files.
-        endpoints.MapGet(BasePath, HandleServiceInfo)
+        group.MapGet("", HandleServiceInfo)
             .WithName("GetVersionManagementServiceInfo")
             .WithSummary("Get VersionManagementServer service metadata")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapGet($"{BasePath}/versions", HandleListVersions)
+        group.MapGet("/versions", HandleListVersions)
             .WithName("ListVersions")
             .WithSummary("List branch versions")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapGet($"{BasePath}/versions/{{versionGuid}}", HandleVersionInfo)
+        group.MapGet("/versions/{versionGuid}", HandleVersionInfo)
             .WithName("GetVersionInfo")
             .WithSummary("Get a single branch version's metadata")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/create", HandleCreate)
+        group.MapPost("/create", HandleCreate)
             .WithName("CreateVersion")
             .WithSummary("Create a branch version")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/delete", HandleDelete)
+        group.MapPost("/versions/{versionGuid}/delete", HandleDelete)
             .WithName("DeleteVersion")
             .WithSummary("Delete a branch version")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/alter", HandleAlter)
+        group.MapPost("/versions/{versionGuid}/alter", HandleAlter)
             .WithName("AlterVersion")
             .WithSummary("Alter a branch version's metadata")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/startReading", HandleStartReading)
+        group.MapPost("/versions/{versionGuid}/startReading", HandleStartReading)
             .WithName("StartReadingVersion")
             .WithSummary("Begin a read session against a branch version")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/stopReading", HandleStopReading)
+        group.MapPost("/versions/{versionGuid}/stopReading", HandleStopReading)
             .WithName("StopReadingVersion")
             .WithSummary("End a read session against a branch version")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/startEditing", HandleStartEditing)
+        group.MapPost("/versions/{versionGuid}/startEditing", HandleStartEditing)
             .WithName("StartEditingVersion")
             .WithSummary("Begin an edit session against a branch version")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/stopEditing", HandleStopEditing)
+        group.MapPost("/versions/{versionGuid}/stopEditing", HandleStopEditing)
             .WithName("StopEditingVersion")
             .WithSummary("End an edit session against a branch version")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/reconcile", HandleReconcile)
+        group.MapPost("/versions/{versionGuid}/reconcile", HandleReconcile)
             .WithName("ReconcileVersion")
             .WithSummary("Reconcile a branch version against DEFAULT")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapGet($"{BasePath}/versions/{{versionGuid}}/inspectConflicts", HandleInspectConflicts)
+        group.MapGet("/versions/{versionGuid}/inspectConflicts", HandleInspectConflicts)
             .WithName("InspectVersionConflicts")
             .WithSummary("Retrieve the pending conflict set for a branch version")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/resolveConflicts", HandleResolveConflicts)
+        group.MapPost("/versions/{versionGuid}/resolveConflicts", HandleResolveConflicts)
             .WithName("ResolveVersionConflicts")
             .WithSummary("Submit manual conflict resolutions for a branch version")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{BasePath}/versions/{{versionGuid}}/post", HandlePost)
+        group.MapPost("/versions/{versionGuid}/post", HandlePost)
             .WithName("PostVersion")
             .WithSummary("Post a reconciled branch version's changes onto DEFAULT")
             .WithTags(Tag)
             .AllowAnonymous();
 
-        endpoints.MapGet($"{BasePath}/versions/{{versionGuid}}/jobs/{{jobId}}", HandleJobStatus)
+        group.MapGet("/versions/{versionGuid}/jobs/{jobId}", HandleJobStatus)
             .WithName("GetVersionJobStatus")
             .WithSummary("Poll the status of an async reconcile/post job")
             .WithTags(Tag)
@@ -322,6 +332,22 @@ public static class VersionManagementServerEndpoints
         if (gate is not null)
         {
             return gate;
+        }
+
+        // BH6-002: refuse to delete a version that is mid-reconcile or mid-post.
+        // Calling DeleteAsync against a locked version produces undefined behavior in the version
+        // store — the in-flight reconcile job may write its result to a deleted record, corrupt the
+        // DEFAULT branch, or leave dangling change rows that can never be cleaned up. Return 409
+        // so the caller retries once the operation completes, mirroring the state guard already
+        // present in AcknowledgeSessionAsync (startEditing path).
+        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var version = versions.FirstOrDefault(v => v.VersionId == versionId);
+        if (version.VersionId == versionId && version.State is VersionState.Reconciling or VersionState.Posting)
+        {
+            return StandardErrorHelpers.CreateConflict(
+                context,
+                $"Version '{version.VersionName}' is {StatusToString(version.State)} and cannot be deleted.",
+                ["A reconcile or post is in progress for this version. Delete it once the operation completes."]);
         }
 
         var deleted = await versionManager.DeleteAsync(versionId, cancellationToken).ConfigureAwait(false);
@@ -511,10 +537,14 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "versionGuid is not a valid GUID.");
         }
 
-        // BH3-003: conflict records contain full before/after attribute and geometry images.
-        // Load the version record and enforce ownership before exposing conflict data.
-        // Private versions gate on owner-or-admin; Public/Protected conflict data requires
-        // only query access (already satisfied by ValidateServiceAsync above).
+        // BH3-003 / BH6-001: conflict records contain full before/after attribute and geometry
+        // images. Load the version record and enforce ownership before exposing conflict data.
+        // Private AND Protected versions require owner-or-admin (CanManageVersion). Only Public
+        // versions (whose conflict state is intentionally world-readable by design) bypass the
+        // ownership check. A comment at the original site incorrectly equated query-level access
+        // with authorization to view raw conflict diffs for Protected versions — BH6-001 corrects
+        // the conditional so Protected versions are now gated on CanManageVersion, matching the
+        // sibling HandleResolveConflicts which checks unconditionally via AuthorizeReadAndResolveVersionAsync.
         var allVersions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
         var conflictVersion = allVersions.FirstOrDefault(v => v.VersionId == versionId);
         if (conflictVersion.VersionId != versionId)
@@ -522,7 +552,7 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
         }
 
-        if (conflictVersion.Access == VersionAccess.Private)
+        if (conflictVersion.Access is VersionAccess.Private or VersionAccess.Protected)
         {
             var callerName = context.User?.Identity?.Name;
             var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);

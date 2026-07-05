@@ -19,7 +19,8 @@ namespace Honua.Server.Tests.Features.Capabilities;
 /// Track-B integration coverage for honua-server#2347 (T11): the built-experimental
 /// capabilities the T10 flip (#2346) gated OFF the first-release surface
 /// (<c>temporal.*</c>, <c>sync.offline</c>, <c>realtime.feature-streams</c>,
-/// <c>alerts.geofence</c>, <c>security.mtls</c>) must be genuinely <b>absent</b> from
+/// <c>security.mtls</c>; <c>alerts.geofence</c> was promoted to GA in #2427 and is no
+/// longer experimental) must be genuinely <b>absent</b> from
 /// every served surface end-to-end when experimental is disabled (the production
 /// default), and become present/served the moment a customer opts one in via
 /// <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and B3 (#2335)
@@ -31,9 +32,10 @@ namespace Honua.Server.Tests.Features.Capabilities;
 ///     opted-in one;
 ///   </description></item>
 ///   <item><description>
-///     the gated HTTP route groups (<c>/api/v1/temporal/*</c>, <c>/api/v1/admin/alerts</c>)
-///     short-circuit with <c>404 honua:capability-experimental-disabled</c> while
-///     disabled, and open per-capability when opted in.
+///     the gated HTTP route groups (<c>/api/v1/temporal/*</c>,
+///     <c>/api/v1/admin/operations/streaming</c>) short-circuit with
+///     <c>404 honua:capability-experimental-disabled</c> while disabled, and open
+///     per-capability when opted in.
 ///   </description></item>
 /// </list>
 /// The Test environment turns experimental ON globally (appsettings.Test.json), which is
@@ -57,8 +59,10 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         "temporal.time-series-tiles",
         "sync.offline",
         "realtime.feature-streams",
-        "alerts.geofence",
+        // alerts.geofence promoted to GA (Implemented) in #2427 — no longer experimental-gated.
         "security.mtls",
+        // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        "versioning.branch",
     ];
 
     [IntegrationTest]
@@ -163,9 +167,38 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/alerts/zones")]
-    public async Task AlertsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    public async Task VmsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
     {
+        // The VMS REST surface (versioning.branch) is gated Preview in the BH6-001/BH6-002 fix
+        // batch. With experimental OFF the capability-gate filter must short-circuit with
+        // 404 honua:capability-experimental-disabled before any handler runs — proving the GA
+        // surface no longer exposes the VMS endpoints by default.
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync(
+                "/rest/services/svc-vms-gate-test/VersionManagementServer?f=json");
+
+            await AssertExperimentalDisabledAsync(response);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/alerts/zones")]
+    public async Task AlertsEndpoint_AfterGaPromotion_IsNotExperimentalGated()
+    {
+        // #2427 promoted alerts.geofence Experimental -> Implemented (GA). The alerts
+        // admin group must no longer short-circuit as experimental-disabled even with the
+        // global experimental switch OFF — the request reaches the handler (subject to
+        // admin auth) instead of the 404 the T10 flip previously produced.
         var fixture = CreateFixture(experimentalGlobalEnabled: false);
         await fixture.InitializeAsync();
 
@@ -174,7 +207,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var client = fixture.CreateAdminClient();
             using var response = await client.GetAsync("/api/v1/admin/alerts/zones");
 
-            await AssertExperimentalDisabledAsync(response);
+            await AssertNotExperimentalDisabledAsync(response);
         }
         finally
         {
@@ -186,10 +219,12 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities")]
     public async Task GatedEndpoints_WhenExperimentalEnabledPerCapability_OpenOnlyThatCapability()
     {
-        // Opt temporal.filtering in but leave alerts.geofence off. The temporal group's
-        // gate must OPEN (no longer the experimental-disabled 404 — the request reaches
-        // the handler), while the still-disabled alerts group keeps returning the
-        // experimental-disabled 404. One fixture proves the per-capability gate both ways.
+        // Opt temporal.filtering in but leave realtime.feature-streams off. The temporal
+        // group's gate must OPEN (no longer the experimental-disabled 404 — the request
+        // reaches the handler), while the still-disabled streaming group keeps returning
+        // the experimental-disabled 404. One fixture proves the per-capability gate both
+        // ways. (Alerts is no longer a valid still-disabled control after its #2427 GA
+        // promotion, so this uses the streaming operations group instead.)
         var fixture = CreateFixture(
             experimentalGlobalEnabled: false,
             perCapabilityEnabled: "temporal.filtering");
@@ -203,8 +238,9 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 "/api/v1/temporal/services/svc-experimental/layers/1/capabilities");
             await AssertNotExperimentalDisabledAsync(temporalResponse);
 
-            using var alertsResponse = await client.GetAsync("/api/v1/admin/alerts/zones");
-            await AssertExperimentalDisabledAsync(alertsResponse);
+            using var streamingResponse = await client.GetAsync(
+                "/api/v1/admin/operations/streaming/subscribers");
+            await AssertExperimentalDisabledAsync(streamingResponse);
         }
         finally
         {

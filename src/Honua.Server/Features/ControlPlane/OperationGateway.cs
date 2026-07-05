@@ -83,15 +83,23 @@ internal sealed partial class OperationGateway : IOperationGateway
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
         }
 
+        // Atomically claim the proposal before invoking the executor.
+        // Transitions AwaitingApproval → Executing via a CAS write: only one concurrent
+        // caller wins this write; all others re-read a non-AwaitingApproval status and
+        // throw, preventing double-execution of non-idempotent operations (BH4-031).
+        proposal = await ClaimForExecutionAsync(proposal, cancellationToken).ConfigureAwait(false);
+
         var request = RebuildRequest(proposal);
         string? executionOperationId = null;
         var status = OperationProposalStatus.Submitted;
         string? failureMessage = null;
+        var executorFound = false;
 
         try
         {
             if (_executors.TryGetValue(proposal.Kind, out var executor))
             {
+                executorFound = true;
                 executionOperationId = await executor
                     .ExecuteAsync(request, proposal.Plan.ExecutionPayload, cancellationToken)
                     .ConfigureAwait(false);
@@ -106,6 +114,16 @@ internal sealed partial class OperationGateway : IOperationGateway
             Log.ProposalExecutionFailed(_logger, proposalId, ex);
             status = OperationProposalStatus.Failed;
             failureMessage = $"Execution failed ({ex.GetType().Name}).";
+        }
+
+        // BH6-033: if no executor was registered for this operation class, fail the proposal
+        // with a terminal Failed status rather than persisting the non-terminal Submitted state
+        // (which would leave the proposal stuck in the active index indefinitely).
+        if (!executorFound && failureMessage == null)
+        {
+            Log.NoExecutorRegisteredForApproval(_logger, proposalId, proposal.Kind.ToString());
+            status = OperationProposalStatus.Failed;
+            failureMessage = $"No executor is registered for operation kind '{proposal.Kind}'; the operation was not performed.";
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -171,13 +189,22 @@ internal sealed partial class OperationGateway : IOperationGateway
         GuardrailDecision decision,
         CancellationToken cancellationToken)
     {
-        string? executionOperationId = null;
-        if (_executors.TryGetValue(request.Kind, out var executor))
+        // BH6-032: if no executor is registered for this operation class, return NotSupported
+        // rather than silently claiming Executed with no work performed.
+        if (!_executors.TryGetValue(request.Kind, out var executor))
         {
-            executionOperationId = await executor
-                .ExecuteAsync(request, request.ExecutionPayload, cancellationToken)
-                .ConfigureAwait(false);
+            Log.NoExecutorRegisteredForDirect(_logger, request.Kind.ToString());
+            return new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.NotSupported,
+                Decision = decision,
+                Message = $"No executor is registered for operation kind '{request.Kind}'; the operation was not performed."
+            };
         }
+
+        var executionOperationId = await executor
+            .ExecuteAsync(request, request.ExecutionPayload, cancellationToken)
+            .ConfigureAwait(false);
 
         return new OperationGatewayResult
         {
@@ -268,12 +295,80 @@ internal sealed partial class OperationGateway : IOperationGateway
                 throw new InvalidOperationException($"Proposal '{proposal.ProposalId}' disappeared during resolution.");
             }
 
+            // Do not overwrite a terminal resolution. If an operator resolved the proposal
+            // concurrently (or a previous write landed between the CAS failure and this
+            // re-read), stop retrying rather than risk overwriting the recorded resolution.
+            if (IsTerminalStatus(latest.Status))
+            {
+                throw new InvalidOperationException(
+                    $"Proposal '{proposal.ProposalId}' reached terminal status '{latest.Status}' " +
+                    "before the resolution write landed; aborting to avoid overwriting it.");
+            }
+
+            // Only the version was bumped (e.g. a notification write); the status is still
+            // active so it is safe to retry with the refreshed version.
             proposal = proposal with { Version = latest.Version };
         }
 
         throw new InvalidOperationException(
             $"Failed to persist resolution for proposal '{proposal.ProposalId}' after repeated version conflicts.");
     }
+
+    /// <summary>
+    /// Atomically transitions a proposal from <see cref="OperationProposalStatus.AwaitingApproval"/>
+    /// to <see cref="OperationProposalStatus.Executing"/> via a CAS write.
+    /// Returns the updated proposal (with its incremented version token) on success.
+    /// Throws when another caller already claimed or resolved the proposal, or when the
+    /// claim cannot be won after retries due to persistent version conflicts.
+    /// </summary>
+    private async Task<OperationProposal> ClaimForExecutionAsync(
+        OperationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var claiming = proposal with { Status = OperationProposalStatus.Executing };
+            if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                // TrySetAsync stores version+1 internally; return a record whose Version
+                // reflects the new stored value so PersistResolutionAsync uses the correct
+                // token for its subsequent CAS write.
+                return claiming with { Version = proposal.Version + 1 };
+            }
+
+            // CAS failed — re-read to find out why.
+            var latest = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken)
+                .ConfigureAwait(false);
+            if (latest == null)
+            {
+                throw new InvalidOperationException(
+                    $"Proposal '{proposal.ProposalId}' disappeared while claiming for execution.");
+            }
+
+            if (latest.Status != OperationProposalStatus.AwaitingApproval)
+            {
+                // Another concurrent caller already claimed (Executing) or fully resolved
+                // this proposal. Do not proceed to execute the operation a second time.
+                throw new InvalidOperationException(
+                    $"Proposal '{proposal.ProposalId}' is '{latest.Status}' — it was claimed or " +
+                    "resolved concurrently; this call will not execute the operation again.");
+            }
+
+            // Status is still AwaitingApproval but the version advanced (e.g. a
+            // notification write bumped the record). Refresh the version and retry.
+            proposal = latest;
+        }
+
+        throw new InvalidOperationException(
+            $"Failed to claim proposal '{proposal.ProposalId}' for execution after repeated version conflicts.");
+    }
+
+    private static bool IsTerminalStatus(OperationProposalStatus status)
+        => status is OperationProposalStatus.Succeeded
+            or OperationProposalStatus.Failed
+            or OperationProposalStatus.Rejected
+            or OperationProposalStatus.RolledBack;
 
     private static OperationGatewayRequest RebuildRequest(OperationProposal proposal) => new()
     {
@@ -325,5 +420,11 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         [LoggerMessage(9201, LogLevel.Error, "Execution of approved proposal {ProposalId} failed")]
         public static partial void ProposalExecutionFailed(ILogger logger, string proposalId, Exception exception);
+
+        [LoggerMessage(9202, LogLevel.Warning, "No executor registered for direct-execute of operation kind {Kind}; returning NotSupported")]
+        public static partial void NoExecutorRegisteredForDirect(ILogger logger, string kind);
+
+        [LoggerMessage(9203, LogLevel.Warning, "No executor registered for approval of proposal {ProposalId} with kind {Kind}; failing proposal to terminal Failed")]
+        public static partial void NoExecutorRegisteredForApproval(ILogger logger, string proposalId, string kind);
     }
 }

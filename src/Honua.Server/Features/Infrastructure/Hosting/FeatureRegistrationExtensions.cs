@@ -136,6 +136,9 @@ internal static class FeatureRegistrationExtensions
         services.AddTerrain();
         services.AddScene(configuration);
         services.AddPostgresSceneRegistry(configuration);
+        // Read-through local materialization cache for hosted scene assets so a
+        // scene published on one node is servable from any node (#2459, ADR-0060).
+        services.AddSceneAssetHydration();
         services.AddElevation();
         services.AddSceneGeneration(configuration);
         services.AddPrintingTools();

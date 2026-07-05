@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Oracle.Features.FeatureStore.Services;
@@ -51,19 +52,27 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     private readonly OracleSpatialGuard _spatialGuard;
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
+    private readonly IMetadataV2GraphProvider? _v2Provider;
 
     public OracleFeatureStore(OracleFeatureDataAccess dataAccess, OracleSpatialGuard spatialGuard)
-        : this(dataAccess, spatialGuard, binding: null)
+        : this(dataAccess, spatialGuard, v2Provider: null, binding: null)
+    {
+    }
+
+    public OracleFeatureStore(OracleFeatureDataAccess dataAccess, OracleSpatialGuard spatialGuard, IMetadataV2GraphProvider? v2Provider)
+        : this(dataAccess, spatialGuard, v2Provider, binding: null)
     {
     }
 
     private OracleFeatureStore(
         OracleFeatureDataAccess dataAccess,
         OracleSpatialGuard spatialGuard,
+        IMetadataV2GraphProvider? v2Provider,
         FeatureProviderBinding? binding)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _spatialGuard = spatialGuard ?? throw new ArgumentNullException(nameof(spatialGuard));
+        _v2Provider = v2Provider;
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -85,12 +94,13 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        return new OracleFeatureStore(_dataAccess, _spatialGuard, binding);
+        return new OracleFeatureStore(_dataAccess, _spatialGuard, _v2Provider, binding);
     }
 
     /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var query = new FeatureQuery
         {
@@ -106,6 +116,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
@@ -145,6 +156,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
@@ -153,6 +165,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = OracleFeatureQueryBuilder.BuildCountQuery(mapping, query);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
@@ -161,6 +174,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
@@ -179,6 +193,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     /// <inheritdoc />
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         var emptyQuery = new FeatureQuery();
@@ -212,6 +227,32 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
+
+    /// <summary>
+    /// Throws <see cref="NotSupportedException"/> when the layer has a permanent filter configured,
+    /// because the shared filter translator emits Postgres-flavored SQL that is not valid Oracle SQL.
+    /// Returns immediately when <c>_v2Provider</c> is not registered (no metadata available to check).
+    /// </summary>
+    private async Task EnsureNoPermanentFilterAsync(int layerId, CancellationToken cancellationToken)
+    {
+        if (_v2Provider == null)
+        {
+            return;
+        }
+        var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        {
+            return;
+        }
+        var v2Filter = resource.PermanentFilter;
+        if (v2Filter != null && !string.IsNullOrWhiteSpace(v2Filter.Expression))
+        {
+            throw new NotSupportedException(
+                $"Layer {layerId} has a permanent (row-visibility) filter configured, but the Oracle provider cannot enforce it: " +
+                "the shared filter translator emits Postgres-flavored SQL that is not valid Oracle SQL. " +
+                "Configure permanent filters only on Postgres layers, or remove the permanent filter from this layer.");
+        }
+    }
 
     private async Task<(OracleLayerMapping Mapping, IReadOnlyList<string> AttributeColumns)> ResolveLayerAsync(
         int layerId,

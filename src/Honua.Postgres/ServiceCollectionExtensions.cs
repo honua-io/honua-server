@@ -327,6 +327,13 @@ internal static class ServiceCollectionExtensions
         // Register migration runner for schema upgrades
         services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();
 
+        // Expand/contract migration-safety gate (#2462, ADR-0060 principle #3a): the runner rejects
+        // pending contract-phase migrations that lack the compatibility-review marker. Enforce
+        // defaults TRUE; set Database:MigrationSafety:Enforce=false to override.
+        services.AddOptions<Honua.Core.Configuration.MigrationSafetyOptions>()
+            .Bind(configuration.GetSection(Honua.Core.Configuration.MigrationSafetyOptions.SectionName))
+            .ValidateDataAnnotations();
+
         // Register database compatibility checker for PostGIS preflight validation
         services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();
 
@@ -570,6 +577,12 @@ internal static class ServiceCollectionExtensions
         // its source-generated context so persistence stays AOT-safe. TryAdd so a host that
         // bypasses Postgres registration retains the in-memory fallback default.
         services.TryAddScoped<IMigrationPerformanceEvidenceStore, PostgresMigrationPerformanceEvidenceStore>();
+
+        // Register migration-run checkpoint store (#2459, ADR-0060). Overrides the Core
+        // in-memory / filesystem default with the durable honua.migration_run_checkpoints
+        // table so resumable migration-run state lives in the shared data plane and can
+        // resume on any node. TryAdd so hosts that bypass Postgres keep the in-memory fallback.
+        services.TryAddScoped<IMigrationRunCheckpointStore, PostgresMigrationRunCheckpointStore>();
 
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();

@@ -23,6 +23,15 @@ public enum OperationProposalStatus
     AwaitingApproval = 1,
 
     /// <summary>
+    /// The proposal has been claimed by an approver and the underlying executor is
+    /// actively running. This is a transient, non-terminal state between
+    /// <see cref="AwaitingApproval"/> and <see cref="Submitted"/> / <see cref="Failed"/>.
+    /// The CAS write from <see cref="AwaitingApproval"/> to this state is the single-flight
+    /// guard that prevents concurrent approvals from executing the operation twice (BH4-031).
+    /// </summary>
+    Executing = 8,
+
+    /// <summary>
     /// Proposal was approved and submitted to the underlying execution pipeline.
     /// </summary>
     Submitted = 2,

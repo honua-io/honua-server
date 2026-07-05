@@ -446,8 +446,10 @@ public sealed class OperateObservabilityFixtureEnvAliasEndpointTests : IAsyncLif
 
 /// <summary>
 /// Verifies the seed endpoint degrades gracefully when the geofence alert stores are not
-/// registered (alerts.geofence experimental-disabled). The seeder must skip the alert-fixture
-/// slice and still hydrate jobs/logs/investigation instead of returning 500 with
+/// registered (a host that has not configured the alerts feature; alerts.geofence is GA as
+/// of #2427 but the pipeline still self-gates on AlertOptions.Enabled, so the stores can be
+/// absent). The seeder must skip the alert-fixture slice and still hydrate
+/// jobs/logs/investigation instead of returning 500 with
 /// "No service for type 'IAlertAdminStore' has been registered." (honua-server#2350).
 /// </summary>
 [Collection("Database")]
@@ -473,7 +475,7 @@ public sealed class OperateObservabilityFixtureMissingAlertStoreEndpointTests : 
                 builder.UseSetting("OperateObservabilityFixture:Profile", Profile);
                 builder.UseSetting("OperateObservabilityFixture:SeedOnStartup", "false");
             })
-            // Simulate a host where the alerts.geofence capability is disabled: the geofence alert
+            // Simulate a host where the alerts feature is not configured: the geofence alert
             // admin store the seeder resolves is never registered. Removing it triggers the seeder's
             // graceful-skip guard (which requires all three alert stores to be present).
             .ConfigureServices(services => services.RemoveAll<IAlertAdminStore>());

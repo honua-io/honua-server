@@ -679,6 +679,115 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         return doc.RootElement.GetProperty("features").GetArrayLength();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_AllEmptyPerLayerPayload_DoesNotInsertPhantomFeatures()
+    {
+        // BH5-013 regression: a per-layer payload where every layer has empty adds/updates/deletes
+        // arrays (a valid no-op acknowledgment) was falling through to the legacy flat-form parser,
+        // which reinterpreted each {"id":0,"adds":[],...} object as a GeoServicesFeature and
+        // submitted it as a phantom Create. After the fix, the no-op is a clean success with no
+        // features inserted.
+        var featureCountBefore = await CountAllFeaturesAsync();
+
+        var replicaId = await CreateReplicaAsync("EmptyPerLayerNoop", "0");
+
+        // All-empty per-layer payload — every array is empty, valid no-op sync.
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new { id = 0, adds = Array.Empty<object>(), updates = Array.Empty<object>(), deletes = Array.Empty<long>() }
+        });
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "upload",
+            edits,
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement;
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+
+        // No phantom inserts: feature count must be unchanged.
+        var featureCountAfter = await CountAllFeaturesAsync();
+        featureCountAfter.Should().Be(featureCountBefore, "a no-op per-layer sync must not insert any phantom features");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_Bidirectional_ConcurrentOtherClientEdit_IsDelivered()
+    {
+        // BH5-015 regression: edits committed by OTHER clients in the window (preUploadGen,
+        // uploadServerGen] were excluded from the bidirectional download delta AND from all
+        // subsequent downloads (because the cursor jumped to uploadServerGen). After the fix
+        // the full window (downloadSinceGen, uploadServerGen] is delivered.
+        var createRoot = await CreateReplicaWithResponseAsync("BidirectionalConcurrent", "0");
+        var replicaId = createRoot.GetProperty("replicaID").GetString()!;
+        var baseServerGen = createRoot.GetProperty("serverGen").GetInt64();
+
+        // Server-side feature committed BEFORE the client's upload window starts.
+        var priorObjectId = await AddFeatureAsync("prior-server-edit");
+
+        // Establish a baseline download so the replica cursor is at the current generation.
+        await SynchronizeDownloadWithResponseAsync(replicaId, baseServerGen);
+
+        // Another client commits a feature concurrently — this is the "in-window" edit that
+        // was previously skipped. We simulate it by adding it before the bidirectional upload.
+        var concurrentObjectId = await AddFeatureAsync("concurrent-other-client");
+
+        // Client uploads its own add in a bidirectional call.
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new { id = 0, adds = new[] { new { attributes = new { name = "client-bidi-concurrent" } } } }
+        });
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "bidirectional",
+            edits,
+            f = "json"
+        });
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+
+        // The concurrent other-client edit must appear in the download delta.
+        root.TryGetProperty("edits", out var deltaEdits).Should().BeTrue();
+        var layer0 = deltaEdits.EnumerateArray().Single(l => l.GetProperty("id").GetInt32() == 0);
+        var deliveredIds = layer0.TryGetProperty("addFeatures", out var addFeatures) && addFeatures.ValueKind == JsonValueKind.Array
+            ? addFeatures.EnumerateArray().Select(f => f.GetProperty("attributes").GetProperty("objectid").GetInt64()).ToList()
+            : new List<long>();
+
+        deliveredIds.Should().Contain(concurrentObjectId,
+            "the concurrent other-client edit committed during the upload window must be delivered in the bidirectional delta");
+    }
+
+    private async Task<int> CountAllFeaturesAsync()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?where=1=1&returnGeometry=false&returnCountOnly=true&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement.GetProperty("count").GetInt32();
+    }
+
     private async Task<string?> ReadFeatureNameAsync(long objectId)
     {
         var response = await _fixture.Client.GetAsync(

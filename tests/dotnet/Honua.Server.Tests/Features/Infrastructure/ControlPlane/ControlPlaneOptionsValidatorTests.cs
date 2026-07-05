@@ -182,6 +182,89 @@ public sealed class ControlPlaneOptionsValidatorTests
     }
 
     [UnitTest]
+    public void Validate_WithCoVersionedPlatformRelease_ReturnsSuccess()
+    {
+        var options = new ControlPlaneOptions
+        {
+            PlatformRelease = new PlatformReleaseOptions
+            {
+                Version = "2026.07.0",
+                ServingArtifactReference = "ghcr.io/honua/server:2026.07.0",
+                Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "ghcr.io/honua/worker:2026.07.0" }]
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
+    }
+
+    [UnitTest]
+    public void Validate_WithPlatformReleaseServingButNoWorkers_ReturnsFailure()
+    {
+        var options = new ControlPlaneOptions
+        {
+            PlatformRelease = new PlatformReleaseOptions
+            {
+                Version = "2026.07.0",
+                ServingArtifactReference = "ghcr.io/honua/server:2026.07.0"
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure =>
+            failure.Contains("PlatformRelease") && failure.Contains("co-version", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
+    public void Validate_WithPlatformReleaseWorkersButNoServing_ReturnsFailure()
+    {
+        var options = new ControlPlaneOptions
+        {
+            PlatformRelease = new PlatformReleaseOptions
+            {
+                Version = "2026.07.0",
+                Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "ghcr.io/honua/worker:2026.07.0" }]
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure =>
+            failure.Contains("PlatformRelease") && failure.Contains("co-version", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
+    public void Validate_WithPlatformReleaseMissingVersion_ReturnsFailure()
+    {
+        var options = new ControlPlaneOptions
+        {
+            PlatformRelease = new PlatformReleaseOptions
+            {
+                ServingArtifactReference = "ghcr.io/honua/server:2026.07.0",
+                Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "ghcr.io/honua/worker:2026.07.0" }]
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure =>
+            failure.Contains("PlatformRelease:Version"));
+    }
+
+    [UnitTest]
+    public void Validate_WithoutPlatformRelease_Succeeds()
+    {
+        var result = _validator.Validate(null, new ControlPlaneOptions());
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
+    }
+
+    [UnitTest]
     public void Validate_WithMissingKubernetesBearerTokenPath_ReturnsFailure()
     {
         var options = new ControlPlaneOptions

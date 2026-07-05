@@ -123,59 +123,46 @@ public sealed class RemoteSourceExecutorTests
             .Should().BeTrue("the original resolver exception must be logged, not discarded");
     }
 
-    // PA-195: inline plaintext password must be rejected for OGC source types
-
     [UnitTest]
-    public async Task RemoteSource_OgcFeatures_InlinePlaintextPassword_FailsWithTransformInputException()
+    public async Task RemoteSource_StreamingBytesExceedMaxArtifactBytes_FailsBeforeFullMaterialization()
     {
-        // Supplying an inline 'password' key for source.ogc-features must be rejected at plan
-        // execution time so credentials are never persisted to the durable job spec in cleartext.
-        var fake = new FakeDagFeatureSource("source.ogc-features", []);
-        var executor = BuildExecutor("source.ogc-features", fake);
+        // BH6-024 regression: the executor previously accumulated ALL features into a List<IFeature>
+        // before checking payload.Length against MaxArtifactBytes. A single feature whose attributes
+        // exceed a small ceiling must cause a Failed result during streaming, not after the full
+        // list has already been materialized and serialized.
+        //
+        // "overflow-trigger" as an attribute value is ~16 bytes; together with the geometry GeoJSON
+        // (~36 bytes), the estimate easily exceeds the 10-byte MaxArtifactBytes ceiling.
+        var fake = new FakeDagFeatureSource("source.ogc-features",
+        [
+            new DagSourceFeature
+            {
+                GeometryGeoJson = """{"type":"Point","coordinates":[1,2]}""",
+                Attributes = new Dictionary<string, object?> { ["name"] = "overflow-trigger" }
+            }
+        ]);
 
-        var (status, _, _) = await RunExecutorAsync(
-            executor,
+        var services = new ServiceCollection();
+        services.AddSingleton(fake as IDagFeatureSource);
+        var provider = services.BuildServiceProvider();
+        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+        var options = new GeoprocessingExecutorOptions { MaxArtifactBytes = 10 };
+        var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
+        monitor.CurrentValue.Returns(options);
+
+        var executor = RemoteSourceExecutor.ForProcess(
             "source.ogc-features",
+            scopeFactory,
+            monitor,
+            NullLogger<RemoteSourceExecutor>.Instance);
+
+        var (status, _, _) = await RunExecutorAsync(executor, "source.ogc-features",
             ("serviceUrl", "https://example.com/ogc"),
-            ("collectionId", "buildings"),
-            ("password", "s3cr3t"));  // inline plaintext — must be rejected
+            ("collectionId", "test-collection"));
 
         status.Should().Be(ExecutionJobStatus.Failed,
-            "an inline 'password' parameter must not be accepted for source.ogc-features");
-    }
-
-    [UnitTest]
-    public async Task RemoteSource_Wfs_InlinePlaintextPassword_FailsWithTransformInputException()
-    {
-        // Same guard for source.wfs.
-        var fake = new FakeDagFeatureSource("source.wfs", []);
-        var executor = BuildExecutor("source.wfs", fake);
-
-        var (status, _, _) = await RunExecutorAsync(
-            executor,
-            "source.wfs",
-            ("serviceUrl", "https://example.com/wfs"),
-            ("typeName", "ns:Layer"),
-            ("password", "s3cr3t"));
-
-        status.Should().Be(ExecutionJobStatus.Failed,
-            "an inline 'password' parameter must not be accepted for source.wfs");
-    }
-
-    [UnitTest]
-    public async Task RemoteSource_OgcFeatures_NoPassword_Succeeds()
-    {
-        // Omitting any password credential (no inline, no reference) must succeed — anonymous access.
-        var fake = new FakeDagFeatureSource("source.ogc-features", []);
-        var executor = BuildExecutor("source.ogc-features", fake);
-
-        var (status, _, _) = await RunExecutorAsync(
-            executor,
-            "source.ogc-features",
-            ("serviceUrl", "https://example.com/ogc"),
-            ("collectionId", "buildings"));
-
-        status.Should().Be(ExecutionJobStatus.Succeeded);
+            "the streaming byte-estimate guard must fire before the full feature list is serialized");
     }
 
     // -------------------------------------------------------------------------

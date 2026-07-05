@@ -241,11 +241,9 @@ internal static class FeatureCatalogGenerator
             return "temporal.filtering";
         }
 
-        // Geofence alerting — /api/v1/admin/alerts/*
-        if (route.StartsWith("/api/v1/admin/alerts", StringComparison.OrdinalIgnoreCase))
-        {
-            return "alerts.geofence";
-        }
+        // Geofence alerting — /api/v1/admin/alerts/* was promoted to GA (Implemented)
+        // in #2427, so it is no longer a flipped experimental group: its routes fall
+        // through to the in-release surface (implemented) like any other GA capability.
 
         // Native mTLS (client certificates) — /api/v1/admin/security/client-certificates/*
         if (route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase))
@@ -267,6 +265,14 @@ internal static class FeatureCatalogGenerator
             route.StartsWith("/api/v1/admin/operations/streaming", StringComparison.OrdinalIgnoreCase))
         {
             return "realtime.feature-streams";
+        }
+
+        // Branch versioning (VMS REST surface) — /rest/services/{serviceId}/VersionManagementServer/*
+        // Gated Preview in the BH6-001/BH6-002 fix batch (ADR-0058).
+        if (route.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase) &&
+            route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return "versioning.branch";
         }
 
         return null;

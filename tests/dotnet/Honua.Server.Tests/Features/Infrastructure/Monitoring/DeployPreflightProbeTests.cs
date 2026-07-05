@@ -5,6 +5,7 @@ using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.HealthCheck;
 using Honua.Infrastructure.Monitoring;
@@ -72,10 +73,62 @@ public sealed class DeployPreflightProbeTests
         snapshot.Migration.PlanError.Should().Be("Migration planning is temporarily unavailable.");
     }
 
+    [Fact]
+    public async Task ProbeAsync_WhenPendingContractMigration_BlocksCoordinatedDeploy()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=db;Database=honua;Username=test;Password=secret"
+            })
+            .Build();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+
+        // A pending, annotated (reviewed) contract migration: it is rollout-safe to apply in a
+        // dedicated contract step, but it must NOT ride along a rolling deploy.
+        var contract = MigrationSafetyClassifier.Classify(
+            "099_drop_legacy.sql",
+            """
+            -- honua:compatibility-review reason=legacy column removed after v2 contract phase
+            ALTER TABLE honua.layers DROP COLUMN legacy_name;
+            """);
+        contract.Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
+
+        var plan = DatabaseMigrationPlan.Succeeded(
+            pendingScripts: new[] { contract.ScriptName },
+            executedButNotDiscoveredScripts: null,
+            pendingScriptClassifications: new[] { contract });
+
+        var probe = new DeployPreflightProbe(
+            configuration,
+            new StubReadinessCheckService(),
+            new FixedPlanMigrationRunner(plan),
+            migrationState,
+            new DatabaseCompatibilityState(),
+            NullLogger<DeployPreflightProbe>.Instance);
+
+        var snapshot = await probe.ProbeAsync();
+
+        snapshot.ReadyForCoordinatedDeploy.Should().BeFalse();
+        snapshot.Migration.HasPendingContractScripts.Should().BeTrue();
+        snapshot.Migration.PendingContractScripts.Should().Contain("099_drop_legacy.sql");
+        snapshot.Message.Should().Contain("contract-phase");
+    }
+
     private sealed class StubReadinessCheckService : IReadinessCheckService
     {
         public Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(ReadinessResult.Ready());
+    }
+
+    private sealed class FixedPlanMigrationRunner(DatabaseMigrationPlan plan) : IDatabaseMigrationRunner
+    {
+        public Task<DatabaseMigrationPlan> PlanMigrationsAsync(string connectionString, Assembly migrationsAssembly, CancellationToken cancellationToken = default)
+            => Task.FromResult(plan);
+
+        public Task<DatabaseMigrationResult> RunMigrationsAsync(string connectionString, Assembly migrationsAssembly, CancellationToken cancellationToken = default)
+            => Task.FromResult(DatabaseMigrationResult.Succeeded());
     }
 
     private sealed class CapturingMigrationRunner : IDatabaseMigrationRunner

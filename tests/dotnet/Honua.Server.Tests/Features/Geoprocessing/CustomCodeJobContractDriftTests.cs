@@ -74,6 +74,34 @@ public sealed class CustomCodeJobContractDriftTests
     }
 
     /// <summary>
+    /// The serving↔worker job-contract version (ADR-0060 #3b) must be pinned across the server
+    /// const and the harness snapshot. The server injects <c>HONUA_CONTRACT_VERSION</c> env-only
+    /// (never in the customcode.* body map), and both harnesses re-check it; a bump must move the
+    /// server const, both harness consts, and this fixture together.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public void ContractVersion_IsPinnedToHarnessFixture_AndEnvOnly()
+    {
+        var fixture = LoadHarnessContractFixture();
+
+        CustomCodeJobContract.ContractVersion.Should().Be(
+            fixture.ContractVersion,
+            "the server's job-contract version must match the harness-supported version in "
+            + $"{FixtureFileName}; bump the server const, both harness consts, and the fixture together");
+
+        CustomCodeJobContract.ContractVersionEnvName.Should().Be(
+            fixture.ContractVersionEnv,
+            "the injected contract-version env var name must match the harness");
+
+        // Env-only, exactly like the auth spine — never folded into the customcode.* body map.
+        CustomCodeJobContract.ParameterToEnv.Values
+            .Should().NotContain(CustomCodeJobContract.ContractVersionEnvName);
+        fixture.BodyEnvToSpecKey.Keys
+            .Should().NotContain(CustomCodeJobContract.ContractVersionEnvName);
+    }
+
+    /// <summary>
     /// The auth spine env names are env-only and intentionally NOT in the body map;
     /// pin them so they are not accidentally folded into the customcode.* pass-through
     /// (which would route the scoped token through the wrong, non-secret path).
@@ -224,6 +252,8 @@ public sealed class CustomCodeJobContractDriftTests
         return new HarnessContractFixture(
             BodyEnvToSpecKey: bodyMap,
             AuthSpineEnv: authSpine,
+            ContractVersion: root.GetProperty("contract_version").GetInt32(),
+            ContractVersionEnv: root.GetProperty("contract_version_env").GetString()!,
             HarnessFile: root.GetProperty("harness_file").GetString()!,
             HarnessCommit: root.GetProperty("harness_commit").GetString()!);
     }
@@ -231,6 +261,8 @@ public sealed class CustomCodeJobContractDriftTests
     private sealed record HarnessContractFixture(
         IReadOnlyDictionary<string, string> BodyEnvToSpecKey,
         IReadOnlyList<string> AuthSpineEnv,
+        int ContractVersion,
+        string ContractVersionEnv,
         string HarnessFile,
         string HarnessCommit);
 }

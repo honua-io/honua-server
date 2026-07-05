@@ -113,6 +113,20 @@ These are certified-off, not absent: the code is present, wired, and tested, but
 it is not certified for this release and is not reachable by a default
 deployment. It lights up when the customer opts in.
 
+> **Update (#2427).** **Geofence alerting** (`alerts.geofence`) has been promoted
+> out of this experimental + disabled set to **GA (`Implemented`)** — the first
+> `Experimental → Implemented` promotion. The alerts engine now ships as shared,
+> un-gated infrastructure: geofence/dwell/attribute-threshold triggers,
+> multi-channel delivery, and a second consumer (ops deploy/job-event
+> notifications, per ADR-0060). Its admin routes (`/api/v1/admin/alerts/*`)
+> therefore carry `maturity: implemented` in the feature catalog and are
+> advertised in the capability manifest. It remains OFF by default operationally
+> — the pipeline self-gates on `Alerts:Enabled` (default `false`) — but that is a
+> runtime enablement switch, not experimental gating. The
+> "Realtime / geofence alerting" bullet and the geofence entries in the
+> two-mechanism roster below are superseded for the alerting half by this note;
+> realtime feature-streaming stays experimental.
+
 **Two mechanisms hold this set OFF — not one uniform registry flag.** The
 route-bearing experimental capabilities — **temporal** analytics/versioning
 (`/api/v1/temporal/*`), **disconnected-sync / replicas**, **realtime
