@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
@@ -25,6 +25,15 @@ internal sealed partial class RedisWorkflowOperationStore(
             return 1
         end
         return 0
+        """;
+
+    private const string CasSetScript = """
+        local current = redis.call('GET', KEYS[1])
+        if current == false then return 0 end
+        local v = tonumber(string.match(current, '"version":(%d+)')) or 0
+        if v ~= tonumber(ARGV[1]) then return 0 end
+        redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3]))
+        return 1
         """;
 
     private readonly IDatabase _database = redis.GetDatabase();
@@ -69,14 +78,15 @@ internal sealed partial class RedisWorkflowOperationStore(
         cancellationToken.ThrowIfCancellationRequested();
 
         var retention = ResolveRetention(operation, ttl);
-        var created = await PersistAsync(operation, retention, createOnly: true).ConfigureAwait(false);
+        var versioned = operation with { Version = 1 };
+        var created = await PersistAsync(versioned, retention, createOnly: true).ConfigureAwait(false);
         if (!created)
         {
             return false;
         }
 
-        Log.WorkflowOperationCreated(logger, operation.OperationId, operation.Kind.ToString(), operation.Status.ToString());
-        LogMetadataReleaseStage(operation);
+        Log.WorkflowOperationCreated(logger, versioned.OperationId, versioned.Kind.ToString(), versioned.Status.ToString());
+        LogMetadataReleaseStage(versioned);
         return true;
     }
 
@@ -128,9 +138,10 @@ internal sealed partial class RedisWorkflowOperationStore(
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await PersistAsync(operation, ResolveRetention(operation, ttl), createOnly: false).ConfigureAwait(false);
-        Log.WorkflowOperationUpdated(logger, operation.OperationId, operation.Status.ToString());
-        LogMetadataReleaseStage(operation);
+        var versioned = operation with { Version = operation.Version + 1 };
+        await PersistAsync(versioned, ResolveRetention(operation, ttl), createOnly: false).ConfigureAwait(false);
+        Log.WorkflowOperationUpdated(logger, versioned.OperationId, versioned.Status.ToString());
+        LogMetadataReleaseStage(versioned);
     }
 
     public async Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(
@@ -171,6 +182,41 @@ internal sealed partial class RedisWorkflowOperationStore(
         return operations
             .OrderByDescending(operation => operation.UpdatedAt)
             .ToArray();
+    }
+
+    public async Task<bool> TrySetAsync(
+        WorkflowOperationRecord operation,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var versioned = operation with { Version = operation.Version + 1 };
+        var retention = ResolveRetention(operation, ttl);
+        var operationKey = GetOperationKey(operation.OperationId);
+        var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.WorkflowOperationRecord);
+
+        var result = await _database.ScriptEvaluateAsync(
+            CasSetScript,
+            keys: [(RedisKey)operationKey],
+            values: [(RedisValue)operation.Version, (RedisValue)payload, (RedisValue)(long)retention.TotalMilliseconds])
+            .ConfigureAwait(false);
+
+        if ((long)result != 1)
+        {
+            Log.CasConflict(logger, operation.OperationId, operation.Version);
+            return false;
+        }
+
+        // Update active/inactive indexes after successful CAS write.
+        var transaction = _database.CreateTransaction();
+        QueueActiveIndexUpdates(transaction, versioned);
+        await transaction.ExecuteAsync().ConfigureAwait(false);
+
+        Log.WorkflowOperationUpdated(logger, versioned.OperationId, versioned.Status.ToString());
+        LogMetadataReleaseStage(versioned);
+        return true;
     }
 
     private async Task<bool> PersistAsync(
@@ -293,6 +339,12 @@ internal sealed partial class RedisWorkflowOperationStore(
 
     private static partial class Log
     {
+        [LoggerMessage(9004, LogLevel.Debug, "Workflow operation {OperationId} CAS conflict at version {Version}; concurrent write detected")]
+        public static partial void CasConflict(
+            ILogger logger,
+            string operationId,
+            long version);
+
         [LoggerMessage(9000, LogLevel.Information, "Created workflow operation {OperationId} ({Kind}) with status {Status}")]
         public static partial void WorkflowOperationCreated(
             ILogger logger,

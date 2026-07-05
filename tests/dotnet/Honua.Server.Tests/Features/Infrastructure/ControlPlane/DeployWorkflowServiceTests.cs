@@ -66,6 +66,50 @@ public sealed class DeployWorkflowServiceTests
         persisted!.ProviderOperationId.Should().Be($"test-backend:{firstResult.OperationId}");
     }
 
+    /// <summary>
+    /// BH5-021 regression: two concurrent SubmitAsync calls for the same operation must
+    /// result in exactly one backend.StartAsync call. The loser of the TrySetAsync CAS
+    /// race returns the current state without calling the provider backend.
+    /// </summary>
+    [Fact]
+    public async Task SubmitAsync_ConcurrentCalls_ExactlyOneSubmitsToBackend()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new BlockingDeployBackend();
+        var service = CreateService(store, backend);
+
+        // Create the operation in Planned state (submitImmediately: false).
+        var created = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Deploy",
+            "deploy-2026-bh5021",
+            "corr-1",
+            OperationPriority.Normal,
+            submitImmediately: false,
+            parameterOverrides: null);
+
+        created.Should().NotBeNull();
+        var operationId = created!.OperationId;
+
+        // Launch both submit calls concurrently — they both read the same Version
+        // and race on TrySetAsync. Exactly one wins the CAS; the other returns immediately.
+        var firstSubmit = service.SubmitAsync(operationId, "alice", "first submit");
+        var secondSubmit = service.SubmitAsync(operationId, "alice", "second submit");
+
+        // Unblock the winner's backend call (the loser never reached StartAsync).
+        await backend.StartEntered.WaitAsync(TimeSpan.FromSeconds(5));
+        backend.AllowStart();
+
+        var results = await Task.WhenAll(firstSubmit, secondSubmit);
+
+        backend.StartCount.Should().Be(1,
+            "two concurrent SubmitAsync calls must not both trigger backend.StartAsync (BH5-021)");
+        results.Should().AllSatisfy(r => r.Should().NotBeNull());
+    }
+
     [Fact]
     public async Task CreateAsync_WithEquivalentParameterOverridesInDifferentOrder_DeduplicatesRequest()
     {
@@ -925,6 +969,30 @@ public sealed class DeployWorkflowServiceTests
             _operations[operation.OperationId] = operation;
             IndexMetadataReleaseOperation(operation, createOnly: false);
             return Task.CompletedTask;
+        }
+
+        public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            // CAS: atomically update only if the stored record has the same version.
+            // ConcurrentDictionary.TryUpdate compares by structural equality (record default).
+            if (!_operations.TryGetValue(operation.OperationId, out var current))
+            {
+                return Task.FromResult(false); // not found
+            }
+
+            if (current.Version != operation.Version)
+            {
+                return Task.FromResult(false); // version conflict — concurrent write detected
+            }
+
+            var versioned = operation with { Version = operation.Version + 1 };
+            var updated = _operations.TryUpdate(operation.OperationId, versioned, current);
+            if (updated)
+            {
+                IndexMetadataReleaseOperation(versioned, createOnly: false);
+            }
+
+            return Task.FromResult(updated);
         }
 
         public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)

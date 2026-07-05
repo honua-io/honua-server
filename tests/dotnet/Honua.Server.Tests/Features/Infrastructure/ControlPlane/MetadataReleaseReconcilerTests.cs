@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
@@ -484,6 +484,13 @@ public sealed class MetadataReleaseReconcilerTests
             _operations[operation.OperationId] = operation;
             Index(operation);
             return Task.CompletedTask;
+        }
+
+        public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _operations[operation.OperationId] = operation;
+            Index(operation);
+            return Task.FromResult(true);
         }
 
         public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)
