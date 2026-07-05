@@ -499,13 +499,17 @@ internal sealed partial class YarpRollingDeployBackend(
             if (replicas.Active is { Running: true })
             {
                 await proxySwapper.SwapAsync(activeAddress, cancellationToken).ConfigureAwait(false);
+                // Stop the failed new revision after a drain window so ObserveAsync can settle the
+                // rollback (it settles once the standby replica is gone). Without this the operation
+                // would spin in RollbackRequested forever.
+                await StopStandbyAfterDrainAsync(target, replicas.Standby, cancellationToken).ConfigureAwait(false);
                 Log.RollbackRequested(logger, operation.OperationId, spec.TargetId, promoted: true);
                 return new DeployObservation
                 {
                     Status = WorkflowOperationStatus.RollbackRequested,
                     ProviderOperationId = operation.ProviderOperationId,
                     ObservedRevision = spec.CurrentRevision,
-                    Message = "Rolling deploy rollback requested after cutover: the proxy was repointed at the previous replica, which is settling."
+                    Message = "Rolling deploy rollback requested after cutover: the proxy was repointed at the previous replica and the failed revision is draining."
                 };
             }
 
@@ -531,13 +535,14 @@ internal sealed partial class YarpRollingDeployBackend(
 
                 await containerRuntime.RunAsync(request, cancellationToken).ConfigureAwait(false);
                 await proxySwapper.SwapAsync(activeAddress, cancellationToken).ConfigureAwait(false);
+                await StopStandbyAfterDrainAsync(target, replicas.Standby, cancellationToken).ConfigureAwait(false);
                 Log.RollbackRequested(logger, operation.OperationId, spec.TargetId, promoted: true);
                 return new DeployObservation
                 {
                     Status = WorkflowOperationStatus.RollbackRequested,
                     ProviderOperationId = operation.ProviderOperationId,
                     ObservedRevision = spec.CurrentRevision,
-                    Message = "Rolling deploy rollback requested after cutover: relaunched the previous revision and repointed the proxy; settling."
+                    Message = "Rolling deploy rollback requested after cutover: relaunched the previous revision, repointed the proxy, and the failed revision is draining."
                 };
             }
 
@@ -560,6 +565,26 @@ internal sealed partial class YarpRollingDeployBackend(
                 Message = "Rolling deploy rollback failed. Check the deploy controller logs for details."
             };
         }
+    }
+
+    /// <summary>
+    /// Stops the standby (new-revision) replica after the configured drain window during a
+    /// post-cutover rollback. Traffic has already been repointed at the previous replica, so the
+    /// drain only lets the failed revision finish in-flight requests. Best-effort by name when the
+    /// label discovery did not surface the standby container.
+    /// </summary>
+    private async Task StopStandbyAfterDrainAsync(
+        SelfHostedDeployTarget target,
+        ContainerSummary? standby,
+        CancellationToken cancellationToken)
+    {
+        if (_options.DrainDelaySeconds > 0)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(_options.DrainDelaySeconds), cancellationToken).ConfigureAwait(false);
+        }
+
+        var name = standby?.Name ?? StandbyContainerName(target);
+        await containerRuntime.StopAsync(target.ContainerRuntime, name, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<LocalReplicaHealthResult> ProbeStandbyAsync(SelfHostedDeployTarget target, CancellationToken cancellationToken)

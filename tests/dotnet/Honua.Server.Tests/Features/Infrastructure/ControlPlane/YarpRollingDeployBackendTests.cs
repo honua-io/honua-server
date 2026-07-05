@@ -158,6 +158,9 @@ public sealed class YarpRollingDeployBackendTests
 
         observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
         proxy.ActiveDestinationAddress.Should().Be(ActiveAddress);
+        // The failed new revision must be stopped after the drain window, otherwise ObserveAsync
+        // (which settles the rollback once the standby is gone) would spin forever.
+        runtime.StopRequests.Should().Contain(StandbyContainerName());
     }
 
     private static string StandbyContainerName() => "honua-app-18081";
