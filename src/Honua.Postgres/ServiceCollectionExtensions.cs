@@ -578,6 +578,12 @@ internal static class ServiceCollectionExtensions
         // bypasses Postgres registration retains the in-memory fallback default.
         services.TryAddScoped<IMigrationPerformanceEvidenceStore, PostgresMigrationPerformanceEvidenceStore>();
 
+        // Register migration-run checkpoint store (#2459, ADR-0060). Overrides the Core
+        // in-memory / filesystem default with the durable honua.migration_run_checkpoints
+        // table so resumable migration-run state lives in the shared data plane and can
+        // resume on any node. TryAdd so hosts that bypass Postgres keep the in-memory fallback.
+        services.TryAddScoped<IMigrationRunCheckpointStore, PostgresMigrationRunCheckpointStore>();
+
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
 
