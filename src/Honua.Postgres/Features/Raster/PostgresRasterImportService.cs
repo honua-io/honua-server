@@ -213,7 +213,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                         connection, transaction, rasterId, srid, warnings, cancellationToken).ConfigureAwait(false);
                 }
 
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
                 stopwatch.Stop();
                 var completedAt = DateTimeOffset.UtcNow;
@@ -254,7 +254,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException
             or NotSupportedException or FileNotFoundException)
         {
-            // Validation / user-input errors — return a failure result so the endpoint can map to 400.
+            // Validation / user-input errors â€” return a failure result so the endpoint can map to 400.
             stopwatch.Stop();
             PostgresRasterImportLog.ImportFailed(_logger, ex, request.LayerId, request.FileName);
 
@@ -268,7 +268,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         }
         catch (Exception ex)
         {
-            // Infrastructure / unexpected errors — log, update progress, and rethrow so the
+            // Infrastructure / unexpected errors â€” log, update progress, and rethrow so the
             // endpoint returns 500 with a generic message (no internal details leaked).
             stopwatch.Stop();
             PostgresRasterImportLog.ImportFailed(_logger, ex, request.LayerId, request.FileName);
@@ -304,7 +304,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
         // World-file formats always require a world file for the geotransform.
         // An explicit SRID is supplemental (overrides .prj detection) but cannot
-        // replace the world file — without it pixels map 1:1 to CRS units which is
+        // replace the world file â€” without it pixels map 1:1 to CRS units which is
         // almost certainly wrong.
         if (request.Format is SupportedRasterFormat.PngWorldFile or SupportedRasterFormat.JpegWorldFile)
         {
@@ -316,7 +316,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             }
         }
 
-        // COG is a valid TIFF — same import path as GeoTIFF.
+        // COG is a valid TIFF â€” same import path as GeoTIFF.
         // PostGIS ST_FromGDALRaster handles COG files correctly (reads base resolution).
         // COG internal overviews are not preserved as separate entities in PostGIS;
         // tile pre-generation at configured zoom levels provides the overview mechanism.
@@ -695,7 +695,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             // World files store the CENTER of the upper-left pixel, but the
             // PostGIS 6-parameter overload maps directly to the GDAL
             // geotransform which expects the CORNER (upper-left) of the
-            // upper-left pixel.  Convert center → corner before the call.
+            // upper-left pixel.  Convert center â†’ corner before the call.
             // Behavior reference: GDAL GDALReadWorldFile (gdalworldfile.cpp)
             var cornerX = upperLeftX - scaleX / 2.0 - skewX / 2.0;
             var cornerY = upperLeftY - skewY / 2.0 - scaleY / 2.0;
@@ -812,7 +812,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 // Zoom 0 has exactly one tile (0,0) covering the entire world.
                 // Handle separately because the general formula uses (1 << (zoom-1))
                 // which is undefined for negative shift counts in PostgreSQL.
-                // Build a 256×256 reference raster aligned to the z=0 tile envelope so the
+                // Build a 256Ã—256 reference raster aligned to the z=0 tile envelope so the
                 // seeded tile covers exactly the world bbox (not just the raster's own extent
                 // stretched to fill the tile, which misregisters partial-world datasets).
                 command.CommandText = $"""
@@ -845,9 +845,9 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             {
                 // Generate tiles for this zoom level using ST_TileEnvelope.
                 // Compute which tiles intersect the raster extent, then resample each onto a
-                // 256×256 reference raster aligned exactly to ST_TileEnvelope(z,x,y) in
+                // 256Ã—256 reference raster aligned exactly to ST_TileEnvelope(z,x,y) in
                 // EPSG:3857. Uncovered pixels become nodata rather than being stretched to fill
-                // the frame — fixing the spatial misregistration the previous ST_Clip+ST_Resize
+                // the frame â€” fixing the spatial misregistration the previous ST_Clip+ST_Resize
                 // approach produced for edge tiles and non-3857 source rasters.
                 command.CommandText = $"""
                     INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)

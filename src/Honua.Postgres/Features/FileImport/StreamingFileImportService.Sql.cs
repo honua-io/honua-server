@@ -103,7 +103,7 @@ internal sealed partial class StreamingFileImportService
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitSafelyAsync(cancellationToken);
         }
         catch
         {

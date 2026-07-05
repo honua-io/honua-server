@@ -19,6 +19,7 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Postgres.Features.Migration;
 using Honua.Postgres.Features.FileImport;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
@@ -91,7 +92,7 @@ internal sealed partial class StreamingFileImportService
 
             if (transaction != null)
             {
-                await transaction.CommitAsync(cancellationToken);
+                await transaction.CommitSafelyAsync(cancellationToken);
             }
         }
         catch (Exception ex)

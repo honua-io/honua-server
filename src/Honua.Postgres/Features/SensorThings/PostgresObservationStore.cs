@@ -391,7 +391,7 @@ VALUES (@id, @datastream_id, @phenomenon_time, @result_time, @result, @feature_o
             });
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return results;
     }
 
@@ -435,7 +435,7 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         return new SensorThingsDatastream
         {
