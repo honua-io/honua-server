@@ -12,8 +12,9 @@ name: Real AWS Certification
 #               `cert` GitHub environment so it matches the honua-iac OIDC role's subject pin
 #               (repo:honua-io/honua-server:environment:cert).
 #   * Budgeted — each certification cell is tiny and short-lived (a register/deregister smoke, two
-#               smallest-tier Batch jobs, one small S3 object, a no-op Lambda alias flip) and every
-#               resource is torn down; the reaper sweeps any crash-orphaned leftover.
+#               smallest-tier Batch jobs, one small S3 object, a no-op Lambda alias flip, one
+#               same-revision ECS/ALB weighted cutover on a standing smallest-Fargate service) and
+#               every resource is torn down; the reaper sweeps any crash-orphaned leftover.
 #   * Teardown — every cell namespaces its resources honua-cert-* and tags them honua-cert-run=<runId>
 #               and tears them down in a finally block; a dedicated always() reaper step then reaps
 #               any honua-cert-run-tagged resource older than the TTL, so no standing resources remain.
@@ -38,11 +39,11 @@ name: Real AWS Certification
 #   cert_artifact_bucket       REALAWS_CERT_ARTIFACT_BUCKET               HONUA_REALAWS_CERT_ARTIFACT_BUCKET
 #   (cert Lambda function)     REALAWS_CERT_LAMBDA_FUNCTION               HONUA_REALAWS_CERT_LAMBDA_FUNCTION
 #   (cert Lambda alias)        REALAWS_CERT_LAMBDA_ALIAS                  HONUA_REALAWS_CERT_LAMBDA_ALIAS
-#   (cert ECS cluster)         REALAWS_CERT_ECS_CLUSTER                   HONUA_REALAWS_CERT_ECS_CLUSTER          (deferred cell)
-#   (cert ECS service)         REALAWS_CERT_ECS_SERVICE                   HONUA_REALAWS_CERT_ECS_SERVICE          (deferred cell)
-#   (cert ALB listener)        REALAWS_CERT_ALB_LISTENER_ARN              HONUA_REALAWS_CERT_ALB_LISTENER_ARN     (deferred cell)
-#   (cert canary target group) REALAWS_CERT_CANARY_TARGET_GROUP_ARN       HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN (deferred cell)
-#   (cert stable target group) REALAWS_CERT_STABLE_TARGET_GROUP_ARN       HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN (deferred cell)
+#   (cert ECS cluster)         REALAWS_CERT_ECS_CLUSTER                   HONUA_REALAWS_CERT_ECS_CLUSTER          (ECS/ALB cell)
+#   (cert ECS service)         REALAWS_CERT_ECS_SERVICE                   HONUA_REALAWS_CERT_ECS_SERVICE          (ECS/ALB cell)
+#   (cert ALB listener)        REALAWS_CERT_ALB_LISTENER_ARN              HONUA_REALAWS_CERT_ALB_LISTENER_ARN     (ECS/ALB cell)
+#   (cert canary target group) REALAWS_CERT_CANARY_TARGET_GROUP_ARN       HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN (ECS/ALB cell)
+#   (cert stable target group) REALAWS_CERT_STABLE_TARGET_GROUP_ARN       HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN (ECS/ALB cell)
 #
 # The Batch execution cell submits against the smallest-tier job definition, which the maintainer
 # must provision (in the cert stack) as a trivially- and quickly-succeeding container (e.g. busybox
