@@ -39,10 +39,15 @@ internal sealed partial class PortalOAuthStore(
     private const string BrokerKeyPrefix = "portal-oauth:broker:";
     private const string CodeKeyPrefix = "portal-oauth:code:";
     private const string RefreshKeyPrefix = "portal-oauth:refresh:";
+    // Prefix for the short-lived Redis claim keys used by AtomicConsumeAsync to ensure
+    // single-use semantics under concurrent requests (BH2-022, BH2-023).
+    private const string ConsumeClaimPrefix = "portal-oauth:claim:";
 
     private readonly IMemoryCache _memoryCache = memoryCache;
     private readonly ILogger<PortalOAuthStore> _logger = logger;
     private readonly IDistributedCache? _distributedCache = distributedCache;
+    // Lock used to make TryGetValue+Remove atomic on the memory-only path (BH2-022).
+    private readonly Lock _consumeLock = new();
 
     /// <summary>Persists a broker session and returns its opaque identifier.</summary>
     public async Task<string> CreateBrokerSessionAsync(
@@ -61,22 +66,14 @@ internal sealed partial class PortalOAuthStore(
     }
 
     /// <summary>Reads and removes a broker session (single use).</summary>
-    public async Task<PortalOAuthBrokerSession?> ConsumeBrokerSessionAsync(
+    public Task<PortalOAuthBrokerSession?> ConsumeBrokerSessionAsync(
         string? id,
         CancellationToken cancellationToken)
-    {
-        var session = await GetAsync(
+        => AtomicConsumeAsync(
             BrokerKeyPrefix,
             id,
             PortalOAuthStoreJsonContext.Default.PortalOAuthBrokerSession,
-            cancellationToken).ConfigureAwait(false);
-        if (session is not null)
-        {
-            await RemoveAsync(BrokerKeyPrefix, id, cancellationToken).ConfigureAwait(false);
-        }
-
-        return session;
-    }
+            cancellationToken);
 
     /// <summary>Persists an issued ArcGIS authorization code and returns its value.</summary>
     public async Task<string> CreateAuthorizationCodeAsync(
@@ -94,23 +91,19 @@ internal sealed partial class PortalOAuthStore(
         return value;
     }
 
-    /// <summary>Reads and removes an issued ArcGIS authorization code (single use).</summary>
-    public async Task<PortalOAuthAuthorizationCode?> ConsumeAuthorizationCodeAsync(
+    /// <summary>
+    /// Atomically reads and removes an issued ArcGIS authorization code (single use).
+    /// Uses a distributed claim lock on the Redis path to prevent concurrent callers
+    /// from both acquiring the record (BH2-022 fix).
+    /// </summary>
+    public Task<PortalOAuthAuthorizationCode?> ConsumeAuthorizationCodeAsync(
         string? code,
         CancellationToken cancellationToken)
-    {
-        var record = await GetAsync(
+        => AtomicConsumeAsync(
             CodeKeyPrefix,
             code,
             PortalOAuthStoreJsonContext.Default.PortalOAuthAuthorizationCode,
-            cancellationToken).ConfigureAwait(false);
-        if (record is not null)
-        {
-            await RemoveAsync(CodeKeyPrefix, code, cancellationToken).ConfigureAwait(false);
-        }
-
-        return record;
-    }
+            cancellationToken);
 
     /// <summary>Persists a refresh token and returns its value.</summary>
     public async Task<string> CreateRefreshTokenAsync(
@@ -141,6 +134,36 @@ internal sealed partial class PortalOAuthStore(
     /// <summary>Removes a refresh token (used on rotation).</summary>
     public Task RemoveRefreshTokenAsync(string? token, CancellationToken cancellationToken)
         => RemoveAsync(RefreshKeyPrefix, token, cancellationToken);
+
+    /// <summary>
+    /// Atomically reads and removes a refresh token (single use when rotation is enabled).
+    /// Uses a distributed claim lock on the Redis path to prevent concurrent callers
+    /// from both acquiring the record (BH2-023 fix).
+    /// </summary>
+    public Task<PortalOAuthRefreshToken?> ConsumeRefreshTokenAsync(
+        string? token,
+        CancellationToken cancellationToken)
+        => AtomicConsumeAsync(
+            RefreshKeyPrefix,
+            token,
+            PortalOAuthStoreJsonContext.Default.PortalOAuthRefreshToken,
+            cancellationToken);
+
+    /// <summary>
+    /// Restores a refresh token that was atomically consumed but whose subsequent
+    /// token issuance failed (BH2-024 fix). The token is re-persisted under its
+    /// original value with its remaining TTL so the client can retry successfully.
+    /// </summary>
+    public Task RestoreRefreshTokenAsync(
+        string tokenValue,
+        PortalOAuthRefreshToken record,
+        CancellationToken cancellationToken)
+        => SetAsync(
+            RefreshKeyPrefix + tokenValue,
+            record,
+            record.ExpiresAt,
+            PortalOAuthStoreJsonContext.Default.PortalOAuthRefreshToken,
+            cancellationToken);
 
     private async Task SetAsync<T>(
         string key,
@@ -246,6 +269,159 @@ internal sealed partial class PortalOAuthStore(
         catch (Exception ex)
         {
             PortalOAuthLog.StoreRemoveFailed(_logger, LogValueRedactor.Hash(key), ex);
+        }
+    }
+
+    /// <summary>
+    /// Atomically reads and removes a single-use OAuth artifact (authorization code or
+    /// rotated refresh token). RFC 6749 requires these to be single-use; a non-atomic
+    /// GET+DELETE allows two concurrent callers to both acquire the record and issue
+    /// independent tokens from the same credential (BH2-022, BH2-023).
+    ///
+    /// For the distributed (Redis) path, a short-lived SET NX claim key is used as
+    /// a distributed mutex so only one concurrent caller can proceed with the GET+DEL.
+    /// The claim key is managed independently via <see cref="StackExchange.Redis.IDatabase"/>
+    /// (STRING type) and does not interfere with the distributed cache's HASH-based
+    /// storage format. On non-Redis distributed caches (or when the IDatabase is not
+    /// yet lazily initialized) the operation degrades to a non-atomic GET+DEL.
+    ///
+    /// For the memory-only path, a <see langword="lock"/> makes TryGetValue+Remove
+    /// atomic within this process.
+    /// </summary>
+    private async Task<T?> AtomicConsumeAsync<T>(
+        string keyPrefix,
+        string? id,
+        JsonTypeInfo<T> typeInfo,
+        CancellationToken cancellationToken)
+        where T : PortalOAuthRecord
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return null;
+        }
+
+        var key = keyPrefix + id;
+
+        if (_distributedCache is null)
+        {
+            // Memory-only path: lock makes TryGetValue+Remove atomic within this process.
+            byte[]? memPayload;
+            lock (_consumeLock)
+            {
+                if (!_memoryCache.TryGetValue(key, out memPayload) || memPayload is null)
+                {
+                    return null;
+                }
+                _memoryCache.Remove(key);
+            }
+            var memValue = JsonSerializer.Deserialize(memPayload, typeInfo);
+            return memValue is null || memValue.ExpiresAt <= DateTimeOffset.UtcNow ? null : memValue;
+        }
+
+        // Distributed path: acquire a short-lived claim lock via Redis SET NX so only
+        // one concurrent caller can proceed with GET+DEL. The claim key uses a separate
+        // Redis STRING key that does not interfere with the distributed cache's hash format.
+        var claimKey = (StackExchange.Redis.RedisKey)(ConsumeClaimPrefix + key);
+        var redisDb = TryGetRedisDatabase();
+        var claimAcquired = false;
+
+        if (redisDb is not null)
+        {
+            try
+            {
+                claimAcquired = await redisDb.StringSetAsync(
+                    claimKey,
+                    "1",
+                    TimeSpan.FromSeconds(30),
+                    StackExchange.Redis.When.NotExists).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Redis claim failed (connection issue); fall through to non-atomic GET+DEL.
+                redisDb = null;
+            }
+
+            if (redisDb is not null && !claimAcquired)
+            {
+                // Claim not acquired: another concurrent caller holds it.
+                _memoryCache.Remove(key);
+                return null;
+            }
+        }
+
+        try
+        {
+            byte[]? payload;
+            try
+            {
+                payload = await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _memoryCache.Remove(key);
+                PortalOAuthLog.StoreReadFailed(_logger, LogValueRedactor.Hash(key), ex);
+                return null;
+            }
+
+            if (payload is null)
+            {
+                _memoryCache.Remove(key);
+                return null;
+            }
+
+            // Remove from both distributed cache and L1 memory cache.
+            try
+            {
+                await _distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                PortalOAuthLog.StoreRemoveFailed(_logger, LogValueRedactor.Hash(key), ex);
+            }
+            _memoryCache.Remove(key);
+
+            var value = JsonSerializer.Deserialize(payload, typeInfo);
+            return value is null || value.ExpiresAt <= DateTimeOffset.UtcNow ? null : value;
+        }
+        finally
+        {
+            // Release the claim lock. The 30 s TTL is the safety net if this fails.
+            if (redisDb is not null && claimAcquired)
+            {
+                try
+                {
+                    await redisDb.KeyDeleteAsync(claimKey).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Ignored; the claim key expires automatically.
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Attempts to obtain the underlying <see cref="StackExchange.Redis.IDatabase"/> from
+    /// the distributed cache when it is backed by Redis.
+    /// Returns <see langword="null"/> when the distributed cache is not Redis-backed or
+    /// when the IDatabase has not yet been lazily initialized (first-request cold start).
+    /// </summary>
+    private StackExchange.Redis.IDatabase? TryGetRedisDatabase()
+    {
+        if (_distributedCache is not Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache redisCache)
+        {
+            return null;
+        }
+
+        try
+        {
+            var field = typeof(Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache)
+                .GetField("_cache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            return field?.GetValue(redisCache) as StackExchange.Redis.IDatabase;
+        }
+        catch
+        {
+            return null;
         }
     }
 

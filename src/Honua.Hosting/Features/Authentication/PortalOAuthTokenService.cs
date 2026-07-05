@@ -353,15 +353,22 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_request", "refresh_token is required.");
         }
 
+        // BH2-023/BH2-024 fix: the validation and the atomic consume are split into
+        // two phases so that client_id binding failures do not silently destroy the
+        // token, and so that only one concurrent caller can acquire the record under
+        // refresh-token rotation.  The non-destructive read below is for validation
+        // only; the atomic consume further down is the single authoritative gate.
+        var rotate = _tokenOptions.OAuth2.RotateRefreshTokens;
+
+        // Non-destructive read — does not remove the token.
         var record = await _store.GetRefreshTokenAsync(request.RefreshToken, cancellationToken).ConfigureAwait(false);
         if (record is null)
         {
             return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token is invalid or expired.");
         }
 
-        // RFC 6749 §6: refresh_token grants must include client_id when the record
-        // carries one — without PKCE on refresh tokens the client_id is the only
-        // binding preventing a stolen token from being replayed by any caller.
+        // RFC 6749 §6: client_id binding check — performed before any destructive
+        // operation so a mis-matched client_id does not consume the token.
         if (!string.IsNullOrWhiteSpace(record.ClientId))
         {
             if (string.IsNullOrWhiteSpace(request.ClientId))
@@ -375,24 +382,57 @@ internal sealed class PortalOAuthTokenService(
             }
         }
 
-        // Refresh-token rotation (#1484): when enabled (the default) the presented
-        // token is revoked and a fresh refresh token is minted and returned, bounding
-        // the replay window of a leaked token to a single use. The old token is
-        // removed before issuing so a concurrent reuse races to a revoked entry. When
-        // rotation is disabled the existing token is reused (legacy ArcGIS behavior).
-        var rotate = _tokenOptions.OAuth2.RotateRefreshTokens;
-        if (rotate)
+        if (!rotate)
         {
-            await _store.RemoveRefreshTokenAsync(request.RefreshToken, cancellationToken).ConfigureAwait(false);
+            // Rotation disabled (legacy ArcGIS behavior): the token is reusable, issue
+            // without consuming it.
+            return await IssueAsync(
+                record.ClientId,
+                record.Principal,
+                requestedMinutes: null,
+                requestBinding,
+                includeRefreshToken: false,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        return await IssueAsync(
-            record.ClientId,
-            record.Principal,
-            requestedMinutes: null,
-            requestBinding,
-            includeRefreshToken: rotate,
-            cancellationToken).ConfigureAwait(false);
+        // BH2-023: atomically consume the refresh token so only one concurrent caller
+        // can acquire it. The non-destructive read above was for validation; this SET NX
+        // backed consume is the authoritative single-use gate. A null result means a
+        // concurrent caller already consumed the token (or it expired between the two reads).
+        var consumed = await _store.ConsumeRefreshTokenAsync(request.RefreshToken, cancellationToken).ConfigureAwait(false);
+        if (consumed is null)
+        {
+            return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token has already been used.");
+        }
+
+        // BH2-024: if IssueAsync throws (transient Redis/network failure) after the atomic
+        // consume, restore the original token so the client can retry successfully instead
+        // of being forced to re-authenticate. Restoration is best-effort: if the store is
+        // also unavailable the client must re-authenticate, but the original exception is
+        // always re-thrown so the caller receives the correct error signal.
+        try
+        {
+            return await IssueAsync(
+                consumed.ClientId,
+                consumed.Principal,
+                requestedMinutes: null,
+                requestBinding,
+                includeRefreshToken: true,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            try
+            {
+                await _store.RestoreRefreshTokenAsync(
+                    request.RefreshToken, consumed, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Swallow restore failures; the original exception propagates below.
+            }
+            throw;
+        }
     }
 
     private async Task<PortalOAuthTokenResult> IssueAsync(
