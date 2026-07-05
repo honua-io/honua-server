@@ -112,6 +112,44 @@ public sealed class FeatureQueryBuilderProjectedPointTests
         result.WhereParameters[4].Should().BeEquivalentTo(new byte[] { 1, 2, 3 });
     }
 
+    // BH2-D04 regression: OFFSET was never emitted for projected-point queries; page 2
+    // always returned page 1 (infinite-loop / duplicate-export bug).
+    [Fact]
+    public void BuildProjectedPointQuery_WithLimitAndOffset_EmitsBothPlaceholders()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326,
+            Limit = 100,
+            Offset = 200
+        };
+
+        var result = queryBuilder.BuildProjectedPointQuery(layerId: 1, query);
+
+        // No WHERE params so LIMIT is at $2, OFFSET at $3.
+        result.Sql.Should().Contain("LIMIT $2");
+        result.Sql.Should().Contain("OFFSET $3");
+    }
+
+    [Fact]
+    public void BuildProjectedPointQuery_WithOffsetOnly_EmitsOffsetWithoutLimit()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326,
+            Offset = 50
+        };
+
+        var result = queryBuilder.BuildProjectedPointQuery(layerId: 1, query);
+
+        result.Sql.Should().NotContain("LIMIT");
+        result.Sql.Should().Contain("OFFSET $2");
+    }
+
     private static FeatureQueryBuilder CreateQueryBuilder()
     {
         var poolProvider = new DefaultObjectPoolProvider();

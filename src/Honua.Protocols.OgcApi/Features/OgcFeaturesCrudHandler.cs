@@ -202,6 +202,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
     public async Task<IResult> HandleDeleteFeatureAsync(
         string collectionId,
         string featureId,
+        string? ifMatch,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -246,6 +247,26 @@ internal sealed partial class OgcFeaturesCrudHandler(
             }
 
             var objectId = resolvedFeature.Value.ObjectId;
+            var existing = resolvedFeature.Value.Feature;
+
+            // Validate If-Match precondition before executing the delete.  The pre-check
+            // gives a fast 412 without an unnecessary write round-trip; the canonical state
+            // token is re-validated inside the write transaction (see EnsurePreconditionSatisfiedAsync)
+            // so a concurrent commit between this check and the write cannot be silently lost.
+            string? expectedStateToken = null;
+            if (!string.IsNullOrWhiteSpace(ifMatch))
+            {
+                var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
+                if (!OgcFeatureEntityTag.MatchesEntityOrRepresentation(ifMatch, etag, _etagService))
+                {
+                    return Results.Problem(
+                        statusCode: 412,
+                        title: "Precondition Failed",
+                        detail: "The resource has been modified since the provided ETag.");
+                }
+
+                expectedStateToken = FeatureStateToken.Compute(existing);
+            }
 
             var editResult = await ExecuteEditAsync(
                 context,
@@ -254,12 +275,22 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 new OgcFeaturesEditRequest
                 {
                     Operation = OgcFeaturesEditOperation.Delete,
-                    ObjectId = objectId
+                    ObjectId = objectId,
+                    IfMatch = ifMatch,
+                    ExpectedStateToken = expectedStateToken
                 },
                 cancellationToken);
             var deleteResult = editResult.DeleteResults.FirstOrDefault();
             if (!deleteResult.IsSuccess)
             {
+                if (deleteResult.IsPreconditionFailure)
+                {
+                    return Results.Problem(
+                        statusCode: 412,
+                        title: "Precondition Failed",
+                        detail: "The resource has been modified since the provided ETag.");
+                }
+
                 return IsNotFound(deleteResult)
                     ? StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.")
                     : StandardErrorHelpers.CreateInternalServerError(context, deleteResult.ErrorMessage ?? "An error occurred while deleting the feature.");

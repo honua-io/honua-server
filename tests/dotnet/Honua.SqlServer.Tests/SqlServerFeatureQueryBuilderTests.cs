@@ -157,20 +157,20 @@ public class SqlServerFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_SqlFilterOnlyWithoutWhere_PassesThroughForDirectCallers()
+    public void BuildSelectQuery_SqlFilterOnlyWithoutWhere_Throws()
     {
-        // Direct programmatic callers may still pass a SqlFragment without Where. We cannot tell
-        // which provider styled it, so behavior matches the pre-fix path: rebind placeholders and
-        // emit the fragment verbatim. FeatureServer cannot reach this branch because it always
-        // sets Where alongside SqlFilter.
+        // The shared ISqlFilterTranslator pipeline emits Postgres-flavored SQL (JSONB ->>,
+        // ::casts, ST_* functions). Passing that fragment to the SQL Server provider would
+        // produce an opaque SqlException at runtime. The builder rejects it eagerly with a
+        // clear diagnostic so callers route through FeatureQuery.Where instead.
         var mapping = BuildMapping();
         var fragment = new SqlFragment("[name] = @p0", new object?[] { "Charlie" });
         var query = new FeatureQuery { SqlFilter = fragment };
 
-        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+        var ex = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
 
-        Assert.Contains("[name] = @p0", result.Sql, StringComparison.Ordinal);
-        Assert.Equal("Charlie", result.WhereParameters[0]);
+        Assert.Contains("SqlFilter", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -382,5 +382,40 @@ public class SqlServerFeatureQueryBuilderTests
             StorageSrid: 4326);
 
         Assert.Throws<ArgumentException>(() => SqlServerLayerMapping.FromStorage(TestLayerId, storage));
+    }
+
+    // BH2-D01 regression: SRID resolves to 0 when both filter and mapping SRID are absent ->
+    // SQL Server spatial predicates return NULL (not false) -> silent zero-row result.
+    [Fact]
+    public void BuildSelectQuery_SpatialFilter_NullFilterSridAndNullMappingSrid_Throws()
+    {
+        var mapping = BuildMapping(srid: null);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create([0x01, 0x02], SpatialRelationship.Intersects, srid: null)
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+
+        Assert.Contains("SRID", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("zero rows", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_SpatialFilter_NullFilterSridWithMappingSrid_UsesMappingSrid()
+    {
+        // When the filter carries no SRID but the mapping has a storage SRID, the mapping
+        // SRID is used for the geometry constructor — no guard should fire.
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create([0x01], SpatialRelationship.Intersects, srid: null)
+        };
+
+        // Should NOT throw — mapping SRID resolves the geometry SRID.
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("STGeomFromWKB(@p0, 4326)", result.Sql, StringComparison.Ordinal);
     }
 }

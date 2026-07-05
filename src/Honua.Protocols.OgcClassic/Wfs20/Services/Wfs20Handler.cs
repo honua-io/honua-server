@@ -158,6 +158,13 @@ internal sealed partial class Wfs20Handler
             return (featureType, query, layerMatched);
         })).ConfigureAwait(false);
 
+        // Known limitation (BH2-006): the per-type COUNT results above are snapshots taken at
+        // slightly different points in time.  A concurrent INSERT or DELETE on any feature type
+        // between its COUNT and the subsequent read in ExecuteFetchAsync can cause the paging
+        // offset distribution to be off-by-one (or more) for multi-type GetFeature requests.
+        // Fixing this atomically would require a distributed serialisable transaction across
+        // multiple storage layers, which is not supported.  Single-type GetFeature uses cursor
+        // paging and is not affected.  Tracked as a known TOCTOU limitation; not a regression.
         var remainingOffset = offset;
         var remainingCount = count;
         long totalMatched = 0;
@@ -802,7 +809,11 @@ internal sealed partial class Wfs20Handler
             return new PagingLinks(null, null);
         }
 
-        var next = offset + pageSize < totalMatched
+        // Use long arithmetic to avoid int overflow when offset approaches int.MaxValue.
+        // Also suppress the next link when the computed STARTINDEX would exceed int.MaxValue
+        // (the parameter parser rejects negative values, producing HTTP 400 on follow-through).
+        var nextOffset = (long)offset + pageSize;
+        var next = nextOffset < totalMatched && nextOffset <= int.MaxValue
             ? BuildGetFeaturePagingLink(
                 wfsUrl,
                 selectedTypes,
@@ -814,7 +825,7 @@ internal sealed partial class Wfs20Handler
                 propertyName,
                 srsName,
                 resultType,
-                offset + pageSize,
+                (int)nextOffset,
                 pageSize)
             : null;
         var previous = offset > 0

@@ -472,6 +472,51 @@ internal static class AccessPolicyHelpers
         return evaluator.Evaluate(AnonymousPrincipal, null, service.AccessPolicy, scope).IsAllowed;
     }
 
+    /// <summary>
+    /// Coarse pre-body mutating-operation gate for <c>applyEdits</c>-style endpoints
+    /// (BH2-012). Returns <see langword="null"/> when the principal holds any one of
+    /// <see cref="AuthorizationOperation.Update"/>,
+    /// <see cref="AuthorizationOperation.Insert"/>, or
+    /// <see cref="AuthorizationOperation.Delete"/> access on the resource, so a
+    /// Delete-only or Insert-only grant holder is not rejected by the default Update
+    /// check before the request body has been inspected for edit types. The per-type
+    /// checks that follow after body inspection remain in place.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resource">The resource (layer) being accessed.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An error result when all three mutating operations are denied, otherwise <see langword="null"/>.</returns>
+    public static async Task<IResult?> RequireAnyMutatingOperationAccessAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Allow the request if any one of the three write operations is permitted.
+        var updateError = await RequireResourceAccessAsync(context, resource, AuthorizationOperation.Update, service, cancellationToken).ConfigureAwait(false);
+        if (updateError is null)
+        {
+            return null;
+        }
+
+        var insertError = await RequireResourceAccessAsync(context, resource, AuthorizationOperation.Insert, service, cancellationToken).ConfigureAwait(false);
+        if (insertError is null)
+        {
+            return null;
+        }
+
+        var deleteError = await RequireResourceAccessAsync(context, resource, AuthorizationOperation.Delete, service, cancellationToken).ConfigureAwait(false);
+        if (deleteError is null)
+        {
+            return null;
+        }
+
+        // All three denied — surface the Update denial as the representative error
+        // (matches the caller's expectation for a service with no per-operation grants).
+        return updateError;
+    }
+
     public static IResult? RequireAnyResourceAccess(
         HttpContext context,
         IEnumerable<MetadataV2Resource> resources,

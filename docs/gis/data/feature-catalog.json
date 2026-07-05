@@ -7911,7 +7911,9 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.ServiceQueryFeatures_GetWithLayerId_ReturnsFilteredFeatures",
         "Honua.Server.Tests.FeatureServerEndpointTests.ServiceQueryFeatures_GetWithMalformedLayersDelimiter_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_ReturnsPerLayerResults",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_WithLayerDefs_AppliesPerLayerWhere"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_WithLayerDefs_AppliesPerLayerWhere",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_WithGeoJsonFormat_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_WithJsonFormat_ReturnsOk"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented"

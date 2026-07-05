@@ -317,6 +317,17 @@ internal sealed partial class FeatureServerQueryHandler(
                 return (null, StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed"));
             }
 
+            // BH2-001: Reject returnDistinctValues when the resultOffset exceeds the safe in-memory
+            // scan threshold (10 × MaxRecordCount). Serving a high-offset distinct page requires
+            // loading every row up to the offset before deduplication, making the effective scan
+            // size proportional to the offset regardless of the requested page size.
+            if (validatedParams.ReturnDistinctValues && (query.Value.Offset ?? 0) > queryLimits.MaxRecordCount * 10)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context,
+                    "Unsupported query parameters",
+                    [$"returnDistinctValues is not supported with resultOffset exceeding {queryLimits.MaxRecordCount * 10}."]));
+            }
+
             var response = await ExecuteJsonQueryResponseAsync(
                 serviceId,
                 layerId,
@@ -1006,6 +1017,19 @@ internal sealed partial class FeatureServerQueryHandler(
                     outFields = parsed.Length == 0 ? null : parsed;
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
+
+                // BH2-001: Reject returnDistinctValues when the resultOffset exceeds the safe in-memory
+                // scan threshold (10 × MaxRecordCount). Serving a high-offset distinct page requires
+                // loading every row up to the offset before deduplication, making the effective scan
+                // size proportional to the offset regardless of the requested page size.
+                if (shouldApplyDistinct && (query.Offset ?? 0) > queryLimits.MaxRecordCount * 10)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Unsupported query parameters",
+                        [$"returnDistinctValues is not supported with resultOffset exceeding {queryLimits.MaxRecordCount * 10}."]);
+                }
+
                 // The raw point fast path emits a pre-serialized compact JSON payload; f=pjson
                 // needs indentation, so skip the fast path and fall through to the materialized
                 // formatter where the pretty flag is honored (#1824).
@@ -2862,8 +2886,18 @@ internal sealed partial class FeatureServerQueryHandler(
     // returnDistinctValues evaluation: the configured transfer limit (or the
     // requested window when it is larger) plus one row so a truncated scan can
     // be detected and reported as exceededTransferLimit.
+    //
+    // BH2-001: Cap at MaxRecordCount * 2 + 1 so a caller with a very large
+    // resultOffset cannot force a multi-million-row materialization. A request
+    // whose offset+limit window exceeds this cap will still see a valid (possibly
+    // empty) page plus exceededTransferLimit=true — it cannot force an OOM.
     private static int ComputeDistinctScanLimit(FeatureQuery query, QueryLimits queryLimits)
-        => Math.Max(queryLimits.MaxRecordCount, Math.Max(0, query.Offset ?? 0) + Math.Max(0, query.Limit ?? 0)) + 1;
+    {
+        var requestedWindow = Math.Max(0, query.Offset ?? 0) + Math.Max(0, query.Limit ?? 0);
+        var uncapped = Math.Max(queryLimits.MaxRecordCount, requestedWindow) + 1;
+        var cap = queryLimits.MaxRecordCount * 2 + 1;
+        return Math.Min(uncapped, cap);
+    }
 
     private static QueryResult<Feature> ApplyPaginationWindow(
         QueryResult<Feature> result,

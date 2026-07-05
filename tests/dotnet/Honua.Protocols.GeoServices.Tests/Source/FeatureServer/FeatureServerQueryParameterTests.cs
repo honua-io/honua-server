@@ -783,4 +783,44 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             hasGeoKey.Should().BeFalse();
         }
     }
+
+    // BH2-001 regression: returnDistinctValues=true combined with a very large resultOffset
+    // (> MaxRecordCount * 10, default threshold 100000) must be rejected with 400. Before the
+    // fix, ComputeDistinctScanLimit would grow with the offset and potentially materialize
+    // up to ~1M rows in memory per request.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_ReturnDistinctValues_WithVeryHighResultOffset_ReturnsBadRequest()
+    {
+        // resultOffset=200000 exceeds the default threshold (MaxRecordCount[10000] * 10 = 100000).
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            "?where=1%3D1&outFields=category&returnDistinctValues=true&returnGeometry=false" +
+            "&resultOffset=200000&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "returnDistinctValues with a very large resultOffset must be rejected to prevent OOM");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("returnDistinctValues",
+            "the error message should identify the problematic parameter");
+    }
+
+    // BH2-001: a moderate resultOffset below the threshold (< MaxRecordCount * 10) with
+    // returnDistinctValues must still be accepted.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_ReturnDistinctValues_WithModerateResultOffset_ReturnsOk()
+    {
+        // resultOffset=50 is well below the rejection threshold and must succeed.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            "?where=1%3D1&outFields=category&returnDistinctValues=true&returnGeometry=false" +
+            "&resultOffset=50&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+    }
 }
