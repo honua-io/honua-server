@@ -204,7 +204,7 @@ internal sealed class PostgresFieldReviewStore : IFieldReviewStore
             state = ReadReviewState(reader);
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return state;
     }
 
@@ -267,7 +267,7 @@ internal sealed class PostgresFieldReviewStore : IFieldReviewStore
             state = ReadReviewState(reader);
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return state;
     }
 
@@ -331,7 +331,7 @@ internal sealed class PostgresFieldReviewStore : IFieldReviewStore
             _ = await statusCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return comment;
     }
 

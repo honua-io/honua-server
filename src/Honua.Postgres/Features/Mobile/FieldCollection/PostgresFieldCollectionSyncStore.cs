@@ -24,7 +24,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     // honua.sync_generation sequence reports its last allocated value,
     // which can be ahead of any committed change row whenever a writer
     // has called nextval but not yet committed. Reading from the changes
-    // table — which is only visible to other sessions after commit —
+    // table â€” which is only visible to other sessions after commit â€”
     // gives a watermark that the puller can advance to without skipping
     // an in-flight write. Pulls bound their SELECT by this watermark, so
     // the watermark and the returned changes share a single committed
@@ -102,7 +102,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     // pg_advisory_xact_lock serializes concurrent pushes that share a (client_id, change_id)
     // idempotency key; the lock is released on commit or rollback so we never leak it across
     // requests. The key is scoped by client_id to match the (client_id, change_id) idempotency
-    // PK — two devices sharing one API key but minting the same change_id are distinct
+    // PK â€” two devices sharing one API key but minting the same change_id are distinct
     // idempotency keys and must not serialize against (or dedup as) each other. The namespace
     // constant keeps this lock space distinct from other features (e.g. raster import) that
     // also use advisory locks. The literal mirrors ticket #894 to make grep-by-ticket easy.
@@ -110,8 +110,8 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
 
     // Feature-identity advisory lock keyed by (namespace, hashtext("<layer_id>:<feature_id>")).
     // Serializes concurrent pushes targeting the same (feature_id, layer_id) regardless of
-    // change_id. Required because SELECT … FOR UPDATE on fieldcollection_features only locks
-    // an existing row — concurrent inserts for an absent feature would otherwise both read
+    // change_id. Required because SELECT â€¦ FOR UPDATE on fieldcollection_features only locks
+    // an existing row â€” concurrent inserts for an absent feature would otherwise both read
     // current=null, both resolve as Applied, and the unconditional ON CONFLICT DO UPDATE
     // upsert would let the second silently overwrite the first. The namespace constant is
     // distinct from FieldCollectionPushLockNamespace so changeId and feature locks never
@@ -125,7 +125,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     // push transaction, so without serialization two concurrent pushes to DIFFERENT features
     // can commit in inverted generation order: a pull then observes the higher generation as
     // the committed MAX(generation) watermark, the client acks it, and the lower-generation
-    // change that commits afterwards falls permanently below the cursor — silent data loss.
+    // change that commits afterwards falls permanently below the cursor â€” silent data loss.
     // Taking this transaction-scoped lock immediately before nextval and holding it through
     // commit makes generation order equal commit order for fieldcollection_changes writers,
     // so the committed-MAX watermark can never skip an in-flight lower generation. The lock
@@ -319,7 +319,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         // ReadCommitted is required so that the post-advisory-lock idempotency
         // re-read sees the winner's freshly committed row. Under RepeatableRead
         // the loser's snapshot is fixed at the first statement (the lock
-        // acquisition), which precedes the winner's commit — the loser would
+        // acquisition), which precedes the winner's commit â€” the loser would
         // see count=0 and fall through to a unique-violation. Per-statement
         // snapshots under ReadCommitted give us a fresh visibility horizon
         // immediately after each advisory lock is released.
@@ -330,7 +330,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         {
             // Serialize concurrent duplicate-changeId requests. The transaction-scoped
             // advisory lock guarantees the loser waits until the winner commits its
-            // idempotency row, then the post-lock read returns the stored response —
+            // idempotency row, then the post-lock read returns the stored response â€”
             // never a unique-violation surfaced as a 5xx.
             await AcquireChangeIdLockAsync(connection, transaction, clientId, request.ChangeId, cancellationToken).ConfigureAwait(false);
 
@@ -342,7 +342,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
             }
 
             // Serialize concurrent pushes that target the same (feature_id, layer_id),
-            // regardless of change_id. The SELECT … FOR UPDATE below only serializes
+            // regardless of change_id. The SELECT â€¦ FOR UPDATE below only serializes
             // the existing-row case; for an absent feature, two distinct change_ids
             // could both observe current=null and both resolve their inserts as
             // Applied. The feature advisory lock closes that race so the second
@@ -391,7 +391,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
             }
 
             await WriteIdempotencyRecordAsync(connection, transaction, clientId, request, result, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -701,7 +701,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         // Composite key uses a colon separator between client_id and change_id so
         // that "<a>" + "<b...>" cannot alias a different "<ab>" + "<...>" pair, and
         // so the lock partitions on the same (client_id, change_id) key the
-        // idempotency table is now keyed by. hashtext collisions remain possible —
+        // idempotency table is now keyed by. hashtext collisions remain possible â€”
         // they only cause unnecessary serialization between unrelated keys, never
         // correctness regressions.
         var lockKey = string.Create(
@@ -723,7 +723,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     {
         // Composite key uses a colon separator between layer_id and feature_id so
         // that "<n>" + "<m...>" cannot alias a different "<nm>" + "<...>" pair.
-        // hashtext collisions remain possible — they only cause unnecessary
+        // hashtext collisions remain possible â€” they only cause unnecessary
         // serialization between unrelated features, never correctness regressions.
         var lockKey = string.Create(
             CultureInfo.InvariantCulture,

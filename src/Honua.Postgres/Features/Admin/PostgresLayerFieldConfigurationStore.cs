@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Admin;
 
 /// <summary>
@@ -76,7 +77,7 @@ internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigur
         }
 
         var fields = await GetFieldConfigurationsAsync(connection, layerId, transaction, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return fields;
     }
 

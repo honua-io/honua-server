@@ -48,7 +48,7 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
             {
                 await InsertItemAsync(connection, transaction, item, cancellationToken).ConfigureAwait(false);
                 await InsertVersionAsync(connection, transaction, version, cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
                 return item;
             }
             catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
@@ -107,7 +107,7 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
             {
                 await InsertVersionAsync(connection, transaction, version, cancellationToken).ConfigureAwait(false);
                 await UpdateCurrentVersionAsync(connection, transaction, version, cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
                 return version;
             }
             catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)

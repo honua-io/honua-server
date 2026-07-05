@@ -171,7 +171,7 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
             reopenedFromVersion: null,
             cancellationToken).ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return await GetVersionAsync(formId, version, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Saved form package version could not be read back.");
     }
@@ -229,7 +229,7 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
         }
 
         await UpsertPackageFamilyAsync(connection, transaction, normalized, currentDraftVersion: version, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return await GetVersionAsync(formId, version, cancellationToken).ConfigureAwait(false);
     }
 
@@ -321,7 +321,7 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return await GetVersionAsync(formId, version, cancellationToken).ConfigureAwait(false);
     }
 
@@ -367,7 +367,7 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
             reopenedFromVersion: publishedVersion,
             cancellationToken).ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return await GetVersionAsync(formId, version, cancellationToken).ConfigureAwait(false);
     }
 
