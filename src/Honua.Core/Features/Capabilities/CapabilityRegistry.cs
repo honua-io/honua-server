@@ -215,8 +215,11 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             // Realtime feature streaming — built-experimental (T10 flip).
             ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
-            // Geofence enter/exit alerting — built-experimental (T10 flip).
-            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            // Geofence enter/exit alerting — promoted to GA (Implemented) in #2427.
+            // First Experimental->Implemented promotion; engine ships as shared,
+            // un-gated GA infrastructure. Workers still self-gate on
+            // AlertOptions.Enabled (default false); GA does not mean on-by-default.
+            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("jobs.runner", "jobs", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("ai.spec-apply", "ai", FeatureCatalog.AiSpecApplyKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("ai.grounding", "ai", FeatureCatalog.AiGroundingKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),

@@ -36,6 +36,39 @@ public sealed class AlertOptions
     /// Dispatcher worker settings.
     /// </summary>
     public AlertDispatchOptions Dispatch { get; init; } = new();
+
+    /// <summary>
+    /// Operations-notification settings (deploy/job terminal events delivered through
+    /// the shared alert delivery outbox). Disabled by default.
+    /// </summary>
+    public AlertOpsOptions Ops { get; init; } = new();
+}
+
+/// <summary>
+/// Settings for operations notifications: deploy-workflow and job terminal events
+/// composed into ops alert events and delivered through the shared alert outbox.
+/// </summary>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+public sealed class AlertOpsOptions
+{
+    /// <summary>
+    /// Enables ops notifications. Disabled by default; enabling requires the alert
+    /// pipeline to also be enabled (<see cref="AlertOptions.Enabled"/>) for delivery.
+    /// </summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>
+    /// Delivery channels (canonical channel names, e.g. <c>webhook</c>, <c>slack</c>)
+    /// ops notifications are dispatched to. Channels disallowed by the active edition
+    /// are dropped at composition time.
+    /// </summary>
+    public IReadOnlyList<string> Channels { get; init; } = [];
+
+    /// <summary>
+    /// Minimum severity delivered. Events below this severity are dropped before
+    /// enqueue. Defaults to <see cref="AlertSeverity.Info"/> (deliver everything).
+    /// </summary>
+    public AlertSeverity MinSeverity { get; init; } = AlertSeverity.Info;
 }
 
 /// <summary>
@@ -114,6 +147,29 @@ public sealed class AlertDispatchOptions
     /// Delay when no dispatch work is available.
     /// </summary>
     public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Maximum outbound notifications delivered per channel per rolling minute.
+    /// When a channel exceeds this cap, further claimed dispatches for that channel
+    /// are rescheduled (not dead-lettered) until the window frees. Set to <c>0</c> to
+    /// disable the cap. Defaults to a generous 120/minute/channel.
+    /// </summary>
+    [Range(0, 1_000_000)]
+    public int MaxNotificationsPerMinutePerChannel { get; init; } = 120;
+
+    /// <summary>
+    /// Backlog size (pending + retriable rows) at or above which the dispatch-backlog
+    /// health check reports Degraded.
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int DegradedBacklogThreshold { get; init; } = 1_000;
+
+    /// <summary>
+    /// Dead-lettered row count at or above which the dispatch-backlog health check
+    /// reports Unhealthy.
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int UnhealthyDeadLetterThreshold { get; init; } = 1;
 
     /// <summary>
     /// Digest delivery settings.

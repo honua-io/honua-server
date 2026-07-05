@@ -117,6 +117,29 @@ public sealed class AlertOptionsValidator : ConfigurationValidator<AlertOptions>
             TimeSpan.FromHours(24),
             $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}.{nameof(DigestAlertOptions.FlushInterval)}",
             errors);
+
+        ValidateOps(options.Ops, errors);
+    }
+
+    private static void ValidateOps(AlertOpsOptions ops, List<string> errors)
+    {
+        if (!Enum.IsDefined(ops.MinSeverity))
+        {
+            errors.Add($"{nameof(AlertOptions.Ops)}.{nameof(AlertOpsOptions.MinSeverity)} has an unsupported value '{ops.MinSeverity}'.");
+        }
+
+        if (ops.Enabled && ops.Channels.Count == 0)
+        {
+            errors.Add($"{nameof(AlertOptions.Ops)}.{nameof(AlertOpsOptions.Channels)} must list at least one channel when ops notifications are enabled.");
+        }
+
+        foreach (var channel in ops.Channels)
+        {
+            if (!AlertChannelNames.TryParse(channel, out _))
+            {
+                errors.Add($"{nameof(AlertOptions.Ops)}.{nameof(AlertOpsOptions.Channels)} contains an unsupported channel '{channel}'.");
+            }
+        }
     }
 
     private static void ValidateStringLength(

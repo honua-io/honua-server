@@ -31,6 +31,12 @@ internal static class AlertsServiceCollectionExtensions
         services.AddScoped<IAlertPipeline, AlertPipeline>();
         services.AddScoped<IAlertEvaluator, DefaultAlertEvaluator>();
         services.AddScoped<IAlertEditionPolicy, AlertEditionPolicy>();
+
+        // Per-channel outbound notification rate cap (shared by the dispatcher across passes).
+        services.AddSingleton<AlertNotificationRateLimiter>();
+
+        // Second outbox consumer: ops notifications (deploy/job terminal events).
+        services.AddScoped<Honua.Alerts.Ops.OpsNotificationService>();
         services.AddSingleton<ILeaderElectionStrategy>(serviceProvider =>
         {
             var dataSource = serviceProvider.GetService<Npgsql.NpgsqlDataSource>();
@@ -44,7 +50,12 @@ internal static class AlertsServiceCollectionExtensions
         services.AddAlertDeliveryChannels(configuration);
 
         services.AddHostedService<AlertEvaluationBackgroundService>();
-        services.AddHostedService<AlertDispatchBackgroundService>();
+
+        // Register the dispatcher once and expose it both as the hosted service and as the
+        // health-state source, so the dispatch-backlog health check reads the live snapshot.
+        services.AddSingleton<AlertDispatchBackgroundService>();
+        services.AddSingleton<IAlertDispatchHealth>(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
+        services.AddHostedService(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
 
         return services;
     }
