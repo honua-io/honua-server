@@ -68,6 +68,7 @@ internal static class ControlPlaneTelemetry
         public const string ExecutionJobTransitions = "honua.execution.job.transitions_total";
         public const string ExecutionJobDurations = "honua.execution.job.duration_ms";
         public const string ExecutionReconcileCycles = "honua.execution.reconcile.cycle";
+        public const string ExecutionQueueDepth = "honua.execution.queue.depth";
     }
 
     public static readonly Counter<long> WorkflowRequests = HonuaTelemetry.Meter.CreateCounter<long>(
@@ -114,6 +115,85 @@ internal static class ControlPlaneTelemetry
         Metrics.ExecutionReconcileCycles,
         "cycles",
         "Number of execution job reconciliation cycles completed by the background service.");
+
+    // GP-plane queue-depth gauge. The observable callback yields one measurement per
+    // (status, backend) pair from the latest snapshot pushed by the collector background
+    // service, so the exporter always reports current queued/provisioning/running depth
+    // per backend. Cardinality is bounded: three active states x the finite backend set.
+    private static volatile IReadOnlyList<ExecutionQueueDepthEntry> _queueDepthSnapshot =
+        Array.Empty<ExecutionQueueDepthEntry>();
+
+    // Kept as a field so the observable gauge stays registered for the meter's lifetime.
+    public static readonly ObservableGauge<int> ExecutionQueueDepthGauge = HonuaTelemetry.Meter.CreateObservableGauge(
+        Metrics.ExecutionQueueDepth,
+        ObserveQueueDepth,
+        "jobs",
+        "Active execution jobs by status and backend (queued/provisioning/running).");
+
+    /// <summary>
+    /// Publishes the latest queue-depth snapshot for the observable gauge to report. Called by the
+    /// collector background service on each poll; the snapshot is an immutable low-cardinality list.
+    /// </summary>
+    /// <param name="snapshot">The current per-(status, backend) active-job counts.</param>
+    public static void UpdateQueueDepth(IReadOnlyList<ExecutionQueueDepthEntry> snapshot)
+    {
+        _queueDepthSnapshot = snapshot ?? Array.Empty<ExecutionQueueDepthEntry>();
+    }
+
+    /// <summary>
+    /// Buckets active execution jobs into per-(status, backend) counts for the queue-depth gauge.
+    /// Only the non-terminal queued/provisioning/running states are counted.
+    /// </summary>
+    /// <param name="activeJobs">The active execution job records.</param>
+    /// <returns>An immutable snapshot of queue-depth entries.</returns>
+    public static IReadOnlyList<ExecutionQueueDepthEntry> ComputeQueueDepth(
+        IReadOnlyList<ExecutionJobRecord> activeJobs)
+    {
+        if (activeJobs is null || activeJobs.Count == 0)
+        {
+            return Array.Empty<ExecutionQueueDepthEntry>();
+        }
+
+        var counts = new Dictionary<(string Status, string Backend), int>();
+        foreach (var job in activeJobs)
+        {
+            if (job.Status is not (ExecutionJobStatus.Queued
+                or ExecutionJobStatus.Provisioning
+                or ExecutionJobStatus.Running))
+            {
+                continue;
+            }
+
+            var backend = string.IsNullOrWhiteSpace(job.Spec.Backend) ? "unknown" : job.Spec.Backend;
+            var key = (job.Status.ToString(), backend);
+            counts[key] = counts.TryGetValue(key, out var existing) ? existing + 1 : 1;
+        }
+
+        if (counts.Count == 0)
+        {
+            return Array.Empty<ExecutionQueueDepthEntry>();
+        }
+
+        var snapshot = new List<ExecutionQueueDepthEntry>(counts.Count);
+        foreach (var pair in counts)
+        {
+            snapshot.Add(new ExecutionQueueDepthEntry(pair.Key.Status, pair.Key.Backend, pair.Value));
+        }
+
+        return snapshot;
+    }
+
+    private static IEnumerable<Measurement<int>> ObserveQueueDepth()
+    {
+        var snapshot = _queueDepthSnapshot;
+        foreach (var entry in snapshot)
+        {
+            yield return new Measurement<int>(
+                entry.Count,
+                new KeyValuePair<string, object?>(Tags.ExecutionJobStatus, entry.Status),
+                new KeyValuePair<string, object?>(Tags.Backend, entry.Backend));
+        }
+    }
 
     public static Activity? StartWorkflowActivity(
         string activityName,
@@ -284,3 +364,12 @@ internal static class ControlPlaneTelemetry
         }
     }
 }
+
+/// <summary>
+/// A single queue-depth measurement: the count of active execution jobs in a given
+/// <paramref name="Status"/> on a given <paramref name="Backend"/>.
+/// </summary>
+/// <param name="Status">The non-terminal execution-job status (Queued/Provisioning/Running).</param>
+/// <param name="Backend">The batch-compute backend identifier the jobs are bound to.</param>
+/// <param name="Count">The number of active jobs in that status/backend bucket.</param>
+internal readonly record struct ExecutionQueueDepthEntry(string Status, string Backend, int Count);

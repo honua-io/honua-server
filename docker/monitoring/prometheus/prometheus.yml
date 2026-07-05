@@ -1,0 +1,35 @@
+# Curated Prometheus scrape config for the Honua observability bundle.
+#
+# Scrapes the Honua server's native Prometheus exposition endpoint (/metrics). That
+# endpoint requires admin authorization; the API-key auth handler also accepts HTTP
+# Basic credentials, so Prometheus authenticates with basic_auth using the admin
+# password as the Basic password. Change the target and password below to match your
+# deployment (or point HONUA_METRICS_TARGET at your server before templating).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts/alerts.yml
+
+scrape_configs:
+  # Honua server. host.docker.internal resolves to the Docker host from inside the
+  # monitoring compose network (Docker Desktop / WSL2). Replace with a service name or
+  # DNS SD entry when co-locating with the app on the same compose network.
+  - job_name: 'honua'
+    metrics_path: '/metrics'
+    scheme: http
+    scrape_interval: 10s
+    basic_auth:
+      # The API-key auth handler accepts the admin key via Basic auth (any username).
+      username: 'prometheus'
+      password: 'quickstart-admin-password'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          service: 'honua-server'
+
+  # Prometheus self-monitoring.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

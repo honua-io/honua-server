@@ -1,0 +1,51 @@
+# Curated Grafana + Prometheus observability bundle for Honua Server ("Splunk out of the box").
+#
+# One-command deploy (server already running, e.g. via the root `docker compose up -d`):
+#
+#     docker compose -f docker/monitoring/compose.yml up -d
+#
+# Then open Grafana at http://localhost:3000 (admin / admin) — the Prometheus datasource
+# and the three curated dashboards (Serving, GP/Jobs, Ops/Alerts) are provisioned on boot.
+# Prometheus is at http://localhost:9090. Edit prometheus/prometheus.yml to change the
+# scrape target/credentials for your deployment.
+name: honua-monitoring
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    ports:
+      - "${HONUA_MONITORING_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    extra_hosts:
+      # Lets the honua scrape target reach the Docker host on Linux engines too.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "${HONUA_MONITORING_GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "${HONUA_MONITORING_GRAFANA_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${HONUA_MONITORING_GRAFANA_PASSWORD:-admin}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
