@@ -55,6 +55,24 @@ internal sealed partial class NotifyingWorkflowOperationStore : IWorkflowOperati
         }
     }
 
+    public async Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        // Authoritative CAS write first; notify only when the write succeeded.
+        var updated = await _inner.TrySetAsync(operation, ttl, cancellationToken).ConfigureAwait(false);
+
+        if (updated
+            && _options.Ops.Enabled
+            && operation.Kind == WorkflowOperationKind.Deploy
+            && TryMapSeverity(operation.Status, out var severity))
+        {
+            await NotifyTerminalAsync(operation, severity, cancellationToken).ConfigureAwait(false);
+        }
+
+        return updated;
+    }
+
     private async Task NotifyTerminalAsync(WorkflowOperationRecord operation, AlertSeverity severity, CancellationToken cancellationToken)
     {
         var attributes = new Dictionary<string, string>(StringComparer.Ordinal)
