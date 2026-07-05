@@ -8,7 +8,10 @@ Honua's live `/mcp` advertised tool input schemas and resource payload shapes
 implementation.
 
 - Source: `geospatial-mcp` `spec/schemas/` (branch `feat/json-schemas-conformance`,
-  PR honua-io/geospatial-mcp#21).
+  PR honua-io/geospatial-mcp#21). `tools/query_features.schema.json` (and the
+  paired paging fixture) were re-vendored from PR honua-io/geospatial-mcp#46,
+  which adds the optional `resultOffset` / `returnGeometry` / `returnCountOnly`
+  params.
 - Do not hand-edit. Re-vendor when the upstream schemas change.
 - Files are copied to the test output directory (`CopyToOutputDirectory`) and
   loaded at test time.
