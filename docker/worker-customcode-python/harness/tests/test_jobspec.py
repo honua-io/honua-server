@@ -5,6 +5,7 @@ import json
 import pytest
 
 from honua_customcode_harness.jobspec import (
+    SUPPORTED_CONTRACT_VERSION,
     JobSpecError,
     is_valid_git_sha,
     load_job_spec,
@@ -164,3 +165,27 @@ def test_validate_entrypoint_rejects_bad(ep: str) -> None:
 
 def test_validate_entrypoint_accepts_good() -> None:
     assert validate_entrypoint("pkg.mod:execute") == "pkg.mod:execute"
+
+
+def test_contract_version_absent_defaults_to_one() -> None:
+    spec = load_job_spec(dict(BASE_ENV))
+    assert spec.contract_version == 1
+
+
+def test_contract_version_at_supported_accepted() -> None:
+    env = dict(BASE_ENV, HONUA_CONTRACT_VERSION=str(SUPPORTED_CONTRACT_VERSION))
+    spec = load_job_spec(env)
+    assert spec.contract_version == SUPPORTED_CONTRACT_VERSION
+
+
+def test_contract_version_above_supported_rejected() -> None:
+    env = dict(BASE_ENV, HONUA_CONTRACT_VERSION=str(SUPPORTED_CONTRACT_VERSION + 1))
+    with pytest.raises(JobSpecError, match="exceeds the version this worker can run"):
+        load_job_spec(env)
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "abc"])
+def test_contract_version_non_positive_or_non_integer_rejected(value: str) -> None:
+    env = dict(BASE_ENV, HONUA_CONTRACT_VERSION=value)
+    with pytest.raises(JobSpecError, match="HONUA_CONTRACT_VERSION"):
+        load_job_spec(env)

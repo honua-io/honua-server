@@ -96,9 +96,22 @@ else
     # look for /tmp/Honua.sln and fail (MSB4014).
     SLNF="$(mktemp -p "${REPO_ROOT}" --suffix=.slnf)"
     trap 'rm -f "${SLNF}"' EXIT
-    projects_json="$(printf '%s\n' "${AFFECTED}" \
+    # A solution filter may only name projects that are members of Honua.sln.
+    # Affected projects outside the solution (e.g. the customcode worker harness
+    # under docker/, which has its own solution) must be dropped or MSBuild
+    # fails with MSB5028; they are built by their own dedicated checks.
+    sln_members="$(grep -oE '"[^"]+\.csproj"' Honua.sln | tr -d '"' | sed 's#\\#/#g' | sort -u)"
+    affected_in_sln=""
+    while IFS= read -r proj; do
+        [[ -z "${proj}" ]] && continue
+        if grep -qxF "${proj}" <<< "${sln_members}"; then
+            affected_in_sln+="${proj}"$'\n'
+        else
+            echo "   (skipping ${proj} — not a Honua.sln member; built by its own gate)"
+        fi
+    done <<< "$(printf '%s\n' "${AFFECTED}" | sed 's#\\#/#g')"
+    projects_json="$(printf '%s' "${affected_in_sln}" \
         | sed '/^$/d' \
-        | sed 's#\\#/#g' \
         | jq -R . | jq -s 'unique')"
     projects_json="$(jq -n --argjson p "${projects_json}" \
         '($p + ["tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"]) | unique')"

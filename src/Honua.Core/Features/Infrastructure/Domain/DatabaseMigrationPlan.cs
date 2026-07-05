@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Migrations;
+
 namespace Honua.Core.Features.Infrastructure.Domain;
 
 /// <summary>
@@ -29,6 +31,43 @@ public sealed record DatabaseMigrationPlan
     public IReadOnlyList<string> ExecutedButNotDiscoveredScripts { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Expand/contract safety classification for each pending script, in the order the scripts
+    /// would be applied. Populated by runners that can read script contents; empty otherwise.
+    /// </summary>
+    public IReadOnlyList<MigrationScriptClassification> PendingScriptClassifications { get; init; }
+        = Array.Empty<MigrationScriptClassification>();
+
+    /// <summary>
+    /// Whether any pending script is a potentially backward-incompatible ("contract") change that
+    /// lacks the compatibility-review marker. Such scripts are rejected by the runner (fail closed).
+    /// </summary>
+    public bool HasUnannotatedBreakingScripts =>
+        PendingScriptClassifications.Any(
+            c => c.Classification == MigrationSafetyClassification.ContractUnannotated);
+
+    /// <summary>
+    /// Whether any pending script is a potentially backward-incompatible ("contract") change,
+    /// whether or not it is annotated. Contract migrations must run in the contract phase and must
+    /// not ride along a rolling deploy (ADR-0060 expand/contract discipline).
+    /// </summary>
+    public bool HasContractScripts => PendingScriptClassifications.Any(c => c.IsBreaking);
+
+    /// <summary>
+    /// The names of pending contract-phase (breaking) scripts, whether or not annotated.
+    /// </summary>
+    public IReadOnlyList<string> ContractScriptNames =>
+        PendingScriptClassifications.Where(c => c.IsBreaking).Select(c => c.ScriptName).ToArray();
+
+    /// <summary>
+    /// The names of pending contract-phase scripts that lack the compatibility-review marker.
+    /// </summary>
+    public IReadOnlyList<string> UnannotatedBreakingScriptNames =>
+        PendingScriptClassifications
+            .Where(c => c.Classification == MigrationSafetyClassification.ContractUnannotated)
+            .Select(c => c.ScriptName)
+            .ToArray();
+
+    /// <summary>
     /// Error message when plan generation fails.
     /// </summary>
     public string? ErrorMessage { get; init; }
@@ -43,7 +82,8 @@ public sealed record DatabaseMigrationPlan
     /// </summary>
     public static DatabaseMigrationPlan Succeeded(
         IReadOnlyList<string>? pendingScripts = null,
-        IReadOnlyList<string>? executedButNotDiscoveredScripts = null)
+        IReadOnlyList<string>? executedButNotDiscoveredScripts = null,
+        IReadOnlyList<MigrationScriptClassification>? pendingScriptClassifications = null)
     {
         var pending = pendingScripts ?? Array.Empty<string>();
 
@@ -52,7 +92,9 @@ public sealed record DatabaseMigrationPlan
             Successful = true,
             UpgradeRequired = pending.Count > 0,
             PendingScripts = pending,
-            ExecutedButNotDiscoveredScripts = executedButNotDiscoveredScripts ?? Array.Empty<string>()
+            ExecutedButNotDiscoveredScripts = executedButNotDiscoveredScripts ?? Array.Empty<string>(),
+            PendingScriptClassifications =
+                pendingScriptClassifications ?? Array.Empty<MigrationScriptClassification>()
         };
     }
 
