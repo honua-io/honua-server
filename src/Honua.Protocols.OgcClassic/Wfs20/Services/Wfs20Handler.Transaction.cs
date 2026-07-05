@@ -135,14 +135,17 @@ internal sealed partial class Wfs20Handler
                 }
             }
 
-            if (editResult.HasErrors)
+            // BH3-010: When rollbackOnFailure=false, WFS 2.0 §15.2.3.1.3 requires the server
+            // to commit as much as possible and return a 200 TransactionResponse that identifies
+            // which individual operations succeeded or failed — not a 400 error. Reserve the
+            // 400 for cases where the entire transaction was rolled back (rollbackOnFailure=true
+            // triggered the rollback path) or there was a protocol-level error. Returning 400 on
+            // a partial success causes clients to retry the whole request, re-inserting the
+            // already-committed features and producing duplicates (BH3-010).
+            if (editResult.HasErrors && editResult.WasRolledBack)
             {
                 var firstError = GetFirstTransactionError(editResult);
-                if (editResult.WasRolledBack)
-                {
-                    Wfs20Log.TransactionRolledBack(_logger, firstError);
-                }
-
+                Wfs20Log.TransactionRolledBack(_logger, firstError);
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
                     "OperationProcessingFailed",
@@ -1774,18 +1777,50 @@ internal sealed partial class Wfs20Handler
             var resource = operations[0].Descriptor.Resource;
             // Per-operation request-intent geometry flags, ordered to match the
             // EditOperation sequence the data layer iterates.
-            var layerResult = await ExecutePreparedEditAsync(
-                context,
-                layerGroup.Key,
-                resource,
-                operations
-                    .Select(static operation => operation.EditOperation)
-                    .ToImmutableArray(),
-                operations
-                    .Select(static operation => operation.RequestGeometryChanged)
-                    .ToImmutableArray(),
-                rollbackOnFailure,
-                cancellationToken).ConfigureAwait(false);
+            FeatureEditResult layerResult;
+            try
+            {
+                layerResult = await ExecutePreparedEditAsync(
+                    context,
+                    layerGroup.Key,
+                    resource,
+                    operations
+                        .Select(static operation => operation.EditOperation)
+                        .ToImmutableArray(),
+                    operations
+                        .Select(static operation => operation.RequestGeometryChanged)
+                        .ToImmutableArray(),
+                    rollbackOnFailure,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // BH3-011: If ExecutePreparedEditAsync throws for this layer, layers processed
+                // before it have already committed to the database. Rather than letting the
+                // exception escape (which would bypass the post-commit cache-invalidation block
+                // in HandleTransactionAsync and leave stale caches for those earlier layers),
+                // convert the exception into per-operation Failure results and continue building
+                // the aggregated result. HandleTransactionAsync will then see committed changes
+                // from earlier layers, invalidate their caches, and return a 200 TransactionResponse
+                // with the per-operation errors for this layer embedded.
+                var safeError = ex switch
+                {
+                    InvalidOperationException or ArgumentException => "Invalid feature data.",
+                    _ => "Transaction failed."
+                };
+                Wfs20Log.MultiLayerTransactionLayerFailed(_logger, ex, layerGroup.Key, safeError);
+
+                var failedCreates = operations.Count(static op => op.EditOperation.Kind == FeatureEditOperationKind.Create);
+                var failedUpdates = operations.Count(static op => op.EditOperation.Kind == FeatureEditOperationKind.Update);
+                var failedDeletes = operations.Count(static op => op.EditOperation.Kind == FeatureEditOperationKind.Delete);
+                layerResult = FeatureEditResult.Success(
+                    createdCount: 0,
+                    updatedCount: 0,
+                    deletedCount: 0,
+                    createResults: Enumerable.Repeat(EditOperationResult.Failure(safeError), failedCreates).ToImmutableArray(),
+                    updateResults: Enumerable.Repeat(EditOperationResult.Failure(safeError), failedUpdates).ToImmutableArray(),
+                    deleteResults: Enumerable.Repeat(EditOperationResult.Failure(safeError), failedDeletes).ToImmutableArray());
+            }
 
             createdCount += layerResult.CreatedCount;
             updatedCount += layerResult.UpdatedCount;

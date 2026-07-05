@@ -255,7 +255,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
 
         await TouchAsync(connection, transaction, investigationId, createdAt, cancellationToken).ConfigureAwait(false);
         var record = await LoadAsync(connection, transaction, investigationId, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return record;
     }
 
@@ -295,7 +295,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
 
         await TouchAsync(connection, transaction, investigationId, updatedAt, cancellationToken).ConfigureAwait(false);
         var record = await LoadAsync(connection, transaction, investigationId, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return record;
     }
 
@@ -337,7 +337,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
 
         await TouchAsync(connection, transaction, investigationId, createdAt, cancellationToken).ConfigureAwait(false);
         var record = await LoadAsync(connection, transaction, investigationId, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return record;
     }
 
@@ -377,7 +377,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
 
         await TouchAsync(connection, transaction, investigationId, updatedAt, cancellationToken).ConfigureAwait(false);
         var record = await LoadAsync(connection, transaction, investigationId, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return record;
     }
 

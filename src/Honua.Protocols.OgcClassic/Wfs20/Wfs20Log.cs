@@ -151,4 +151,12 @@ internal static partial class Wfs20Log
     /// </summary>
     [LoggerMessage(Level = LogLevel.Warning, Message = "WFS Transaction post-commit side-effects timed out for request {TraceId}; transaction was committed successfully.")]
     public static partial void PostCommitSideEffectsTimedOut(ILogger logger, string traceId);
+
+    /// <summary>
+    /// Logs when a layer's edit execution throws inside a multi-layer WFS Transaction with
+    /// rollbackOnFailure=false. Previously-committed layers are NOT rolled back; their cache
+    /// entries are still invalidated from the partial result that the caller receives.
+    /// </summary>
+    [LoggerMessage(Level = LogLevel.Error, Message = "WFS Transaction layer {LayerId} execution failed; treating as per-operation errors to preserve cache invalidation for earlier committed layers: {Error}")]
+    public static partial void MultiLayerTransactionLayerFailed(ILogger logger, Exception exception, int layerId, string error);
 }

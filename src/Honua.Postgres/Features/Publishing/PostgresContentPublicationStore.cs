@@ -9,6 +9,7 @@ using Honua.Core.Features.Publishing.Content.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Publishing;
 
 /// <summary>
@@ -178,7 +179,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
             }
 
             await InsertEventAsync(connection, transaction, auditEvent, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -214,7 +215,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
             }
 
             await InsertEventAsync(connection, transaction, auditEvent, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (ContentPublicationConflictException)
         {
