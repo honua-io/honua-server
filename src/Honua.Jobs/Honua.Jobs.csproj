@@ -38,6 +38,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.CloudIntegration.Tests" />
     <InternalsVisibleTo Include="Honua.Worker.Gdal" />
     <InternalsVisibleTo Include="Honua.Worker.Gdal.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />

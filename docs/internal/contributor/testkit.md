@@ -595,6 +595,38 @@ The kind lane builds three busybox worker images (`/bin/true`, `/bin/false`, `/b
 with `ImagePullPolicy=Never`; the backend's `BuildManifest` sets no container command, so each
 image self-selects behaviour via its `ENTRYPOINT`.
 
+### Local-substrate lane — `Category=LocalSubstrate` (ADR-0060 §Verification, #2166 / #2457)
+
+Runs in the `local-substrate` job of `.github/workflows/cloud-integration-harness.yml` (same
+nightly + manual triggers, no cloud secrets, plain ubuntu runner with Docker). It is the
+substrate-neutral proof that a **single host — containers only, no Kubernetes, no cloud** — can
+deploy, rolling-upgrade, run the expand/contract migration gate, and roll back with **zero
+downtime** on BOTH planes. Every test is `[SkippableFact]` and skips (never fails) when Docker is
+absent; the GP process tests need only a resolvable `dotnet` muxer, so they also run without Docker.
+
+It drives the real trunk seams end-to-end — `YarpRollingDeployBackend` (`honua-yarp-rolling`,
+`DeployTargetKind.SelfHostedRolling`) with a real embedded-YARP `InMemoryConfigProvider` and the
+real `ProcessContainerRuntimeClient` against docker; `LocalProcessPoolBatchComputeBackend`
+(`honua-local-process`, `BatchComputeTargetKind.LocalProcess`) spawning real child processes; and
+the real `PostgresDatabaseMigrationRunner` expand/contract gate over a Testcontainers Postgres.
+
+Matrix cells — {serving, GP} × {local/YARP} × {deploy, rolling-upgrade, expand/contract-migration, rollback}:
+
+| Plane | Deploy | Rolling-upgrade | Expand/contract migration | Rollback |
+|-------|--------|-----------------|---------------------------|----------|
+| **Serving** (`LocalSubstrateRollingDeployTests`) | launch v2 standby, health-gate → `PromotionRecommended` | atomic proxy destination swap v1→v2; continuous request loop asserts **zero failed requests** across cutover | contract migrations gate the coordinated deploy (see migration row) | pre-cutover rollback keeps v1 serving (zero downtime); post-cutover rollback repoints the proxy at the previous replica, drains the failed one, and settles `RolledBack` |
+| **GP** (`LocalSubstrateProcessPoolTests`) | child-process launch → `Running`→`Succeeded` with exit-code mapping; `HONUA_*` env contract asserted | non-blocking pool-saturation admission: pending marker then launch once a slot frees; contract-version gate declares baseline v1 so a v2 job is refused | — | `CancelAsync` kills the process tree → `Cancelled` |
+| **Migration gate** (`LocalSubstrateMigrationGateTests`) | — | — | real runner over real Postgres: unannotated `DROP COLUMN` → **fail-closed** naming the compatibility-review marker; annotated → applies; `PlanMigrationsAsync` reports pending contract scripts (the `DeployPreflightProbe` signal that blocks a coordinated deploy) | — |
+
+Image/binary choices: the serving lane builds two tiny `busybox:1.36` `httpd` images
+(`honua-ci/ls-replica:v1|v2`) whose one-file docroot is the revision marker (HTTP 200 at `/`
+doubles as the health signal). The GP lane compiles a shell-free managed helper with Roslyn and
+launches it via the absolute-path `dotnet` muxer (no OS coreutil, PATH-shim-safe). The migration
+lane compiles per-scenario synthetic migration assemblies (embedded `.sql` resources) with Roslyn so
+the real runner is driven over a controlled expand/contract script set. The pure classification logic
+(`MigrationSafetyClassifierTests`) and the probe's plan consumption (`DeployPreflightProbeTests`) stay
+unit-tested; this lane exercises the real runner + real database path rather than duplicating them.
+
 ### Real-AWS certification lane — `Category=RealAwsCertification`
 
 Runs in `.github/workflows/real-aws-certification.yml` (weekly + manual, never on `pull_request`)
