@@ -705,7 +705,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 OutputAxisOrder = crsDefinition.AxisOrder
             };
 
-            var entityETag = OgcFeatureEntityTag.Compute(storedFeature, _etagService);
             context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
@@ -737,6 +736,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
             {
                 return StandardErrorHelpers.CreateInternalServerError(context, "Feature response could not be projected.");
             }
+
+            // BH6-006: Derive entityETag from responseFeature (the same instance used to build
+            // the response payload) rather than storedFeature (the first read). Under a concurrent
+            // write, storedFeature and responseFeature can differ; computing the entity tag from
+            // storedFeature but the payload from responseFeature produces a mixed-state
+            // representationETag whose If-Match precondition check spuriously fails with 412.
+            var entityETag = OgcFeatureEntityTag.Compute(responseFeature.Value, _etagService);
 
             var responseFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, resource);
             ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
