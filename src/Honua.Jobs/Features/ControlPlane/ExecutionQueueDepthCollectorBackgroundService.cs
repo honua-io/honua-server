@@ -28,7 +28,7 @@ internal sealed partial class ExecutionQueueDepthCollectorBackgroundService(
         {
             try
             {
-                var activeJobs = await jobStore.ListActiveAsync(kind: null, stoppingToken).ConfigureAwait(false);
+                var activeJobs = await jobStore.ListActiveAsync(kind: null, cancellationToken: stoppingToken).ConfigureAwait(false);
                 var snapshot = ControlPlaneTelemetry.ComputeQueueDepth(activeJobs);
                 ControlPlaneTelemetry.UpdateQueueDepth(snapshot);
             }

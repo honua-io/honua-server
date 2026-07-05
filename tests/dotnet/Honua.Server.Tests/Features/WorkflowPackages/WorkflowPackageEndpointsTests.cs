@@ -56,7 +56,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IExecutionJobStore>(_jobStore);
                 services.AddSingleton<IUniversalProgressStore>(_progressStore);
                 services.AddSingleton<IJobQueue>(_jobQueue);
-                // Capture the publish→metadata-release bridge deterministically without requiring an
+                // Capture the publishâ†’metadata-release bridge deterministically without requiring an
                 // active Metadata v2 snapshot in the test environment (#2176).
                 services.AddSingleton<IMetadataReleaseService>(_releaseService);
             })
@@ -629,7 +629,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
     /// <summary>
-    /// Records workflow release-package emissions from the publish path so the publish→
+    /// Records workflow release-package emissions from the publish path so the publishâ†’
     /// metadata-release bridge can be asserted without an active Metadata v2 snapshot (#2176).
     /// All other release-service operations are unused by these tests.
     /// </summary>
@@ -780,6 +780,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
 
         public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
             ExecutionJobKind? kind = null,
+            int? limit = null,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values
                 .Where(job => !kind.HasValue || job.Spec.Kind == kind.Value)

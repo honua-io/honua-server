@@ -611,7 +611,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             });
         }
 
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
 
         private static bool MatchesParameter(ExecutionJobRecord job, string key, string? expected)
