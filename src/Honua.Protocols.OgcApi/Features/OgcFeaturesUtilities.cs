@@ -172,7 +172,16 @@ internal static class OgcFeaturesUtilities
     {
         if (string.IsNullOrWhiteSpace(crs))
         {
-            definition = supportedCrs[Crs84Uri];
+            // BH7-008: Use TryGetValue to guard against a degraded CRS registry where
+            // CRS84 was not successfully resolved at startup (PROJ misconfiguration,
+            // transient registry error). The previous indexer access threw
+            // KeyNotFoundException which propagated as a misleading HTTP 400.
+            if (!supportedCrs.TryGetValue(Crs84Uri, out definition))
+            {
+                error = "Default CRS (CRS84) is not available for this collection.";
+                return false;
+            }
+
             error = null;
             return true;
         }

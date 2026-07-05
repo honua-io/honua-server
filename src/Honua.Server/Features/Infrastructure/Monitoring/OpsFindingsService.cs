@@ -231,7 +231,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             return;
         }
 
-        var activeJobs = await _jobStore.ListActiveAsync(kind: null, cancellationToken).ConfigureAwait(false);
+        var activeJobs = await _jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var queueDepth = ControlPlaneTelemetry.ComputeQueueDepth(activeJobs);
         var totalActive = queueDepth.Sum(entry => entry.Count);
         if (totalActive < options.GpQueueDepthThreshold)

@@ -120,11 +120,16 @@ internal static class JobEndpoints
             return JobStoreUnavailableResult();
         }
 
+        // BH7-009: Compute the effective limit before fetching so the store can
+        // apply a server-side cap. The 2x budget accommodates per-job authorization
+        // filters that may discard some records without starving the page.
+        var effectiveLimit = limit ?? options.Value.DefaultJobLimit;
+
         var jobs = await jobStore.ListActiveAsync(
             ExecutionJobKind.Geoprocessing,
+            effectiveLimit,
             context.RequestAborted).ConfigureAwait(false);
 
-        var effectiveLimit = limit ?? options.Value.DefaultJobLimit;
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var statusInfosBuilder = ImmutableArray.CreateBuilder<OgcStatusInfo>();
@@ -406,7 +411,7 @@ internal static class JobEndpoints
             return ProcessEndpoints.FormatOgcAuthError(authDecision);
         }
 
-        // Already dismissed — reconcile side effects and return current status
+        // Already dismissed â€” reconcile side effects and return current status
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
             if (jobQueue != null)
@@ -453,7 +458,7 @@ internal static class JobEndpoints
                 StatusCodes.Status409Conflict);
         }
 
-        // Dismissing a running job is a destructive action — require approval.
+        // Dismissing a running job is a destructive action â€” require approval.
         // Evaluated after state checks so not-found, idempotent, and terminal paths
         // remain reachable regardless of approval policy, matching CancelJobAsync.
         var approval = gate.CheckApproval(context.User, new OperatorAuthorizationRequest
@@ -540,7 +545,7 @@ internal static class JobEndpoints
 
                         // Stamp CancellationRequestedAt before the remote cancel so a
                         // concurrent dismiss that races ahead and sees the provider job
-                        // already gone maps NotFound → Cancelled rather than Failed.
+                        // already gone maps NotFound â†’ Cancelled rather than Failed.
                         var stampResult = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
                             jobStore, latest, cancellationToken: context.RequestAborted).ConfigureAwait(false);
                         switch (stampResult.Outcome)

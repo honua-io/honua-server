@@ -134,7 +134,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             return new OpsGpQueueView { TotalActive = 0, Available = false, Buckets = [] };
         }
 
-        var activeJobs = await _jobStore.ListActiveAsync(kind: null, cancellationToken).ConfigureAwait(false);
+        var activeJobs = await _jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var queueDepth = ControlPlaneTelemetry.ComputeQueueDepth(activeJobs);
         var buckets = queueDepth
             .Select(entry => new OpsGpQueueBucketView

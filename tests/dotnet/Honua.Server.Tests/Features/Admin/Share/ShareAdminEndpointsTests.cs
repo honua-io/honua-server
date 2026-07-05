@@ -376,7 +376,7 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
         retryResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await _jobStore.GetAsync(jobRunId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
 
-        // And the Share run must remain Cancelled — the rejected retry must not have reopened it.
+        // And the Share run must remain Cancelled â€” the rejected retry must not have reopened it.
         var detail = await _client.GetAsync($"/api/v1/admin/share/exports/{exportId}/runs/{runId}");
         detail.StatusCode.Should().Be(HttpStatusCode.OK);
         using (var doc = await ReadJsonAsync(detail))
@@ -725,7 +725,7 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
                 NextCursor = null
             });
 
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(
                 _jobs.Values.Where(job => !kind.HasValue || job.Spec.Kind == kind.Value).ToArray());
     }
@@ -992,7 +992,7 @@ public sealed class ShareExportDispatchFailureTests : IAsyncLifetime
         public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
             => Task.FromResult(new ExecutionJobPage { Items = _jobs.Values.ToArray(), NextCursor = null });
 
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }
 }
@@ -1190,7 +1190,7 @@ public sealed class ShareExportRunPersistFailureTests : IAsyncLifetime
         public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
             => Task.FromResult(new ExecutionJobPage { Items = _jobs.Values.ToArray(), NextCursor = null });
 
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }
 }

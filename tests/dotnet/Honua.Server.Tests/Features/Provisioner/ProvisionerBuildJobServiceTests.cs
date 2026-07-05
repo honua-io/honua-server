@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Provisioner;
 /// cancellation. Exercises the canonical submission flow against the in-process
 /// <see cref="LocalBatchComputeBackend"/> (durable record + queue enqueue) and a remote
 /// stub backend (provider submission with the AWS Batch coordinates wired), plus
-/// cancellation and rollback — all with the Batch backend mocked, no live AWS.
+/// cancellation and rollback â€” all with the Batch backend mocked, no live AWS.
 /// </summary>
 public sealed class ProvisionerBuildJobServiceTests
 {
@@ -268,7 +268,7 @@ public sealed class ProvisionerBuildJobServiceTests
         public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
             => Task.FromResult(new ExecutionJobPage { Items = _records.Values.ToArray() });
 
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_records.Values.ToArray());
 
         public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
