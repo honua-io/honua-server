@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureDataAccess
@@ -121,7 +122,7 @@ internal sealed partial class FeatureDataAccess
                     createResults.ToImmutable(), updateResults.ToImmutable(), deleteResults.ToImmutable());
             }
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
             var immutableCreateResults = createResults.ToImmutable();
             var immutableUpdateResults = updateResults.ToImmutable();

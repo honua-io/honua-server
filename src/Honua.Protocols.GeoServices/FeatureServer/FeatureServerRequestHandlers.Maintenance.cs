@@ -94,10 +94,12 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        // Per-operation authorization (BH3-001/BH3-014): append inserts features.
         var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
             resource,
             service,
+            AuthorizationOperation.Insert,
             cancellationToken);
         if (rbacError != null)
         {
@@ -164,10 +166,12 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        // Per-operation authorization (BH3-001/BH3-014): append inserts features.
         var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
             resource,
             service,
+            AuthorizationOperation.Insert,
             cancellationToken);
         if (rbacError != null)
         {
@@ -251,10 +255,12 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        // Per-operation authorization (BH3-001/BH3-014): calculate is a bulk field update.
         var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
             resource,
             service,
+            AuthorizationOperation.Update,
             cancellationToken);
         if (rbacError != null)
         {

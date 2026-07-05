@@ -40,8 +40,8 @@ internal sealed class PostgresRasterStore : IRasterStore
     // A single statistics backfill runs ST_SummaryStats across every pixel of a raster (or
     // every raster in a mosaic) and can exceed a minute on county-scale imagery. The compute
     // is serialized behind a transaction-scoped advisory lock (single-flight), so it is given
-    // a dedicated, generous timeout — independent of the ~30s request-path command/statement
-    // timeout default — otherwise the first cold read on a large raster times out and the
+    // a dedicated, generous timeout â€” independent of the ~30s request-path command/statement
+    // timeout default â€” otherwise the first cold read on a large raster times out and the
     // statistics never persist, retrying forever instead of self-healing (#1649).
     private const int StatisticsComputeTimeoutSeconds = 300;
 
@@ -659,7 +659,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     /// <summary>
     /// Wraps the source <paramref name="rasterToken"/> so a low-zoom tile reads a
-    /// resolution-reduced grid (metres/pixel ≈ the requested tile's ground resolution)
+    /// resolution-reduced grid (metres/pixel â‰ˆ the requested tile's ground resolution)
     /// instead of resampling the full-resolution raster. Returns the bare token unchanged
     /// at native-or-finer zoom (<paramref name="level"/> &gt;= <see cref="OverviewMaxZoom"/>),
     /// keeping the substitution a single-token no-op on the high-zoom path.
@@ -669,7 +669,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// SRID-agnostic: the outer <c>ST_Transform(..., 3857)</c> in the tile query becomes an
     /// identity transform on the already-reprojected grid. <c>GREATEST</c>/<c>LEAST</c> guards
     /// clamp the target pixel size against the source's own 3857 resolution so the rescale can
-    /// only ever coarsen — never upsample — making it a per-source no-op when the source is
+    /// only ever coarsen â€” never upsample â€” making it a per-source no-op when the source is
     /// already coarser than the tile. Residual sub-pixel drift from <c>ST_Rescale</c> keeping
     /// the source origin is corrected by the subsequent envelope-aligned <c>ST_Resample</c>.
     /// NearestNeighbor matches the tile path's existing (default) resampling/nodata semantics.
@@ -929,7 +929,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     /// <summary>
     /// Computes per-band statistics over the rendered (renderingRule Clip -> stretch -> colormap)
-    /// single raster, with no AOI geometry. Always computed fresh — the persisted statistics
+    /// single raster, with no AOI geometry. Always computed fresh â€” the persisted statistics
     /// describe the raw source pixels.
     /// </summary>
     private async Task<RasterStatistics[]> GetRenderedStatisticsAsync(
@@ -1415,7 +1415,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         // Apply band arithmetic (renderingRule BandArithmetic) on the merged mosaic, collapsing
-        // two bands into a single analytic band (e.g. NDVI) before the stretch — previously the
+        // two bands into a single analytic band (e.g. NDVI) before the stretch â€” previously the
         // mosaic path silently ignored band-math renderingRules (#1803).
         if (query.BandArithmetic is { } mosaicBandArithmetic)
         {
@@ -1906,10 +1906,10 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var dynCommand = connection.CreateCommand();
 
-        // Build a 256×256 reference raster exactly aligned to the WebMercatorQuad tile
+        // Build a 256Ã—256 reference raster exactly aligned to the WebMercatorQuad tile
         // envelope (EPSG:3857). ST_Resample reprojects the source raster onto that grid so
         // the output PNG covers exactly ST_TileEnvelope(z,x,y) with nodata for uncovered
-        // pixels — correcting both the projection and the spatial registration that the
+        // pixels â€” correcting both the projection and the spatial registration that the
         // previous ST_Clip+ST_Resize approach got wrong (it preserved the clipped source
         // extent rather than the tile envelope, stretching edge tiles and ignoring CRS).
         const string tileBoundsCte = """
@@ -1932,7 +1932,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (overviewId is { } persistedOverviewId)
         {
             // The persisted overview is already EPSG:3857, so ST_Transform is the identity and the
-            // intersect uses 3857 directly. This reads the reduced pyramid level — no full-res scan.
+            // intersect uses 3857 directly. This reads the reduced pyramid level â€” no full-res scan.
             dynCommand.CommandText = $"""
                 {tileBoundsCte}
                 SELECT ST_AsGDALRaster(
@@ -2030,7 +2030,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var overviewSource = BuildOverviewSourceExpression(level);
 
         await using var command = connection.CreateCommand();
-        // Same tile-envelope-aligned approach as GetImageTileAsync: build a 256×256
+        // Same tile-envelope-aligned approach as GetImageTileAsync: build a 256Ã—256
         // reference raster in EPSG:3857 and use ST_Resample so the mosaic output covers
         // exactly ST_TileEnvelope(z,x,y) with nodata for uncovered pixels.
         command.CommandText = $"""
@@ -2191,7 +2191,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var persisted = await ReadPersistedRasterStatisticsAsync(connection, transaction, rasterId, cancellationToken).ConfigureAwait(false);
         if (persisted.Count > 0)
         {
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return persisted;
         }
 
@@ -2229,7 +2229,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             }
 
             var stats = await ReadPersistedRasterStatisticsAsync(connection, transaction, rasterId, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             PostgresRasterLog.RasterStatisticsBackfilled(_logger, layerId, rasterId, stats.Count);
             return stats;
         }
@@ -2258,7 +2258,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         CancellationToken cancellationToken)
     {
         // Self-provision the snapshot table so already-registered datasets backfill without a
-        // manual migration (same pattern as PostgresMetadataV2GraphStore.EnsureSchemaAsync —
+        // manual migration (same pattern as PostgresMetadataV2GraphStore.EnsureSchemaAsync â€”
         // a no-op once 003_CreateRasterLayerStatistics.sql has been applied). Best-effort: a
         // read-only connection simply keeps the legacy compute path below.
         await TryEnsureLayerStatisticsTableAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -2285,14 +2285,14 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         if (persisted.Count > 0)
         {
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return persisted;
         }
 
         var computed = await ComputeMosaicStatisticsAsync(connection, transaction, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
         if (computed.Count == 0)
         {
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return computed;
         }
 
@@ -2335,7 +2335,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             PostgresRasterLog.LayerStatisticsBackfilled(_logger, layerId, rasterIds.Length, strategyKey, computed.Count);
         }
         catch (PostgresException ex)

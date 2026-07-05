@@ -80,6 +80,19 @@
   </ItemGroup>
 
   <!--
+    HN0001 (CommitAsyncWithLiveToken): fails the build on any call to
+    DbTransaction.CommitAsync() with a live CancellationToken. Use
+    DbTransactionExtensions.CommitSafelyAsync(ct) instead to guard against the
+    phantom-commit race. Excluded from the analyzer project itself (IsRoslynComponent)
+    to avoid a self-reference bootstrap cycle.
+  -->
+  <ItemGroup Condition="'$(HonuaSkipRepoAnalyzers)' != 'true' AND '$(MSBuildProjectName)' != 'package-test' AND '$(IsRoslynComponent)' != 'true'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)src/Honua.Analyzers/Honua.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!--
     Roslynator initial-rollout suppressions: a handful of rules fire en masse
     across the existing codebase and would block the warnings-as-errors build.
     They are suppressed (NOT silenced via Severity=None) so they still surface

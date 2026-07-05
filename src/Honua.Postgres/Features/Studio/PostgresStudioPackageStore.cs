@@ -96,7 +96,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             command.Parameters.AddWithValue("@updated_at", draft.UpdatedAt);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             committed = true;
             return draft;
         }
@@ -229,7 +229,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 updated.UpdatedAt,
                 cancellationToken).ConfigureAwait(false);
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             committed = true;
             return updated;
         }
@@ -370,7 +370,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 updatePublished: false,
                 cancellationToken).ConfigureAwait(false);
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             committed = true;
             return (await GetVersionAsync(draft.ItemId, versionId, cancellationToken).ConfigureAwait(false))!;
         }
@@ -495,7 +495,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                     cancellationToken).ConfigureAwait(false);
             }
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             committed = true;
             return request;
         }
@@ -585,7 +585,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             committed = true;
             return request;
         }
