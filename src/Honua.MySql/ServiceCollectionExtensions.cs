@@ -98,7 +98,13 @@ internal static class ServiceCollectionExtensions
         // checker drives a SELECT 1 through the same pooled MySqlDataSource the store uses.
         services.AddScoped<IDatabaseHealthChecker, MySqlDatabaseHealthChecker>();
 
-        services.AddScoped<MySqlFeatureStore>();
+        // Register the main feature store composition, wiring optional permanent-filter
+        // dependencies so row-visibility filters are enforced on MySQL/MariaDB reads.
+        services.AddScoped<MySqlFeatureStore>(sp => new MySqlFeatureStore(
+            sp.GetRequiredService<IFeatureQueryBuilder>(),
+            sp.GetRequiredService<IFeatureDataAccess>(),
+            sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
+            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>()));
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<MySqlFeatureStore>());
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<MySqlFeatureStore>());
         services.AddScoped<IPagedFeatureReader>(sp => sp.GetRequiredService<MySqlFeatureStore>());
