@@ -15,9 +15,78 @@ public sealed class MigrationSafetyClassifierTests
     [InlineData("DROP TABLE honua.layers;", "drop-table")]
     [InlineData("DROP SCHEMA honua CASCADE;", "drop-schema")]
     [InlineData("DROP SEQUENCE honua.layers_id_seq;", "drop-sequence")]
+    [InlineData("ALTER TABLE honua.layers RENAME TO layers_v2;", "rename-table")]
     public void DetectBreakingRules_FlagsEachBreakingPattern(string sql, string expectedRule)
     {
         MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain(expectedRule);
+    }
+
+    [Fact]
+    public void DetectBreakingRules_TableRename_DoesNotFalselyMatchRenameColumn()
+    {
+        const string sql = "ALTER TABLE honua.layers RENAME COLUMN legacy_name TO display_name;";
+
+        var rules = MigrationSafetyClassifier.DetectBreakingRules(sql);
+
+        rules.Should().Contain("rename-column");
+        rules.Should().NotContain("rename-table");
+    }
+
+    [Fact]
+    public void DetectBreakingRules_ApostropheInsideLineComment_DoesNotHideRealDrop()
+    {
+        // A prior regex-order bug stripped '...'-quoted spans before -- line comments, so the
+        // apostrophes in these two comments opened a quote span that swallowed the DROP TABLE
+        // between them — misclassifying a contract migration as an additive expand change.
+        const string sql = """
+            -- cleanup, don't ship this without review
+            DROP TABLE honua.layers;
+            -- the legacy column isn't used anymore
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-table");
+    }
+
+    [Fact]
+    public void Classify_ApostropheInCommentHidingDrop_IsContractUnannotated()
+    {
+        const string sql = """
+            -- cleanup, don't ship this without review
+            DROP TABLE honua.layers;
+            -- the legacy column isn't used anymore
+            """;
+
+        var result = MigrationSafetyClassifier.Classify("060_drop_layers.sql", sql);
+
+        result.Classification.Should().Be(MigrationSafetyClassification.ContractUnannotated);
+        result.IsBreaking.Should().BeTrue();
+        result.BreakingRules.Should().Contain("drop-table");
+    }
+
+    [Fact]
+    public void Classify_TableRenameWithoutMarker_IsContractUnannotated()
+    {
+        const string sql = "ALTER TABLE honua.layers RENAME TO layers_v2;";
+
+        var result = MigrationSafetyClassifier.Classify("061_rename_layers.sql", sql);
+
+        result.Classification.Should().Be(MigrationSafetyClassification.ContractUnannotated);
+        result.BreakingRules.Should().Contain("rename-table");
+    }
+
+    [Fact]
+    public void DetectBreakingRules_ApostropheInStringLiteral_StillIgnoresCommentedDrop()
+    {
+        // The lexer must keep string literals and comments independent: a real string literal that
+        // contains an apostrophe must not leak, and a DROP TABLE that only appears inside a comment
+        // must stay hidden.
+        const string sql = """
+            INSERT INTO honua.notes (body) VALUES ('it''s fine');
+            -- DROP TABLE honua.layers;
+            ALTER TABLE honua.layers ADD COLUMN note TEXT;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().BeEmpty();
     }
 
     [Fact]
