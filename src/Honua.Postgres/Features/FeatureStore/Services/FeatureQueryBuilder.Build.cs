@@ -119,7 +119,12 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             if (query.Limit.HasValue)
             {
-                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex}");
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+            }
+
+            if (query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
             }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);

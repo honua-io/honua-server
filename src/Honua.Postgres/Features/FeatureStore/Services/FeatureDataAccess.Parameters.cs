@@ -49,10 +49,11 @@ internal sealed partial class FeatureDataAccess
     }
 
     // Bind the OFFSET value only when the emitted SQL actually contains an OFFSET placeholder.
-    // Most builders append " OFFSET $n" whenever query.Offset is set, but some shapes (e.g.
-    // BuildProjectedPointQuery) emit a LIMIT placeholder and no OFFSET clause, so always binding
-    // Offset would push the bound-parameter count past the placeholder count and fail with a
-    // bind-count mismatch (500). Gating on the emitted SQL keeps every shape self-consistent.
+    // All current builders (including BuildProjectedPointQuery) append " OFFSET $n" when
+    // query.Offset is set, so this guard exists to protect future query shapes that may emit
+    // LIMIT without OFFSET (e.g. KNN queries that do not support paging). Gating on the
+    // emitted text keeps every query shape self-consistent without requiring callers to know
+    // which shapes support offset paging.
     private static void AddOffsetParameterIfEmitted(NpgsqlCommand command, FeatureQuery query, ref int parameterIndex)
     {
         if (query.Offset.HasValue &&

@@ -619,19 +619,28 @@ public sealed class StacSearchTests : IAsyncLifetime
 
             if (fields == "-geometry")
             {
+                // Exclude mode: geometry is explicitly excluded; other required fields remain.
                 item.TryGetProperty("geometry", out _).Should().BeFalse();
                 item.TryGetProperty("id", out _).Should().BeTrue();
                 item.TryGetProperty("assets", out _).Should().BeTrue();
             }
             else if (fields == "-properties,+properties.name")
             {
-                item.TryGetProperty("geometry", out _).Should().BeFalse();
+                // BH2-009: include mode auto-seeds required fields, so geometry IS present even
+                // though the caller only explicitly included properties.name.
+                item.TryGetProperty("geometry", out _).Should().BeTrue("geometry is a required STAC field and must be present in include mode");
+                item.TryGetProperty("id", out _).Should().BeTrue("id is a required STAC field and must be present in include mode");
+                item.TryGetProperty("stac_version", out _).Should().BeTrue("stac_version is a required STAC field and must be present in include mode");
                 item.GetProperty("properties").TryGetProperty("name", out _).Should().BeTrue();
             }
             else
             {
-                item.TryGetProperty("geometry", out _).Should().BeTrue();
-                item.EnumerateObject().Should().ContainSingle();
+                // BH2-009: include mode with +geometry,-geometry — required fields (all 8) must
+                // always be present; the prior ContainSingle() assertion was testing the bug.
+                item.TryGetProperty("geometry", out _).Should().BeTrue("geometry is required");
+                item.TryGetProperty("id", out _).Should().BeTrue("id is required");
+                item.TryGetProperty("stac_version", out _).Should().BeTrue("stac_version is required");
+                item.TryGetProperty("type", out _).Should().BeTrue("type is required");
             }
         }
     }
@@ -660,7 +669,9 @@ public sealed class StacSearchTests : IAsyncLifetime
 
         using var json = JsonDocument.Parse(content);
         var item = json.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Subject;
-        item.TryGetProperty("id", out _).Should().BeFalse();
+        // BH2-009: top-level 'id' is a required STAC field and must always be returned in
+        // include mode; the prior BeFalse() assertion was validating the bug.
+        item.TryGetProperty("id", out _).Should().BeTrue("id is a required STAC item field and must be present in include mode");
         var properties = item.GetProperty("properties");
         properties.EnumerateObject().Select(property => property.Name).Should().Contain("id");
         properties.GetProperty("id").GetString().Should().Be(nestedId);
@@ -793,6 +804,104 @@ public sealed class StacSearchTests : IAsyncLifetime
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>
+    /// Regression test for BH2-009: a property-only include (e.g. +properties.datetime)
+    /// must not null out id, type, geometry, stac_version, links, or assets.
+    /// Before the fix, all eight required top-level fields were absent from the response.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_IncludeMode_PropertyOnlyInclude_RequiredFieldsAlwaysPresent()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+
+        // Request only a property-path include — the eight required STAC item fields must
+        // still be returned even though they were not mentioned in the include list.
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&limit=1&fields=%2Bproperties.name");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var json = JsonDocument.Parse(content);
+        var item = json.RootElement.GetProperty("features").EnumerateArray().Should().NotBeEmpty().And.Subject.First();
+
+        // Every required STAC item field must be present regardless of the property-only include.
+        item.TryGetProperty("id", out _).Should().BeTrue("id is a required STAC item field (BH2-009)");
+        item.TryGetProperty("type", out _).Should().BeTrue("type is a required STAC item field (BH2-009)");
+        item.TryGetProperty("stac_version", out _).Should().BeTrue("stac_version is a required STAC item field (BH2-009)");
+        item.TryGetProperty("links", out _).Should().BeTrue("links is a required STAC item field (BH2-009)");
+        item.TryGetProperty("assets", out _).Should().BeTrue("assets is a required STAC item field (BH2-009)");
+        item.TryGetProperty("properties", out _).Should().BeTrue("properties is a required STAC item field (BH2-009)");
+
+        // The requested property must also be present.
+        item.GetProperty("properties").TryGetProperty("name", out _).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Regression test for BH2-010: the GET search next-link for paginated requests must
+    /// use literal commas as collection-ID separators rather than encoding the separator
+    /// comma, so that following the link correctly returns page 2.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WhenMorePagesExist_GetNextLinkIsFollowable()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var runId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var firstId = $"nextlink-a-{runId}";
+        var secondId = $"nextlink-b-{runId}";
+        var firstFeatureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"aaa nextlink {runId}");
+        var secondFeatureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"zzz nextlink {runId}");
+        await SetFeatureAttributeAsync(firstFeatureId, "stac_id", firstId);
+        await SetFeatureAttributeAsync(secondFeatureId, "stac_id", secondId);
+
+        // Request page 1 with limit=1 so a next-link is generated.
+        var page1Response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={Uri.EscapeDataString(firstId)},{Uri.EscapeDataString(secondId)}&sortby=name&limit=1");
+
+        var page1Content = await page1Response.Content.ReadAsStringAsync();
+        page1Response.StatusCode.Should().Be(HttpStatusCode.OK, page1Content);
+
+        var page1Json = JsonDocument.Parse(page1Content);
+        page1Json.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(2);
+        page1Json.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(1);
+
+        // The GET next-link must be a plain URL (not a POST merge body).
+        var nextLink = page1Json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .Should().Contain(link => link.GetProperty("rel").GetString() == "next")
+            .Subject;
+
+        // BH2-010: the next-link URL should contain `collections=N` with a literal comma
+        // as the ID separator (not %2C). The href must be followable as a GET request.
+        var href = nextLink.GetProperty("href").GetString();
+        href.Should().NotBeNull();
+
+        // Follow the next-link directly to verify page 2 is returned correctly.
+        var page2Response = await _fixture.Client.GetAsync(new Uri(href!).PathAndQuery);
+
+        var page2Content = await page2Response.Content.ReadAsStringAsync();
+        page2Response.StatusCode.Should().Be(HttpStatusCode.OK, page2Content);
+
+        var page2Json = JsonDocument.Parse(page2Content);
+        var page2Ids = page2Json.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Select(f => f.GetProperty("id").GetString())
+            .ToArray();
+        page2Ids.Should().HaveCount(1);
+
+        // Page 2 must contain the second item, not a repeat of page 1.
+        var page1Ids = page1Json.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Select(f => f.GetProperty("id").GetString())
+            .ToArray();
+        page2Ids[0].Should().NotBe(page1Ids[0]);
+        new[] { page1Ids[0], page2Ids[0] }.Should().BeEquivalentTo(new[] { firstId, secondId });
     }
 
     private static double[][] BuildSquareRing((double X, double Y) point, double halfSize = 1d)
