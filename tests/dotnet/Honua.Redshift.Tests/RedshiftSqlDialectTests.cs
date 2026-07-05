@@ -30,8 +30,11 @@ public class RedshiftSqlDialectTests
     [Fact]
     public void Dialect_QuoteLiteral_EscapesSingleQuotes()
     {
-        // QuoteLiteral is a default interface member on ISqlDialect; call through the interface.
+        // QuoteLiteral is a default interface member on ISqlDialect; call through the interface
+        // to verify the default implementation is exercised correctly.
+#pragma warning disable CA1859 // Use concrete type — intentional: verifying default interface member dispatch
         ISqlDialect dialect = RedshiftSqlDialect.Instance;
+#pragma warning restore CA1859
         Assert.Equal("'O''Brien'", dialect.QuoteLiteral("O'Brien"));
     }
 

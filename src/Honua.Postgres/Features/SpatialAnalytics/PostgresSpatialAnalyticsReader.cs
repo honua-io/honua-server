@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Queries.Filters;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Postgres.Features.FeatureStore.Services;
 
 namespace Honua.Postgres.Features.SpatialAnalytics;
