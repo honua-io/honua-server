@@ -31,25 +31,4 @@ public sealed class DeferredRealCertificationPlaceholders
             + "not implemented; the reconciliation paths are unit/integration-tested. This placeholder "
             + "reserves the cell and documents the deferral.");
     }
-
-    /// <summary>
-    /// DEFERRED: ECS/ALB weighted-cutover certification. The ALB weight mechanics are heavily unit-
-    /// tested (<c>AwsEcsAlbDeployBackendTests</c>) and already have a Terraform-gated live path keyed
-    /// off the separate <c>HONUA_LIVE_ECS_ALB_*</c> variables (<c>AwsEcsAlbDeployBackendLiveTests</c>).
-    /// Folding a live weighted cutover into THIS lane needs standing ALB + dual target-group + running
-    /// ECS service infrastructure and a canary-promotion decision, which is a deliberate
-    /// infrastructure/cost decision deferred out of the initial cert tier. Reserved here so the live
-    /// matrix records the deferral; the fixture already surfaces the ECS/ALB inputs
-    /// (<c>HONUA_REALAWS_CERT_ECS_*</c> / <c>_ALB_*</c> / <c>_TARGET_GROUP_ARN</c>) for when it lands.
-    /// </summary>
-    [SkippableFact]
-    public void EcsAlbWeightedCutover_Certification_IsDeferred()
-    {
-        Skip.If(
-            true,
-            "Deferred: live ECS/ALB weighted-cutover certification needs standing ALB + dual "
-            + "target-group + ECS-service infrastructure. The weight mechanics are unit-tested and a "
-            + "Terraform-gated live path already exists (AwsEcsAlbDeployBackendLiveTests). This "
-            + "placeholder reserves the cell and documents the deferral.");
-    }
 }

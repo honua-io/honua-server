@@ -61,6 +61,9 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="AWSSDK.Batch" />
+    <!-- The ECS/ALB weighted-cutover cell (#2164) resolves the cert listener's default rule ARN
+         directly (DescribeRules by ListenerArn) before driving the production AwsSdkAlbClient seam. -->
+    <PackageReference Include="AWSSDK.ElasticLoadBalancingV2" />
   </ItemGroup>
 
   <ItemGroup>

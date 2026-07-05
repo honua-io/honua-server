@@ -34,7 +34,7 @@ namespace Honua.CloudIntegration.Tests;
 ///   <item><term>gp_execution_role_arn</term><description><c>HONUA_REALAWS_CERT_EXECUTION_ROLE_ARN</c></description></item>
 ///   <item><term>cert_artifact_bucket</term><description><c>HONUA_REALAWS_CERT_ARTIFACT_BUCKET</c> (required for the S3 cell)</description></item>
 ///   <item><term>(cert stack Lambda)</term><description><c>HONUA_REALAWS_CERT_LAMBDA_FUNCTION</c> + <c>HONUA_REALAWS_CERT_LAMBDA_ALIAS</c> (required for the Lambda cell)</description></item>
-///   <item><term>(cert stack ECS/ALB)</term><description><c>HONUA_REALAWS_CERT_ECS_CLUSTER</c>, <c>HONUA_REALAWS_CERT_ECS_SERVICE</c>, <c>HONUA_REALAWS_CERT_ALB_LISTENER_ARN</c>, <c>HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN</c>, <c>HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN</c> (ECS/ALB cell — deferred placeholder)</description></item>
+///   <item><term>(cert stack ECS/ALB)</term><description><c>HONUA_REALAWS_CERT_ECS_CLUSTER</c>, <c>HONUA_REALAWS_CERT_ECS_SERVICE</c>, <c>HONUA_REALAWS_CERT_ALB_LISTENER_ARN</c>, <c>HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN</c>, <c>HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN</c> (required for the ECS/ALB weighted-cutover cell)</description></item>
 /// </list>
 /// </summary>
 public sealed class RealAwsCertificationFixture : IAsyncLifetime
@@ -75,19 +75,22 @@ public sealed class RealAwsCertificationFixture : IAsyncLifetime
     /// <summary>Cert-stack Lambda alias name the alias-flip cell reads, flips, and restores.</summary>
     public const string LambdaAliasEnvVar = "HONUA_REALAWS_CERT_LAMBDA_ALIAS";
 
-    /// <summary>Cert-stack ECS cluster (ECS/ALB weighted-cutover cell — deferred placeholder).</summary>
+    /// <summary>Cert-stack ECS cluster the ECS/ALB weighted-cutover cell drives.</summary>
     public const string EcsClusterEnvVar = "HONUA_REALAWS_CERT_ECS_CLUSTER";
 
-    /// <summary>Cert-stack ECS service (ECS/ALB weighted-cutover cell — deferred placeholder).</summary>
+    /// <summary>Cert-stack ECS service the ECS/ALB weighted-cutover cell drives.</summary>
     public const string EcsServiceEnvVar = "HONUA_REALAWS_CERT_ECS_SERVICE";
 
-    /// <summary>Cert-stack ALB listener ARN (ECS/ALB weighted-cutover cell — deferred placeholder).</summary>
+    /// <summary>
+    /// Cert-stack ALB listener ARN. The ECS/ALB weighted-cutover cell resolves this listener's
+    /// DEFAULT rule (the weighted forward action the backend mutates) at test start.
+    /// </summary>
     public const string AlbListenerArnEnvVar = "HONUA_REALAWS_CERT_ALB_LISTENER_ARN";
 
-    /// <summary>Cert-stack canary target group ARN (ECS/ALB weighted-cutover cell — deferred placeholder).</summary>
+    /// <summary>Cert-stack canary target group ARN the ECS/ALB weighted-cutover cell shifts weight to.</summary>
     public const string CanaryTargetGroupArnEnvVar = "HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN";
 
-    /// <summary>Cert-stack stable target group ARN (ECS/ALB weighted-cutover cell — deferred placeholder).</summary>
+    /// <summary>Cert-stack stable target group ARN the ECS/ALB weighted-cutover cell shifts weight to.</summary>
     public const string StableTargetGroupArnEnvVar = "HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN";
 
     /// <summary>
@@ -192,6 +195,20 @@ public sealed class RealAwsCertificationFixture : IAsyncLifetime
     /// <summary>True when the lane is enabled AND both the Lambda function and alias are present.</summary>
     public bool LambdaAliasConfigured
         => Enabled && !string.IsNullOrWhiteSpace(LambdaFunctionName) && !string.IsNullOrWhiteSpace(LambdaAliasName);
+
+    /// <summary>
+    /// True when the lane is enabled AND every ECS/ALB weighted-cutover input is present: the ECS
+    /// cluster + service, the ALB listener whose default rule is mutated, and both the canary and
+    /// stable target group ARNs. The cell resolves the listener's default rule ARN from
+    /// <see cref="AlbListenerArn"/> at test start, so no separate rule-ARN input is required.
+    /// </summary>
+    public bool EcsAlbConfigured
+        => Enabled
+            && !string.IsNullOrWhiteSpace(EcsCluster)
+            && !string.IsNullOrWhiteSpace(EcsService)
+            && !string.IsNullOrWhiteSpace(AlbListenerArn)
+            && !string.IsNullOrWhiteSpace(CanaryTargetGroupArn)
+            && !string.IsNullOrWhiteSpace(StableTargetGroupArn);
 
     /// <summary>
     /// The per-run resource-tag set: <see cref="RunTagKey"/>=<see cref="RunId"/> plus a
