@@ -17,11 +17,9 @@ namespace Honua.Import.FileImport;
 /// upload queue to drain. The queue depth/active counters therefore report an idle queue;
 /// the metrics surface is retained because health checks and monitoring endpoints consume it.
 /// </remarks>
-internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetricsProvider
+internal sealed class StreamingFileUploadService : IUploadQueueMetricsProvider
 {
     private readonly FileUploadOptions _options;
-    private readonly SemaphoreSlim _processingSlot;
-    private int _disposed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamingFileUploadService"/> class.
@@ -30,34 +28,18 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
     public StreamingFileUploadService(IOptions<FileUploadOptions> options)
     {
         _options = options.Value;
-
-        // Limit concurrent upload processing
-        _processingSlot = new SemaphoreSlim(_options.MaxConcurrentUploads, _options.MaxConcurrentUploads);
     }
 
     /// <inheritdoc />
     public UploadQueueSnapshot GetQueueSnapshot()
     {
-        // No in-process upload queue remains (#2459): queue depth is always zero, and with no
-        // slots ever taken the active-upload count derives from the semaphore's current count.
+        // No in-process upload queue remains (#2459): depth and active counts are always zero;
+        // the configured limits are still reported so dashboards keep their capacity context.
         return new UploadQueueSnapshot(
             0,
             _options.MaxQueuedUploads,
-            _options.MaxConcurrentUploads - _processingSlot.CurrentCount,
+            0,
             _options.MaxConcurrentUploads);
-    }
-
-    /// <summary>
-    /// Disposes the service and releases resources.
-    /// </summary>
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-        {
-            return;
-        }
-
-        _processingSlot.Dispose();
     }
 }
 
