@@ -81,7 +81,12 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
 
-        if (!IsExtentWithinCrsBounds(requestedExtent, normalizedCrs))
+        // BH6-010: Use the same lenient intersection check GetMap uses rather than the
+        // strict containment check. A BBOX that extends outside CRS bounds but still
+        // intersects it renders fine in GetMap; GetFeatureInfo must not reject it with 400
+        // when GetMap would succeed. Any out-of-bounds click geometry is clamped during
+        // feature query rather than rejected at the validation gate.
+        if (!DoesExtentIntersectCrsBounds(requestedExtent, normalizedCrs))
         {
             return CreateWmsServiceException(context, "InvalidParameterValue", "BBOX is outside the valid range for the requested CRS.");
         }
