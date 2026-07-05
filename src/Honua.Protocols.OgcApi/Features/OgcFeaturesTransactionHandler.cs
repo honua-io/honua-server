@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -15,6 +16,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Helpers;
@@ -121,6 +123,18 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     $"Batch request exceeds maximum of {maxBatchOperations} operations.");
+            }
+
+            // Per-operation authorization (BH3-001/BH3-014): the coarse write gate above authorizes
+            // any-write; a mixed batch must additionally require the caller to hold each specific
+            // operation present in the body. A CREATE item requires Insert, UPDATE requires Update,
+            // DELETE requires Delete — so an insert-only grantee cannot slip an update or delete
+            // through the batch surface. Each distinct kind is checked once.
+            var batchOperationError = await AuthorizeBatchOperationKindsAsync(
+                context, resource, layerValidation.Service, batchRequest, cancellationToken).ConfigureAwait(false);
+            if (batchOperationError is not null)
+            {
+                return batchOperationError;
             }
 
             var preparedBatch = await PrepareBatchOperationsAsync(
@@ -300,6 +314,52 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     /// <summary>
+    /// Per-operation authorization for a mixed batch (BH3-001/BH3-014). Requires the caller to
+    /// hold the data-editor authorization for each distinct operation kind present in the batch
+    /// (CREATE=Insert, UPDATE=Update, DELETE=Delete). Returns the first denial error, or
+    /// <see langword="null"/> when every present operation kind is authorized. Unknown operation
+    /// types are ignored here — they are rejected later by the batch preparation validation.
+    /// </summary>
+    private static async Task<IResult?> AuthorizeBatchOperationKindsAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        BatchRequest batchRequest,
+        CancellationToken cancellationToken)
+    {
+        var seen = new HashSet<AuthorizationOperation>();
+        foreach (var item in batchRequest.Operations)
+        {
+            if (string.IsNullOrWhiteSpace(item.Type))
+            {
+                continue;
+            }
+
+            AuthorizationOperation? operation = item.Type.ToUpperInvariant() switch
+            {
+                "CREATE" => AuthorizationOperation.Insert,
+                "UPDATE" => AuthorizationOperation.Update,
+                "DELETE" => AuthorizationOperation.Delete,
+                _ => null,
+            };
+
+            if (operation is not { } op || !seen.Add(op))
+            {
+                continue;
+            }
+
+            var error = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context, resource, service, op, cancellationToken).ConfigureAwait(false);
+            if (error is not null)
+            {
+                return error;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Handles feature replacement with optimistic concurrency control.
     /// </summary>
     public async Task<IResult> HandleReplaceFeatureAsync(
@@ -311,8 +371,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         try
         {
+            // Per-operation authorization (BH3-001/BH3-014): a PUT replace modifies an existing
+            // feature and therefore authorizes as Update.
             var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessV2Async(
-                context, collectionId, cancellationToken: cancellationToken);
+                context, collectionId, operation: AuthorizationOperation.Update, cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
@@ -585,8 +647,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         try
         {
+            // Per-operation authorization (BH3-001/BH3-014): a PATCH partial update authorizes
+            // as Update.
             var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessV2Async(
-                context, collectionId, cancellationToken: cancellationToken);
+                context, collectionId, operation: AuthorizationOperation.Update, cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;

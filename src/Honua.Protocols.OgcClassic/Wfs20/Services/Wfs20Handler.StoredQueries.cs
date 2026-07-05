@@ -43,11 +43,42 @@ internal sealed partial class Wfs20Handler
     // Hard cap on managed stored queries to prevent unbounded memory growth.
     // WFS 2.0 CITE Manage-Stored-Queries conformance requires mutation operations to
     // succeed but does not mandate unlimited cardinality. Reject CreateStoredQuery once
-    // the process-wide count reaches this threshold and return OperationProcessingFailed.
+    // the per-service count reaches this threshold and return OperationProcessingFailed.
+    // BH3-009: the limit is now enforced per-service scope (tenant), not globally.
     private const int MaxManagedStoredQueryCount = 1000;
 
-    private static readonly ConcurrentDictionary<string, StoredQueryDefinition> ManagedStoredQueries =
+    // BH3-009: Stored queries are keyed by (serviceScope, queryId) to prevent cross-service
+    // information disclosure, sabotage, and DoS via global slot exhaustion.
+    // The outer key is the tenant scope resolved from the request context; queries created
+    // on Service A are never visible or operable from Service B.
+    private const string GlobalStoredQueryScope = "__global__";
+
+    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, StoredQueryDefinition>> ManagedStoredQueriesByScope =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Resolves the service scope key for stored-query isolation. Returns the tenant id
+    /// when present, or <see cref="GlobalStoredQueryScope"/> for requests without a tenant
+    /// context (e.g. single-tenant admin deployments).
+    /// </summary>
+    private static string ResolveStoredQueryScope(HttpContext context)
+    {
+        var tenantId = TenantScopeHelpers.ResolveRequestTenantId(context);
+        return string.IsNullOrWhiteSpace(tenantId) ? GlobalStoredQueryScope : tenantId;
+    }
+
+    /// <summary>
+    /// Returns the <see cref="ConcurrentDictionary{TKey, TValue}"/> of stored queries
+    /// scoped to the service (tenant) of the current request. Creates the per-scope bucket
+    /// on first access; subsequent calls for the same scope reuse the existing bucket.
+    /// </summary>
+    private static ConcurrentDictionary<string, StoredQueryDefinition> GetScopedStoredQueries(HttpContext context)
+    {
+        var scope = ResolveStoredQueryScope(context);
+        return ManagedStoredQueriesByScope.GetOrAdd(
+            scope,
+            static _ => new ConcurrentDictionary<string, StoredQueryDefinition>(StringComparer.OrdinalIgnoreCase));
+    }
 
     public async Task<IResult> HandleListStoredQueriesAsync(
         HttpContext context,
@@ -57,9 +88,10 @@ internal sealed partial class Wfs20Handler
         // default headers. The response is always application/xml.
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
+        var scopedQueries = GetScopedStoredQueries(context);
         var xml = BuildListStoredQueriesXml(
             descriptors,
-            ManagedStoredQueries.Values.OrderBy(query => query.Id, StringComparer.Ordinal).ToArray());
+            scopedQueries.Values.OrderBy(query => query.Id, StringComparer.Ordinal).ToArray());
         return Results.Content(xml, "application/xml", Encoding.UTF8);
     }
 
@@ -71,11 +103,12 @@ internal sealed partial class Wfs20Handler
     {
         // Same story — DescribeStoredQueries is XML-only.
 
+        var scopedQueries = GetScopedStoredQueries(context);
         var requestedIds = ParseQualifiedList(storedQueryIds);
         foreach (var requestedId in requestedIds)
         {
             if (!IsGetFeatureByIdStoredQuery(requestedId) &&
-                !ManagedStoredQueries.ContainsKey(requestedId))
+                !scopedQueries.ContainsKey(requestedId))
             {
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
@@ -87,10 +120,10 @@ internal sealed partial class Wfs20Handler
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var requestedDefinitions = requestedIds.Length == 0
-            ? ManagedStoredQueries.Values.OrderBy(query => query.Id, StringComparer.Ordinal).ToArray()
+            ? scopedQueries.Values.OrderBy(query => query.Id, StringComparer.Ordinal).ToArray()
             : requestedIds
-                .Where(id => ManagedStoredQueries.TryGetValue(id, out _))
-                .Select(id => ManagedStoredQueries[id])
+                .Where(id => scopedQueries.TryGetValue(id, out _))
+                .Select(id => scopedQueries[id])
                 .ToArray();
         var includeBuiltIn = requestedIds.Length == 0 || requestedIds.Any(IsGetFeatureByIdStoredQuery);
         var xml = BuildDescribeStoredQueriesXml(descriptors, requestedDefinitions, includeBuiltIn);
@@ -135,7 +168,8 @@ internal sealed partial class Wfs20Handler
                 "id");
         }
 
-        if (IsGetFeatureByIdStoredQuery(id) || ManagedStoredQueries.ContainsKey(id))
+        var scopedQueries = GetScopedStoredQueries(context);
+        if (IsGetFeatureByIdStoredQuery(id) || scopedQueries.ContainsKey(id))
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -144,7 +178,7 @@ internal sealed partial class Wfs20Handler
                 id);
         }
 
-        if (ManagedStoredQueries.Count >= MaxManagedStoredQueryCount)
+        if (scopedQueries.Count >= MaxManagedStoredQueryCount)
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -233,7 +267,7 @@ internal sealed partial class Wfs20Handler
             filterXml,
             parameters);
 
-        if (!ManagedStoredQueries.TryAdd(id, definition))
+        if (!scopedQueries.TryAdd(id, definition))
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -277,8 +311,9 @@ internal sealed partial class Wfs20Handler
                 "storedquery_id");
         }
 
+        var scopedQueries = GetScopedStoredQueries(context);
         if (IsGetFeatureByIdStoredQuery(storedQueryId) ||
-            !ManagedStoredQueries.TryRemove(storedQueryId, out _))
+            !scopedQueries.TryRemove(storedQueryId, out _))
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -310,7 +345,7 @@ internal sealed partial class Wfs20Handler
     {
         if (!IsGetFeatureByIdStoredQuery(storedQueryId))
         {
-            if (ManagedStoredQueries.TryGetValue(storedQueryId, out var definition))
+            if (GetScopedStoredQueries(context).TryGetValue(storedQueryId, out var definition))
             {
                 return await HandleManagedStoredQueryGetFeatureAsync(
                     context,

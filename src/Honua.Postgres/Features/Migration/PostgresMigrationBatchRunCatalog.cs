@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Migration;
 
 /// <summary>
@@ -126,7 +127,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
             }
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         var persisted = await GetInternalAsync(connection, record.BatchId, cancellationToken).ConfigureAwait(false) ?? record;
         Log.BatchCreated(_logger, persisted.BatchId, persisted.SourceKind, persisted.TotalChildren);
@@ -308,7 +309,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
         {
-            // The batch schema (migration 045) is not present yet — e.g. during the
+            // The batch schema (migration 045) is not present yet â€” e.g. during the
             // boot window before migrations run, or in test fixtures pinned to an
             // earlier schema. Treat as "no active batches" so the background poller
             // does not error every cycle; polling resumes once the table exists.

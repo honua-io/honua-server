@@ -20,6 +20,13 @@ internal static class AtomicTokenReplayProtection
     private static readonly object _memoryLock = new();
     private static readonly HashSet<string> _processedTokens = new();
 
+    // BH3-033: SemaphoreSlim(1,1) serialises the non-Redis check-then-set window so that
+    // two concurrent requests carrying the same token cannot both observe "not present" and
+    // both return true. This gate only protects the non-Redis fallback path (MemoryDistributed-
+    // Cache and other non-Redis IDistributedCache impls); the production Redis path uses SET NX
+    // which is natively atomic and never reaches this semaphore.
+    private static readonly SemaphoreSlim _nonAtomicGate = new(1, 1);
+
     /// <summary>
     /// Atomically checks and marks a JWT token as used to prevent replay attacks.
     /// Returns true if the token is valid and this is the first use, false if it's a replay.
@@ -139,27 +146,32 @@ internal static class AtomicTokenReplayProtection
         DistributedCacheEntryOptions options,
         CancellationToken cancellationToken)
     {
-        // For non-Redis caches, implement a more robust fallback with unique identifier verification
-        var uniqueMarker = Guid.NewGuid().ToString();
-        var timestampedValue = $"{DateTimeOffset.UtcNow:O}|{uniqueMarker}";
-
-        // First attempt to get existing value
-        var existing = await cache.GetStringAsync(cacheKey, cancellationToken);
-        if (existing != null)
+        // BH3-033: The previous read-delay-verify pattern had a TOCTOU race: two concurrent
+        // requests could both observe "not present" at T1, write their unique markers, and
+        // each verify their own write before the other's write arrived — both returning true.
+        // The 1 ms Task.Delay was not a distributed barrier and did not close the window.
+        //
+        // Fix: _nonAtomicGate serialises the check-then-set pair within this process.
+        // For MemoryDistributedCache (which is process-local) this is fully race-free.
+        // For cross-process distributed caches that are not Redis, the gate prevents same-
+        // process races but cannot prevent cross-process replays; operators should prefer
+        // Redis for true distributed replay protection.
+        await _nonAtomicGate.WaitAsync(cancellationToken);
+        try
         {
-            // Token already exists, this is a replay
-            return false;
+            var existing = await cache.GetStringAsync(cacheKey, cancellationToken);
+            if (existing != null)
+            {
+                return false;
+            }
+
+            await cache.SetStringAsync(cacheKey, "1", options, cancellationToken);
+            return true;
         }
-
-        // Set our unique marker
-        await cache.SetStringAsync(cacheKey, timestampedValue, options, cancellationToken);
-
-        // Brief delay to allow any concurrent operations to complete
-        await Task.Delay(1, cancellationToken);
-
-        // Verify our unique marker is still there - if not, another request won the race
-        var verification = await cache.GetStringAsync(cacheKey, cancellationToken);
-        return verification == timestampedValue; // Only allow if our exact value is present
+        finally
+        {
+            _nonAtomicGate.Release();
+        }
     }
 
     private static bool TryMarkTokenAsUsedMemory(

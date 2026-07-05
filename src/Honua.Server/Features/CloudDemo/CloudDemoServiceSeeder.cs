@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data;
@@ -6,6 +6,7 @@ using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Server.Features.CloudDemo;
 
 internal sealed class CloudDemoServiceSeeder(
@@ -88,7 +89,7 @@ internal sealed class CloudDemoServiceSeeder(
                 await ExecuteSqlAsync(connection, transaction, statement, cancellationToken).ConfigureAwait(false);
             }
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
         {

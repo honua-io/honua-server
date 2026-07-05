@@ -73,7 +73,8 @@ internal static partial class FeatureServerEndpoints
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
+        // addFeatures authorizes as Insert (BH3-001/BH3-014).
+        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken, AuthorizationOperation.Insert);
         if (authorizationError != null)
         {
             return authorizationError;
@@ -125,7 +126,8 @@ internal static partial class FeatureServerEndpoints
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
+        // updateFeatures authorizes as Update (BH3-001/BH3-014).
+        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken, AuthorizationOperation.Update);
         if (authorizationError != null)
         {
             return authorizationError;
@@ -341,10 +343,12 @@ internal static partial class FeatureServerEndpoints
             return (null, accessError);
         }
 
+        // Per-operation authorization (BH3-001/BH3-014): resolving delete ids is part of a delete.
         var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
             resource,
             service,
+            AuthorizationOperation.Delete,
             cancellationToken);
         if (rbacError != null)
         {
@@ -878,7 +882,7 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         HttpContext context,
         CancellationToken cancellationToken,
-        AuthorizationOperation operation = AuthorizationOperation.Update)
+        AuthorizationOperation? operation = null)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
@@ -895,18 +899,34 @@ internal static partial class FeatureServerEndpoints
 
         var service = validationResult.Service!;
         var resource = validationResult.Resource!;
+        // A specific operation narrows the check for the single-verb add/update/delete endpoints.
+        // A null operation (applyEdits) is a MIXED payload: keep the pre-body gate coarse
+        // (representative write op for the resource-access seam, any-write for the data-editor
+        // gate) because the real per-edit-type enforcement runs in FeatureServerEditsHandler on
+        // the parsed body (BH3-001/BH3-014). Narrowing here would wrongly reject an insert-only
+        // grantee that submits an adds-only applyEdits payload.
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource, operation, service, cancellationToken).ConfigureAwait(false);
+            context, resource, operation ?? AuthorizationOperation.Update, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
         }
 
-        return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-            context,
-            resource,
-            service,
-            cancellationToken);
+        // Per-operation authorization (BH3-001/BH3-014): thread the specific operation into the
+        // data-editor gate for the single-verb endpoints so the pre-body check cannot be satisfied
+        // by a grant for a different operation. applyEdits (null) stays coarse here.
+        return operation is { } op
+            ? await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                resource,
+                service,
+                op,
+                cancellationToken)
+            : await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                resource,
+                service,
+                cancellationToken);
     }
 
     private static async Task<IResult?> RequireServiceWriteAccessBeforeBodyAsync(
@@ -934,6 +954,10 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        // Coarse pre-body gate for the MIXED service-level applyEdits (multi-layer, mixed
+        // insert/update/delete). A single per-operation distinction does not apply at the service
+        // scope; the real per-edit-type enforcement runs per layer in FeatureServerEditsHandler on
+        // the parsed body (BH3-001/BH3-014).
         return await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
             context,
             service,

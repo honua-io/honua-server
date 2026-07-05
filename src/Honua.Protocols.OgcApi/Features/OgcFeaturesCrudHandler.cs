@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -58,8 +59,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
     {
         try
         {
+            // Per-operation authorization (BH3-001/BH3-014): a POST create authorizes as Insert.
             var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessV2Async(
-                context, collectionId, cancellationToken: cancellationToken);
+                context, collectionId, operation: AuthorizationOperation.Insert, cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
@@ -208,8 +210,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
     {
         try
         {
+            // Per-operation authorization (BH3-001/BH3-014): a DELETE authorizes as Delete.
             var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessV2Async(
-                context, collectionId, cancellationToken: cancellationToken);
+                context, collectionId, operation: AuthorizationOperation.Delete, cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;

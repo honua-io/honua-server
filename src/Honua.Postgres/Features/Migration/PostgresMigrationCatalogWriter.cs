@@ -16,6 +16,7 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Postgres.Features.Migration;
 using Honua.Postgres.Features.FileImport;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Migration;
 
 /// <summary>
@@ -238,7 +239,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                 await copyCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var rowCount = await CountRowsAsync(connection, targetIdent, cancellationToken).ConfigureAwait(false);
@@ -518,7 +519,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             """;
 
         // honua.relationships has CHECK constraints on relationship_id > 0 and
-        // relationship_type ∈ {esriRelRoleOrigin, esriRelRoleDestination,
+        // relationship_type âˆˆ {esriRelRoleOrigin, esriRelRoleDestination,
         // esriRelRoleAny}. Stable-hash the source identifier when the source did
         // not advertise an integer id so the row still satisfies the schema.
         var relationshipId = request.EsriRelationshipId ?? DeriveStableRelationshipId(request.SourceRelationshipId);
