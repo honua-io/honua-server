@@ -136,7 +136,7 @@ public sealed class OgcProcessesJobKindFilterTestsFixture : IAsyncLifetime
             .Returns(GeoJob);
         mockJobStore.GetAsync(Arg.Is<string>(id => id != EtlJobId && id != GeoJobId), Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
-        mockJobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        mockJobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ExecutionJobRecord> { GeoJob });
 
         App = new WebAppFixture()

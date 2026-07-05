@@ -62,7 +62,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
             .Returns(queuedJob, (ExecutionJobRecord?)null);
         _jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
-        _jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        _jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ExecutionJobRecord>());
 
         _cancellationNotifier.Cancel(JobId).Returns(false);
@@ -238,7 +238,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(remoteQueued, terminal);
         jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
-        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ExecutionJobRecord>());
 
         var fixture = new WebAppFixture()
@@ -311,7 +311,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(remoteQueued);
         jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
-        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ExecutionJobRecord>());
 
         var fixture = new WebAppFixture()
@@ -393,7 +393,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(retryAwaitingResubmission);
         jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
-        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ExecutionJobRecord>());
 
         var fixture = new WebAppFixture()
@@ -476,7 +476,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
             .Returns(remoteQueued, remoteQueued, runningRecord);
         jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
-        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ExecutionJobRecord>());
         jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(false);
@@ -558,7 +558,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
 
-        // Queue should NOT have been cleaned up — worker owns terminal state.
+        // Queue should NOT have been cleaned up â€” worker owns terminal state.
         await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
@@ -605,7 +605,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(remoteRunning);
         jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
-        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ExecutionJobRecord>());
 
         var fixture = new WebAppFixture()
@@ -693,7 +693,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(remoteRunning);
         jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
-        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ExecutionJobRecord>());
 
         var fixture = new WebAppFixture()
@@ -763,7 +763,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(remoteRunning);
         jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
-        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ExecutionJobRecord>());
 
         var fixture = new WebAppFixture()

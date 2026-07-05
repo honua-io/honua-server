@@ -202,15 +202,13 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
             }
         }
 
-        if (_cache == null)
-        {
-            // In-process fallback: ConcurrentDictionary.TryAdd is atomic - only one concurrent
-            // caller wins; the loser sees false and should return 409.
-            return _fallback.TryAdd(key, new FallbackEntry(PendingSentinel, now.Add(ReservationWindow)));
-        }
-
-        // Non-Redis IDistributedCache has no set-if-absent; fall open.
-        return true;
+        // In-process fallback: ConcurrentDictionary.TryAdd is atomic — only one concurrent
+        // caller wins; the loser sees false and should return 409.
+        // This covers both the no-cache path (_cache == null) and the non-Redis
+        // IDistributedCache path: a MemoryDistributedCache / SQL-session-store / Memcached
+        // cache has no set-if-absent primitive, so treating it the same as no-cache
+        // gives us a single process-level mutex via ConcurrentDictionary. (BH7-002)
+        return _fallback.TryAdd(key, new FallbackEntry(PendingSentinel, now.Add(ReservationWindow)));
     }
 
     public async Task SetAsync(
@@ -258,6 +256,12 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
             // Best-effort: failing to record the response must not fail an already-applied edit.
             FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
         }
+
+        // TryReserveAsync uses _fallback for the non-Redis IDistributedCache path (BH7-002).
+        // Replace the pending reservation sentinel with the committed response so it does not
+        // linger for the full ReservationWindow, and trigger CleanupFallback to bound growth.
+        _fallback[key] = new FallbackEntry(payload, now.Add(DedupeWindow));
+        CleanupFallback(now);
     }
 
     private static string BuildKey(ApplyEditsIdempotencyScope scope)

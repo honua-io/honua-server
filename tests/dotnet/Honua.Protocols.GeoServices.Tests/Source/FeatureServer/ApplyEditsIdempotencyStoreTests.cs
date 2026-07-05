@@ -114,6 +114,41 @@ public sealed class ApplyEditsIdempotencyStoreTests
         replay.Should().BeNull("the same key on a different layer is a distinct edit");
     }
 
+    // ─── BH7-002 regression ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// BH7-002: concurrent TryReserveAsync on a non-Redis IDistributedCache (e.g.
+    /// MemoryDistributedCache — the default deployment) must still produce exactly one
+    /// winner per key.  The store must fall through to the in-process ConcurrentDictionary
+    /// path instead of returning true for every caller (the previous "fall-open" bug).
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task TryReserveAsync_ConcurrentSameScope_NonRedisCache_ExactlyOneWins()
+    {
+        // Arrange: MemoryDistributedCache configured but no IConnectionMultiplexer.
+        // Prior to the fix TryReserveAsync returned true unconditionally here.
+        var store = new DistributedApplyEditsIdempotencyStore(
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+
+        var scope = Scope(key: "bh7-002-race");
+
+        // Act: 10 concurrent reservations for the same scope.
+        var tasks = Enumerable.Range(0, 10)
+            .Select(_ => store.TryReserveAsync(scope))
+            .ToArray();
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert: exactly one winner (BH7-002).
+        results.Count(static r => r).Should().Be(1,
+            "ConcurrentDictionary.TryAdd is the fallback for non-Redis IDistributedCache; " +
+            "exactly one concurrent caller must win the reservation so only one edit executes");
+        results.Count(static r => !r).Should().Be(9,
+            "all other concurrent callers must lose the reservation and return 409");
+    }
+
     [UnitTest]
     [Operation(Operations.ApplyEdits)]
     public void TryResolveKey_NoHeader_ReturnsNullKeyWithoutError()

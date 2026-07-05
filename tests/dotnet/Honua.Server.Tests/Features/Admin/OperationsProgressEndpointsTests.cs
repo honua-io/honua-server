@@ -660,7 +660,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
             jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
                 .Returns(jobRecord);
-            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
                 .Returns(Array.Empty<ExecutionJobRecord>());
 
             var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-never-submitted");
@@ -749,7 +749,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
             jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
                 .Returns(jobRecord);
-            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
                 .Returns(Array.Empty<ExecutionJobRecord>());
 
             var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-retry-backoff");
@@ -836,7 +836,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
             jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
                 .Returns(jobRecord, runningRecord);
-            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
                 .Returns(Array.Empty<ExecutionJobRecord>());
             jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
                 .Returns(false);
@@ -907,7 +907,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
             jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
                 .Returns(jobRecord);
-            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
                 .Returns(Array.Empty<ExecutionJobRecord>());
 
             var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-nonterminal");
@@ -989,7 +989,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
             jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
                 .Returns(jobRecord);
-            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
                 .Returns(Array.Empty<ExecutionJobRecord>());
 
             var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-terminal-race");
@@ -1058,7 +1058,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
             jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
                 .Returns(jobRecord);
-            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
                 .Returns(Array.Empty<ExecutionJobRecord>());
 
             var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-failed-race");

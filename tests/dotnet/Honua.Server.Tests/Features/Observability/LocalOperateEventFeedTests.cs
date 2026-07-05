@@ -854,7 +854,7 @@ public sealed class LocalOperateEventFeedTests
             return Task.FromResult(new ExecutionJobPage { Items = page, NextCursor = nextCursor });
         }
 
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_records.Values.ToArray());
 
         private static bool MatchesParameter(ExecutionJobRecord job, string key, string? expected)
