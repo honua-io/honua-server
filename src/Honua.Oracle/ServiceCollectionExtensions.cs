@@ -54,7 +54,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOracleSpatialMetadataProbe, OracleSpatialMetadataProbe>();
         services.AddScoped<OracleSpatialGuard>();
         services.AddScoped<OracleFeatureDataAccess>();
-        services.AddScoped<OracleFeatureStore>();
+        services.AddScoped<OracleFeatureStore>(sp => new OracleFeatureStore(
+            sp.GetRequiredService<OracleFeatureDataAccess>(),
+            sp.GetRequiredService<OracleSpatialGuard>(),
+            sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>()));
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<OracleFeatureStore>());
 

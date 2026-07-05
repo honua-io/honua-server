@@ -335,6 +335,14 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             return (0, 0);
         }
 
+        if (entry.Type != TiffConstants.TypeDouble)
+        {
+            // Geo-referencing tags MUST use DOUBLE (type 12) so all coordinate reads are
+            // at fixed 8-byte offsets. A non-DOUBLE type produces an undersized buffer
+            // that would overflow data.Slice(offset) — return the zero origin instead.
+            return (0, 0);
+        }
+
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
         var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
 
@@ -350,6 +358,13 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
     {
         if (entry.Count < 3)
         {
+            return (1, 1);
+        }
+
+        if (entry.Type != TiffConstants.TypeDouble)
+        {
+            // Same rationale as ExtractTiepointAsync — guard against a non-DOUBLE type
+            // declaration that would undersize the buffer relative to the hardcoded read offsets.
             return (1, 1);
         }
 
