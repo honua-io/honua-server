@@ -31,6 +31,7 @@ public static partial class EndpointRegistry
     [
         .. PlatformEndpoints,
         .. AdminEndpoints,
+        .. AdminObservabilityEndpoints,
         .. IdentityProvisioningEndpoints,
         .. ConsoleEndpoints,
         .. StudioEndpoints,

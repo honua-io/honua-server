@@ -133,6 +133,9 @@ public static partial class Extensions
             tracingOptions.ExportExceptionDetails,
             tracingOptions.ExportExceptionDetails && tracingOptions.RecordExceptionStackTraces,
             tracingOptions.MaxExceptionDetailLength);
+        HonuaTelemetry.ConfigureServingLatency(
+            TimeSpan.FromSeconds(tracingOptions.ServingLatencyWindowSeconds),
+            tracingOptions.ServingLatencySamplesPerProtocol);
 
         // Bind Prometheus scraping options
         builder.Services.Configure<PrometheusOptions>(builder.Configuration.GetSection(PrometheusOptions.SectionName));
