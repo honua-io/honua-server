@@ -19,6 +19,7 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Postgres.Features.Migration;
 using Honua.Postgres.Features.FileImport;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
@@ -145,7 +146,7 @@ internal sealed partial class GeoservicesImportService
             await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
-            await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitSafelyAsync(cancellationToken);
 
             PublishedLayerSummary? publishedLayer = null;
             if (request.AutoPublish)
@@ -189,7 +190,7 @@ internal sealed partial class GeoservicesImportService
                     "Layer advertises attachments, but no attachment store is registered; attachments were not copied.");
             }
 
-            // Phase 5: Validating — reconcile the published layer against the apply-time source
+            // Phase 5: Validating â€” reconcile the published layer against the apply-time source
             // snapshot before declaring the import complete. A hard finding routes the run to
             // NeedsReview (issue #1380) instead of Completed; warn findings are recorded but do
             // not block. Reconciliation runs outside the import transaction (which is already

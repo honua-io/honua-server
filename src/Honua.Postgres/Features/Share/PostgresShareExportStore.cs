@@ -261,7 +261,7 @@ internal sealed class PostgresShareExportStore : IShareExportStore
                     await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
 
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
                 return run;
             }
             catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)

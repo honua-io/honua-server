@@ -170,23 +170,41 @@ internal sealed class FeatureServerEditsHandler(
                     contentType: "application/json");
             }
 
-            // Per-edit-type authorization checks (BH-002): the pre-body gate uses Update as the
-            // coarsest write check; after the body is read, gate each present edit type on its
-            // specific operation so a delete-only payload requires Delete, not just Update.
+            // Per-edit-type authorization checks (BH-002 / BH3-001 / BH3-014): the pre-body gate
+            // uses Update as the coarsest write check; after the body is read, each present edit
+            // type is gated on its specific operation so a delete-only payload requires Delete,
+            // an insert-only payload requires Insert, and an updates-only payload requires Update.
+            // ALL THREE checks are required — omitting any one allows a principal that holds only
+            // a different operation's grant to bypass the missing check entirely.
+            //
+            // RequireResourceDataEditorAsync is called here with a specific requiredOperation so
+            // that the RBAC data-editor gate bypass is narrowed to that exact operation: a caller
+            // with only an Insert grant cannot bypass the gate for an Update-only payload
+            // (BH3-001) and a Delete-only grantee cannot do the same (BH3-014).
             if (request.Adds?.Length > 0)
             {
-                var insertError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                    httpContext, resource, AuthorizationOperation.Insert, service, cancellationToken).ConfigureAwait(false);
+                var insertError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                    httpContext, resource, service, AuthorizationOperation.Insert, cancellationToken).ConfigureAwait(false);
                 if (insertError != null)
                 {
                     return insertError;
                 }
             }
 
+            if (request.Updates?.Length > 0)
+            {
+                var updateError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                    httpContext, resource, service, AuthorizationOperation.Update, cancellationToken).ConfigureAwait(false);
+                if (updateError != null)
+                {
+                    return updateError;
+                }
+            }
+
             if (request.Deletes?.Length > 0)
             {
-                var deleteError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                    httpContext, resource, AuthorizationOperation.Delete, service, cancellationToken).ConfigureAwait(false);
+                var deleteError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                    httpContext, resource, service, AuthorizationOperation.Delete, cancellationToken).ConfigureAwait(false);
                 if (deleteError != null)
                 {
                     return deleteError;

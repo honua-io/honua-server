@@ -167,7 +167,11 @@ public class AdoNetDatabaseSession : IDatabaseSession
             throw new InvalidOperationException("Cannot commit: session is not transactional.");
         }
 
-        await _transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        // Guard against phantom commits: check the token before the COMMIT round-trip
+        // so we fail cleanly if already cancelled; then commit with None so the in-flight
+        // COMMIT can never be interrupted once it starts (see HN0001).
+        cancellationToken.ThrowIfCancellationRequested();
+        await _transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
         _committed = true;
     }
 

@@ -71,6 +71,38 @@ internal static class ServiceDataEditorAuthorization
         MetadataV2Service? service = null,
         CancellationToken cancellationToken = default)
     {
+        return await RequireResourceDataEditorCoreAsync(context, resource, service, specificOperation: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Per-edit-type variant of <see cref="RequireResourceDataEditorAsync(HttpContext, MetadataV2Resource, MetadataV2Service?, CancellationToken)"/>
+    /// (BH3-001/BH3-014). The RBAC data-editor gate bypass is narrowed to the
+    /// specified <paramref name="operation"/> so a caller with only an Insert grant
+    /// is denied an Update-only payload and vice-versa.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resource">The target resource.</param>
+    /// <param name="service">The owning service, or <see langword="null"/>.</param>
+    /// <param name="operation">The specific write operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An error result when denied; otherwise <see langword="null"/>.</returns>
+    public static async Task<IResult?> RequireResourceDataEditorAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        return await RequireResourceDataEditorCoreAsync(context, resource, service, operation, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult?> RequireResourceDataEditorCoreAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        AuthorizationOperation? specificOperation,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(resource);
 
         // Layer-scoped write keys (#1637) are enforced here in the shared pipeline.
@@ -93,9 +125,12 @@ internal static class ServiceDataEditorAuthorization
 
         // No explicit write policy: a per-operation RBAC write grant (#1376) on
         // the (service, layer) authorizes the mutation, bypassing the coarse
-        // data-editor role gate. Absent any grant, behavior is unchanged.
+        // data-editor role gate. When specificOperation is set (per-type edit checks
+        // — BH3-001/BH3-014) the bypass is narrowed to that exact operation so a
+        // caller with only an Insert grant cannot bypass the gate for an Update-only
+        // payload and vice-versa.
         if (service is not null &&
-            await HasWriteGrantAsync(context, service.Metadata.Name, resource.Metadata.Name, cancellationToken).ConfigureAwait(false))
+            await HasWriteGrantAsync(context, service.Metadata.Name, resource.Metadata.Name, cancellationToken, specificOperation).ConfigureAwait(false))
         {
             return null;
         }
@@ -220,7 +255,8 @@ internal static class ServiceDataEditorAuthorization
         HttpContext context,
         string serviceName,
         string? layerName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AuthorizationOperation? specificOperation = null)
     {
         if (string.IsNullOrWhiteSpace(serviceName))
         {
@@ -246,7 +282,14 @@ internal static class ServiceDataEditorAuthorization
             ?? string.Empty;
         var isAuthenticated = principal.Identity?.IsAuthenticated == true;
 
-        foreach (var operation in WriteOperations)
+        // When specificOperation is set (per-type edit check), only that operation
+        // can bypass the data-editor role gate.  Without it, any write op suffices
+        // (coarse caller check — BH3-001/BH3-014 narrowing is done at the call site).
+        IEnumerable<AuthorizationOperation> operations = specificOperation.HasValue
+            ? [specificOperation.Value]
+            : WriteOperations;
+
+        foreach (var operation in operations)
         {
             var decision = await resolver.AuthorizeAsync(
                 userId,

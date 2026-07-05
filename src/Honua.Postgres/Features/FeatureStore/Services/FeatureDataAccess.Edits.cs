@@ -12,6 +12,7 @@ using NetTopologySuite.IO;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
@@ -156,7 +157,7 @@ internal sealed partial class FeatureDataAccess
                     cancellationToken).ConfigureAwait(false);
             }
 
-            await Transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await Transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return deleted.Deleted;
         }
 
@@ -176,7 +177,7 @@ internal sealed partial class FeatureDataAccess
         // A scope without a registered outbox repository is a wiring error: the protocol
         // layer opened a scope expecting durable CDC intent, so falling through to the
         // autocommit fast path would silently drop the envelope the scope was set up to
-        // record — the exact gap the transactional outbox is meant to close. Fail loud
+        // record â€” the exact gap the transactional outbox is meant to close. Fail loud
         // instead so the misconfiguration surfaces as a mutation failure rather than as
         // silent CDC loss. Capability provider and repository must be registered together.
         if (_outboxRepository is null)
@@ -214,7 +215,7 @@ internal sealed partial class FeatureDataAccess
             snapshot,
             cancellationToken).ConfigureAwait(false);
 
-        await Transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await Transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return snapshot ?? throw new InvalidOperationException("Mutation returned no snapshot.");
     }
 
@@ -507,7 +508,7 @@ internal sealed partial class FeatureDataAccess
 
         if (transaction != null)
         {
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var immutableCreatedIds = createdIds.ToImmutable();
@@ -960,7 +961,7 @@ internal sealed partial class FeatureDataAccess
         // When an outbox scope is active we serialize creates so the per-row snapshot
         // returned by CreateWithConnectionAsync can drive the outbox factory. The fast
         // bulk INSERT path returns ids only and would force a second projection just to
-        // satisfy the outbox payload — single-row inserts give us the snapshot directly
+        // satisfy the outbox payload â€” single-row inserts give us the snapshot directly
         // and remain inside the same connection/transaction so atomicity is preserved.
         // TryUseTransactionalOutbox throws when scope is active but the repository is
         // missing so the wiring error surfaces here instead of silently picking the bulk
@@ -1134,10 +1135,19 @@ internal sealed partial class FeatureDataAccess
                 FROM payload
                 ORDER BY payload.ordinality
                 RETURNING objectid
+            ),
+            numbered AS (
+                -- BH3-020: ORDER BY ctid diverges from insertion order on tables with
+                -- free pages from prior deletes. Use ROW_NUMBER() OVER () instead:
+                -- PostgreSQL returns RETURNING rows in insertion order, which we control
+                -- via ORDER BY payload.ordinality above, so row numbers map 1:1 to input
+                -- feature array indices.
+                SELECT objectid, ROW_NUMBER() OVER () AS rn
+                FROM inserted
             )
             SELECT objectid
-            FROM inserted
-            ORDER BY ctid";
+            FROM numbered
+            ORDER BY rn";
 
         await using var command = new NpgsqlCommand(sql, connection)
         {
@@ -1376,7 +1386,7 @@ internal sealed partial class FeatureDataAccess
 
         await using var rowTransaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         var result = await mutateAndAppendOutbox(connection, (NpgsqlTransaction)rowTransaction, cancellationToken).ConfigureAwait(false);
-        await rowTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await rowTransaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return result;
     }
 
