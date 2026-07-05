@@ -22,6 +22,11 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 [JsonSerializable(typeof(McpGeoJsonFeatureCollection))]
 [JsonSerializable(typeof(McpRenderMapArgument))]
 [JsonSerializable(typeof(McpRenderLayerRef))]
+[JsonSerializable(typeof(McpEditFeaturesArgument))]
+[JsonSerializable(typeof(McpEditFeature))]
+[JsonSerializable(typeof(McpEditFeaturesOutput))]
+[JsonSerializable(typeof(McpEditResult))]
+[JsonSerializable(typeof(McpEditSummary))]
 [JsonSerializable(typeof(JsonNode))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSourceGenerationOptions(
