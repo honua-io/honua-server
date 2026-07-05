@@ -134,9 +134,6 @@ internal sealed partial class NotifyingWorkflowOperationStore : IWorkflowOperati
     public Task<bool> TryCreateAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         => _inner.TryCreateAsync(operation, ttl, cancellationToken);
 
-    public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        => _inner.TrySetAsync(operation, ttl, cancellationToken);
-
     public Task<WorkflowOperationRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
         => _inner.GetAsync(operationId, cancellationToken);
 
