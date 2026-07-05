@@ -93,7 +93,7 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
 
         // Resolve the listener's DEFAULT rule (the weighted forward action the backend mutates). The
         // substrate hands us a LISTENER ARN; the backend operates on a RULE ARN, so derive it live.
-        var listenerRuleArn = await ResolveDefaultRuleArnAsync(_cert.AlbListenerArn!, region);
+        var listenerRuleArn = await ResolveWeightedRuleArnAsync(_cert.AlbListenerArn!, region);
 
         // Same-revision deploy: the desired revision IS the service's current task definition, so ECS
         // is already converged and the cell certifies the traffic-shift mechanics, not an image roll.
@@ -121,7 +121,7 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
             var submission = await backend.StartAsync(operation);
             submission.Status.Should().Be(
                 WorkflowOperationStatus.Submitted,
-                "the production ECS/ALB backend must accept the weighted cutover");
+                $"the production ECS/ALB backend must accept the weighted cutover (message: {submission.Message})");
 
             var afterShift = ReadShares(await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region));
             afterShift.Canary.Should().Be(
@@ -259,24 +259,27 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         }
     }
 
-    private static async Task<string> ResolveDefaultRuleArnAsync(string listenerArn, string region)
+    private static async Task<string> ResolveWeightedRuleArnAsync(string listenerArn, string region)
     {
         using var elb = string.IsNullOrWhiteSpace(region)
             ? new AmazonElasticLoadBalancingV2Client()
             : new AmazonElasticLoadBalancingV2Client(RegionEndpoint.GetBySystemName(region));
 
+        // AWS forbids ModifyRule on a listener's DEFAULT rule (OperationNotPermitted), so the
+        // substrate parks the weighted forward action on a dedicated non-default rule — exactly
+        // how a production canary deployment is wired. Certify against that rule.
         var response = await elb.DescribeRulesAsync(new DescribeRulesRequest { ListenerArn = listenerArn });
-        var defaultRule = response.Rules?.FirstOrDefault(rule => rule.IsDefault == true)
+        var weightedRule = response.Rules?.FirstOrDefault(rule => rule.IsDefault != true)
             ?? throw new InvalidOperationException(
-                $"Listener '{listenerArn}' has no default rule to certify weighted cutover against.");
+                $"Listener '{listenerArn}' has no non-default rule to certify weighted cutover against.");
 
-        if (string.IsNullOrWhiteSpace(defaultRule.RuleArn))
+        if (string.IsNullOrWhiteSpace(weightedRule.RuleArn))
         {
             throw new InvalidOperationException(
-                $"Listener '{listenerArn}' default rule did not resolve to a rule ARN.");
+                $"Listener '{listenerArn}' weighted rule did not resolve to a rule ARN.");
         }
 
-        return defaultRule.RuleArn;
+        return weightedRule.RuleArn;
     }
 
     private (int Canary, int Stable) ReadShares(AwsAlbListenerRuleState state)
