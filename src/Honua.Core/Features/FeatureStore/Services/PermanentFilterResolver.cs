@@ -5,13 +5,12 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
 using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Core.Features.FeatureStore.Services;
 
 /// <summary>
 /// Resolves a layer's metadata-v2 permanent (row-visibility) filter to a
-/// parameterized SQL fragment. Shared by <c>PostgresFeatureStoreRefactored</c>
-/// and <c>PostgresSpatialAnalyticsReader</c> so every Postgres read surface
-/// enforces the same row-visibility rules.
+/// parameterized SQL fragment. Shared across all read-capable feature store
+/// providers so every provider enforces the same row-visibility rules.
 /// </summary>
 internal static class PermanentFilterResolver
 {

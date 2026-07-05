@@ -72,4 +72,41 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("<wfs:FeatureCollection");
     }
+
+    /// <summary>
+    /// Regression for BH4-008: streaming responses must expose an advisory
+    /// <c>numberMatched</c> snapshot count (in the JSON body and
+    /// <c>OGC-NumberMatched</c> header). The value is a pre-flight snapshot
+    /// estimate — it is advisory per OGC API Features Part 1 §7.7, not an
+    /// authoritative exact count — but it must always be a non-negative integer,
+    /// never absent or negative.
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_LargeLimit_Streaming_ProvidesAdvisorySnapshotNumberMatched()
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestLayerId}/items?limit=2000");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.True(response.Headers.TransferEncodingChunked ?? false,
+            "Response must use chunked encoding (streaming path)");
+
+        // JSON body must contain numberMatched as an advisory snapshot count.
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.TryGetProperty("numberMatched", out var nmProp)
+            .Should().BeTrue("streaming path must include an advisory numberMatched count (BH4-008)");
+        nmProp.GetInt64().Should().BeGreaterThanOrEqualTo(0,
+            "numberMatched snapshot estimate must be a non-negative integer");
+
+        // HTTP header form: OGC-NumberMatched must also be set for protocol-level consumers.
+        response.Headers.TryGetValues("OGC-NumberMatched", out var headerValues)
+            .Should().BeTrue("streaming path must set OGC-NumberMatched response header (BH4-008)");
+        var headerValue = headerValues!.First();
+        long.TryParse(headerValue, out var parsedHeader).Should().BeTrue(
+            "OGC-NumberMatched header must be parseable as a long integer");
+        parsedHeader.Should().BeGreaterThanOrEqualTo(0,
+            "OGC-NumberMatched header value must be non-negative");
+    }
 }
