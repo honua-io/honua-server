@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.ControlPlane;
 using Honua.Server.Features.Orchestration;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Startup;
 
@@ -92,6 +93,12 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
 #endif
 
+        // Substrate-neutral, single-host rolling-replace deploy backend (ADR-0060). Registered
+        // unconditionally: it is the zero-cloud default for on-prem/air-gapped hosts and is gated at
+        // runtime by ControlPlane:SelfHosted:Enabled rather than a compile-time HONUA_EXCLUDE_* switch.
+        services.AddSingleton<YarpRollingDeployBackend>();
+        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<YarpRollingDeployBackend>());
+
         // Batch backends. Local fallback is registered first so it sits earlier in the enumerable.
         services.AddSingleton<LocalBatchComputeBackend>();
         services.AddSingleton<IBatchComputeBackend>(sp =>
@@ -112,6 +119,18 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<KubernetesJobBatchComputeBackend>();
         services.AddSingleton<IBatchComputeBackend>(sp =>
             sp.GetRequiredService<KubernetesJobBatchComputeBackend>());
+
+        // Substrate-neutral, single-host local process-pool batch backend (ADR-0060). Registered
+        // unconditionally as the zero-dependency GP executor for on-prem/air-gapped hosts; per-workload
+        // process spec is carried on ExecutionJobSpec.Parameters, and the pool size is bounded by
+        // ControlPlane:LocalProcess options.
+        services.AddOptions<LocalProcessPoolOptions>()
+            .BindConfiguration(LocalProcessPoolOptions.SectionName)
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<LocalProcessPoolOptions>, LocalProcessPoolOptionsValidator>();
+        services.AddSingleton<LocalProcessPoolBatchComputeBackend>();
+        services.AddSingleton<IBatchComputeBackend>(sp =>
+            sp.GetRequiredService<LocalProcessPoolBatchComputeBackend>());
 
         return services;
     }
