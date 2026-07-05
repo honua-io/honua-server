@@ -302,4 +302,20 @@ public class Cql2LexerTests
         tokens[0].Type.Should().Be(Cql2TokenType.Identifier);
         tokens[0].Value.Should().Be("ns:field.subfield");
     }
+
+    [Fact]
+    public void Tokenize_BareIntersects_IsLexedAsIdentifierNotSpatialPredicate()
+    {
+        // OGC CQL2 Text grammar (OGC 21-065r1): bare INTERSECTS is NOT a valid
+        // spatial predicate — only S_INTERSECTS is. The bare alias was removed
+        // to keep the CQL2 surface conformant for CITE negative testing. An
+        // expression using bare INTERSECTS should be rejected by the parser, not
+        // silently accepted as S_INTERSECTS.
+        var lexer = new Cql2Lexer("INTERSECTS");
+
+        var tokens = lexer.Tokenize();
+
+        tokens[0].Type.Should().Be(Cql2TokenType.Identifier,
+            "bare INTERSECTS is not a valid CQL2 spatial predicate; S_INTERSECTS is required");
+    }
 }

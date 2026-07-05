@@ -68,6 +68,7 @@ internal static class SearchEndpoints
         HttpContext context,
         [FromQuery] int? limit,
         [FromQuery] int? offset,
+        [FromQuery] string? token,
         [FromQuery] string? bbox,
         [FromQuery] string? datetime,
         [FromQuery] string? collections,
@@ -113,7 +114,22 @@ internal static class SearchEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid search parameters.");
         }
 
-        var effectiveOffset = Math.Max(offset ?? 0, 0);
+        // STAC API token takes precedence over the legacy offset parameter.
+        // "token" uses the same opaque offset:N format as the POST next link,
+        // aligning GET and POST pagination strategies.
+        int effectiveOffset;
+        if (token is not null)
+        {
+            if (!TryParseContinuationToken(token, out effectiveOffset))
+            {
+                StacTelemetry.SetFailed(activity, "invalid_pagination_token");
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid pagination token.");
+            }
+        }
+        else
+        {
+            effectiveOffset = Math.Max(offset ?? 0, 0);
+        }
 
         return await ExecuteSearchAsync(
             request,
@@ -1465,10 +1481,14 @@ internal static class SearchEndpoints
 
     private static string BuildSearchQuery(int limit, int offset, StacSearchRequest request, bool defaultFilterLangIsText)
     {
+        // Emit "token=offset:N" (same format as the POST next link) so GET and POST
+        // pagination strategies align. The legacy "offset" parameter continues to
+        // be accepted for backward compatibility.
+        var paginationToken = ContinuationTokenPrefix + offset.ToString(CultureInfo.InvariantCulture);
         var query = new List<string>
         {
             $"limit={limit}",
-            $"offset={offset}"
+            $"token={Uri.EscapeDataString(paginationToken)}"
         };
 
         if (request.Bbox is { IsDefault: false } bboxArr && bboxArr.Length >= 4)

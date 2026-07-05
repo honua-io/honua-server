@@ -70,4 +70,45 @@ public sealed class SpatialReferenceExtensionsTests
         var sr = new SpatialReference { Wkid = wkid };
         sr.GetAuthorityCode().Should().Be(expected);
     }
+
+    // PA-022: WGS84 layers must advertise both CRS84 (EastNorth) and EPSG:4326 (NorthEast).
+    [Fact]
+    public void GetSupportedCrsUris_Wgs84Layer_IncludesBothCrs84AndEpsg4326()
+    {
+        var sr = new SpatialReference { Wkid = 4326 };
+        var uris = sr.GetSupportedCrsUris();
+
+        uris.Should().Contain("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+        uris.Should().Contain("http://www.opengis.net/def/crs/EPSG/0/4326");
+    }
+
+    // PA-023: Non-WGS84, non-WebMercator layers must NOT advertise EPSG:3857.
+    [Fact]
+    public void GetSupportedCrsUris_NonWgs84NonWebMercator_DoesNotInclude3857()
+    {
+        var sr = new SpatialReference { Wkid = 4269 };
+        var uris = sr.GetSupportedCrsUris();
+
+        uris.Should().NotContain("http://www.opengis.net/def/crs/EPSG/0/3857");
+    }
+
+    // PA-028: https:// CRS84 URI must be normalised to the canonical http:// form.
+    [Fact]
+    public void FromOgcCrsUri_HttpsCrs84Uri_ReturnsWgs84()
+    {
+        var result = SpatialReferenceExtensions.FromOgcCrsUri("https://www.opengis.net/def/crs/OGC/1.3/CRS84");
+
+        result.Should().NotBeNull();
+        result!.Value.Wkid.Should().Be(4326);
+    }
+
+    // PA-028: https:// EPSG URI must resolve to the correct SRID.
+    [Fact]
+    public void FromOgcCrsUri_HttpsEpsgUri_ReturnsCorrectSrid()
+    {
+        var result = SpatialReferenceExtensions.FromOgcCrsUri("https://www.opengis.net/def/crs/EPSG/0/3857");
+
+        result.Should().NotBeNull();
+        result!.Value.Wkid.Should().Be(3857);
+    }
 }
