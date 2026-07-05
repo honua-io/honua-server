@@ -107,6 +107,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_publish_service", "publish_service", "lifecycle"),
             ("honua_list_layers", "list_layers", "results"),
             ("honua_query_features", "query_features", "results"),
+            ("honua_edit_features", "edit_features", "execution"),
             ("honua_render_map", "render_map", "results"),
             ("honua_resolve_entity", "resolve_entity", "results"),
             ("honua_list_capabilities", "list_capabilities", "results"),

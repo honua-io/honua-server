@@ -144,6 +144,21 @@ internal static class McpServiceCollectionExtensions
                 services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.QueryFeaturesTool>());
             }
 
+            // honua_edit_features: the transactional feature-editing tool. It is a
+            // thin adapter over the shared edit/transaction pipeline
+            // (IEditProcessor validation + ToFeatureEditBatch, then
+            // IFeatureWriter.ApplyEditsAsync — the same seams FeatureServer
+            // applyEdits, OGC API Features, WFS Transaction, and OData CRUD adapt
+            // to). Advertised only when BOTH the edit processor and the feature
+            // writer are composed, so tools/list never advertises an edit verb the
+            // host cannot back (read-only providers register a ReadOnlyFeatureWriter
+            // but no IEditProcessor unless the edit pipeline is wired).
+            if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Edit.IEditProcessor)) &&
+                services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FeatureStore.Abstractions.IFeatureWriter)))
+            {
+                services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.EditFeaturesTool>());
+            }
+
             // The map-render tool additionally needs the canonical raster
             // renderer (the same IRasterMapRenderer the OGC API Maps / MapServer
             // export / WMS GetMap surfaces drive).

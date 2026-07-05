@@ -46,6 +46,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_solve_route",
         "honua_list_layers",
         "honua_query_features",
+        "honua_edit_features",
         "honua_render_map",
         "honua_resolve_entity",
         "honua_list_capabilities"
@@ -236,6 +237,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_publish_service"] = (Destructive: false, Idempotent: false),
             ["honua_create_map_package"] = (Destructive: false, Idempotent: false),
             ["honua_create_app_package"] = (Destructive: false, Idempotent: false),
+            ["honua_edit_features"] = (Destructive: true, Idempotent: false),
         };
 
     [UnitTest]
@@ -580,6 +582,8 @@ public sealed partial class McpTaxonomyAlignmentTests
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.EditFeaturesTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.EditFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance),
             new Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool(

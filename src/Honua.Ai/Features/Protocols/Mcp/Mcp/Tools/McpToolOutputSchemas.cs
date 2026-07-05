@@ -405,16 +405,31 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "returnedCount", "limit", "exceededTransferLimit", "geojson"],
+          "required": ["serviceId", "layerId", "returnedCount", "limit", "resultOffset", "exceededTransferLimit"],
           "properties": {
             "serviceId": { "type": "string" },
             "layerId": { "type": "integer" },
             "returnedCount": { "type": "integer" },
             "limit": { "type": "integer" },
-            "exceededTransferLimit": { "type": "boolean" },
+            "resultOffset": {
+              "type": "integer",
+              "description": "The resultOffset applied to this request (defaults to 0)."
+            },
+            "exceededTransferLimit": {
+              "type": "boolean",
+              "description": "True when more matching features exist beyond this page. When true, re-issue the same query with resultOffset=nextOffset to fetch the next page."
+            },
+            "nextOffset": {
+              "type": "integer",
+              "description": "Present only when exceededTransferLimit is true: the resultOffset to send on the next request (resultOffset + returnedCount) to page mechanically. Absent on the last page."
+            },
+            "count": {
+              "type": "integer",
+              "description": "Matching feature count. Present only when returnCountOnly=true; features are omitted in that mode."
+            },
             "geojson": {
               "type": "object",
-              "description": "RFC 7946 GeoJSON FeatureCollection.",
+              "description": "RFC 7946 GeoJSON FeatureCollection. Omitted when returnCountOnly=true. When returnGeometry=false each feature's geometry is null.",
               "properties": {
                 "type": { "type": "string", "const": "FeatureCollection" },
                 "features": { "type": "array", "items": { "type": "object" } }
@@ -476,6 +491,47 @@ internal static class McpToolOutputSchemas
             "capabilityState": { "type": ["object", "null"] },
             "provider": { "type": ["string", "null"] },
             "model": { "type": ["string", "null"] }
+          }
+        }
+        """);
+
+    /// <summary>
+    /// Schema for <c>McpEditFeaturesOutput</c>: per-edit results grouped by edit
+    /// kind plus the transaction summary emitted by the shared edit pipeline.
+    /// </summary>
+    public static readonly JsonElement EditFeaturesOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["serviceId", "layerId", "addResults", "updateResults", "deleteResults", "summary"],
+          "properties": {
+            "serviceId": { "type": "string" },
+            "layerId": { "type": "integer" },
+            "addResults": { "type": "array", "items": { "$ref": "#/$defs/editResult" } },
+            "updateResults": { "type": "array", "items": { "$ref": "#/$defs/editResult" } },
+            "deleteResults": { "type": "array", "items": { "$ref": "#/$defs/editResult" } },
+            "summary": {
+              "type": "object",
+              "required": ["applied", "failed", "rolledBack"],
+              "properties": {
+                "applied": { "type": "integer", "description": "Count of successfully applied edits." },
+                "failed": { "type": "integer", "description": "Count of failed edits." },
+                "rolledBack": { "type": "boolean", "description": "True when the whole transaction was rolled back." }
+              }
+            }
+          },
+          "$defs": {
+            "editResult": {
+              "type": "object",
+              "required": ["index", "success"],
+              "properties": {
+                "index": { "type": "integer", "description": "Zero-based position of the edit in its submitted array." },
+                "success": { "type": "boolean" },
+                "objectId": { "type": ["integer", "null"] },
+                "globalId": { "type": ["string", "null"] },
+                "error": { "type": ["string", "null"] }
+              }
+            }
           }
         }
         """);

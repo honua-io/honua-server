@@ -8,14 +8,16 @@ Honua's live `/mcp` advertised tool input schemas and resource payload shapes
 implementation.
 
 - Source: `geospatial-mcp` `spec/schemas/` (branch `feat/json-schemas-conformance`,
-  PR honua-io/geospatial-mcp#21).
+  PR honua-io/geospatial-mcp#21). `tools/query_features.schema.json` (and the
+  paired paging fixture) were re-vendored from PR honua-io/geospatial-mcp#46,
+  which adds the optional `resultOffset` / `returnGeometry` / `returnCountOnly`
+  params.
 - `tools/geocode_addresses.schema.json`, `tools/ingest_dataset.schema.json`,
   their fixtures, and the matching `index.json` entries are vendored from
-  `geospatial-mcp` commit `9d985a0c18ceb73da58dcb90ec3aee4e372396b0`
-  (branch `spec/ingest-dataset-geocode-addresses`). Note: upstream trunk has
-  since revised other schema descriptions/enums (PR geospatial-mcp#44); those
-  files are deliberately NOT re-vendored here — reconciling that drift is a
-  separate alignment task.
+  the `geospatial-mcp` branch `spec/ingest-dataset-geocode-addresses`. Note:
+  upstream trunk has since revised other schema descriptions/enums (PR
+  geospatial-mcp#44); those files are deliberately NOT re-vendored here —
+  reconciling that drift is a separate alignment task.
 - Do not hand-edit. Re-vendor when the upstream schemas change.
 - Files are copied to the test output directory (`CopyToOutputDirectory`) and
   loaded at test time.

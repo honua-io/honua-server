@@ -1,0 +1,31 @@
+{
+  "id": "edit_features.transactional_mixed",
+  "schemaRef": "tools/edit_features.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "serviceId": "county_parcels",
+    "layerId": 0,
+    "srid": 4326,
+    "adds": [
+      {
+        "geometry": { "type": "Point", "coordinates": [-97.74, 30.27] },
+        "attributes": { "parcel_id": "A-1001", "zoning": "R1" }
+      },
+      {
+        "geometry": { "type": "Point", "coordinates": [-97.75, 30.28] },
+        "attributes": { "parcel_id": "A-1002", "zoning": "R1" }
+      }
+    ],
+    "updates": [
+      {
+        "objectId": 42,
+        "attributes": { "zoning": "R2" }
+      }
+    ],
+    "deletes": [99],
+    "rollbackOnFailure": true,
+    "returnEditResults": true
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}

@@ -81,6 +81,22 @@ internal static class MapToolSchemas
               "default": 100,
               "description": "Maximum number of features to return (capped at 1000)."
             },
+            "resultOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "description": "Number of matching features to skip before returning results (pagination). Pair with limit to page mechanically through large result sets: when a response reports exceededTransferLimit=true, re-issue the same query with resultOffset set to the returned nextOffset until exceededTransferLimit is false."
+            },
+            "returnGeometry": {
+              "type": "boolean",
+              "default": true,
+              "description": "When false, features are returned without geometry (attribute-only rows). Use for attribute scans where returning geometry would waste the response/context budget."
+            },
+            "returnCountOnly": {
+              "type": "boolean",
+              "default": false,
+              "description": "When true, return only the matching feature count and no features. Use for cheap cardinality checks before deciding whether/how to page."
+            },
             "outSrid": {
               "type": "integer",
               "default": 4326,
@@ -157,8 +173,83 @@ internal static class MapToolSchemas
     /// <summary>Schema for <see cref="McpQueryFeaturesArgument"/>.</summary>
     public static readonly JsonElement QueryFeaturesArgumentSchema = Parse(QueryFeaturesArgumentSchemaJson);
 
+    private const string EditFeaturesArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["serviceId", "layerId"],
+          "properties": {
+            "serviceId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Published service identifier or name (from honua_list_layers.serviceId or honua_resolve_entity)."
+            },
+            "layerId": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Service-local layer index of the editable layer (from honua_list_layers.layerId)."
+            },
+            "srid": {
+              "type": "integer",
+              "default": 4326,
+              "description": "Spatial reference (SRID/WKID) of the input feature geometries."
+            },
+            "adds": {
+              "type": "array",
+              "description": "Features to insert. Object IDs are assigned by the store.",
+              "items": { "$ref": "#/$defs/editFeature" }
+            },
+            "updates": {
+              "type": "array",
+              "description": "Features to update. Each MUST carry an objectId identifying the existing feature.",
+              "items": { "$ref": "#/$defs/editFeature" }
+            },
+            "deletes": {
+              "type": "array",
+              "description": "Object IDs of features to delete.",
+              "items": { "type": "integer" }
+            },
+            "rollbackOnFailure": {
+              "type": "boolean",
+              "default": true,
+              "description": "When true, any failed edit rolls back the whole transaction (all-or-nothing)."
+            },
+            "returnEditResults": {
+              "type": "boolean",
+              "default": true,
+              "description": "When true, per-edit results are returned; when false only the transaction summary is emitted."
+            }
+          },
+          "$defs": {
+            "editFeature": {
+              "type": "object",
+              "properties": {
+                "objectId": {
+                  "type": "integer",
+                  "description": "Object ID of the target feature. Required for updates; ignored for adds."
+                },
+                "globalId": {
+                  "type": "string",
+                  "description": "Optional global ID of the feature."
+                },
+                "geometry": {
+                  "type": ["object", "null"],
+                  "description": "RFC 7946 GeoJSON geometry object (e.g. {\"type\":\"Point\",\"coordinates\":[1,2]})."
+                },
+                "attributes": {
+                  "type": "object",
+                  "description": "Flat attribute name/value map applied to the feature."
+                }
+              }
+            }
+          }
+        }
+        """;
+
     /// <summary>Schema for <see cref="McpRenderMapArgument"/>.</summary>
     public static readonly JsonElement RenderMapArgumentSchema = Parse(RenderMapArgumentSchemaJson);
+
+    /// <summary>Schema for <see cref="McpEditFeaturesArgument"/>.</summary>
+    public static readonly JsonElement EditFeaturesArgumentSchema = Parse(EditFeaturesArgumentSchemaJson);
 
     private static JsonElement Parse(string json)
     {
