@@ -26,7 +26,9 @@ internal sealed class ConfigurationDeployTargetRegistry(IOptionsMonitor<ControlP
     }
 
     private static DeployTargetDefinition[] BuildTargets(ControlPlaneOptions options)
-        => options.DeployTargets
+    {
+        var release = options.PlatformRelease.ToDefinition();
+        return options.DeployTargets
             .Where(target => !string.IsNullOrWhiteSpace(target.TargetId))
             .Select(target => new DeployTargetDefinition
             {
@@ -35,13 +37,15 @@ internal sealed class ConfigurationDeployTargetRegistry(IOptionsMonitor<ControlP
                 Backend = target.Backend,
                 Environment = target.Environment,
                 TargetName = target.TargetName,
-                ArtifactReference = target.ArtifactReference,
+                // Explicit target artifact wins; otherwise inherit the co-versioned release serving image.
+                ArtifactReference = PlatformReleaseProjection.ResolveServingArtifact(target.ArtifactReference, release),
                 RuntimeProfile = target.RuntimeProfile,
                 RequiresApproval = target.RequiresApproval,
                 RequiresOutOfBandMigrations = target.RequiresOutOfBandMigrations,
                 Parameters = ConfigurationOperationCatalogHelpers.BuildParameters(target.Parameters, target.ParameterEntries)
             })
             .ToArray();
+    }
 }
 
 /// <summary>
@@ -64,7 +68,9 @@ internal sealed class ConfigurationExecutionJobDefinitionRegistry(IOptionsMonito
     }
 
     private static ExecutionJobDefinition[] BuildDefinitions(ControlPlaneOptions options)
-        => options.ExecutionWorkloads
+    {
+        var release = options.PlatformRelease.ToDefinition();
+        return options.ExecutionWorkloads
             .Where(definition => !string.IsNullOrWhiteSpace(definition.WorkloadId))
             .Select(definition => new ExecutionJobDefinition
             {
@@ -73,13 +79,19 @@ internal sealed class ConfigurationExecutionJobDefinitionRegistry(IOptionsMonito
                 Backend = definition.Backend,
                 Kind = definition.Kind,
                 WorkloadName = definition.WorkloadName,
-                ArtifactReference = definition.ArtifactReference,
+                // Explicit workload artifact wins; otherwise inherit the co-versioned release worker image
+                // matched by runtime profile (falling back to the release default image).
+                ArtifactReference = PlatformReleaseProjection.ResolveWorkerArtifact(
+                    definition.ArtifactReference,
+                    definition.RuntimeProfile,
+                    release),
                 RuntimeProfile = definition.RuntimeProfile,
                 ContractVersion = definition.ContractVersion,
                 Parameters = ConfigurationOperationCatalogHelpers.BuildParameters(definition.Parameters, definition.ParameterEntries)
             })
             .Where(ExecutionWorkloadGate.IsActivatable)
             .ToArray();
+    }
 }
 
 /// <summary>
