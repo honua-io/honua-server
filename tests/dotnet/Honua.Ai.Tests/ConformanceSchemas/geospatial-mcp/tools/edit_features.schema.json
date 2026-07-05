@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/edit_features.schema.json",
+  "title": "edit_features inputSchema",
+  "description": "Argument shape for the transactional feature-editing tool (advertised name honua_edit_features). Applies adds/updates/deletes to a single published editable layer as one all-or-nothing transaction when rollbackOnFailure=true (the default). The bare taxonomy excludes direct data editing per ADR-0028 (AI must not autonomously mutate authoritative records); the reference implementation exposes editing as a discrete tool that requires an authenticated, authorized caller and routes through the shared server edit/transaction pipeline (validation, authorization, optimistic behavior, telemetry) rather than autonomous unapproved mutation. x-honua-extension: this is a documented Honua reference extension over the bare taxonomy, pending formalization (and ADR-0028 reconciliation) in the geospatial-mcp standard. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["serviceId", "layerId"],
+  "properties": {
+    "serviceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Published service identifier or name (from list_layers.serviceId or resolve_entity)."
+    },
+    "layerId": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Service-local layer index of the editable layer (from list_layers.layerId)."
+    },
+    "srid": {
+      "type": "integer",
+      "default": 4326,
+      "description": "Spatial reference (SRID/WKID) of the input feature geometries."
+    },
+    "adds": {
+      "type": "array",
+      "description": "Features to insert. Object IDs are assigned by the store.",
+      "items": { "$ref": "#/$defs/editFeature" }
+    },
+    "updates": {
+      "type": "array",
+      "description": "Features to update. Each MUST carry an objectId identifying the existing feature.",
+      "items": { "$ref": "#/$defs/editFeature" }
+    },
+    "deletes": {
+      "type": "array",
+      "description": "Object IDs of features to delete.",
+      "items": { "type": "integer" }
+    },
+    "rollbackOnFailure": {
+      "type": "boolean",
+      "default": true,
+      "description": "When true, any failed edit rolls back the whole transaction (all-or-nothing)."
+    },
+    "returnEditResults": {
+      "type": "boolean",
+      "default": true,
+      "description": "When true, per-edit results are returned; when false only the transaction summary is emitted."
+    }
+  },
+  "$defs": {
+    "editFeature": {
+      "type": "object",
+      "properties": {
+        "objectId": {
+          "type": "integer",
+          "description": "Object ID of the target feature. Required for updates; ignored for adds."
+        },
+        "globalId": {
+          "type": "string",
+          "description": "Optional global ID of the feature."
+        },
+        "geometry": {
+          "type": ["object", "null"],
+          "description": "RFC 7946 GeoJSON geometry object (e.g. {\"type\":\"Point\",\"coordinates\":[1,2]})."
+        },
+        "attributes": {
+          "type": "object",
+          "description": "Flat attribute name/value map applied to the feature."
+        }
+      }
+    }
+  }
+}

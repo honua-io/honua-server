@@ -157,8 +157,83 @@ internal static class MapToolSchemas
     /// <summary>Schema for <see cref="McpQueryFeaturesArgument"/>.</summary>
     public static readonly JsonElement QueryFeaturesArgumentSchema = Parse(QueryFeaturesArgumentSchemaJson);
 
+    private const string EditFeaturesArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["serviceId", "layerId"],
+          "properties": {
+            "serviceId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Published service identifier or name (from honua_list_layers.serviceId or honua_resolve_entity)."
+            },
+            "layerId": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Service-local layer index of the editable layer (from honua_list_layers.layerId)."
+            },
+            "srid": {
+              "type": "integer",
+              "default": 4326,
+              "description": "Spatial reference (SRID/WKID) of the input feature geometries."
+            },
+            "adds": {
+              "type": "array",
+              "description": "Features to insert. Object IDs are assigned by the store.",
+              "items": { "$ref": "#/$defs/editFeature" }
+            },
+            "updates": {
+              "type": "array",
+              "description": "Features to update. Each MUST carry an objectId identifying the existing feature.",
+              "items": { "$ref": "#/$defs/editFeature" }
+            },
+            "deletes": {
+              "type": "array",
+              "description": "Object IDs of features to delete.",
+              "items": { "type": "integer" }
+            },
+            "rollbackOnFailure": {
+              "type": "boolean",
+              "default": true,
+              "description": "When true, any failed edit rolls back the whole transaction (all-or-nothing)."
+            },
+            "returnEditResults": {
+              "type": "boolean",
+              "default": true,
+              "description": "When true, per-edit results are returned; when false only the transaction summary is emitted."
+            }
+          },
+          "$defs": {
+            "editFeature": {
+              "type": "object",
+              "properties": {
+                "objectId": {
+                  "type": "integer",
+                  "description": "Object ID of the target feature. Required for updates; ignored for adds."
+                },
+                "globalId": {
+                  "type": "string",
+                  "description": "Optional global ID of the feature."
+                },
+                "geometry": {
+                  "type": ["object", "null"],
+                  "description": "RFC 7946 GeoJSON geometry object (e.g. {\"type\":\"Point\",\"coordinates\":[1,2]})."
+                },
+                "attributes": {
+                  "type": "object",
+                  "description": "Flat attribute name/value map applied to the feature."
+                }
+              }
+            }
+          }
+        }
+        """;
+
     /// <summary>Schema for <see cref="McpRenderMapArgument"/>.</summary>
     public static readonly JsonElement RenderMapArgumentSchema = Parse(RenderMapArgumentSchemaJson);
+
+    /// <summary>Schema for <see cref="McpEditFeaturesArgument"/>.</summary>
+    public static readonly JsonElement EditFeaturesArgumentSchema = Parse(EditFeaturesArgumentSchemaJson);
 
     private static JsonElement Parse(string json)
     {
