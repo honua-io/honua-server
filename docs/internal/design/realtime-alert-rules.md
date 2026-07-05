@@ -1,7 +1,10 @@
 # Realtime / Geofence / Threshold / Dwell Alert Rules — Backend Scoping & Handoff
 
-**Status:** Proposed · scoping for implementation handoff
-**Issue:** honua-server#1169
+**Status:** Implemented · promoted to GA (`alerts.geofence` maturity `Implemented`) in honua-server#2427.
+The engine ships as shared, un-gated infrastructure with pipeline telemetry, a dispatch-backlog health
+check, a per-channel notification rate cap, and a second consumer (ops deploy/job-event notifications).
+It remains OFF by default operationally (`Alerts:Enabled`, default `false`).
+**Issue:** honua-server#1169 (GA promotion: honua-server#2427)
 **Owner (UI side):** honua-console `/operate/alerts/rules` editor (rule authoring + per-rule delivery-state)
 **Audience:** the engineer/agent implementing the honua-server side
 **Goal:** confirm and finalize the alert **rule authoring + delivery-state** contract the
@@ -231,8 +234,11 @@ route to `AlertAdminEndpoints` + `EndpointRegistry.cs` + the JSON context.
   (`AlertOptions` · `src/Honua.Core/Features/Alerts/Domain/AlertOptions.cs`; sinks under
   `src/Honua.Server/Features/Alerts/*DeliverySink.cs`). The editor does NOT author secrets — it only selects
   channels, and the server reports each channel's configured/unconfigured/unauthorized state via §4.2/§4.3
-  so the operator sees which channels will actually deliver. Channel secrets follow the standard secret-
-  reference/`ISecretProvider` pattern used elsewhere; do not surface them through the rule API.
+  so the operator sees which channels will actually deliver. Channel credentials (SMTP `Password`, Slack/
+  Teams `WebhookUrl`, SNS/SQS/Event Grid/Event Hub URLs and connection strings) are **config-bound values
+  today** — plain settings on `AlertDeliveryOptions` bound from configuration/environment; there is no
+  secret-reference (`ISecretProvider`) resolution for channel secrets yet (deliberately deferred). Either
+  way, do not surface them through the rule API.
 - **Edition gating:** `IAlertEditionPolicy` enforces which triggers/channels the configured edition allows;
   disallowed selections fail validation (`unauthorized`). This is already wired — honour it.
 - **Provider:** alert evaluation depends on the durable change tracker (`IChangeTracker`) + Postgres alert

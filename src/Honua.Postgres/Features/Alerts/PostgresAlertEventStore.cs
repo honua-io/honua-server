@@ -27,19 +27,27 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
         const string sql = """
             INSERT INTO honua.alert_events (
                 dedupe_key, rule_id, zone_id, service_id, layer_id, objectid, trigger_type,
-                generation, severity, occurred_at, payload, incident_status, incident_duration_ms)
+                generation, severity, occurred_at, payload, incident_status, incident_duration_ms, source)
             VALUES (
                 @dedupe_key, @rule_id, @zone_id, @service_id, @layer_id, @objectid, @trigger_type,
-                @generation, @severity, @occurred_at, @payload::jsonb, @incident_status, @incident_duration_ms)
+                @generation, @severity, @occurred_at, @payload::jsonb, @incident_status, @incident_duration_ms, @source)
             ON CONFLICT (dedupe_key) DO NOTHING
             RETURNING event_id
             """;
+
+        // Operations notifications are not linked to an alert rule; persist rule_id as
+        // NULL for them (the FK still constrains rule-driven events). A positive RuleId
+        // is always a real rule reference.
+        var isOps = string.Equals(alertEvent.Source, AlertEventSources.Ops, StringComparison.Ordinal);
+        var ruleIdValue = isOps || alertEvent.RuleId <= 0
+            ? (object)DBNull.Value
+            : alertEvent.RuleId;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("dedupe_key", NpgsqlDbType.Text, alertEvent.DedupeKey);
-        command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, alertEvent.RuleId);
+        command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, ruleIdValue);
         command.Parameters.AddWithValue("zone_id", NpgsqlDbType.Bigint, (object?)alertEvent.ZoneId ?? DBNull.Value);
         command.Parameters.AddWithValue("service_id", NpgsqlDbType.Text, alertEvent.ServiceId);
         command.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, alertEvent.LayerId);
@@ -51,6 +59,7 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
         command.Parameters.AddWithValue("payload", NpgsqlDbType.Text, alertEvent.PayloadJson);
         command.Parameters.AddWithValue("incident_status", NpgsqlDbType.Smallint, alertEvent.IncidentStatus.ToDbValue());
         command.Parameters.AddWithValue("incident_duration_ms", NpgsqlDbType.Bigint, alertEvent.IncidentDurationMs);
+        command.Parameters.AddWithValue("source", NpgsqlDbType.Text, (object?)alertEvent.Source ?? DBNull.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long eventId ? eventId : null;
@@ -60,7 +69,7 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
     {
         const string sql = """
             SELECT dedupe_key, rule_id, zone_id, service_id, layer_id, objectid, trigger_type,
-                   generation, severity, occurred_at, payload, incident_status, incident_duration_ms
+                   generation, severity, occurred_at, payload, incident_status, incident_duration_ms, source
             FROM honua.alert_events
             WHERE event_id = @event_id
             """;
@@ -78,7 +87,7 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
         return new AlertEventEnvelope
         {
             DedupeKey = reader.GetString(0),
-            RuleId = reader.GetInt64(1),
+            RuleId = reader.IsDBNull(1) ? 0 : reader.GetInt64(1),
             ZoneId = reader.IsDBNull(2) ? null : reader.GetInt64(2),
             ServiceId = reader.GetString(3),
             LayerId = reader.GetInt32(4),
@@ -89,7 +98,8 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
             OccurredAt = reader.GetFieldValue<DateTimeOffset>(9),
             PayloadJson = reader.IsDBNull(10) ? "{}" : reader.GetString(10),
             IncidentStatus = AlertStoreConversions.ToIncidentStatus(reader.GetInt16(11)),
-            IncidentDurationMs = reader.GetInt64(12)
+            IncidentDurationMs = reader.GetInt64(12),
+            Source = reader.IsDBNull(13) ? null : reader.GetString(13)
         };
     }
 }

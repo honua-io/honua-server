@@ -235,6 +235,30 @@ public interface IAlertDispatchStore
         bool deadLetter,
         string? errorMessage,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reschedules a claimed dispatch job for a later attempt WITHOUT counting the
+    /// deferral against the retry budget. Used when a delivery is deferred by the
+    /// per-channel notification rate cap: the row returns to pending with a future
+    /// <c>next_attempt_at</c>, its attempt count is unchanged, and it is never
+    /// dead-lettered by the deferral.
+    /// </summary>
+    /// <param name="dispatchId">Dispatch identifier</param>
+    /// <param name="nextAttemptAt">Time at which the row becomes eligible again</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    Task RescheduleAsync(
+        long dispatchId,
+        DateTimeOffset nextAttemptAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the current delivery-outbox backlog snapshot (rows awaiting delivery
+    /// versus rows in the dead-letter state) for metrics and health reporting.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Backlog snapshot.</returns>
+    Task<AlertDispatchBacklog> GetBacklogAsync(
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

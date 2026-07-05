@@ -85,7 +85,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "temporal.time-series-tiles",
         "sync.offline",
         "realtime.feature-streams",
-        "alerts.geofence",
+        // alerts.geofence promoted to Implemented (GA) in #2427 — no longer omitted.
         "security.mtls",
     ];
 

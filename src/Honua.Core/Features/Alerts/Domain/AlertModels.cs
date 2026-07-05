@@ -504,6 +504,43 @@ public sealed record AlertStateSnapshot
 }
 
 /// <summary>
+/// Canonical <see cref="AlertEventEnvelope.Source"/> discriminators. A null or
+/// <see cref="GisRule"/> source marks a rule-driven geofence/dwell/threshold event;
+/// <see cref="Ops"/> marks an operations notification (deploy/job terminal event)
+/// that reuses the shared delivery outbox but is not linked to an alert rule.
+/// </summary>
+public static class AlertEventSources
+{
+    /// <summary>
+    /// Rule-driven geofence/dwell/attribute-threshold alert event (the default).
+    /// </summary>
+    public const string GisRule = "gis";
+
+    /// <summary>
+    /// Operations notification event (deploy/job terminal event) with no owning rule.
+    /// </summary>
+    public const string Ops = "ops";
+}
+
+/// <summary>
+/// Backlog snapshot for the alert delivery outbox, used by metrics and the
+/// dispatch-backlog health check. Counts rows awaiting delivery versus rows that
+/// exhausted retries and require operator triage.
+/// </summary>
+public sealed record AlertDispatchBacklog
+{
+    /// <summary>
+    /// Number of dispatch rows awaiting delivery (pending, claimed/processing, or retriable-failed).
+    /// </summary>
+    public required long PendingCount { get; init; }
+
+    /// <summary>
+    /// Number of dispatch rows currently in the dead-letter state.
+    /// </summary>
+    public required long DeadLetteredCount { get; init; }
+}
+
+/// <summary>
 /// Immutable alert event produced by transition evaluation.
 /// </summary>
 public sealed record AlertEventEnvelope
@@ -514,7 +551,8 @@ public sealed record AlertEventEnvelope
     public required string DedupeKey { get; init; }
 
     /// <summary>
-    /// Rule identifier.
+    /// Rule identifier. Zero (persisted as NULL) for non-rule operations
+    /// notifications; see <see cref="Source"/>.
     /// </summary>
     public required long RuleId { get; init; }
 
@@ -572,6 +610,16 @@ public sealed record AlertEventEnvelope
     /// Duration of the incident in milliseconds from when it started.
     /// </summary>
     public long IncidentDurationMs { get; init; }
+
+    /// <summary>
+    /// Event source discriminator (see <see cref="AlertEventSources"/>). Null defaults
+    /// to a rule-driven GIS event. <see cref="AlertEventSources.Ops"/> marks an
+    /// operations notification whose <see cref="RuleId"/>/<see cref="ZoneId"/>/
+    /// <see cref="ObjectId"/>/<see cref="LayerId"/>/<see cref="TriggerType"/> are inert
+    /// placeholders — the meaningful payload lives in <see cref="ServiceId"/> (the ops
+    /// source), <see cref="Severity"/>, and <see cref="PayloadJson"/>.
+    /// </summary>
+    public string? Source { get; init; }
 }
 
 /// <summary>
