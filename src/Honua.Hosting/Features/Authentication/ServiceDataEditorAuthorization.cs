@@ -103,6 +103,36 @@ internal static class ServiceDataEditorAuthorization
         AuthorizationOperation? specificOperation,
         CancellationToken cancellationToken)
     {
+        var decision = await EvaluateResourceDataEditorAsync(
+            context, resource, service, specificOperation, cancellationToken).ConfigureAwait(false);
+        return CreateDecisionResult(context, decision);
+    }
+
+    /// <summary>
+    /// Decision-shaped core of the per-layer data-editor write gate, shared by the
+    /// HTTP <see cref="IResult"/> wrappers above and by non-HTTP-result adapters
+    /// (e.g. the MCP <c>honua_edit_features</c> tool) that surface denials through
+    /// their own error contracts. Semantics are identical to the HTTP path:
+    /// layer-scoped write keys (#1637) are authoritative for scoped principals; an
+    /// explicit <see cref="AccessPolicy"/> write restriction stays authoritative;
+    /// otherwise a per-operation RBAC write grant (#1376) on the
+    /// <c>(service, layer)</c> authorizes the mutation (narrowed to
+    /// <paramref name="specificOperation"/> when set — BH3-001/BH3-014), falling
+    /// back to the coarse admin/data-editor/service-scoped role gate.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resource">The target resource (layer).</param>
+    /// <param name="service">The owning service, or <see langword="null"/>.</param>
+    /// <param name="specificOperation">The specific write operation being authorized, or <see langword="null"/> for any-write.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The access decision.</returns>
+    internal static async Task<AccessDecision> EvaluateResourceDataEditorAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        AuthorizationOperation? specificOperation,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(resource);
 
         // Layer-scoped write keys (#1637) are enforced here in the shared pipeline.
@@ -111,7 +141,7 @@ internal static class ServiceDataEditorAuthorization
         // the named layer. Out-of-scope targets are forbidden.
         if (LayerScopedWriteKey.IsScopedWritePrincipal(context.User))
         {
-            return EvaluateScopedWriteKey(context, service?.Metadata.Name, resource.Metadata.Name);
+            return EvaluateScopedWriteKeyDecision(context, service?.Metadata.Name, resource.Metadata.Name);
         }
 
         // An explicit AccessPolicy write restriction stays authoritative (a
@@ -120,7 +150,7 @@ internal static class ServiceDataEditorAuthorization
         var explicitDecision = EvaluateExplicitWritePolicy(context, resource.AccessPolicy, service?.AccessPolicy);
         if (explicitDecision is not null)
         {
-            return CreateDecisionResult(context, explicitDecision.Value);
+            return explicitDecision.Value;
         }
 
         // No explicit write policy: a per-operation RBAC write grant (#1376) on
@@ -132,32 +162,31 @@ internal static class ServiceDataEditorAuthorization
         if (service is not null &&
             await HasWriteGrantAsync(context, service.Metadata.Name, resource.Metadata.Name, cancellationToken, specificOperation).ConfigureAwait(false))
         {
-            return null;
+            return AccessDecision.Allowed();
         }
 
         if (service is null)
         {
             // No service context — fall back to the same global role gate used for
-            // service-scoped checks (admin or global data-editor role).  Returning null
-            // for any authenticated principal would allow a principal with only the
-            // default OIDC role to mutate any service-less resource, bypassing RBAC.
+            // service-scoped checks (admin or global data-editor role).  Allowing any
+            // authenticated principal here would let a principal with only the
+            // default OIDC role mutate any service-less resource, bypassing RBAC.
             if (context.User?.Identity?.IsAuthenticated != true)
             {
-                return CreateDecisionResult(context, AccessDecision.RequiresAuth("Authentication is required."));
+                return AccessDecision.RequiresAuth("Authentication is required.");
             }
 
             var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
             var user = context.User!; // non-null: authenticated guard above
             if (IsAdmin(user, options) || HasGlobalDataEditorRole(user, options))
             {
-                return null;
+                return AccessDecision.Allowed();
             }
 
-            return CreateDecisionResult(context, AccessDecision.Forbidden("User does not have the required data editor role."));
+            return AccessDecision.Forbidden("User does not have the required data editor role.");
         }
 
-        var decision = await EvaluateServiceAccessAsync(context, service.Metadata.Name, cancellationToken).ConfigureAwait(false);
-        return CreateDecisionResult(context, decision);
+        return await EvaluateServiceAccessAsync(context, service.Metadata.Name, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
