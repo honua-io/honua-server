@@ -56,6 +56,9 @@ public sealed class AwsBatchRealCertificationTests : IClassFixture<RealAwsCertif
         {
             JobDefinitionName = jobDefinitionName,
             Type = JobDefinitionType.Container,
+            // Tag with the per-run tag + created stamp so the reaper (CertificationResourceReaper)
+            // can reclaim this definition if a crash between register and deregister orphans it.
+            Tags = new Dictionary<string, string>(_cert.RunTags(), StringComparer.Ordinal),
             ContainerProperties = new ContainerProperties
             {
                 Image = "public.ecr.aws/docker/library/busybox:latest",
