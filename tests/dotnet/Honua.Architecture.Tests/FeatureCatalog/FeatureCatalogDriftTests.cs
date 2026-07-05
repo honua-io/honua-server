@@ -149,6 +149,8 @@ public sealed class FeatureCatalogDriftTests
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase));
         experimentalRoutes.Should().Contain(route => route.Contains("/replicas", StringComparison.OrdinalIgnoreCase));
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
+        // Branch versioning (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        experimentalRoutes.Should().Contain(route => route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase));
     }
 
     [ArchitectureTest]
