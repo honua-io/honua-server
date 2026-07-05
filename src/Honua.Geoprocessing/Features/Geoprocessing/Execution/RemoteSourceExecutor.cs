@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -148,11 +149,32 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         var features = new List<IFeature>();
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
 
+        // BH6-024: track a running byte estimate from the raw source strings while
+        // streaming so the size guard fires before the full list is materialized and
+        // passed to WriteFeatureCollection. Without this guard a malicious or
+        // misconfigured remote can push arbitrarily large payloads into the worker's
+        // heap long before the post-loop payload.Length check ever runs.
+        long streamingByteEstimate = 0L;
+
         try
         {
             await foreach (var sourceFeature in source.ReadAsync(request, cancellationToken).ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                streamingByteEstimate +=
+                    (long)Encoding.UTF8.GetByteCount(sourceFeature.GeometryGeoJson ?? "null")
+                    + sourceFeature.Attributes.Sum(static kv =>
+                        (long)Encoding.UTF8.GetByteCount(kv.Key)
+                        + (long)Encoding.UTF8.GetByteCount(kv.Value?.ToString() ?? "null")
+                        + 10L); // per-attribute JSON punctuation overhead
+
+                if (streamingByteEstimate > maxBytes)
+                {
+                    return JobExecutionResult.Failed(
+                        $"{_processId} artifact size exceeds configured MaxArtifactBytes={maxBytes} during streaming.");
+                }
+
                 features.Add(ToNtsFeature(sourceFeature, geoJsonReader));
             }
         }
@@ -232,7 +254,10 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
             "source.ogc-features" or "source.wfs" => request with
             {
                 Username = inputs.TryGet("username", out var user) ? user : null,
-                Password = await ResolveSecretOrInlineAsync(inputs, services, "password", "passwordSecretReference", cancellationToken)
+                // PA-195: reject inline plaintext passwords for OGC source types to prevent
+                // cleartext credentials being stored in the durable job spec. Only secret
+                // references are accepted; use 'passwordSecretReference' to name a stored secret.
+                Password = await ResolveSecretPasswordOnlyAsync(inputs, services, cancellationToken)
                     .ConfigureAwait(false)
             },
             "source.postgis" => await EnrichPostgisAsync(request, inputs, services, cancellationToken).ConfigureAwait(false),
@@ -302,6 +327,41 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         }
 
         return inputs.TryGet(inlineKey, out var inline) ? inline : null;
+    }
+
+    /// <summary>
+    /// Resolves a password from a secret reference only; rejects inline plaintext passwords.
+    /// Used for OGC source types (source.ogc-features, source.wfs) where credentials are stored
+    /// in the durable job spec — inline passwords would persist as cleartext in the job store.
+    /// </summary>
+    private static async Task<string?> ResolveSecretPasswordOnlyAsync(
+        StepInputReader inputs,
+        IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        // PA-195: reject the inline 'password' key for source types that persist the job spec
+        // durably. Callers must use 'passwordSecretReference' to reference a stored secret so
+        // credentials are never written to the job table in cleartext.
+        if (inputs.TryGet("password", out _))
+        {
+            throw new TransformInputException(
+                "inline 'password' is not accepted for this source type; " +
+                "use 'passwordSecretReference' to reference a stored secret.");
+        }
+
+        if (!inputs.TryGet("passwordSecretReference", out var secretReference) ||
+            string.IsNullOrWhiteSpace(secretReference))
+        {
+            return null;
+        }
+
+        var resolver = services.GetService<IConnectionSecretResolver>();
+        if (resolver is null)
+        {
+            throw new TransformInputException("a secret reference was supplied but no secret resolver is configured.");
+        }
+
+        return await resolver.ResolveSecretAsync(secretReference!, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<string?> ResolveSecureConnectionAsync(

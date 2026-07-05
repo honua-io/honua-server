@@ -122,6 +122,14 @@
       "implementationStatus": "implemented"
     },
     {
+      "standardName": "edit_features",
+      "referenceToolName": "honua_edit_features",
+      "family": "Transactional editing (Honua extension)",
+      "schema": "tools/edit_features.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua reference extension: transactional feature editing (adds/updates/deletes) over the shared server edit pipeline. In tension with ADR-0028's Edit-Data exclusion; the reference tool requires an authenticated, authorized caller and is not autonomous unapproved mutation. Pending an ADR-0028 reconciliation decision by the standard maintainers; schema marks x-honua-extension."
+    },
+    {
       "standardName": "render_map",
       "referenceToolName": "honua_render_map",
       "family": "Discovery and query (reference shape)",

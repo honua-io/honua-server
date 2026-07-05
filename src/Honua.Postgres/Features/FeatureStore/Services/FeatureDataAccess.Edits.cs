@@ -278,6 +278,14 @@ internal sealed partial class FeatureDataAccess
 
         var preconditions = BuildPreconditionMap(editBatch);
 
+        // BH7-021: hoist partial-result accumulators outside the try so the outer catch for
+        // the non-transactional path can report already-committed rows as successes rather than
+        // re-marking them as failures (which drives clients to re-submit, creating duplicates).
+        var partialCreatedIds = ImmutableArray<long>.Empty;
+        var partialCreateResults = ImmutableArray<EditOperationResult>.Empty;
+        var partialUpdateResults = ImmutableArray<EditOperationResult>.Empty;
+        var partialDeleteResults = ImmutableArray<EditOperationResult>.Empty;
+
         try
         {
             if (!editBatch.Operations.IsDefaultOrEmpty)
@@ -297,6 +305,8 @@ internal sealed partial class FeatureDataAccess
                 connection,
                 transaction,
                 cancellationToken);
+            partialCreatedIds = createdIds;
+            partialCreateResults = createResults;
 
             var (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
                 layerId,
@@ -305,6 +315,7 @@ internal sealed partial class FeatureDataAccess
                 transaction,
                 preconditions,
                 cancellationToken);
+            partialUpdateResults = updateResults;
 
             var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
                 layerId,
@@ -313,6 +324,7 @@ internal sealed partial class FeatureDataAccess
                 transaction,
                 preconditions,
                 cancellationToken);
+            partialDeleteResults = deleteResults;
 
             var hasErrors = System.Linq.Enumerable.Any(createResults, r => !r.IsSuccess) ||
                             System.Linq.Enumerable.Any(updateResults, r => !r.IsSuccess) ||
@@ -377,17 +389,41 @@ internal sealed partial class FeatureDataAccess
                 return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
 
-            var (failedCreateResults, failedUpdateResults, failedDeleteResults) =
-                CreateFailedOperationResults(editBatch, "Edit batch failed.");
+            // BH7-021: for the non-transactional path the partial accumulators above capture
+            // every result that was recorded before the exception. Only operations that did
+            // not yet produce a result (the unprocessed tail) should be reported as failed.
+            // Reporting all as failed previously drove clients to re-submit already-committed
+            // rows, creating duplicates.
+            var tailCreateFailures = editBatch.Creates.Length > partialCreateResults.Length
+                ? System.Linq.Enumerable
+                    .Repeat(EditOperationResult.Failure("Edit batch failed."), editBatch.Creates.Length - partialCreateResults.Length)
+                    .ToImmutableArray()
+                : ImmutableArray<EditOperationResult>.Empty;
+            var tailUpdateFailures = editBatch.Updates.Length > partialUpdateResults.Length
+                ? editBatch.Updates
+                    .Skip(partialUpdateResults.Length)
+                    .Select(f => EditOperationResult.Failure("Edit batch failed.", objectId: f.Id))
+                    .ToImmutableArray()
+                : ImmutableArray<EditOperationResult>.Empty;
+            var tailDeleteFailures = editBatch.Deletes.Length > partialDeleteResults.Length
+                ? editBatch.Deletes
+                    .Skip(partialDeleteResults.Length)
+                    .Select(id => EditOperationResult.Failure("Edit batch failed.", objectId: id))
+                    .ToImmutableArray()
+                : ImmutableArray<EditOperationResult>.Empty;
+
+            var finalCreateResults = partialCreateResults.AddRange(tailCreateFailures);
+            var finalUpdateResults = partialUpdateResults.AddRange(tailUpdateFailures);
+            var finalDeleteResults = partialDeleteResults.AddRange(tailDeleteFailures);
 
             return FeatureEditResult.Success(
-                0,
-                0,
-                0,
-                ImmutableArray<long>.Empty,
-                failedCreateResults,
-                failedUpdateResults,
-                failedDeleteResults,
+                System.Linq.Enumerable.Count(finalCreateResults, r => r.IsSuccess),
+                System.Linq.Enumerable.Count(finalUpdateResults, r => r.IsSuccess),
+                System.Linq.Enumerable.Count(finalDeleteResults, r => r.IsSuccess),
+                partialCreatedIds,
+                finalCreateResults,
+                finalUpdateResults,
+                finalDeleteResults,
                 wasRolledBack: false);
         }
     }
@@ -1021,6 +1057,12 @@ internal sealed partial class FeatureDataAccess
                 createdIds.Add(created.Id);
                 results.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // BH7-020: propagate cancellation so the server stops executing remaining
+                // batch items after a client abort, mirroring the update/delete path fixes.
+                throw;
+            }
             catch (Exception ex)
             {
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
@@ -1228,6 +1270,13 @@ internal sealed partial class FeatureDataAccess
                 updatedCount++;
                 results.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // BH7-020: propagate cancellation so the server stops executing the remaining
+                // batch items after a client abort. Swallowing this was wasting CPU/connections
+                // and misreporting any committed row as a failure.
+                throw;
+            }
             catch (FeatureEditPreconditionFailedException)
             {
                 results.Add(EditOperationResult.PreconditionFailed(feature.Id));
@@ -1297,6 +1346,12 @@ internal sealed partial class FeatureDataAccess
                 {
                     results.Add(EditOperationResult.Failure($"Feature {featureId} not found", objectId: featureId));
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // BH7-020: propagate cancellation so the server stops executing remaining
+                // batch items after a client abort, mirroring the update path fix.
+                throw;
             }
             catch (FeatureEditPreconditionFailedException)
             {

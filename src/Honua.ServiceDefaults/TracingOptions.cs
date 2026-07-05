@@ -53,6 +53,20 @@ public sealed class TracingOptions
     public int MaxExceptionDetailLength { get; set; } = 256;
 
     /// <summary>
+    /// Gets or sets the rolling window, in seconds, over which the in-process serving-latency
+    /// snapshot (per-protocol p50/p95/p99 + error rate, surfaced by the admin ops-health endpoint)
+    /// is aggregated. Default is 300 (5 minutes).
+    /// </summary>
+    public int ServingLatencyWindowSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// Gets or sets the per-protocol reservoir capacity for the in-process serving-latency snapshot.
+    /// Bounds aggregation memory; under throughput above this rate the effective window shrinks to the
+    /// most recent samples. Default is 4096.
+    /// </summary>
+    public int ServingLatencySamplesPerProtocol { get; set; } = 4096;
+
+    /// <summary>
     /// Gets or sets the maximum number of attributes per span.
     /// </summary>
     public int MaxAttributesPerSpan { get; set; } = 128;

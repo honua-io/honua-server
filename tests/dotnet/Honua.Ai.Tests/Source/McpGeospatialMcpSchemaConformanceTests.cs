@@ -64,6 +64,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_solve_route"] = "solve_route",
             ["honua_list_layers"] = "list_layers",
             ["honua_query_features"] = "query_features",
+            ["honua_edit_features"] = "edit_features",
             ["honua_render_map"] = "render_map",
             ["honua_publish_service"] = "publish_service",
             // Honua extensions over the bare taxonomy (#1949): the standard models

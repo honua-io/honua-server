@@ -36,14 +36,40 @@ internal static class GeoservicesServiceUrlValidation
         "ServiceUrl must target an ArcGIS Service root URL (FeatureServer or MapServer), not a layer/table URL.";
     internal const string DisallowedAddressMessage =
         "ServiceUrl resolves to a private, loopback, or unresolvable network address, which is not allowed.";
+    internal const string DisallowedHostMessage =
+        "ServiceUrl host is not in the configured Migration:AllowedServiceHostSuffixes allowlist.";
 
+    /// <summary>
+    /// Validates the service URL without a host allowlist (any public HTTPS host is permitted).
+    /// For deployments that restrict which hosts may be contacted, use the overload that accepts
+    /// an <c>allowedHostSuffixes</c> parameter.
+    /// </summary>
     public static Task<GeoservicesServiceUrlValidationResult> ValidateAsync(
         string serviceUrl,
         CancellationToken cancellationToken = default)
-        => ValidateAsync(serviceUrl, ResolveHostAddressesAsync, cancellationToken);
+        => ValidateAsync(serviceUrl, allowedHostSuffixes: null, ResolveHostAddressesAsync, cancellationToken);
+
+    /// <summary>
+    /// Validates the service URL, optionally enforcing a host-suffix allowlist.
+    /// When <paramref name="allowedHostSuffixes"/> is non-null and non-empty, the request host
+    /// must end with at least one of the listed suffixes (e.g. ".arcgisonline.com").
+    /// An empty allowlist rejects all hosts. A null allowlist allows any public host.
+    /// </summary>
+    public static Task<GeoservicesServiceUrlValidationResult> ValidateAsync(
+        string serviceUrl,
+        IReadOnlyCollection<string>? allowedHostSuffixes,
+        CancellationToken cancellationToken = default)
+        => ValidateAsync(serviceUrl, allowedHostSuffixes, ResolveHostAddressesAsync, cancellationToken);
 
     internal static async Task<GeoservicesServiceUrlValidationResult> ValidateAsync(
         string serviceUrl,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken = default)
+        => await ValidateAsync(serviceUrl, allowedHostSuffixes: null, hostAddressResolver, cancellationToken).ConfigureAwait(false);
+
+    internal static async Task<GeoservicesServiceUrlValidationResult> ValidateAsync(
+        string serviceUrl,
+        IReadOnlyCollection<string>? allowedHostSuffixes,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
         CancellationToken cancellationToken = default)
     {
@@ -73,7 +99,41 @@ internal static class GeoservicesServiceUrlValidation
             return GeoservicesServiceUrlValidationResult.Failure(DisallowedAddressMessage);
         }
 
+        // PA-153: optional per-deployment host allowlist. When configured, only URLs whose host
+        // ends with one of the listed suffixes are accepted. This prevents credentialed SSRF to
+        // arbitrary public internet hosts if admin credentials are compromised.
+        if (allowedHostSuffixes is not null && !IsHostAllowed(uri.Host, allowedHostSuffixes))
+        {
+            return GeoservicesServiceUrlValidationResult.Failure(DisallowedHostMessage);
+        }
+
         return GeoservicesServiceUrlValidationResult.Success();
+    }
+
+    internal static bool IsHostAllowed(string host, IReadOnlyCollection<string> allowedSuffixes)
+    {
+        if (string.IsNullOrWhiteSpace(host) || allowedSuffixes.Count == 0)
+        {
+            return false;
+        }
+
+        var lower = host.ToLowerInvariant();
+        foreach (var suffix in allowedSuffixes)
+        {
+            if (string.IsNullOrWhiteSpace(suffix))
+            {
+                continue;
+            }
+
+            var normalizedSuffix = suffix.ToLowerInvariant();
+            if (lower == normalizedSuffix || lower.EndsWith("." + normalizedSuffix, StringComparison.Ordinal)
+                || lower.EndsWith(normalizedSuffix, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsServiceRootUrl(Uri uri)

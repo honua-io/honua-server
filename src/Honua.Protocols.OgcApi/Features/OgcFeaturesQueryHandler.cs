@@ -705,7 +705,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 OutputAxisOrder = crsDefinition.AxisOrder
             };
 
-            var entityETag = OgcFeatureEntityTag.Compute(storedFeature, _etagService);
             context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
@@ -737,6 +736,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
             {
                 return StandardErrorHelpers.CreateInternalServerError(context, "Feature response could not be projected.");
             }
+
+            // BH6-006: Derive entityETag from responseFeature (the same instance used to build
+            // the response payload) rather than storedFeature (the first read). Under a concurrent
+            // write, storedFeature and responseFeature can differ; computing the entity tag from
+            // storedFeature but the payload from responseFeature produces a mixed-state
+            // representationETag whose If-Match precondition check spuriously fails with 412.
+            var entityETag = OgcFeatureEntityTag.Compute(responseFeature.Value, _etagService);
 
             var responseFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, resource);
             ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
@@ -1486,7 +1492,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             httpContext.Response.ContentType = _outputFormat;
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
-            httpContext.Response.Headers["OGC-NumberMatched"] = _numberMatched.ToString(CultureInfo.InvariantCulture);
+            // OGC-NumberMatched is a non-standard header; numberMatched is written
+            // into the FeatureCollection JSON body by StreamFeatureCollectionAsync,
+            // which is the spec-compliant location (OGC 17-069r4 §7.14.4).
             EnableChunkedEncodingIfHttp1(httpContext);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -1600,7 +1608,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // All rows determined; safe to set headers before writing body.
             httpContext.Response.ContentType = MediaTypes.Gml;
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
-            httpContext.Response.Headers["OGC-NumberMatched"] = _numberMatched.ToString(CultureInfo.InvariantCulture);
+            // OGC-NumberMatched is a non-standard header; numberMatched and
+            // numberReturned are emitted as GML wfs:FeatureCollection attributes
+            // by OgcResponseFormatter.StreamGmlFeatureCollectionAsync, which is
+            // the spec-compliant location.
 
             var links = BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, MediaTypes.Gml, _effectiveLimit, _effectiveOffset, hasMoreResults);
             foreach (var link in links)

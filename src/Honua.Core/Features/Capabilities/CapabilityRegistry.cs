@@ -105,6 +105,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_publish_service", "publish_service", "lifecycle"),
             ("honua_list_layers", "list_layers", "results"),
             ("honua_query_features", "query_features", "results"),
+            ("honua_edit_features", "edit_features", "execution"),
             ("honua_render_map", "render_map", "results"),
             ("honua_resolve_entity", "resolve_entity", "results"),
             ("honua_list_capabilities", "list_capabilities", "results"),
@@ -192,11 +193,11 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         // manifest omits them (B3), the T5 endpoint gates 404 their route groups, and
         // the feature catalog projects them as `experimental`. A customer opts in per
         // capability via Capabilities:Experimental:{id}:Enabled=true. Concepts whose
-        // built-experimental surface has no distinct registry descriptor (versioned
-        // editing/VMS, SIEM/investigations, cross-environment promotion,
-        // rollback/auto-rollback, collaborative map sessions, governance auth
-        // SSO/OIDC/SAML/SCIM, forms/form-packages, mobile field-collection beyond
-        // offline sync) are intentionally left as-is — there is no descriptor to flip.
+        // built-experimental surface has no distinct registry descriptor (SIEM/investigations,
+        // cross-environment promotion, rollback/auto-rollback, collaborative map sessions,
+        // governance auth SSO/OIDC/SAML/SCIM, forms/form-packages, mobile field-collection
+        // beyond offline sync) are intentionally left as-is — there is no descriptor to flip.
+        // versioning.branch (VMS) is now gated here via its own descriptor (added below).
         (string Id, string Category, string? EntitlementKey, CapabilityKind Kind, string? PackageSchemaVersion, CapabilityMaturity Maturity)[] capabilities =
         [
             ("package.metadata-v2", "packages", null, CapabilityKind.Feature, MetadataV2Constants.SchemaVersion, CapabilityMaturity.Implemented),
@@ -243,6 +244,10 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("publication.metadata-release", "publication", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("upload.file", "upload", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            // Branch versioning (VMS REST surface) — built-experimental (ADR-0058 / BH6-001/BH6-002 fix).
+            // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).
+            // Opt in via Capabilities:Experimental:versioning.branch:Enabled=true.
+            ("versioning.branch", "versioning", FeatureCatalog.BranchVersioningKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
         ];
 
         foreach (var (id, category, entitlementKey, kind, packageSchemaVersion, maturity) in capabilities)

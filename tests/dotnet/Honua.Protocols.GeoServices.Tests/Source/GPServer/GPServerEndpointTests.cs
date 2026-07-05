@@ -116,7 +116,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
         var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -138,7 +139,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer?f=html");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -161,7 +163,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         try
         {
             using var response = await fixture.Client.GetAsync("/rest/services/MissingService/GPServer");
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -259,7 +262,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
         var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -269,7 +273,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/BufferAnalysis");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -292,7 +297,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         try
         {
             using var response = await fixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -381,7 +387,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_AsyncOnlyTask_Returns400WithCapabilityMessage()
     {
-        // analytics.cluster is NOT in GPServerExecutionPolicy.SyncEligibleProcessIds —
+        // analytics.cluster is NOT in GPServerExecutionPolicy.SyncEligibleProcessIds â€”
         // the synchronous /execute path must surface a capability error rather
         // than try to run a long-running task inline.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -396,7 +402,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/analytics.cluster/execute", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("submitJob");
         body.Should().Contain("asynchronous");
@@ -457,7 +464,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/conversion.geometry-format/execute", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("target");
         body.Should().Contain("not-a-real-format");
@@ -500,7 +508,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -523,7 +532,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob?f=json&input=test");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -558,7 +568,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
                 content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -599,7 +610,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
                 content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             var body = await response.Content.ReadAsStringAsync();
             body.Should().NotContain("honua.services");
         }
@@ -838,7 +850,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var created = await jobStore!.TryCreateAsync(jobRecord);
         created.Should().BeTrue("the binding-validation fixture job must be created");
 
-        // Query status under a different service — should be rejected
+        // Query status under a different service â€” should be rejected
         var statusResponse = await _client.GetAsync(
             $"/rest/services/OtherService/GPServer/BufferAnalysis/jobs/{jobId}?f=json");
 
@@ -877,7 +889,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var created = await jobStore!.TryCreateAsync(jobRecord);
         created.Should().BeTrue("the binding-validation fixture job must be created");
 
-        // Query status under a different task — should be rejected
+        // Query status under a different task â€” should be rejected
         var statusResponse = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/DifferentTask/jobs/{jobId}?f=json");
 
@@ -951,7 +963,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/AnyTask/jobs?num=0&f=json");
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private static ExecutionJobRecord BoundJob(
@@ -1015,11 +1028,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var created = await jobStore!.TryCreateAsync(jobRecord);
         created.Should().BeTrue("the cross-protocol fixture job must be created");
 
-        // Access via GPServer route — should be rejected (no GPServer binding metadata)
+        // Access via GPServer route â€” should be rejected (no GPServer binding metadata)
         var response = await _client.GetAsync(
             $"/rest/services/AnyService/GPServer/AnyTask/jobs/{jobId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // -----------------------------------------------------------------------
@@ -1043,7 +1057,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1051,7 +1066,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJobPost_WithEnvInQueryString_ReturnsBadRequest()
     {
-        // POST with form body but env control in query string — the query-string
+        // POST with form body but env control in query string â€” the query-string
         // parameter must still be read and rejected (not silently dropped).
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -1064,7 +1079,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?env:outSR=4326", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1075,7 +1091,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10&env:processSR=3857");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // -----------------------------------------------------------------------
@@ -1087,7 +1104,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task JobStatus_WithMissingJobId_ReturnsBadRequestOrNotFound()
     {
-        // Empty jobId in the route — the routing framework will either 404 or match
+        // Empty jobId in the route â€” the routing framework will either 404 or match
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/?f=json");
 
@@ -1191,7 +1208,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             var response = await client.PostAsync(
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
-            // Auth must be checked before parameter validation — expect 401 not 400.
+            // Auth must be checked before parameter validation â€” expect 401 not 400.
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
                 "auth must be checked before env-control rejection per IGeoprocessingJobService contract");
         }
@@ -1695,6 +1712,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
         public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
             ExecutionJobKind? kind = null,
+            int? limit = null,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values
                 .Where(job => !kind.HasValue || job.Spec.Kind == kind.Value)

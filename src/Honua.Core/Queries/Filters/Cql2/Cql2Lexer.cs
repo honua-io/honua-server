@@ -38,9 +38,10 @@ public sealed class Cql2Lexer
             { "TIMESTAMP", Cql2TokenType.Timestamp },
             { "INTERVAL", Cql2TokenType.Interval },
 
-            // Spatial predicates
+            // Spatial predicates (OGC CQL2 Text grammar OGC 21-065r1: S_ prefix is required).
+            // The bare INTERSECTS alias was removed — only the standard S_INTERSECTS token
+            // is accepted so the CQL2 surface remains conformant for CITE negative testing.
             { "S_INTERSECTS", Cql2TokenType.S_Intersects },
-            { "INTERSECTS", Cql2TokenType.S_Intersects },
             { "S_CONTAINS", Cql2TokenType.S_Contains },
             { "S_WITHIN", Cql2TokenType.S_Within },
             { "S_CROSSES", Cql2TokenType.S_Crosses },

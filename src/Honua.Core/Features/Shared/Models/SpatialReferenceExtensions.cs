@@ -54,7 +54,13 @@ public static class SpatialReferenceExtensions
         if (string.IsNullOrWhiteSpace(crsUri))
             return null;
 
-        return crsUri switch
+        // PA-028: Normalize https:// → http:// before matching. The OGC canonical form uses http://,
+        // but some servers (including Honua's Maps handler) emit https:// Content-Crs headers.
+        var normalized = crsUri.StartsWith("https://www.opengis.net/", StringComparison.OrdinalIgnoreCase)
+            ? "http://" + crsUri["https://".Length..]
+            : crsUri;
+
+        return normalized switch
         {
             // Preserve the original WKT-populated WGS84 instance for the canonical CRS84 URI.
             "http://www.opengis.net/def/crs/OGC/1.3/CRS84" => SpatialReference.WGS84,
@@ -63,11 +69,17 @@ public static class SpatialReferenceExtensions
                     => SpatialReference.Create(epsgCode),
             // Delegate everything else to the shared, more complete CRS parser
             // (case-insensitive prefixes, CRS84/OGC:CRS84/EPSG: short forms, /EPSG/ variants).
-            _ => ExtentExtensions.TryExtractSridFromCrs(crsUri, out var srid)
+            _ => ExtentExtensions.TryExtractSridFromCrs(normalized, out var srid)
                     ? SpatialReference.Create(srid)
                     : null
         };
     }
+
+    /// <summary>
+    /// The OGC URI for EPSG:4326 (latitude/longitude, NorthEast axis order).
+    /// Distinct from CRS84 (<c>OGC:CRS84</c>) which uses EastNorth (lon/lat) axis order.
+    /// </summary>
+    private const string Epsg4326CrsUri = "http://www.opengis.net/def/crs/EPSG/0/4326";
 
     /// <summary>
     /// Gets the list of supported CRS URIs for OGC APIs
@@ -81,17 +93,23 @@ public static class SpatialReferenceExtensions
             spatialRef.ToOgcCrsUri()
         };
 
-        // Always include WGS84 as a supported CRS for OGC compatibility
-        if (spatialRef.Wkid != 4326)
+        if (spatialRef.Wkid == 4326)
         {
+            // PA-022: EPSG:4326 is distinct from CRS84: it uses NorthEast (lat/lon) axis order.
+            // Both must be advertised so clients sending ?crs=EPSG:4326 receive a supported-CRS hit.
+            // CRS84 is already the first URI via ToOgcCrsUri() above.
+            uris.Add(Epsg4326CrsUri);
+        }
+        else
+        {
+            // Include CRS84 (WGS84 EastNorth) as a fallback CRS for non-geographic layers
             uris.Add(SpatialReference.WGS84.ToOgcCrsUri());
         }
 
-        // Include Web Mercator if it's commonly used
-        if (spatialRef.Wkid != 3857)
-        {
-            uris.Add(SpatialReference.WebMercator.ToOgcCrsUri());
-        }
+        // PA-023: Web Mercator (EPSG:3857) is only advertised when it is the layer's own CRS.
+        // Unconditional advertisement was a false capability claim for providers that do not
+        // support on-the-fly ST_Transform to 3857. The 3857 URI is already emitted as the
+        // first entry for 3857-native layers, so no additional entry is needed here.
 
         return uris.ToImmutableArray();
     }

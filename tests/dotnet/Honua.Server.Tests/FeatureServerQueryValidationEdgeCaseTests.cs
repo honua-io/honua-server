@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
+using System.Text.Json;
 
 namespace Honua.Server.Tests;
 
@@ -134,5 +136,36 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
             "&f=json");
 
         response.Be200Ok();
+    }
+
+    // BH7-003 regression: outStatistics with groupByFieldsForStatistics must apply
+    // the configured MaxRecordCount cap (not null) so a high-cardinality groupBy
+    // cannot exhaust server memory. With few test rows the cap is never hit; the
+    // test guards the code path and verifies no regression in the normal case.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_OutStatisticsGroupByWithCap_ReturnsGroupedResultsWithinLimit()
+    {
+        var outStatistics = Uri.EscapeDataString(
+            "[{\"statisticType\":\"count\",\"onStatisticField\":\"objectid\",\"outStatisticFieldName\":\"feature_count\"}]");
+
+        // Each of the two seeded features has a distinct name, so the groupBy produces
+        // one statistics row per name — well within the MaxRecordCount cap.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            "?where=1%3D1" +
+            "&groupByFieldsForStatistics=name" +
+            $"&outStatistics={outStatistics}" +
+            "&f=json");
+
+        // Must succeed — the cap must not break valid queries below the threshold.
+        response.Be200Ok();
+
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = System.Text.Json.JsonDocument.Parse(body);
+        doc.RootElement.TryGetProperty("features", out var features).Should().BeTrue();
+        // Two distinct names -> two groups; both within the default MaxRecordCount cap.
+        features.GetArrayLength().Should().Be(2);
     }
 }

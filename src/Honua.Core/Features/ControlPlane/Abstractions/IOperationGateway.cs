@@ -26,6 +26,14 @@ public enum OperationGatewayOutcome
     /// The operation was blocked by the guardrail ladder / entitlement gate.
     /// </summary>
     Blocked = 2,
+
+    /// <summary>
+    /// No executor is registered for the requested operation class; the operation
+    /// was not performed. This differs from <see cref="Blocked"/> (which means the
+    /// guardrail ladder denied the operation for the current edition) — NotSupported
+    /// means the runtime has no handler for the kind regardless of edition.
+    /// </summary>
+    NotSupported = 3,
 }
 
 /// <summary>

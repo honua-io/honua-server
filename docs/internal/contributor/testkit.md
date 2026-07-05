@@ -630,28 +630,85 @@ unit-tested; this lane exercises the real runner + real database path rather tha
 ### Real-AWS certification lane — `Category=RealAwsCertification`
 
 Runs in `.github/workflows/real-aws-certification.yml` (weekly + manual, never on `pull_request`)
-and targets a LIVE AWS account. It is gated, budgeted, and teardown-guaranteed:
+and targets a LIVE AWS account, driving Honua's production cloud seams against the standing
+certification stack provisioned by `honua-iac` (`examples/aws-cert`). It is gated, budgeted, and
+teardown-guaranteed:
 
-- **Gated** — the live test step runs only when `vars.REALAWS_CERT_ROLE_ARN` is configured
-  (OIDC role assumption). Without it the lane is an explicit no-op; the tests also self-skip
-  unless `HONUA_REALAWS_CERT_ENABLED=true`, so forks and credential-less runs never fail.
-- **Budgeted** — `AwsBatchRealCertificationTests` only *registers* a job definition (never submits
-  a job), so there is no compute and zero cost.
-- **Isolated + torn down** — `RealAwsCertificationFixture` mints a unique `honua-cert-*` prefix for
-  every resource; tests deregister in a `finally` block and assert no `ACTIVE` resource remains.
+- **Gated** — the live test step runs only when `vars.REALAWS_CERT_ROLE_ARN` is configured (OIDC
+  role assumption). The `certify` job runs in the `cert` GitHub environment so it matches the
+  honua-iac OIDC role's subject pin (`repo:honua-io/honua-server:environment:cert`). Without the
+  role variable the lane is an explicit no-op; the tests also self-skip unless
+  `HONUA_REALAWS_CERT_ENABLED=true`, and each cell self-skips when its own stack-output inputs are
+  absent, so the lane degrades cell-by-cell and forks / credential-less runs never fail.
+- **Budgeted** — each cell is tiny and short-lived: a register/deregister smoke, two smallest-tier
+  Batch jobs (one polled to `SUCCEEDED` under a hard <8-minute budget, one cancelled), one small S3
+  object, a no-op Lambda alias flip, and one same-revision ECS/ALB weighted cutover (shift → observe
+  → promote → rollback) against the standing smallest-Fargate cert service under a hard <5-minute
+  convergence budget, with the listener rule restored to `stable=100/canary=0` in a `finally`.
+- **Isolated + torn down** — `RealAwsCertificationFixture` mints a unique `honua-cert-{runId}`
+  prefix and a `honua-cert-run=<runId>` tag; every cell tears its resources down in a `finally`
+  block. A dedicated `always()` reaper step (`CertificationResourceReaper`, filtered by
+  `FullyQualifiedName~Reaper`) then sweeps any `honua-cert-run`-tagged Batch job definition (aged by
+  its `honua-cert-created` tag) or S3 object (aged by `LastModified`) older than a 24h TTL — the
+  belt-and-braces backstop for a crash between create and delete. The reaper keys **strictly** off
+  the run tag, never a name prefix, so it can never touch the standing stack.
 
-Run locally against your own account (credentials via the default chain):
+**Cells:** `AwsBatchRealCertificationTests` (job-def register/deregister smoke),
+`AwsBatchExecutionRealCertificationTests` (submit→`SUCCEEDED` and submit→cancel through the real
+`AwsBatchComputeBackend` + `AwsSdkBatchJobClient`), `S3ArtifactRealCertificationTests` (artifact
+round-trip through the production S3 client seam against `cert_artifact_bucket`), and
+`AwsLambdaAliasRealCertificationTests` (read→no-op-flip→restore through the production
+`AwsSdkLambdaAliasClient`, certifying the alias-flip primitive that cutover/rollback ride), and
+`AwsEcsAlbRealCertificationTests` (weighted-cutover cell — drives the real `AwsEcsAlbDeployBackend`
+with its production `AwsSdkAlbClient` + `AwsSdkEcsClient` seams: resolves the listener's default rule,
+`StartAsync` shifts a 25% canary share, `ObserveAsync` polls to `PromotionRecommended`, `PromoteAsync`
+cuts to `canary=100/stable=0`, then `RollbackAsync` restores `stable=100/canary=0` and `ObserveAsync`
+settles `RolledBack`). It deploys the service's **current** task definition as the desired revision
+(same-revision) so ECS converges immediately and the cell certifies traffic-shift + convergence +
+rollback mechanics, not an image roll; it drives `StartAsync` directly (skipping `PlanAsync`, whose
+`telemetry.connection` gate is a workflow-orchestration concern the backend's unit tests cover); and
+it snapshots + restores the standing listener rule and task definition in a `finally` so the
+substrate stays pristine.
+
+**Deferred (`DeferredRealCertificationPlaceholders`, explicit skipped placeholders):** live
+failure-of-failure / double-fault certification (#2161 — covered today by reconciler unit tests).
+
+**Stack-output → repo-variable → env-var contract** (set repo Actions *variables* from the
+`honua-iac examples/aws-cert` Terraform outputs; every input is optional/dormant-safe):
+
+| `terraform output` | repo variable | env var (fixture reads) |
+| --- | --- | --- |
+| (OIDC role) | `REALAWS_CERT_ROLE_ARN` | (assumed via `configure-aws-credentials`) |
+| `region` (default `us-east-1`) | `REALAWS_CERT_REGION` | `HONUA_REALAWS_CERT_REGION` |
+| `gp_job_queue_arn` | `REALAWS_CERT_JOB_QUEUE_ARN` | `HONUA_REALAWS_CERT_JOB_QUEUE_ARN` |
+| `gp_job_definition_arns.s` | `REALAWS_CERT_JOBDEF_ARN_S` | `HONUA_REALAWS_CERT_JOBDEF_ARN_S` |
+| `gp_job_definition_arns.{m,l,xl}` | `REALAWS_CERT_JOBDEF_ARN_{M,L,XL}` | `HONUA_REALAWS_CERT_JOBDEF_ARN_{M,L,XL}` |
+| `gp_job_role_arn` | `REALAWS_CERT_JOB_ROLE_ARN` | `HONUA_REALAWS_CERT_JOB_ROLE_ARN` |
+| `gp_execution_role_arn` | `REALAWS_CERT_EXECUTION_ROLE_ARN` | `HONUA_REALAWS_CERT_EXECUTION_ROLE_ARN` |
+| `cert_artifact_bucket` | `REALAWS_CERT_ARTIFACT_BUCKET` | `HONUA_REALAWS_CERT_ARTIFACT_BUCKET` |
+| (cert Lambda function) | `REALAWS_CERT_LAMBDA_FUNCTION` | `HONUA_REALAWS_CERT_LAMBDA_FUNCTION` |
+| (cert Lambda alias) | `REALAWS_CERT_LAMBDA_ALIAS` | `HONUA_REALAWS_CERT_LAMBDA_ALIAS` |
+| (cert ECS/ALB set) | `REALAWS_CERT_ECS_CLUSTER`, `REALAWS_CERT_ECS_SERVICE`, `REALAWS_CERT_ALB_LISTENER_ARN`, `REALAWS_CERT_CANARY_TARGET_GROUP_ARN`, `REALAWS_CERT_STABLE_TARGET_GROUP_ARN` | `HONUA_REALAWS_CERT_ECS_CLUSTER`, `HONUA_REALAWS_CERT_ECS_SERVICE`, `HONUA_REALAWS_CERT_ALB_LISTENER_ARN`, `HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN`, `HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN` |
+
+**Maintainer bootstrap:** (1) apply `honua-iac examples/aws-cert`; (2) set `REALAWS_CERT_ROLE_ARN`
+to its `github_oidc_role_arn` output and the per-cell variables above from the matching outputs;
+(3) ensure the smallest-tier job definition (`gp_job_definition_arns.s`) resolves to a trivially-
+and quickly-succeeding container (e.g. busybox `true`) — the SubmitJob seam overrides env + resources
+but NOT the image/command, so the "tiny job" shape is a property of the provisioned job definition.
+
+Run locally against your own account (credentials via the default chain), pointing each cell at your
+own stack outputs:
 
 ```bash
-HONUA_REALAWS_CERT_ENABLED=true HONUA_REALAWS_CERT_REGION=us-west-2 \
+HONUA_REALAWS_CERT_ENABLED=true HONUA_REALAWS_CERT_REGION=us-east-1 \
+  HONUA_REALAWS_CERT_JOB_QUEUE_ARN=... HONUA_REALAWS_CERT_JOBDEF_ARN_S=... \
+  HONUA_REALAWS_CERT_ARTIFACT_BUCKET=... \
   dotnet test tests/dotnet/Honua.CloudIntegration.Tests/Honua.CloudIntegration.Tests.csproj \
   --filter "Category=RealAwsCertification"
 ```
 
-**Remainder (tracked under #2164):** the full submit-to-`SUCCEEDED` Batch lifecycle and the
-ECS/Lambda deploy + rollback certifications need an ephemeral Fargate compute environment + IAM
-execution role whose teardown is slower and must be supervised, so they are not performed
-automatically by this lane yet.
+Cells whose inputs you omit skip cleanly. With the lane disabled (no `HONUA_REALAWS_CERT_ENABLED`)
+every certification test skips, which is the correct local/PR outcome.
 
 ## Environment Requirements
 

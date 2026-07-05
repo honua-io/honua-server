@@ -355,7 +355,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             ResolvePath(WebAppFixture.TestServiceId, replicaId, conflictId),
             JsonContent.Create(new ReplicaConflictResolutionRequest { Action = "teleport" }));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -395,6 +396,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             ConflictsPath(WebAppFixture.TestServiceId, "00000000000000000000000000000000"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

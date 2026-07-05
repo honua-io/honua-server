@@ -61,6 +61,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         "realtime.feature-streams",
         // alerts.geofence promoted to GA (Implemented) in #2427 — no longer experimental-gated.
         "security.mtls",
+        // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        "versioning.branch",
     ];
 
     [IntegrationTest]
@@ -155,6 +157,31 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var client = fixture.CreateAdminClient();
             using var response = await client.GetAsync(
                 "/api/v1/temporal/services/svc-experimental/layers/1/capabilities");
+
+            await AssertExperimentalDisabledAsync(response);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    public async Task VmsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
+    {
+        // The VMS REST surface (versioning.branch) is gated Preview in the BH6-001/BH6-002 fix
+        // batch. With experimental OFF the capability-gate filter must short-circuit with
+        // 404 honua:capability-experimental-disabled before any handler runs — proving the GA
+        // surface no longer exposes the VMS endpoints by default.
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync(
+                "/rest/services/svc-vms-gate-test/VersionManagementServer?f=json");
 
             await AssertExperimentalDisabledAsync(response);
         }

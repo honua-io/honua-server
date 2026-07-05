@@ -322,7 +322,8 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
                 new StringContent(extractPayload, Encoding.UTF8, "application/json"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
             // After the change-log baseline (migration 059), a gen-0 baseline replica resolves through
             // the incremental change-log delta path rather than the all-features snapshot fallback, so an
