@@ -191,4 +191,12 @@ internal static partial class GeoprocessingServiceLog
     public static partial void JobsListed(
         ILogger logger,
         int count);
+
+    [LoggerMessage(8033, LogLevel.Warning, "Submit rejected by job-contract version gate: JobId={JobId}, Backend={Backend}, RequiredVersion={RequiredVersion}, BackendMaxVersion={BackendMaxVersion}")]
+    public static partial void SubmitRejectedByContractVersion(
+        ILogger logger,
+        string jobId,
+        string backend,
+        int requiredVersion,
+        int backendMaxVersion);
 }

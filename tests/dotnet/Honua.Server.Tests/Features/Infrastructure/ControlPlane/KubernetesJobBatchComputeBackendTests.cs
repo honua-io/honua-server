@@ -75,7 +75,10 @@ public sealed class KubernetesJobBatchComputeBackendTests
             Arg.Is<KubernetesJobManifest>(m =>
                 m.Image == "honua/worker:1.0.0" &&
                 m.Name == "honua-job-create" &&
-                m.Namespace == "default"),
+                m.Namespace == "default" &&
+                // Serving↔worker job-contract version (ADR-0060 #3b) injected for the worker to re-check.
+                m.EnvironmentVariables.ContainsKey("HONUA_CONTRACT_VERSION") &&
+                m.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "1"),
             Arg.Any<CancellationToken>());
     }
 

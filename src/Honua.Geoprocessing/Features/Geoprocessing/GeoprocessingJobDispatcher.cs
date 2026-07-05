@@ -50,6 +50,10 @@ internal readonly record struct RemoteCancelResult(
 /// </summary>
 internal sealed class GeoprocessingJobDispatcher
 {
+    // The initial serving↔worker job contract. A job at this version runs on any worker because
+    // every backend reports at least this via BatchComputeBackendCapabilities.MaxSupportedContractVersion.
+    private const int BaselineContractVersion = 1;
+
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly IUniversalProgressStore _progressStore;
@@ -230,6 +234,41 @@ internal sealed class GeoprocessingJobDispatcher
         {
             throw new InvalidOperationException(
                 $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind}).");
+        }
+
+        // Serving↔worker job-contract gate (ADR-0060 principle #3b): during a rolling version step
+        // a vX server must not submit a job an older (vY) worker cannot run. Fail the job cleanly
+        // rather than dispatching a payload the worker would reject, so operators see a clear reason.
+        // A baseline (v1) job runs on any worker (every backend supports at least the initial
+        // contract), so only consult capabilities when the job requires a newer contract.
+        if (job.Spec.ContractVersion > BaselineContractVersion)
+        {
+            var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+            if (job.Spec.ContractVersion > capabilities.MaxSupportedContractVersion)
+            {
+                GeoprocessingServiceLog.SubmitRejectedByContractVersion(
+                    _logger,
+                    job.OperationId,
+                    job.Spec.Backend,
+                    job.Spec.ContractVersion,
+                    capabilities.MaxSupportedContractVersion);
+
+                var mismatchMessage =
+                    $"Job requires job-contract version {job.Spec.ContractVersion} but backend "
+                    + $"'{job.Spec.Backend}' supports at most version {capabilities.MaxSupportedContractVersion}. "
+                    + "Complete the worker upgrade before submitting this job.";
+
+                await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                    jobStore,
+                    job.OperationId,
+                    _progressStore,
+                    ProgressRetention,
+                    mismatchMessage,
+                    cancellationToken).ConfigureAwait(false);
+
+                var failed = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+                return failed ?? job;
+            }
         }
 
         return await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
