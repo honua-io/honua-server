@@ -35,6 +35,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_cancel_job",
         "honua_propose_operation",
         "honua_publish_service",
+        "honua_publish_result",
         "honua_create_map_package",
         "honua_create_app_package",
         "honua_plan_analysis",
@@ -231,6 +232,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
             ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
             ["honua_publish_service"] = (Destructive: false, Idempotent: false),
+            ["honua_publish_result"] = (Destructive: false, Idempotent: false),
             ["honua_create_map_package"] = (Destructive: false, Idempotent: false),
             ["honua_create_app_package"] = (Destructive: false, Idempotent: false),
             ["honua_edit_features"] = (Destructive: true, Idempotent: false),
@@ -562,6 +564,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
+            new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
             new CreateMapPackageTool(jobService, NullLogger<CreateMapPackageTool>.Instance),
             new CreateAppPackageTool(jobService, NullLogger<CreateAppPackageTool>.Instance),
             new PlanAnalysisTool(

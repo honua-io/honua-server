@@ -173,6 +173,98 @@ internal sealed class McpPublishServiceOutput
 }
 
 /// <summary>
+/// Arguments for <c>honua_publish_result</c> (geospatial-mcp <c>publish_result</c>,
+/// #2482): promote a completed analysis job's materialized feature/table artifact
+/// into a hosted service + layer. Per the standard schema only <c>sourceId</c>
+/// (the completed job whose result is promoted) is required; the honua extension
+/// selectors below name the artifact and target service/layer. <c>targetKind</c>,
+/// <c>visibility</c>, and <c>routePrefix</c> mirror the standard's promotion-surface
+/// fields — the reference implementation supports the
+/// <c>published_service</c> promotion (Analyze / Publish Data); <c>deployment</c>
+/// (Build App) is not yet materialized server-side and returns a structured
+/// <c>failed_precondition</c>.
+/// </summary>
+internal sealed class McpPublishResultArgument
+{
+    [JsonPropertyName("sourceId")]
+    public string? SourceId { get; set; }
+
+    [JsonPropertyName("artifactId")]
+    public string? ArtifactId { get; set; }
+
+    [JsonPropertyName("serviceName")]
+    public string? ServiceName { get; set; }
+
+    [JsonPropertyName("layerName")]
+    public string? LayerName { get; set; }
+
+    [JsonPropertyName("targetKind")]
+    public string? TargetKind { get; set; }
+
+    [JsonPropertyName("visibility")]
+    public string? Visibility { get; set; }
+
+    [JsonPropertyName("routePrefix")]
+    public string? RoutePrefix { get; set; }
+}
+
+/// <summary>
+/// Output for <c>honua_publish_result</c>. Projects the same canonical
+/// <c>OperationHandle</c> shape as <c>honua_publish_service</c> (the promotion
+/// routes through the shared <c>service.publish</c> operation): a
+/// <c>Completed</c> promotion carries <c>serviceId</c> + <c>layerId</c> the agent
+/// chains straight into <c>honua_query_features</c> / <c>honua_render_map</c>; a
+/// <c>RequiresApproval</c> outcome carries the approval lane; a <c>Queued</c>
+/// outcome carries the durable job id; a <c>Denied</c> outcome carries the
+/// reason. <c>sourceJobId</c> / <c>artifactId</c> echo the promoted result
+/// (#2482).
+/// </summary>
+internal sealed class McpPublishResultOutput
+{
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("requiresApproval")]
+    public bool RequiresApproval { get; set; }
+
+    [JsonPropertyName("operationId")]
+    public string OperationId { get; set; } = string.Empty;
+
+    [JsonPropertyName("handleId")]
+    public string HandleId { get; set; } = string.Empty;
+
+    [JsonPropertyName("sourceJobId")]
+    public string? SourceJobId { get; set; }
+
+    [JsonPropertyName("artifactId")]
+    public string? ArtifactId { get; set; }
+
+    [JsonPropertyName("serviceUri")]
+    public string? ServiceUri { get; set; }
+
+    [JsonPropertyName("serviceId")]
+    public string? ServiceId { get; set; }
+
+    [JsonPropertyName("layerId")]
+    public string? LayerId { get; set; }
+
+    [JsonPropertyName("metadataRevision")]
+    public long? MetadataRevision { get; set; }
+
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; set; }
+
+    [JsonPropertyName("approvalLane")]
+    public string? ApprovalLane { get; set; }
+
+    [JsonPropertyName("summary")]
+    public string? Summary { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+}
+
+/// <summary>
 /// Arguments for <c>honua_create_map_package</c>: author a MapPackage from a
 /// prompt through the canonical map-generation pipeline (#1951). The standard
 /// geospatial-mcp composition selectors (<c>templateId</c>, <c>styleId</c>,
