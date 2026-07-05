@@ -56,6 +56,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "publication.metadata-release",
         "upload.file",
         "edit.features",
+        "versioning.branch",
     ];
 
     private static bool IsManifestCapability(CapabilityDescriptor descriptor)
@@ -87,6 +88,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "realtime.feature-streams",
         // alerts.geofence promoted to Implemented (GA) in #2427 — no longer omitted.
         "security.mtls",
+        // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        "versioning.branch",
     ];
 
     [Fact]
