@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -374,10 +375,13 @@ internal sealed partial class ODataBatchHandler
 
         if (scope == AccessScope.Write)
         {
+            // Per-operation authorization (BH3-001/BH3-014): map the batch sub-request method to
+            // its canonical operation so an insert-only grantee cannot Update/Delete via $batch.
             var rbacResult = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
                 validation.Resource,
                 validation.Service,
+                MapMethodToOperation(method),
                 cancellationToken).ConfigureAwait(false);
             if (rbacResult != null)
             {
@@ -452,6 +456,25 @@ internal sealed partial class ODataBatchHandler
                 method.Equals("PATCH", StringComparison.OrdinalIgnoreCase) ||
                 method.Equals("DELETE", StringComparison.OrdinalIgnoreCase) ||
                 method.Equals("PUT", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // Maps an OData $batch sub-request HTTP method to its canonical authorization operation
+    // (BH3-001/BH3-014): POST=Insert, PATCH/PUT=Update, DELETE=Delete. PUT (replace) modifies
+    // an existing feature and therefore authorizes as Update. Only mutation methods reach here.
+    private static AuthorizationOperation MapMethodToOperation(string? method)
+    {
+        if (method != null && method.Equals("POST", StringComparison.OrdinalIgnoreCase))
+        {
+            return AuthorizationOperation.Insert;
+        }
+
+        if (method != null && method.Equals("DELETE", StringComparison.OrdinalIgnoreCase))
+        {
+            return AuthorizationOperation.Delete;
+        }
+
+        // PATCH and PUT both modify an existing feature.
+        return AuthorizationOperation.Update;
     }
 
     private static ODataParsedPath ParseUrl(string url)

@@ -183,7 +183,8 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new ExternalPostgisSinkExecutor(monitor),
             new ImportDatasetJobExecutor(
                 Substitute.For<IServiceScopeFactory>(),
-                NullLogger<ImportDatasetJobExecutor>.Instance),
+                NullLogger<ImportDatasetJobExecutor>.Instance,
+                Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>()),
         };
 
         return new GeoprocessingDispatchJobExecutor(

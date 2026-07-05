@@ -124,7 +124,7 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
             await InsertActivityAsync(connection, transaction, mapId, "thread-opened", authorName, authorId,
                 $"opened a comment on {featureLabel}", threadId, now, cancellationToken).ConfigureAwait(false);
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             committed = true;
         }
         catch
@@ -167,7 +167,7 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
             await InsertActivityAsync(connection, transaction, mapId, "comment-posted", authorName, authorId,
                 $"replied on {featureLabel}", threadId, now, cancellationToken).ConfigureAwait(false);
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             committed = true;
         }
         catch
@@ -227,7 +227,7 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
             await InsertActivityAsync(connection, transaction, mapId, kind, actorName, actorId,
                 $"{verb} the comment on {featureLabel}", threadId, now, cancellationToken).ConfigureAwait(false);
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             committed = true;
         }
         catch

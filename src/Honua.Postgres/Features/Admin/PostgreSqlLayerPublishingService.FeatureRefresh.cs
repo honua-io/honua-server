@@ -6,8 +6,8 @@
 // Rebuilds a published layer's rows in the canonical `features` table from its live source
 // table. Publishing materializes a one-time snapshot (MaterializeLayerFeaturesAsync) that the
 // server-side MVT/tile path reads, while the feature-query paths read the live source table.
-// Re-importing or updating the source therefore leaves the snapshot — and the tiles built from
-// it — silently stale (honua-server#1628). These helpers delete the layer's stale snapshot rows
+// Re-importing or updating the source therefore leaves the snapshot â€” and the tiles built from
+// it â€” silently stale (honua-server#1628). These helpers delete the layer's stale snapshot rows
 // and re-insert them from the live source within a single transaction so tiles stay consistent
 // with the live data the query paths serve.
 
@@ -15,6 +15,7 @@ using System.Globalization;
 using Honua.Core.Features.Admin.Domain;
 using Npgsql;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
@@ -120,7 +121,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 cancellationToken)
             .ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         Log.LayerSnapshotRefreshed(_logger, metadata.LayerId, materializedCount);
 
@@ -295,7 +296,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         if (reader.IsDBNull(4))
         {
-            // No geometry column recorded — not a materializable spatial layer.
+            // No geometry column recorded â€” not a materializable spatial layer.
             return null;
         }
 

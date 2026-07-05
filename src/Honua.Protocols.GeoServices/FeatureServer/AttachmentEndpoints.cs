@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -285,7 +286,7 @@ internal static partial class AttachmentEndpoints
     /// </summary>
     private static async Task HandleAddAttachment(HttpContext context)
     {
-        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write);
+        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write, AuthorizationOperation.Insert);
         if (resource == null)
             return;
 
@@ -374,7 +375,7 @@ internal static partial class AttachmentEndpoints
     /// </summary>
     private static async Task HandleUpdateAttachment(HttpContext context)
     {
-        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write);
+        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write, AuthorizationOperation.Update);
         if (resource == null)
             return;
 
@@ -458,7 +459,7 @@ internal static partial class AttachmentEndpoints
     /// </summary>
     private static async Task HandleDeleteAttachments(HttpContext context)
     {
-        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write);
+        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write, AuthorizationOperation.Delete);
         if (resource == null)
             return;
 
@@ -671,7 +672,8 @@ internal static partial class AttachmentEndpoints
 
     private static async Task<AttachmentAccessContext?> TryValidateLayerAccessAsync(
         HttpContext context,
-        AccessScope scope = AccessScope.Read)
+        AccessScope scope = AccessScope.Read,
+        AuthorizationOperation? writeOperation = null)
     {
         var routeValidator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
         var serviceResult = routeValidator.ValidateServiceId(context);
@@ -728,11 +730,22 @@ internal static partial class AttachmentEndpoints
 
         if (scope == AccessScope.Write)
         {
-            var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                resource,
-                service,
-                context.RequestAborted);
+            // Per-operation authorization (BH3-001/BH3-014): an attachment add/update/delete
+            // authorizes as Insert/Update/Delete respectively, so a grant for one attachment
+            // mutation cannot authorize another. Absent a specific operation (defensive default),
+            // the coarse any-write gate is used.
+            var rbacError = writeOperation is { } op
+                ? await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                    context,
+                    resource,
+                    service,
+                    op,
+                    context.RequestAborted)
+                : await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                    context,
+                    resource,
+                    service,
+                    context.RequestAborted);
             if (rbacError != null)
             {
                 await rbacError.ExecuteAsync(context);

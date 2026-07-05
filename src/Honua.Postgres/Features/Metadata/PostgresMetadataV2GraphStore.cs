@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Metadata;
 
 /// <summary>
@@ -76,10 +77,10 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             // When both the V2 snapshot table and the V1 catalog are absent or empty the
             // server is freshly deployed with zero published datasets. Every catalog-style
             // endpoint (STAC /stac, GeoServices /rest/services, OGC API /collections, OData
-            // service document, WFS GetCapabilities, …) already handles an empty list
+            // service document, WFS GetCapabilities, â€¦) already handles an empty list
             // gracefully and returns a valid empty response. Returning an empty-but-valid
             // snapshot here makes ALL of those surfaces return 200 with zero
-            // items — the correct behaviour for a healthy but unpopulated server — instead
+            // items â€” the correct behaviour for a healthy but unpopulated server â€” instead
             // of surfacing a 500. A snapshot that EXISTS in the database but fails to load
             // (network/parse error) still 500s correctly because TryLoadCurrentAsync
             // propagates that exception rather than returning null. (honua-server#1619.)
@@ -195,7 +196,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
 
         // Self-heal the Metadata v2 schema so a fresh-DB container where migration
         // 031 has not yet run does not 500 the admin layer-publish path. Idempotent
-        // CREATE TABLE IF NOT EXISTS — a no-op once the migration is applied.
+        // CREATE TABLE IF NOT EXISTS â€” a no-op once the migration is applied.
         // (honua-server#1341.)
         await EnsureSchemaAsync(connection, cancellationToken).ConfigureAwait(false);
 
@@ -228,7 +229,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         await RefreshSidecarsAsync(connection, transaction, graph, clearStaleEnvironmentRows: isBootstrap, cancellationToken).ConfigureAwait(false);
         await UpsertCurrentAsync(connection, transaction, graph.Revision, etag, cancellationToken).ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         var snapshot = new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
         _cachedCurrent = snapshot;
@@ -583,7 +584,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     /// <summary>
     /// Builds an empty-but-valid in-memory snapshot for a freshly deployed server with no
     /// published datasets. All catalog-style read surfaces (STAC, GeoServices, OGC API
-    /// Features, OData, WFS, …) enumerate the collections/services list and return a valid
+    /// Features, OData, WFS, â€¦) enumerate the collections/services list and return a valid
     /// empty response when the list is zero-length, so this snapshot produces 200s with no
     /// items rather than 500s. It is never persisted to the database. (honua-server#1619.)
     /// </summary>

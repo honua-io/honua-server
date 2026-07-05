@@ -22,7 +22,7 @@ namespace Honua.Postgres.Features.AuditLog;
 /// deletes, and migration 069 builds a hash chain over the rows. Retention is the
 /// sanctioned, privileged maintenance path the migration explicitly allows
 /// ("rotate / archive via partition swap or explicit DROP RULE in a maintenance
-/// window"). This pruner performs that rotation safely and — critically —
+/// window"). This pruner performs that rotation safely and â€” critically â€”
 /// <em>without holding a long-lived lock</em>:
 /// </para>
 /// <list type="number">
@@ -30,7 +30,7 @@ namespace Honua.Postgres.Features.AuditLog;
 /// (<c>MIN(audit_id)</c> among still-retained rows). Everything below that
 /// boundary is, by construction, an expired contiguous prefix of the chain.
 /// Because the integrity verifier treats the first surviving hashed row as the
-/// chain genesis, pruning a head prefix never breaks verification — unlike a
+/// chain genesis, pruning a head prefix never breaks verification â€” unlike a
 /// mid-chain delete. Concurrent inserts only ever add rows <em>above</em> the
 /// boundary (higher <c>audit_id</c>, newer timestamps), so they can never be
 /// caught by the prune and the boundary stays valid for the whole sweep.</item>
@@ -79,7 +79,7 @@ internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
     {
         ArgumentNullException.ThrowIfNull(policy);
 
-        // Unbounded retention means "retain forever" — never remove anything.
+        // Unbounded retention means "retain forever" â€” never remove anything.
         if (!policy.IsBounded)
         {
             return 0;
@@ -139,7 +139,7 @@ internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
     {
         // Each batch runs in its own short transaction so the ACCESS EXCLUSIVE lock
         // taken by DISABLE/ENABLE RULE is held only for the few milliseconds this
-        // small delete takes, then released — letting inline audit inserts proceed
+        // small delete takes, then released â€” letting inline audit inserts proceed
         // between batches instead of stalling for the whole sweep.
         await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
 
@@ -193,7 +193,7 @@ internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
             $"ALTER TABLE {_table} ENABLE RULE {NoDeleteRule}",
             ct).ConfigureAwait(false);
 
-        await transaction.CommitAsync(ct).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(ct).ConfigureAwait(false);
 
         return deleted;
     }

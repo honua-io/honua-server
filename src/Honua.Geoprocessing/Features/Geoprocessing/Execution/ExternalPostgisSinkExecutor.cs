@@ -189,7 +189,8 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                         .ConfigureAwait(false);
                 }
 
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                await tx.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             }
             catch
             {

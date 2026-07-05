@@ -10,6 +10,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -104,6 +105,7 @@ internal sealed class FormSubmissionService
             context,
             targetMetadata,
             targetMetadata.Service.Metadata.Name,
+            MapSubmissionOperation(request.Operation),
             context.RequestAborted).ConfigureAwait(false);
         if (authorizationFailure is not null)
         {
@@ -302,18 +304,25 @@ internal sealed class FormSubmissionService
         HttpContext context,
         FormTargetMetadataResolution target,
         string fallbackServiceId,
+        AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
         var (service, _, resource, _) = target;
         if (resource is not null)
         {
+            // Per-operation authorization (BH3-001/BH3-014): a form submission maps to
+            // Insert (create) / Update / Delete based on the submission operation, so a grant
+            // for one cannot authorize another.
             return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
                 resource,
                 service,
+                operation,
                 cancellationToken).ConfigureAwait(false);
         }
 
+        // Service-scoped fallbacks: no resource to run a per-operation resource check against, so
+        // the coarse service data-editor gate applies.
         if (service is not null)
         {
             return await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
@@ -327,6 +336,17 @@ internal sealed class FormSubmissionService
             fallbackServiceId,
             cancellationToken).ConfigureAwait(false);
     }
+
+    // Maps a form submission operation to its canonical authorization operation
+    // (BH3-001/BH3-014): create=Insert, update=Update, delete=Delete. An unknown/empty value
+    // defaults to Insert since a submission with no explicit operation creates a feature.
+    private static AuthorizationOperation MapSubmissionOperation(string? submissionOperation)
+        => submissionOperation?.ToLowerInvariant() switch
+        {
+            FormSubmissionOperations.Update => AuthorizationOperation.Update,
+            FormSubmissionOperations.Delete => AuthorizationOperation.Delete,
+            _ => AuthorizationOperation.Insert,
+        };
 
     private async Task<IResult> ResolveClaimConflictAsync(
         HttpContext context,
