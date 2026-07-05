@@ -80,21 +80,25 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         dataset_id, id, name, description, asset_root, tileset_file_name, dataset_type,
         extent_xmin, extent_ymin, extent_xmax, extent_ymax, crs,
         cache_max_age_seconds, cache_no_store, edition_gate, requires_auth, is_public,
-        allowed_roles, status, validation_message, revision, created_at, created_by, updated_at
+        allowed_roles, status, validation_message, revision, created_at, created_by, updated_at,
+        asset_storage_prefix
         """;
 
     private readonly IPrimaryDatabaseConnectionProvider _connectionProvider;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<PostgresSceneDatasetRegistry> _logger;
+    private readonly ISceneAssetHydrator? _hydrator;
 
     public PostgresSceneDatasetRegistry(
         IPrimaryDatabaseConnectionProvider connectionProvider,
         IHostEnvironment environment,
-        ILogger<PostgresSceneDatasetRegistry> logger)
+        ILogger<PostgresSceneDatasetRegistry> logger,
+        ISceneAssetHydrator? hydrator = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _environment = environment ?? throw new ArgumentNullException(nameof(environment));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _hydrator = hydrator;
     }
 
     public async ValueTask<SceneDataset?> FindAsync(string id, CancellationToken cancellationToken = default)
@@ -124,7 +128,20 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
             }
 
             var record = MapRow(reader);
-            return ProjectToServing(record);
+            var localAssetRoot = CanonicalizeAssetRoot(record.AssetRoot);
+
+            // Read-through hydration seam (#2459, ADR-0060): every serving path
+            // (HTTP, gRPC, I3S, OpenUSD) resolves through FindAsync, so materializing
+            // the local asset cache here — before projection — makes a scene
+            // published on one node servable from any node without touching a single
+            // endpoint. A no-op for legacy rows with no storage prefix, and a fast
+            // marker check once the local cache is current.
+            if (_hydrator is not null && !string.IsNullOrEmpty(record.AssetStoragePrefix))
+            {
+                await _hydrator.EnsureLocalAsync(record, localAssetRoot, cancellationToken).ConfigureAwait(false);
+            }
+
+            return ProjectToServing(record, localAssetRoot);
         }
         catch (Exception ex)
         {
@@ -151,12 +168,14 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
                 dataset_id, id, name, description, asset_root, tileset_file_name, dataset_type,
                 extent_xmin, extent_ymin, extent_xmax, extent_ymax, crs,
                 cache_max_age_seconds, cache_no_store, edition_gate, requires_auth, is_public,
-                allowed_roles, status, validation_message, revision, created_at, created_by, updated_at
+                allowed_roles, status, validation_message, revision, created_at, created_by, updated_at,
+                asset_storage_prefix
             ) VALUES (
                 @dataset_id, @id, @name, @description, @asset_root, @tileset_file_name, @dataset_type,
                 @extent_xmin, @extent_ymin, @extent_xmax, @extent_ymax, @crs,
                 @cache_max_age_seconds, @cache_no_store, @edition_gate, @requires_auth, @is_public,
-                @allowed_roles, @status, @validation_message, @revision, @created_at, @created_by, @updated_at
+                @allowed_roles, @status, @validation_message, @revision, @created_at, @created_by, @updated_at,
+                @asset_storage_prefix
             )
             """;
 
@@ -286,6 +305,7 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
                 name                  = @name,
                 description           = @description,
                 asset_root            = @asset_root,
+                asset_storage_prefix  = @asset_storage_prefix,
                 tileset_file_name     = @tileset_file_name,
                 dataset_type          = @dataset_type,
                 extent_xmin           = @extent_xmin,
@@ -369,14 +389,14 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         }
     }
 
-    private SceneDataset ProjectToServing(SceneDatasetRecord record)
+    private static SceneDataset ProjectToServing(SceneDatasetRecord record, string canonicalAssetRoot)
     {
         return new SceneDataset
         {
             Id = record.Id,
             Name = record.Name,
             Description = record.Description,
-            AssetRoot = CanonicalizeAssetRoot(record.AssetRoot),
+            AssetRoot = canonicalAssetRoot,
             TilesetFileName = record.TilesetFileName,
             AccessPolicy = SceneServingProjection.ToAccessPolicy(record),
             CachePolicy = record.CachePolicy
@@ -437,6 +457,7 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         var createdAt = reader.GetFieldValue<DateTimeOffset>(21);
         var createdBy = reader.GetString(22);
         var updatedAt = reader.IsDBNull(23) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(23);
+        var assetStoragePrefix = reader.IsDBNull(24) ? null : reader.GetString(24);
 
         return new SceneDatasetRecord
         {
@@ -445,6 +466,7 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
             Name = name,
             Description = description,
             AssetRoot = assetRoot,
+            AssetStoragePrefix = assetStoragePrefix,
             TilesetFileName = tilesetFileName,
             DatasetType = datasetType,
             Extent = extent,
@@ -473,6 +495,8 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         command.Parameters.Add(new NpgsqlParameter("@name", record.Name));
         command.Parameters.Add(new NpgsqlParameter("@description", (object?)record.Description ?? DBNull.Value));
         command.Parameters.Add(new NpgsqlParameter("@asset_root", record.AssetRoot));
+        command.Parameters.Add(new NpgsqlParameter("@asset_storage_prefix",
+            (object?)record.AssetStoragePrefix ?? DBNull.Value));
         command.Parameters.Add(new NpgsqlParameter("@tileset_file_name",
             string.IsNullOrWhiteSpace(record.TilesetFileName) ? "tileset.json" : record.TilesetFileName));
         command.Parameters.Add(new NpgsqlParameter("@dataset_type", ToDatabaseValue(record.DatasetType)));
