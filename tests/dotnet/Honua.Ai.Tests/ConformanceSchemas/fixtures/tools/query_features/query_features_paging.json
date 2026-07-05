@@ -1,0 +1,17 @@
+{
+  "id": "query_features.paging_and_count",
+  "schemaRef": "tools/query_features.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "serviceId": "county_parcels",
+    "layerId": 0,
+    "where": "zoning = 'R1'",
+    "limit": 100,
+    "resultOffset": 100,
+    "returnGeometry": false,
+    "returnCountOnly": false,
+    "outSrid": 4326
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}

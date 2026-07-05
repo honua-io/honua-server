@@ -48,7 +48,9 @@ internal sealed class QueryFeaturesTool : IMcpTool
     {
         Name = ToolName,
         Title = "Query features",
-        Description = "Query features from a published layer (by serviceId/layerId) with an optional attribute WHERE clause, bbox, outFields, and result limit. Returns a GeoJSON FeatureCollection.",
+        Description = "Query features from a published layer (by serviceId/layerId) with an optional attribute WHERE clause, bbox, outFields, and result limit. Returns a GeoJSON FeatureCollection. "
+            + "Paging: results are capped at 'limit' (default 100, max 1000). When the response reports exceededTransferLimit=true there are more matching features; page through them mechanically by re-issuing the SAME query with resultOffset set to the returned nextOffset, repeating until exceededTransferLimit=false. "
+            + "Set returnCountOnly=true to get just the matching {count} (no features) for a cheap cardinality check, and returnGeometry=false to return attribute-only rows (geometry omitted) when scanning attributes.",
         InputSchema = MapToolSchemas.QueryFeaturesArgumentSchema,
         OutputSchema = McpToolOutputSchemas.QueryFeaturesOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Query features")
@@ -74,6 +76,9 @@ internal sealed class QueryFeaturesTool : IMcpTool
         var layer = MapToolLayerResolver.Resolve(snapshot, argument.ServiceId, argument.LayerId);
 
         var limit = ResolveLimit(argument.Limit);
+        var offset = ResolveOffset(argument.ResultOffset);
+        var returnGeometry = argument.ReturnGeometry ?? true;
+        var returnCountOnly = argument.ReturnCountOnly ?? false;
         var outSrid = argument.OutSrid ?? 4326;
         if (outSrid <= 0)
         {
@@ -87,18 +92,39 @@ internal sealed class QueryFeaturesTool : IMcpTool
         {
             OutFields = ToOutFields(argument.OutFields),
             Limit = limit,
+            ResultOffset = offset,
             OutputSrid = outSrid,
             SqlFilter = BuildAttributeFilter(filterService, argument.Where, layer),
             SpatialFilter = BuildBboxFilter(geometryService, argument.Bbox, argument.BboxSrid)
         };
 
         var reader = httpContext.RequestServices.GetRequiredService<IFeatureReader>();
+
+        // returnCountOnly: adapt to the canonical count seam and return {count}
+        // with no features (a cheap cardinality check that never buffers geometry).
+        if (returnCountOnly)
+        {
+            var count = await reader.CountAsync(layer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+            var countOutput = new McpQueryFeaturesOutput
+            {
+                ServiceId = layer.Service.Metadata.Id,
+                LayerId = argument.LayerId!.Value,
+                ReturnedCount = 0,
+                Limit = limit,
+                ResultOffset = offset,
+                ExceededTransferLimit = false,
+                Count = count
+            };
+
+            return McpToolHelpers.SuccessResult(countOutput, MapToolJsonContext.Default.McpQueryFeaturesOutput);
+        }
+
         var result = await reader.QueryAsync(layer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
 
         var features = new List<JsonNode>(result.Items.Length);
         foreach (var feature in result.Items)
         {
-            features.Add(ToGeoJsonFeature(feature, geometryService));
+            features.Add(ToGeoJsonFeature(feature, geometryService, returnGeometry));
         }
 
         var output = new McpQueryFeaturesOutput
@@ -107,7 +133,11 @@ internal sealed class QueryFeaturesTool : IMcpTool
             LayerId = argument.LayerId!.Value,
             ReturnedCount = features.Count,
             Limit = limit,
+            ResultOffset = offset,
             ExceededTransferLimit = result.HasMoreResults,
+            // When more results remain, hand the agent the exact offset to page
+            // mechanically: the next page starts after everything returned so far.
+            NextOffset = result.HasMoreResults ? offset + features.Count : null,
             GeoJson = new McpGeoJsonFeatureCollection { Features = features }
         };
 
@@ -123,6 +153,17 @@ internal sealed class QueryFeaturesTool : IMcpTool
         }
 
         return Math.Min(limit, MapToolSchemas.MaxFeatureLimit);
+    }
+
+    private static int ResolveOffset(int? requested)
+    {
+        var offset = requested ?? 0;
+        if (offset < 0)
+        {
+            throw new GeoprocessingValidationException("'resultOffset' must be zero or a positive integer.");
+        }
+
+        return offset;
     }
 
     private static ImmutableArray<string>? ToOutFields(IReadOnlyList<string>? outFields)
@@ -219,10 +260,14 @@ internal sealed class QueryFeaturesTool : IMcpTool
             envelopeMaxY: maxY);
     }
 
-    private static JsonObject ToGeoJsonFeature(Feature feature, IGeometryService geometryService)
+    private static JsonObject ToGeoJsonFeature(Feature feature, IGeometryService geometryService, bool returnGeometry)
     {
-        var geometryJson = geometryService.ConvertWkbToGeoJson(feature.Geometry);
-        JsonNode? geometryNode = geometryJson is null ? null : JsonNode.Parse(geometryJson);
+        JsonNode? geometryNode = null;
+        if (returnGeometry)
+        {
+            var geometryJson = geometryService.ConvertWkbToGeoJson(feature.Geometry);
+            geometryNode = geometryJson is null ? null : JsonNode.Parse(geometryJson);
+        }
 
         var properties = new JsonObject();
         foreach (var pair in feature.Attributes)
