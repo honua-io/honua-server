@@ -251,6 +251,73 @@ internal static class MapToolSchemas
     /// <summary>Schema for <see cref="McpEditFeaturesArgument"/>.</summary>
     public static readonly JsonElement EditFeaturesArgumentSchema = Parse(EditFeaturesArgumentSchemaJson);
 
+    // No required fields: styleId, serviceId+layerId, and the empty (list) call
+    // are all valid. Optional serviceId/layerId are the reference-implementation
+    // shape for resolving a published layer's primary style.
+    private const string GetStyleArgumentSchemaJson = """
+        {
+          "type": "object",
+          "properties": {
+            "styleId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Catalog style identifier (style_…) to resolve. Omit to resolve serviceId+layerId's primary style, or to list the available styles when neither is given."
+            },
+            "serviceId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Published service identifier or name (from honua_list_layers.serviceId). Paired with layerId, resolves that layer's primary/default style when styleId is omitted."
+            },
+            "layerId": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Service-local layer index (from honua_list_layers.layerId). Paired with serviceId, resolves that layer's primary/default style when styleId is omitted."
+            },
+            "encoding": {
+              "type": "string",
+              "enum": ["mapbox-style", "sld-1.0.0", "sld-1.1.0", "esri-drawing-info"],
+              "default": "mapbox-style",
+              "description": "Stylesheet encoding to inline when includeStylesheet=true. mapbox-style is the canonical MapLibre style JSON; esri-drawing-info is the Esri renderer; SLD 1.0/1.1 are derived."
+            },
+            "includeStylesheet": {
+              "type": "boolean",
+              "default": false,
+              "description": "When true, inline the resolved stylesheet body for the selected encoding; otherwise encodings are advertised by reference."
+            }
+          }
+        }
+        """;
+
+    private const string ApplyStylePresetArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["serviceId", "layerId", "styleId"],
+          "properties": {
+            "serviceId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Published service identifier or name whose layer is being styled (from honua_list_layers.serviceId)."
+            },
+            "layerId": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Service-local layer index to apply the preset to (from honua_list_layers.layerId)."
+            },
+            "styleId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Catalog style preset identifier (style_…) to apply as the layer's primary/default style. Discover valid presets with honua_get_style (omit styleId to list them)."
+            }
+          }
+        }
+        """;
+
+    /// <summary>Schema for <see cref="McpGetStyleArgument"/>.</summary>
+    public static readonly JsonElement GetStyleArgumentSchema = Parse(GetStyleArgumentSchemaJson);
+
+    /// <summary>Schema for <see cref="McpApplyStylePresetArgument"/>.</summary>
+    public static readonly JsonElement ApplyStylePresetArgumentSchema = Parse(ApplyStylePresetArgumentSchemaJson);
+
     private static JsonElement Parse(string json)
     {
         using var document = JsonDocument.Parse(json);

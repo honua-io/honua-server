@@ -27,6 +27,12 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 [JsonSerializable(typeof(McpEditFeaturesOutput))]
 [JsonSerializable(typeof(McpEditResult))]
 [JsonSerializable(typeof(McpEditSummary))]
+[JsonSerializable(typeof(McpGetStyleArgument))]
+[JsonSerializable(typeof(McpGetStyleOutput))]
+[JsonSerializable(typeof(McpStyleEncodingRef))]
+[JsonSerializable(typeof(McpStyleSummary))]
+[JsonSerializable(typeof(McpApplyStylePresetArgument))]
+[JsonSerializable(typeof(McpApplyStylePresetOutput))]
 [JsonSerializable(typeof(JsonNode))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSourceGenerationOptions(
