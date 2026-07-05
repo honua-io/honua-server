@@ -75,6 +75,7 @@ internal sealed class ConfigurationExecutionJobDefinitionRegistry(IOptionsMonito
                 WorkloadName = definition.WorkloadName,
                 ArtifactReference = definition.ArtifactReference,
                 RuntimeProfile = definition.RuntimeProfile,
+                ContractVersion = definition.ContractVersion,
                 Parameters = ConfigurationOperationCatalogHelpers.BuildParameters(definition.Parameters, definition.ParameterEntries)
             })
             .Where(ExecutionWorkloadGate.IsActivatable)
