@@ -31,6 +31,17 @@ internal sealed partial class MySqlFeatureQueryBuilder
         ref int paramIndex,
         List<object> parameters)
     {
+        if (query.EnforcedSqlFilter is { } enforcedFilter)
+        {
+            // Enforced row-visibility predicate — applied first, cannot be overridden by callers.
+            var renumbered = ConvertNamedParameters(enforcedFilter.Sql, ref paramIndex);
+            sb.Append(CultureInfo.InvariantCulture, $" AND ({renumbered})");
+            foreach (var p in enforcedFilter.Parameters)
+            {
+                parameters.Add(p ?? DBNull.Value);
+            }
+        }
+
         if (query.SqlFilter is { } sqlFilter)
         {
             // Pre-translated SQL — re-number the embedded `@pN` placeholders so they
