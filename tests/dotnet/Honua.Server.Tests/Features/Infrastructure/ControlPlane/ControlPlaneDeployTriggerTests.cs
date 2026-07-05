@@ -407,6 +407,13 @@ public sealed class ControlPlaneDeployTriggerTests
             return Task.CompletedTask;
         }
 
+        public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _ops[operation.OperationId] = operation;
+            WriteCount++;
+            return Task.FromResult(true);
+        }
+
         public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>(
                 _ops.Values

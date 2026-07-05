@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Authorization.Domain;
@@ -768,6 +768,12 @@ public sealed record WorkflowOperationRecord
     /// Current workflow status.
     /// </summary>
     public required WorkflowOperationStatus Status { get; init; }
+
+    /// <summary>
+    /// Optimistic concurrency version token incremented on every store write. Used by
+    /// <c>IWorkflowOperationStore.TrySetAsync</c> to detect concurrent modifications.
+    /// </summary>
+    public long Version { get; init; }
 
     /// <summary>
     /// Relative operator priority.
