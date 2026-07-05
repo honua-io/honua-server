@@ -204,6 +204,18 @@ internal sealed partial class Wfs20Handler
         {
             return StandardErrorHelpers.CreatePayloadTooLarge(context, "Request payload is too large.");
         }
+        catch (Fes20ParseException ex)
+        {
+            // Malformed FES 2.0 filter XML in a Delete or Update action - return 400 instead
+            // of propagating to the generic 500 catch-all (mirrors the GetFeature path).
+            Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
+            HonuaTelemetry.RecordException(activity, ex);
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                GeneralizedValidationErrorMessage,
+                "filter");
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
@@ -956,7 +968,10 @@ internal sealed partial class Wfs20Handler
             : string.Join(',', resourceIdValues);
         var hasOnlyResourceIdPredicates = filterChildren.Length > 0 &&
             filterChildren.All(element => string.Equals(element.Name.LocalName, "ResourceId", StringComparison.OrdinalIgnoreCase));
-        var filterXml = hasOnlyResourceIdPredicates
+        // An empty <Filter/> element (zero children) is treated as a missing filter so the
+        // null-filter guard below fires and returns a protocol-correct 400 instead of letting
+        // the empty string reach Fes20Parser which would throw Fes20ParseException -> HTTP 500.
+        var filterXml = hasOnlyResourceIdPredicates || filterChildren.Length == 0
             ? null
             : filterElement?.ToString(SaveOptions.DisableFormatting);
 

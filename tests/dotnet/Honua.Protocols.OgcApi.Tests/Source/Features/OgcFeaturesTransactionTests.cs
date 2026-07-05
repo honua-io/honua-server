@@ -458,6 +458,82 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    // Regression tests for BH2-002: DELETE If-Match / optimistic-concurrency.
+    // Before the fix HandleDeleteFeature ignored the If-Match header entirely, meaning a
+    // DELETE would succeed unconditionally even when the ETag was stale (OGC API Features
+    // Part 4 §7.3 requires 412 Precondition Failed in that case).
+
+    [IntegrationTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task DeleteFeature_WithMatchingIfMatch_ReturnsNoContent()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Delete With ETag");
+
+        // GET the feature to obtain its current ETag.
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        getResponse.Headers.ETag.Should().NotBeNull();
+        var etag = getResponse.Headers.ETag!.ToString();
+
+        using var deleteRequest = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}");
+        deleteRequest.Headers.TryAddWithoutValidation("If-Match", etag);
+
+        var response = await _fixture.Client.SendAsync(deleteRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task DeleteFeature_WithStaleIfMatch_Returns412()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Delete Stale ETag");
+
+        // GET the feature to capture the original ETag.
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        getResponse.Headers.ETag.Should().NotBeNull();
+        var staleEtag = getResponse.Headers.ETag!.ToString();
+
+        // PUT an update to change the feature (and therefore its ETag).
+        var updated = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = existingId,
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.4194, 37.7749]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Updated So ETag Changes"
+            }
+        };
+
+        var putResponse = await _fixture.Client.PutAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}",
+            new StringContent(
+                JsonSerializer.Serialize(updated, OgcJsonContext.Default.GeoJsonFeature),
+                Encoding.UTF8,
+                MediaTypes.GeoJson));
+        putResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // DELETE with the now-stale ETag.  OGC API Features Part 4 §7.3 requires 412.
+        using var deleteRequest = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}");
+        deleteRequest.Headers.TryAddWithoutValidation("If-Match", staleEtag);
+
+        var response = await _fixture.Client.SendAsync(deleteRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+    }
+
     private sealed class ThrowingFeatureChangeEventPublisher : IFeatureChangeEventPublisher
     {
         public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
