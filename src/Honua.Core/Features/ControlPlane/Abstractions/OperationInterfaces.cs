@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Domain;
@@ -192,10 +192,18 @@ public interface IExecutionJobStore : IOperationStore
     /// Lists active execution jobs, optionally filtered by job kind.
     /// </summary>
     /// <param name="kind">Optional execution job kind filter.</param>
+    /// <param name="limit">
+    /// Optional upper bound on the number of records materialised before authorization
+    /// filtering. When null the store returns all active jobs. Callers that display a
+    /// bounded page should supply <c>effectiveLimit</c> plus a small overfetch budget
+    /// so per-job authorization filters can discard some records without starving the
+    /// page (BH7-009).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Active execution jobs.</returns>
     Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
         ExecutionJobKind? kind = null,
+        int? limit = null,
         CancellationToken cancellationToken = default);
 }
 

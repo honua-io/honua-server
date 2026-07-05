@@ -8,7 +8,7 @@ namespace Honua.ControlPlane;
 
 /// <summary>
 /// Event entrypoint that drives a single control-plane reconcile from an external state-change
-/// event instead of a poll cycle. This is what an AWS Lambda — triggered by an EventBridge rule —
+/// event instead of a poll cycle. This is what an AWS Lambda â€” triggered by an EventBridge rule â€”
 /// invokes: resolve the event to the durable operation id, then reconcile that one operation
 /// exactly once and exit.
 /// <para>
@@ -34,7 +34,7 @@ namespace Honua.ControlPlane;
 /// </list>
 /// <para>
 /// The handler is intentionally loop-free and never trusts the event payload as authoritative
-/// state. A malformed, duplicate, or out-of-order event therefore cannot corrupt state — at worst it
+/// state. A malformed, duplicate, or out-of-order event therefore cannot corrupt state â€” at worst it
 /// triggers a redundant reconcile that the lease/CAS + terminal guards inside each reconciler make a
 /// no-op.
 /// </para>
@@ -105,12 +105,12 @@ internal sealed partial class ControlPlaneEventHandler(
     /// <list type="bullet">
     ///   <item><description>
     ///     <b>ECS Task State Change</b> and <b>CodeDeploy DeploymentStateChange</b> for the
-    ///     <c>AwsEcsAlbDeployBackend</c> — the provider id is the CodeDeploy deployment id /
+    ///     <c>AwsEcsAlbDeployBackend</c> â€” the provider id is the CodeDeploy deployment id /
     ///     ECS service-deployment id recorded as the operation's <c>ProviderOperationId</c>.
     ///   </description></item>
     ///   <item><description>
     ///     <b>Lambda-alias</b> routing-config change events for the
-    ///     <c>AwsLambdaGitOpsDeployBackend</c> — the provider id is the alias/version recorded as
+    ///     <c>AwsLambdaGitOpsDeployBackend</c> â€” the provider id is the alias/version recorded as
     ///     the operation's <c>ProviderOperationId</c>.
     ///   </description></item>
     /// </list>
@@ -171,7 +171,7 @@ internal sealed partial class ControlPlaneEventHandler(
     /// These reconcilers advance exactly one stage per call. Under event mode there is no 5s poll
     /// loop to re-enter and drive the next stage, so after a stage persists the reconciler enqueues a
     /// "continue" signal (a custom EventBridge event) that this handler consumes to reconcile the
-    /// same operation again — advancing the next stage. The chain terminates naturally when the
+    /// same operation again â€” advancing the next stage. The chain terminates naturally when the
     /// operation reaches a terminal status, because the reconciler's terminal guard makes any further
     /// reconcile a no-op. The backstop is the safety net if a continue signal is dropped.
     /// </para>
@@ -203,7 +203,7 @@ internal sealed partial class ControlPlaneEventHandler(
         string providerOperationId,
         CancellationToken cancellationToken)
     {
-        var active = await jobStore.ListActiveAsync(kind: null, cancellationToken).ConfigureAwait(false);
+        var active = await jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         foreach (var job in active)
         {
             if (string.Equals(job.ProviderOperationId, providerOperationId, StringComparison.Ordinal))

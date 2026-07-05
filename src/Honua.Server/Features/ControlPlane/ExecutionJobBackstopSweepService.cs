@@ -74,7 +74,7 @@ internal sealed partial class ExecutionJobBackstopSweepService(
     /// </summary>
     internal async Task SweepOnceAsync(TimeSpan staleThreshold, CancellationToken cancellationToken)
     {
-        var active = await jobStore.ListActiveAsync(kind: null, cancellationToken).ConfigureAwait(false);
+        var active = await jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var cutoff = DateTimeOffset.UtcNow - staleThreshold;
 
         foreach (var job in active)

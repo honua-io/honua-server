@@ -305,6 +305,7 @@ internal sealed partial class RedisExecutionJobStore(
 
     public async Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
         ExecutionJobKind? kind = null,
+        int? limit = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -312,9 +313,20 @@ internal sealed partial class RedisExecutionJobStore(
         var activeKey = kind.HasValue ? GetKindActiveKey(kind.Value) : ActiveJobsKey;
         var jobIds = await _database.SetMembersAsync(activeKey).ConfigureAwait(false);
 
-        var validIds = new List<RedisValue>(jobIds.Length);
+        // BH7-009: When a limit is supplied, cap the number of IDs we materialise.
+        // Apply a 2x overfetch so per-job authorization filters can discard some
+        // records without starving the requested page. Redis Sets have no stable
+        // order; the subset is best-effort.
+        var maxIds = limit.HasValue ? limit.Value * 2 : int.MaxValue;
+
+        var validIds = new List<RedisValue>(Math.Min(jobIds.Length, maxIds));
         foreach (var jobId in jobIds)
         {
+            if (validIds.Count >= maxIds)
+            {
+                break;
+            }
+
             if (jobId.HasValue)
             {
                 validIds.Add(jobId);

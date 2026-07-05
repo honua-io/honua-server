@@ -1472,9 +1472,9 @@ public sealed class ExecutionJobReconcilerTests
             {
                 setCallCount++;
                 var record = (ExecutionJobRecord)call[0];
-                // 1st call: Provisioning transition → succeed.
-                // 2nd call: Post-start update → simulated CAS conflict (winner raced in).
-                // 3rd call: Merge-provenance CAS over the fetched winner → succeed.
+                // 1st call: Provisioning transition â†’ succeed.
+                // 2nd call: Post-start update â†’ simulated CAS conflict (winner raced in).
+                // 3rd call: Merge-provenance CAS over the fetched winner â†’ succeed.
                 if (setCallCount == 2)
                 {
                     return false;
@@ -1541,7 +1541,7 @@ public sealed class ExecutionJobReconcilerTests
         // The reconciler dispatches the retry; the Kubernetes adapter creates a fresh
         // "...-a2" Job. Before the post-start CAS fires, a concurrent cancellation-
         // request writer stamps the record, winning the CAS. The merge helper must
-        // still advance AttemptCount (1→2) and clear NextRetryAt on the winner,
+        // still advance AttemptCount (1â†’2) and clear NextRetryAt on the winner,
         // otherwise the Kubernetes adapter's ResolveCoordinates would resolve the Job
         // name against the stale AttemptCount=1 and target the prior attempt's Job
         // (which no longer exists) instead of the "...-a2" Job it just created.
@@ -2045,7 +2045,7 @@ public sealed class ExecutionJobReconcilerTests
                     .ToArray()
             });
 
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
         {
             var jobs = _jobs.Values
                 .Where(job => !kind.HasValue || job.Spec.Kind == kind.Value)
@@ -2083,7 +2083,7 @@ public sealed class ExecutionJobReconcilerTests
                     .Take(query.Limit)
                     .ToArray()
             });
-        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }
 

@@ -615,6 +615,19 @@ internal static partial class FeatureServerEndpoints
             };
         }
 
+        // BH7-016: rollbackOnFailure=true on a multi-layer request is semantically un-atomic.
+        // Each layer's edits run in its own independent transaction; there is no way to roll
+        // back a layer that has already committed when a later layer fails. Fail-closed here
+        // rather than partially committing and misrepresenting the operation as rolled back.
+        if (sharedOptions.RollbackOnFailure && orderedLayerIds.Count > 1)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "rollbackOnFailure=true is not supported for multi-layer service applyEdits",
+                ["rollbackOnFailure=true only provides intra-layer atomicity. " +
+                 "Multi-layer service-level edits cannot be rolled back atomically across layers. " +
+                 "Set rollbackOnFailure=false (or omit it) to allow partial commits, or submit each layer separately."]);
+        }
+
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
 
         // BH2-013: Track whether any non-first layer returned an error response so the

@@ -29,7 +29,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
     public ExecutionAdmissionEvaluatorTests()
     {
         _jobStore
-            .ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            .ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ExecutionJobRecord>());
     }
 
@@ -58,7 +58,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
-    // Backpressure — system-wide global limit
+    // Backpressure â€” system-wide global limit
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
-    // Concurrency — per-partition + kind limit
+    // Concurrency â€” per-partition + kind limit
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -125,7 +125,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
-    // Rate — per-principal sliding window
+    // Rate â€” per-principal sliding window
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -158,10 +158,10 @@ public sealed class ExecutionAdmissionEvaluatorTests
 
         (await sut.EvaluateAsync(CreateRequest())).Outcome.Should().Be(ExecutionAdmissionOutcome.Admitted);
 
-        // Within the window — throttled.
+        // Within the window â€” throttled.
         (await sut.EvaluateAsync(CreateRequest())).Outcome.Should().Be(ExecutionAdmissionOutcome.Throttled);
 
-        // After the window — admitted again.
+        // After the window â€” admitted again.
         _time.Advance(TimeSpan.FromSeconds(31));
         (await sut.EvaluateAsync(CreateRequest())).Outcome.Should().Be(ExecutionAdmissionOutcome.Admitted);
     }
@@ -188,7 +188,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
-    // Cost — aggregate cost weight per partition
+    // Cost â€” aggregate cost weight per partition
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -225,7 +225,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
-    // Short-circuit evaluation order: Backpressure → Concurrency → Rate → Cost
+    // Short-circuit evaluation order: Backpressure â†’ Concurrency â†’ Rate â†’ Cost
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -280,7 +280,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
-    // Job store missing — do not crash, skip concurrency/cost gates
+    // Job store missing â€” do not crash, skip concurrency/cost gates
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -334,7 +334,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
     private void SeedActiveJobs(params ExecutionJobRecord[] jobs)
     {
         _jobStore
-            .ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            .ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(jobs);
     }
 

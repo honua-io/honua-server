@@ -14,7 +14,7 @@ namespace Honua.Protocols.GeoServices.Sharing;
 /// <summary>
 /// ArcGIS-compatible <c>/sharing/rest/oauth2</c> named-user endpoints (#1242):
 /// <c>authorize</c>, <c>callback</c>, and <c>token</c>. Per ADR-0049 this is a thin
-/// bridge over the shared OIDC identity core and <c>IPortalTokenIssuer</c> — it does
+/// bridge over the shared OIDC identity core and <c>IPortalTokenIssuer</c> â€” it does
 /// not introduce a parallel user or token store. The interactive
 /// authorization-code+PKCE leg is delegated to the operator's configured OIDC
 /// provider through <see cref="PortalOAuthBroker"/>; the access token returned to
@@ -52,21 +52,16 @@ internal static class SharingOAuth2Endpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
 
+        // RFC 6749 §4.1.3: the token endpoint MUST be reached via POST only.
+        // A GET registration would expose auth codes, client_secret, and
+        // refresh tokens as URL query-string parameters — logged verbatim by
+        // every proxy, CDN, and access-log middleware in the chain (CWE-598).
+        // BH7-001: GET registration removed; POST-only enforced.
         endpoints.MapPost(PortalOAuthRoutes.TokenPath, HandleTokenAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Token")
             .WithName("SharingRestOAuth2TokenPost")
             .WithSummary("Exchange an authorization code or refresh token for a portal access token")
-            .WithDescription("Returns the Esri-shaped { access_token, expires_in, refresh_token? } envelope; access_token is minted via IPortalTokenIssuer.")
-            .WithTags("GeoServices Sharing")
-            .AllowAnonymous()
-            .Produces<OAuth2TokenResponse>(StatusCodes.Status200OK, JsonContentType)
-            .Produces<OAuth2ErrorResponse>(StatusCodes.Status400BadRequest, JsonContentType)
-            .Produces(StatusCodes.Status404NotFound);
-
-        endpoints.MapGet(PortalOAuthRoutes.TokenPath, HandleTokenAsync)
-            .WithDisplayName("ArcGIS Portal OAuth2 Token (GET)")
-            .WithName("SharingRestOAuth2TokenGet")
-            .WithSummary("Exchange an authorization code or refresh token via query parameters")
+            .WithDescription("Returns the Esri-shaped { access_token, expires_in, refresh_token? } envelope; access_token is minted via IPortalTokenIssuer. POST-only per RFC 6749 §4.1.3.")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .Produces<OAuth2TokenResponse>(StatusCodes.Status200OK, JsonContentType)
@@ -77,7 +72,7 @@ internal static class SharingOAuth2Endpoints
             .WithDisplayName("ArcGIS Portal OAuth2 Token Revocation")
             .WithName("SharingRestOAuth2Revoke")
             .WithSummary("RFC 7009 per-token revocation for opaque and JWT access tokens and refresh tokens")
-            .WithDescription("Immediately invalidates the presented access or refresh token so it fails every subsequent authorization check. Per RFC 7009 §2.2 a revocation request always returns 200, even for an unknown or already-revoked token. The presented token value is the authorization to revoke it (#2155).")
+            .WithDescription("Immediately invalidates the presented access or refresh token so it fails every subsequent authorization check. Per RFC 7009 Â§2.2 a revocation request always returns 200, even for an unknown or already-revoked token. The presented token value is the authorization to revoke it (#2155).")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .Produces(StatusCodes.Status200OK)
@@ -133,7 +128,7 @@ internal static class SharingOAuth2Endpoints
 
         await revocationService.RevokeAsync(token, tokenTypeHint, context.RequestAborted).ConfigureAwait(false);
 
-        // RFC 7009 §2.2: the authorization server responds with HTTP 200 for a
+        // RFC 7009 Â§2.2: the authorization server responds with HTTP 200 for a
         // successful revocation as well as for an unknown/already-revoked token, so a
         // caller can never probe token validity through this endpoint.
         return Results.Ok();
@@ -146,7 +141,7 @@ internal static class SharingOAuth2Endpoints
         [FromServices] ILogger<SharingRestLog> logger)
     {
         // The whole introspection surface is off by default; when disabled it 404s
-        // so it is never a silent discovery surface (RFC 7662 §4: the endpoint must
+        // so it is never a silent discovery surface (RFC 7662 Â§4: the endpoint must
         // be protected, and Honua keeps it absent unless explicitly enabled).
         if (!tokenOptions.Value.Enabled || !introspectionService.IntrospectionEnabled)
         {
@@ -171,7 +166,7 @@ internal static class SharingOAuth2Endpoints
 
         var result = await introspectionService.IntrospectAsync(token, context.RequestAborted).ConfigureAwait(false);
 
-        // RFC 7662 §2.2: an inactive token returns only { "active": false } — no
+        // RFC 7662 Â§2.2: an inactive token returns only { "active": false } â€” no
         // other detail is leaked, regardless of whether it was unknown, expired,
         // revoked, or a forged JWT.
         if (result is null)
@@ -227,7 +222,7 @@ internal static class SharingOAuth2Endpoints
 
         // Open-redirect mitigation (#1484): the redirect_uri must be registered in
         // the per-deployment allow-list. A non-allow-listed redirect_uri is rejected
-        // with a direct 400 and is NEVER redirected to (RFC 6749 §4.1.2.1) so the
+        // with a direct 400 and is NEVER redirected to (RFC 6749 Â§4.1.2.1) so the
         // bridge cannot be used to bounce an authorization code to a hostile host.
         if (!PortalOAuthRedirectUriValidator.IsAllowed(redirectUri, tokenOptions.Value.OAuth2.AllowedRedirectUris))
         {
@@ -237,7 +232,7 @@ internal static class SharingOAuth2Endpoints
 
         // response_type is validated only after the redirect_uri allow-list check so
         // the error redirect below can never target an unvalidated URI (RFC 6749
-        // §4.1.2.1 requires validating redirect_uri before redirecting errors to it).
+        // Â§4.1.2.1 requires validating redirect_uri before redirecting errors to it).
         var responseType = ReadFirst(query["response_type"]);
         if (responseType is not null && !string.Equals(responseType, "code", StringComparison.Ordinal))
         {
@@ -395,7 +390,7 @@ internal static class SharingOAuth2Endpoints
             scope = ReadFirst(query["scope"]);
         }
 
-        // RFC 6749 §2.3.1: a confidential client MAY present its credentials via HTTP
+        // RFC 6749 Â§2.3.1: a confidential client MAY present its credentials via HTTP
         // Basic auth instead of the request body. When present and the body omitted
         // them, use the Basic-auth client_id/client_secret (body values win when both
         // are supplied, matching the existing body-first parsing above).
@@ -467,7 +462,7 @@ internal static class SharingOAuth2Endpoints
 
     private static IResult OAuth2Error(string error, string description)
     {
-        // OAuth2 (RFC 6749 §5.2) error responses are 400 with a JSON
+        // OAuth2 (RFC 6749 Â§5.2) error responses are 400 with a JSON
         // { error, error_description } body.
         var response = new OAuth2ErrorResponse
         {

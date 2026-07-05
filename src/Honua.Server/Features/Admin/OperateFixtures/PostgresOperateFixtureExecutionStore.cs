@@ -252,6 +252,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
 
     public async Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
         ExecutionJobKind? kind = null,
+        int? limit = null,
         CancellationToken cancellationToken = default)
     {
         await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -273,6 +274,15 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         }
 
         sql.Append(" ORDER BY updated_at DESC, operation_id DESC");
+
+        // BH7-009: apply a 2x overfetch cap when a limit is supplied so this store
+        // does not load unbounded rows before the caller applies a page window.
+        if (limit.HasValue)
+        {
+            sql.Append(" LIMIT @row_cap");
+            command.Parameters.Add(Parameter("row_cap", NpgsqlDbType.Integer, limit.Value * 2));
+        }
+
         command.CommandText = sql.ToString();
 
         var rows = new List<ExecutionJobRecord>();
