@@ -82,7 +82,10 @@ internal static class StacConstants
 
         public static readonly HashSet<string> SearchGet = new(StringComparer.OrdinalIgnoreCase)
         {
-            "f", "limit", "offset", "bbox", "datetime", "collections", "ids",
+            // "offset" is a Honua extension kept for backward compatibility.
+            // "token" is the STAC API-aligned pagination parameter (same opaque
+            // token format emitted by the POST next link body).
+            "f", "limit", "offset", "token", "bbox", "datetime", "collections", "ids",
             "intersects", "fields", "sortby", "filter", "filter-lang", "filter-crs"
         };
     }

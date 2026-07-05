@@ -265,4 +265,12 @@ internal sealed class ErrorResponseFormatterOptions
     /// Explicit OData error code to emit instead of inferring one from the HTTP status code.
     /// </summary>
     public string? ODataErrorCode { get; init; }
+
+    /// <summary>
+    /// Explicit GeoServices body error code to emit. When set, overrides the code derived from
+    /// <see cref="StandardErrorResponse.StatusCode"/>. Use <see cref="GeoServicesErrorCodes.TokenRequired"/>
+    /// (499) for missing-token auth failures and <see cref="GeoServicesErrorCodes.InvalidToken"/> (498)
+    /// for expired/invalid token failures.
+    /// </summary>
+    public int? GeoServicesBodyCode { get; init; }
 }

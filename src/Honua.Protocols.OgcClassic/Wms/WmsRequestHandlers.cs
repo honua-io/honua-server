@@ -1099,7 +1099,9 @@ internal static partial class WmsRequestHandlers
         var version = context is null ? Wms13Version : GetQueryValue(context.Request.Query, "VERSION");
         var xml = BuildWmsServiceExceptionReport(code, message, version);
         var contentType = GetWmsExceptionMimeType(context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS"), version);
-        return Results.Content(xml, contentType, Encoding.UTF8, statusCode);
+        // WMS 1.3.0 §7.3.3.4 / WMS 1.1.1 §6.10: ServiceExceptionReport MUST be returned with HTTP 200 OK.
+        // The error code and message are conveyed entirely in the XML body.
+        return Results.Content(xml, contentType, Encoding.UTF8, StatusCodes.Status200OK);
     }
 
     private static string BuildWmsServiceExceptionReport(string code, string message, string? version)

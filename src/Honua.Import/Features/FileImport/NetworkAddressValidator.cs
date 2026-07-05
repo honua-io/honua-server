@@ -33,6 +33,65 @@ internal static class NetworkAddressValidator
         return await IsPrivateOrUnresolvableAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Validates the URI's host address and returns the resolved IP addresses for use by
+    /// callers that want to pin the connection (PA-154 DNS rebinding mitigation). Returns
+    /// <c>true</c> and an empty array when the address is disallowed, or <c>false</c> and
+    /// the resolved non-private IP addresses when the host is permitted.
+    /// <para>
+    /// Callers should use the returned addresses with <see cref="PinnedDnsHttpMessageHandler"/>
+    /// so the TCP connection is made to the address that was validated rather than letting
+    /// the HttpClient re-resolve DNS independently (TOCTOU gap).
+    /// </para>
+    /// </summary>
+    internal static async Task<(bool IsDisallowed, IPAddress[] ResolvedAddresses)> ValidateAndResolveAsync(
+        Uri uri,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+    {
+        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
+        {
+            return (IsDisallowed: true, ResolvedAddresses: []);
+        }
+
+        // Literal IP: validate in place; no DNS resolution needed.
+        if (IPAddress.TryParse(uri.Host, out var literalAddress))
+        {
+            return IsPrivateOrReservedAddress(literalAddress)
+                ? (IsDisallowed: true, ResolvedAddresses: [])
+                : (IsDisallowed: false, ResolvedAddresses: [literalAddress]);
+        }
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = await hostAddressResolver(uri.DnsSafeHost, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SocketException)
+        {
+            return (IsDisallowed: true, ResolvedAddresses: []);
+        }
+        catch (ArgumentException)
+        {
+            return (IsDisallowed: true, ResolvedAddresses: []);
+        }
+
+        if (addresses.Length == 0)
+        {
+            return (IsDisallowed: true, ResolvedAddresses: []);
+        }
+
+        foreach (var address in addresses)
+        {
+            if (IsPrivateOrReservedAddress(address))
+            {
+                return (IsDisallowed: true, ResolvedAddresses: []);
+            }
+        }
+
+        return (IsDisallowed: false, ResolvedAddresses: addresses);
+    }
+
     private static async Task<bool> IsPrivateOrUnresolvableAddressAsync(
         Uri uri,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,

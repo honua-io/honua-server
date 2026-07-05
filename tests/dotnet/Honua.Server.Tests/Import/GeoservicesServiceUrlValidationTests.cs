@@ -135,4 +135,105 @@ public sealed class GeoservicesServiceUrlValidationTests
         result.IsValid.Should().BeFalse();
         result.ErrorMessage.Should().Contain("not allowed");
     }
+
+    // PA-153: host allowlist tests (SSRF defence)
+
+    [UnitTest]
+    public async Task ValidateAsync_AllowlistConfigured_MatchingSuffix_ReturnsSuccess()
+    {
+        var allowedSuffixes = new[] { ".arcgisonline.com", "arcgis.example.com" };
+
+        var result = await GeoservicesServiceUrlValidation.ValidateAsync(
+            "https://services.arcgisonline.com/arcgis/rest/services/Test/FeatureServer",
+            allowedSuffixes,
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_AllowlistConfigured_NonMatchingSuffix_ReturnsFailure()
+    {
+        var allowedSuffixes = new[] { ".arcgisonline.com" };
+
+        var result = await GeoservicesServiceUrlValidation.ValidateAsync(
+            "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            allowedSuffixes,
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Be(GeoservicesServiceUrlValidation.DisallowedHostMessage);
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_AllowlistNull_AnyPublicHostPermitted()
+    {
+        // When no allowlist is configured, the original permissive behaviour is preserved.
+        var result = await GeoservicesServiceUrlValidation.ValidateAsync(
+            "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            allowedHostSuffixes: null,
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_AllowlistEmpty_RejectsAllHosts()
+    {
+        // An explicitly empty allowlist means "no hosts are allowed".
+        var result = await GeoservicesServiceUrlValidation.ValidateAsync(
+            "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            allowedHostSuffixes: [],
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Be(GeoservicesServiceUrlValidation.DisallowedHostMessage);
+    }
+
+    // PA-154: ValidateAndResolveAsync pinned-address helper
+
+    [UnitTest]
+    public async Task ValidateAndResolveAsync_PublicAddress_ReturnsFalseAndAddresses()
+    {
+        var publicIp = IPAddress.Parse("93.184.216.34");
+        var uri = new Uri("https://example.com/arcgis/rest/services/Test/FeatureServer");
+
+        var (isDisallowed, resolved) = await NetworkAddressValidator.ValidateAndResolveAsync(
+            uri,
+            (_, _) => Task.FromResult(new[] { publicIp }),
+            CancellationToken.None);
+
+        isDisallowed.Should().BeFalse();
+        resolved.Should().ContainSingle().Which.Should().Be(publicIp);
+    }
+
+    [UnitTest]
+    public async Task ValidateAndResolveAsync_PrivateAddress_ReturnsTrueAndEmptySet()
+    {
+        var privateIp = IPAddress.Parse("10.10.10.10");
+        var uri = new Uri("https://internal.corp.example.com/arcgis/rest/services/Test/FeatureServer");
+
+        var (isDisallowed, resolved) = await NetworkAddressValidator.ValidateAndResolveAsync(
+            uri,
+            (_, _) => Task.FromResult(new[] { privateIp }),
+            CancellationToken.None);
+
+        isDisallowed.Should().BeTrue();
+        resolved.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task ValidateAndResolveAsync_MetadataLiteralAddress_ReturnsTrueAndEmpty()
+    {
+        // 169.254.169.254 is the cloud metadata endpoint for AWS/Azure/GCP.
+        var uri = new Uri("https://169.254.169.254/latest/meta-data/");
+
+        var (isDisallowed, resolved) = await NetworkAddressValidator.ValidateAndResolveAsync(
+            uri,
+            static (_, _) => throw new InvalidOperationException("Literal IPs should not use DNS resolution."),
+            CancellationToken.None);
+
+        isDisallowed.Should().BeTrue();
+        resolved.Should().BeEmpty();
+    }
 }

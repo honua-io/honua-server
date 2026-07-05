@@ -1025,4 +1025,31 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     }
 
     #endregion
+
+    #region Error Content-Type
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /odata/Features({layerId})?$filter=invalid — error Content-Type")]
+    public async Task ErrorResponse_ContentType_IsPlainApplicationJson()
+    {
+        // OData v4.01 protocol §9.3: error responses MUST use Content-Type: application/json.
+        // The odata.metadata preference parameter is defined for data-entity responses only
+        // (OData JSON Format v4.01 §3.1) and has no meaning on error payloads. Strict OData
+        // clients (e.g. Microsoft OData client library, Azure Data Factory) may reject it.
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$filter=invalid_syntax");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var contentType = response.Content.Headers.ContentType;
+        contentType.Should().NotBeNull();
+        contentType!.MediaType.Should().Be("application/json",
+            "OData v4.01 §9.3 requires error responses to use Content-Type: application/json without metadata parameters");
+        contentType.Parameters.Should().NotContain(
+            p => p.Name.Contains("odata.metadata", StringComparison.OrdinalIgnoreCase),
+            "the odata.metadata preference parameter must not appear on error responses");
+    }
+
+    #endregion
 }
