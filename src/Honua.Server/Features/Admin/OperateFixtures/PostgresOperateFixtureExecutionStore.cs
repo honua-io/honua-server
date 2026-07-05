@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data.Common;
@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Server.Features.Admin.OperateFixtures;
 
 internal sealed partial class PostgresOperateFixtureExecutionStore(
@@ -432,7 +433,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
             await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<ScopedConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)

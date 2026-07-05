@@ -16,6 +16,7 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Postgres.Features.Migration;
 using Honua.Postgres.Features.FileImport;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Migration;
 
 /// <summary>
@@ -24,10 +25,10 @@ namespace Honua.Postgres.Features.Migration;
 /// <remarks>
 /// The sink lazily provisions the target table with a stable schema:
 /// <list type="bullet">
-///   <item><c>source_feature_id text primary key</c> — natural key derived from the source feature id.</item>
-///   <item><c>properties jsonb</c> — verbatim GeoJSON properties payload.</item>
-///   <item><c>geometry geometry</c> — projected geometry parsed from the GeoJSON feature.</item>
-///   <item><c>imported_at timestamptz</c> — write timestamp used for telemetry.</item>
+///   <item><c>source_feature_id text primary key</c> â€” natural key derived from the source feature id.</item>
+///   <item><c>properties jsonb</c> â€” verbatim GeoJSON properties payload.</item>
+///   <item><c>geometry geometry</c> â€” projected geometry parsed from the GeoJSON feature.</item>
+///   <item><c>imported_at timestamptz</c> â€” write timestamp used for telemetry.</item>
 /// </list>
 /// Inserts use <c>ON CONFLICT (source_feature_id) DO UPDATE</c> so re-running the importer against
 /// the same source/target combination converges to the same row set.
@@ -164,7 +165,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
                 written++;
             }
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
         {

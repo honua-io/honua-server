@@ -201,9 +201,18 @@ public static class VersionManagementServerEndpoints
         }
 
         var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+
+        // BH3-002: filter the version set before projecting. Private versions are only
+        // visible to their owner and service administrators; Public and Protected versions
+        // are visible to any query-access caller.
+        var callerName = context.User?.Identity?.Name;
+        var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
         var response = new VersionListResponse
         {
-            Versions = versions.Select(ToVersionInfo).ToArray(),
+            Versions = versions
+                .Where(v => VersionAccessPolicy.IsVersionVisible(v, callerName, isAdmin))
+                .Select(ToVersionInfo)
+                .ToArray(),
         };
 
         return Results.Json(response, VersionManagementJsonContext.Default.VersionListResponse,
@@ -240,6 +249,15 @@ public static class VersionManagementServerEndpoints
         var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
         var match = versions.FirstOrDefault(v => v.VersionId == versionId);
         if (match.VersionId != versionId)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
+        }
+
+        // BH3-002: A Private version is only visible to its owner and service admins.
+        // Return 404 (not 403) so a non-owner cannot confirm the version's existence.
+        var callerName = context.User?.Identity?.Name;
+        var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
+        if (!VersionAccessPolicy.IsVersionVisible(match, callerName, isAdmin))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
         }
@@ -491,6 +509,27 @@ public static class VersionManagementServerEndpoints
         if (!Guid.TryParse(versionGuid, out var versionId))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "versionGuid is not a valid GUID.");
+        }
+
+        // BH3-003: conflict records contain full before/after attribute and geometry images.
+        // Load the version record and enforce ownership before exposing conflict data.
+        // Private versions gate on owner-or-admin; Public/Protected conflict data requires
+        // only query access (already satisfied by ValidateServiceAsync above).
+        var allVersions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var conflictVersion = allVersions.FirstOrDefault(v => v.VersionId == versionId);
+        if (conflictVersion.VersionId != versionId)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
+        }
+
+        if (conflictVersion.Access == VersionAccess.Private)
+        {
+            var callerName = context.User?.Identity?.Name;
+            var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
+            if (!VersionAccessPolicy.CanManageVersion(conflictVersion, callerName, isAdmin))
+            {
+                return StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
+            }
         }
 
         var conflicts = await versionManager.GetPendingConflictsAsync(versionId, cancellationToken).ConfigureAwait(false);
@@ -793,7 +832,47 @@ public static class VersionManagementServerEndpoints
             return (StandardErrorHelpers.CreateBadRequest(context, "versionGuid is not a valid GUID."), null, Guid.Empty);
         }
 
+        // BH3-004: lifecycle operations (delete, alter, reconcile, post, resolveConflicts,
+        // start/stop editing/reading) are restricted to the version owner and service admins,
+        // regardless of the version's access level. Load the version and enforce ownership here
+        // so every lifecycle handler gets the check for free via this shared entry point.
+        var ownershipGate = await RequireVersionOwnerOrAdminAsync(
+            context, versionManager, versionId, versionGuid, cancellationToken).ConfigureAwait(false);
+        if (ownershipGate is not null)
+        {
+            return (ownershipGate, null, Guid.Empty);
+        }
+
         return (null, values, versionId);
+    }
+
+    /// <summary>
+    /// Loads the version with <paramref name="versionId"/> and verifies that the caller is its
+    /// owner or holds the administrator role. Returns a non-null error result when denied,
+    /// <see langword="null"/> when authorized.
+    /// </summary>
+    private static async Task<IResult?> RequireVersionOwnerOrAdminAsync(
+        HttpContext context,
+        IVersionManager versionManager,
+        Guid versionId,
+        string versionGuidString,
+        CancellationToken cancellationToken)
+    {
+        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var version = versions.FirstOrDefault(v => v.VersionId == versionId);
+        if (version.VersionId != versionId)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuidString}' was not found.");
+        }
+
+        var callerName = context.User?.Identity?.Name;
+        var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
+        if (!VersionAccessPolicy.CanManageVersion(version, callerName, isAdmin))
+        {
+            return StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
+        }
+
+        return null;
     }
 
     private static string ResolveOwner(HttpContext context)

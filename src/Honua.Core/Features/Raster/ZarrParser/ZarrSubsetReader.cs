@@ -229,10 +229,28 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
     {
         var rank = array.Shape.Length;
         var chunkPath = JoinKey(arrayPath, BuildChunkKey(chunkIndex, array.ChunkKeyEncoding));
+
+        // BH3-022: Validate the declared chunk size against the per-request cap BEFORE issuing
+        // any cloud read. The old code passed int.MaxValue/4 (~512 MB) as the read ceiling and
+        // only checked the metadata-declared size after the read had already allocated raw buffers.
+        // An attacker-controlled Zarr store can write chunk objects much larger than the declared
+        // chunk dimensions; with MaxDegreeOfParallelism=8, that yielded up to 4.3 GB of temporary
+        // allocation per request. By computing chunkBytes first and using it as the read ceiling,
+        // the network read is bounded to the expected uncompressed size (compressed data is always
+        // smaller than its uncompressed form, so this ceiling is safe for both codecs).
+        var chunkBytes = ComputeChunkBytes(array, elementSize);
+        if (chunkBytes > MaxBytesPerRequest)
+        {
+            throw new InvalidOperationException(
+                $"Zarr chunk size of {chunkBytes:N0} bytes exceeds the per-chunk cap of {MaxBytesPerRequest:N0} bytes. " +
+                $"Re-chunk the Zarr store with smaller chunk dimensions before serving it.");
+        }
+
         byte[]? raw;
         try
         {
-            raw = await reader.ReadRangeAsync(bucket, chunkPath, 0, int.MaxValue / 4, cancellationToken).ConfigureAwait(false);
+            // chunkBytes <= MaxBytesPerRequest (256 MiB), so the cast to int is safe.
+            raw = await reader.ReadRangeAsync(bucket, chunkPath, 0, (int)chunkBytes, cancellationToken).ConfigureAwait(false);
         }
         catch (FileNotFoundException)
         {
@@ -241,14 +259,6 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         catch (DirectoryNotFoundException)
         {
             raw = null;
-        }
-
-        var chunkBytes = ComputeChunkBytes(array, elementSize);
-        if (chunkBytes > MaxBytesPerRequest)
-        {
-            throw new InvalidOperationException(
-                $"Zarr chunk size of {chunkBytes:N0} bytes exceeds the per-chunk cap of {MaxBytesPerRequest:N0} bytes. " +
-                $"Re-chunk the Zarr store with smaller chunk dimensions before serving it.");
         }
 
         var chunkBuffer = new byte[chunkBytes];

@@ -164,6 +164,14 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
         };
     }
 
+    /// <summary>
+    /// Staging directory that matches the <c>ImportStagingDirectory</c> default in
+    /// <c>GeoprocessingExecutorOptions</c> so the path-traversal guard (BH3-027) passes
+    /// for legitimate test files.
+    /// </summary>
+    private static readonly string StagingDirectory =
+        Path.Combine(Path.GetTempPath(), "honua-import-staging");
+
     private static string StageGeoJsonSource()
     {
         var geoJson = JsonSerializer.Serialize(new
@@ -177,7 +185,9 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
             }
         });
 
-        var path = Path.Combine(Path.GetTempPath(), $"import_dataset_{Guid.NewGuid():N}.geojson");
+        // BH3-027: files must be placed under the configured staging root.
+        Directory.CreateDirectory(StagingDirectory);
+        var path = Path.Combine(StagingDirectory, $"import_dataset_{Guid.NewGuid():N}.geojson");
         File.WriteAllText(path, geoJson, Encoding.UTF8);
         return path;
 

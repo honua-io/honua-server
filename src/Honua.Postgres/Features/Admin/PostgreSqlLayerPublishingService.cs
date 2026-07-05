@@ -5,12 +5,12 @@
 // shared constants/fields, the LoggerMessage Log class, and the nested DTO records
 // (LayerFieldInsert, LayerExtentInsert, LayerExtentRefreshMetadata, GeometryHealth,
 // ResolvedPublishValidation) used across partials. Implementation helpers live in:
-//   * PostgreSqlLayerPublishingService.MetadataV2Graph.cs   — V2 graph projection
-//   * PostgreSqlLayerPublishingService.Validation.cs        — publish validation pipeline
-//   * PostgreSqlLayerPublishingService.TableIntrospection.cs — source-table discovery
-//   * PostgreSqlLayerPublishingService.LayerPersistence.cs  — honua.* catalog writes
-//   * PostgreSqlLayerPublishingService.ExtentRefresh.cs     — extent recomputation SQL
-//   * PostgreSqlLayerPublishingService.SqlHelpers.cs        — shared quoting / expression helpers
+//   * PostgreSqlLayerPublishingService.MetadataV2Graph.cs   â€” V2 graph projection
+//   * PostgreSqlLayerPublishingService.Validation.cs        â€” publish validation pipeline
+//   * PostgreSqlLayerPublishingService.TableIntrospection.cs â€” source-table discovery
+//   * PostgreSqlLayerPublishingService.LayerPersistence.cs  â€” honua.* catalog writes
+//   * PostgreSqlLayerPublishingService.ExtentRefresh.cs     â€” extent recomputation SQL
+//   * PostgreSqlLayerPublishingService.SqlHelpers.cs        â€” shared quoting / expression helpers
 
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
@@ -19,6 +19,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Admin;
 
 /// <summary>
@@ -334,7 +335,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         // Project into the Metadata v2 graph BEFORE committing the layer transaction. The graph store uses
         // its own connection/transaction, so it only needs the computed publish values (not the uncommitted
         // layer row). Doing it first means a projection failure leaves the layer transaction uncommitted and
-        // rolled back on dispose — instead of committing an orphaned layer that then blocks re-publish with
+        // rolled back on dispose â€” instead of committing an orphaned layer that then blocks re-publish with
         // "Layer already exists". (Publish is atomic from the caller's perspective.)
         await UpsertPublishedLayerMetadataV2Async(
                 serviceName,
@@ -352,7 +353,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitSafelyAsync(cancellationToken);
 
         return new PublishedLayerSummary
         {
@@ -408,7 +409,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var linkedLayer = await GetLayerSummaryAsync(connection, transaction, layerId, normalizedService, cancellationToken)
             .ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitSafelyAsync(cancellationToken);
         return linkedLayer;
     }
 
@@ -531,7 +532,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         layer = CloneWithEnabled(layer, enabled);
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitSafelyAsync(cancellationToken);
         return layer;
     }
 
@@ -565,7 +566,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await updateCommand.ExecuteNonQueryAsync(cancellationToken);
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitSafelyAsync(cancellationToken);
 
         return await ListPublishedLayersAsync(connectionString, normalizedService, cancellationToken);
     }
@@ -616,7 +617,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken)
             .ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         // Mirror the recomputed extents into the canonical Metadata v2 graph so the
         // FeatureServer / OGC API Features / OData metadata endpoints (which read

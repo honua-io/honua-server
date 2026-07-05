@@ -9,12 +9,13 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Geoprocessing;
 
 /// <summary>
 /// Catalog-database implementation of <see cref="IHonuaLayerSink"/>. Loads pre-encoded
 /// feature rows into a named layer table in the Honua catalog using the catalog's own
-/// <see cref="NpgsqlDataSource"/>. This type — not the geoprocessing dispatcher — owns the
+/// <see cref="NpgsqlDataSource"/>. This type â€” not the geoprocessing dispatcher â€” owns the
 /// dependency on the catalog data source, so it is registered only by the Postgres provider
 /// and is simply absent in lean deployments (#2210).
 /// </summary>
@@ -83,7 +84,7 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
                 .ConfigureAwait(false);
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         return new HonuaLayerSinkOutcome(written, schema, table, request.BatchId);
     }

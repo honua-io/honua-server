@@ -16,6 +16,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -76,13 +77,16 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
 
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<ImportDatasetJobExecutor> _logger;
+    private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
 
     public ImportDatasetJobExecutor(
         IServiceScopeFactory serviceScopeFactory,
-        ILogger<ImportDatasetJobExecutor> logger)
+        ILogger<ImportDatasetJobExecutor> logger,
+        IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions)
     {
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
+        _executorOptions = executorOptions;
     }
 
     /// <summary>
@@ -125,7 +129,23 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Staging source", cancellationToken).ConfigureAwait(false);
 
-        if (!File.Exists(request.SourcePath))
+        // BH3-027: Validate that the caller-supplied sourcePath is contained within the
+        // configured staging root before any filesystem access. Path.GetFullPath resolves
+        // ".." segments and symlink-style escapes; the StartsWith check on the canonical
+        // form then prevents traversal to arbitrary server paths (e.g. /etc/shadow).
+        var stagingRoot = Path.GetFullPath(_executorOptions.CurrentValue.ImportStagingDirectory);
+        var resolvedSourcePath = Path.GetFullPath(request.SourcePath);
+        var stagingRootWithSep = stagingRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? stagingRoot
+            : stagingRoot + Path.DirectorySeparatorChar;
+        if (!resolvedSourcePath.StartsWith(stagingRootWithSep, StringComparison.OrdinalIgnoreCase))
+        {
+            Log.PathTraversalRejected(_logger, job.OperationId, request.SourcePath);
+            return JobExecutionResult.Failed(
+                $"Invalid {HandledProcessId} inputs: source path is not within the permitted staging directory.");
+        }
+
+        if (!File.Exists(resolvedSourcePath))
         {
             return JobExecutionResult.Failed(
                 $"Invalid {HandledProcessId} inputs: staged source file was not found.");
@@ -175,7 +195,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
             // source under overwrite idempotency, which is the resume contract.
             var importRequest = new ImportRequest
             {
-                LocalFilePath = request.SourcePath,
+                LocalFilePath = resolvedSourcePath,
                 FileName = request.FileName,
                 TableName = request.TableName,
                 TargetSchema = request.TargetSchema,
@@ -305,7 +325,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                                 LayerId = rasterLayerId,
                                 Name = request.LayerName,
                                 Description = request.Description,
-                                FilePath = request.SourcePath,
+                                FilePath = resolvedSourcePath,
                                 FileName = request.FileName,
                                 Format = rasterFormat.Value,
                                 Srid = request.SourceSrid
@@ -575,6 +595,10 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         [LoggerMessage(9200, LogLevel.Warning,
             "Import dataset executor refused job {OperationId}: unsupported process id '{ProcessId}'")]
         public static partial void UnsupportedProcessId(ILogger logger, string operationId, string processId);
+
+        [LoggerMessage(9207, LogLevel.Warning,
+            "Import dataset executor rejected job {OperationId}: source path '{SourcePath}' is outside the permitted staging directory (BH3-027)")]
+        public static partial void PathTraversalRejected(ILogger logger, string operationId, string sourcePath);
 
         [LoggerMessage(9201, LogLevel.Warning,
             "Import dataset executor rejected job {OperationId}: {Reason}")]

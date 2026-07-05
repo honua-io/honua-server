@@ -275,7 +275,8 @@ internal static class GeoPackageExportWriter
 
                 if (batchCount >= BatchSize)
                 {
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+                    ct.ThrowIfCancellationRequested();
+                    await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
                     transaction.Dispose();
                     transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
                     cmd.Transaction = transaction;
@@ -289,7 +290,7 @@ internal static class GeoPackageExportWriter
                 // not persist a partial batch whose in-flight features may have been
                 // truncated by the async source.
                 ct.ThrowIfCancellationRequested();
-                await transaction.CommitAsync(ct).ConfigureAwait(false);
+                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
         finally
