@@ -777,4 +777,43 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("ST_GeomFromWKB(@p0, 4326)", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// BH4-024: Permanent row-visibility filter must be included in the generated WHERE clause.
+    /// The enforced filter is applied before any caller-supplied SqlFilter so it cannot be
+    /// bypassed.
+    /// </summary>
+    [Fact]
+    public void BuildSelectQuery_WithEnforcedSqlFilter_IncludesFilterInWhereClause()
+    {
+        // EnforcedSqlFilter uses @pN notation; MySQL builder re-numbers in sequence.
+        var fragment = new SqlFragment("`status` = @p0", new object?[] { "active" });
+        var query = new FeatureQuery { EnforcedSqlFilter = fragment };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("AND (`status` = @p0)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("active", result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithEnforcedSqlFilterAndSqlFilter_EnforcedAppearsFirst()
+    {
+        var enforced = new SqlFragment("`tenant_id` = @p0", new object?[] { 42 });
+        var caller = new SqlFragment("`status` = @p0", new object?[] { "active" });
+        var query = new FeatureQuery { EnforcedSqlFilter = enforced, SqlFilter = caller };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        // Scope the ordering check to the WHERE clause so column names in SELECT don't skew positions.
+        var whereStart = result.Sql.IndexOf("WHERE 1=1", StringComparison.Ordinal);
+        Assert.True(whereStart >= 0, "SQL must contain WHERE 1=1");
+        var whereClause = result.Sql[whereStart..];
+        var enforcedPos = whereClause.IndexOf("tenant_id", StringComparison.Ordinal);
+        var callerPos = whereClause.IndexOf("status", StringComparison.Ordinal);
+        Assert.True(enforcedPos < callerPos, "EnforcedSqlFilter must precede SqlFilter in the generated SQL.");
+        // The enforced parameter gets @p0, the caller's parameter gets @p1.
+        Assert.Contains(42, result.WhereParameters.OfType<int>().Cast<object>());
+        Assert.Contains("active", result.WhereParameters);
+    }
 }

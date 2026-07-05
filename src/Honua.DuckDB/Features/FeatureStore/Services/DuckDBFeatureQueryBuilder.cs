@@ -718,6 +718,18 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         ref int paramIndex,
         List<object> parameters)
     {
+        // Enforced row-visibility predicate (permanent filter + RLS) — applied first so it
+        // cannot be overridden by caller-supplied filters.
+        if (query.EnforcedSqlFilter != null)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $" AND ({ConvertNamedParametersToPositional(query.EnforcedSqlFilter.Sql, ref paramIndex)})");
+            foreach (var param in query.EnforcedSqlFilter.Parameters)
+            {
+                parameters.Add(param ?? DBNull.Value);
+            }
+        }
+
         if (query.SqlFilter != null)
         {
             sb.Append(CultureInfo.InvariantCulture,

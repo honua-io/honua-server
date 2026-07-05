@@ -5,6 +5,9 @@ using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.MySql.Features.FeatureStore;
 
@@ -25,13 +28,19 @@ internal sealed class MySqlFeatureStore :
 
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
+    private readonly IMetadataV2GraphProvider? _v2Provider;
+    private readonly IFilterExpressionService? _filterExpressionService;
 
     public MySqlFeatureStore(
         IFeatureQueryBuilder queryBuilder,
-        IFeatureDataAccess dataAccess)
+        IFeatureDataAccess dataAccess,
+        IMetadataV2GraphProvider? v2Provider = null,
+        IFilterExpressionService? filterExpressionService = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
+        _v2Provider = v2Provider;
+        _filterExpressionService = filterExpressionService;
     }
 
     /// <inheritdoc />
@@ -47,13 +56,24 @@ internal sealed class MySqlFeatureStore :
     public IFeatureWriter? Writer => null;
 
     /// <inheritdoc />
-    public Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
-        => _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken);
+    public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
+    {
+        var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        if (query.EnforcedSqlFilter is null)
+        {
+            return await _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken).ConfigureAwait(false);
+        }
+        var pageQuery = query with { ObjectIds = ImmutableArray.Create(featureId), Limit = 1 };
+        var selectQuery = _queryBuilder.BuildSelectQuery(layerId, pageQuery);
+        var features = await _dataAccess.ExecuteSelectQueryAsync(selectQuery, pageQuery, layerId, cancellationToken).ConfigureAwait(false);
+        return features.IsDefaultOrEmpty ? null : features[0];
+    }
 
     /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var countQuery = _queryBuilder.BuildCountQuery(layerId, query);
         var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken).ConfigureAwait(false);
 
@@ -86,6 +106,7 @@ internal sealed class MySqlFeatureStore :
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var objectIdsQuery = _queryBuilder.BuildObjectIdsQuery(layerId, query);
         return await _dataAccess.ExecuteSelectObjectIdsQueryAsync(objectIdsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
@@ -93,6 +114,7 @@ internal sealed class MySqlFeatureStore :
     /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var countQuery = _queryBuilder.BuildCountQuery(layerId, query);
         return await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
@@ -101,7 +123,7 @@ internal sealed class MySqlFeatureStore :
     public async Task<FeatureExtent?> GetExtentAsync(
         int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        var effective = query ?? new FeatureQuery();
+        var effective = await ApplyPermanentFilterAsync(layerId, query ?? new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var extentQuery = _queryBuilder.BuildExtentQuery(layerId, effective);
         return await _dataAccess.GetExtentAsync(layerId, extentQuery, effective, cancellationToken).ConfigureAwait(false);
     }
@@ -161,6 +183,7 @@ internal sealed class MySqlFeatureStore :
     public async Task<PagedQueryResult<Feature>> QueryPageAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
             var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
@@ -270,4 +293,30 @@ internal sealed class MySqlFeatureStore :
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException(
             "Streaming GML features is not supported by the MySQL/MariaDB provider in this slice.");
+
+    /// <summary>
+    /// Resolves and applies the layer's permanent (row-visibility) filter to the query.
+    /// Idempotent: queries already carrying an enforced filter are returned unchanged.
+    /// </summary>
+    private async Task<FeatureQuery> ApplyPermanentFilterAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (query.EnforcedSqlFilter != null)
+        {
+            return query;
+        }
+
+        var enforcedFilter = await PermanentFilterResolver
+            .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (enforcedFilter != null)
+        {
+            query = query with { EnforcedSqlFilter = enforcedFilter };
+        }
+
+        return query;
+    }
 }

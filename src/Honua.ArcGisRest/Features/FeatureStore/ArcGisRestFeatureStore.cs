@@ -260,29 +260,34 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
         var context = ResolveBinding(layerId);
         var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
 
-        // returnIdsOnly responses are likewise truncated at the upstream
-        // maxRecordCount, so page on resultOffset until the upstream stops
-        // returning ids (or returns a short/empty page) — otherwise the
-        // provider would advertise only the first page of object ids.
+        // Determine the total matching count first so paging does not depend on comparing
+        // each page against the hardcoded DefaultPageSize sentinel — which breaks when the
+        // upstream's maxRecordCount < DefaultPageSize and every page looks "short" even
+        // though more records remain (BH4-001).
+        var totalCount = await CountAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        if (totalCount <= 0)
+        {
+            return ImmutableArray<long>.Empty;
+        }
+
         var baseOffset = query.Offset is int o && o > 0 ? o : 0;
         var requestedLimit = query.Limit is int l && l > 0 ? l : (int?)null;
 
-        var ids = ImmutableArray.CreateBuilder<long>();
+        // Cap accumulation at the lesser of total known count and the caller's limit.
+        var targetCount = requestedLimit.HasValue
+            ? (int)Math.Min(requestedLimit.Value, totalCount - baseOffset)
+            : (int)Math.Min(totalCount - baseOffset, int.MaxValue);
+
+        if (targetCount <= 0)
+        {
+            return ImmutableArray<long>.Empty;
+        }
+
+        var ids = ImmutableArray.CreateBuilder<long>(targetCount);
         var pageOffset = baseOffset;
 
-        for (var iteration = 0; iteration < MaxPageIterations; iteration++)
+        for (var iteration = 0; iteration < MaxPageIterations && ids.Count < targetCount; iteration++)
         {
-            if (requestedLimit is int limit && ids.Count >= limit)
-            {
-                break;
-            }
-
-            // returnIdsOnly responses carry no exceededTransferLimit flag, so a page
-            // shorter than the *requested* page size marks the end. Always request a
-            // full DefaultPageSize page (rather than the caller's smaller remaining
-            // budget) so the short-page signal stays meaningful even when the
-            // upstream maxRecordCount is below the caller's limit; trim to the
-            // caller's limit after accumulating.
             var pageQuery = query with { Offset = pageOffset, Limit = DefaultPageSize };
             var url = ArcGisRestQueryParameters.BuildObjectIdsUrl(
                 context.ServiceLocation.ServiceUrl,
@@ -293,18 +298,13 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
             EnsureNoUpstreamError(response.Error);
 
             var pageLength = response.ObjectIds is { Length: > 0 } ? response.ObjectIds.Length : 0;
-            if (pageLength > 0)
+            if (pageLength == 0)
             {
-                ids.AddRange(response.ObjectIds!);
-            }
-
-            // A short or empty page means the upstream returned everything it has;
-            // this also bounds the loop against a non-advancing upstream.
-            if (pageLength < DefaultPageSize)
-            {
+                // Upstream returned nothing — stop to avoid infinite loop.
                 break;
             }
 
+            ids.AddRange(response.ObjectIds!);
             pageOffset += pageLength;
         }
 

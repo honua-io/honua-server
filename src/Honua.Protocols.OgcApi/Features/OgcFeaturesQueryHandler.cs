@@ -234,19 +234,28 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (useStreaming)
             {
-                var totalCount = await featureReader.CountAsync(layerId, query, cancellationToken);
+                // Pre-flight snapshot count used as numberMatched in streaming responses.
+                // This value is subject to a TOCTOU race: concurrent inserts or deletes
+                // between this COUNT and the stream open can make it stale. Per OGC API
+                // Features Part 1 §7.7, numberMatched is OPTIONAL and may be omitted when
+                // an exact count cannot be guaranteed. Here it is provided as an advisory
+                // snapshot estimate rather than an authoritative exact count (BH4-008).
+                // Clients performing paginated ingestion should treat numberMatched as
+                // informational. Pagination correctness is derived from the cursor-paging
+                // probe (limit+1 rows) below, not from this pre-flight count.
+                var snapshotCount = await featureReader.CountAsync(layerId, query, cancellationToken);
 
                 // Avoid streaming for small result sets even when the requested limit is large.
-                if (totalCount > StreamingThreshold)
+                if (snapshotCount > StreamingThreshold)
                 {
-                    // hasMoreResults is NOT derived from totalCount here because there is a
-                    // TOCTOU race between the COUNT query and the subsequent stream: concurrent
+                    // hasMoreResults is NOT derived from snapshotCount here because there is
+                    // a TOCTOU race between the COUNT query and the subsequent stream: concurrent
                     // inserts/deletes change the actual row count, making the next-link wrong.
                     // Instead, the streaming results fetch limit+1 rows and derive hasMoreResults
                     // from whether the extra row exists (cursor-paging pattern).
                     stopwatch.Stop();
-                    var estimatedReturned = (int)Math.Min(effectiveLimit, Math.Max(0, totalCount - effectiveOffset));
-                    OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, estimatedReturned, totalCount, stopwatch.Elapsed.TotalMilliseconds);
+                    var estimatedReturned = (int)Math.Min(effectiveLimit, Math.Max(0, snapshotCount - effectiveOffset));
+                    OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, estimatedReturned, snapshotCount, stopwatch.Elapsed.TotalMilliseconds);
                     HonuaTelemetry.SetSuccess(featureActivity, estimatedReturned);
 
                     var streamBaseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -260,7 +269,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             streamingFeatureStore,
                             layerId,
                             query,
-                            totalCount,
+                            snapshotCount, // advisory snapshot estimate; see comment above
                             outputCrsUri,
                             outputAxisOrder,
                             streamGmlSchemaUrl,
@@ -285,7 +294,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         effectiveLimit,
                         effectiveOffset,
                         _ogcFeaturesOptions.IncludeFeatureLinks,
-                        totalCount,
+                        snapshotCount, // advisory snapshot estimate; see comment above
                         outputCrsUri,
                         cancellationToken);
                 }
