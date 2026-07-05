@@ -204,4 +204,54 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             AlertLog.DispatchFailed(_logger, dispatchId, deadLetter);
         }
     }
+
+    public async Task RescheduleAsync(
+        long dispatchId,
+        DateTimeOffset nextAttemptAt,
+        CancellationToken cancellationToken = default)
+    {
+        // Rate-cap deferral: return the claimed (Processing) row to Pending with a
+        // later next_attempt_at. Attempts are deliberately NOT incremented so the cap
+        // never consumes the retry budget or dead-letters a deliverable notification.
+        const string sql = """
+            UPDATE honua.alert_dispatch
+            SET status = 0,
+                next_attempt_at = @next_attempt_at,
+                updated_at = now()
+            WHERE dispatch_id = @dispatch_id
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("dispatch_id", NpgsqlDbType.Bigint, dispatchId);
+        command.Parameters.AddWithValue("next_attempt_at", NpgsqlDbType.TimestampTz, nextAttemptAt);
+        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AlertDispatchBacklog> GetBacklogAsync(CancellationToken cancellationToken = default)
+    {
+        // Pending backlog = rows awaiting delivery: pending (0), in-flight/claimed (1),
+        // and retriable-failed (3). Dead-lettered (4) rows are counted separately.
+        const string sql = """
+            SELECT
+                COUNT(*) FILTER (WHERE status IN (0, 1, 3)) AS pending,
+                COUNT(*) FILTER (WHERE status = 4) AS dead_lettered
+            FROM honua.alert_dispatch
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 };
+        }
+
+        return new AlertDispatchBacklog
+        {
+            PendingCount = reader.IsDBNull(0) ? 0 : reader.GetInt64(0),
+            DeadLetteredCount = reader.IsDBNull(1) ? 0 : reader.GetInt64(1)
+        };
+    }
 }

@@ -120,6 +120,14 @@ flipping the capability off in the registry removes it from the manifest,
 ADR gives the registry, and the manifest lever the Console release gate
 (honua-io/honua-console#264) consumes.
 
+> **Update (#2427).** **Geofence alerting** (`alerts.geofence`,
+> `/api/v1/admin/alerts/*`) was promoted from `experimental` to `Implemented`
+> (GA) — the first `Experimental → Implemented` promotion. It is therefore no
+> longer part of the registry-flag experimental roster (a): its routes ship on
+> the default first-release surface like any other GA capability. The alerts
+> pipeline still self-gates on `Alerts:Enabled` (default `false`), so GA does not
+> mean on-by-default; it means no longer hidden/unadvertised.
+
 **(b) Edition/entitlement + Console-UI gating** covers the remainder of the
 experimental + disabled set — the capabilities that are **not** held back by a
 route-level registry flag: SSO/OIDC/SAML/SCIM, **forms** authoring + **field
