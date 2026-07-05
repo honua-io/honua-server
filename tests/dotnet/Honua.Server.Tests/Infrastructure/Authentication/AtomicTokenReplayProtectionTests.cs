@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IdentityModel.Tokens.Jwt;
@@ -7,102 +7,55 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
 /// <summary>
 /// Unit tests for <see cref="AtomicTokenReplayProtection"/> covering replay detection,
-/// distributed-cache fallback paths, and the BH-027 mutual-recursion regression.
+/// Redis fail-closed behaviour, and the BH5-022 / BH-027 regressions.
 /// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
 public sealed class AtomicTokenReplayProtectionTests
 {
-    // ─── BH-027 regression ──────────────────────────────────────────────────────
+    // ─── BH5-022 / BH-027 regression ────────────────────────────────────────────
 
     /// <summary>
-    /// Regression test for BH-027: when the Redis IDatabase has not yet been initialized
-    /// (lazy connect, _cache == null), the old fallback re-entered
-    /// TryMarkTokenAsUsedDistributedAsync with the same RedisCache argument, which
-    /// re-dispatched back to TryMarkTokenAsUsedRedisAsync — infinite mutual recursion
-    /// → StackOverflowException on the very first JWT validation request.
+    /// BH5-022 regression: the old implementation used reflection to extract a private
+    /// <c>_cache</c> field from RedisCache. When the field was null (lazy connection not
+    /// yet established) the code re-entered the distributed-cache path with the same
+    /// RedisCache argument, which redispatched back to the Redis path — infinite mutual
+    /// recursion → StackOverflowException on the very first JWT validation request (BH-027).
     ///
-    /// After the fix the fallback calls TryMarkTokenAsUsedNonAtomicAsync directly,
-    /// breaking the cycle.  If the old code is restored, this test causes the test
-    /// runner process to crash with a StackOverflowException instead of completing.
+    /// The fix resolves <see cref="IConnectionMultiplexer"/> directly from DI — no
+    /// reflection, no mutual recursion. When the multiplexer is registered but every
+    /// Redis command throws, the method must return <see langword="false"/> (fail-closed)
+    /// without propagating the exception.
     /// </summary>
     [UnitTest]
-    public async Task TryMarkTokenAsUsedAsync_RedisCacheWithNullDatabase_TerminatesWithoutRecursion()
+    public async Task TryMarkTokenAsUsedAsync_RedisMultiplexerAlwaysThrows_ReturnsFalseWithoutThrowing()
     {
-        // Port 65530 on loopback is almost certainly closed; a closed port returns
-        // ECONNREFUSED immediately, so the connection fails in < 1 ms.
-        var configOptions = new StackExchange.Redis.ConfigurationOptions
-        {
-            EndPoints = { "127.0.0.1:65530" },
-            ConnectTimeout = 100,
-            SyncTimeout = 100,
-            AbortOnConnectFail = true,
-            ConnectRetry = 0
-        };
-        using var redisCache = new Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache(
-            Microsoft.Extensions.Options.Options.Create(
-                new Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions
-                {
-                    ConfigurationOptions = configOptions
-                }));
+        var database = Substitute.For<IDatabase>();
+        database.StringSetAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<When>(),
+                Arg.Any<CommandFlags>())
+            .Returns(_ => Task.FromException<bool>(
+                new RedisConnectionException(ConnectionFailureType.UnableToConnect, "simulated Redis down")));
 
-        // Precondition: _cache is null before any Redis operation (lazy initialization).
-        // This is the exact state that triggered the StackOverflow: reflection returns null,
-        // connection == null, the old code fell back into TryMarkTokenAsUsedDistributedAsync,
-        // which re-dispatched to TryMarkTokenAsUsedRedisAsync, causing infinite recursion.
-        var cacheField = redisCache.GetType().GetField(
-            "_cache",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        cacheField.Should().NotBeNull("the private _cache field must be resolvable via reflection");
-        cacheField!.GetValue(redisCache).Should().BeNull(
-            "IDatabase is lazily initialized and must be null before the first Redis operation");
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        multiplexer.GetDatabase().Returns(database);
+        multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
 
         var services = new ServiceCollection();
-        services.AddSingleton<IDistributedCache>(redisCache);
-        using var sp = services.BuildServiceProvider();
-
-        var token = CreateTestJwtToken();
-        var options = new TokenValidationOptions { EnableTokenReplayProtection = true };
-
-        // Before the fix: StackOverflowException kills the test runner (no assertion reached).
-        // After the fix: returns false because Redis is unreachable; the exception from the
-        // non-atomic fallback path is caught and mapped to false (fail-secure).
-        var result = await AtomicTokenReplayProtection.TryMarkTokenAsUsedAsync(
-            token, options, sp, CancellationToken.None);
-
-        result.Should().BeFalse(
-            "the atomic Redis path failed (null IDatabase) and the non-atomic fallback also " +
-            "failed (unreachable Redis); the method must degrade to false without recursing");
-    }
-
-    [UnitTest]
-    public async Task TryMarkTokenAsUsedAsync_DistributedCacheAlwaysThrows_ReturnsFalseWithoutThrowing()
-    {
-        // When every distributed cache operation throws, the method must return false
-        // (err on the side of security) and must NOT propagate the exception to the caller.
-        var throwingCache = Substitute.For<IDistributedCache>();
-        throwingCache
-            .GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<byte[]?>(new InvalidOperationException("simulated Redis failure")));
-        throwingCache
-            .SetAsync(
-                Arg.Any<string>(),
-                Arg.Any<byte[]>(),
-                Arg.Any<DistributedCacheEntryOptions>(),
-                Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException(new InvalidOperationException("simulated Redis failure")));
-
-        var services = new ServiceCollection();
-        services.AddSingleton<IDistributedCache>(throwingCache);
+        services.AddSingleton<IConnectionMultiplexer>(multiplexer);
         using var sp = services.BuildServiceProvider();
 
         var token = CreateTestJwtToken();
@@ -113,17 +66,49 @@ public sealed class AtomicTokenReplayProtectionTests
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.Should().BeFalse(
-            "a distributed cache failure is treated as a replay signal to fail-secure");
+            "Redis failure must be fail-closed — the exception must be caught and false returned " +
+            "without mutual recursion (BH5-022 / BH-027)");
+    }
+
+    [UnitTest]
+    public async Task TryMarkTokenAsUsedAsync_RedisSetNxReturnsFalse_ReturnsFalseWithoutThrowing()
+    {
+        // When SET NX returns false (key already exists), the method must return false —
+        // the token has already been seen.
+        var database = Substitute.For<IDatabase>();
+        database.StringSetAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<When>(),
+                Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(false));
+
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        multiplexer.GetDatabase().Returns(database);
+        multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConnectionMultiplexer>(multiplexer);
+        using var sp = services.BuildServiceProvider();
+
+        var token = CreateTestJwtToken();
+        var options = new TokenValidationOptions { EnableTokenReplayProtection = true };
+
+        var result = await AtomicTokenReplayProtection.TryMarkTokenAsUsedAsync(
+            token, options, sp, CancellationToken.None);
+
+        result.Should().BeFalse("SET NX returning false means the key existed — this is a replay");
     }
 
     // ─── Happy-path replay detection ────────────────────────────────────────────
 
     [UnitTest]
-    public async Task TryMarkTokenAsUsedAsync_MemoryDistributedCache_FirstUseTrueThenReplayFalse()
+    public async Task TryMarkTokenAsUsedAsync_MemoryCacheOnly_FirstUseTrueThenReplayFalse()
     {
-        // Non-Redis IDistributedCache: first use accepted, replay rejected.
+        // No Redis, in-memory cache only: first use accepted, replay rejected.
         var services = new ServiceCollection();
-        services.AddDistributedMemoryCache();
+        services.AddMemoryCache();
         using var sp = services.BuildServiceProvider();
 
         var token = CreateTestJwtToken();
@@ -139,9 +124,9 @@ public sealed class AtomicTokenReplayProtectionTests
     }
 
     [UnitTest]
-    public async Task TryMarkTokenAsUsedAsync_MemoryCacheOnly_FirstUseTrueThenReplayFalse()
+    public async Task TryMarkTokenAsUsedAsync_MemoryCacheOnlyDistinct_BothAccepted()
     {
-        // In-memory-only path (no distributed cache): first use accepted, replay rejected.
+        // In-memory fallback with two distinct tokens: each accepted on first use.
         var services = new ServiceCollection();
         services.AddMemoryCache();
         using var sp = services.BuildServiceProvider();
@@ -180,7 +165,7 @@ public sealed class AtomicTokenReplayProtectionTests
     {
         // Two distinct tokens (different JTIs) are each accepted on first use.
         var services = new ServiceCollection();
-        services.AddDistributedMemoryCache();
+        services.AddMemoryCache();
         using var sp = services.BuildServiceProvider();
 
         var tokenA = CreateTestJwtToken();
@@ -203,14 +188,14 @@ public sealed class AtomicTokenReplayProtectionTests
     /// both be accepted as first-use.  The old read-delay-verify pattern had a TOCTOU race
     /// where both requests could observe "not present" at T1, each write a unique marker,
     /// and each verify their own marker before the other's write arrived — causing both to
-    /// return <see langword="true"/>.  After the fix a <see cref="SemaphoreSlim"/> serialises
-    /// the check-then-set window so exactly one concurrent caller wins.
+    /// return <see langword="true"/>.  After the fix a <see cref="System.Threading.SemaphoreSlim"/>
+    /// serialises the check-then-set window so exactly one concurrent caller wins.
     /// </summary>
     [UnitTest]
     public async Task TryMarkTokenAsUsedAsync_ConcurrentRequestsSameToken_ExactlyOneWins()
     {
         var services = new ServiceCollection();
-        services.AddDistributedMemoryCache();
+        services.AddMemoryCache();
         using var sp = services.BuildServiceProvider();
 
         var token = CreateTestJwtToken();

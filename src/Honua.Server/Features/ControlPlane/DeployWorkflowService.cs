@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
@@ -308,17 +308,36 @@ internal sealed partial class DeployWorkflowService
                 $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
         }
 
+        // Atomically claim the operation before calling the backend. Transitions Planned -> Submitted
+        // via CAS (version check): only one concurrent SubmitAsync wins; the loser re-reads the
+        // current state, which is already Submitted/Reconciling/etc., and returns it directly without
+        // triggering a second backend deployment (BH5-021).
+        var preliminary = operation with
+        {
+            Status = WorkflowOperationStatus.Submitted,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Submitting to deploy backend.",
+            Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
+        };
+
+        var claimed = await _workflowStore!.TrySetAsync(preliminary, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!claimed)
+        {
+            // Another concurrent SubmitAsync already claimed this operation. Re-read and return
+            // the current state so the caller sees the latest status without executing twice.
+            return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+
         try
         {
-            var submission = await backend.StartAsync(operation, cancellationToken).ConfigureAwait(false);
-            var updated = operation with
+            var submission = await backend.StartAsync(preliminary, cancellationToken).ConfigureAwait(false);
+            var updated = preliminary with
             {
                 Status = submission.Status,
                 UpdatedAt = DateTimeOffset.UtcNow,
                 ProviderOperationId = submission.ProviderOperationId,
                 CurrentPhase = submission.Message ?? "Submitted to deploy backend",
                 ErrorMessage = null,
-                Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason),
                 Deploy = operation.Deploy with
                 {
                     CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision
@@ -335,14 +354,13 @@ internal sealed partial class DeployWorkflowService
         catch (Exception ex)
         {
             Log.DeploySubmissionFailed(_logger, operation.OperationId, operation.Deploy.TargetId, ex);
-            var failed = operation with
+            var failed = preliminary with
             {
                 Status = WorkflowOperationStatus.Failed,
                 UpdatedAt = DateTimeOffset.UtcNow,
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Backend submission failed.",
-                ErrorMessage = $"Backend submission failed ({ex.GetType().Name}).",
-                Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
+                ErrorMessage = $"Backend submission failed ({ex.GetType().Name})."
             };
 
             await _workflowStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
