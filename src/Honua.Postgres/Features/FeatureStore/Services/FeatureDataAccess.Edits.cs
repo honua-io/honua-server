@@ -328,7 +328,13 @@ internal sealed partial class FeatureDataAccess
 
             if (transaction != null)
             {
-                await transaction.CommitAsync(cancellationToken);
+                // Guard against phantom commits: if the token fires after the server accepts
+                // COMMIT but before the ack arrives, Npgsql throws an OperationCanceledException
+                // and the data is committed server-side but the caller sees a failure. Checking
+                // here before the commit ensures we never hand an interruptible token to CommitAsync;
+                // once COMMIT starts it must complete atomically (or the whole session is lost).
+                cancellationToken.ThrowIfCancellationRequested();
+                await transaction.CommitAsync(CancellationToken.None);
             }
 
             if (hasErrors)
@@ -1130,7 +1136,8 @@ internal sealed partial class FeatureDataAccess
                 RETURNING objectid
             )
             SELECT objectid
-            FROM inserted";
+            FROM inserted
+            ORDER BY ctid";
 
         await using var command = new NpgsqlCommand(sql, connection)
         {
