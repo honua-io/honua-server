@@ -480,8 +480,32 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
-    public async Task OgcFeaturesCreate_UpdateGrant_OverridesCoarseDeny()
+    public async Task OgcFeaturesCreate_InsertGrant_OverridesCoarseDeny()
     {
+        // An OGC API Features POST authorizes as Insert (BH3-001/BH3-014), so a matching Insert
+        // grant must override the coarse data-editor deny. The in-memory fixture cannot complete
+        // the create, so the assertion is that authorization is cleared (not Forbidden / not
+        // Unauthorized) rather than a 201.
+        using var factory = CreateWriteFactory(Grant("insert"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var response = await client.PostAsync(
+            $"/ogc/features/collections/{ServiceRbacTestFixture.AlphaLayerId}/items",
+            ServiceRbacTestFixture.CreateOgcFeatureContent());
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden,
+            "a matching insert grant must clear per-operation authorization for an OGC create; body: {0}",
+            await response.Content.ReadAsStringAsync());
+        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task OgcFeaturesCreate_UpdateOnlyGrant_DeniesCreate()
+    {
+        // BH3-001/BH3-014: an Update-only grantee must be denied an OGC create (POST=Insert).
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -489,7 +513,28 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/ogc/features/collections/{ServiceRbacTestFixture.AlphaLayerId}/items",
             ServiceRbacTestFixture.CreateOgcFeatureContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Created);
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task OgcFeaturesUpdate_InsertOnlyGrant_DeniesUpdate()
+    {
+        // BH3-001/BH3-014 primary regression for the OGC API Features write surface: an OGC PUT
+        // authorizes as Update, so an Insert-only grantee must be denied. Authorization runs before
+        // feature resolution, so the denial is a clean 403.
+        using var factory = CreateWriteFactory(Grant("insert"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var response = await client.PutAsync(
+            $"/ogc/features/collections/{ServiceRbacTestFixture.AlphaLayerId}/items/1",
+            ServiceRbacTestFixture.CreateOgcFeatureContent());
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "an insert-only principal must not execute an OGC API Features Update; body: {0}",
+            await response.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]

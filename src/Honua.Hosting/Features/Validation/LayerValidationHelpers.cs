@@ -644,10 +644,16 @@ internal static class LayerValidationHelpers
     /// <param name="requiredProtocol">Optional protocol gate. Defaults to
     /// <c>OgcFeatures</c> protocol constant to mirror the v1 method.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="operation">Per-operation authorization narrowing (BH3-001/BH3-014):
+    /// when supplied (POST=Insert, PUT/PATCH/Replace=Update, DELETE=Delete), the RBAC
+    /// data-editor gate bypass is limited to that operation so a grant for one operation
+    /// cannot authorize another. Null preserves the coarse any-write behavior (e.g. a mixed
+    /// batch that runs its own per-operation-kind checks after parsing the body).</param>
     public static async Task<MetadataV2ValidationResult> ValidateCollectionWriteAccessV2Async(
         HttpContext context,
         string collectionId,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
+        AuthorizationOperation? operation = null,
         CancellationToken cancellationToken = default)
     {
         var validation = await ValidateCollectionWithAccessV2Async(
@@ -661,11 +667,18 @@ internal static class LayerValidationHelpers
             return validation;
         }
 
-        var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-            context,
-            validation.Resource!,
-            validation.Service,
-            cancellationToken).ConfigureAwait(false);
+        var rbacError = operation is { } op
+            ? await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                validation.Resource!,
+                validation.Service,
+                op,
+                cancellationToken).ConfigureAwait(false)
+            : await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                validation.Resource!,
+                validation.Service,
+                cancellationToken).ConfigureAwait(false);
         if (rbacError != null)
         {
             return new MetadataV2ValidationResult(
@@ -683,7 +696,7 @@ internal static class LayerValidationHelpers
         var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
             context,
             validation,
-            operation: null,
+            operation,
             cancellationToken).ConfigureAwait(false);
         if (canonicalError != null)
         {
