@@ -1871,6 +1871,12 @@ internal static partial class FeatureServerEndpoints
         UploadBaseGeneration = record.UploadBaseGeneration
     };
 
+    // Per-operation authorization (BH3-001/BH3-014) does NOT cleanly apply to replica write
+    // access: this gate covers replica lifecycle operations (create / unregister — which are not
+    // feature mutations) and replica synchronize (which carries a mix of insert/update/delete
+    // edits governed by the replica registration and applied through the shared edit pipeline,
+    // and whose edits are not yet parsed at this point). Authorization here is therefore the
+    // coarse replica-scoped write capability rather than a single feature operation.
     private static async Task<IResult?> RequireReplicaWriteAccessV2Async(
         HttpContext context,
         MetadataV2Service service,
@@ -1893,6 +1899,10 @@ internal static partial class FeatureServerEndpoints
         return null;
     }
 
+    // Pre-body OR-gate for replica operations: mirrors the FeatureServer pre-body mutating-access
+    // gate. Coarse by design (it authorizes when ANY service resource is writable before the body
+    // is read); the per-operation narrowing is applied by the primary single-verb edit surfaces,
+    // not this replica capability check.
     private static async Task<IResult?> RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
         HttpContext context,
         MetadataV2Service service,

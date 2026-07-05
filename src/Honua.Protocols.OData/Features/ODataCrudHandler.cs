@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -253,7 +254,7 @@ internal sealed class ODataCrudHandler(
 
         if (layerId.HasValue)
         {
-            var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId.Value, effectiveToken);
+            var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId.Value, AuthorizationOperation.Insert, effectiveToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
@@ -317,7 +318,7 @@ internal sealed class ODataCrudHandler(
                 "LayerId is required when creating a feature.");
         }
 
-        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, resolvedLayerId.Value, effectiveToken);
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, resolvedLayerId.Value, AuthorizationOperation.Insert, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -424,7 +425,7 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, effectiveToken);
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, AuthorizationOperation.Update, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -465,7 +466,8 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, effectiveToken);
+        // Replace modifies an existing feature, so it authorizes as an Update (BH3-001/BH3-014).
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, AuthorizationOperation.Update, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -530,7 +532,7 @@ internal sealed class ODataCrudHandler(
             return ODataUtilityService.CreateODataError(context, "InvalidRequest", "ObjectId in payload does not match route.");
         }
 
-        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, effectiveToken);
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, AuthorizationOperation.Update, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -654,7 +656,7 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, effectiveToken);
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, AuthorizationOperation.Delete, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -848,15 +850,20 @@ internal sealed class ODataCrudHandler(
             requiredProtocol: ODataProtocolConstants.ProtocolName,
             cancellationToken: cancellationToken);
 
+    // Per-operation OData write authorization (BH3-001/BH3-014): each CRUD verb passes its
+    // canonical operation (POST=Insert, PATCH/PUT/Replace=Update, DELETE=Delete) so an
+    // insert-only grantee cannot Update or Delete and vice-versa.
     private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateODataLayerWriteAccessAsync(
         HttpContext context,
         int layerId,
+        AuthorizationOperation operation,
         CancellationToken cancellationToken)
         => LayerValidationHelpers.ValidateLayerWriteAccessV2Async(
             context,
             layerId,
             LayerValidationHelpers.ValidationProtocol.OData,
             ODataProtocolConstants.ProtocolName,
+            operation,
             cancellationToken);
 
     private static int ResolveLayerSrid(LayerValidationHelpers.MetadataV2ValidationResult layerValidation)
