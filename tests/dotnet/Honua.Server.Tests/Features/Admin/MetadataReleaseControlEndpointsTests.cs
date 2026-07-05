@@ -142,6 +142,13 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
             return Task.CompletedTask;
         }
 
+        public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _operations[operation.OperationId] = operation;
+            Index(operation);
+            return Task.FromResult(true);
+        }
+
         public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)
         {
             var operations = _operations.Values

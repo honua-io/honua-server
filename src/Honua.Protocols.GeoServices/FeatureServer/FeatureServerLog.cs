@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -273,6 +273,16 @@ internal static partial class FeatureServerLog
     /// <param name="exception">The exception raised by the store.</param>
     [LoggerMessage(EventId = 2407, Level = LogLevel.Warning, Message = "ApplyEdits idempotency store unavailable for service '{ServiceId}' layer {LayerId}; retry deduplication is degraded")]
     public static partial void ApplyEditsIdempotencyStoreUnavailable(ILogger logger, string serviceId, int layerId, Exception exception);
+
+    /// <summary>
+    /// Logs when a concurrent request holds the idempotency reservation for the same key (BH5-001).
+    /// The caller should return 409 so the client can retry after the winner has written the response.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="layerId">The layer identifier.</param>
+    [LoggerMessage(EventId = 2408, Level = LogLevel.Warning, Message = "ApplyEdits idempotency conflict for service '{ServiceId}' layer {LayerId}: concurrent request with same key")]
+    public static partial void ApplyEditsIdempotencyConflict(ILogger logger, string serviceId, int layerId);
 
     /// <summary>
     /// Logs when adding a feature fails.

@@ -137,12 +137,17 @@ internal static partial class WmsRequestHandlers
         {
             return filterResult.Error;
         }
+        // BH5-007: use GroupBy before ToDictionary to handle duplicate LAYERS tokens (e.g.
+        // LAYERS=X,X) without throwing ArgumentException on the duplicate StorageLayerId key.
+        // The temporal filter path below has always used this pattern; the spatial path is now
+        // consistent with it.
         var filtersByStorageLayerId = filterResult.Filters is null
             ? null
             : mapLayers
                 .Select((layer, index) => (layer.StorageLayerId, Filter: filterResult.Filters[index]))
                 .Where(item => item.Filter is not null)
-                .ToDictionary(item => item.StorageLayerId, item => item.Filter);
+                .GroupBy(item => item.StorageLayerId)
+                .ToDictionary(group => group.Key, group => group.First().Filter);
 
         // Apply the TIME dimension to identify, mirroring GetMap. Previously GetFeatureInfo
         // ignored TIME entirely, so on a time-enabled layer GetMap showed the selected instant
