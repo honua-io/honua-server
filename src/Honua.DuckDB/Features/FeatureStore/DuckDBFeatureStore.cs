@@ -6,6 +6,9 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.DuckDB.Features.FeatureStore.Services;
 
 namespace Honua.DuckDB.Features.FeatureStore;
@@ -29,15 +32,21 @@ internal sealed class DuckDBFeatureStore :
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IFeatureCacheManager _cacheManager;
+    private readonly IMetadataV2GraphProvider? _v2Provider;
+    private readonly IFilterExpressionService? _filterExpressionService;
 
     public DuckDBFeatureStore(
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
-        IFeatureCacheManager cacheManager)
+        IFeatureCacheManager cacheManager,
+        IMetadataV2GraphProvider? v2Provider = null,
+        IFilterExpressionService? filterExpressionService = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
+        _v2Provider = v2Provider;
+        _filterExpressionService = filterExpressionService;
     }
 
     /// <inheritdoc />
@@ -57,7 +66,16 @@ internal sealed class DuckDBFeatureStore :
     /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
-        return await _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken).ConfigureAwait(false);
+        var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        if (query.EnforcedSqlFilter is null)
+        {
+            return await _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken).ConfigureAwait(false);
+        }
+        query = query with { ObjectIds = ImmutableArray.Create(featureId), Limit = 1 };
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var selectQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectQueryAsync(selectQuery, query, layerId, cancellationToken).ConfigureAwait(false);
+        return features.IsDefaultOrEmpty ? null : features[0];
     }
 
     /// <inheritdoc />
@@ -73,6 +91,7 @@ internal sealed class DuckDBFeatureStore :
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var objectIdsQuery = _queryBuilder.BuildObjectIdsQuery(layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteSelectObjectIdsQueryAsync(objectIdsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
@@ -88,6 +107,7 @@ internal sealed class DuckDBFeatureStore :
     /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken).ConfigureAwait(false);
@@ -96,7 +116,7 @@ internal sealed class DuckDBFeatureStore :
     /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        var effectiveQuery = query ?? new FeatureQuery();
+        var effectiveQuery = await ApplyPermanentFilterAsync(layerId, query ?? new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var extentQuery = _queryBuilder.BuildExtentQuery(layerId, effectiveQuery, geometryStorageType);
         return await _dataAccess.GetExtentAsync(layerId, extentQuery, effectiveQuery, cancellationToken).ConfigureAwait(false);
@@ -106,6 +126,7 @@ internal sealed class DuckDBFeatureStore :
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var statisticsQuery = _queryBuilder.BuildStatisticsQuery(layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(statisticsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
@@ -137,6 +158,7 @@ internal sealed class DuckDBFeatureStore :
     public async Task<QueryResult<Feature>> QueryTopFeaturesAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var topFeaturesQuery = _queryBuilder.BuildTopFeaturesQuery(layerId, query, geometryStorageType);
         var features = await _dataAccess.ExecuteSelectQueryAsync(topFeaturesQuery, query, layerId, cancellationToken).ConfigureAwait(false);
@@ -150,6 +172,7 @@ internal sealed class DuckDBFeatureStore :
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
         int layerId, FeatureQuery query, DateBinDefinition dateBin, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var dateBinsQuery = _queryBuilder.BuildDateBinsQuery(layerId, query, dateBin, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(dateBinsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
@@ -159,6 +182,7 @@ internal sealed class DuckDBFeatureStore :
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
         int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var binsQuery = _queryBuilder.BuildBinsQuery(layerId, query, binDefinition, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(binsQuery, query, layerId, cancellationToken).ConfigureAwait(false);
@@ -193,6 +217,7 @@ internal sealed class DuckDBFeatureStore :
     public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
         int layerId, FeatureQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var streamQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
         await foreach (var feature in _dataAccess.StreamFeaturesAsync(layerId, streamQuery, query, cancellationToken))
@@ -226,6 +251,7 @@ internal sealed class DuckDBFeatureStore :
     public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
         int layerId, FeatureQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var streamQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query, geometryStorageType);
         await foreach (var feature in _dataAccess.StreamGmlFeaturesAsync(layerId, streamQuery, query, cancellationToken))
@@ -242,6 +268,7 @@ internal sealed class DuckDBFeatureStore :
     public async Task<PagedQueryResult<Feature>> QueryPageAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
             var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
@@ -270,6 +297,32 @@ internal sealed class DuckDBFeatureStore :
 
     #region Private helpers
 
+    /// <summary>
+    /// Resolves and applies the layer's permanent (row-visibility) filter to the query.
+    /// Idempotent: queries already carrying an enforced filter are returned unchanged.
+    /// </summary>
+    private async Task<FeatureQuery> ApplyPermanentFilterAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (query.EnforcedSqlFilter != null)
+        {
+            return query;
+        }
+
+        var enforcedFilter = await PermanentFilterResolver
+            .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (enforcedFilter != null)
+        {
+            query = query with { EnforcedSqlFilter = enforcedFilter };
+        }
+
+        return query;
+    }
+
     private async Task<QueryResult<T>> ExecuteFormatQueryAsync<T>(
         int layerId,
         FeatureQuery query,
@@ -278,6 +331,7 @@ internal sealed class DuckDBFeatureStore :
         Func<int, FeatureQuery, GeometryStorageType, CancellationToken, Task<QueryResult<T>>> executeOptimized,
         CancellationToken cancellationToken)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
 
         // Use optimized single-query path when pagination is active

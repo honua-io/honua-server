@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.DuckDB.Features.FeatureStore.Services;
 using Honua.DuckDB.Features.Infrastructure;
 
@@ -456,5 +457,44 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.Contains("ST_DWithin(", result.Sql);
         Assert.DoesNotContain("ST_Distance_Spheroid(", result.Sql);
         Assert.Contains(500.0, result.WhereParameters.OfType<double>());
+    }
+
+    /// <summary>
+    /// BH4-024: Permanent row-visibility filter must be included in the generated WHERE clause.
+    /// The enforced filter is applied before any caller-supplied SqlFilter so it cannot be
+    /// bypassed.
+    /// </summary>
+    [Fact]
+    public void BuildSelectQuery_WithEnforcedSqlFilter_IncludesFilterInWhereClause()
+    {
+        // EnforcedSqlFilter uses @pN notation; DuckDB builder converts to positional $N.
+        var fragment = new SqlFragment("\"status\" = @p0", new object?[] { "active" });
+        var query = new FeatureQuery { EnforcedSqlFilter = fragment };
+
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+
+        Assert.Contains("AND (\"status\" = $1)", result.Sql);
+        Assert.Contains("active", result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithEnforcedSqlFilterAndSqlFilter_EnforcedAppearsFirst()
+    {
+        var enforced = new SqlFragment("\"tenant_id\" = @p0", new object?[] { 42 });
+        var caller = new SqlFragment("\"status\" = @p0", new object?[] { "active" });
+        var query = new FeatureQuery { EnforcedSqlFilter = enforced, SqlFilter = caller };
+
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+
+        // Scope the ordering check to the WHERE clause so column names in SELECT don't skew positions.
+        var whereStart = result.Sql.IndexOf("WHERE 1=1", StringComparison.Ordinal);
+        Assert.True(whereStart >= 0, "SQL must contain WHERE 1=1");
+        var whereClause = result.Sql[whereStart..];
+        var enforcedPos = whereClause.IndexOf("tenant_id", StringComparison.Ordinal);
+        var callerPos = whereClause.IndexOf("status", StringComparison.Ordinal);
+        Assert.True(enforcedPos < callerPos, "EnforcedSqlFilter must precede SqlFilter in the generated SQL.");
+        // Both parameter values should appear.
+        Assert.Contains(42, result.WhereParameters.OfType<int>().Cast<object>());
+        Assert.Contains("active", result.WhereParameters);
     }
 }

@@ -41,7 +41,9 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<ISqlServerConnectionFactory, SqlServerConnectionFactory>();
         services.AddScoped<SqlServerFeatureDataAccess>();
-        services.AddScoped<SqlServerFeatureStore>();
+        services.AddScoped<SqlServerFeatureStore>(sp => new SqlServerFeatureStore(
+            sp.GetRequiredService<SqlServerFeatureDataAccess>(),
+            sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>()));
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<SqlServerFeatureStore>());
 

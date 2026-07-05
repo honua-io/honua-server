@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.SqlServer.Features.FeatureStore.Services;
@@ -45,17 +46,25 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     private readonly SqlServerFeatureDataAccess _dataAccess;
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
+    private readonly IMetadataV2GraphProvider? _v2Provider;
 
     public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess)
-        : this(dataAccess, binding: null)
+        : this(dataAccess, v2Provider: null, binding: null)
+    {
+    }
+
+    public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess, IMetadataV2GraphProvider? v2Provider)
+        : this(dataAccess, v2Provider, binding: null)
     {
     }
 
     private SqlServerFeatureStore(
         SqlServerFeatureDataAccess dataAccess,
+        IMetadataV2GraphProvider? v2Provider,
         FeatureProviderBinding? binding)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
+        _v2Provider = v2Provider;
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -77,12 +86,13 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        return new SqlServerFeatureStore(_dataAccess, binding);
+        return new SqlServerFeatureStore(_dataAccess, _v2Provider, binding);
     }
 
     /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var query = new FeatureQuery
         {
@@ -98,6 +108,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
@@ -134,6 +145,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
@@ -142,6 +154,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
@@ -150,6 +163,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
@@ -201,6 +215,32 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
+
+    /// <summary>
+    /// Throws <see cref="NotSupportedException"/> when the layer has a permanent filter configured,
+    /// because the shared filter translator emits Postgres-flavored SQL that is not valid T-SQL.
+    /// Returns immediately when <c>_v2Provider</c> is not registered (no metadata available to check).
+    /// </summary>
+    private async Task EnsureNoPermanentFilterAsync(int layerId, CancellationToken cancellationToken)
+    {
+        if (_v2Provider == null)
+        {
+            return;
+        }
+        var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        {
+            return;
+        }
+        var v2Filter = resource.PermanentFilter;
+        if (v2Filter != null && !string.IsNullOrWhiteSpace(v2Filter.Expression))
+        {
+            throw new NotSupportedException(
+                $"Layer {layerId} has a permanent (row-visibility) filter configured, but the SQL Server provider cannot enforce it: " +
+                "the shared filter translator emits Postgres-flavored SQL that is not valid T-SQL. " +
+                "Configure permanent filters only on Postgres layers, or remove the permanent filter from this layer.");
+        }
+    }
 
     private Task<(SqlServerLayerMapping Mapping, IReadOnlyList<string> AttributeColumns)> ResolveLayerAsync(
         int layerId,
