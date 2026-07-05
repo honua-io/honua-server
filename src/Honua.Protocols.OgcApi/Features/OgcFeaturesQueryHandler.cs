@@ -239,7 +239,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 // Avoid streaming for small result sets even when the requested limit is large.
                 if (totalCount > StreamingThreshold)
                 {
-                    var hasMoreResults = totalCount > (effectiveOffset + effectiveLimit);
+                    // hasMoreResults is NOT derived from totalCount here because there is a
+                    // TOCTOU race between the COUNT query and the subsequent stream: concurrent
+                    // inserts/deletes change the actual row count, making the next-link wrong.
+                    // Instead, the streaming results fetch limit+1 rows and derive hasMoreResults
+                    // from whether the extra row exists (cursor-paging pattern).
                     stopwatch.Stop();
                     var estimatedReturned = (int)Math.Min(effectiveLimit, Math.Max(0, totalCount - effectiveOffset));
                     OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, estimatedReturned, totalCount, stopwatch.Elapsed.TotalMilliseconds);
@@ -248,14 +252,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     var streamBaseUrl = BaseUrlResolver.GetBaseUrl(context);
                     var streamCollectionSegment = Uri.EscapeDataString(collectionId);
                     var streamBasePath = $"{streamBaseUrl}/ogc/features/collections/{streamCollectionSegment}/items";
-                    var streamLinks = BuildItemsLinks(
-                        request,
-                        collectionId,
-                        streamBasePath,
-                        outputFormat,
-                        effectiveLimit,
-                        effectiveOffset,
-                        hasMoreResults);
 
                     if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
                     {
@@ -265,11 +261,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             layerId,
                             query,
                             totalCount,
-                            estimatedReturned,
                             outputCrsUri,
                             outputAxisOrder,
                             streamGmlSchemaUrl,
-                            streamLinks,
+                            collectionId,
+                            streamBasePath,
+                            effectiveLimit,
+                            effectiveOffset,
                             cancellationToken);
                     }
 
@@ -283,7 +281,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         _geometryServices,
                         projectedProperties,
                         outputFormat,
-                        streamLinks,
+                        streamBasePath,
+                        effectiveLimit,
+                        effectiveOffset,
                         _ogcFeaturesOptions.IncludeFeatureLinks,
                         totalCount,
                         outputCrsUri,
@@ -1331,6 +1331,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
         return false;
     }
 
+    // Cursor-paging overload: the caller passes a stream of limit+1 rows (maxFeatures+1 from
+    // the provider), and a delegate that produces the final links once hasMoreResults is known.
+    // Links are written at the end of the JSON body so hasMoreResults can be deferred until
+    // after the stream has been consumed.
     private static async Task StreamFeatureCollectionAsync(
         HttpContext context,
         IAsyncEnumerable<Feature> features,
@@ -1340,7 +1344,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties,
         string outputFormat,
-        ImmutableArray<Link> links,
+        int maxFeatures,
+        Func<bool, ImmutableArray<Link>> buildLinks,
         bool includeFeatureLinks,
         long numberMatched,
         CancellationToken cancellationToken)
@@ -1356,9 +1361,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteStartArray("features");
 
         var numberReturned = 0;
+        var hasMoreResults = false;
         var featuresSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
+            if (numberReturned >= maxFeatures)
+            {
+                // The limit+1 probe row exists: there is a next page.
+                hasMoreResults = true;
+                break;
+            }
+
             ImmutableArray<Link>? featureLinks = includeFeatureLinks
                 ? OgcFeaturesUtilities.BuildFeatureLinks(
                     context.Request,
@@ -1381,6 +1394,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberMatched", numberMatched);
         writer.WriteNumber("numberReturned", numberReturned);
         writer.WritePropertyName("links");
+        var links = buildLinks(hasMoreResults);
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
 
         writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
@@ -1399,6 +1413,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
     }
 
+    // Cursor-paging streaming result for JSON (GeoJSON / application/json) responses.
+    // The query is issued with Limit = effectiveLimit + 1; the extra row determines
+    // hasMoreResults without relying on the stale pre-flight COUNT.
     private sealed class StreamingItemsResult : IResult
     {
         private readonly IStreamingFeatureStore _streamingFeatureStore;
@@ -1408,7 +1425,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly string _collectionId;
         private readonly AxisOrder _axisOrder;
         private readonly string _outputFormat;
-        private readonly ImmutableArray<Link> _links;
+        private readonly string _streamBasePath;
+        private readonly int _effectiveLimit;
+        private readonly int _effectiveOffset;
         private readonly bool _includeFeatureLinks;
         private readonly ImmutableHashSet<string>? _projectedProperties;
         private readonly long _numberMatched;
@@ -1426,7 +1445,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
             OgcFeaturesGeometryServices geometryServices,
             ImmutableHashSet<string>? projectedProperties,
             string outputFormat,
-            ImmutableArray<Link> links,
+            string streamBasePath,
+            int effectiveLimit,
+            int effectiveOffset,
             bool includeFeatureLinks,
             long numberMatched,
             string crsUri,
@@ -1435,13 +1456,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
             _streamingFeatureStore = streamingFeatureStore;
             _resource = resource;
             _storageLayerId = storageLayerId;
-            _query = query;
+            // Request limit+1 rows so the streaming loop can detect hasMoreResults from the
+            // actual stream rather than from the stale pre-flight COUNT (cursor-paging pattern).
+            _query = query with { Limit = effectiveLimit + 1 };
             _collectionId = collectionId;
             _axisOrder = axisOrder;
             _geometryServices = geometryServices;
             _projectedProperties = projectedProperties;
             _outputFormat = outputFormat;
-            _links = links;
+            _streamBasePath = streamBasePath;
+            _effectiveLimit = effectiveLimit;
+            _effectiveOffset = effectiveOffset;
             _includeFeatureLinks = includeFeatureLinks;
             _numberMatched = numberMatched;
             _crsUri = crsUri;
@@ -1474,24 +1499,33 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 _geometryServices,
                 _projectedProperties,
                 _outputFormat,
-                _links,
+                _effectiveLimit,
+                hasMore => BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, _outputFormat, _effectiveLimit, _effectiveOffset, hasMore),
                 _includeFeatureLinks,
                 _numberMatched,
                 cancellationToken);
         }
     }
 
+    // Cursor-paging streaming result for GML responses.
+    // GML pagination links go in HTTP headers, which must be set before any body bytes are
+    // written.  This result therefore buffers limit+1 rows first, determines hasMoreResults
+    // from the buffer, sets headers (including the correct next/prev links), then writes the
+    // truncated GML body - avoiding the TOCTOU race that existed when hasMoreResults was
+    // derived from a stale pre-flight COUNT.
     private sealed class StreamingGmlItemsResult : IResult
     {
         private readonly IStreamingFeatureStore _streamingFeatureStore;
         private readonly int _storageLayerId;
         private readonly FeatureQuery _query;
         private readonly long _numberMatched;
-        private readonly int _numberReturned;
         private readonly string _crsUri;
         private readonly AxisOrder _axisOrder;
         private readonly string _gmlApplicationSchemaUrl;
-        private readonly ImmutableArray<Link> _links;
+        private readonly string _collectionId;
+        private readonly string _streamBasePath;
+        private readonly int _effectiveLimit;
+        private readonly int _effectiveOffset;
         private readonly CancellationToken _requestCancellationToken;
 
         public StreamingGmlItemsResult(
@@ -1499,33 +1533,68 @@ internal sealed partial class OgcFeaturesQueryHandler(
             int storageLayerId,
             FeatureQuery query,
             long numberMatched,
-            int numberReturned,
             string crsUri,
             AxisOrder axisOrder,
             string gmlApplicationSchemaUrl,
-            ImmutableArray<Link> links,
+            string collectionId,
+            string streamBasePath,
+            int effectiveLimit,
+            int effectiveOffset,
             CancellationToken requestCancellationToken)
         {
             _streamingFeatureStore = streamingFeatureStore;
             _storageLayerId = storageLayerId;
-            _query = query;
+            // Request limit+1 rows for the cursor-paging probe (same as StreamingItemsResult).
+            _query = query with { Limit = effectiveLimit + 1 };
             _numberMatched = numberMatched;
-            _numberReturned = numberReturned;
             _crsUri = crsUri;
             _axisOrder = axisOrder;
             _gmlApplicationSchemaUrl = gmlApplicationSchemaUrl;
-            _links = links;
+            _collectionId = collectionId;
+            _streamBasePath = streamBasePath;
+            _effectiveLimit = effectiveLimit;
+            _effectiveOffset = effectiveOffset;
             _requestCancellationToken = requestCancellationToken;
         }
 
         public async Task ExecuteAsync(HttpContext httpContext)
         {
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                httpContext.RequestAborted,
+                _requestCancellationToken);
+            var cancellationToken = linkedCts.Token;
+
+            // Buffer limit+1 rows to determine hasMoreResults before setting HTTP headers
+            // (GML links are emitted as Link headers, which must precede the body).
+            var probeStream = _streamingFeatureStore.StreamGmlFeaturesAsync(
+                _storageLayerId,
+                _query,
+                cancellationToken);
+
+            var buffered = new List<GmlFeature>(_effectiveLimit + 1);
+            await foreach (var feature in probeStream.WithCancellation(cancellationToken))
+            {
+                buffered.Add(feature);
+                if (buffered.Count > _effectiveLimit)
+                {
+                    // Got the extra probe row - no need to buffer further.
+                    break;
+                }
+            }
+
+            var hasMoreResults = buffered.Count > _effectiveLimit;
+            if (hasMoreResults)
+            {
+                buffered.RemoveAt(_effectiveLimit);
+            }
+
+            // All rows determined; safe to set headers before writing body.
             httpContext.Response.ContentType = MediaTypes.Gml;
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
             httpContext.Response.Headers["OGC-NumberMatched"] = _numberMatched.ToString(CultureInfo.InvariantCulture);
 
-            // Emit pagination links as HTTP Link headers (standard for non-JSON formats)
-            foreach (var link in _links)
+            var links = BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, MediaTypes.Gml, _effectiveLimit, _effectiveOffset, hasMoreResults);
+            foreach (var link in links)
             {
                 if (!string.IsNullOrEmpty(link.Href))
                 {
@@ -1535,21 +1604,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             EnableChunkedEncodingIfHttp1(httpContext);
 
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                httpContext.RequestAborted,
-                _requestCancellationToken);
-            var cancellationToken = linkedCts.Token;
-
-            var stream = _streamingFeatureStore.StreamGmlFeaturesAsync(
-                _storageLayerId,
-                _query,
-                cancellationToken);
-
             await OgcResponseFormatter.StreamGmlFeatureCollectionAsync(
-                stream,
+                buffered,
                 httpContext.Response.BodyWriter,
                 _numberMatched,
-                _numberReturned,
                 DateTimeOffset.UtcNow,
                 _gmlApplicationSchemaUrl,
                 _crsUri,

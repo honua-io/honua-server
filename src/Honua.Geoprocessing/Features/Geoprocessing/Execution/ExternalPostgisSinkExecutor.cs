@@ -125,7 +125,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             batchSize = inputs.TryGet("batchSize", out var rawBatch)
                 && int.TryParse(rawBatch, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
                 && parsed > 0
-                ? parsed
+                ? Math.Clamp(parsed, 1, 50_000)
                 : DefaultBatchSize;
         }
         catch (TransformInputException ex)
@@ -150,39 +150,51 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
+            // DDL runs outside the data transaction so schema/table creation is committed
+            // even when a subsequent NpgsqlException rolls back the data writes.
             await EnsureTableAsync(connection, schema, table, geometryColumn, targetSrid, cancellationToken)
                 .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(40, "Inserting features", cancellationToken).ConfigureAwait(false);
 
+            await using var tx = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             var wkbWriter = new WKBWriter();
             var buffer = new List<IFeature>(batchSize);
-
-            await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (feature.Geometry is null)
+                await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
                 {
-                    rejected++;
-                    continue;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (feature.Geometry is null)
+                    {
+                        rejected++;
+                        continue;
+                    }
+
+                    buffer.Add(feature);
+                    if (buffer.Count >= batchSize)
+                    {
+                        written += await InsertBatchAsync(
+                            connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId, wkbWriter, cancellationToken)
+                            .ConfigureAwait(false);
+                        buffer.Clear();
+                    }
                 }
 
-                buffer.Add(feature);
-                if (buffer.Count >= batchSize)
+                if (buffer.Count > 0)
                 {
                     written += await InsertBatchAsync(
-                        connection, schema, table, geometryColumn, targetSrid, buffer, batchId, wkbWriter, cancellationToken)
+                        connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId, wkbWriter, cancellationToken)
                         .ConfigureAwait(false);
-                    buffer.Clear();
                 }
-            }
 
-            if (buffer.Count > 0)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
             {
-                written += await InsertBatchAsync(
-                    connection, schema, table, geometryColumn, targetSrid, buffer, batchId, wkbWriter, cancellationToken)
-                    .ConfigureAwait(false);
+                await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                throw;
             }
         }
         catch (NpgsqlException ex)
@@ -205,10 +217,11 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                             ("partial", true)),
                         cancellationToken).ConfigureAwait(false);
                 }
-                catch
+                catch (Exception publishEx)
                 {
-                    // Best-effort: if artifact publish fails during failure handling, suppress
-                    // so the original failure is returned.
+                    // Log a structured warning so the batchId is not lost even when the
+                    // partial-artifact publish fails during failure handling (BH2-018).
+                    Log.SinkPartialPublishFailed(_logger, batchId, publishEx);
                 }
             }
 
@@ -345,6 +358,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
 
     private static async Task<long> InsertBatchAsync(
         NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         string schema,
         string table,
         string geometryColumn,
@@ -377,7 +391,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             FROM unnest(@wkbs, @attributes) AS payload(wkb, attributes)
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.Add("wkbs", NpgsqlDbType.Array | NpgsqlDbType.Bytea).Value = wkbs;
         command.Parameters.Add("attributes", NpgsqlDbType.Array | NpgsqlDbType.Jsonb).Value = attributes;
 
@@ -534,5 +548,11 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             "Sink executor could not resolve the secure connection ({ConnectionRef})")]
         public static partial void ConnectionResolutionFailed(
             ILogger logger, string connectionRef, Exception exception);
+
+        [LoggerMessage(9262, LogLevel.Warning,
+            "Sink executor could not publish the partial-write artifact for batch {BatchId}; " +
+            "the operator may need to manually roll back via this batchId")]
+        public static partial void SinkPartialPublishFailed(
+            ILogger logger, string batchId, Exception exception);
     }
 }

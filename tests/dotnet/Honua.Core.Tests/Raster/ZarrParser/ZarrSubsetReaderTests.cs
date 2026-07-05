@@ -235,4 +235,83 @@ public class ZarrSubsetReaderTests
         act.Should().Throw<InvalidDataException>()
             .WithMessage("*element size*exceeds*");
     }
+
+    /// <summary>
+    /// Regression test for BH2-015: WriteFillScalar had no case for &lt;i8 (int64) so
+    /// a missing chunk was zero-filled instead of using the declared fill_value.
+    /// After the fix the chunk buffer must be filled with the correct little-endian
+    /// representation of the fill value.
+    /// </summary>
+    [Fact]
+    public async Task ReadSubsetAsync_Int64DtypeWithNonzeroFillValue_MissingChunkFillsCorrectly()
+    {
+        // Build a 4×4 <i8 array with fill_value=-9999. We deliberately omit the chunk
+        // bytes from the in-memory store so the reader must fall back to FillWithFillValue.
+        const long fillValue = -9999L;
+        var objects = new System.Collections.Generic.Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["datasets/int64/.zarray"] = System.Text.Encoding.UTF8.GetBytes(
+                """{"chunks":[4,4],"compressor":null,"dtype":"<i8","fill_value":-9999,"filters":null,"order":"C","shape":[4,4],"zarr_format":2}""")
+            // No chunk key "datasets/int64/0.0" — reader must use fill value.
+        };
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/int64");
+
+        var request = new ZarrSubsetRequest
+        {
+            Variable = "int64",
+            Start = new[] { 0, 0 },
+            Stop = new[] { 4, 4 }
+        };
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/int64", metadata, request);
+
+        subset.Shape.Should().Equal(4, 4);
+        subset.DataType.Should().Be("<i8");
+        subset.Data.Length.Should().Be(4 * 4 * sizeof(long));
+
+        // Every cell in the missing chunk must carry the declared fill value, not 0.
+        for (var i = 0; i < 16; i++)
+        {
+            var actual = BitConverter.ToInt64(subset.Data, i * sizeof(long));
+            actual.Should().Be(fillValue, $"cell {i} should be filled with {fillValue} (BH2-015)");
+        }
+    }
+
+    /// <summary>
+    /// Regression test for BH2-015: WriteFillScalar had no case for &lt;u8 (uint64) so
+    /// a missing chunk was zero-filled instead of using the declared fill_value.
+    /// </summary>
+    [Fact]
+    public async Task ReadSubsetAsync_UInt64DtypeWithNonzeroFillValue_MissingChunkFillsCorrectly()
+    {
+        // Build a 2×2 <u8 array with fill_value=42. Omit the chunk so fill path is exercised.
+        const ulong fillValue = 42UL;
+        var objects = new System.Collections.Generic.Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["datasets/uint64/.zarray"] = System.Text.Encoding.UTF8.GetBytes(
+                """{"chunks":[2,2],"compressor":null,"dtype":"<u8","fill_value":42,"filters":null,"order":"C","shape":[2,2],"zarr_format":2}""")
+        };
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/uint64");
+
+        var request = new ZarrSubsetRequest
+        {
+            Variable = "uint64",
+            Start = new[] { 0, 0 },
+            Stop = new[] { 2, 2 }
+        };
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/uint64", metadata, request);
+
+        subset.Shape.Should().Equal(2, 2);
+        subset.DataType.Should().Be("<u8");
+        subset.Data.Length.Should().Be(2 * 2 * sizeof(ulong));
+
+        for (var i = 0; i < 4; i++)
+        {
+            var actual = BitConverter.ToUInt64(subset.Data, i * sizeof(ulong));
+            actual.Should().Be(fillValue, $"cell {i} should be filled with {fillValue} (BH2-015)");
+        }
+    }
 }

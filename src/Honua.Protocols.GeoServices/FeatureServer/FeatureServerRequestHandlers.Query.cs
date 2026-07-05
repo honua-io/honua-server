@@ -187,11 +187,13 @@ internal static partial class FeatureServerEndpoints
 
         // Validate output format only after the service is confirmed to exist, so a
         // missing service returns 404 rather than a misleading 400 (e.g. f=html).
-        // The layer query handler produces the full FeatureServerQueryFormats set
-        // (json/pjson/geojson/pbf/fgb/geobuf/parquet/arrow) — matching what the
-        // layer's SupportedQueryFormats advertises — so validate against that set
-        // rather than JsonOnly (which wrongly rejected f=geojson; #2323).
-        if (!TryValidateOutputFormat(requestedFormat, FeatureServerQueryFormats, out _, out var formatError))
+        // BH2-011: The service query endpoint always returns a ServiceQueryResponse (JSON),
+        // not per-layer binary formats. Validate against JsonOnlyFormats so that f=geojson,
+        // f=pbf, f=fgb, etc. are rejected here rather than passing the outer check and then
+        // being rejected by the inner per-layer handler with a confusing HTTP 400 inside a
+        // 200-looking partial loop. The per-layer handler already validates against
+        // JsonOnlyFormats so this brings the outer guard into alignment with it.
+        if (!TryValidateOutputFormat(requestedFormat, FeatureServerEndpoints.JsonOnlyFormats, out _, out var formatError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",

@@ -130,6 +130,63 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
             .ResolveConnectionStringAsync(default(Guid), default);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_MidBatchFailure_RollsBackAllPreviouslyInsertedRows()
+    {
+        // Regression for BH2-018: without the transaction wrapping, a constraint violation
+        // on the 2nd batch would leave the 1st batch's rows permanently committed in the
+        // external table. With the fix, the transaction wraps both batches
+        // and the entire load is rolled back atomically.
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver
+            .ResolveConnectionStringAsync("external-target", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_fixture.ConnectionString));
+        var executor = new ExternalPostgisSinkExecutor(Options(), resolver);
+        var factory = new GeometryFactory(new PrecisionModel(), 4326);
+
+        // Manually create the target table with a CHECK constraint that rejects 'reject_me'.
+        // CREATE TABLE IF NOT EXISTS in EnsureTableAsync will skip recreation because the table
+        // already exists, so the constraint is preserved for the duration of this test.
+        await using var setupConnection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var setupCmd = new NpgsqlCommand(
+            $"""
+            CREATE TABLE IF NOT EXISTS "{_schemaName}".partial_test (
+                id         BIGSERIAL PRIMARY KEY,
+                geom       geometry(Geometry, 4326),
+                attributes JSONB NOT NULL,
+                CONSTRAINT reject_me_constraint CHECK (attributes->>'name' != 'reject_me')
+            );
+            """,
+            setupConnection);
+        await setupCmd.ExecuteNonQueryAsync();
+
+        var input = BuildInputUri(
+            new Feature(factory.CreatePoint(new Coordinate(0, 0)), new AttributesTable { { "name", "first_feature" } }),
+            new Feature(factory.CreatePoint(new Coordinate(1, 1)), new AttributesTable { { "name", "reject_me" } }));
+
+        var record = Record(
+            ("input", input),
+            ("connectionName", "external-target"),
+            ("schema", _schemaName),
+            ("table", "partial_test"),
+            ("targetSrid", "4326"),
+            ("batchId", "batch-rollback-test"),
+            ("batchSize", "1"));  // batchSize=1 so each feature is a separate batch
+
+        var result = await executor.ExecuteAsync(record, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+
+        Assert.Equal(ExecutionJobStatus.Failed, result.Status);
+
+        // Without the transaction fix, the first batch (first_feature) would be committed
+        // before the second batch fails. With the fix, the transaction wraps both batches
+        // and the entire load is rolled back → 0 rows in the table.
+        await using var countConnection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var countCmd = new NpgsqlCommand(
+            $"SELECT COUNT(*) FROM \"{_schemaName}\".partial_test", countConnection);
+        var count = (long)(await countCmd.ExecuteScalarAsync())!;
+        Assert.Equal(0L, count);
+    }
+
     private static IOptionsMonitor<GeoprocessingExecutorOptions> Options()
     {
         var options = new GeoprocessingExecutorOptions

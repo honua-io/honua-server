@@ -32,43 +32,33 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
     }
 
     /// <summary>
-    /// Enforces the effective provider's advertised per-minute rate limit before any provider
-    /// attempt. Returns a throttling failure result when the limit is exceeded, otherwise
-    /// <see langword="null"/>. The effective provider is the first capability-compatible provider
-    /// in failover order so the limit reflects the provider that would actually serve the request.
+    /// Checks the rate limit for a single candidate provider before it is attempted.
+    /// Returns a throttle result if the provider's per-minute limit is exceeded, otherwise
+    /// <see langword="null"/>. Called per-provider inside the failover loop so a throttled
+    /// primary does not prevent failover to a healthy secondary (BH2-020).
     /// </summary>
-    private GeocodeResult<T>? EnforceRateLimit<T>(
-        IReadOnlyList<IGeocodeProvider> providers,
-        Func<IGeocodeProvider, bool> supportsOperation)
+    private GeocodeResult<T>? CheckProviderRateLimit<T>(IGeocodeProvider provider)
     {
-        var primary = providers.FirstOrDefault(supportsOperation);
-        if (primary is null)
-        {
-            return null;
-        }
-
-        var decision = _limitEnforcer.CheckRequestRate(primary.Name, primary.Capabilities);
+        var decision = _limitEnforcer.CheckRequestRate(provider.Name, provider.Capabilities);
         if (decision.Allowed)
         {
             return null;
         }
 
         var retryAfterSeconds = (int)Math.Ceiling((decision.RetryAfter ?? TimeSpan.Zero).TotalSeconds);
-        GeocodeCoordinatorLog.RateLimitRejected(_logger, primary.Name, decision.EffectiveLimit ?? 0, retryAfterSeconds);
-
-        var metadata = new Dictionary<string, object>(StringComparer.Ordinal)
-        {
-            [GeocodeLimitMetadata.RetryAfterSecondsKey] = retryAfterSeconds
-        };
+        GeocodeCoordinatorLog.RateLimitRejected(_logger, provider.Name, decision.EffectiveLimit ?? 0, retryAfterSeconds);
 
         return new GeocodeResult<T>
         {
             Data = default!,
-            ProviderName = primary.Name,
+            ProviderName = provider.Name,
             IsSuccess = false,
             ErrorMessage = decision.Reason ?? "Geocoding provider rate limit was exceeded.",
-            AttemptedProviders = [primary.Name],
-            Metadata = metadata
+            AttemptedProviders = [provider.Name],
+            Metadata = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                [GeocodeLimitMetadata.RetryAfterSecondsKey] = retryAfterSeconds
+            }
         };
     }
 
@@ -85,15 +75,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
         var providers = GetProvidersToTry(providerName);
 
-        var throttled = EnforceRateLimit<IReadOnlyList<GeocodeCandidate>>(providers, static p => p.Capabilities.SupportsForwardGeocode);
-        if (throttled is not null)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, throttled.ErrorMessage);
-            return throttled;
-        }
-
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
+        GeocodeResult<IReadOnlyList<GeocodeCandidate>>? lastThrottleResult = null;
 
         foreach (var provider in providers)
         {
@@ -111,6 +95,15 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             if (!HasFailoverBudget(attemptedProviders.Count))
             {
                 break;
+            }
+
+            // Per-provider rate-limit check. A throttled provider is skipped without
+            // consuming the failover budget so a healthy secondary can still be reached.
+            var throttleResult = CheckProviderRateLimit<IReadOnlyList<GeocodeCandidate>>(provider);
+            if (throttleResult is not null)
+            {
+                lastThrottleResult = throttleResult;
+                continue;
             }
 
             attemptedProviders.Add(provider.Name);
@@ -157,6 +150,14 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
+        // If every capable provider was throttled and nothing was actually attempted,
+        // return the last throttle result so the caller surfaces a 429.
+        if (attemptedProviders.Count == 0 && lastThrottleResult is not null && lastException is null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, lastThrottleResult.ErrorMessage);
+            return lastThrottleResult;
+        }
+
         var errorMessage = BuildFailureMessage(lastException, "forward geocoding", attemptedProviders);
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
@@ -187,15 +188,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
         var providers = GetProvidersToTry(providerName);
 
-        var throttled = EnforceRateLimit<ReverseGeocodeMatch?>(providers, static p => p.Capabilities.SupportsReverseGeocode);
-        if (throttled is not null)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, throttled.ErrorMessage);
-            return throttled;
-        }
-
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
+        GeocodeResult<ReverseGeocodeMatch?>? lastThrottleResult = null;
 
         foreach (var provider in providers)
         {
@@ -212,6 +207,15 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             if (!HasFailoverBudget(attemptedProviders.Count))
             {
                 break;
+            }
+
+            // Per-provider rate-limit check. A throttled provider is skipped without
+            // consuming the failover budget so a healthy secondary can still be reached.
+            var throttleResult = CheckProviderRateLimit<ReverseGeocodeMatch?>(provider);
+            if (throttleResult is not null)
+            {
+                lastThrottleResult = throttleResult;
+                continue;
             }
 
             attemptedProviders.Add(provider.Name);
@@ -258,6 +262,14 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
+        // If every capable provider was throttled and nothing was actually attempted,
+        // return the last throttle result so the caller surfaces a 429.
+        if (attemptedProviders.Count == 0 && lastThrottleResult is not null && lastException is null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, lastThrottleResult.ErrorMessage);
+            return lastThrottleResult;
+        }
+
         var errorMessage = BuildFailureMessage(lastException, "reverse geocoding", attemptedProviders);
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
@@ -290,15 +302,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
         var providers = GetProvidersToTry(providerName);
 
-        var throttled = EnforceRateLimit<IReadOnlyList<GeocodeSuggestion>>(providers, static p => p.Capabilities.SupportsSuggest);
-        if (throttled is not null)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, throttled.ErrorMessage);
-            return throttled;
-        }
-
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
+        GeocodeResult<IReadOnlyList<GeocodeSuggestion>>? lastThrottleResult = null;
 
         foreach (var provider in providers)
         {
@@ -315,6 +321,15 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             if (!HasFailoverBudget(attemptedProviders.Count))
             {
                 break;
+            }
+
+            // Per-provider rate-limit check. A throttled provider is skipped without
+            // consuming the failover budget so a healthy secondary can still be reached.
+            var throttleResult = CheckProviderRateLimit<IReadOnlyList<GeocodeSuggestion>>(provider);
+            if (throttleResult is not null)
+            {
+                lastThrottleResult = throttleResult;
+                continue;
             }
 
             attemptedProviders.Add(provider.Name);
@@ -359,6 +374,14 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     break;
                 }
             }
+        }
+
+        // If every capable provider was throttled and nothing was actually attempted,
+        // return the last throttle result so the caller surfaces a 429.
+        if (attemptedProviders.Count == 0 && lastThrottleResult is not null && lastException is null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, lastThrottleResult.ErrorMessage);
+            return lastThrottleResult;
         }
 
         var errorMessage = BuildFailureMessage(lastException, "suggestions", attemptedProviders);
@@ -411,15 +434,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
         }
 
-        var throttled = EnforceRateLimit<IReadOnlyList<GeocodeCandidate>>(providers, static p => p.Capabilities.SupportsBatch);
-        if (throttled is not null)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, throttled.ErrorMessage);
-            return throttled;
-        }
-
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
+        GeocodeResult<IReadOnlyList<GeocodeCandidate>>? lastThrottleResult = null;
 
         foreach (var provider in providers)
         {
@@ -436,6 +453,15 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             if (!HasFailoverBudget(attemptedProviders.Count))
             {
                 break;
+            }
+
+            // Per-provider rate-limit check. A throttled provider is skipped without
+            // consuming the failover budget so a healthy secondary can still be reached.
+            var throttleResult = CheckProviderRateLimit<IReadOnlyList<GeocodeCandidate>>(provider);
+            if (throttleResult is not null)
+            {
+                lastThrottleResult = throttleResult;
+                continue;
             }
 
             attemptedProviders.Add(provider.Name);
@@ -480,6 +506,14 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     break;
                 }
             }
+        }
+
+        // If every capable provider was throttled and nothing was actually attempted,
+        // return the last throttle result so the caller surfaces a 429.
+        if (attemptedProviders.Count == 0 && lastThrottleResult is not null && lastException is null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, lastThrottleResult.ErrorMessage);
+            return lastThrottleResult;
         }
 
         var errorMessage = BuildFailureMessage(lastException, "batch geocoding", attemptedProviders);

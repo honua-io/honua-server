@@ -39,6 +39,8 @@ internal sealed class Wcs20Handler
     private static readonly XNamespace XLink = Wcs20Utilities.XLinkNamespace;
     private static readonly XNamespace Xsi = Wcs20Utilities.XsiNamespace;
     private const string WcsProtocolName = "Wcs";
+    // Mirror WMS/OGC Maps per-axis cap to prevent OOM DoS via SCALESIZE=x(N),y(N).
+    private const int MaxWcsOutputDimension = 4096;
 
     private static readonly HashSet<string> _getCoverageAllowedParameters = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1834,12 +1836,14 @@ internal sealed class Wcs20Handler
             foreach (var token in rawValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 if (!TryParseSingleSubset(token, out var axis, out var size, out _, out var isSlice) ||
-                    !isSlice || size <= 0 || size != Math.Floor(size))
+                    !isSlice || size <= 0 || size != Math.Floor(size) || size > MaxWcsOutputDimension)
                 {
                     error = CreateScaleSizeError(token);
                     return false;
                 }
 
+                // size has passed the > 0 and <= MaxWcsOutputDimension guards above, so the
+                // cast to int is safe (MaxWcsOutputDimension is well within int range).
                 var target = (int)size;
                 if (string.Equals(axis, "x", StringComparison.Ordinal))
                 {

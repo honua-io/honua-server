@@ -724,6 +724,20 @@ internal static class SearchEndpoints
         var excludedTopLevelFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var isIncludeMode = fields.Includes is { IsDefault: false, Length: > 0 };
 
+        // BH2-009: The STAC Fields Extension spec requires that the eight required item fields
+        // (id, type, geometry, bbox, links, assets, properties, stac_version) are always returned
+        // in include mode unless explicitly excluded by the caller.  Seed them unconditionally so
+        // ShouldIncludeTopLevelField does not null them out when the caller only named
+        // property-path includes (e.g. ?fields=+properties.cloud_cover).
+        if (isIncludeMode)
+        {
+            ReadOnlySpan<string> required = ["id", "type", "geometry", "bbox", "links", "assets", "properties", "stac_version"];
+            foreach (var field in required)
+            {
+                includedTopLevelFields.Add(field);
+            }
+        }
+
         if (fields.Includes is { IsDefault: false } includes && includes.Length > 0)
         {
             foreach (var include in includes)
@@ -1469,12 +1483,17 @@ internal static class SearchEndpoints
 
         if (request.Collections is { IsDefault: false } cols && cols.Length > 0)
         {
-            query.Add($"collections={Uri.EscapeDataString(string.Join(",", cols))}");
+            // BH2-010: encode each collection ID individually so that commas WITHIN an ID
+            // become %2C while the inter-ID separator remains a literal comma.  The old code
+            // encoded the already-joined string, turning the separator comma into %2C as well,
+            // making it impossible for TryParseStringTokens to reconstruct the original IDs.
+            query.Add($"collections={string.Join(",", cols.Select(Uri.EscapeDataString))}");
         }
 
         if (request.Ids is { IsDefault: false } ids && ids.Length > 0)
         {
-            query.Add($"ids={Uri.EscapeDataString(string.Join(",", ids))}");
+            // BH2-010: same per-ID encoding fix applied to item IDs.
+            query.Add($"ids={string.Join(",", ids.Select(Uri.EscapeDataString))}");
         }
 
         if (request.Intersects.HasValue)

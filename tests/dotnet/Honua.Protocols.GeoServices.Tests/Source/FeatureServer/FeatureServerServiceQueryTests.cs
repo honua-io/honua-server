@@ -147,4 +147,35 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         document.RootElement.TryGetProperty("domains", out var domains).Should().BeTrue();
         domains.ValueKind.Should().Be(JsonValueKind.Array);
     }
+
+    // BH2-011 regression: the service-level query endpoint (/FeatureServer/query, not
+    // /FeatureServer/{layerId}/query) always returns a ServiceQueryResponse (JSON). Formats
+    // like f=geojson are not supported at the service level. Before the fix, the outer
+    // format validation allowed FeatureServerQueryFormats (including geojson), which let the
+    // request pass the service-level check and then fail inside the per-layer loop with a
+    // confusing HTTP 400. After the fix, the outer guard uses JsonOnlyFormats and the
+    // rejection is immediate and correctly attributed.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    public async Task ServiceQuery_WithGeoJsonFormat_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?where=1=1&f=geojson");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "f=geojson is not supported for service-level queries which always return ServiceQueryResponse JSON");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    public async Task ServiceQuery_WithJsonFormat_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?where=1=1&f=json");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "f=json must be accepted for service queries; body: {0}", content);
+    }
 }

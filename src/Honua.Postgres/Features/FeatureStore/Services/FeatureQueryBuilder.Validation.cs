@@ -28,29 +28,40 @@ internal sealed partial class FeatureQueryBuilder
     {
         var startingParamIndex = paramIndex;
 
+        // Collect unique @pN indices in ascending order. SqlFragment.Parameters is always
+        // ordered by @pN index (CombineSqlFilters renumbers right-side indices to follow
+        // the left count), so sorting unique indices gives the correct Parameters[rank]
+        // <-> positional-$index alignment. Using a dense mapping also prevents sparse
+        // filters (@p0, @p3 with only 2 entries) from advancing paramIndex by 4 and
+        // misaligning every subsequent spatial/temporal/pagination parameter.
+        var sortedIndices = new SortedSet<int>();
+        foreach (Match match in NamedParameterRegex().Matches(sql))
+        {
+            sortedIndices.Add(int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture));
+        }
+
+        if (sortedIndices.Count == 0)
+        {
+            return sql;
+        }
+
+        // Build dense mapping: @pN -> startingParamIndex + rank(N)
+        var indexMap = new Dictionary<int, int>(sortedIndices.Count);
+        var rank = 0;
+        foreach (var paramN in sortedIndices)
+        {
+            indexMap[paramN] = startingParamIndex + rank++;
+        }
+
         var result = NamedParameterRegex().Replace(
             sql,
             match =>
             {
                 var paramNumber = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
-                return $"${startingParamIndex + paramNumber}";
+                return $"${indexMap[paramNumber]}";
             });
 
-        var maxParamNumber = -1;
-        foreach (Match match in NamedParameterRegex().Matches(sql))
-        {
-            var paramNumber = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
-            if (paramNumber > maxParamNumber)
-            {
-                maxParamNumber = paramNumber;
-            }
-        }
-
-        if (maxParamNumber >= 0)
-        {
-            paramIndex = startingParamIndex + maxParamNumber + 1;
-        }
-
+        paramIndex = startingParamIndex + sortedIndices.Count;
         return result;
     }
 
@@ -88,7 +99,12 @@ internal sealed partial class FeatureQueryBuilder
                     var beforeChar = i > 0 ? input[i - 1] : ' ';
                     var afterChar = i + pattern.Length < input.Length ? input[i + pattern.Length] : ' ';
 
-                    if (!IsIdentifierChar(beforeChar) && !IsIdentifierChar(afterChar))
+                    // Only apply the identifier-boundary guard for word-like patterns such as
+                    // SQL keywords (e.g. "UNION", "SELECT"). Punctuation sequences like --, /*, and
+                    // */ are not identifiers; an adjacent alphanumeric character (e.g. `field = 1--`)
+                    // must not suppress their detection as comment delimiters.
+                    var isWordPattern = IsAllIdentifierChars(pattern);
+                    if (!isWordPattern || (!IsIdentifierChar(beforeChar) && !IsIdentifierChar(afterChar)))
                     {
                         return true;
                     }
