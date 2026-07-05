@@ -287,7 +287,16 @@ public enum DeployTargetKind
     /// <summary>
     /// Azure Functions target using deployment slots or revision swaps.
     /// </summary>
-    AzureFunctions
+    AzureFunctions,
+
+    /// <summary>
+    /// Substrate-neutral, single-host rolling-replace target (ADR-0060). The Honua process fronts
+    /// traffic with embedded YARP and owns the cutover: it starts a standby replica of the desired
+    /// revision on a co-located port, health-gates it, atomically swaps the reverse-proxy destination,
+    /// and keeps the old replica until the new one is healthy. Delivers the on-prem/air-gapped,
+    /// zero-cloud-dependency zero-downtime upgrade and rollback story.
+    /// </summary>
+    SelfHostedRolling
 }
 
 /// <summary>
@@ -308,7 +317,15 @@ public enum BatchComputeTargetKind
     /// <summary>
     /// Azure Batch backend.
     /// </summary>
-    AzureBatch
+    AzureBatch,
+
+    /// <summary>
+    /// Substrate-neutral, single-host local process pool (ADR-0060). Runs a run-to-completion
+    /// workload as a child process on the host, bounded by a configurable max-concurrency pool.
+    /// Delivers a true process-spawning geoprocessing executor for single-host/air-gapped
+    /// deployments with no container runtime or cloud batch service dependency.
+    /// </summary>
+    LocalProcess
 }
 
 /// <summary>
