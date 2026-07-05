@@ -147,6 +147,194 @@ public sealed class McpMapToolTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public void Describe_QueryFeatures_AdvertisesPagingAndCountParameters()
+    {
+        var descriptor = new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance).Describe();
+
+        var inputProps = descriptor.InputSchema.GetProperty("properties");
+        inputProps.TryGetProperty("resultOffset", out var resultOffset).Should().BeTrue();
+        resultOffset.GetProperty("type").GetString().Should().Be("integer");
+        resultOffset.GetProperty("minimum").GetInt32().Should().Be(0);
+        inputProps.TryGetProperty("returnGeometry", out var returnGeometry).Should().BeTrue();
+        returnGeometry.GetProperty("type").GetString().Should().Be("boolean");
+        inputProps.TryGetProperty("returnCountOnly", out var returnCountOnly).Should().BeTrue();
+        returnCountOnly.GetProperty("type").GetString().Should().Be("boolean");
+
+        descriptor.OutputSchema.Should().NotBeNull();
+        var outputProps = descriptor.OutputSchema!.Value.GetProperty("properties");
+        outputProps.TryGetProperty("nextOffset", out _).Should().BeTrue();
+        outputProps.TryGetProperty("count", out _).Should().BeTrue();
+        outputProps.TryGetProperty("resultOffset", out _).Should().BeTrue();
+
+        descriptor.Description.Should().Contain("nextOffset",
+            "the tool description must teach the mechanical paging loop");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_WithResultOffset_PagesDisjointResultsUsingNextOffset()
+    {
+        // A 250-row layer paged at limit=100 must be traversed in exactly three
+        // calls: offset 0 -> 100 -> 200, each page disjoint, driven only by the
+        // returned nextOffset until exceededTransferLimit flips false.
+        const int total = 250;
+        const int pageSize = 100;
+
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var query = callInfo.ArgAt<FeatureQuery>(1);
+                var offset = query.ResultOffset ?? 0;
+                var limit = query.Limit ?? pageSize;
+                var take = Math.Min(limit, Math.Max(0, total - offset));
+                var items = Enumerable.Range(offset, take)
+                    .Select(id => new Feature
+                    {
+                        Id = id,
+                        Geometry = [0x01],
+                        Attributes = ImmutableDictionary<string, object?>.Empty.Add("idx", id)
+                    })
+                    .ToImmutableArray();
+                return new QueryResult<Feature>
+                {
+                    TotalCount = total,
+                    HasMoreResults = offset + take < total,
+                    Items = items
+                };
+            });
+
+        var geometryService = Substitute.For<IGeometryService>();
+        geometryService.ConvertWkbToGeoJson(Arg.Any<byte[]?>())
+            .Returns("""{"type":"Point","coordinates":[1,2]}""");
+
+        var surface = BuildSurface();
+        var services = BuildServices(reader: reader, geometryService: geometryService);
+
+        var seenIds = new List<long>();
+        int? offsetArg = null;
+        var calls = 0;
+
+        while (true)
+        {
+            calls++;
+            var offsetJson = offsetArg is { } o ? $",\"resultOffset\":{o}" : string.Empty;
+            var response = await surface.DispatchAsync(
+                AuthenticatedContext(services),
+                ToolCall($"page-{calls}", QueryFeaturesTool.ToolName, $$"""
+                    {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"limit":{{pageSize}}{{offsetJson}}}
+                    """),
+                CancellationToken.None);
+
+            response!.Error.Should().BeNull();
+            var structured = response.Result!.Value.GetProperty("structuredContent");
+
+            foreach (var feature in structured.GetProperty("geojson").GetProperty("features").EnumerateArray())
+            {
+                seenIds.Add(feature.GetProperty("id").GetInt64());
+            }
+
+            if (structured.GetProperty("exceededTransferLimit").GetBoolean())
+            {
+                structured.TryGetProperty("nextOffset", out var nextOffset).Should().BeTrue(
+                    "a non-final page must advertise nextOffset so the agent can page mechanically");
+                offsetArg = nextOffset.GetInt32();
+            }
+            else
+            {
+                structured.TryGetProperty("nextOffset", out _).Should().BeFalse(
+                    "the final page must not advertise nextOffset");
+                break;
+            }
+
+            calls.Should().BeLessThan(10, "paging must terminate");
+        }
+
+        calls.Should().Be(3, "a 250-row layer at limit=100 pages in exactly three calls");
+        seenIds.Should().HaveCount(total);
+        seenIds.Should().OnlyHaveUniqueItems("pages must be disjoint");
+        seenIds.Should().BeEquivalentTo(Enumerable.Range(0, total).Select(i => (long)i));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_ReturnCountOnly_ReturnsCountWithoutFeatures()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(250L);
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader)),
+            ToolCall("count-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":true}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var structured = response.Result!.Value.GetProperty("structuredContent");
+        structured.GetProperty("count").GetInt64().Should().Be(250);
+        structured.GetProperty("returnedCount").GetInt32().Should().Be(0);
+        structured.TryGetProperty("geojson", out _).Should().BeFalse(
+            "returnCountOnly must omit the feature collection");
+
+        await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await reader.DidNotReceive().QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_ReturnGeometryFalse_OmitsGeometry()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryResult<Feature>
+            {
+                TotalCount = 1,
+                HasMoreResults = false,
+                Items =
+                [
+                    new Feature
+                    {
+                        Id = 7,
+                        Geometry = [0x01],
+                        Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", "Lot 7")
+                    }
+                ]
+            });
+
+        var geometryService = Substitute.For<IGeometryService>();
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
+            ToolCall("nogeom-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnGeometry":false}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var structured = response.Result!.Value.GetProperty("structuredContent");
+        structured.GetProperty("returnedCount").GetInt32().Should().Be(1);
+        var feature = structured.GetProperty("geojson").GetProperty("features")[0];
+        feature.GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null,
+            "returnGeometry=false yields attribute-only rows with null geometry");
+        feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("Lot 7");
+
+        geometryService.DidNotReceive().ConvertWkbToGeoJson(Arg.Any<byte[]?>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_render_map")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_RenderMap_ReturnsImageContentBlock()

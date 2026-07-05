@@ -109,7 +109,7 @@ public sealed class OpsFindingsServiceTests
     public async Task Evaluate_GpQueueDepthAboveThreshold_ProducesWarningWithNoAction()
     {
         var jobStore = Substitute.For<IExecutionJobStore>();
-        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ExecutionJobRecord>
             {
                 BuildJob("j1", ExecutionJobStatus.Queued, "aws-batch"),

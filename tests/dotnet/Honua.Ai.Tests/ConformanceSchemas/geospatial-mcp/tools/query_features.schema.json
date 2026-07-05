@@ -45,6 +45,22 @@
       "default": 100,
       "description": "Maximum number of features to return (capped at 1000)."
     },
+    "resultOffset": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Number of matching features to skip before returning results (pagination). Pair with limit to page mechanically through large result sets: when a response reports exceededTransferLimit=true, re-issue the same query with resultOffset set to the returned nextOffset until exceededTransferLimit is false."
+    },
+    "returnGeometry": {
+      "type": "boolean",
+      "default": true,
+      "description": "When false, features are returned without geometry (attribute-only rows). Use for attribute scans where returning geometry would waste the response/context budget."
+    },
+    "returnCountOnly": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, return only the matching feature count and no features. Use for cheap cardinality checks before deciding whether/how to page."
+    },
     "outSrid": {
       "type": "integer",
       "default": 4326,

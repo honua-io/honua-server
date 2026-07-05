@@ -117,6 +117,27 @@ internal sealed class McpQueryFeaturesArgument
     [JsonPropertyName("limit")]
     public int? Limit { get; set; }
 
+    /// <summary>
+    /// Number of matching features to skip before returning results (pagination).
+    /// Threads into the canonical query pipeline's <c>ResultOffset</c>.
+    /// </summary>
+    [JsonPropertyName("resultOffset")]
+    public int? ResultOffset { get; set; }
+
+    /// <summary>
+    /// When <see langword="false"/>, features are returned without geometry
+    /// (attribute-only rows). Defaults to <see langword="true"/>.
+    /// </summary>
+    [JsonPropertyName("returnGeometry")]
+    public bool? ReturnGeometry { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, only the matching feature count is returned
+    /// and no features. Defaults to <see langword="false"/>.
+    /// </summary>
+    [JsonPropertyName("returnCountOnly")]
+    public bool? ReturnCountOnly { get; set; }
+
     [JsonPropertyName("outSrid")]
     public int? OutSrid { get; set; }
 }
@@ -139,12 +160,34 @@ internal sealed class McpQueryFeaturesOutput
     [JsonPropertyName("limit")]
     public int Limit { get; set; }
 
+    /// <summary>
+    /// Offset applied to this request (the <c>resultOffset</c> argument, defaulting to 0).
+    /// </summary>
+    [JsonPropertyName("resultOffset")]
+    public int ResultOffset { get; set; }
+
     [JsonPropertyName("exceededTransferLimit")]
     public bool ExceededTransferLimit { get; set; }
 
-    /// <summary>RFC 7946 GeoJSON <c>FeatureCollection</c> for the returned features.</summary>
+    /// <summary>
+    /// When <see cref="ExceededTransferLimit"/> is <see langword="true"/>, the
+    /// <c>resultOffset</c> the caller should send on the next request to fetch the
+    /// following page (<c>resultOffset + returnedCount</c>). Omitted (null) when the
+    /// last page has been returned.
+    /// </summary>
+    [JsonPropertyName("nextOffset")]
+    public int? NextOffset { get; set; }
+
+    /// <summary>
+    /// Matching feature count. Populated only when <c>returnCountOnly=true</c>
+    /// (features are omitted in that mode); otherwise null.
+    /// </summary>
+    [JsonPropertyName("count")]
+    public long? Count { get; set; }
+
+    /// <summary>RFC 7946 GeoJSON <c>FeatureCollection</c> for the returned features. Omitted when <c>returnCountOnly=true</c>.</summary>
     [JsonPropertyName("geojson")]
-    public McpGeoJsonFeatureCollection GeoJson { get; set; } = new();
+    public McpGeoJsonFeatureCollection? GeoJson { get; set; }
 }
 
 /// <summary>

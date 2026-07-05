@@ -321,16 +321,31 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "returnedCount", "limit", "exceededTransferLimit", "geojson"],
+          "required": ["serviceId", "layerId", "returnedCount", "limit", "resultOffset", "exceededTransferLimit"],
           "properties": {
             "serviceId": { "type": "string" },
             "layerId": { "type": "integer" },
             "returnedCount": { "type": "integer" },
             "limit": { "type": "integer" },
-            "exceededTransferLimit": { "type": "boolean" },
+            "resultOffset": {
+              "type": "integer",
+              "description": "The resultOffset applied to this request (defaults to 0)."
+            },
+            "exceededTransferLimit": {
+              "type": "boolean",
+              "description": "True when more matching features exist beyond this page. When true, re-issue the same query with resultOffset=nextOffset to fetch the next page."
+            },
+            "nextOffset": {
+              "type": "integer",
+              "description": "Present only when exceededTransferLimit is true: the resultOffset to send on the next request (resultOffset + returnedCount) to page mechanically. Absent on the last page."
+            },
+            "count": {
+              "type": "integer",
+              "description": "Matching feature count. Present only when returnCountOnly=true; features are omitted in that mode."
+            },
             "geojson": {
               "type": "object",
-              "description": "RFC 7946 GeoJSON FeatureCollection.",
+              "description": "RFC 7946 GeoJSON FeatureCollection. Omitted when returnCountOnly=true. When returnGeometry=false each feature's geometry is null.",
               "properties": {
                 "type": { "type": "string", "const": "FeatureCollection" },
                 "features": { "type": "array", "items": { "type": "object" } }
