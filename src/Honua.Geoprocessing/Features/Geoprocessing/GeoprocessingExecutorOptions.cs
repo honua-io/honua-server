@@ -34,6 +34,16 @@ internal sealed class GeoprocessingExecutorOptions
         Path.Combine(Path.GetTempPath(), "honua-geoprocessing-outputs");
 
     /// <summary>
+    /// Root directory that the <c>import.dataset</c> executor accepts as the staging area
+    /// for source files. The caller-supplied <c>sourcePath</c> job input must resolve to a
+    /// canonical path that starts with this prefix; paths outside the staging root are
+    /// rejected with a job failure to prevent path-traversal attacks (BH3-027).
+    /// Defaults to the same staging directory used by the upload pipeline.
+    /// </summary>
+    public string ImportStagingDirectory { get; set; } =
+        Path.Combine(Path.GetTempPath(), "honua-import-staging");
+
+    /// <summary>
     /// Retention TTL applied to durable geoprocessing result packages produced
     /// by built-in executors. Mirrors the default Redis store retention so
     /// configuration here is authoritative for both reads and writes.

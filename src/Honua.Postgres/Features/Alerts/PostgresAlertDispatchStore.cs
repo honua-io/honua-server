@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Features.Alerts;
 
 internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
@@ -139,7 +140,7 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             }
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         AlertLog.DispatchClaimed(_logger, rows.Count);
         return rows;
     }

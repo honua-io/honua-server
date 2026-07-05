@@ -1,4 +1,4 @@
-// Copyright (c) Honua. All rights reserved.
+﻿// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
@@ -16,6 +16,7 @@ using Honua.Infrastructure.Monitoring;
 using Npgsql;
 using NpgsqlTypes;
 
+using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Server.Features.Admin.OperateFixtures;
 
 internal interface IOperateObservabilityFixtureSeeder
@@ -378,7 +379,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
     }
 
     // Investigation-create audit is independent of the gated alert stores, so it is seeded even when
-    // the alert-fixture slice is skipped — the Operate observability events surface still shows an
+    // the alert-fixture slice is skipped â€” the Operate observability events surface still shows an
     // audit trail for the seeded investigation.
     private static Task EnsureInvestigationAuditEventAsync(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -789,7 +790,7 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
             seededAt.AddMinutes(-2),
             cancellationToken).ConfigureAwait(false));
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         return new OperateObservabilityInvestigationFixtureSeed
         {

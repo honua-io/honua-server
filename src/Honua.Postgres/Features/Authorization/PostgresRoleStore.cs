@@ -80,7 +80,7 @@ internal sealed class PostgresRoleStore : IRoleStore
             }
 
             await ReplacePermissionsAsync(connection.Connection, transaction, role.RoleId, role.Permissions, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -132,7 +132,7 @@ internal sealed class PostgresRoleStore : IRoleStore
             }
 
             await ReplacePermissionsAsync(connection.Connection, transaction, role.RoleId, role.Permissions, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -202,7 +202,7 @@ internal sealed class PostgresRoleStore : IRoleStore
         }
 
         await ReplacePermissionsAsync(connection.Connection, transaction, roleId, permissions, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return permissions;
     }
 

@@ -432,7 +432,8 @@ public sealed class CatalogExecutableConformanceTests
             new HonuaLayerSinkExecutor(monitor, NullLogger<HonuaLayerSinkExecutor>.Instance),
             new ImportDatasetJobExecutor(
                 Substitute.For<IServiceScopeFactory>(),
-                NullLogger<ImportDatasetJobExecutor>.Instance),
+                NullLogger<ImportDatasetJobExecutor>.Instance,
+                Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>()),
         };
 
         // Remote DAG source connectors self-register as IProcessExecutor, so they flow

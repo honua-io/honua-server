@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -292,8 +293,10 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
 
             DataIntegrityCoordinatorLog.CommittingCoordinatedTransaction(_logger, _operationId, _operations.Count);
 
-            // First commit the database transaction
-            await DatabaseTransaction.CommitAsync(cancellationToken);
+            // First commit the database transaction (CommitSafelyAsync guards against the
+            // phantom-commit race: checks cancellation before COMMIT, then uses None so the
+            // in-flight round-trip is never interrupted — see HN0001).
+            await DatabaseTransaction.CommitSafelyAsync(cancellationToken);
 
             // Then commit file and cache operations
             var exceptions = new List<Exception>();

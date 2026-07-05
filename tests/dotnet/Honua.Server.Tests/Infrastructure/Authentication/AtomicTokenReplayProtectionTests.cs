@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
@@ -193,6 +194,41 @@ public sealed class AtomicTokenReplayProtectionTests
 
         resultA.Should().BeTrue("token A must be accepted on first use");
         resultB.Should().BeTrue("token B is a distinct token and must be accepted independently");
+    }
+
+    // ─── BH3-033 regression ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Regression test for BH3-033: two concurrent requests carrying the same JWT must not
+    /// both be accepted as first-use.  The old read-delay-verify pattern had a TOCTOU race
+    /// where both requests could observe "not present" at T1, each write a unique marker,
+    /// and each verify their own marker before the other's write arrived — causing both to
+    /// return <see langword="true"/>.  After the fix a <see cref="SemaphoreSlim"/> serialises
+    /// the check-then-set window so exactly one concurrent caller wins.
+    /// </summary>
+    [UnitTest]
+    public async Task TryMarkTokenAsUsedAsync_ConcurrentRequestsSameToken_ExactlyOneWins()
+    {
+        var services = new ServiceCollection();
+        services.AddDistributedMemoryCache();
+        using var sp = services.BuildServiceProvider();
+
+        var token = CreateTestJwtToken();
+        var options = new TokenValidationOptions { EnableTokenReplayProtection = true };
+
+        // Fire 8 concurrent requests for the same token and collect all results.
+        var tasks = Enumerable.Range(0, 8)
+            .Select(_ => AtomicTokenReplayProtection.TryMarkTokenAsUsedAsync(
+                token, options, sp, CancellationToken.None))
+            .ToArray();
+
+        var results = await Task.WhenAll(tasks);
+
+        results.Count(r => r).Should().Be(1,
+            "exactly one concurrent first-use attempt must be accepted (BH3-033); " +
+            "the rest must be treated as replays");
+        results.Count(r => !r).Should().Be(7,
+            "all other concurrent attempts must be rejected as replay");
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────

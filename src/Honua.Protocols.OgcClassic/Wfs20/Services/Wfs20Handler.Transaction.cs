@@ -12,6 +12,7 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -135,14 +136,17 @@ internal sealed partial class Wfs20Handler
                 }
             }
 
-            if (editResult.HasErrors)
+            // BH3-010: When rollbackOnFailure=false, WFS 2.0 §15.2.3.1.3 requires the server
+            // to commit as much as possible and return a 200 TransactionResponse that identifies
+            // which individual operations succeeded or failed — not a 400 error. Reserve the
+            // 400 for cases where the entire transaction was rolled back (rollbackOnFailure=true
+            // triggered the rollback path) or there was a protocol-level error. Returning 400 on
+            // a partial success causes clients to retry the whole request, re-inserting the
+            // already-committed features and producing duplicates (BH3-010).
+            if (editResult.HasErrors && editResult.WasRolledBack)
             {
                 var firstError = GetFirstTransactionError(editResult);
-                if (editResult.WasRolledBack)
-                {
-                    Wfs20Log.TransactionRolledBack(_logger, firstError);
-                }
-
+                Wfs20Log.TransactionRolledBack(_logger, firstError);
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
                     "OperationProcessingFailed",
@@ -237,7 +241,11 @@ internal sealed partial class Wfs20Handler
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var operations = ImmutableArray.CreateBuilder<PreparedTransactionOperation>();
         var distinctLayerIds = new HashSet<int>();
-        var validatedLayerIds = new HashSet<int>();
+        // Keyed on (layerId, operation) so per-operation authorization (BH3-001/BH3-014)
+        // is enforced independently for each action type: a transaction that both inserts
+        // into and updates the same layer must clear both the Insert and Update gates,
+        // not just the first one seen.
+        var validatedLayerIds = new HashSet<(int LayerId, AuthorizationOperation Operation)>();
         // Tracks whether the body contained at least one supported WFS action element.
         // ISO 19142 §15.2.5.3: a Delete or Update whose filter matches zero features is a
         // valid no-op that contributes zero operations but is still a recognised action.
@@ -360,7 +368,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<int> validatedLayerIds,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
         var handle = insertElement.Attributes()
@@ -392,6 +400,7 @@ internal sealed partial class Wfs20Handler
             var validationError = await ValidateTransactionLayerWriteAccessAsync(
                 context,
                 descriptor.StorageLayerId,
+                AuthorizationOperation.Insert,
                 validatedLayerIds,
                 cancellationToken).ConfigureAwait(false);
             if (validationError != null)
@@ -428,7 +437,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<int> validatedLayerIds,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
         var handle = updateElement.Attributes()
@@ -452,6 +461,7 @@ internal sealed partial class Wfs20Handler
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
             descriptor.StorageLayerId,
+            AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
@@ -522,7 +532,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<int> validatedLayerIds,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
         var handle = deleteElement.Attributes()
@@ -546,6 +556,7 @@ internal sealed partial class Wfs20Handler
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
             descriptor.StorageLayerId,
+            AuthorizationOperation.Delete,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
@@ -607,7 +618,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<int> validatedLayerIds,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
         var handle = replaceElement.Attributes()
@@ -626,9 +637,11 @@ internal sealed partial class Wfs20Handler
         }
 
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, featureElement.Name.LocalName);
+        // Replace modifies an existing feature, so it authorizes as an Update (BH3-001/BH3-014).
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
             descriptor.StorageLayerId,
+            AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
@@ -1017,10 +1030,11 @@ internal sealed partial class Wfs20Handler
     private static async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
         HttpContext context,
         int layerId,
-        HashSet<int> validatedLayerIds,
+        AuthorizationOperation operation,
+        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
-        if (!validatedLayerIds.Add(layerId))
+        if (!validatedLayerIds.Add((layerId, operation)))
         {
             return null;
         }
@@ -1041,10 +1055,14 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
+        // Per-operation authorization (BH3-001/BH3-014): each WFS-T action type is gated on its
+        // specific operation so an insert-only grantee cannot Update/Delete via a Transaction and
+        // vice-versa. Replace maps to Update since it modifies an existing feature.
         return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
             layerValidation.Resource!,
             layerValidation.Service,
+            operation,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1774,18 +1792,50 @@ internal sealed partial class Wfs20Handler
             var resource = operations[0].Descriptor.Resource;
             // Per-operation request-intent geometry flags, ordered to match the
             // EditOperation sequence the data layer iterates.
-            var layerResult = await ExecutePreparedEditAsync(
-                context,
-                layerGroup.Key,
-                resource,
-                operations
-                    .Select(static operation => operation.EditOperation)
-                    .ToImmutableArray(),
-                operations
-                    .Select(static operation => operation.RequestGeometryChanged)
-                    .ToImmutableArray(),
-                rollbackOnFailure,
-                cancellationToken).ConfigureAwait(false);
+            FeatureEditResult layerResult;
+            try
+            {
+                layerResult = await ExecutePreparedEditAsync(
+                    context,
+                    layerGroup.Key,
+                    resource,
+                    operations
+                        .Select(static operation => operation.EditOperation)
+                        .ToImmutableArray(),
+                    operations
+                        .Select(static operation => operation.RequestGeometryChanged)
+                        .ToImmutableArray(),
+                    rollbackOnFailure,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // BH3-011: If ExecutePreparedEditAsync throws for this layer, layers processed
+                // before it have already committed to the database. Rather than letting the
+                // exception escape (which would bypass the post-commit cache-invalidation block
+                // in HandleTransactionAsync and leave stale caches for those earlier layers),
+                // convert the exception into per-operation Failure results and continue building
+                // the aggregated result. HandleTransactionAsync will then see committed changes
+                // from earlier layers, invalidate their caches, and return a 200 TransactionResponse
+                // with the per-operation errors for this layer embedded.
+                var safeError = ex switch
+                {
+                    InvalidOperationException or ArgumentException => "Invalid feature data.",
+                    _ => "Transaction failed."
+                };
+                Wfs20Log.MultiLayerTransactionLayerFailed(_logger, ex, layerGroup.Key, safeError);
+
+                var failedCreates = operations.Count(static op => op.EditOperation.Kind == FeatureEditOperationKind.Create);
+                var failedUpdates = operations.Count(static op => op.EditOperation.Kind == FeatureEditOperationKind.Update);
+                var failedDeletes = operations.Count(static op => op.EditOperation.Kind == FeatureEditOperationKind.Delete);
+                layerResult = FeatureEditResult.Success(
+                    createdCount: 0,
+                    updatedCount: 0,
+                    deletedCount: 0,
+                    createResults: Enumerable.Repeat(EditOperationResult.Failure(safeError), failedCreates).ToImmutableArray(),
+                    updateResults: Enumerable.Repeat(EditOperationResult.Failure(safeError), failedUpdates).ToImmutableArray(),
+                    deleteResults: Enumerable.Repeat(EditOperationResult.Failure(safeError), failedDeletes).ToImmutableArray());
+            }
 
             createdCount += layerResult.CreatedCount;
             updatedCount += layerResult.UpdatedCount;
