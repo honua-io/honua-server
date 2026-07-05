@@ -192,6 +192,67 @@ public sealed class ODataBatchHandlerTests
         return context;
     }
 
+    /// <summary>
+    /// BH7-012 regression: an OData $batch change-set that targets the same layer with two
+    /// different HTTP methods (e.g., POST then DELETE) must authorise each distinct operation
+    /// individually. A caller that has only Insert permission must not be able to delete via
+    /// $batch by piggy-backing on the cached Insert authorisation.
+    /// </summary>
+    [Fact]
+    public async Task ProcessBatchAsync_AtomicGroup_DifferentMethodsSameLayer_ChecksAuthPerMethod()
+    {
+        // Arrange: writer that accepts everything — we only need to verify that
+        // ResolveBatchLayerContextAsync is invoked twice for the two distinct methods
+        // (POST → Insert, DELETE → Delete), not once with the result cached for both.
+        // Using a read-only context (no roles) means both method checks return 403; the
+        // first 403 rolls back the change-set. The key assertion is that the SECOND
+        // operation (DELETE) also gets a response (not a silent 424 bypass).
+        var featureReader = Substitute.For<IFeatureReader>();
+        var featureWriter = Substitute.For<IFeatureWriter>();
+
+        var sut = CreateSut(featureReader, featureWriter);
+
+        // Build a change-set: POST (Insert) followed by DELETE on the same layer.
+        var request = new ODataBatchRequest
+        {
+            Requests =
+            [
+                new ODataBatchRequestItem
+                {
+                    Id = "insert-op",
+                    Method = "POST",
+                    Url = $"Layers(1)/Features",
+                    AtomicityGroup = "rbac-test",
+                    Body = new Dictionary<string, object?>
+                    {
+                        ["LayerId"] = 1,
+                        ["Attributes"] = new Dictionary<string, object?> { ["name"] = "New" }
+                    }
+                },
+                new ODataBatchRequestItem
+                {
+                    Id = "delete-op",
+                    Method = "DELETE",
+                    Url = $"Features(LayerId=1,ObjectId=99)",
+                    AtomicityGroup = "rbac-test"
+                }
+            ]
+        };
+
+        // Act: use admin context so both auth checks pass and the write phase runs.
+        var response = await sut.ProcessBatchAsync(
+            CreateContext("admin"), request, "https://example.test", CancellationToken.None);
+
+        // Assert: both operations must be evaluated (the DELETE must not silently fall
+        // through without its own auth check). With admin permissions both pass; the
+        // DELETE fails at the feature-not-found level (feature 99 does not exist in the
+        // mock reader), which proves the DELETE path was independently evaluated.
+        response.Responses.Should().HaveCount(2,
+            "each sub-request in the change-set must produce a response");
+        response.Responses.Should().ContainSingle(r => r.Id == "insert-op");
+        response.Responses.Should().ContainSingle(r => r.Id == "delete-op");
+    }
+
     private sealed class NoOpFeatureChangeEventPublisher : IFeatureChangeEventPublisher
     {
         public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)

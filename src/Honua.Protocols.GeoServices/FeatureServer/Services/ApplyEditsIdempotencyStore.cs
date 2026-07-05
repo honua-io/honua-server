@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
@@ -209,8 +209,13 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
             return _fallback.TryAdd(key, new FallbackEntry(PendingSentinel, now.Add(ReservationWindow)));
         }
 
-        // Non-Redis IDistributedCache has no set-if-absent; fall open.
-        return true;
+        // Non-Redis IDistributedCache (MemoryDistributedCache, SQL Server session store, etc.) has
+        // no atomic set-if-absent primitive and cannot provide mutual exclusion between concurrent
+        // requests. Fall through to the in-process ConcurrentDictionary.TryAdd path, which IS
+        // atomic within a single process and correctly serialises concurrent requests on the default
+        // no-Redis deployment (BH7-002). SetAsync still writes the final response to _cache so
+        // replay-deduplication of later retries continues to work via the distributed store.
+        return _fallback.TryAdd(key, new FallbackEntry(PendingSentinel, now.Add(ReservationWindow)));
     }
 
     public async Task SetAsync(

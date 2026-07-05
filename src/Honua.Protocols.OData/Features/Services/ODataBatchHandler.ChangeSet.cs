@@ -37,6 +37,9 @@ internal sealed partial class ODataBatchHandler
         // and the batch write would otherwise be silently overwritten (TOCTOU).
         var preconditionsByLayer = new Dictionary<int, List<FeatureEditPrecondition>>();
         var writeLayerIds = new HashSet<int>();
+        // Per-(layerId, normalizedMethod) set: ensures RBAC is checked for every distinct
+        // operation type targeting a layer, not only the first sub-request (BH7-012).
+        var layerMethodAuthSet = new HashSet<(int layerId, string method)>();
         var layerCache = new Dictionary<int, ODataBatchLayerContext>();
 
         foreach (var request in requests)
@@ -112,7 +115,9 @@ internal sealed partial class ODataBatchHandler
                     continue;
                 }
                 var objectId = parsed.ObjectId;
-                if (!layerCache.TryGetValue(layerId.Value, out var layer))
+                var normalizedMethod = request.Method.ToUpperInvariant();
+                ODataBatchLayerContext? layer;
+                if (!layerMethodAuthSet.Contains((layerId.Value, normalizedMethod)))
                 {
                     var resolvedLayer = await ResolveBatchLayerContextAsync(
                         context,
@@ -131,8 +136,17 @@ internal sealed partial class ODataBatchHandler
                         continue;
                     }
 
-                    layer = resolvedLayer.Layer;
+                    layer = resolvedLayer.Layer!;
+                    layerMethodAuthSet.Add((layerId.Value, normalizedMethod));
                     layerCache[layerId.Value] = layer;
+                }
+                else if (!layerCache.TryGetValue(layerId.Value, out layer))
+                {
+                    // Defensive guard; should not fire since layerCache is always populated
+                    // alongside layerMethodAuthSet (BH7-012).
+                    responses.Add(CreateErrorResponse(request.Id, 500, "InternalError", "Layer context not found."));
+                    rollback = true;
+                    continue;
                 }
 
                 switch (request.Method.ToUpperInvariant())

@@ -615,6 +615,17 @@ internal static partial class FeatureServerEndpoints
             };
         }
 
+        // BH7-016: rollbackOnFailure=true provides no cross-layer atomicity — each layer commits
+        // in its own independent transaction. Reject rather than silently partially-committing
+        // when multiple layers are targeted, mirroring the WFS-T BH3-009 fail-safe.
+        if (sharedOptions.RollbackOnFailure && orderedLayerIds.Count > 1)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "rollbackOnFailure is not supported for multi-layer service edits",
+                [$"rollbackOnFailure=true cannot provide cross-layer atomicity across {orderedLayerIds.Count} layers; " +
+                 "each layer commits in its own transaction. Submit single-layer batches or omit rollbackOnFailure."]);
+        }
+
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
 
         // BH2-013: Track whether any non-first layer returned an error response so the

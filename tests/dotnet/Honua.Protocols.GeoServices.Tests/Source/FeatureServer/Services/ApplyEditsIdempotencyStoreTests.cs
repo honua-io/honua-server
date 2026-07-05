@@ -100,6 +100,46 @@ public sealed class ApplyEditsIdempotencyStoreTests
             .Should().BeGreaterThan(TimeSpan.Zero, "reservation window must be a positive duration");
     }
 
+    // ─── BH7-002 regression ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// BH7-002 regression: concurrent TryReserveAsync calls with a non-Redis IDistributedCache
+    /// (MemoryDistributedCache — the default no-Redis deployment) must fall through to the
+    /// in-process ConcurrentDictionary path. Exactly one caller must win; the rest must lose
+    /// so they return 409 instead of both executing and committing duplicate rows.
+    /// </summary>
+    [Fact]
+    public async Task TryReserveAsync_ConcurrentSameScope_NonRedisCache_ExactlyOneWins()
+    {
+        // Arrange: non-null IDistributedCache (simulating MemoryDistributedCache / SQL server
+        // session store — any non-Redis backend), no IConnectionMultiplexer.
+        // Before BH7-002 this path returned true unconditionally for every caller, so all
+        // concurrent requests would win and duplicate features would be created.
+        var cache = NSubstitute.Substitute.For<Microsoft.Extensions.Caching.Distributed.IDistributedCache>();
+        var store = new DistributedApplyEditsIdempotencyStore(
+            multiplexer: null,
+            cache,
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-race-noncache");
+
+        // Act: fire 10 concurrent reserve calls.
+        var tasks = Enumerable.Range(0, 10)
+            .Select(_ => store.TryReserveAsync(scope))
+            .ToArray();
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert: exactly one winner — the in-process ConcurrentDictionary.TryAdd path
+        // must still provide mutual exclusion even when a non-Redis IDistributedCache is
+        // configured (BH7-002 fix: fall through to TryAdd instead of returning true).
+        results.Count(r => r).Should().Be(1,
+            "non-Redis IDistributedCache has no set-if-absent; the in-process fallback must " +
+            "be used so exactly one concurrent caller wins the reservation (BH7-002)");
+        results.Count(r => !r).Should().Be(9,
+            "all other concurrent callers must lose the reservation and return 409");
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────────
 
     private static ApplyEditsResponse BuildTestResponse() =>

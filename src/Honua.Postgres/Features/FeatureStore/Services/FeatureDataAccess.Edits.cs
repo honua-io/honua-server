@@ -278,6 +278,16 @@ internal sealed partial class FeatureDataAccess
 
         var preconditions = BuildPreconditionMap(editBatch);
 
+        // BH7-021: Hoist partial-result accumulators outside the try block so the
+        // non-transactional outer catch can report already-committed rows accurately
+        // rather than fabricating all-failure results via CreateFailedOperationResults.
+        var createdIds = ImmutableArray<long>.Empty;
+        var createResults = ImmutableArray<EditOperationResult>.Empty;
+        var updatedCount = 0;
+        var updateResults = ImmutableArray<EditOperationResult>.Empty;
+        var deletedCount = 0;
+        var deleteResults = ImmutableArray<EditOperationResult>.Empty;
+
         try
         {
             if (!editBatch.Operations.IsDefaultOrEmpty)
@@ -291,14 +301,14 @@ internal sealed partial class FeatureDataAccess
                     cancellationToken).ConfigureAwait(false);
             }
 
-            var (createdIds, createResults) = await ProcessCreatesWithResultsAsync(
+            (createdIds, createResults) = await ProcessCreatesWithResultsAsync(
                 layerId,
                 editBatch.Creates,
                 connection,
                 transaction,
                 cancellationToken);
 
-            var (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
+            (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
                 layerId,
                 editBatch.Updates,
                 connection,
@@ -306,7 +316,7 @@ internal sealed partial class FeatureDataAccess
                 preconditions,
                 cancellationToken);
 
-            var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
+            (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
                 layerId,
                 editBatch.Deletes,
                 connection,
@@ -372,22 +382,46 @@ internal sealed partial class FeatureDataAccess
             if (transaction != null)
             {
                 await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
-                var (createResults, updateResults, deleteResults) = CreateFailedOperationResults(editBatch, "Transaction failed.");
+                var (txCreateResults, txUpdateResults, txDeleteResults) = CreateFailedOperationResults(editBatch, "Transaction failed.");
 
-                return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
+                return FeatureEditResult.Rollback(txCreateResults, txUpdateResults, txDeleteResults);
             }
 
-            var (failedCreateResults, failedUpdateResults, failedDeleteResults) =
-                CreateFailedOperationResults(editBatch, "Edit batch failed.");
+            // BH7-021: Report partial results rather than fabricating all-failure results.
+            // Operations already recorded in createResults/updateResults/deleteResults reflect
+            // rows committed before the exception; only unrecorded operations get failure entries.
+            // For ordered-operation batches (editBatch.Operations path, different model) fall back
+            // to CreateFailedOperationResults since the hoisted accumulators are empty there.
+            if (!editBatch.Operations.IsDefaultOrEmpty)
+            {
+                var (opCreateResults, opUpdateResults, opDeleteResults) =
+                    CreateFailedOperationResults(editBatch, "Edit batch failed.");
+                return FeatureEditResult.Success(
+                    0, 0, 0, ImmutableArray<long>.Empty,
+                    opCreateResults, opUpdateResults, opDeleteResults, wasRolledBack: false);
+            }
+
+            var finalCreateResults = createResults.AddRange(
+                System.Linq.Enumerable.Select(
+                    System.Linq.Enumerable.Skip(editBatch.Creates, createResults.Length),
+                    _ => EditOperationResult.Failure("Edit batch failed.")));
+            var finalUpdateResults = updateResults.AddRange(
+                System.Linq.Enumerable.Select(
+                    System.Linq.Enumerable.Skip(editBatch.Updates, updateResults.Length),
+                    feature => EditOperationResult.Failure("Edit batch failed.", objectId: feature.Id)));
+            var finalDeleteResults = deleteResults.AddRange(
+                System.Linq.Enumerable.Select(
+                    System.Linq.Enumerable.Skip(editBatch.Deletes, deleteResults.Length),
+                    id => EditOperationResult.Failure("Edit batch failed.", objectId: id)));
 
             return FeatureEditResult.Success(
-                0,
-                0,
-                0,
-                ImmutableArray<long>.Empty,
-                failedCreateResults,
-                failedUpdateResults,
-                failedDeleteResults,
+                System.Linq.Enumerable.Count(finalCreateResults, r => r.IsSuccess),
+                System.Linq.Enumerable.Count(finalUpdateResults, r => r.IsSuccess),
+                System.Linq.Enumerable.Count(finalDeleteResults, r => r.IsSuccess),
+                createdIds,
+                finalCreateResults,
+                finalUpdateResults,
+                finalDeleteResults,
                 wasRolledBack: false);
         }
     }
@@ -1021,6 +1055,10 @@ internal sealed partial class FeatureDataAccess
                 createdIds.Add(created.Id);
                 results.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
@@ -1232,6 +1270,10 @@ internal sealed partial class FeatureDataAccess
             {
                 results.Add(EditOperationResult.PreconditionFailed(feature.Id));
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
@@ -1301,6 +1343,10 @@ internal sealed partial class FeatureDataAccess
             catch (FeatureEditPreconditionFailedException)
             {
                 results.Add(EditOperationResult.PreconditionFailed(featureId));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
