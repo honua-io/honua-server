@@ -750,10 +750,41 @@ public sealed class EditProcessor : IEditProcessor
         return 10000; // Default maximum operations per resource
     }
 
+    /// <summary>
+    /// Determines whether <paramref name="field"/> is the resource's server-assigned primary id
+    /// field, which must never be required from a create/update client payload. A field qualifies
+    /// when it carries the <c>id.primary</c> semantic role OR when its name matches the resource's
+    /// authoritative primary-id field name (<see cref="MetadataV2SpatialExtensions.FindPrimaryIdField"/>,
+    /// which falls back to the conventional <c>objectid</c>/<c>id</c> name).
+    /// </summary>
+    /// <remarks>
+    /// The semantic-role check alone is insufficient: many seeded and published layers declare a
+    /// non-nullable <c>objectid</c> field without the <c>id.primary</c> role. BH2-014 (#2456) added a
+    /// per-field required-attribute gate that keyed exclusively on the role, so every create that
+    /// omitted <c>objectid</c> — the normal case, since the server assigns it — was rejected with
+    /// "Required attribute(s) missing for create operation: objectid". Keying the skip on the
+    /// resource's authoritative id-field name as well restores valid creates while still rejecting
+    /// genuinely-missing non-id required fields.
+    /// </remarks>
+    private static bool IsResourcePrimaryIdField(MetadataV2Field field, string? primaryIdFieldName)
+    {
+        for (var i = 0; i < field.SemanticRoles.Count; i++)
+        {
+            if (string.Equals(field.SemanticRoles[i], "id.primary", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return primaryIdFieldName is not null
+            && string.Equals(field.Name, primaryIdFieldName, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool RequiresAttributes(MetadataV2Resource resource)
     {
         // V2 fields carry Nullable but no DefaultValue — match the v1 contract by
         // treating any non-nullable, non-geometry, non-system field as required.
+        var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
         foreach (var field in resource.SchemaFields)
         {
             if (field.Nullable)
@@ -765,15 +796,11 @@ public sealed class EditProcessor : IEditProcessor
                 continue;
             }
             // Skip the primary id field — it is generated server-side on create.
-            for (var i = 0; i < field.SemanticRoles.Count; i++)
+            if (IsResourcePrimaryIdField(field, primaryIdFieldName))
             {
-                if (string.Equals(field.SemanticRoles[i], "id.primary", StringComparison.OrdinalIgnoreCase))
-                {
-                    goto next;
-                }
+                continue;
             }
             return true;
-        next:;
         }
         return false;
     }
@@ -788,6 +815,7 @@ public sealed class EditProcessor : IEditProcessor
         ImmutableDictionary<string, object?> attributes)
     {
         var missing = new List<string>();
+        var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
 
         foreach (var field in resource.SchemaFields)
         {
@@ -801,17 +829,7 @@ public sealed class EditProcessor : IEditProcessor
             }
 
             // Skip the primary id field — it is generated server-side on create.
-            var isPrimaryId = false;
-            for (var i = 0; i < field.SemanticRoles.Count; i++)
-            {
-                if (string.Equals(field.SemanticRoles[i], "id.primary", StringComparison.OrdinalIgnoreCase))
-                {
-                    isPrimaryId = true;
-                    break;
-                }
-            }
-
-            if (isPrimaryId)
+            if (IsResourcePrimaryIdField(field, primaryIdFieldName))
             {
                 continue;
             }

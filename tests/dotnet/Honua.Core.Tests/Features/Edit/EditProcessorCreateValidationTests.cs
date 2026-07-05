@@ -113,6 +113,105 @@ public sealed class EditProcessorCreateValidationTests
             "the empty-attributes guard fires before the per-field check");
     }
 
+    // Resource whose non-nullable "objectid" field carries NO semantic roles — mirrors the many
+    // seeded/published layers (e.g. WebAppFixtureMetadataV2Mixin, ServiceRbacTestFixture) that
+    // declare objectid as Nullable=false without the "id.primary" role. BH2-014 (#2456) keyed its
+    // primary-id skip exclusively on the role, so every create omitting objectid was rejected.
+    private static MetadataV2Resource CreateResourceWithUnroledObjectId() => new()
+    {
+        SchemaFields =
+        [
+            new MetadataV2Field
+            {
+                Name = "objectid",
+                Type = MetadataV2FieldType.Integer,
+                Nullable = false,
+                SemanticRoles = []
+            },
+            new MetadataV2Field
+            {
+                Name = "name",
+                Type = MetadataV2FieldType.String,
+                Nullable = false,
+                SemanticRoles = []
+            },
+            new MetadataV2Field
+            {
+                Name = "notes",
+                Type = MetadataV2FieldType.String,
+                Nullable = true,
+                SemanticRoles = []
+            }
+        ]
+    };
+
+    // Regression (#2456): a create that supplies every required NON-id field but omits the
+    // server-assigned "objectid" must validate, even when objectid lacks the "id.primary" role.
+    // Before the fix this failed with "Required attribute(s) missing for create operation: objectid".
+    [UnitTest]
+    public void ValidateEdit_CreateOmittingUnroledObjectId_Succeeds()
+    {
+        var processor = CreateProcessor();
+        var resource = CreateResourceWithUnroledObjectId();
+
+        var attributes = ImmutableDictionary.Create<string, object?>(StringComparer.OrdinalIgnoreCase)
+            .Add("name", "Honua");
+
+        var request = UnifiedEditRequest.WithCreates(
+            ImmutableArray.Create(EditFeature.ForCreate(geometry: null, attributes)));
+
+        var result = processor.ValidateEdit(request, resource);
+
+        result.IsValid.Should().BeTrue(
+            "the server-assigned object-id field must never be required from the client, "
+            + "even when it does not carry the id.primary semantic role");
+    }
+
+    // The fix must not weaken BH2-014: a genuinely-missing required NON-id field is still rejected
+    // even on a layer whose objectid lacks the id.primary role.
+    [UnitTest]
+    public void ValidateEdit_CreateMissingRequiredFieldOnUnroledObjectIdLayer_StillFails()
+    {
+        var processor = CreateProcessor();
+        var resource = CreateResourceWithUnroledObjectId();
+
+        // Supplies only the nullable "notes" field — the required "name" field is absent.
+        var attributes = ImmutableDictionary.Create<string, object?>(StringComparer.OrdinalIgnoreCase)
+            .Add("notes", "some note");
+
+        var request = UnifiedEditRequest.WithCreates(
+            ImmutableArray.Create(EditFeature.ForCreate(geometry: null, attributes)));
+
+        var result = processor.ValidateEdit(request, resource);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("name",
+            "a genuinely-missing required non-id field must still be reported");
+        result.ErrorMessage.Should().NotContain("objectid",
+            "the server-assigned object-id field must never appear as a missing required attribute");
+    }
+
+    // The update path must likewise not require the object-id field as a client attribute: the
+    // caller identifies the row via EditFeature.ObjectId, not via an "objectid" attribute entry.
+    [UnitTest]
+    public void ValidateEdit_UpdateOmittingUnroledObjectIdAttribute_Succeeds()
+    {
+        var processor = CreateProcessor();
+        var resource = CreateResourceWithUnroledObjectId();
+
+        var attributes = ImmutableDictionary.Create<string, object?>(StringComparer.OrdinalIgnoreCase)
+            .Add("name", "Updated");
+
+        var request = UnifiedEditRequest.WithUpdates(
+            ImmutableArray.Create(EditFeature.ForUpdate(objectId: 42, geometry: null, attributes)));
+
+        var result = processor.ValidateEdit(request, resource);
+
+        result.IsValid.Should().BeTrue(
+            "an update identifies the row via EditFeature.ObjectId, so the object-id field is not "
+            + "required as a client attribute");
+    }
+
     [UnitTest]
     public void ValidateEdit_CreateWithCaseInsensitiveFieldName_Succeeds()
     {
