@@ -4,6 +4,7 @@
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
@@ -24,16 +25,21 @@ namespace Honua.Routing.Features.Routing.Providers;
 /// is rejected rather than embedded. The built-in default's names are trusted
 /// constants.
 /// </remarks>
-internal sealed class NetworkDatasetRegistry : INetworkDatasetResolver
+internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
 {
     private readonly IDatabaseSessionFactory _sessionFactory;
+    private readonly ILogger<NetworkDatasetRegistry> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NetworkDatasetRegistry"/> class.
     /// </summary>
     /// <param name="sessionFactory">Shared database session factory.</param>
-    public NetworkDatasetRegistry(IDatabaseSessionFactory sessionFactory)
-        => _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
+    /// <param name="logger">Logger for structured diagnostics.</param>
+    public NetworkDatasetRegistry(IDatabaseSessionFactory sessionFactory, ILogger<NetworkDatasetRegistry> logger)
+    {
+        _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
     /// <inheritdoc />
     public async Task<NetworkDataset?> ResolveAsync(
@@ -112,8 +118,17 @@ internal sealed class NetworkDatasetRegistry : INetworkDatasetResolver
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not InvalidOperationException)
         {
-            // A transient/registry-shape failure must not break routing on the
-            // default topology; fall back to the built-in default path.
+            if (!string.Equals(datasetId, NetworkDataset.DefaultId, StringComparison.OrdinalIgnoreCase))
+            {
+                // A transient DB failure for a non-default dataset must not silently appear as
+                // 'dataset not found'. Rethrow so the caller can surface a retriable error
+                // instead of a permanent 404 (BH2-021).
+                Log.TransientRegistryFailure(_logger, datasetId, ex);
+                throw;
+            }
+
+            // Default dataset: swallow exceptions so routing falls through to the built-in
+            // default topology unchanged (plain-PostGIS images without the registry table).
             return null;
         }
     }
@@ -131,5 +146,15 @@ internal sealed class NetworkDatasetRegistry : INetworkDatasetResolver
             throw new InvalidOperationException(
                 $"Network dataset {role} '{identifier}' is not a valid schema-qualified identifier.");
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = 9300,
+            Level = LogLevel.Warning,
+            Message = "Network dataset registry lookup for dataset '{DatasetId}' failed with a DB error; " +
+                      "routing request will receive a retriable error")]
+        public static partial void TransientRegistryFailure(ILogger logger, string datasetId, Exception exception);
     }
 }
