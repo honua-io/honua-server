@@ -1,0 +1,386 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Text.Json.Serialization;
+
+namespace Honua.Infrastructure.Monitoring;
+
+/// <summary>
+/// Consolidated operational-health snapshot returned by
+/// <c>GET /api/v{version}/admin/observability/ops-health</c>. Composes the comprehensive
+/// health-check roll-up, in-process serving latency, GP queue depth, alert-dispatch backlog,
+/// deploy readiness, and database/cache utilization into one admin payload for the console.
+/// </summary>
+public sealed class OpsHealthSnapshotResponse
+{
+    /// <summary>Gets the UTC time the snapshot was produced.</summary>
+    [JsonPropertyName("generatedAt")]
+    public required DateTimeOffset GeneratedAt { get; init; }
+
+    /// <summary>Gets the overall status roll-up (<c>Healthy</c>/<c>Degraded</c>/<c>Unhealthy</c>) from the health report.</summary>
+    [JsonPropertyName("overallStatus")]
+    public required string OverallStatus { get; init; }
+
+    /// <summary>Gets the comprehensive health-check roll-up, including the alert-dispatch check.</summary>
+    [JsonPropertyName("health")]
+    public required OpsHealthChecksView Health { get; init; }
+
+    /// <summary>Gets the in-process serving-latency snapshot (per-protocol percentiles + error rate).</summary>
+    [JsonPropertyName("servingLatency")]
+    public required OpsServingLatencyView ServingLatency { get; init; }
+
+    /// <summary>Gets the geoprocessing queue depth by status/backend plus the active total.</summary>
+    [JsonPropertyName("geoprocessing")]
+    public required OpsGpQueueView Geoprocessing { get; init; }
+
+    /// <summary>Gets the alert-dispatch backlog / dead-letter summary.</summary>
+    [JsonPropertyName("alertDispatch")]
+    public required OpsAlertDispatchView AlertDispatch { get; init; }
+
+    /// <summary>Gets the coordinated-deploy readiness summary and platform-release skew.</summary>
+    [JsonPropertyName("deploy")]
+    public required OpsDeployReadinessView Deploy { get; init; }
+
+    /// <summary>Gets the database connection-pool utilization and cache/error metrics.</summary>
+    [JsonPropertyName("database")]
+    public required OpsDatabaseView Database { get; init; }
+}
+
+/// <summary>Comprehensive health-check roll-up view.</summary>
+public sealed class OpsHealthChecksView
+{
+    /// <summary>Gets the aggregate health status string.</summary>
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    /// <summary>Gets the total health-check evaluation duration in milliseconds.</summary>
+    [JsonPropertyName("totalDurationMs")]
+    public required double TotalDurationMs { get; init; }
+
+    /// <summary>Gets the individual health-check entries.</summary>
+    [JsonPropertyName("entries")]
+    public required IReadOnlyList<OpsHealthCheckEntryView> Entries { get; init; }
+}
+
+/// <summary>A single health-check entry.</summary>
+public sealed class OpsHealthCheckEntryView
+{
+    /// <summary>Gets the registered health-check name.</summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    /// <summary>Gets the check status string.</summary>
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    /// <summary>Gets the operator-facing description, when the check provides one.</summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    /// <summary>Gets the check duration in milliseconds.</summary>
+    [JsonPropertyName("durationMs")]
+    public required double DurationMs { get; init; }
+}
+
+/// <summary>In-process serving-latency snapshot view.</summary>
+public sealed class OpsServingLatencyView
+{
+    /// <summary>Gets the rolling window length in seconds.</summary>
+    [JsonPropertyName("windowSeconds")]
+    public required double WindowSeconds { get; init; }
+
+    /// <summary>Gets the per-protocol latency entries.</summary>
+    [JsonPropertyName("protocols")]
+    public required IReadOnlyList<OpsServingLatencyProtocolView> Protocols { get; init; }
+}
+
+/// <summary>Per-protocol serving latency entry.</summary>
+public sealed class OpsServingLatencyProtocolView
+{
+    /// <summary>Gets the protocol family.</summary>
+    [JsonPropertyName("protocol")]
+    public required string Protocol { get; init; }
+
+    /// <summary>Gets the in-window request count.</summary>
+    [JsonPropertyName("requestCount")]
+    public required long RequestCount { get; init; }
+
+    /// <summary>Gets the in-window server-error count (HTTP status &gt;= 500).</summary>
+    [JsonPropertyName("errorCount")]
+    public required long ErrorCount { get; init; }
+
+    /// <summary>Gets the server-error rate over the window (0.0 to 1.0).</summary>
+    [JsonPropertyName("errorRate")]
+    public required double ErrorRate { get; init; }
+
+    /// <summary>Gets the 50th-percentile duration in milliseconds.</summary>
+    [JsonPropertyName("p50Ms")]
+    public required double P50Ms { get; init; }
+
+    /// <summary>Gets the 95th-percentile duration in milliseconds.</summary>
+    [JsonPropertyName("p95Ms")]
+    public required double P95Ms { get; init; }
+
+    /// <summary>Gets the 99th-percentile duration in milliseconds.</summary>
+    [JsonPropertyName("p99Ms")]
+    public required double P99Ms { get; init; }
+
+    /// <summary>Gets the maximum duration in milliseconds.</summary>
+    [JsonPropertyName("maxMs")]
+    public required double MaxMs { get; init; }
+}
+
+/// <summary>Geoprocessing queue-depth view.</summary>
+public sealed class OpsGpQueueView
+{
+    /// <summary>Gets the total active jobs (queued + provisioning + running).</summary>
+    [JsonPropertyName("totalActive")]
+    public required int TotalActive { get; init; }
+
+    /// <summary>Gets a value indicating whether GP queue telemetry is available (an execution-job store is registered).</summary>
+    [JsonPropertyName("available")]
+    public required bool Available { get; init; }
+
+    /// <summary>Gets the active-job counts bucketed by status and backend.</summary>
+    [JsonPropertyName("buckets")]
+    public required IReadOnlyList<OpsGpQueueBucketView> Buckets { get; init; }
+}
+
+/// <summary>A single GP queue-depth bucket.</summary>
+public sealed class OpsGpQueueBucketView
+{
+    /// <summary>Gets the non-terminal job status (Queued/Provisioning/Running).</summary>
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    /// <summary>Gets the batch-compute backend identifier.</summary>
+    [JsonPropertyName("backend")]
+    public required string Backend { get; init; }
+
+    /// <summary>Gets the active-job count in this status/backend bucket.</summary>
+    [JsonPropertyName("count")]
+    public required int Count { get; init; }
+}
+
+/// <summary>Alert-dispatch backlog / dead-letter summary view.</summary>
+public sealed class OpsAlertDispatchView
+{
+    /// <summary>Gets a value indicating whether the dispatcher loop is running.</summary>
+    [JsonPropertyName("dispatcherRunning")]
+    public required bool DispatcherRunning { get; init; }
+
+    /// <summary>Gets a value indicating whether the alert pipeline is enabled by configuration.</summary>
+    [JsonPropertyName("dispatcherEnabled")]
+    public required bool DispatcherEnabled { get; init; }
+
+    /// <summary>Gets a value indicating whether the most recent dispatch pass failed to reach the backlog store.</summary>
+    [JsonPropertyName("storagePollFailing")]
+    public required bool StoragePollFailing { get; init; }
+
+    /// <summary>Gets the timestamp of the most recent successful dispatch pass, when known.</summary>
+    [JsonPropertyName("lastPollAt")]
+    public DateTimeOffset? LastPollAt { get; init; }
+
+    /// <summary>Gets the pending backlog count, when a backlog snapshot is available.</summary>
+    [JsonPropertyName("pendingCount")]
+    public long? PendingCount { get; init; }
+
+    /// <summary>Gets the dead-lettered count, when a backlog snapshot is available.</summary>
+    [JsonPropertyName("deadLetteredCount")]
+    public long? DeadLetteredCount { get; init; }
+}
+
+/// <summary>Coordinated-deploy readiness and platform-release skew summary view.</summary>
+public sealed class OpsDeployReadinessView
+{
+    /// <summary>Gets the preflight status string (<c>ready</c>/<c>blocked</c>).</summary>
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    /// <summary>Gets a value indicating whether the instance is ready for a coordinated deploy.</summary>
+    [JsonPropertyName("readyForCoordinatedDeploy")]
+    public required bool ReadyForCoordinatedDeploy { get; init; }
+
+    /// <summary>Gets the count of pending (non-contract) migration scripts.</summary>
+    [JsonPropertyName("pendingMigrationsCount")]
+    public required int PendingMigrationsCount { get; init; }
+
+    /// <summary>Gets the count of pending contract migration scripts (which hold coordinated-deploy readiness).</summary>
+    [JsonPropertyName("pendingContractScriptsCount")]
+    public required int PendingContractScriptsCount { get; init; }
+
+    /// <summary>Gets the platform-release skew summary.</summary>
+    [JsonPropertyName("platformRelease")]
+    public required OpsPlatformReleaseView PlatformRelease { get; init; }
+}
+
+/// <summary>Platform-release co-versioning summary view.</summary>
+public sealed class OpsPlatformReleaseView
+{
+    /// <summary>Gets the declared release version, when any.</summary>
+    [JsonPropertyName("releaseVersion")]
+    public string? ReleaseVersion { get; init; }
+
+    /// <summary>Gets a value indicating whether a platform release is declared.</summary>
+    [JsonPropertyName("releaseDeclared")]
+    public required bool ReleaseDeclared { get; init; }
+
+    /// <summary>Gets a value indicating whether all planes are co-versioned with the release.</summary>
+    [JsonPropertyName("isCoVersioned")]
+    public required bool IsCoVersioned { get; init; }
+
+    /// <summary>Gets the identifiers of planes skewed from the declared release.</summary>
+    [JsonPropertyName("skewedIds")]
+    public required IReadOnlyList<string> SkewedIds { get; init; }
+}
+
+/// <summary>Database connection-pool + cache/error utilization view.</summary>
+public sealed class OpsDatabaseView
+{
+    /// <summary>Gets the connection-pool utilization ratio (0.0 to 1.0), when available.</summary>
+    [JsonPropertyName("connectionPoolUtilization")]
+    public double? ConnectionPoolUtilization { get; init; }
+
+    /// <summary>Gets a value indicating whether connection-pool utilization telemetry is available.</summary>
+    [JsonPropertyName("hasConnectionPoolData")]
+    public required bool HasConnectionPoolData { get; init; }
+
+    /// <summary>Gets the number of active database connections.</summary>
+    [JsonPropertyName("activeConnections")]
+    public required int ActiveConnections { get; init; }
+
+    /// <summary>Gets the connection acquisition timeout count.</summary>
+    [JsonPropertyName("connectionAcquisitionTimeouts")]
+    public required long ConnectionAcquisitionTimeouts { get; init; }
+
+    /// <summary>Gets the connection acquisition failure count.</summary>
+    [JsonPropertyName("connectionAcquisitionFailures")]
+    public required long ConnectionAcquisitionFailures { get; init; }
+
+    /// <summary>Gets the cache hit ratio (0.0 to 1.0).</summary>
+    [JsonPropertyName("cacheHitRatio")]
+    public required double CacheHitRatio { get; init; }
+
+    /// <summary>Gets the live HTTP server error rate (0.0 to 1.0).</summary>
+    [JsonPropertyName("errorRate")]
+    public required double ErrorRate { get; init; }
+}
+
+/// <summary>Response for <c>GET /api/v{version}/admin/observability/findings</c>.</summary>
+public sealed class OpsFindingsListResponse
+{
+    /// <summary>Gets the UTC time the findings were evaluated.</summary>
+    [JsonPropertyName("generatedAt")]
+    public required DateTimeOffset GeneratedAt { get; init; }
+
+    /// <summary>Gets the active findings, ordered by descending severity.</summary>
+    [JsonPropertyName("findings")]
+    public required IReadOnlyList<OpsFindingView> Findings { get; init; }
+}
+
+/// <summary>Wire view of a single deterministic ops finding.</summary>
+public sealed class OpsFindingView
+{
+    /// <summary>Gets the deterministic finding identifier (used to propose its action).</summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    /// <summary>Gets the kebab-case rule identifier.</summary>
+    [JsonPropertyName("rule")]
+    public required string Rule { get; init; }
+
+    /// <summary>Gets the severity (<c>Info</c>/<c>Warning</c>/<c>Critical</c>).</summary>
+    [JsonPropertyName("severity")]
+    public required string Severity { get; init; }
+
+    /// <summary>Gets the short title.</summary>
+    [JsonPropertyName("title")]
+    public required string Title { get; init; }
+
+    /// <summary>Gets the plain-language explanation.</summary>
+    [JsonPropertyName("explanation")]
+    public required string Explanation { get; init; }
+
+    /// <summary>Gets the detection (evaluation) time.</summary>
+    [JsonPropertyName("detectedAt")]
+    public required DateTimeOffset DetectedAt { get; init; }
+
+    /// <summary>Gets the subject identifiers.</summary>
+    [JsonPropertyName("subject")]
+    public required OpsFindingSubjectView Subject { get; init; }
+
+    /// <summary>Gets the supporting evidence references.</summary>
+    [JsonPropertyName("evidenceRefs")]
+    public required IReadOnlyList<string> EvidenceRefs { get; init; }
+
+    /// <summary>Gets the recommended action summary, or <c>null</c> when the finding is informational.</summary>
+    [JsonPropertyName("recommendedAction")]
+    public OpsFindingActionView? RecommendedAction { get; init; }
+}
+
+/// <summary>Subject identifiers a finding pins to.</summary>
+public sealed class OpsFindingSubjectView
+{
+    /// <summary>Gets the deploy target identifier, when applicable.</summary>
+    [JsonPropertyName("targetId")]
+    public string? TargetId { get; init; }
+
+    /// <summary>Gets the execution workload identifier, when applicable.</summary>
+    [JsonPropertyName("workloadId")]
+    public string? WorkloadId { get; init; }
+
+    /// <summary>Gets the notification channel identifier, when applicable.</summary>
+    [JsonPropertyName("channel")]
+    public string? Channel { get; init; }
+
+    /// <summary>Gets the workflow/deploy operation identifier, when applicable.</summary>
+    [JsonPropertyName("operationId")]
+    public string? OperationId { get; init; }
+
+    /// <summary>Gets the platform release version, when applicable.</summary>
+    [JsonPropertyName("releaseVersion")]
+    public string? ReleaseVersion { get; init; }
+}
+
+/// <summary>
+/// Wire view of a finding's recommended action. The opaque execution payload is intentionally not
+/// surfaced — the console proposes the action by finding id, and the server materializes the payload.
+/// </summary>
+public sealed class OpsFindingActionView
+{
+    /// <summary>Gets the operation class the action routes through (<c>AdminConfigChange</c>/<c>Deploy</c>/<c>MetadataRelease</c>/<c>Seed</c>).</summary>
+    [JsonPropertyName("kind")]
+    public required string Kind { get; init; }
+
+    /// <summary>Gets the plain-language action summary.</summary>
+    [JsonPropertyName("summary")]
+    public required string Summary { get; init; }
+
+    /// <summary>Gets the operator-facing reason recorded on the proposal.</summary>
+    [JsonPropertyName("reason")]
+    public required string Reason { get; init; }
+}
+
+/// <summary>Response for <c>POST /api/v{version}/admin/observability/findings/{findingId}/propose</c>.</summary>
+public sealed class OpsFindingProposeResponse
+{
+    /// <summary>Gets the finding identifier that was proposed.</summary>
+    [JsonPropertyName("findingId")]
+    public required string FindingId { get; init; }
+
+    /// <summary>Gets the proposal outcome status (<c>Executed</c>/<c>ProposalCreated</c>/<c>Blocked</c>/<c>NotSupported</c>).</summary>
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    /// <summary>Gets the created proposal identifier when the gateway required approval.</summary>
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; init; }
+
+    /// <summary>Gets the executed operation identifier when the gateway executed directly.</summary>
+    [JsonPropertyName("executionOperationId")]
+    public string? ExecutionOperationId { get; init; }
+
+    /// <summary>Gets an operator-facing message describing the outcome, when available.</summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+}
