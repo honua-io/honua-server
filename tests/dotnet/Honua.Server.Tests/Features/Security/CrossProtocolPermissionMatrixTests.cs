@@ -127,12 +127,20 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task FeatureServerApplyEdits_UpdateGrant_OverridesCoarseDeny()
     {
+        // An Update RBAC grant must override the coarse data-editor role deny and
+        // allow Update operations for a principal that lacks the data-editor role.
+        // The payload is an updates-only request so the per-type Update check
+        // (BH3-001 fix) also exercises the correct grant path.
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
+        var payload = new StringContent(
+            @"{""updates"":[{""attributes"":{""objectid"":1,""name"":""rbac-test""}}]}",
+            System.Text.Encoding.UTF8,
+            "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
-            ServiceRbacTestFixture.CreateApplyEditsContent());
+            payload);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
@@ -486,6 +494,84 @@ public sealed class CrossProtocolPermissionMatrixTests
 
         response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Unauthorized);
         response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Forbidden);
+    }
+
+    // ---- FeatureServer applyEdits – Update payload (BH3-001 / BH3-014 regression) ----
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_UpdatePayload_InsertOnlyGrantDeniesUpdate()
+    {
+        // BH3-001 / BH3-014: applyEdits must check AuthorizationOperation.Update for an
+        // updates-only payload. Before the fix, an insert-only principal passed the pre-body
+        // coarse gate (any write op) and then sailed through the per-type block because there
+        // was no Update check — only Insert and Delete were gated. After the fix the
+        // per-type Update check must return 403 for insert-only principals.
+        using var factory = CreateWriteFactory(Grant("insert"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var payload = new StringContent(
+            @"{""updates"":[{""attributes"":{""objectid"":1,""name"":""unauthorized""}}]}",
+            System.Text.Encoding.UTF8,
+            "application/json");
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
+            payload);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden,
+            "an insert-only principal must not execute Update operations; body: {0}",
+            await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_UpdatePayload_UpdateGrantAllowsUpdate()
+    {
+        // BH3-001 / BH3-014: a principal with only an Update grant must be permitted to submit
+        // an updates-only payload. Validates the positive case so the regression check does not
+        // over-block.
+        using var factory = CreateWriteFactory(Grant("update"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var payload = new StringContent(
+            @"{""updates"":[{""attributes"":{""objectid"":1,""name"":""authorized""}}]}",
+            System.Text.Encoding.UTF8,
+            "application/json");
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
+            payload);
+
+        response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Forbidden,
+            "an update-only principal must be permitted to execute Update operations; body: {0}",
+            await response.Content.ReadAsStringAsync());
+        response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_UpdatePayload_DeleteOnlyGrantDeniesUpdate()
+    {
+        // BH3-014: a delete-only principal must also be denied an updates-only payload.
+        using var factory = CreateWriteFactory(Grant("delete"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+
+        var payload = new StringContent(
+            @"{""updates"":[{""attributes"":{""objectid"":1,""name"":""unauthorized""}}]}",
+            System.Text.Encoding.UTF8,
+            "application/json");
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
+            payload);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden,
+            "a delete-only principal must not execute Update operations; body: {0}",
+            await response.Content.ReadAsStringAsync());
     }
 
     // ---- WFS GetFeature + Transaction ----
