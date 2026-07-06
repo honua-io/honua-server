@@ -12,6 +12,7 @@ import httpx
 from pyproj import Transformer
 
 from shared.geometry import GeometryGenerator
+from shared.geoservices import assert_geoservices_error
 
 
 NON_DISTANCE_SPATIAL_RELS = [
@@ -134,7 +135,8 @@ class TestSpatialRelMatrix:
                 "f": "json",
             },
         )
-        assert response.status_code == 400
+        # PA-070/PA-117 (#2418): GeoServices errors -> HTTP 200 + {"error": {"code": 400}}.
+        assert_geoservices_error(response, body_codes={400})
 
 
 class TestGeometryTypeMatrix:
@@ -180,7 +182,8 @@ class TestNearestCount:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={"where": "1=1", "nearestCount": 3, "f": "json"},
         )
-        assert response.status_code == 400
+        # PA-070/PA-117 (#2418): GeoServices errors -> HTTP 200 + {"error": {"code": 400}}.
+        assert_geoservices_error(response, body_codes={400})
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -254,7 +257,8 @@ class TestInputOutputSpatialReference:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={"where": "1=1", "inSR": "invalid", "f": "json"},
         )
-        assert response.status_code == 400
+        # PA-070/PA-117 (#2418): GeoServices errors -> HTTP 200 + {"error": {"code": 400}}.
+        assert_geoservices_error(response, body_codes={400})
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -263,4 +267,5 @@ class TestInputOutputSpatialReference:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={"where": "1=1", "outSR": "invalid", "f": "json"},
         )
-        assert response.status_code == 400
+        # PA-070/PA-117 (#2418): GeoServices errors -> HTTP 200 + {"error": {"code": 400}}.
+        assert_geoservices_error(response, body_codes={400})

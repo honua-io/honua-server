@@ -16,6 +16,8 @@ import json
 import httpx
 import pytest
 
+from shared.geoservices import assert_geoservices_error
+
 
 class TestGeometryServer:
     @pytest.mark.integration
@@ -64,7 +66,8 @@ class TestImageServer:
             params={"f": "xml"},
         )
 
-        assert response.status_code == 400
+        # PA-070/PA-117 (#2418): GeoServices errors -> HTTP 200 + {"error": {"code": 400}}.
+        assert_geoservices_error(response, body_codes={400})
 
     @pytest.mark.integration
     def test_compute_statistics_histograms_valid_request_returns_statistics(
@@ -109,4 +112,6 @@ class TestImageServer:
             },
         )
 
-        assert response.status_code == 501
+        # PA-070/PA-117 (#2418): the not-implemented signal is now HTTP 200 +
+        # {"error": {"code": 501}} rather than a bare 501 status.
+        assert_geoservices_error(response, body_codes={501})

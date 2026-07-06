@@ -8,6 +8,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from shared.geoservices import assert_geoservices_error
+
 POINT_WKB_BASE64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 
@@ -75,7 +77,9 @@ class TestGPServerSmoke:
             },
         )
 
-        assert response.status_code == 400
+        # PA-070/PA-117 (#2418): GeoServices REST signals errors with HTTP 200 and an
+        # {"error": {"code": N}} body; the error code moved into the body, not the status.
+        assert response.status_code == 200
 
         data = response.json()
         assert data["error"]["code"] == 400
@@ -100,10 +104,12 @@ class TestGPServerSmoke:
             },
         )
 
+        # PA-070/PA-117 (#2418): the store-unavailable case now returns HTTP 200 with a
+        # {"error": {"code": 503}} body instead of a 503 status; branch on the body.
         assert response.status_code in (200, 503)
 
         data = response.json()
-        if response.status_code == 200:
+        if "error" not in data:
             assert data["jobId"]
             assert data["jobStatus"] == "esriJobSubmitted"
             return
