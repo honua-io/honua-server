@@ -94,6 +94,27 @@ public sealed class TeamsAlertDeliverySinkTests
     }
 
     [UnitTest]
+    public async Task DeliverAsync_WithOpsEvent_RendersOpsTitleAndSourceNotRuleFacts()
+    {
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK);
+        var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-teams").Returns(client);
+
+        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithTeams()));
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
+            AlertTestFixtures.CreateOpsAlertEvent());
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("Deploy prod-web failed", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.Contains("deploy-workflow", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.Contains("op-9f3c", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.Contains("Critical", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Rule ID", handler.LastRequestBody, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void ChannelType_ReturnsMicrosoftTeams()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
