@@ -86,6 +86,18 @@ internal static class OpsObservabilityEndpoints
                 detail);
         }
 
+        if (result.Status is OpsFindingProposalStatus.GatewayUnavailable)
+        {
+            // The server is running without its durable control-plane backend, so the approval
+            // gateway is not wired and the recommended fix cannot be routed (#2511). Surface a 503
+            // so callers can distinguish "temporarily degraded" from a not-found/no-action finding.
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status503ServiceUnavailable,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                result.Message
+                    ?? "The control-plane operation gateway is unavailable; the recommended action cannot be proposed.");
+        }
+
         var response = new OpsFindingProposeResponse
         {
             FindingId = result.FindingId,
