@@ -58,7 +58,7 @@ internal sealed class ResolveEntityTool : IMcpTool
     {
         Name = ToolName,
         Title = "Resolve entity",
-        Description = "Resolve a natural-language name or phrase (e.g. \"parcels\", \"flood zones\") to concrete published service/layer references, ranked by match quality. Use the returned serviceId/layerId with honua_query_features and honua_render_map. Resolves only against the live catalog, so it never invents layers that do not exist.",
+        Description = "Routing: a NAME or phrase -> layer references; use this when you just need to find a layer (not to explore or plan an analysis). Resolves a natural-language name or phrase (e.g. \"parcels\", \"flood zones\") to concrete published service/layer references, ranked by match quality. Use the returned serviceId/layerId with honua_query_features and honua_render_map. Resolves only against the live catalog, so it never invents layers that do not exist.",
         InputSchema = DiscoveryToolSchemas.ResolveEntityArgumentSchema,
         OutputSchema = DiscoveryToolSchemas.ResolveEntityOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Resolve entity")
