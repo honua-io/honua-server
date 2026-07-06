@@ -126,7 +126,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             ("username", "admin"), ("password", "WRONG"),
             ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-        await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
+        await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
     [IntegrationTest]

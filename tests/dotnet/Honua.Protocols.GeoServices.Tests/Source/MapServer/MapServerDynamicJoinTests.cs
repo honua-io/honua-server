@@ -12,6 +12,7 @@ using Honua.Protocols.GeoServices.MapServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -116,7 +117,7 @@ public sealed class MapServerDynamicJoinTests
             $"&dynamicLayers={dynamicLayers}&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        await response.AssertGeoServicesErrorAsync(400);
         content.Should().Contain("inaccessible right layer");
     }
 
@@ -168,7 +169,7 @@ public sealed class MapServerDynamicJoinTests
             $"&dynamicLayers={dynamicLayers}&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        await response.AssertGeoServicesErrorAsync(400);
         content.Should().Contain("not a valid field name");
     }
 

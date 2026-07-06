@@ -519,7 +519,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords",
             content);
 
-        await response.AssertGeoServicesErrorAsync(new[] { 415, 500 });
+        await response.AssertGeoServicesErrorAsync(415, 500);
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("Unsupported Media Type");
     }

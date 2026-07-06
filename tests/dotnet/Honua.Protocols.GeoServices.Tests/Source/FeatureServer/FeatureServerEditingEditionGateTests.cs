@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -10,6 +9,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
@@ -56,7 +56,7 @@ public sealed class FeatureServerEditingEditionGateTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+        await response.AssertGeoServicesErrorAsync(402);
         var responseBody = await response.Content.ReadAsStringAsync();
         responseBody.Should().Contain(FeatureCatalog.FeatureServerEditsKey);
     }
