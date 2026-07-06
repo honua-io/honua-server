@@ -149,6 +149,40 @@ public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ListAsync_WithOpsEventNullRuleId_DoesNotThrowAndReturnsNullRuleId()
+    {
+        // Regression: migration 075 relaxed rule_id to NULL so ops notifications
+        // (deploy/job terminal events) can reuse the alert outbox. The list mapper
+        // previously called GetInt64 unconditionally and threw InvalidCastException
+        // when an ops row (NULL rule_id) surfaced (#2427).
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
+        try
+        {
+            await EnsureSchemaAsync(schema);
+            var baseTime = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
+            await InsertEventAsync(schema, ruleId: 7, severity: "warning", occurredAt: baseTime);
+            var opsEventId = await InsertOpsEventAsync(schema, severity: "critical", occurredAt: baseTime.AddSeconds(1));
+
+            var query = new PostgresAlertEventQuery(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            var page = await query.ListAsync(new AlertEventFilter { PageSize = 10 });
+
+            page.Items.Should().HaveCount(2);
+            var opsRow = page.Items.Single(item => item.EventId == opsEventId);
+            opsRow.RuleId.Should().BeNull();
+            opsRow.Severity.Should().Be(AlertSeverity.Critical);
+
+            var single = await query.GetAsync(opsEventId);
+            single.Should().NotBeNull();
+            single!.RuleId.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task SuppressAsync_PersistsExpiryAndAuditMetadata()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
@@ -314,13 +348,36 @@ public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
         return (eventId, ruleId);
     }
 
+    private async Task<long> InsertOpsEventAsync(
+        string schema,
+        string severity,
+        DateTimeOffset occurredAt,
+        string serviceId = "deploy")
+    {
+        await using var conn = await fixture.GetConnectionAsync(schema);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $$"""
+            INSERT INTO "{{schema}}".alert_events (
+                dedupe_key, rule_id, service_id, layer_id, objectid, trigger_type, generation,
+                severity, occurred_at, payload, incident_status, incident_duration_ms, source)
+            VALUES (@dedupe, NULL, @svc, 0, 0, 1, 0, @sev, @occurred, '{}'::jsonb, 1, 0, 'ops')
+            RETURNING event_id;
+            """;
+        cmd.Parameters.AddWithValue("dedupe", Guid.NewGuid().ToString("N"));
+        cmd.Parameters.AddWithValue("svc", serviceId);
+        cmd.Parameters.AddWithValue("sev", severity);
+        cmd.Parameters.AddWithValue("occurred", occurredAt);
+
+        return (long)(await cmd.ExecuteScalarAsync())!;
+    }
+
     private async Task EnsureSchemaAsync(string schema)
     {
         await fixture.ExecuteAsync($$"""
             CREATE TABLE IF NOT EXISTS "{{schema}}".alert_events (
                 event_id BIGSERIAL PRIMARY KEY,
                 dedupe_key TEXT NOT NULL UNIQUE,
-                rule_id BIGINT NOT NULL,
+                rule_id BIGINT NULL,
                 zone_id BIGINT NULL,
                 service_id TEXT NOT NULL,
                 layer_id INT NOT NULL,
@@ -332,6 +389,7 @@ public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
                 payload JSONB NOT NULL DEFAULT '{}'::jsonb,
                 incident_status SMALLINT NOT NULL DEFAULT 1,
                 incident_duration_ms BIGINT NOT NULL DEFAULT 0,
+                source TEXT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
 
