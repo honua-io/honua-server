@@ -79,6 +79,23 @@ public sealed class CacheOptions
     public double JitterPercentage { get; set; } = 0.2;
 
     /// <summary>
+    /// Whether the in-process Metadata v2 graph snapshot cache is enabled. When enabled, the
+    /// caching provider decorator reuses one materialized catalog snapshot across request scopes
+    /// instead of re-reading the full catalog document (whole-JSONB SELECT + deserialize + index
+    /// rebuild) on every catalog resolution. Default is true.
+    /// </summary>
+    public bool MetadataGraphCacheEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Time-to-live for the in-process Metadata v2 graph snapshot cache in seconds. Kept short to
+    /// bound cross-node staleness in multi-node deployments (a catalog write on one node does not
+    /// reach another node's in-process cache); same-node writes invalidate immediately. Set to 0 to
+    /// disable the snapshot cache. Default is 10 seconds.
+    /// </summary>
+    [Range(0, 3600, ErrorMessage = "MetadataGraphTtlSeconds must be between 0 and 3600 seconds.")]
+    public int MetadataGraphTtlSeconds { get; set; } = 10;
+
+    /// <summary>
     /// Whether to use in-memory fallback when Redis is unavailable.
     /// Default is true for high availability.
     /// </summary>
@@ -169,6 +186,11 @@ public sealed class CacheOptions
     /// Gets the query response TTL as a TimeSpan.
     /// </summary>
     public TimeSpan QueryTtl => TimeSpan.FromSeconds(QueryTtlSeconds);
+
+    /// <summary>
+    /// Gets the Metadata v2 graph snapshot cache TTL as a TimeSpan.
+    /// </summary>
+    public TimeSpan MetadataGraphTtl => TimeSpan.FromSeconds(MetadataGraphTtlSeconds);
 
     /// <summary>
     /// Gets the retry interval as a TimeSpan.

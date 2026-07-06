@@ -50,7 +50,9 @@ internal sealed class QueryFeaturesTool : IMcpTool
         Title = "Query features",
         Description = "Query features from a published layer (by serviceId/layerId) with an optional attribute WHERE clause, bbox, outFields, and result limit. Returns a GeoJSON FeatureCollection. "
             + "Paging: results are capped at 'limit' (default 100, max 1000). When the response reports exceededTransferLimit=true there are more matching features; page through them mechanically by re-issuing the SAME query with resultOffset set to the returned nextOffset, repeating until exceededTransferLimit=false. "
-            + "Set returnCountOnly=true to get just the matching {count} (no features) for a cheap cardinality check, and returnGeometry=false to return attribute-only rows (geometry omitted) when scanning attributes.",
+            + "Set returnCountOnly=true to get just the matching {count} (no features) for a cheap cardinality check, and returnGeometry=false to return attribute-only rows (geometry omitted) when scanning attributes. "
+            + "Geometry coordinates are rounded to geometryPrecision decimal places (default 6, ~0.1 m) to keep responses compact; pass a higher value for finer precision or a negative value for full precision. "
+            + "The full FeatureCollection is always in structuredContent; for large pages the text block is a one-line summary (counts, ids, paging hint), not a duplicate of the data.",
         InputSchema = MapToolSchemas.QueryFeaturesArgumentSchema,
         OutputSchema = McpToolOutputSchemas.QueryFeaturesOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Query features")
@@ -79,6 +81,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
         var offset = ResolveOffset(argument.ResultOffset);
         var returnGeometry = argument.ReturnGeometry ?? true;
         var returnCountOnly = argument.ReturnCountOnly ?? false;
+        var geometryPrecision = argument.GeometryPrecision ?? MapToolSchemas.DefaultGeometryPrecision;
         var outSrid = argument.OutSrid ?? 4326;
         if (outSrid <= 0)
         {
@@ -116,7 +119,10 @@ internal sealed class QueryFeaturesTool : IMcpTool
                 Count = count
             };
 
-            return McpToolHelpers.SuccessResult(countOutput, MapToolJsonContext.Default.McpQueryFeaturesOutput);
+            return McpToolHelpers.SuccessResult(
+                countOutput,
+                MapToolJsonContext.Default.McpQueryFeaturesOutput,
+                SummarizeQueryResult);
         }
 
         var result = await reader.QueryAsync(layer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
@@ -124,7 +130,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
         var features = new List<JsonNode>(result.Items.Length);
         foreach (var feature in result.Items)
         {
-            features.Add(ToGeoJsonFeature(feature, geometryService, returnGeometry));
+            features.Add(ToGeoJsonFeature(feature, geometryService, returnGeometry, geometryPrecision));
         }
 
         var output = new McpQueryFeaturesOutput
@@ -141,7 +147,50 @@ internal sealed class QueryFeaturesTool : IMcpTool
             GeoJson = new McpGeoJsonFeatureCollection { Features = features }
         };
 
-        return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpQueryFeaturesOutput);
+        return McpToolHelpers.SuccessResult(
+            output,
+            MapToolJsonContext.Default.McpQueryFeaturesOutput,
+            SummarizeQueryResult);
+    }
+
+    /// <summary>
+    /// One-line, information-bearing summary of a query result for the <c>text</c>
+    /// content block: feature count, layer address, offset, the paging next-step
+    /// hint, and whether geometry was included — never a duplicate of the GeoJSON
+    /// payload (which always rides in <c>structuredContent</c>).
+    /// </summary>
+    private static string SummarizeQueryResult(McpQueryFeaturesOutput output)
+    {
+        if (output.Count is { } count)
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "Matched {0} feature(s) in {1}/{2} (count only, no geometry). Count in structuredContent.count.",
+                count,
+                output.ServiceId,
+                output.LayerId);
+        }
+
+        var geometryNote = output.GeoJson is { Features.Count: > 0 } collection
+            && collection.Features[0] is JsonObject first
+            && first.TryGetPropertyValue("geometry", out var geometryNode)
+            && geometryNode is null
+                ? "geometry omitted"
+                : "geometry included";
+
+        var pagingNote = output.ExceededTransferLimit && output.NextOffset is { } next
+            ? string.Format(CultureInfo.InvariantCulture, "more available: re-query with resultOffset={0}", next)
+            : "last page";
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "Returned {0} feature(s) from {1}/{2} at offset {3} ({4}, {5}). GeoJSON FeatureCollection in structuredContent.geojson.",
+            output.ReturnedCount,
+            output.ServiceId,
+            output.LayerId,
+            output.ResultOffset,
+            pagingNote,
+            geometryNote);
     }
 
     private static int ResolveLimit(int? requested)
@@ -260,13 +309,21 @@ internal sealed class QueryFeaturesTool : IMcpTool
             envelopeMaxY: maxY);
     }
 
-    private static JsonObject ToGeoJsonFeature(Feature feature, IGeometryService geometryService, bool returnGeometry)
+    private static JsonObject ToGeoJsonFeature(
+        Feature feature,
+        IGeometryService geometryService,
+        bool returnGeometry,
+        int geometryPrecision)
     {
         JsonNode? geometryNode = null;
         if (returnGeometry)
         {
             var geometryJson = geometryService.ConvertWkbToGeoJson(feature.Geometry);
             geometryNode = geometryJson is null ? null : JsonNode.Parse(geometryJson);
+            if (geometryNode is not null)
+            {
+                QuantizeCoordinates(geometryNode, geometryPrecision);
+            }
         }
 
         var properties = new JsonObject();
@@ -282,6 +339,50 @@ internal sealed class QueryFeaturesTool : IMcpTool
             ["geometry"] = geometryNode,
             ["properties"] = properties
         };
+    }
+
+    /// <summary>
+    /// Rounds every coordinate in a GeoJSON geometry node to
+    /// <paramref name="precision"/> decimal places in place. Walks the geometry
+    /// tree uniformly so Point/LineString/Polygon/Multi*/GeometryCollection
+    /// coordinates (and any <c>bbox</c>) are all quantized. A negative or
+    /// out-of-range precision leaves coordinates untouched (full precision).
+    /// </summary>
+    private static void QuantizeCoordinates(JsonNode node, int precision)
+    {
+        if (precision < 0 || precision > MapToolSchemas.MaxGeometryPrecision)
+        {
+            return;
+        }
+
+        switch (node)
+        {
+            case JsonArray array:
+                for (var i = 0; i < array.Count; i++)
+                {
+                    var element = array[i];
+                    if (element is JsonValue value && value.TryGetValue<double>(out var coordinate))
+                    {
+                        array[i] = JsonValue.Create(Math.Round(coordinate, precision, MidpointRounding.AwayFromZero));
+                    }
+                    else if (element is not null)
+                    {
+                        QuantizeCoordinates(element, precision);
+                    }
+                }
+
+                break;
+            case JsonObject obj:
+                foreach (var property in obj)
+                {
+                    if (property.Value is not null)
+                    {
+                        QuantizeCoordinates(property.Value, precision);
+                    }
+                }
+
+                break;
+        }
     }
 
     private static JsonValue? ToJsonValue(object? value) => value switch

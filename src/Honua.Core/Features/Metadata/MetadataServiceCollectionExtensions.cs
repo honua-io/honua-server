@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Caching;
 using Honua.Core.Features.Metadata.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -26,6 +27,25 @@ public static class MetadataServiceCollectionExtensions
         services.TryAddSingleton<IMetadataReleasePackageStore, InMemoryMetadataReleasePackageStore>();
         services.TryAddScoped<IMetadataReleaseService, MetadataReleaseService>();
         services.TryAddScoped<IMetadataCompatibilityPrevalidationService, MetadataCompatibilityPrevalidationService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the shared, per-instance Metadata v2 graph snapshot cache and its invalidation
+    /// hook. Idempotent — safe to call from every provider registration path. The cache lets the
+    /// caching provider decorator reuse one materialized snapshot across request scopes instead of
+    /// re-reading the full catalog document on every catalog resolution. Staleness is bounded by
+    /// <c>Cache:MetadataGraphTtlSeconds</c>; catalog writes invalidate the writing node immediately.
+    /// </summary>
+    /// <param name="services">The service collection to add services to.</param>
+    public static IServiceCollection AddMetadataV2GraphSnapshotCache(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<MetadataV2GraphSnapshotCache>();
+        services.TryAddSingleton<IMetadataV2GraphCacheInvalidator>(
+            static sp => sp.GetRequiredService<MetadataV2GraphSnapshotCache>());
         return services;
     }
 

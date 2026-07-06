@@ -397,11 +397,27 @@ internal sealed class McpContentBlock
     public string? Data { get; set; }
 
     /// <summary>
-    /// MIME type for an <c>image</c> content block (e.g. <c>image/png</c>). Null
-    /// for text blocks.
+    /// MIME type for an <c>image</c> or <c>resource_link</c> content block (e.g.
+    /// <c>image/png</c>). Null for text blocks.
     /// </summary>
     [JsonPropertyName("mimeType")]
     public string? MimeType { get; set; }
+
+    /// <summary>
+    /// Target URI for a <c>resource_link</c> content block (MCP 2025-06-18). Used
+    /// by <c>honua_render_map</c> to hand back a fetchable artifact href instead
+    /// of inlining a multi-megabyte base64 image into the model context. Null for
+    /// text/image blocks (omitted from the wire by <c>WhenWritingNull</c>).
+    /// </summary>
+    [JsonPropertyName("uri")]
+    public string? Uri { get; set; }
+
+    /// <summary>
+    /// Human-readable name for a <c>resource_link</c> content block. Null for
+    /// text/image blocks.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
 }
 
 /// <summary>
