@@ -9,6 +9,7 @@ using FluentAssertions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.OData.Models;
 using Honua.TestKit;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.Core.Features.Licensing.Domain;
@@ -533,8 +534,8 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         // Act
         var response = await _client.GetAsync("/rest/services/nonexistent/FeatureServer?f=json");
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // Assert (PA-070/PA-117 #2418: GeoServices errors are HTTP 200 + {"error":{"code":404}})
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -545,8 +546,8 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         // Act
         var response = await _client.GetAsync("/rest/services/test/FeatureServer/99999?f=json");
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // Assert (PA-070/PA-117 #2418: GeoServices errors are HTTP 200 + {"error":{"code":404}})
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -557,8 +558,8 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         // Act
         var response = await _client.GetAsync("/rest/services/test/FeatureServer/1/query?where=INVALID_SQL_SYNTAX&f=json");
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // Assert (PA-070/PA-117 #2418: GeoServices errors are HTTP 200 + {"error":{"code":400}})
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     #endregion

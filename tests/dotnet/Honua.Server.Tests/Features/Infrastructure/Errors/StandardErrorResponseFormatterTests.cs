@@ -280,7 +280,9 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         var responseBody = GetResponseBody(context);
         responseBody.Should().Contain("<ServiceExceptionReport");
         responseBody.Should().Contain("LayerNotDefined");
-        responseBody.Should().Contain("Layer 'test-service' not found.");
+        // The exception text is XML-escaped by the formatter (SecurityElement.Escape),
+        // so apostrophes appear as &apos; in the serialized report.
+        responseBody.Should().Contain("Layer &apos;test-service&apos; not found.");
         responseBody.Should().NotContain("\"error\"");
     }
 
