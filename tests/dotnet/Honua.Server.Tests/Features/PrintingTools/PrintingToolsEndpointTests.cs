@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
@@ -135,10 +136,12 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             content);
 
         // PDF may be blocked by entitlement gating (Community edition in tests).
-        // Accept either OK with PDF or Payment Required from license gating.
-        if (response.StatusCode == HttpStatusCode.OK)
+        // Accept either a PDF document or a Payment Required GeoServices error from
+        // license gating. Post-#2418 a GeoServices error is signalled with HTTP 200 +
+        // an {"error":{"code":402}} body, so branch on the produced content type (a
+        // real PDF) rather than the HTTP status.
+        if (response.Content.Headers.ContentType?.MediaType == "application/pdf")
         {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/pdf");
             var bytes = await response.Content.ReadAsByteArrayAsync();
             bytes.Length.Should().BeGreaterThan(0);
             // Verify PDF magic bytes
@@ -149,7 +152,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         }
         else
         {
-            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            await response.AssertGeoServicesErrorAsync(402);
         }
     }
 
@@ -242,7 +245,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -278,7 +281,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -303,7 +306,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -328,7 +331,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/submitJob",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -364,7 +367,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -402,7 +405,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -420,7 +423,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -439,7 +442,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -459,7 +462,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     // --- Async Job Submission ---
@@ -617,7 +620,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/nonexistent-job-id");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     // --- Job Result ---
@@ -647,19 +650,25 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         var resultResponse = await _client.GetAsync(
             $"/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/{jobId}/results/Output_File");
 
-        // Should be BadRequest since job isn't complete yet, or OK if it completed fast
-        if (resultResponse.StatusCode == HttpStatusCode.OK)
+        // The job is either complete (single GP parameter object) or still processing
+        // (a GeoServices 400 error). Post-#2418 an incomplete-job error is signalled
+        // with HTTP 200 + an {"error":{"code":400}} body, so branch on the presence of
+        // an "error" member rather than the HTTP status.
+        var resultJson = await resultResponse.Content.ReadAsStringAsync();
+        using var resultDoc = JsonDocument.Parse(resultJson);
+        var resultRoot = resultDoc.RootElement;
+        var isError = resultRoot.ValueKind == JsonValueKind.Object &&
+                      resultRoot.TryGetProperty("error", out _);
+
+        if (resultResponse.StatusCode == HttpStatusCode.OK && !isError)
         {
             // Verify single GP parameter object shape (not wrapped in results[])
-            var resultJson = await resultResponse.Content.ReadAsStringAsync();
-            using var resultDoc = JsonDocument.Parse(resultJson);
-            var resultRoot = resultDoc.RootElement;
             resultRoot.GetProperty("paramName").GetString().Should().Be("Output_File");
             resultRoot.GetProperty("dataType").GetString().Should().Be("GPDataFile");
         }
         else
         {
-            resultResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await resultResponse.AssertGeoServicesErrorAsync(400);
         }
     }
 
@@ -671,7 +680,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/does-not-exist/results/Output_File");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     // --- Helper Methods ---

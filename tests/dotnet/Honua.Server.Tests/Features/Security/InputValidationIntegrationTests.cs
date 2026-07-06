@@ -10,6 +10,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Security;
@@ -49,7 +50,7 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         using var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("SQL injection attempt detected");
@@ -109,7 +110,7 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         using var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         (await response.Content.ReadAsStringAsync()).Should().Contain("SQL injection attempt detected");
     }
 
@@ -140,7 +141,7 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         using var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Path traversal attempt detected");
     }
@@ -233,7 +234,7 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         using var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("SQL injection attempt detected");
     }
