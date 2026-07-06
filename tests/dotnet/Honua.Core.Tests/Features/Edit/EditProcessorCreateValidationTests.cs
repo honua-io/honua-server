@@ -230,4 +230,89 @@ public sealed class EditProcessorCreateValidationTests
         result.IsValid.Should().BeTrue(
             "field presence check must be case-insensitive so 'NAME' satisfies the 'name' schema field");
     }
+
+    // Resource that carries BOTH a distinct public primary id ("id", string, id.primary role) AND a
+    // separate server-assigned integer object-id ("objectid", no role) — the shape of the OGC API
+    // Features String-ID layers (OgcFeaturesStringIdentifierEndpointTests, StringIdLayerId=99).
+    // FindPrimaryIdField resolves to the roled public "id", so before this fix the conventional
+    // integer "objectid" fell through the primary-id skip and a create omitting it (the normal case,
+    // since the server auto-assigns it) was rejected — surfacing as an OGC HTTP 500.
+    private static MetadataV2Resource CreateResourceWithDistinctPublicIdAndObjectId() => new()
+    {
+        SchemaFields =
+        [
+            new MetadataV2Field
+            {
+                Name = "id",
+                Type = MetadataV2FieldType.String,
+                Nullable = false,
+                Length = 64,
+                SemanticRoles = ["id.primary"]
+            },
+            new MetadataV2Field
+            {
+                Name = "objectid",
+                Type = MetadataV2FieldType.Integer,
+                Nullable = false,
+                SemanticRoles = []
+            },
+            new MetadataV2Field
+            {
+                Name = "name",
+                Type = MetadataV2FieldType.String,
+                Nullable = false,
+                SemanticRoles = []
+            }
+        ]
+    };
+
+    // Regression (OGC create-with-top-level-string-feature-id): a create that supplies the public
+    // "id" plus the required "name" but omits the server-assigned integer "objectid" must validate,
+    // even though "objectid" is non-nullable and does not carry the id.primary role (a separate
+    // "id" field does). Before the fix this failed with
+    // "Required attribute(s) missing for create operation: objectid" → OGC HTTP 500.
+    [UnitTest]
+    public void ValidateEdit_CreateOmittingServerAssignedObjectIdBesidePublicId_Succeeds()
+    {
+        var processor = CreateProcessor();
+        var resource = CreateResourceWithDistinctPublicIdAndObjectId();
+
+        var attributes = ImmutableDictionary.Create<string, object?>(StringComparer.OrdinalIgnoreCase)
+            .Add("id", "top-level-created")
+            .Add("name", "Top Level ID Created");
+
+        var request = UnifiedEditRequest.WithCreates(
+            ImmutableArray.Create(EditFeature.ForCreate(geometry: null, attributes)));
+
+        var result = processor.ValidateEdit(request, resource);
+
+        result.IsValid.Should().BeTrue(
+            "the conventional server-assigned integer object-id must never be required from the "
+            + "client, even when a distinct id.primary field is the resource's resolved primary id");
+    }
+
+    // The fix must not weaken validation: on the same two-id-field layer, a genuinely-missing
+    // required NON-id field ("name") is still rejected, and the server-assigned "objectid" must not
+    // appear in the missing-required list.
+    [UnitTest]
+    public void ValidateEdit_CreateMissingRequiredFieldBesidePublicIdAndObjectId_StillFails()
+    {
+        var processor = CreateProcessor();
+        var resource = CreateResourceWithDistinctPublicIdAndObjectId();
+
+        // Supplies only the public "id"; the required "name" field is absent.
+        var attributes = ImmutableDictionary.Create<string, object?>(StringComparer.OrdinalIgnoreCase)
+            .Add("id", "top-level-created");
+
+        var request = UnifiedEditRequest.WithCreates(
+            ImmutableArray.Create(EditFeature.ForCreate(geometry: null, attributes)));
+
+        var result = processor.ValidateEdit(request, resource);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("name",
+            "a genuinely-missing required non-id field must still be reported");
+        result.ErrorMessage.Should().NotContain("objectid",
+            "the server-assigned object-id field must never appear as a missing required attribute");
+    }
 }
