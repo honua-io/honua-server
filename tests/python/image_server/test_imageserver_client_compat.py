@@ -94,13 +94,15 @@ def test_imageserver_python_client_error_shapes(
     invalid_format = client.service_info(f="xml")
     invalid_identify_format = client.identify(geometry="0,0", f="xml")
 
-    assert invalid_format.status_code == 400
+    # PA-070/PA-117 (#2418): GeoServices REST signals errors with HTTP 200 and an
+    # {"error": {"code": N}} body; the failing code moved into the body, not the status.
+    assert invalid_format.status_code == 200
     invalid_format_error = _assert_esri_error(invalid_format, 400)
     assert "Only JSON format is supported" in " ".join(
         invalid_format_error["error"].get("details") or []
     )
 
-    assert invalid_identify_format.status_code == 400
+    assert invalid_identify_format.status_code == 200
     identify_error = _assert_esri_error(invalid_identify_format, 400)
     assert "Only JSON format is supported" in " ".join(
         identify_error["error"].get("details") or []

@@ -107,7 +107,8 @@ describe('WHERE Clause', () => {
     describe.each(INVALID_WHERE_CASES)('$name', ({ where }) => {
       it(`should reject: ${where}`, async () => {
         const response = await client.query({ where });
-        expect(response.status).toBe(400);
+        expect(response.status).toBe(200);
+        expect((response.data as { error?: { code?: number } }).error?.code).toBe(400);
       });
     });
   });
@@ -409,7 +410,8 @@ describe('Pagination', () => {
         resultOffset: 1000001,
       });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(200);
+      expect((response.data as { error?: { code?: number } }).error?.code).toBe(400);
     });
   });
 

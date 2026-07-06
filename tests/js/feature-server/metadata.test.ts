@@ -102,7 +102,8 @@ describe('Service Metadata', () => {
       });
 
       const response = await customClient.getServiceMetadata();
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(200);
+      expect((response.data as { error?: { code?: number } }).error?.code).toBe(404);
     });
   });
 });
@@ -330,7 +331,8 @@ describe('Layer Metadata', () => {
   describe('Error Cases', () => {
     it('should return 404 for nonexistent layer', async () => {
       const response = await client.getLayerMetadata(99999);
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(200);
+      expect((response.data as { error?: { code?: number } }).error?.code).toBe(404);
     });
   });
 });

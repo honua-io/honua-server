@@ -121,5 +121,7 @@ def test_gpserver_python_client_missing_job_uses_esri_error_shape(
 
     response = client.missing_job_status()
 
-    assert response.status_code in (404, 503)
-    _assert_esri_error(response, response.status_code)
+    # PA-070/PA-117 (#2418): a not-found job now yields HTTP 200 + {"error": {"code": 404}}
+    # per the Esri GeoServices convention; a durable-store outage still surfaces as 503.
+    assert response.status_code in (200, 503)
+    _assert_esri_error(response, 404 if response.status_code == 200 else 503)

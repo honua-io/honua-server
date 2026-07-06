@@ -526,7 +526,9 @@ describe('ApplyEdits - Error Handling', () => {
         body: new URLSearchParams({ adds: 'not valid json', f: 'json' }),
       });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(200);
+      const data = await response.json() as { error?: { code?: number } };
+      expect(data.error?.code).toBe(400);
     });
   });
 
