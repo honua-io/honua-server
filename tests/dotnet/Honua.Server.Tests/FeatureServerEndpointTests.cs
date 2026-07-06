@@ -3026,7 +3026,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
             content);
 
-        await response.AssertGeoServicesErrorAsync(new[] { 415, 500 });
+        await response.AssertGeoServicesErrorAsync(415, 500);
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("Unsupported Media Type");
     }

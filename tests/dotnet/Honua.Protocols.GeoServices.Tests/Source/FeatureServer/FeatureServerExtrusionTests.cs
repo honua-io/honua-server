@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -116,7 +117,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        await response.AssertGeoServicesErrorAsync(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldMissing);
     }
@@ -136,7 +137,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        await response.AssertGeoServicesErrorAsync(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldNotFound);
     }
@@ -156,7 +157,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        await response.AssertGeoServicesErrorAsync(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldTypeInvalid);
     }
@@ -180,7 +181,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        await response.AssertGeoServicesErrorAsync(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.UnitUnrecognized);
     }
@@ -201,7 +202,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        await response.AssertGeoServicesErrorAsync(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.NegativeDefaultHeight);
     }

@@ -9,6 +9,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -240,7 +241,7 @@ public sealed class SharingOAuth2IntrospectionTests
             using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
             using var response = await PostIntrospectAsync(client, "any-token");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await response.AssertGeoServicesErrorAsync(404);
         }
         finally
         {

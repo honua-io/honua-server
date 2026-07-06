@@ -466,7 +466,7 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
         else
         {
             // If transformation fails, should return informative error
-            await response.AssertGeoServicesErrorAsync(new[] { 400, 422 });
+            await response.AssertGeoServicesErrorAsync(400, 422);
         }
     }
 

@@ -15,6 +15,7 @@ using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
@@ -527,7 +528,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpkx");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        await response.AssertGeoServicesErrorAsync(400);
         content.Should().Contain("compact");
     }
 
@@ -1335,7 +1336,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         var invalidResponse = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=invalid");
-        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await invalidResponse.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -1515,7 +1516,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
             new StringContent(payload, Encoding.UTF8, "text/plain"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -1527,7 +1528,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await PostTextPlainJsonAsync("/find");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        await response.AssertGeoServicesErrorAsync(415, 500);
     }
 
     [IntegrationTest]
@@ -1537,7 +1538,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await PostTextPlainJsonAsync("/export");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        await response.AssertGeoServicesErrorAsync(415, 500);
     }
 
     [IntegrationTest]
@@ -1547,7 +1548,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await PostTextPlainJsonAsync("/identify");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        await response.AssertGeoServicesErrorAsync(415, 500);
     }
 
     [IntegrationTest]
@@ -1557,7 +1558,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await PostTextPlainJsonAsync("/generateKml");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        await response.AssertGeoServicesErrorAsync(415, 500);
     }
 
     [IntegrationTest]
@@ -2044,8 +2045,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryAttachments?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     private Task<HttpResponseMessage> PostTextPlainJsonAsync(string operationPath)
