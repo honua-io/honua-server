@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -176,7 +177,7 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
 
         // Open-redirect mitigation: a non-allow-listed redirect_uri is a direct 400
         // and is NEVER redirected to.
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         response.Headers.Location.Should().BeNull();
     }
 

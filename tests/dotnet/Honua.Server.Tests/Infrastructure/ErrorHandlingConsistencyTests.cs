@@ -5,6 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Infrastructure.Models;
+using Honua.TestKit.Extensions;
 using Honua.Protocols.OData.Models;
 using Honua.TestKit;
 using Honua.Core.Features.Licensing.Domain;
@@ -42,8 +43,17 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
             var response = await _fixture.Client.GetAsync(endpoint);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-                $"endpoint {endpoint} should return 404 Not Found");
+            // GeoServices surfaces (/rest/services, /tiles) now signal errors as
+            // HTTP 200 + {"error":{"code":404}} (#2418); OGC/OData keep RFC 7807.
+            if (IsGeoServicesEndpoint(endpoint))
+            {
+                await response.AssertGeoServicesErrorAsync(404);
+            }
+            else
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                    $"endpoint {endpoint} should return 404 Not Found");
+            }
         }
     }
 
@@ -157,10 +167,24 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
             var response = await _fixture.Client.GetAsync(endpoint);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-                $"endpoint {endpoint} should return 400 Bad Request for invalid syntax");
+            // GeoServices surfaces (/rest/services, /tiles) now signal errors as
+            // HTTP 200 + {"error":{"code":400}} (#2418, PA-070/PA-117); OGC API and
+            // OData keep RFC 7807 HTTP status semantics.
+            if (IsGeoServicesEndpoint(endpoint))
+            {
+                await response.AssertGeoServicesErrorAsync(400);
+            }
+            else
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+                    $"endpoint {endpoint} should return 400 Bad Request for invalid syntax");
+            }
         }
     }
+
+    private static bool IsGeoServicesEndpoint(string endpoint) =>
+        endpoint.StartsWith("/rest/services", StringComparison.Ordinal) ||
+        endpoint.StartsWith("/tiles", StringComparison.Ordinal);
 
     [Fact]
     public async Task AllProtocols_NoSensitiveInformationLeakage_InErrorResponses()

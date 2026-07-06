@@ -14,6 +14,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
@@ -355,8 +356,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             ResolvePath(WebAppFixture.TestServiceId, replicaId, conflictId),
             JsonContent.Create(new ReplicaConflictResolutionRequest { Action = "teleport" }));
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -396,7 +396,6 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             ConflictsPath(WebAppFixture.TestServiceId, "00000000000000000000000000000000"));
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 }

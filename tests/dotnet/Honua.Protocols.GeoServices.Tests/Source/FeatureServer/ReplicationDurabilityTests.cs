@@ -10,6 +10,7 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.Configuration;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
@@ -222,7 +223,7 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
             new StringContent(failedUploadPayload, Encoding.UTF8, "application/json"));
 
-        failedUploadResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await failedUploadResponse.AssertGeoServicesErrorAsync(400);
 
         var afterFailure = await repo.GetAsync(replicaId);
         afterFailure.Should().NotBeNull();

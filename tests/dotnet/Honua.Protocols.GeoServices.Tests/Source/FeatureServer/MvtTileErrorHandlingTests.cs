@@ -8,6 +8,7 @@ using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -172,8 +173,8 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
         var queryResponse = await _fixture.Client.GetAsync("/rest/services/99999/FeatureServer/0/query");
 
         // Assert - Both should return the same error response format
-        mvtResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        queryResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await mvtResponse.AssertGeoServicesErrorAsync(404);
+        await queryResponse.AssertGeoServicesErrorAsync(404);
 
         var mvtContent = await mvtResponse.Content.ReadAsStringAsync();
         var queryContent = await queryResponse.Content.ReadAsStringAsync();

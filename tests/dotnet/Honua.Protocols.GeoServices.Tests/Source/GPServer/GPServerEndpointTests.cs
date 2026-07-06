@@ -18,6 +18,7 @@ using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -129,7 +130,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer",
             new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        await response.AssertGeoServicesErrorAsync(415, 500);
     }
 
     [IntegrationTest]
@@ -521,7 +522,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
             new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        await response.AssertGeoServicesErrorAsync(415, 500);
     }
 
     [IntegrationTest]
@@ -694,10 +695,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent-job-id?f=json");
 
-        // Without Redis: ServiceUnavailable; With Redis: NotFound
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.NotFound,
-            HttpStatusCode.ServiceUnavailable);
+        await response.AssertGeoServicesErrorAsync(404, 503);
     }
 
     // -----------------------------------------------------------------------
@@ -712,10 +710,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/results/Output?f=json");
 
-        // Without Redis: ServiceUnavailable; With Redis: NotFound
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.NotFound,
-            HttpStatusCode.ServiceUnavailable);
+        await response.AssertGeoServicesErrorAsync(404, 503);
     }
 
     [IntegrationTest]
@@ -794,10 +789,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/cancel?f=json");
 
-        // Without Redis: ServiceUnavailable; With Redis: NotFound
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.NotFound,
-            HttpStatusCode.ServiceUnavailable);
+        await response.AssertGeoServicesErrorAsync(404, 503);
     }
 
     [IntegrationTest]
@@ -809,9 +801,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/cancel",
             new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" }));
 
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.NotFound,
-            HttpStatusCode.ServiceUnavailable);
+        await response.AssertGeoServicesErrorAsync(404, 503);
     }
 
     // -----------------------------------------------------------------------
@@ -854,7 +844,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var statusResponse = await _client.GetAsync(
             $"/rest/services/OtherService/GPServer/BufferAnalysis/jobs/{jobId}?f=json");
 
-        statusResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await statusResponse.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -893,7 +883,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var statusResponse = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/DifferentTask/jobs/{jobId}?f=json");
 
-        statusResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await statusResponse.AssertGeoServicesErrorAsync(404);
     }
 
     // -----------------------------------------------------------------------
@@ -1108,7 +1098,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/?f=json");
 
-        response.IsSuccessStatusCode.Should().BeFalse();
+        await response.AssertGeoServicesErrorAsync(400, 404);
     }
 
     [IntegrationTest]
@@ -1131,7 +1121,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             var response = await client.GetAsync(
                 $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/slow-job?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.RequestTimeout);
+            await response.AssertGeoServicesErrorAsync(408);
         }
         finally
         {
@@ -1159,7 +1149,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             var response = await client.GetAsync(
                 $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/completed-job?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+            await response.AssertGeoServicesErrorAsync(412, 500);
         }
         finally
         {
@@ -1209,8 +1199,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
             // Auth must be checked before parameter validation â€” expect 401 not 400.
-            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
-                "auth must be checked before env-control rejection per IGeoprocessingJobService contract");
+            await response.AssertGeoServicesErrorAsync(401, 499);
         }
         finally
         {

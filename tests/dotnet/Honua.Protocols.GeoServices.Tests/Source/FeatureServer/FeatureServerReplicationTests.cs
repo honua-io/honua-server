@@ -10,6 +10,7 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
 
@@ -121,7 +122,7 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
                 new StringContent(payload, Encoding.UTF8, "application/json"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            await response.AssertGeoServicesErrorAsync(402);
             var body = await response.Content.ReadAsStringAsync();
             body.Should().Contain(FeatureCatalog.FieldOpsOfflineSyncKey);
         }
