@@ -6,6 +6,7 @@ using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Edit;
@@ -751,22 +752,33 @@ public sealed class EditProcessor : IEditProcessor
     }
 
     /// <summary>
-    /// Determines whether <paramref name="field"/> is the resource's server-assigned primary id
-    /// field, which must never be required from a create/update client payload. A field qualifies
-    /// when it carries the <c>id.primary</c> semantic role OR when its name matches the resource's
+    /// Determines whether <paramref name="field"/> is a server-assigned identifier field, which
+    /// must never be required from a create/update client payload. A field qualifies when it
+    /// carries the <c>id.primary</c> semantic role, when its name matches the resource's
     /// authoritative primary-id field name (<see cref="MetadataV2SpatialExtensions.FindPrimaryIdField"/>,
-    /// which falls back to the conventional <c>objectid</c>/<c>id</c> name).
+    /// which falls back to the conventional <c>objectid</c>/<c>id</c> name), OR when it is the
+    /// conventional server-assigned integer object-id field (an integer/big-integer field named
+    /// <see cref="FieldNames.ObjectId"/>).
     /// </summary>
     /// <remarks>
     /// The semantic-role check alone is insufficient: many seeded and published layers declare a
     /// non-nullable <c>objectid</c> field without the <c>id.primary</c> role. BH2-014 (#2456) added a
     /// per-field required-attribute gate that keyed exclusively on the role, so every create that
     /// omitted <c>objectid</c> — the normal case, since the server assigns it — was rejected with
-    /// "Required attribute(s) missing for create operation: objectid". Keying the skip on the
-    /// resource's authoritative id-field name as well restores valid creates while still rejecting
+    /// "Required attribute(s) missing for create operation: objectid". c4dada39 keyed the skip on the
+    /// resource's authoritative id-field name as well.
+    /// <para>
+    /// That still missed layers that declare BOTH a distinct public primary id (e.g. a string field
+    /// with the <c>id.primary</c> role) AND a separate server-assigned integer <c>objectid</c>. For
+    /// those, <see cref="MetadataV2SpatialExtensions.FindPrimaryIdField"/> resolves to the roled
+    /// public id, so the conventional <c>objectid</c> fell through and every create omitting it (the
+    /// normal case — it is auto-assigned) was rejected with a 500. The OGC API Features create path
+    /// (String-ID layers) is exactly this shape. Recognizing the conventional integer object-id
+    /// independently of the resolved primary id restores those creates while still rejecting
     /// genuinely-missing non-id required fields.
+    /// </para>
     /// </remarks>
-    private static bool IsResourcePrimaryIdField(MetadataV2Field field, string? primaryIdFieldName)
+    private static bool IsServerAssignedIdField(MetadataV2Field field, string? primaryIdFieldName)
     {
         for (var i = 0; i < field.SemanticRoles.Count; i++)
         {
@@ -776,8 +788,16 @@ public sealed class EditProcessor : IEditProcessor
             }
         }
 
-        return primaryIdFieldName is not null
-            && string.Equals(field.Name, primaryIdFieldName, StringComparison.OrdinalIgnoreCase);
+        if (primaryIdFieldName is not null
+            && string.Equals(field.Name, primaryIdFieldName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Conventional server-assigned integer object-id (Esri-style OID): auto-assigned on insert
+        // even when a distinct public primary-id field carries the id.primary role.
+        return field.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
+            && string.Equals(field.Name, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool RequiresAttributes(MetadataV2Resource resource)
@@ -795,8 +815,8 @@ public sealed class EditProcessor : IEditProcessor
             {
                 continue;
             }
-            // Skip the primary id field — it is generated server-side on create.
-            if (IsResourcePrimaryIdField(field, primaryIdFieldName))
+            // Skip server-assigned identifier fields — they are generated server-side on create.
+            if (IsServerAssignedIdField(field, primaryIdFieldName))
             {
                 continue;
             }
@@ -828,8 +848,8 @@ public sealed class EditProcessor : IEditProcessor
                 continue;
             }
 
-            // Skip the primary id field — it is generated server-side on create.
-            if (IsResourcePrimaryIdField(field, primaryIdFieldName))
+            // Skip server-assigned identifier fields — they are generated server-side on create.
+            if (IsServerAssignedIdField(field, primaryIdFieldName))
             {
                 continue;
             }
