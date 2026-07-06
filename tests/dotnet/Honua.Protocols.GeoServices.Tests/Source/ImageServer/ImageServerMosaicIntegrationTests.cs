@@ -14,6 +14,7 @@ using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -141,7 +142,7 @@ public sealed class ImageServerMosaicIntegrationTests
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
                 "?geometry=1.5,1&geometryType=esriGeometryPoint&time=2024-02-15T00:00:00Z&f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            await response.AssertGeoServicesErrorAsync(402);
         }
         finally
         {

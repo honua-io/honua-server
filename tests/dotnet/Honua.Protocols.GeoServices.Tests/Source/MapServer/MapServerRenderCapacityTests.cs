@@ -90,7 +90,10 @@ public sealed class MapServerRenderCapacityTests : IClassFixture<MapServerRender
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, content);
+        // PA-069 (#2418): a WMS ServiceExceptionReport MUST be returned with HTTP 200 OK
+        // per WMS 1.3.0 §7.3.3.4 — the capacity-exhausted condition is signalled through
+        // the XML exception body (NoApplicableCode), not the HTTP status.
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("NoApplicableCode");
         content.Should().Contain("Raster rendering capacity is currently exhausted");
     }

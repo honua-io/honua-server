@@ -39,17 +39,23 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotImplemented, HttpStatusCode.ServiceUnavailable);
 
         var content = await response.Content.ReadAsStringAsync();
-        if (response.StatusCode == HttpStatusCode.OK)
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+        // PA-070/PA-117 (#2418): a capability error is now signalled as HTTP 200 +
+        // {"error":{...}} (formerly 501/503), so distinguish success from a capability
+        // error by the presence of an "error" member, not the HTTP status.
+        var isError = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out _);
+        if (response.StatusCode == HttpStatusCode.OK && !isError)
         {
-            using var document = JsonDocument.Parse(content);
-            var root = document.RootElement;
             root.TryGetProperty("features", out var features).Should().BeTrue();
             features.ValueKind.Should().Be(JsonValueKind.Array);
         }
         else
         {
-            // Capability error should mention h3-pg
-            content.Should().Contain("h3-pg");
+            // Capability unavailable: a GeoServices error body (200 + {"error"}) or a legacy 501/503.
+            (isError ||
+             response.StatusCode is HttpStatusCode.NotImplemented or HttpStatusCode.ServiceUnavailable)
+                .Should().BeTrue("a non-success H3 response must be a capability error");
         }
     }
 
@@ -115,10 +121,13 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotImplemented, HttpStatusCode.ServiceUnavailable);
 
         var content = await response.Content.ReadAsStringAsync();
-        if (response.StatusCode == HttpStatusCode.OK)
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+        // PA-070/PA-117 (#2418): a capability error is now HTTP 200 + {"error":{...}}
+        // (formerly 501/503); branch on the "error" member, not the HTTP status.
+        var isError = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out _);
+        if (response.StatusCode == HttpStatusCode.OK && !isError)
         {
-            using var document = JsonDocument.Parse(content);
-            var root = document.RootElement;
             root.TryGetProperty("features", out var features).Should().BeTrue();
             features.ValueKind.Should().Be(JsonValueKind.Array);
         }
