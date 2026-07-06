@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
@@ -68,31 +70,19 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
             };
 
             // Use Office 365 Connector card format (MessageCard) for broad compatibility.
+            var ops = OpsNotificationPresentation.TryResolve(alertEvent);
+            var summary = ops is null
+                ? $"Honua Alert: {alertEvent.TriggerType} ({alertEvent.Severity})"
+                : $"Honua Ops: {ops.Title} ({alertEvent.Severity})";
+
             var payload = JsonSerializer.Serialize(
                 new TeamsAlertPayload
                 {
                     Type = "MessageCard",
                     Context = "https://schema.org/extensions",
                     ThemeColor = themeColor,
-                    Summary = $"Honua Alert: {alertEvent.TriggerType} ({alertEvent.Severity})",
-                    Sections =
-                    [
-                        new TeamsAlertSection
-                        {
-                            ActivityTitle = $"Honua Alert: {alertEvent.TriggerType}",
-                            ActivitySubtitle = $"Incident {alertEvent.IncidentStatus}",
-                            Facts =
-                            [
-                                new TeamsAlertFact { Name = "Severity", Value = alertEvent.Severity.ToString() },
-                                new TeamsAlertFact { Name = "Status", Value = alertEvent.IncidentStatus.ToString() },
-                                new TeamsAlertFact { Name = "Rule ID", Value = alertEvent.RuleId.ToString(System.Globalization.CultureInfo.InvariantCulture) },
-                                new TeamsAlertFact { Name = "Layer", Value = alertEvent.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture) },
-                                new TeamsAlertFact { Name = "Feature", Value = alertEvent.ObjectId.ToString(System.Globalization.CultureInfo.InvariantCulture) },
-                                new TeamsAlertFact { Name = "Occurred At", Value = alertEvent.OccurredAt.ToString("O") }
-                            ],
-                            Markdown = true
-                        }
-                    ]
+                    Summary = summary,
+                    Sections = [ops is null ? BuildGisSection(alertEvent) : BuildOpsSection(alertEvent, ops)]
                 },
                 AlertDeliveryJsonContext.Default.TeamsAlertPayload);
 
@@ -130,5 +120,48 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
                 Error = "Teams delivery failed."
             };
         }
+    }
+
+    private static TeamsAlertSection BuildGisSection(AlertEventEnvelope alertEvent) => new()
+    {
+        ActivityTitle = $"Honua Alert: {alertEvent.TriggerType}",
+        ActivitySubtitle = $"Incident {alertEvent.IncidentStatus}",
+        Facts =
+        [
+            new TeamsAlertFact { Name = "Severity", Value = alertEvent.Severity.ToString() },
+            new TeamsAlertFact { Name = "Status", Value = alertEvent.IncidentStatus.ToString() },
+            new TeamsAlertFact { Name = "Rule ID", Value = alertEvent.RuleId.ToString(CultureInfo.InvariantCulture) },
+            new TeamsAlertFact { Name = "Layer", Value = alertEvent.LayerId.ToString(CultureInfo.InvariantCulture) },
+            new TeamsAlertFact { Name = "Feature", Value = alertEvent.ObjectId.ToString(CultureInfo.InvariantCulture) },
+            new TeamsAlertFact { Name = "Occurred At", Value = alertEvent.OccurredAt.ToString("O") }
+        ],
+        Markdown = true
+    };
+
+    private static TeamsAlertSection BuildOpsSection(AlertEventEnvelope alertEvent, OpsAlertPayload ops)
+    {
+        var facts = new List<TeamsAlertFact>
+        {
+            new() { Name = "Severity", Value = alertEvent.Severity.ToString() },
+            new() { Name = "Source", Value = ops.Source }
+        };
+
+        if (ops.Attributes is not null)
+        {
+            foreach (var pair in ops.Attributes.OrderBy(static p => p.Key, StringComparer.Ordinal))
+            {
+                facts.Add(new TeamsAlertFact { Name = pair.Key, Value = pair.Value });
+            }
+        }
+
+        facts.Add(new TeamsAlertFact { Name = "Occurred At", Value = alertEvent.OccurredAt.ToString("O") });
+
+        return new TeamsAlertSection
+        {
+            ActivityTitle = ops.Title,
+            ActivitySubtitle = string.IsNullOrWhiteSpace(ops.Body) ? ops.Source : ops.Body,
+            Facts = [.. facts],
+            Markdown = true
+        };
     }
 }

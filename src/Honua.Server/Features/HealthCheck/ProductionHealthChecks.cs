@@ -81,7 +81,9 @@ internal static class ProductionHealthChecks
             OutboxTags);
 
         // Alert delivery outbox (#2427): surfaces dispatch backlog growth and dead-letter
-        // accumulation on the readiness endpoint so notification-delivery stalls are visible
+        // accumulation through the HealthCheckService roll-up / ops-health snapshot
+        // overallStatus (not the /healthz/ready probe, which uses ReadinessCheckService and
+        // does not run registered health checks) so notification-delivery stalls are visible
         // before they become silent loss. Reports Healthy when the pipeline is disabled.
         healthChecksBuilder.AddCheck<Honua.Alerts.AlertDispatchHealthCheck>(
             "alert-dispatch",

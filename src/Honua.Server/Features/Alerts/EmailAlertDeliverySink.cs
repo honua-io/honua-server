@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Mail;
+using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Microsoft.Extensions.Options;
@@ -49,16 +51,21 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
 
         try
         {
+            var content = BuildContent(alertEvent);
             using var message = new MailMessage
             {
                 From = new MailAddress(emailOptions.FromAddress, emailOptions.FromName),
-                Subject = $"[Honua Alert] {alertEvent.Severity}: {alertEvent.TriggerType} on layer {alertEvent.LayerId}",
-                Body = alertEvent.PayloadJson,
+                Subject = content.Subject,
+                Body = content.Body,
                 IsBodyHtml = false
             };
             message.To.Add(new MailAddress(recipient));
 
-            message.Headers.Add("X-Honua-Alert-Rule", alertEvent.RuleId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (content.RuleHeader is not null)
+            {
+                message.Headers.Add("X-Honua-Alert-Rule", content.RuleHeader);
+            }
+
             message.Headers.Add("X-Honua-Alert-Event", alertEvent.DedupeKey);
 
             using var client = new SmtpClient(emailOptions.SmtpHost, emailOptions.SmtpPort)
@@ -111,4 +118,39 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
             };
         }
     }
+
+    /// <summary>
+    /// Builds the email subject, body, and rule header for an alert event. Ops
+    /// notifications render their human-readable title/body/attributes; the rule
+    /// header is omitted (they are not linked to an alert rule). GIS alerts keep the
+    /// existing subject/body/rule-header formatting.
+    /// </summary>
+    internal static EmailAlertContent BuildContent(AlertEventEnvelope alertEvent)
+    {
+        if (OpsNotificationPresentation.TryResolve(alertEvent) is { } ops)
+        {
+            var body = ops.Body;
+            var attributes = OpsNotificationPresentation.FormatAttributes(ops.Attributes, "\n");
+            if (attributes.Length > 0)
+            {
+                body = string.IsNullOrWhiteSpace(body) ? attributes : $"{body}\n\n{attributes}";
+            }
+
+            return new EmailAlertContent(
+                Subject: $"[Honua Ops] {alertEvent.Severity}: {ops.Title}",
+                Body: body,
+                RuleHeader: null);
+        }
+
+        return new EmailAlertContent(
+            Subject: $"[Honua Alert] {alertEvent.Severity}: {alertEvent.TriggerType} on layer {alertEvent.LayerId}",
+            Body: alertEvent.PayloadJson,
+            RuleHeader: alertEvent.RuleId.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>Rendered email content for an alert event.</summary>
+    /// <param name="Subject">Email subject line.</param>
+    /// <param name="Body">Plain-text email body.</param>
+    /// <param name="RuleHeader">Value for the <c>X-Honua-Alert-Rule</c> header, or null to omit it (ops events).</param>
+    internal readonly record struct EmailAlertContent(string Subject, string Body, string? RuleHeader);
 }
