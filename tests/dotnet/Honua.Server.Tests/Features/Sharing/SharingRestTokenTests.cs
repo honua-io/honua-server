@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -125,7 +126,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             ("username", "admin"), ("password", "WRONG"),
             ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
     }
 
     [IntegrationTest]
@@ -137,7 +138,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         using var response = await PostFormAsync(client,
             ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -150,7 +151,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             ("username", "admin"), ("password", AdminPassword),
             ("client", "referer"), ("f", "json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -227,7 +228,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 ("username", "admin"), ("password", AdminPassword),
                 ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            await response.AssertGeoServicesErrorAsync(403);
         }
         finally
         {
@@ -332,7 +333,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             ("username", "admin"), ("password", AdminPassword),
             ("client", "referer"), ("referer", SecureRefererA), ("f", "xml"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -356,7 +357,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 ("username", "admin"), ("password", AdminPassword),
                 ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await response.AssertGeoServicesErrorAsync(404);
         }
         finally
         {
@@ -388,7 +389,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 $"&password={Uri.EscapeDataString(AdminPassword)}&client=ip&f=json";
             using var response = await client.GetAsync(query);
 
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            await response.AssertGeoServicesErrorAsync(403);
             var body = await response.Content.ReadAsStringAsync();
             // The error body should mention POST or HTTPS as alternatives so the
             // caller understands how to proceed without the credential exposure risk.

@@ -10,6 +10,7 @@ using Honua.TestKit.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.SpatialAnalytics;
 
@@ -161,7 +162,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("eps");
     }
@@ -181,7 +182,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("k");
     }
@@ -201,7 +202,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("algorithm");
     }
@@ -228,7 +229,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("outStatistics");
     }
@@ -256,7 +257,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("outStatistics");
         content.Should().Contain("returnHullPerCluster");
@@ -309,7 +310,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             "/rest/services/nonexistent/FeatureServer/0/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     // ---------- Spatial Join ----------
@@ -483,7 +484,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("joinLayerId");
     }
@@ -504,7 +505,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("joinLayerId");
     }
@@ -525,7 +526,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("distance");
     }
@@ -546,7 +547,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("predicate");
     }
@@ -567,7 +568,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     // ---------- Buffer Aggregate ----------
@@ -699,7 +700,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("distance");
     }
@@ -720,7 +721,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("unit");
     }
@@ -744,7 +745,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("distance");
     }
@@ -770,7 +771,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("outStatistics");
         content.Should().Contain("dissolve");
@@ -852,7 +853,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("cellSize");
     }
@@ -873,7 +874,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("mode");
     }
@@ -894,7 +895,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("cellSize");
     }
@@ -915,7 +916,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             "/rest/services/nonexistent/FeatureServer/0/queryDensity",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     // ---------- Fix #1: TryBuildFeatureQuery shared filter parameters ----------
@@ -979,7 +980,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("objectIds");
     }
@@ -1048,7 +1049,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("spatialRel");
     }
