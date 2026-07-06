@@ -854,7 +854,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var statusResponse = await _client.GetAsync(
             $"/rest/services/OtherService/GPServer/BufferAnalysis/jobs/{jobId}?f=json");
 
-        statusResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await statusResponse.ShouldBeGeoServicesError(404);
     }
 
     [IntegrationTest]
@@ -893,7 +894,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var statusResponse = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/DifferentTask/jobs/{jobId}?f=json");
 
-        statusResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await statusResponse.ShouldBeGeoServicesError(404);
     }
 
     // -----------------------------------------------------------------------

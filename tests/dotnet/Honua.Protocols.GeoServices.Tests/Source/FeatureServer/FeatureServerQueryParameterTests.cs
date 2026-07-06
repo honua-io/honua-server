@@ -814,8 +814,8 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             "?where=1%3D1&outFields=category&returnDistinctValues=true&returnGeometry=false" +
             "&resultOffset=200000&f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "returnDistinctValues with a very large resultOffset must be rejected to prevent OOM");
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("returnDistinctValues",

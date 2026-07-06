@@ -116,7 +116,8 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldMissing);
     }
@@ -136,7 +137,8 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldNotFound);
     }
@@ -156,7 +158,8 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldTypeInvalid);
     }
@@ -180,7 +183,8 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.UnitUnrecognized);
     }
@@ -201,7 +205,8 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         var response = await client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(422);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain(MetadataV2ExtrusionErrorCodes.NegativeDefaultHeight);
     }

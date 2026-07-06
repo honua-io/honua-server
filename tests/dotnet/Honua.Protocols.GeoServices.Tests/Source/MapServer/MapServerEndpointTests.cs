@@ -527,7 +527,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpkx");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
         content.Should().Contain("compact");
     }
 
@@ -1335,7 +1336,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         var invalidResponse = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=invalid");
-        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await invalidResponse.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]

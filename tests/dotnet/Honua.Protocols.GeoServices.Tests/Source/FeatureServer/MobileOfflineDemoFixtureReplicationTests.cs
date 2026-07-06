@@ -483,8 +483,8 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
 
         // An undeclared filter field must be a clean 400, not a 500.
         var undeclaredResponse = await _fixture.Client.GetAsync(runTaggedUri);
-        undeclaredResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "an undeclared filter field is a client error, not a server 'Query execution failed' 500");
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await undeclaredResponse.ShouldBeGeoServicesError(400);
         using (var undeclaredDocument = await ReadJsonDocumentAsync(undeclaredResponse))
         {
             undeclaredDocument.RootElement.GetProperty("error").GetProperty("code").GetInt32()

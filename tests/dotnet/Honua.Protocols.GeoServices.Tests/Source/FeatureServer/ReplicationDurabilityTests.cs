@@ -222,7 +222,8 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
             new StringContent(failedUploadPayload, Encoding.UTF8, "application/json"));
 
-        failedUploadResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await failedUploadResponse.ShouldBeGeoServicesError(400);
 
         var afterFailure = await repo.GetAsync(replicaId);
         afterFailure.Should().NotBeNull();

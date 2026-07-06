@@ -233,11 +233,13 @@ public class ImageServerRasterMetadataTests
         {
             var invalidFormat = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/statistics?f=xml");
-            invalidFormat.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            await invalidFormat.ShouldBeGeoServicesError(400);
 
             var missingLayer = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/histograms?f=json");
-            missingLayer.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            await missingLayer.ShouldBeGeoServicesError(404);
         }
         finally
         {

@@ -138,7 +138,8 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
         var invalidResponse = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/2/10/10");
 
-        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await invalidResponse.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]

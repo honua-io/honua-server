@@ -103,24 +103,26 @@ public sealed class FeatureServerNotImplementedOperationTests : IClassFixture<We
         // image: honest 404; this server stores no FeatureServer image resource.
         var image = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/image");
-        image.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await image.ShouldBeGeoServicesError(404);
 
         // Invalid-service branch (404) for each GET surface.
-        (await _fixture.Client.GetAsync(
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/queryContingentValues?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/sharedTemplates?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/sharedTemplates/query?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/htmlPopup?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/image"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+            .ShouldBeGeoServicesError(404);
     }
 
     // ----- Service-level mutation operations (POST, honest rejection) -----
@@ -133,23 +135,24 @@ public sealed class FeatureServerNotImplementedOperationTests : IClassFixture<We
     public async Task ServiceLevelSharedTemplateMutations_RejectHonestlyAnd404OnMissingService()
     {
         // Valid service: honest rejection (no shared-template store).
-        (await _fixture.Client.PostAsync(
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await (await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/sharedTemplates/add",
-            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await _fixture.Client.PostAsync(
+            EmptyJsonBody())).ShouldBeGeoServicesError(400);
+        await (await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/sharedTemplates/update",
-            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            EmptyJsonBody())).ShouldBeGeoServicesError(400);
 
         // Invalid service: 404 takes precedence over rejection.
-        (await _fixture.Client.PostAsync(
+        await (await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/sharedTemplates/add",
-            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.PostAsync(
+            EmptyJsonBody())).ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/sharedTemplates/update",
-            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.PostAsync(
+            EmptyJsonBody())).ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/sharedTemplates/delete",
-            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            EmptyJsonBody())).ShouldBeGeoServicesError(404);
     }
 
     // ----- Layer-level read operations (GET, spec-shaped 200) -----
@@ -194,15 +197,16 @@ public sealed class FeatureServerNotImplementedOperationTests : IClassFixture<We
         }
 
         // Invalid-service branch (404) for each GET surface.
-        (await _fixture.Client.GetAsync(
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/0/hasAssets?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/0/queryAssets?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/0/cleanupAssets?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+            .ShouldBeGeoServicesError(404);
     }
 
     // ----- Layer-level rejection operations (honest rejection) -----
@@ -216,31 +220,32 @@ public sealed class FeatureServerNotImplementedOperationTests : IClassFixture<We
     public async Task LayerLevelUnsupportedOperations_RejectHonestlyAnd404OnMissingService()
     {
         // Valid layer: honest rejection (no asset / 3D / metadata-write surface).
-        (await _fixture.Client.GetAsync(
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await (await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/uploadAssets?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(400);
+        await (await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/convert3D?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(400);
+        await (await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query3D?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await _fixture.Client.PostAsync(
+            .ShouldBeGeoServicesError(400);
+        await (await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/metadata/update",
-            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            EmptyJsonBody())).ShouldBeGeoServicesError(400);
 
         // Invalid service: 404 takes precedence over rejection.
-        (await _fixture.Client.GetAsync(
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/0/uploadAssets?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/0/convert3D?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.GetAsync(
+            .ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/0/query3D?f=json"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await _fixture.Client.PostAsync(
+            .ShouldBeGeoServicesError(404);
+        await (await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/0/metadata/update",
-            EmptyJsonBody())).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            EmptyJsonBody())).ShouldBeGeoServicesError(404);
     }
 }

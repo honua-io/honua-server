@@ -42,8 +42,17 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
             var response = await _fixture.Client.GetAsync(endpoint);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-                $"endpoint {endpoint} should return 404 Not Found");
+            if (endpoint.StartsWith("/rest/services", StringComparison.Ordinal) ||
+                endpoint.StartsWith("/tiles", StringComparison.Ordinal))
+            {
+                // PA-070/PA-117: GeoServices signals not-found through HTTP 200 with the code in the JSON body.
+                await response.ShouldBeGeoServicesError(404);
+            }
+            else
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                    $"endpoint {endpoint} should return 404 Not Found");
+            }
         }
     }
 
@@ -157,8 +166,17 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
             var response = await _fixture.Client.GetAsync(endpoint);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-                $"endpoint {endpoint} should return 400 Bad Request for invalid syntax");
+            if (endpoint.StartsWith("/rest/services", StringComparison.Ordinal) ||
+                endpoint.StartsWith("/tiles", StringComparison.Ordinal))
+            {
+                // PA-070/PA-117: GeoServices signals bad-request through HTTP 200 with the code in the JSON body.
+                await response.ShouldBeGeoServicesError(400);
+            }
+            else
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+                    $"endpoint {endpoint} should return 400 Bad Request for invalid syntax");
+            }
         }
     }
 

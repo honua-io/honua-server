@@ -104,7 +104,8 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
 
         // Test invalid layer ID
         var invalidResponse = await client.GetAsync("/rest/services/test/FeatureServer/999?f=json");
-        invalidResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await invalidResponse.ShouldBeGeoServicesError(404);
     }
 
     /// <summary>

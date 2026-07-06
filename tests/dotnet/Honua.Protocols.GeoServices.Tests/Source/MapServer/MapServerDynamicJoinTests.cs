@@ -116,7 +116,8 @@ public sealed class MapServerDynamicJoinTests
             $"&dynamicLayers={dynamicLayers}&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
         content.Should().Contain("inaccessible right layer");
     }
 
@@ -168,7 +169,8 @@ public sealed class MapServerDynamicJoinTests
             $"&dynamicLayers={dynamicLayers}&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
         content.Should().Contain("not a valid field name");
     }
 

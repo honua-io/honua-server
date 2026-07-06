@@ -181,8 +181,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{Guid.NewGuid()}/startReading",
             ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "an unknown version should not open a session; body: {0}", await response.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(404);
     }
 
     [IntegrationTest]
@@ -226,8 +226,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{Guid.NewGuid()}/startEditing",
             ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "an unknown version should not open an edit session; body: {0}", await response.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(404);
     }
 
     [IntegrationTest]
@@ -359,8 +359,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
             ("conflictDetection", "byPlanet"), ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "an unsupported conflictDetection mode should be rejected; body: {0}", await response.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]
@@ -543,7 +543,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
         var info = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}?f=json");
-        info.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await info.ShouldBeGeoServicesError(404);
     }
 
     // ---- helpers --------------------------------------------------------------------------------

@@ -163,8 +163,8 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?where=1=1&f=geojson");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "f=geojson is not supported for service-level queries which always return ServiceQueryResponse JSON");
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]

@@ -69,8 +69,8 @@ public class MvtTileEndpointTests : IClassFixture<WebAppFixture>
         foreach (var coordinate in invalidCoordinates)
         {
             var response = await _fixture.Client.GetAsync(coordinate);
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-                $"coordinate {coordinate} should return BadRequest");
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            await response.ShouldBeGeoServicesError(400);
         }
     }
 
