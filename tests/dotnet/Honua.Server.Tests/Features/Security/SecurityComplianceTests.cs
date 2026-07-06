@@ -10,6 +10,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Security;
@@ -149,16 +150,18 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
             request.Headers.Add("X-API-Key", AdminPassword);
 
             var response = await _client.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
 
-            // Should either return 400 (bad request) or 200 with safe results, but never execute the injection
+            // The injection must never execute or leak system-catalog data / raw SQL
+            // errors, whether the query is rejected or returns a safe result set.
+            content.Should().NotContain("pg_user", "SQL injection should not return system information");
+            content.Should().NotContain("SQLSTATE", "raw SQL errors must not leak to clients");
+
+            // Post-#2418 a rejected GeoServices query is signalled as HTTP 200 +
+            // {"error":{"code":400}} (or a legacy 400); a safe query returns HTTP 200 with
+            // a normal result set. Both are acceptable — silent execution of the injection
+            // is what the content assertions above guard against.
             response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.OK);
-
-            if (response.StatusCode == HttpStatusCode.OK)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                content.Should().NotContain("pg_user", "SQL injection should not return system information");
-                content.Should().NotContain("error", "SQL injection should not cause database errors");
-            }
         }
     }
 
@@ -351,10 +354,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         var response = await _client.SendAsync(request);
 
         // Assert
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.BadRequest,
-            HttpStatusCode.RequestEntityTooLarge
-        );
+        await response.AssertGeoServicesErrorAsync(new[] { 400, 413 });
     }
 
     [IntegrationTest]
@@ -502,8 +502,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
 
             var response = await _client.SendAsync(request);
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-                $"Malformed JSON should be rejected: {payload}");
+            await response.AssertGeoServicesErrorAsync(400);
         }
     }
 }

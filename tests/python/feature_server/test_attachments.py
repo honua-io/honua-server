@@ -20,6 +20,7 @@ import pytest
 import httpx
 
 from shared.geometry import GeometryGenerator
+from shared.geoservices import assert_geoservices_error
 
 
 class TestQueryAttachments:
@@ -138,10 +139,14 @@ class TestAddAttachment:
             files=files,
             data={"f": "json"},
         )
-        # Should return error
+        # Should return error. PA-070/PA-117 (#2418): a not-found feature now yields
+        # HTTP 200 + {"error": {"code": 404}} per the Esri GeoServices convention;
+        # a legacy 4xx or an addAttachmentResult.success == False is also accepted.
         assert response.status_code in [400, 404] or (
-            response.status_code == 200 and
-            response.json().get("addAttachmentResult", {}).get("success") is False
+            response.status_code == 200 and (
+                isinstance(response.json().get("error"), dict) or
+                response.json().get("addAttachmentResult", {}).get("success") is False
+            )
         )
 
 
@@ -161,9 +166,14 @@ class TestUpdateAttachment:
                 "f": "json",
             },
         )
+        # PA-070/PA-117 (#2418): invalid IDs now yield HTTP 200 + {"error": {...}}
+        # per the Esri GeoServices convention; a legacy 4xx or an
+        # updateAttachmentResult.success == False is also accepted.
         assert response.status_code in [400, 404] or (
-            response.status_code == 200 and
-            response.json().get("updateAttachmentResult", {}).get("success") is False
+            response.status_code == 200 and (
+                isinstance(response.json().get("error"), dict) or
+                response.json().get("updateAttachmentResult", {}).get("success") is False
+            )
         )
 
 
@@ -211,7 +221,9 @@ class TestDownloadAttachment:
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/999999999/attachments/999999999"
         )
-        assert response.status_code == 404
+        # PA-070/PA-117 (#2418): a missing attachment now yields HTTP 200 +
+        # {"error": {"code": 404}} per the Esri GeoServices convention.
+        assert_geoservices_error(response, body_codes={404})
 
 
 class TestAttachmentWorkflow:

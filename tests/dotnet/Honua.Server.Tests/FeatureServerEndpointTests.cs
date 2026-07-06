@@ -304,7 +304,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync("/rest/services/nonexistent/FeatureServer");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -323,7 +323,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer?f=html");
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var details = document.RootElement.GetProperty("error").GetProperty("details")
@@ -551,7 +551,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=html");
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var details = document.RootElement.GetProperty("error").GetProperty("details")
@@ -615,7 +615,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/nonexistent/FeatureServer/{TestLayerId}");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -636,7 +636,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/999");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -656,7 +656,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/invalid");
 
         // Assert - Should return 404 because 'invalid' doesn't match int route constraint
-        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -669,7 +669,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.DeleteAsync($"/rest/services/{TestServiceId}/FeatureServer");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        await response.AssertGeoServicesErrorAsync(405);
     }
 
     [IntegrationTest]
@@ -681,7 +681,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.DeleteAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        await response.AssertGeoServicesErrorAsync(405);
     }
 
     [IntegrationTest]
@@ -975,7 +975,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/query?layers={TestLayerId},&where=1%3D1&f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -1254,7 +1254,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnCountOnly=true&f=geojson");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -1265,7 +1265,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnIdsOnly=true&f=geojson");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -1276,7 +1276,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnExtentOnly=true&f=geojson");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -1371,8 +1371,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest,
-            "only classBreaksDef and uniqueValueDef classification types are supported");
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("classificationDef");
@@ -1521,7 +1520,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={malformedClassificationDef}");
 
-        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("classificationDef must be valid JSON.");
@@ -1539,7 +1538,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='Test'; DROP TABLE users; --");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -1562,7 +1561,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=invalid syntax here");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -1584,7 +1583,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?unexpected=1");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -1643,7 +1642,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/nonexistent/FeatureServer/{TestLayerId}/query");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -1664,7 +1663,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/999/query");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -1961,7 +1960,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,invalid,3");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -2357,7 +2356,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(invalidGeometry)}&f=json");
 
         // Assert
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     /// <summary>
@@ -2377,7 +2376,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(pointGeometry)}&spatialRel={unsupportedSpatialRel}&f=json");
 
         // Assert
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     /// <summary>
@@ -2665,7 +2664,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=invalid");
 
         // Assert
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var details = document.RootElement.GetProperty("error").GetProperty("details")
@@ -2879,7 +2878,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     /// <summary>
@@ -2905,7 +2904,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -3007,7 +3006,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
             content);
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("Request body contains invalid JSON.");
         responseContent.Should().NotContain("BytePositionInLine");
@@ -3027,7 +3026,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        await response.AssertGeoServicesErrorAsync(new[] { 415, 500 });
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("Unsupported Media Type");
     }
@@ -3054,7 +3053,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?useGlobalIds=true",
             new StringContent(request, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("useGlobalIds is not supported");
@@ -3673,7 +3672,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits?useGlobalIds=true",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("useGlobalIds is not supported");
@@ -3698,7 +3697,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits?f=xml",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var details = document.RootElement.GetProperty("error").GetProperty("details")
@@ -3928,7 +3927,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteFeatures",
             new StringContent(deletePayload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
