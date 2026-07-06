@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.ControlPlane;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
@@ -19,10 +20,14 @@ namespace Honua.CloudIntegration.Tests;
 /// flip between, which mutates a production-relevant function and needs standing rollout
 /// infrastructure. Instead this cell targets ONLY the dedicated certification-stack function and
 /// performs a NO-OP flip: read the alias's current <c>FunctionVersion</c> and routing weights, then
-/// <c>UpdateAlias</c> the alias to that SAME version (exercising the exact production
-/// <c>UpdateAliasAsync</c> control-plane call — the alias-flip primitive both cutover and rollback
-/// are built on), and RESTORE the original version + weights in a guaranteed <c>finally</c>. It
-/// never changes which version serves traffic, so it certifies the alias-flip control-plane
+/// <c>UpdateAlias</c> the alias to that SAME version AND its EXISTING weights (exercising the exact
+/// production <c>UpdateAliasAsync</c> control-plane call — the alias-flip primitive both cutover and
+/// rollback are built on), and RESTORE the original version + weights in a guaranteed <c>finally</c>.
+/// Preserving the existing weights on the flip is load-bearing: the production seam sends an
+/// <c>AliasRoutingConfiguration</c> whose empty weight map CLEARS any <c>AdditionalVersionWeights</c>,
+/// so flipping with a null/empty weight map would drop a live weighted (canary) routing config — a
+/// kill between that flip and the restore would then lose the routing permanently. It never changes
+/// which version serves traffic nor the traffic split, so it certifies the alias-flip control-plane
 /// mechanics without a deploy artifact and without risk to a production-relevant function. The
 /// weighted-cutover and rollback-decision mechanics themselves stay covered by the backend's
 /// extensive unit tests; a full live cutover certification is deferred (see the ECS/ALB deferral in
@@ -36,10 +41,12 @@ namespace Honua.CloudIntegration.Tests;
 public sealed class AwsLambdaAliasRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
 {
     private readonly RealAwsCertificationFixture _cert;
+    private readonly ITestOutputHelper _output;
 
-    public AwsLambdaAliasRealCertificationTests(RealAwsCertificationFixture cert)
+    public AwsLambdaAliasRealCertificationTests(RealAwsCertificationFixture cert, ITestOutputHelper output)
     {
         _cert = cert;
+        _output = output;
     }
 
     [SkippableFact]
@@ -67,18 +74,24 @@ public sealed class AwsLambdaAliasRealCertificationTests : IClassFixture<RealAws
         var restoreRequired = true;
         try
         {
-            // Flip the alias to the SAME version (no traffic change) — this is the production
-            // UpdateAliasAsync control-plane call the backend's cutover/rollback are built on.
+            // Flip the alias to the SAME version AND its EXISTING weights (no traffic change) — this is
+            // the production UpdateAliasAsync control-plane call the backend's cutover/rollback are built
+            // on. We MUST pass originalWeights (not null): a null/empty weight map makes the seam CLEAR
+            // any live AdditionalVersionWeights, so a null flip on a weighted alias would drop the canary
+            // routing, and a kill before the restore would lose it permanently.
             var flipped = await client.UpdateAliasAsync(
                 function,
                 alias,
                 original.FunctionVersion!,
-                additionalVersionWeights: null,
+                additionalVersionWeights: originalWeights,
                 region);
 
             flipped.FunctionVersion.Should().Be(
                 original.FunctionVersion,
                 "the alias-flip primitive must land the alias on the requested version");
+            flipped.AdditionalVersionWeights.Should().BeEquivalentTo(
+                original.AdditionalVersionWeights,
+                "the weight-preserving flip must not alter the alias's traffic split");
 
             // Restore explicitly (idempotent with the finally), then mark the finally a no-op.
             await client.UpdateAliasAsync(function, alias, original.FunctionVersion!, originalWeights, region);
@@ -87,6 +100,9 @@ public sealed class AwsLambdaAliasRealCertificationTests : IClassFixture<RealAws
             restored.FunctionVersion.Should().Be(
                 original.FunctionVersion,
                 "the alias must be restored to its original version");
+            restored.AdditionalVersionWeights.Should().BeEquivalentTo(
+                original.AdditionalVersionWeights,
+                "the alias must be restored to its original traffic split (weights), not just its version");
             restoreRequired = false;
         }
         finally
@@ -96,13 +112,16 @@ public sealed class AwsLambdaAliasRealCertificationTests : IClassFixture<RealAws
                 try
                 {
                     // Guaranteed restore if an assertion above threw after the flip: never leave the
-                    // dedicated cert function's alias mutated.
+                    // dedicated cert function's alias mutated — restore both the version AND the weights.
                     await client.UpdateAliasAsync(function, alias, original.FunctionVersion!, originalWeights, region);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Best-effort: the flip was a no-op (same version), so even a failed restore
-                    // leaves the alias serving the original version's traffic unchanged.
+                    // Best-effort: the flip preserved the original version AND weights, so even a failed
+                    // restore leaves the alias serving the original traffic split unchanged. Log it so a
+                    // failed teardown is visible in CI rather than silently swallowed.
+                    _output.WriteLine(
+                        $"[cert] best-effort alias restore for '{function}:{alias}' failed: {ex.Message}");
                 }
             }
         }
