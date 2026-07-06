@@ -581,6 +581,7 @@ sql:
           name                  VARCHAR(128) NOT NULL,
           description           TEXT,
           asset_root            TEXT NOT NULL,
+          asset_storage_prefix  TEXT,
           tileset_file_name     VARCHAR(64) NOT NULL DEFAULT 'tileset.json',
           dataset_type          VARCHAR(32) NOT NULL DEFAULT 'hosted_tiles',
           extent_xmin           DOUBLE PRECISION,

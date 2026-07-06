@@ -293,7 +293,9 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
         itemLinkTypes.Should().Contain("application/geo+json");
         itemLinkTypes.Should().Contain("application/json");
-        itemLinkTypes.Should().Contain("application/gml+xml;version=3.2");
+        // GML 3.2 media type carries the IANA-canonical spaced form ("...; version=3.2")
+        // since #2418 (PA-169); the link type mirrors MediaTypes.Gml.
+        itemLinkTypes.Should().Contain("application/gml+xml; version=3.2");
         itemLinkTypes.Should().Contain("text/html");
 
         links.Any(link =>

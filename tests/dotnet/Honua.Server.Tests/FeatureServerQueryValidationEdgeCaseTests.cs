@@ -139,9 +139,17 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
     }
 
     // BH7-003 regression: outStatistics with groupByFieldsForStatistics must apply
-    // the configured MaxRecordCount cap (not null) so a high-cardinality groupBy
-    // cannot exhaust server memory. With few test rows the cap is never hit; the
-    // test guards the code path and verifies no regression in the normal case.
+    // the configured MaxRecordCount cap (default 10 000, not null) so a
+    // high-cardinality groupBy cannot exhaust server memory. With few groups the
+    // cap is never hit; the test guards the code path and verifies no regression
+    // in the normal (sub-threshold) case.
+    //
+    // Layer 0 is not empty at the start of the test: the shared server.yaml seed
+    // pre-populates it with five features (objectid 1-5, each a distinct name), on
+    // top of which InitializeAsync inserts "edge_one" and "edge_two". The where
+    // clause therefore scopes the groupBy to just this class's two inserted rows —
+    // mirroring FeatureServerStatisticsHavingTests — so the expected group count is
+    // stable regardless of what the shared seed contains.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -150,11 +158,11 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
         var outStatistics = Uri.EscapeDataString(
             "[{\"statisticType\":\"count\",\"onStatisticField\":\"objectid\",\"outStatisticFieldName\":\"feature_count\"}]");
 
-        // Each of the two seeded features has a distinct name, so the groupBy produces
-        // one statistics row per name — well within the MaxRecordCount cap.
+        // Scope to the two features this test inserted so the groupBy produces exactly
+        // two statistics rows (one per distinct name) — well within the MaxRecordCount cap.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
-            "?where=1%3D1" +
+            "?where=name+LIKE+'edge_%'" +
             "&groupByFieldsForStatistics=name" +
             $"&outStatistics={outStatistics}" +
             "&f=json");
@@ -165,7 +173,11 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
         var doc = System.Text.Json.JsonDocument.Parse(body);
         doc.RootElement.TryGetProperty("features", out var features).Should().BeTrue();
+
         // Two distinct names -> two groups; both within the default MaxRecordCount cap.
-        features.GetArrayLength().Should().Be(2);
+        var groups = features.EnumerateArray()
+            .Select(f => f.GetProperty("attributes").GetProperty("name").GetString())
+            .ToArray();
+        groups.Should().BeEquivalentTo(["edge_one", "edge_two"]);
     }
 }
