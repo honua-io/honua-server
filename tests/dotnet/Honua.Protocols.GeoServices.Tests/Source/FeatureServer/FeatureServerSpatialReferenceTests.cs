@@ -199,7 +199,8 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync(requestUri);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]
@@ -215,7 +216,8 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync(requestUri);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]
@@ -231,7 +233,8 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync(requestUri);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]
@@ -244,7 +247,8 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync(requestUri);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]

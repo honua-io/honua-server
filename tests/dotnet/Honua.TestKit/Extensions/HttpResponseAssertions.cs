@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 
 namespace Honua.TestKit.Extensions;
@@ -63,6 +64,32 @@ public static class HttpResponseAssertions
     {
         response.Should().NotBeNull();
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, "the server encountered an error");
+    }
+
+    /// <summary>
+    /// Asserts that a GeoServices response signals an error through the Esri error contract:
+    /// HTTP 200 OK with the failing code carried in the JSON body as
+    /// <c>{"error":{"code":N,...}}</c>.
+    /// </summary>
+    /// <remarks>
+    /// PA-070/PA-117: Esri GeoServices REST responses (including errors) always use HTTP 200 OK;
+    /// the error is signalled exclusively through the JSON body error code, never the HTTP status.
+    /// </remarks>
+    /// <param name="response">The HTTP response returned by a GeoServices endpoint.</param>
+    /// <param name="expectedCode">The error code expected in the JSON body (for example 400, 403, 404).</param>
+    public static async Task ShouldBeGeoServicesError(this HttpResponseMessage response, int expectedCode)
+    {
+        response.Should().NotBeNull();
+        response.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            "GeoServices signals errors through the JSON body, not the HTTP status");
+
+        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        using var document = JsonDocument.Parse(content);
+        var code = document.RootElement.GetProperty("error").GetProperty("code").GetInt32();
+        code.Should().Be(
+            expectedCode,
+            "the GeoServices error body should carry the intended error code");
     }
 
     /// <summary>

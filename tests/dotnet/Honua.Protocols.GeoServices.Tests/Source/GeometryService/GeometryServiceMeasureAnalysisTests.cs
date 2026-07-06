@@ -82,7 +82,8 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
     {
         var response = await _fixture.Client.GetAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/distance?sr=4326");
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     // #1308: ArcGIS clients wrap geometry1/geometry2 as
@@ -199,7 +200,8 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/Utilities/Geometry/GeometryServer/relation?geometries1={geometries1}&geometries2={geometries2}&sr=4326");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     // --- densify ---
@@ -247,7 +249,8 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/Utilities/Geometry/GeometryServer/densify?geometries={geometries}&sr=3857");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]
@@ -275,7 +278,8 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
             "/rest/services/Utilities/Geometry/GeometryServer/densify",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     [IntegrationTest]
@@ -355,7 +359,8 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
     {
         var response = await _fixture.Client.GetAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/convexHull?sr=4326");
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     // --- generalize ---
@@ -403,7 +408,8 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/Utilities/Geometry/GeometryServer/generalize?geometries={geometries}&sr=3857");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 
     // --- labelPoints ---
@@ -442,6 +448,7 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
     {
         var response = await _fixture.Client.GetAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/labelPoints?sr=4326");
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(400);
     }
 }
