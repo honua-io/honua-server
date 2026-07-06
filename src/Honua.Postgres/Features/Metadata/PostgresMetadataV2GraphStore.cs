@@ -22,6 +22,7 @@ namespace Honua.Postgres.Features.Metadata;
 internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphWriteBaseReader
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly IMetadataV2GraphCacheInvalidator? _cacheInvalidator;
     private readonly string _environment;
     private readonly string _schemaName;
     private readonly string _snapshotsTable;
@@ -36,7 +37,8 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     public PostgresMetadataV2GraphStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         string environment,
-        string? schemaName = null)
+        string? schemaName = null,
+        IMetadataV2GraphCacheInvalidator? cacheInvalidator = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         if (string.IsNullOrWhiteSpace(environment))
@@ -45,6 +47,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         }
 
         _connectionProvider = connectionProvider;
+        _cacheInvalidator = cacheInvalidator;
         _environment = environment;
         _schemaName = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName.Trim();
         _snapshotsTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_snapshots", schemaName);
@@ -233,6 +236,14 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
 
         var snapshot = new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
         _cachedCurrent = snapshot;
+
+        // Drop the shared read-through snapshot cache for this environment so read surfaces
+        // (MCP tools, REST/OGC metadata) observe the committed mutation immediately on this node
+        // instead of waiting out the TTL. Other nodes remain TTL-bounded. This is the canonical
+        // catalog write, so every mutation path (admin publish, migration/import, release
+        // reconcilers) invalidates through here. (mcp A2 hot-path caching.)
+        _cacheInvalidator?.Invalidate(_environment);
+
         return snapshot;
     }
 
