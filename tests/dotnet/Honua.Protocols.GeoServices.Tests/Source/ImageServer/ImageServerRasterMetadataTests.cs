@@ -10,6 +10,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -233,11 +234,11 @@ public class ImageServerRasterMetadataTests
         {
             var invalidFormat = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/statistics?f=xml");
-            invalidFormat.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await invalidFormat.AssertGeoServicesErrorAsync(400);
 
             var missingLayer = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/histograms?f=json");
-            missingLayer.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await missingLayer.AssertGeoServicesErrorAsync(404);
         }
         finally
         {

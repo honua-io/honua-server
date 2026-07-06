@@ -483,7 +483,7 @@ public sealed class GeometryValidationTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(malformedGeometry)}&f=json");
 
         // Assert
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     #endregion
