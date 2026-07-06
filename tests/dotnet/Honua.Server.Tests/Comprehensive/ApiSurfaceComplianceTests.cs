@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Performance;
 using Honua.TestKit.Security;
@@ -102,9 +103,9 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         layerContent.Should().Contain("\"geometryType\"");
         layerContent.Should().Contain("\"fields\"");
 
-        // Test invalid layer ID
+        // Test invalid layer ID (GeoServices 200 + {"error":{"code":404}} per #2418)
         var invalidResponse = await client.GetAsync("/rest/services/test/FeatureServer/999?f=json");
-        invalidResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await invalidResponse.AssertGeoServicesErrorAsync(404);
     }
 
     /// <summary>
@@ -208,7 +209,18 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         foreach (var (endpoint, expectedStatus, description) in errorTestCases)
         {
             var response = await client.GetAsync(endpoint);
-            response.StatusCode.Should().Be(expectedStatus, description);
+
+            // GeoServices (/rest/services) error responses now use the Esri contract:
+            // HTTP 200 + {"error":{"code":N}} (#2418, PA-070/PA-117). OGC API endpoints
+            // keep RFC 7807 HTTP status semantics.
+            if (endpoint.StartsWith("/rest/services", StringComparison.Ordinal) && (int)expectedStatus >= 400)
+            {
+                await response.AssertGeoServicesErrorAsync((int)expectedStatus);
+            }
+            else
+            {
+                response.StatusCode.Should().Be(expectedStatus, description);
+            }
 
             _output.WriteLine($"{description}: {response.StatusCode} (expected {expectedStatus})");
         }

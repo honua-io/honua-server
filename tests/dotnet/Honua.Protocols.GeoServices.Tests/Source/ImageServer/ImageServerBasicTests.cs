@@ -11,6 +11,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -469,9 +470,7 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
         {
             using var response = await fixture.Client.GetAsync("/rest/services/2024Imagery/ImageServer?f=xml");
 
-            response.StatusCode.Should().Be(
-                HttpStatusCode.BadRequest,
-                "numeric-leading service IDs should match the named ImageServer route before format validation runs");
+            await response.AssertGeoServicesErrorAsync(400);
         }
         finally
         {

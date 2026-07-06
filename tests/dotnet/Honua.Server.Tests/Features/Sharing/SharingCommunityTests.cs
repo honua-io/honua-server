@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -78,7 +79,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var response = await PostFormAsync(client, "/sharing/rest/community/createGroup",
             ("title", "Field Crew"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
     [IntegrationTest]
@@ -123,7 +124,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var response = await PostFormAsync(malloryClient, $"/sharing/rest/community/groups/{groupId}/addUsers?token={malloryToken}",
             ("users", "mallory"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -165,7 +166,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var response = await PostFormAsync(client, "/sharing/rest/content/items/svc-rivers/share",
             ("everyone", "true"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
     [IntegrationTest]
@@ -187,7 +188,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var response = await PostFormAsync(malloryClient, $"/sharing/rest/content/items/{itemId}/share?token={malloryToken}",
             ("everyone", "true"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -203,7 +204,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var anon = _fixture.CreateClient();
         using var response = await anon.GetAsync($"/sharing/rest/community/groups/{groupId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -219,7 +220,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var lookup = await client.GetAsync($"/sharing/rest/community/groups/{groupId}?token={token}&f=json");
-        lookup.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await lookup.AssertGeoServicesErrorAsync(404);
     }
 
     private async Task<string> CreateGroupAsync(HttpClient client, string token, string title)

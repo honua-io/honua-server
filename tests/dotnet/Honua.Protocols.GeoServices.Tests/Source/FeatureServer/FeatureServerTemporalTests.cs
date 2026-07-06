@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -513,9 +514,7 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
                 $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?time={encodedTime}&f=json");
 
             // Assert
-            response.StatusCode.Should().BeOneOf(
-                new[] { HttpStatusCode.BadRequest, HttpStatusCode.InternalServerError },
-                $"Invalid time format should return error: {invalidTime}");
+            await response.AssertGeoServicesErrorAsync(400, 500);
         }
     }
 
@@ -560,10 +559,7 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
 
         // Assert
         // Should return an appropriate error when no temporal field is available
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.BadRequest,
-            HttpStatusCode.NotFound,
-            HttpStatusCode.InternalServerError);
+        await response.AssertGeoServicesErrorAsync(400, 404, 500);
 
         if (response.StatusCode == HttpStatusCode.BadRequest)
         {

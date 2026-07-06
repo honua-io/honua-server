@@ -931,7 +931,7 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&f=json");
 
         // The coordinator catches the exception and returns a failure result; handler maps to error
-        await response.AssertGeoServicesErrorAsync(new[] { 400, 500 });
+        await response.AssertGeoServicesErrorAsync(400, 500);
     }
 
     [IntegrationTest]
