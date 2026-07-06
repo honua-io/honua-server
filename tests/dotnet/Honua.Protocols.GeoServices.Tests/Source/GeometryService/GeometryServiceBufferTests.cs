@@ -259,7 +259,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -282,7 +282,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
 
         var responseContent = await response.Content.ReadAsStringAsync();
         var error = JsonSerializer.Deserialize<ApiErrorResponse>(responseContent);
@@ -314,7 +314,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -340,7 +340,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "/rest/services/Utilities/Geometry/GeometryServer/buffer",
             new StringContent(requestBody, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("maximum of 1000 geometries");
@@ -371,7 +371,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "/rest/services/Utilities/Geometry/GeometryServer/buffer",
             new StringContent(requestBody, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("maximum of 1000 values");
@@ -406,7 +406,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer?inSR=4326");
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
