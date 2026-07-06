@@ -10,6 +10,8 @@ Endpoint: GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRendere
 import pytest
 import httpx
 
+from shared.geoservices import assert_geoservices_error
+
 
 class TestGenerateRenderer:
     """Tests for the generateRenderer endpoint."""
@@ -111,7 +113,8 @@ class TestGenerateRenderer:
                 "f": "json",
             },
         )
-        assert response.status_code in [400, 501]
+        # PA-070/PA-117 (#2418): GeoServices errors -> HTTP 200 + {"error": {"code": N}}.
+        assert_geoservices_error(response, body_codes={400, 501})
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -126,4 +129,5 @@ class TestGenerateRenderer:
                 "f": "json",
             },
         )
-        assert response.status_code in [400, 404]
+        # PA-070/PA-117 (#2418): unknown layer -> HTTP 200 + {"error": {"code": 404}}.
+        assert_geoservices_error(response, body_codes={400, 404})
