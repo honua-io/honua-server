@@ -15,6 +15,7 @@ using Honua.Server.Tests;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -1388,8 +1389,11 @@ public class OidcAuthenticationTests
         // Act - Access FeatureServer endpoint without auth
         var response = await client.GetAsync("/rest/services/test/FeatureServer");
 
-        // Assert - Should require authentication by default
-        Assert.Equal(401, (int)response.StatusCode);
+        // Assert - Should require authentication by default. FeatureServer is a GeoServices
+        // REST path, so an auth failure is emitted as the Esri contract: HTTP 200 +
+        // {"error":{"code":401|499}} (#2418, PA-167). The helper still fails on a
+        // success-shaped body, so it keeps catching a real "unauthenticated read allowed" leak.
+        await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
         _output.WriteLine($"FeatureServer response requires auth: {response.StatusCode}");
     }
 
