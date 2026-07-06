@@ -32,7 +32,11 @@ public sealed class FeatureServerH3TileTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().BeOneOf(
             HttpStatusCode.OK, HttpStatusCode.NoContent, HttpStatusCode.NotImplemented, HttpStatusCode.ServiceUnavailable);
 
-        if (response.StatusCode == HttpStatusCode.OK)
+        // PA-070/PA-117 (#2418): a capability error is now signalled as HTTP 200 +
+        // a JSON {"error":{...}} body (formerly 501/503), so an OK response is a
+        // real tile only when it is not the JSON error envelope.
+        if (response.StatusCode == HttpStatusCode.OK &&
+            response.Content.Headers.ContentType?.MediaType != "application/json")
         {
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.mapbox-vector-tile");
         }

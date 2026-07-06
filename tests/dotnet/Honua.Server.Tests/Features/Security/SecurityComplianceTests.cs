@@ -354,7 +354,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         var response = await _client.SendAsync(request);
 
         // Assert
-        await response.AssertGeoServicesErrorAsync(new[] { 400, 413 });
+        await response.AssertGeoServicesErrorAsync(400, 413);
     }
 
     [IntegrationTest]
