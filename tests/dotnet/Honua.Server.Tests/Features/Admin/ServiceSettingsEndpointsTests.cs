@@ -410,7 +410,8 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var layerMetadataResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer/1?f=json");
-        layerMetadataResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117 (#2418): a blocked GeoServices surface reports HTTP 200 + {"error":{"code":404}}
+        await layerMetadataResponse.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -429,7 +430,8 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var tileResponse = await _client.GetAsync("/tiles/1/0/0/0.mvt");
-        tileResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // /tiles is GeoServices-classified: blocked tiles report HTTP 200 + {"error":{"code":404}}
+        await tileResponse.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
