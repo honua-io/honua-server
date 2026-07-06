@@ -150,6 +150,14 @@ public enum OpsFindingProposalStatus
 
     /// <summary>The gateway does not support the action's operation class.</summary>
     NotSupported = 5,
+
+    /// <summary>
+    /// The durable control-plane operation gateway is unavailable, so the recommended action cannot
+    /// be routed. This is the degraded outcome when the server runs without its durable backend
+    /// (Redis): findings are still evaluated and returned, but proposing their fixes requires the
+    /// gateway, which is only wired when the durable control-plane graph is registered.
+    /// </summary>
+    GatewayUnavailable = 6,
 }
 
 /// <summary>
