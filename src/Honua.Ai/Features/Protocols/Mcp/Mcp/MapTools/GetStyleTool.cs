@@ -97,7 +97,10 @@ internal sealed class GetStyleTool : IMcpTool
         if (!hasStyleId && !hasLayer)
         {
             var styles = await styleCatalog.ListStylesAsync(cancellationToken).ConfigureAwait(false);
-            return McpToolHelpers.SuccessResult(BuildListOutput(styles), MapToolJsonContext.Default.McpGetStyleOutput);
+            return McpToolHelpers.SuccessResult(
+                BuildListOutput(styles),
+                MapToolJsonContext.Default.McpGetStyleOutput,
+                SummarizeStyleOutput);
         }
 
         var styleId = hasStyleId
@@ -111,7 +114,46 @@ internal sealed class GetStyleTool : IMcpTool
         var includeStylesheet = argument.IncludeStylesheet ?? false;
         var output = await BuildStyleOutputAsync(httpContext, record, encoding, includeStylesheet, cancellationToken)
             .ConfigureAwait(false);
-        return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpGetStyleOutput);
+        return McpToolHelpers.SuccessResult(
+            output,
+            MapToolJsonContext.Default.McpGetStyleOutput,
+            SummarizeStyleOutput);
+    }
+
+    /// <summary>
+    /// One-line, information-bearing text summary emitted when the serialized
+    /// style payload is large (a big discovery catalog, or an inlined stylesheet
+    /// body): the essential identifiers and next-step hints live in text while
+    /// the full payload rides in <c>structuredContent</c> (MCP A1 token policy).
+    /// </summary>
+    private static string SummarizeStyleOutput(McpGetStyleOutput output)
+    {
+        if (output.Styles is { } styles)
+        {
+            return string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "Listed {0} style(s) in the catalog. Full styleId/title/uri entries in structuredContent.styles; "
+                + "pass a styleId to honua_apply_style_preset to style a layer.",
+                styles.Count);
+        }
+
+        var inlined = output.Encodings?.FirstOrDefault(e => e.InlineBody is not null);
+        var encodingNote = inlined is null
+            ? "encodings advertised by reference"
+            : string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "'{0}' stylesheet inlined ({1:N0} chars)",
+                inlined.Encoding,
+                inlined.InlineBody!.Length);
+
+        return string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "Resolved style '{0}' ({1}, v{2}; {3}). Full projection in structuredContent; "
+            + "apply it to a layer with honua_apply_style_preset.",
+            output.StyleId,
+            output.Title ?? "untitled",
+            output.StyleVersion ?? 0,
+            encodingNote);
     }
 
     private static async Task<string> ResolveLayerStyleIdAsync(

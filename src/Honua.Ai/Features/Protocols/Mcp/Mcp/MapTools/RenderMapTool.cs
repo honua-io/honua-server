@@ -10,6 +10,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Services;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 
@@ -17,12 +18,14 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 
 /// <summary>
 /// MCP tool that renders a map image for one or more published layers and
-/// returns it as an MCP <c>image</c> content block (base64 PNG) so the client
-/// can display it inline. Thin adapter over the canonical
-/// <see cref="IRasterMapRenderer"/> pipeline — the same renderer the OGC API
-/// Maps / MapServer export / WMS GetMap surfaces drive — so no rasterization or
-/// styling logic is reimplemented here. Layers are resolved through the same
-/// Metadata v2 snapshot the GeoServices surfaces use and passed bottom-to-top.
+/// returns it as a fetchable artifact reference (<c>resource_link</c> href) by
+/// default, or as an inline base64 <c>image</c> content block when the caller
+/// opts in via <c>maxInlineBytes</c> and the encoded image fits. Thin adapter
+/// over the canonical <see cref="IRasterMapRenderer"/> pipeline — the same
+/// renderer the OGC API Maps / MapServer export / WMS GetMap surfaces drive —
+/// so no rasterization or styling logic is reimplemented here. Layers are
+/// resolved through the same Metadata v2 snapshot the GeoServices surfaces use
+/// and passed bottom-to-top, each rendering with its primary/default style.
 /// </summary>
 internal sealed class RenderMapTool : IMcpTool
 {
@@ -45,13 +48,15 @@ internal sealed class RenderMapTool : IMcpTool
     {
         Name = ToolName,
         Title = "Render map",
-        Description = "Render a map image (PNG) for one or more published layers over a bbox and return it as an inline image. Layers draw bottom-to-top. Width/height are capped at 1024 px. "
+        Description = "Render a map image (PNG) for one or more published layers over a bbox. Layers draw bottom-to-top. Width/height are capped at 1024 px. "
+            + "By default the result is a fetchable artifact reference (resource_link href) with the image dimensions and byte size in text — NOT an inline base64 image — so a multi-megabyte render never floods the model context. "
+            + "Set maxInlineBytes to opt into inlining the base64 PNG when the encoded image is at or below that size. "
             + "Each layer renders with its primary/default style, which the caption reports; change a layer's style first with honua_apply_style_preset (discover presets with honua_get_style) and re-render to reflect it. "
             + "To render analysis results as a styled map: run the analysis, then honua_publish_result to promote the result to a serviceId/layerId, then optionally honua_apply_style_preset, then render that layer here.",
         InputSchema = MapToolSchemas.RenderMapArgumentSchema,
-        // Read-only render. No OutputSchema: this tool returns an image content
-        // block, not a structuredContent payload, so there is no structured
-        // result shape to describe.
+        // Read-only render. No OutputSchema: this tool returns an image or
+        // resource_link content block, not a structuredContent payload, so there
+        // is no structured result shape to describe.
         Annotations = McpToolAnnotationSets.ReadOnly("Render map")
     };
 
@@ -128,21 +133,80 @@ internal sealed class RenderMapTool : IMcpTool
             throw new GeoprocessingStoreUnavailableException("Map rendering produced an empty image.");
         }
 
-        var base64 = Convert.ToBase64String(result.Data);
-        var caption = string.Format(
+        var extentDescription = string.Format(
             CultureInfo.InvariantCulture,
-            "Rendered {0} layer{1} at {2}x{3} px over bbox [{4}, {5}, {6}, {7}] (SRID {8}).",
-            storageLayerIds.Length,
-            storageLayerIds.Length == 1 ? string.Empty : "s",
-            result.Width,
-            result.Height,
+            "over bbox [{0}, {1}, {2}, {3}] (SRID {4})",
             bbox[0],
             bbox[1],
             bbox[2],
             bbox[3],
             bboxSrid);
+        var layerCountDescription = string.Format(
+            CultureInfo.InvariantCulture,
+            "{0} layer{1}",
+            storageLayerIds.Length,
+            storageLayerIds.Length == 1 ? string.Empty : "s");
 
+        // The effective per-layer styles are reported on both result shapes so an
+        // applied preset (honua_apply_style_preset) stays observable in the caption.
         var styleNote = BuildStyleNote(effectiveStyleIds);
+
+        // Default: hand back a fetchable artifact href instead of inlining a
+        // multi-megabyte base64 PNG into the model context. Inline only when the
+        // caller opts in via maxInlineBytes AND the encoded image fits under it.
+        var maxInlineBytes = argument.MaxInlineBytes ?? 0;
+        if (maxInlineBytes > 0 && result.Data.Length <= maxInlineBytes)
+        {
+            var inlineCaption = string.Format(
+                CultureInfo.InvariantCulture,
+                "Rendered {0} at {1}x{2} px {3} ({4}, {5:N0} bytes, inlined).",
+                layerCountDescription,
+                result.Width,
+                result.Height,
+                extentDescription,
+                result.ContentType,
+                result.Data.Length);
+            if (styleNote is not null)
+            {
+                inlineCaption = inlineCaption + " " + styleNote;
+            }
+
+            return new McpToolsCallResult
+            {
+                IsError = false,
+                Content =
+                [
+                    new McpContentBlock { Type = "text", Text = inlineCaption },
+                    new McpContentBlock
+                    {
+                        Type = "image",
+                        Data = Convert.ToBase64String(result.Data),
+                        MimeType = result.ContentType
+                    }
+                ]
+            };
+        }
+
+        var temporaryFileService = httpContext.RequestServices.GetRequiredService<ITemporaryFileService>();
+        var href = await temporaryFileService
+            .StoreTemporaryFileAsync(
+                result.Data,
+                result.ContentType,
+                TimeSpan.FromHours(1),
+                principal: httpContext.User,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        var caption = string.Format(
+            CultureInfo.InvariantCulture,
+            "Rendered {0} at {1}x{2} px {3} ({4}, {5:N0} bytes). Fetch the image at {6} (expires in 1h); returned as an artifact reference to conserve context. Pass maxInlineBytes >= {5} to inline it instead.",
+            layerCountDescription,
+            result.Width,
+            result.Height,
+            extentDescription,
+            result.ContentType,
+            result.Data.Length,
+            href);
         if (styleNote is not null)
         {
             caption = caption + " " + styleNote;
@@ -156,8 +220,9 @@ internal sealed class RenderMapTool : IMcpTool
                 new McpContentBlock { Type = "text", Text = caption },
                 new McpContentBlock
                 {
-                    Type = "image",
-                    Data = base64,
+                    Type = "resource_link",
+                    Uri = href,
+                    Name = "rendered-map",
                     MimeType = result.ContentType
                 }
             ]

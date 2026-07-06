@@ -26,6 +26,21 @@ internal static class MapToolSchemas
     /// <summary>Maximum render width/height per side (caps cost and payload).</summary>
     public const int MaxRenderSize = 1024;
 
+    /// <summary>
+    /// Default number of decimal places returned <c>honua_query_features</c>
+    /// geometry coordinates are rounded to (~0.1&#160;m at the equator). Trims
+    /// full-precision coordinate noise that otherwise dominates the response
+    /// token budget.
+    /// </summary>
+    public const int DefaultGeometryPrecision = 6;
+
+    /// <summary>
+    /// Maximum decimal places <c>geometryPrecision</c> can request. Values above
+    /// this (or below zero) skip quantization and return full-precision
+    /// coordinates; <see cref="System.Math.Round(double, int)"/> caps at 15.
+    /// </summary>
+    public const int MaxGeometryPrecision = 15;
+
     private const string ListLayersArgumentSchemaJson = """
         {
           "type": "object",
@@ -101,6 +116,11 @@ internal static class MapToolSchemas
               "type": "integer",
               "default": 4326,
               "description": "Output spatial reference (SRID/WKID) for returned geometries."
+            },
+            "geometryPrecision": {
+              "type": "integer",
+              "default": 6,
+              "description": "x-honua extension: decimal places to round returned geometry coordinates to. Defaults to 6 (~0.1 m at the equator) so coordinates stay compact instead of emitting 15-digit full-precision noise that inflates the response token budget. Pass a higher value for finer precision, or a negative value for full unrounded coordinates. Ignored when returnGeometry=false."
             }
           }
         }
@@ -162,6 +182,12 @@ internal static class MapToolSchemas
               "type": "boolean",
               "default": false,
               "description": "Render a transparent background instead of an opaque one."
+            },
+            "maxInlineBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "description": "x-honua extension: opt-in ceiling (bytes) for inlining the rendered PNG as a base64 image content block. When the encoded image is at or below this size it is returned inline; otherwise, and by default (0), the tool returns a fetchable artifact href (resource_link) with the image dimensions and byte size in text so a multi-megabyte render never floods the model context."
             }
           }
         }

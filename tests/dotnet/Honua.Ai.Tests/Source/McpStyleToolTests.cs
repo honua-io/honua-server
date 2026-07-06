@@ -13,6 +13,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Services;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -290,6 +291,19 @@ public sealed class McpStyleToolTests
         services.AddSingleton(catalog ?? Substitute.For<IStyleCatalog>());
         services.AddSingleton(graphSync ?? Substitute.For<IMetadataV2StyleGraphSync>());
         services.AddSingleton(renderer ?? Substitute.For<IRasterMapRenderer>());
+
+        // render_map's default result is an artifact reference stored through the
+        // shared temp-file pipeline; stub it so the href path resolves in tests.
+        var temporaryFileService = Substitute.For<ITemporaryFileService>();
+        temporaryFileService
+            .StoreTemporaryFileAsync(
+                Arg.Any<byte[]>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<ClaimsPrincipal?>(),
+                Arg.Any<CancellationToken>())
+            .Returns("/temp/rendered-map.png");
+        services.AddSingleton(temporaryFileService);
 
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services.BuildServiceProvider();
