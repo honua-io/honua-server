@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { FeatureServerClient } from '../shared/client';
+import { FeatureServerClient, assertGeoServicesError } from '../shared/client';
 import { VALID_ESRI_GEOMETRY_TYPES } from '../shared/constants';
 
 // =============================================================================
@@ -102,7 +102,7 @@ describe('Service Metadata', () => {
       });
 
       const response = await customClient.getServiceMetadata();
-      expect(response.status).toBe(404);
+      assertGeoServicesError(response, { bodyCodes: [404] });
     });
   });
 });
@@ -330,7 +330,7 @@ describe('Layer Metadata', () => {
   describe('Error Cases', () => {
     it('should return 404 for nonexistent layer', async () => {
       const response = await client.getLayerMetadata(99999);
-      expect(response.status).toBe(404);
+      assertGeoServicesError(response, { bodyCodes: [404] });
     });
   });
 });

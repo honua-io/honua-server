@@ -107,7 +107,10 @@ describe('GPServer Smoke', () => {
       jobStatus?: string;
     };
 
-    if (response.status === 200) {
+    // PA-070/PA-117 (#2418): the job-store-unavailable error is now signalled as
+    // HTTP 200 + {"error":{"code":503}} rather than a 503 status, so branch on the
+    // body error member instead of the HTTP status.
+    if (response.status === 200 && !data.error) {
       expect(data.jobId).toBeTruthy();
       expect(data.jobStatus).toBe('esriJobSubmitted');
       return;
