@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -390,7 +391,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var featureServerResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer?f=json");
-        featureServerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await featureServerResponse.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]

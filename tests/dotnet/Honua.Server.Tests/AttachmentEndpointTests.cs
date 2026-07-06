@@ -320,7 +320,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
             new StringContent("objectId=1", Encoding.UTF8, "text/plain"));
 
-        await response.AssertGeoServicesErrorAsync(new[] { 415, 500 });
+        await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -443,7 +443,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment",
             new StringContent("objectId=1&attachmentId=1", Encoding.UTF8, "application/json"));
 
-        await response.AssertGeoServicesErrorAsync(new[] { 415, 500 });
+        await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -563,7 +563,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments",
             new StringContent("objectId=1&attachmentIds=1", Encoding.UTF8, "application/json"));
 
-        await response.AssertGeoServicesErrorAsync(new[] { 415, 500 });
+        await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }

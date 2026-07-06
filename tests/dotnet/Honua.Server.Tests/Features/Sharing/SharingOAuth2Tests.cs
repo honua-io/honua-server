@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -386,7 +387,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         using var response = await client.GetAsync(url);
 
         // GET must be rejected — credentials must never travel in the URL.
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        await response.AssertGeoServicesErrorAsync(405);
     }
 
     [IntegrationTest]
@@ -404,7 +405,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
         // No OIDC provider is configured in the Test environment, so the callback
         // surface 404s exactly like authorize.
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -427,7 +428,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
         // The Test environment configures no OIDC provider, so there is no named-user
         // identity to broker and the surface 404s rather than silently redirecting.
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -488,7 +489,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
                 new KeyValuePair<string, string>("token", "x"),
             }));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -515,7 +516,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
                     new KeyValuePair<string, string>("code", "x"),
                 }));
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await response.AssertGeoServicesErrorAsync(404);
         }
         finally
         {
@@ -649,7 +650,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
                     new KeyValuePair<string, string>("token", "x"),
                 }));
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await response.AssertGeoServicesErrorAsync(404);
         }
         finally
         {

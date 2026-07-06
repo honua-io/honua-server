@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Protocols.GeoServices.VectorTileServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer;
 
@@ -155,7 +156,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         foreach (var url in badCoordinates)
         {
             var response = await _fixture.Client.GetAsync(url);
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{url} is out of range");
+            await response.AssertGeoServicesErrorAsync(400);
         }
     }
 

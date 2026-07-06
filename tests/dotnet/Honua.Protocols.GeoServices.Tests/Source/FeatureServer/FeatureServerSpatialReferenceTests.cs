@@ -199,7 +199,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync(requestUri);
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -215,7 +215,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync(requestUri);
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -231,7 +231,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync(requestUri);
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -244,7 +244,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync(requestUri);
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
