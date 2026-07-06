@@ -9,6 +9,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 [Protocol(TestProtocols.FeatureServer)]
@@ -557,7 +558,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query",
             new StringContent(payload, Encoding.UTF8, "text/plain"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -814,8 +815,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             "?where=1%3D1&outFields=category&returnDistinctValues=true&returnGeometry=false" +
             "&resultOffset=200000&f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "returnDistinctValues with a very large resultOffset must be rejected to prevent OOM");
+        await response.AssertGeoServicesErrorAsync(400);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("returnDistinctValues",
