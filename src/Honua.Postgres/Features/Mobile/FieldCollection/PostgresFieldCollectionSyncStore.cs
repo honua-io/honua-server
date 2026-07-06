@@ -110,7 +110,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
 
     // Feature-identity advisory lock keyed by (namespace, hashtext("<layer_id>:<feature_id>")).
     // Serializes concurrent pushes targeting the same (feature_id, layer_id) regardless of
-    // change_id. Required because SELECT â€¦ FOR UPDATE on fieldcollection_features only locks
+    // change_id. Required because SELECT … FOR UPDATE on fieldcollection_features only locks
     // an existing row â€” concurrent inserts for an absent feature would otherwise both read
     // current=null, both resolve as Applied, and the unconditional ON CONFLICT DO UPDATE
     // upsert would let the second silently overwrite the first. The namespace constant is
@@ -342,7 +342,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
             }
 
             // Serialize concurrent pushes that target the same (feature_id, layer_id),
-            // regardless of change_id. The SELECT â€¦ FOR UPDATE below only serializes
+            // regardless of change_id. The SELECT … FOR UPDATE below only serializes
             // the existing-row case; for an absent feature, two distinct change_ids
             // could both observe current=null and both resolve their inserts as
             // Applied. The feature advisory lock closes that race so the second

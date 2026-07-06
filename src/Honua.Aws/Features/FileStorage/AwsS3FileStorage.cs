@@ -348,17 +348,25 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
             var response = await _client.ListObjectsV2Async(request, cancellationToken);
 
+            // AWS SDK v4 leaves response collections null when S3 returns no items (an empty
+            // prefix produces a ListBucketResult with no <Contents>, unmarshalled as
+            // S3Objects == null rather than an empty list). Normalize before dereferencing —
+            // an unguarded .Count here NRE'd the temporary-file quota listing against the
+            // empty temporary-files/ prefix and 500'd every rendered map-image href/f=json
+            // export on S3-backed deployments (honua-server#2311).
+            var s3Objects = response.S3Objects ?? [];
+
             // ListObjectsV2 already carries the key, size, and last-modified for every object, so a
             // size/last-modified-only listing needs no per-object HEAD. Only fetch per-object
             // metadata (HeadObject) when the caller explicitly asks for the custom user metadata
             // (original file name, expiry, custom keys) that the flat listing cannot return — and
             // even then bound the parallelism so a page is N concurrent HEADs rather than N
             // sequential round trips.
-            var pageBatch = new CloudFile?[response.S3Objects.Count];
+            var pageBatch = new CloudFile?[s3Objects.Count];
             if (includeMetadata)
             {
                 await Parallel.ForEachAsync(
-                    response.S3Objects.Select((item, index) => (item, index)),
+                    s3Objects.Select((item, index) => (item, index)),
                     new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
                     async (entry, ct) =>
                     {
@@ -371,9 +379,9 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             }
             else
             {
-                for (var index = 0; index < response.S3Objects.Count; index++)
+                for (var index = 0; index < s3Objects.Count; index++)
                 {
-                    pageBatch[index] = ToCloudFile(response.S3Objects[index]);
+                    pageBatch[index] = ToCloudFile(s3Objects[index]);
                 }
             }
 
@@ -497,7 +505,8 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             request.ContinuationToken = continuationToken;
             var response = await _client.ListObjectsV2Async(request, cancellationToken);
 
-            foreach (var item in response.S3Objects)
+            // SDK v4: S3Objects is null (not empty) when the listing has no results.
+            foreach (var item in response.S3Objects ?? [])
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var metadata = await GetMetadataDictionaryAsync(item.Key, cancellationToken);
@@ -650,7 +659,9 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         {
             request.ContinuationToken = continuationToken;
             var response = await _client.ListObjectsV2Async(request, cancellationToken);
-            foreach (var item in response.S3Objects)
+
+            // SDK v4: S3Objects is null (not empty) when the listing has no results.
+            foreach (var item in response.S3Objects ?? [])
             {
                 if (await DeleteObjectAsync(item.Key, cancellationToken))
                 {
