@@ -336,13 +336,15 @@ public sealed class McpResourceSerializationTests
         entries.GetArrayLength().Should().BeGreaterThan(0);
 
         // Every served entry is evidence-backed: a route, at least one proving
-        // test, and the implemented maturity tier (slice 1 invariant, #1946).
+        // test, and a recognized maturity tier. The catalog carries both the
+        // slice-1 "implemented" tier (#1946) and the "experimental" tier
+        // introduced with #2346; the resource serves the catalog unfiltered.
         foreach (var entry in entries.EnumerateArray())
         {
             entry.GetProperty("route").GetString().Should().NotBeNullOrWhiteSpace();
             entry.GetProperty("method").GetString().Should().NotBeNullOrWhiteSpace();
             entry.GetProperty("proving_tests").GetArrayLength().Should().BeGreaterThan(0);
-            entry.GetProperty("maturity").GetString().Should().Be("implemented");
+            entry.GetProperty("maturity").GetString().Should().BeOneOf("implemented", "experimental");
         }
     }
 

@@ -63,7 +63,7 @@ public sealed class LayerEnablementIntegrationTests : IAsyncLifetime
 
         var featureServerResponse = await _client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}");
-        featureServerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await featureServerResponse.AssertGeoServicesErrorAsync(404);
 
         var ogcResponse = await _client.GetAsync($"/ogc/features/collections/{WebAppFixture.TestLayerId}");
         ogcResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -72,6 +72,6 @@ public sealed class LayerEnablementIntegrationTests : IAsyncLifetime
         odataResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var tileJsonResponse = await _client.GetAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json");
-        tileJsonResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await tileJsonResponse.AssertGeoServicesErrorAsync(404);
     }
 }
