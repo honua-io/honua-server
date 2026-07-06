@@ -5988,6 +5988,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.RenderStyledMap_VectorLayer_NoLongerThrowsNotSupported_Issue2498Regression",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetStyledMap_VectorCollectionTiff_ReturnsCleanErrorNeverPngLabeledTiff",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetStyledMap_VectorCollection_RendersPngInsteadOf501",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetStyledMap_WithValidStyle_ReachesStyledMapEndpoint",
@@ -6033,6 +6034,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.RenderDatasetMap_BoundVectorStyle_IsAppliedAtPixelLevelAndVariesByStyle",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithCollections_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithoutCollections_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetDatasetMap_AllUnknownCollectionIds_ReturnsNotFound",

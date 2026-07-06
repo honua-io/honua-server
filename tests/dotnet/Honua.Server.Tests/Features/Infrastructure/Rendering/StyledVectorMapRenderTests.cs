@@ -68,6 +68,7 @@ public sealed class StyledVectorMapRenderTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/map")]
     public async Task RenderDatasetMap_BoundVectorStyle_IsAppliedAtPixelLevelAndVariesByStyle()
     {
         var catalog = _fixture.GetService<ILayerStyleCatalog>();
@@ -94,6 +95,7 @@ public sealed class StyledVectorMapRenderTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
     public async Task RenderStyledMap_VectorLayer_NoLongerThrowsNotSupported_Issue2498Regression()
     {
         var catalog = _fixture.GetService<ILayerStyleCatalog>();
