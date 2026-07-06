@@ -9,6 +9,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
@@ -90,8 +91,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var second = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/create",
             ("versionName", "admin.dup_name_test"), ("accessPermission", "private"), ("f", "json"));
-        second.StatusCode.Should().Be(HttpStatusCode.Conflict,
-            "duplicate version name must return 409; body: {0}", await second.Content.ReadAsStringAsync());
+        await second.AssertGeoServicesErrorAsync(409);
 
         using var doc = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
         doc.RootElement.TryGetProperty("error", out _).Should().BeTrue(
@@ -181,8 +181,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{Guid.NewGuid()}/startReading",
             ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "an unknown version should not open a session; body: {0}", await response.Content.ReadAsStringAsync());
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -226,8 +225,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{Guid.NewGuid()}/startEditing",
             ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "an unknown version should not open an edit session; body: {0}", await response.Content.ReadAsStringAsync());
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -252,9 +250,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var editResponse = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startEditing",
             ("f", "json"));
-        editResponse.StatusCode.Should().Be(HttpStatusCode.Conflict,
-            "opening an edit session against a reconciling version must return 409; body: {0}",
-            await editResponse.Content.ReadAsStringAsync());
+        await editResponse.AssertGeoServicesErrorAsync(409);
 
         using (var doc = JsonDocument.Parse(await editResponse.Content.ReadAsStringAsync()))
         {
@@ -359,8 +355,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
             ("conflictDetection", "byPlanet"), ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "an unsupported conflictDetection mode should be rejected; body: {0}", await response.Content.ReadAsStringAsync());
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -518,9 +513,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/delete",
             ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict,
-            "BH6-002: deleting a reconciling version must return 409; body: {0}",
-            await response.Content.ReadAsStringAsync());
+        await response.AssertGeoServicesErrorAsync(409);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.TryGetProperty("error", out _).Should().BeTrue(
@@ -543,7 +536,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
         var info = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}?f=json");
-        info.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await info.AssertGeoServicesErrorAsync(404);
     }
 
     // ---- helpers --------------------------------------------------------------------------------

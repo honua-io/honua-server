@@ -122,7 +122,6 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
             25.5,
             new KeyValuePair<string, string>("env:transferDomains", "true"));
 
-        error.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         error.Code.Should().Be(400);
         error.Message.Should().Be("Bad Request");
         error.Details.Should().Contain(detail => detail.Contains("GP environment controls are not yet supported", StringComparison.Ordinal));

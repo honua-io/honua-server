@@ -132,7 +132,7 @@ public sealed class GeometryServiceSimplifyTests : IClassFixture<WebAppFixture>
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/simplify?sr=4326");
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -152,6 +152,6 @@ public sealed class GeometryServiceSimplifyTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/simplify", content);
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 }

@@ -301,7 +301,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         else
         {
             // If transformation fails, should be informative error, not server crash
-            await response.AssertGeoServicesErrorAsync(new[] { 400, 422 });
+            await response.AssertGeoServicesErrorAsync(400, 422);
         }
     }
 
@@ -504,7 +504,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(requestUri);
 
         // Should return appropriate error, not crash
-        await response.AssertGeoServicesErrorAsync(new[] { 400, 422, 404 });
+        await response.AssertGeoServicesErrorAsync(400, 422, 404);
 
         // Should not be a server error (500)
         ((int)response.StatusCode).Should().BeLessThan(500);
@@ -534,7 +534,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(requestUri);
 
         // Should validate and reject invalid coordinates
-        await response.AssertGeoServicesErrorAsync(new[] { 400, 422 });
+        await response.AssertGeoServicesErrorAsync(400, 422);
 
         // Should not cause server errors
         ((int)response.StatusCode).Should().BeLessThan(500);

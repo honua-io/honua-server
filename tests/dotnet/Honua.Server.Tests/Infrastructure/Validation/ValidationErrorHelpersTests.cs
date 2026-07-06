@@ -284,7 +284,9 @@ public class ValidationErrorHelpersTests
 
         await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status415UnsupportedMediaType);
+        // PA-070/PA-117 (#2418): GeoServices errors are transported as HTTP 200;
+        // the error is signalled exclusively through the JSON body envelope.
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         context.Response.Body.Position = 0;
 
         using var document = await JsonDocument.ParseAsync(context.Response.Body);
@@ -302,7 +304,10 @@ public class ValidationErrorHelpersTests
 
         await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status405MethodNotAllowed);
+        // PA-070/PA-117 (#2418): GeoServices errors are transported as HTTP 200;
+        // the error is signalled exclusively through the JSON body envelope
+        // (error.code = 405 below). The Allow header is still emitted.
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         context.Response.Headers["Allow"].ToString().Should().Be("GET, POST");
         context.Response.Body.Position = 0;
 
