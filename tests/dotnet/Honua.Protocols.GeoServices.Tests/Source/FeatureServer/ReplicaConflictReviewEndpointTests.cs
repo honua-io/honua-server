@@ -340,7 +340,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             ResolvePath(WebAppFixture.TestServiceId, replicaId, conflictId),
             JsonContent.Create(new ReplicaConflictResolutionRequest { Action = "keepServer" }));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(409);
     }
 
     [IntegrationTest]

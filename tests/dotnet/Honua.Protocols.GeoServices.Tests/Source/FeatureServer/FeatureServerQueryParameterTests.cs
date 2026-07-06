@@ -557,7 +557,8 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query",
             new StringContent(payload, Encoding.UTF8, "text/plain"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }

@@ -129,7 +129,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer",
             new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(415);
     }
 
     [IntegrationTest]
@@ -521,7 +522,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
             new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await response.ShouldBeGeoServicesError(415);
     }
 
     [IntegrationTest]
