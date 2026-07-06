@@ -80,7 +80,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             // When both the V2 snapshot table and the V1 catalog are absent or empty the
             // server is freshly deployed with zero published datasets. Every catalog-style
             // endpoint (STAC /stac, GeoServices /rest/services, OGC API /collections, OData
-            // service document, WFS GetCapabilities, â€¦) already handles an empty list
+            // service document, WFS GetCapabilities, …) already handles an empty list
             // gracefully and returns a valid empty response. Returning an empty-but-valid
             // snapshot here makes ALL of those surfaces return 200 with zero
             // items â€” the correct behaviour for a healthy but unpopulated server â€” instead
@@ -595,7 +595,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     /// <summary>
     /// Builds an empty-but-valid in-memory snapshot for a freshly deployed server with no
     /// published datasets. All catalog-style read surfaces (STAC, GeoServices, OGC API
-    /// Features, OData, WFS, â€¦) enumerate the collections/services list and return a valid
+    /// Features, OData, WFS, …) enumerate the collections/services list and return a valid
     /// empty response when the list is zero-length, so this snapshot produces 200s with no
     /// items rather than 500s. It is never persisted to the database. (honua-server#1619.)
     /// </summary>
