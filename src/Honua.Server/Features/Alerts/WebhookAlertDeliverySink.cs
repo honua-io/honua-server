@@ -4,6 +4,7 @@
 using System.Net;
 using System.Globalization;
 using System.Text;
+using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
@@ -79,7 +80,18 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
             };
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
             var signature = WebhookDeliveryHelper.ComputeSignature(_options.Dispatch.DefaultWebhookSecret, timestamp, alertEvent.PayloadJson);
-            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Rule", alertEvent.RuleId.ToString(CultureInfo.InvariantCulture));
+
+            // Ops notifications are not linked to an alert rule; emit the ops source
+            // instead of a misleading "0" rule reference (#2427).
+            if (OpsNotificationPresentation.TryResolve(alertEvent) is { } ops)
+            {
+                WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Source", ops.Source);
+            }
+            else
+            {
+                WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Rule", alertEvent.RuleId.ToString(CultureInfo.InvariantCulture));
+            }
+
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Event", alertEvent.DedupeKey);
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Event-Timestamp", timestamp);
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Signature", $"sha256={signature}");

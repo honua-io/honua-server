@@ -77,6 +77,6 @@ internal sealed partial class OpsJobTerminalCallback : IJobTerminalCallback
         }
     }
 
-    [LoggerMessage(EventId = 9433, Level = LogLevel.Warning, Message = "Ops notification for failed job {OperationId} could not be enqueued.")]
+    [LoggerMessage(EventId = 9453, Level = LogLevel.Warning, Message = "Ops notification for failed job {OperationId} could not be enqueued.")]
     private static partial void LogNotifyFailed(ILogger logger, string operationId, Exception exception);
 }
