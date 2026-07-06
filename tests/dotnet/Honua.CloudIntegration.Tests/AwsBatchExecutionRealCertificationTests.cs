@@ -7,6 +7,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
@@ -52,10 +53,12 @@ public sealed class AwsBatchExecutionRealCertificationTests : IClassFixture<Real
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
 
     private readonly RealAwsCertificationFixture _cert;
+    private readonly ITestOutputHelper _output;
 
-    public AwsBatchExecutionRealCertificationTests(RealAwsCertificationFixture cert)
+    public AwsBatchExecutionRealCertificationTests(RealAwsCertificationFixture cert, ITestOutputHelper output)
     {
         _cert = cert;
+        _output = output;
     }
 
     [SkippableFact]
@@ -91,7 +94,7 @@ public sealed class AwsBatchExecutionRealCertificationTests : IClassFixture<Real
         }
         finally
         {
-            await BestEffortCancelAsync(backend, job, providerId);
+            await BestEffortCancelAsync(backend, job, providerId, _output);
         }
     }
 
@@ -131,7 +134,7 @@ public sealed class AwsBatchExecutionRealCertificationTests : IClassFixture<Real
         }
         finally
         {
-            await BestEffortCancelAsync(backend, job, providerId);
+            await BestEffortCancelAsync(backend, job, providerId, _output);
         }
     }
 
@@ -189,7 +192,8 @@ public sealed class AwsBatchExecutionRealCertificationTests : IClassFixture<Real
     private static async Task BestEffortCancelAsync(
         AwsBatchComputeBackend backend,
         ExecutionJobRecord job,
-        string? providerId)
+        string? providerId,
+        ITestOutputHelper output)
     {
         if (string.IsNullOrWhiteSpace(providerId))
         {
@@ -206,10 +210,13 @@ public sealed class AwsBatchExecutionRealCertificationTests : IClassFixture<Real
                 CancellationRequestedAt = DateTimeOffset.UtcNow,
             });
         }
-        catch
+        catch (Exception ex)
         {
             // Best-effort: the job is ephemeral run-to-completion and ages out on its own; a
-            // transient cancel blip must not mask the primary assertion outcome.
+            // transient cancel blip must not mask the primary assertion outcome. Log it so a failed
+            // teardown is visible in CI rather than silently swallowed.
+            output.WriteLine(
+                $"[cert] best-effort cancel of Batch job '{providerId}' failed: {ex.Message}");
         }
     }
 

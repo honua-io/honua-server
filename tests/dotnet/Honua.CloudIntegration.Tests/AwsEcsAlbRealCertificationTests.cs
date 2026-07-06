@@ -10,6 +10,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
@@ -43,10 +44,14 @@ namespace Honua.CloudIntegration.Tests;
 /// performs the promotion decision itself.
 ///
 /// TEARDOWN INVARIANT: the listener rule is a STANDING resource (not created here), so there is
-/// nothing to tag or reap — correctness is a guaranteed restore. The original default-rule weights and
-/// the original service task definition are snapshotted at test start and restored UNCONDITIONALLY in
-/// a <c>finally</c> block, even when an assertion above throws, so every weekly run leaves the
-/// substrate pristine (stable=100/canary=0) for the next one.
+/// nothing to tag or reap — correctness is a guaranteed restore to a KNOWN BASELINE. The cell asserts
+/// the resolved weighted rule is at the baseline (stable=100/canary=0) at test START and fails loudly
+/// if it has drifted (surfacing a prior poisoned run), then restores that KNOWN baseline (NOT a
+/// captured snapshot) plus the original service task definition UNCONDITIONALLY in a <c>finally</c>
+/// block, even when an assertion throws. Restoring the fixed baseline rather than a snapshot is
+/// deliberate: a run killed between promote and restore must never be able to leave canary=100 and
+/// have the next run snapshot+restore that poison — the substrate always converges back to
+/// stable=100/canary=0 for the next weekly run.
 ///
 /// SAFETY: OFF unless <see cref="RealAwsCertificationFixture.EcsAlbConfigured"/>; the single fact
 /// <c>[SkippableFact]</c>-skips otherwise (forks, PRs without secrets, ordinary local runs).
@@ -64,11 +69,18 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
     // valid canary-weight range) so the observe path lands on PromotionRecommended, not Succeeded.
     private const int CanaryShare = 25;
 
-    private readonly RealAwsCertificationFixture _cert;
+    // The KNOWN baseline the standing substrate is provisioned at and must always be restored to:
+    // stable serves 100%, canary serves 0%.
+    private const int BaselineStableWeight = 100;
+    private const int BaselineCanaryWeight = 0;
 
-    public AwsEcsAlbRealCertificationTests(RealAwsCertificationFixture cert)
+    private readonly RealAwsCertificationFixture _cert;
+    private readonly ITestOutputHelper _output;
+
+    public AwsEcsAlbRealCertificationTests(RealAwsCertificationFixture cert, ITestOutputHelper output)
     {
         _cert = cert;
+        _output = output;
     }
 
     [SkippableFact]
@@ -91,9 +103,27 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         using var albClient = new AwsSdkAlbClient();
         using var ecsClient = new AwsSdkEcsClient();
 
-        // Resolve the listener's DEFAULT rule (the weighted forward action the backend mutates). The
-        // substrate hands us a LISTENER ARN; the backend operates on a RULE ARN, so derive it live.
-        var listenerRuleArn = await ResolveWeightedRuleArnAsync(_cert.AlbListenerArn!, region);
+        // Resolve the listener's weighted NON-DEFAULT rule (AWS forbids ModifyRule on a default rule,
+        // so the substrate parks the weighted forward action on a dedicated non-default rule). The
+        // substrate hands us a LISTENER ARN; the backend operates on a RULE ARN, so derive it live —
+        // selecting the rule whose forward action targets BOTH configured target groups, never just
+        // the first non-default rule (which could be an unrelated redirect/fixed-response rule).
+        var listenerRuleArn = await ResolveWeightedRuleArnAsync(
+            _cert.AlbListenerArn!, canaryTargetGroup, stableTargetGroup, region);
+
+        // Assert the substrate is at the KNOWN BASELINE (stable=100/canary=0) before we mutate it, and
+        // FAIL LOUDLY if it has drifted. A prior run that died between promote and restore would leave
+        // canary=100 standing; surfacing that here stops a poisoned run from silently snapshotting and
+        // perpetuating the bad weight (the finally always restores the known baseline, never a snapshot).
+        var startingShares = ReadShares(await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region));
+        startingShares.Stable.Should().Be(
+            BaselineStableWeight,
+            "the ECS/ALB substrate must start each run at the known baseline (stable=100); a drifted "
+            + "stable weight means a prior run left the substrate poisoned and must be investigated");
+        startingShares.Canary.Should().Be(
+            BaselineCanaryWeight,
+            "the ECS/ALB substrate must start each run at the known baseline (canary=0); a drifted "
+            + "canary weight means a prior run left the substrate poisoned and must be investigated");
 
         // Same-revision deploy: the desired revision IS the service's current task definition, so ECS
         // is already converged and the cell certifies the traffic-shift mechanics, not an image roll.
@@ -101,9 +131,6 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         var currentTaskDefinition = currentService.TaskDefinitionArn;
         currentTaskDefinition.Should().NotBeNullOrWhiteSpace(
             "the certification ECS service must resolve to a concrete task definition to deploy");
-
-        // Snapshot the pre-test state so the finally can restore the substrate exactly, even on failure.
-        var originalRuleState = await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region);
 
         var backend = new AwsEcsAlbDeployBackend(albClient, ecsClient, NullLogger<AwsEcsAlbDeployBackend>.Instance);
         var operation = BuildOperation(
@@ -165,21 +192,35 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         }
         finally
         {
-            // Guaranteed restore of the STANDING substrate: original default-rule weights + original
-            // task definition, so the next weekly run starts from stable=100/canary=0 regardless of any
-            // assertion failure above. Best-effort — a transient restore blip must not mask a primary
-            // assertion, and the task-definition restore is a no-op on the same-revision happy path.
+            // Guaranteed restore of the STANDING substrate to the KNOWN BASELINE (stable=100/canary=0)
+            // plus the original task definition, so the next weekly run starts pristine regardless of
+            // any assertion failure above. Restoring the KNOWN baseline (not a captured snapshot) is
+            // deliberate: a run killed between promote and restore must not be able to leave canary=100
+            // and have the next run snapshot+restore that poison. Best-effort — a transient restore blip
+            // must not mask a primary assertion; the start-of-test baseline assertion is the backstop
+            // that surfaces any restore that did not take.
             await BestEffortRestoreAsync(
                 albClient,
                 ecsClient,
                 listenerRuleArn,
-                originalRuleState.TargetGroupWeights,
+                BuildBaselineWeights(stableTargetGroup, canaryTargetGroup),
                 cluster,
                 service,
                 currentTaskDefinition!,
                 region);
         }
     }
+
+    // The known-baseline weighted forward action the substrate is provisioned at and is always
+    // restored to: stable serves 100%, canary serves 0%.
+    private static IReadOnlyList<AwsAlbTargetGroupWeight> BuildBaselineWeights(
+        string stableTargetGroup,
+        string canaryTargetGroup)
+        =>
+        [
+            new AwsAlbTargetGroupWeight { TargetGroupArn = stableTargetGroup, Weight = BaselineStableWeight },
+            new AwsAlbTargetGroupWeight { TargetGroupArn = canaryTargetGroup, Weight = BaselineCanaryWeight },
+        ];
 
     private static async Task<bool> PollForPromotionAsync(
         AwsEcsAlbDeployBackend backend,
@@ -228,11 +269,11 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         return latest;
     }
 
-    private static async Task BestEffortRestoreAsync(
+    private async Task BestEffortRestoreAsync(
         AwsSdkAlbClient albClient,
         AwsSdkEcsClient ecsClient,
         string listenerRuleArn,
-        IReadOnlyList<AwsAlbTargetGroupWeight> originalWeights,
+        IReadOnlyList<AwsAlbTargetGroupWeight> baselineWeights,
         string cluster,
         string service,
         string originalTaskDefinition,
@@ -240,26 +281,40 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
     {
         try
         {
-            await albClient.UpdateListenerRuleWeightsAsync(listenerRuleArn, originalWeights, region);
+            await albClient.UpdateListenerRuleWeightsAsync(listenerRuleArn, baselineWeights, region);
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort: the substrate default is stable=100/canary=0 and a failed rollout already
-            // shifts traffic back to stable, so a transient restore failure does not strand traffic.
+            // Best-effort: if this restore does not take, the rule stays at whatever weight the last
+            // successful mutation set — possibly canary=100 after a promote — so it can leave traffic
+            // shifted. There is NO guarantee a failed rollout already moved traffic back to stable.
+            // We do not throw (that would mask a primary assertion), but we log LOUDLY so CI shows it,
+            // and the next run's start-of-test baseline assertion fails hard on the leftover drift.
+            _output.WriteLine(
+                $"[cert] WARNING: baseline restore of listener rule '{listenerRuleArn}' FAILED: "
+                + $"{ex.Message}. The rule may be left off-baseline (e.g. canary=100); the next run's "
+                + "baseline assertion will surface it.");
         }
 
         try
         {
             await ecsClient.UpdateServiceTaskDefinitionAsync(cluster, service, originalTaskDefinition, region);
         }
-        catch
+        catch (Exception ex)
         {
             // Best-effort: same-revision deploys never change the service task definition, so this is a
-            // defensive no-op that must not mask the primary assertion outcome.
+            // defensive no-op that must not mask the primary assertion outcome — but log it if it fails.
+            _output.WriteLine(
+                $"[cert] task-definition restore for service '{service}' failed (defensive no-op on the "
+                + $"same-revision happy path): {ex.Message}");
         }
     }
 
-    private static async Task<string> ResolveWeightedRuleArnAsync(string listenerArn, string region)
+    private static async Task<string> ResolveWeightedRuleArnAsync(
+        string listenerArn,
+        string canaryTargetGroup,
+        string stableTargetGroup,
+        string region)
     {
         using var elb = string.IsNullOrWhiteSpace(region)
             ? new AmazonElasticLoadBalancingV2Client()
@@ -267,11 +322,19 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
 
         // AWS forbids ModifyRule on a listener's DEFAULT rule (OperationNotPermitted), so the
         // substrate parks the weighted forward action on a dedicated non-default rule — exactly
-        // how a production canary deployment is wired. Certify against that rule.
+        // how a production canary deployment is wired. Certify against the non-default rule whose
+        // forward action targets BOTH the configured stable and canary target groups; picking the
+        // first non-default rule blindly could select an unrelated redirect/fixed-response/other
+        // rule and then mutate the wrong resource.
         var response = await elb.DescribeRulesAsync(new DescribeRulesRequest { ListenerArn = listenerArn });
-        var weightedRule = response.Rules?.FirstOrDefault(rule => rule.IsDefault != true)
+        var candidates = response.Rules?.Where(rule => rule.IsDefault != true).ToList() ?? [];
+
+        var weightedRule = candidates.FirstOrDefault(
+            rule => RuleForwardsToBothTargetGroups(rule, canaryTargetGroup, stableTargetGroup))
             ?? throw new InvalidOperationException(
-                $"Listener '{listenerArn}' has no non-default rule to certify weighted cutover against.");
+                $"Listener '{listenerArn}' has no non-default rule whose forward action targets both the "
+                + $"configured stable ('{stableTargetGroup}') and canary ('{canaryTargetGroup}') target "
+                + "groups to certify weighted cutover against.");
 
         if (string.IsNullOrWhiteSpace(weightedRule.RuleArn))
         {
@@ -280,6 +343,27 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         }
 
         return weightedRule.RuleArn;
+    }
+
+    // True when the rule has a forward action whose target-group set contains BOTH configured groups.
+    private static bool RuleForwardsToBothTargetGroups(
+        Rule rule,
+        string canaryTargetGroup,
+        string stableTargetGroup)
+    {
+        var forward = rule.Actions?.FirstOrDefault(action => action.Type == ActionTypeEnum.Forward);
+        var targetGroups = forward?.ForwardConfig?.TargetGroups;
+        if (targetGroups is null)
+        {
+            return false;
+        }
+
+        var arns = targetGroups
+            .Where(tuple => !string.IsNullOrWhiteSpace(tuple.TargetGroupArn))
+            .Select(tuple => tuple.TargetGroupArn)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return arns.Contains(canaryTargetGroup) && arns.Contains(stableTargetGroup);
     }
 
     private (int Canary, int Stable) ReadShares(AwsAlbListenerRuleState state)
