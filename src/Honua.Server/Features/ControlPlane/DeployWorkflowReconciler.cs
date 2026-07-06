@@ -216,6 +216,11 @@ internal sealed partial class DeployWorkflowReconciler(
                 }
             }
 
+            // Which signal must be satisfied before an auto-promotion (cutover) fires. Cloud targets
+            // default to the telemetry gate; self-hosted rolling defaults to its own health gate so
+            // on-prem/air-gapped deploys (no metrics substrate) are not structurally unable to promote.
+            var promotionGate = DeployPromotionPolicy.Resolve(current.Deploy);
+
             var telemetryDecision = await telemetrySignalEvaluator.EvaluateAsync(current, cancellationToken).ConfigureAwait(false);
             if (telemetryDecision != null)
             {
@@ -253,13 +258,31 @@ internal sealed partial class DeployWorkflowReconciler(
                     };
                 }
 
+                // A configured telemetry gate must clear (not rollback, not still waiting) before
+                // promotion — unless the operator pinned the manual gate, in which case only the admin
+                // promote endpoint may cut over.
                 if (!telemetryDecision.RollbackRecommended &&
                     !telemetryDecision.WaitForMoreTelemetry &&
                     promotionRecommended &&
-                    current.Status == WorkflowOperationStatus.Reconciling)
+                    current.Status == WorkflowOperationStatus.Reconciling &&
+                    promotionGate != DeployPromotionGateMode.Manual)
                 {
                     current = await AdvanceOrPromoteAsync(current, backend, cancellationToken).ConfigureAwait(false);
                 }
+            }
+            else if (
+                // Health-gate-only promotion (#2543): no telemetry policy is configured, so there is no
+                // metrics decision to clear. When the operator's promotion gate is health-only, the
+                // backend's own health gate (it set PromotionRecommended after health-probing the new
+                // revision) is authoritative and drives the cutover. Cloud targets default to the
+                // telemetry gate and keep holding until telemetry is wired or an operator forces
+                // promotion; a backend-recommended rollback still short-circuits promotion.
+                promotionGate == DeployPromotionGateMode.Health &&
+                string.IsNullOrWhiteSpace(rollbackReason) &&
+                promotionRecommended &&
+                current.Status == WorkflowOperationStatus.Reconciling)
+            {
+                current = await AdvanceOrPromoteAsync(current, backend, cancellationToken).ConfigureAwait(false);
             }
         }
 
