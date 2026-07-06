@@ -11,6 +11,8 @@ from typing import Any
 import httpx
 import pytest
 
+from shared.geoservices import assert_geoservices_error
+
 
 @dataclass(frozen=True)
 class ImageServerClient:
@@ -94,13 +96,15 @@ def test_imageserver_python_client_error_shapes(
     invalid_format = client.service_info(f="xml")
     invalid_identify_format = client.identify(geometry="0,0", f="xml")
 
-    assert invalid_format.status_code == 400
+    # PA-070/PA-117 (#2418): GeoServices errors are HTTP 200 + {"error":{"code":400}}
+    # (or a legacy 400 status).
+    assert_geoservices_error(invalid_format, body_codes={400})
     invalid_format_error = _assert_esri_error(invalid_format, 400)
     assert "Only JSON format is supported" in " ".join(
         invalid_format_error["error"].get("details") or []
     )
 
-    assert invalid_identify_format.status_code == 400
+    assert_geoservices_error(invalid_identify_format, body_codes={400})
     identify_error = _assert_esri_error(invalid_identify_format, 400)
     assert "Only JSON format is supported" in " ".join(
         identify_error["error"].get("details") or []

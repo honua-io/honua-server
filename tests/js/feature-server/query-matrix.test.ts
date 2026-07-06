@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { FeatureServerClient, assertEsriFeatureSet } from '../shared/client';
+import { FeatureServerClient, assertEsriFeatureSet, assertGeoServicesError } from '../shared/client';
 import { GeometryGenerator } from '../shared/geometry';
 import {
   NON_DISTANCE_SPATIAL_RELS,
@@ -126,7 +126,7 @@ describe('Spatial Relationship Matrix', () => {
         // No distance parameter
       });
 
-      expect(response.status).toBe(400);
+      assertGeoServicesError(response, { bodyCodes: [400] });
     });
 
     it('should return 400 when distance parameter is missing for esriSpatialRelBeyondDistance', async () => {
@@ -140,7 +140,7 @@ describe('Spatial Relationship Matrix', () => {
         // No distance parameter
       });
 
-      expect(response.status).toBe(400);
+      assertGeoServicesError(response, { bodyCodes: [400] });
     });
   });
 });
@@ -239,7 +239,7 @@ describe('Spatial Reference Matrix', () => {
         inSR: 'invalid',
       });
 
-      expect(response.status).toBe(400);
+      assertGeoServicesError(response, { bodyCodes: [400] });
     });
   });
 
@@ -280,7 +280,7 @@ describe('Spatial Reference Matrix', () => {
         outSR: 'invalid',
       });
 
-      expect(response.status).toBe(400);
+      assertGeoServicesError(response, { bodyCodes: [400] });
     });
   });
 
@@ -332,7 +332,7 @@ describe('Nearest Count Matrix', () => {
       nearestCount: 3,
     } as any);
 
-    expect(response.status).toBe(400);
+    assertGeoServicesError(response, { bodyCodes: [400] });
   });
 
   it('should return features with distance when returnDistance=true', async () => {

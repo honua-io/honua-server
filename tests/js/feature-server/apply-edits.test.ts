@@ -16,6 +16,7 @@ import {
   FeatureServerClient,
   assertEsriFeatureSet,
   assertEditSuccess,
+  assertGeoServicesError,
 } from '../shared/client';
 import { GeometryGenerator } from '../shared/geometry';
 import { GEOMETRY_TYPE_CASES } from '../shared/constants';
@@ -526,7 +527,8 @@ describe('ApplyEdits - Error Handling', () => {
         body: new URLSearchParams({ adds: 'not valid json', f: 'json' }),
       });
 
-      expect(response.status).toBe(400);
+      const body = (await response.json()) as unknown;
+      assertGeoServicesError({ status: response.status, data: body }, { bodyCodes: [400] });
     });
   });
 
@@ -543,7 +545,7 @@ describe('ApplyEdits - Error Handling', () => {
         99999,
       );
 
-      expect([400, 404]).toContain(response.status);
+      assertGeoServicesError(response, { bodyCodes: [400, 404] });
     });
   });
 
