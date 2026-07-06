@@ -10,6 +10,7 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -324,7 +325,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var response = await _client.GetAsync("/rest/services/throw-general");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        await response.AssertGeoServicesErrorAsync(500);
 
         var content = await response.Content.ReadAsStringAsync();
         var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
