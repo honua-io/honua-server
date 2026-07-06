@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { config } from '../shared/client';
+import { assertGeoServicesError, config } from '../shared/client';
 
 interface MapServerQueryResponse {
   features?: Array<{
@@ -68,6 +68,7 @@ describe('MapServer Query', () => {
       },
     );
 
-    expect(response.status).toBe(400);
+    const body = (await response.json()) as unknown;
+    assertGeoServicesError({ status: response.status, data: body }, { bodyCodes: [400] });
   });
 });

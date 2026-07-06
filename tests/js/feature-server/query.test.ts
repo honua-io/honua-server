@@ -18,6 +18,7 @@ import {
   FeatureServerClient,
   assertEsriFeatureSet,
   assertGeoJsonFeatureCollection,
+  assertGeoServicesError,
 } from '../shared/client';
 import { GeometryGenerator } from '../shared/geometry';
 import {
@@ -83,7 +84,7 @@ describe('Query Basic', () => {
   describe('Invalid Layer', () => {
     it('should return error for nonexistent layer', async () => {
       const response = await client.query({ where: '1=1' }, 99999);
-      expect([400, 404]).toContain(response.status);
+      assertGeoServicesError(response, { bodyCodes: [400, 404] });
     });
   });
 });
@@ -107,7 +108,7 @@ describe('WHERE Clause', () => {
     describe.each(INVALID_WHERE_CASES)('$name', ({ where }) => {
       it(`should reject: ${where}`, async () => {
         const response = await client.query({ where });
-        expect(response.status).toBe(400);
+        assertGeoServicesError(response, { bodyCodes: [400] });
       });
     });
   });
@@ -409,7 +410,7 @@ describe('Pagination', () => {
         resultOffset: 1000001,
       });
 
-      expect(response.status).toBe(400);
+      assertGeoServicesError(response, { bodyCodes: [400] });
     });
   });
 
