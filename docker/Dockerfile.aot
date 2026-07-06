@@ -152,10 +152,21 @@ RUN addgroup -g 1001 -S honua && \
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
 
-# Security: Create runtime directories with proper permissions
-RUN mkdir -p /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
-    chown -R 1001:1001 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
-    chmod 750 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics
+# Security: Create runtime directories with proper permissions.
+# This set MUST include every writable directory the default configuration writes
+# to at runtime. Under the read-only root filesystem this image is built for
+# (security.read-only-root="true"), any path not provisioned here — and not backed
+# by a writable volume mount by the deployment — is read-only, so a write attempt
+# throws. /tmp/honua-temp (TemporaryFiles:StorageDirectory) and /tmp/honua-storage
+# (FileStorage:LocalStorage:BasePath) back the map-image export href/f=json responses
+# (MapServer export, ImageServer exportImage); omitting them makes every rendered
+# image export fail with a 500 while inline f=image responses (which never touch
+# temp storage) still succeed. Keep this list in sync with the default storage
+# directories in appsettings.json — DockerfileWritableStorageDirectoryTests enforces
+# it for every Dockerfile that declares security.read-only-root="true".
+RUN mkdir -p /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics /tmp/honua-temp /tmp/honua-storage && \
+    chown -R 1001:1001 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics /tmp/honua-temp /tmp/honua-storage && \
+    chmod 750 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics /tmp/honua-temp /tmp/honua-storage
 
 # Security: Remove unnecessary setuid/setgid binaries
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} \; 2>/dev/null || true
