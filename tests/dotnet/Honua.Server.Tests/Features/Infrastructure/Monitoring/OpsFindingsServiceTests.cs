@@ -329,6 +329,82 @@ public sealed class OpsFindingsServiceTests
         Assert.NotNull(resolved);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task EvaluateAsync_LocalBackendOnServerlessSubstrate_ProducesCriticalFinding()
+    {
+        var controlPlane = new ControlPlaneOptions
+        {
+            Substrate = new SubstrateOptions { Profile = BatchComputeSubstrateProfile.Serverless },
+        };
+
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new OpsFindingsOptions()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(controlPlane),
+            new FakeAlertDispatchHealth(),
+            new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            batchBackends: [FakeLocalBackend("honua-local-process", BatchComputeTargetKind.LocalProcess)],
+            environmentAccessor: _ => null);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleLocalBackendSubstrate);
+        Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
+        Assert.Contains("honua-local-process", finding.Explanation, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task EvaluateAsync_LocalBackendOnSingleHostSubstrate_ProducesNoFinding()
+    {
+        var controlPlane = new ControlPlaneOptions
+        {
+            Substrate = new SubstrateOptions { Profile = BatchComputeSubstrateProfile.SingleHost },
+        };
+
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new OpsFindingsOptions()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(controlPlane),
+            new FakeAlertDispatchHealth(),
+            new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            batchBackends: [FakeLocalBackend("honua-local-process", BatchComputeTargetKind.LocalProcess)],
+            environmentAccessor: _ => null);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleLocalBackendSubstrate);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task EvaluateAsync_MultiNodeWithSharedWorkDir_ProducesNoFinding()
+    {
+        var controlPlane = new ControlPlaneOptions
+        {
+            Substrate = new SubstrateOptions { Profile = BatchComputeSubstrateProfile.MultiNode, SharedWorkDir = true },
+        };
+
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new OpsFindingsOptions()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(controlPlane),
+            new FakeAlertDispatchHealth(),
+            new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            batchBackends: [FakeLocalBackend("honua-local-process", BatchComputeTargetKind.LocalProcess)],
+            environmentAccessor: _ => null);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleLocalBackendSubstrate);
+    }
+
+    private static IBatchComputeBackend FakeLocalBackend(string backendName, BatchComputeTargetKind targetKind)
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(backendName);
+        backend.TargetKind.Returns(targetKind);
+        return backend;
+    }
+
     private static OpsFindingsService CreateService(
         OpsFindingsOptions? options = null,
         ControlPlaneOptions? controlPlaneOptions = null,
@@ -342,9 +418,9 @@ public sealed class OpsFindingsServiceTests
             new StaticOptionsMonitor<ControlPlaneOptions>(controlPlaneOptions ?? new ControlPlaneOptions()),
             alertHealth ?? new FakeAlertDispatchHealth(),
             deployProbe ?? new FakeDeployPreflightProbe(BuildDeploySnapshot()),
-            gateway ?? Substitute.For<IOperationGateway>(),
-            workflowStore,
-            jobStore);
+            gateway: gateway ?? Substitute.For<IOperationGateway>(),
+            workflowStore: workflowStore,
+            jobStore: jobStore);
 
     private static DeployPreflightSnapshot BuildDeploySnapshot(
         bool hasPendingContractScripts = false,
