@@ -1113,7 +1113,11 @@ sql:
       CREATE TABLE IF NOT EXISTS honua.alert_events (
           event_id BIGSERIAL PRIMARY KEY,
           dedupe_key TEXT NOT NULL,
-          rule_id BIGINT NOT NULL REFERENCES honua.alert_rules(rule_id) ON DELETE CASCADE,
+          -- rule_id is nullable and `source` discriminates rule-driven (gis) vs
+          -- operations-notification (ops) events, mirroring 075_AddAlertOpsSource.sql
+          -- (#2427 alerts GA) so this migration-skipping integration fixture matches
+          -- the canonical alert_events shape the alert stores write to.
+          rule_id BIGINT REFERENCES honua.alert_rules(rule_id) ON DELETE CASCADE,
           zone_id BIGINT NULL REFERENCES honua.alert_zones(zone_id) ON DELETE SET NULL,
           service_id TEXT NOT NULL,
           layer_id INT NOT NULL,
@@ -1125,6 +1129,7 @@ sql:
           payload JSONB NOT NULL DEFAULT '{}'::jsonb,
           incident_status SMALLINT NOT NULL DEFAULT 1,
           incident_duration_ms BIGINT NOT NULL DEFAULT 0,
+          source TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           CONSTRAINT alert_events_valid_dedupe_key CHECK (length(dedupe_key) > 0),
           CONSTRAINT alert_events_valid_trigger CHECK (trigger_type IN (1, 2, 3, 4)),
@@ -1133,6 +1138,8 @@ sql:
           CONSTRAINT alert_events_valid_incident_status CHECK (incident_status IN (1, 2, 3))
       );
   - "CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_events_dedupe_key ON honua.alert_events(dedupe_key);"
+  # Partial index for ops-notification queries (mirrors 075_AddAlertOpsSource.sql).
+  - "CREATE INDEX IF NOT EXISTS ix_alert_events_source_ops ON honua.alert_events(occurred_at DESC) WHERE source = 'ops';"
   - |
       CREATE TABLE IF NOT EXISTS honua.alert_event_lifecycle (
           event_id           BIGINT      PRIMARY KEY REFERENCES honua.alert_events(event_id) ON DELETE CASCADE,

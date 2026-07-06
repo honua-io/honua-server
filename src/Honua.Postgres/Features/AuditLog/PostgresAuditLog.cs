@@ -28,7 +28,7 @@ internal sealed class PostgresAuditLog : IAuditLog
     private const int MaxCorrelationIdLength = 64;
     private const int MaxRemoteIpLength = 64;
     private const int MaxUserAgentLength = 512;
-    private const string TruncationMarker = "â€¦";
+    private const string TruncationMarker = "…";
 
     // Stable, table-scoped key for the transaction advisory lock that serializes
     // hash-chain construction (#350). Concurrent audit inserts briefly contend on
