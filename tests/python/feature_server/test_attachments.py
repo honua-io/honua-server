@@ -123,7 +123,15 @@ class TestAddAttachment:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/1/addAttachment",
             data={"f": "json"},
         )
-        assert response.status_code in [400, 404]
+        # PA-070/PA-117 (#2418): a missing file now yields HTTP 200 + {"error": {...}}
+        # per the Esri GeoServices convention; a legacy 4xx or an
+        # addAttachmentResult.success == False is also accepted.
+        assert response.status_code in [400, 404] or (
+            response.status_code == 200 and (
+                isinstance(response.json().get("error"), dict) or
+                response.json().get("addAttachmentResult", {}).get("success") is False
+            )
+        )
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -206,7 +214,15 @@ class TestDeleteAttachments:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/1/deleteAttachments",
             data={"f": "json"},
         )
-        assert response.status_code in [400, 404]
+        # PA-070/PA-117 (#2418): missing parameters now yield HTTP 200 + {"error": {...}}
+        # per the Esri GeoServices convention; a legacy 4xx or a
+        # deleteAttachmentsResult.success == False is also accepted.
+        assert response.status_code in [400, 404] or (
+            response.status_code == 200 and (
+                isinstance(response.json().get("error"), dict) or
+                response.json().get("deleteAttachmentsResult", {}).get("success") is False
+            )
+        )
 
 
 class TestDownloadAttachment:
