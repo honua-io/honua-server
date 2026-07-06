@@ -22,6 +22,7 @@ using Honua.Server.Features.Geocoding;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -144,7 +145,7 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outFields=Match_addr,,Provider&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     // geocodeAddresses must honour outFields per result location.
@@ -303,7 +304,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=hon&provider=fake&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("not supported", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -320,7 +321,7 @@ public sealed class GeocodingEndpointTests
         var records = """[{"attributes":{"SingleLine":"test address"}}]""";
         using var response = await client.GetAsync($"/rest/services/World/GeocodeServer/geocodeAddresses?records={Uri.EscapeDataString(records)}&provider=fake&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("not supported", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -639,7 +640,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/geocodeAddresses?f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -656,7 +657,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/geocodeAddresses?records=not-valid-json&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("invalid JSON", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -678,7 +679,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync($"/rest/services/World/GeocodeServer/geocodeAddresses?records={Uri.EscapeDataString(records)}&provider=fake&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("exceeds the maximum", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -699,7 +700,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync($"/rest/services/World/GeocodeServer/geocodeAddresses?records={Uri.EscapeDataString(records)}&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("index 1", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -714,7 +715,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/NonexistentLocator/GeocodeServer/findAddressCandidates?singleLine=test&f=json");
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -787,7 +788,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&f=xml");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -809,7 +810,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -823,7 +824,7 @@ public sealed class GeocodingEndpointTests
         // Missing location parameter
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -836,7 +837,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&provider=nonexistent&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("not found", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -851,7 +852,7 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03,38.89&provider=nonexistent&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("not found", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -930,10 +931,7 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&f=json");
 
         // The coordinator catches the exception and returns a failure result; handler maps to error
-        Assert.True(
-            response.StatusCode == HttpStatusCode.InternalServerError ||
-            response.StatusCode == HttpStatusCode.BadRequest,
-            $"Expected error status code but got {response.StatusCode}");
+        await response.AssertGeoServicesErrorAsync(new[] { 400, 500 });
     }
 
     [IntegrationTest]
@@ -985,7 +983,7 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&searchExtent=not-an-extent&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("searchExtent", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -1038,7 +1036,7 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&distance=0&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("distance", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -1181,7 +1179,7 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&magicKey=tampered.token&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("magicKey", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -1430,7 +1428,7 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&location=not-a-point&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("location", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -1447,7 +1445,7 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&location=-77.0,38.9&distance=-5&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await response.AssertGeoServicesErrorAsync(400);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("distance", body, StringComparison.OrdinalIgnoreCase);
     }

@@ -10,6 +10,8 @@ Endpoint: GET /tiles/{layerId}/{z}/{x}/{y}.mvt
 import pytest
 import httpx
 
+from shared.geoservices import assert_geoservices_error
+
 
 class TestMvtTiles:
     """Tests for MVT tile endpoint."""
@@ -61,7 +63,9 @@ class TestMvtTiles:
     def test_mvt_tile_invalid_layer_returns_404(self, http_client: httpx.Client):
         """MVT tile for invalid layer should return 404."""
         response = http_client.get("/tiles/99999/0/0/0.mvt")
-        assert response.status_code == 404
+        # PA-070/PA-117 (#2418): /tiles is a GeoServices-classified path, so an
+        # unknown layer now yields HTTP 200 + {"error": {"code": 404}}.
+        assert_geoservices_error(response, body_codes={400, 404})
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -86,8 +90,9 @@ class TestMvtTiles:
         """MVT tile with out-of-bounds coordinates should return error."""
         # At zoom 0, only tile 0/0/0 exists
         response = http_client.get(f"/tiles/{test_layer_id}/0/5/5.mvt")
-        # Should return 400 (invalid) or 204 (empty)
-        assert response.status_code in [400, 204]
+        # PA-070/PA-117 (#2418): out-of-range coordinates yield either an empty tile
+        # (204) or a GeoServices error (HTTP 200 + {"error": {...}}, or legacy 4xx).
+        assert_geoservices_error(response, body_codes={400, 404}, allow_empty=True)
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -96,8 +101,9 @@ class TestMvtTiles:
     ):
         """MVT tile with negative coordinates should return error."""
         response = http_client.get(f"/tiles/{test_layer_id}/5/-1/0.mvt")
-        # Negative coordinates are invalid
-        assert response.status_code in [400, 404]
+        # Negative coordinates are invalid. PA-070/PA-117 (#2418): a GeoServices
+        # error now surfaces as HTTP 200 + {"error": {...}} (or a legacy 4xx/route 404).
+        assert_geoservices_error(response, body_codes={400, 404}, allow_empty=True)
 
     @pytest.mark.integration
     @pytest.mark.featureserver

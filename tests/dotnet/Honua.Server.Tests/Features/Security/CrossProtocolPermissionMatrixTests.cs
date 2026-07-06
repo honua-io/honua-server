@@ -18,6 +18,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Protocols.OData.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
@@ -116,7 +117,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     // ---- FeatureServer edits (applyEdits) ----
@@ -160,7 +161,7 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             ServiceRbacTestFixture.CreateApplyEditsContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -176,7 +177,7 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             ServiceRbacTestFixture.CreateApplyEditsContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     // ---- FeatureServer layer-not-granted (per-layer scoping) ----
@@ -195,7 +196,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -662,9 +663,7 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             payload);
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden,
-            "an insert-only principal must not execute Update operations; body: {0}",
-            await response.Content.ReadAsStringAsync());
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -711,9 +710,7 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             payload);
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden,
-            "a delete-only principal must not execute Update operations; body: {0}",
-            await response.Content.ReadAsStringAsync());
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     // ---- WFS GetFeature + Transaction ----

@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Scale;
@@ -178,7 +179,11 @@ public sealed class FeatureServerReplicaScaleTests
                 }
 
                 var extract = await ExtractChangesAsync(client, serviceId, apiKey, replicaId);
-                extract.StatusCode.Should().Be(HttpStatusCode.NotFound);
+                // extractChanges for a replica that does not exist on this instance is a
+                // GeoServices error: post-#2418 signalled with HTTP 200 + {"error":{"code":404}}
+                // (or a legacy 404). extract is a ScaleResponse wrapper, not an
+                // HttpResponseMessage, so assert the contract on its captured status + body.
+                GeoServicesErrorAssertions.AssertGeoServicesError((int)extract.StatusCode, extract.Content, 404);
                 return;
             }
 

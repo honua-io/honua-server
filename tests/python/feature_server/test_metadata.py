@@ -12,6 +12,8 @@ Endpoints:
 import pytest
 import httpx
 
+from shared.geoservices import assert_geoservices_error
+
 
 class TestServiceMetadata:
     """Tests for the FeatureServer service metadata endpoint."""
@@ -78,7 +80,9 @@ class TestServiceMetadata:
         response = http_client.get(
             "/rest/services/nonexistent_service_xyz/FeatureServer"
         )
-        assert response.status_code == 404
+        # PA-070/PA-117 (#2418): GeoServices REST signals not-found with HTTP 200 +
+        # {"error": {"code": 404}} rather than a bare 404.
+        assert_geoservices_error(response, body_codes={404})
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -209,7 +213,9 @@ class TestLayerMetadata:
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/99999"
         )
-        assert response.status_code == 404
+        # PA-070/PA-117 (#2418): GeoServices REST signals not-found with HTTP 200 +
+        # {"error": {"code": 404}} rather than a bare 404.
+        assert_geoservices_error(response, body_codes={404})
 
     @pytest.mark.integration
     @pytest.mark.featureserver

@@ -59,7 +59,7 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
             $"?where={Uri.EscapeDataString(where)}" +
             "&f=json");
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [Theory]
@@ -79,7 +79,7 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
             $"?outStatistics={outStatistics}" +
             "&f=json");
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [Theory]
@@ -117,7 +117,7 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
             $"&outStatistics={outStatistics}" +
             "&f=json");
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]

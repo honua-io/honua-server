@@ -24,6 +24,7 @@ using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
@@ -57,7 +58,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             ServiceRbacTestFixture.CreateApplyEditsContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -89,7 +90,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.BetaService}/FeatureServer/{ServiceRbacTestFixture.BetaLayerId}/applyEdits",
             ServiceRbacTestFixture.CreateApplyEditsContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -128,7 +129,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/append",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+        await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
     }
 
     [IntegrationTest]
@@ -151,7 +152,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/append",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -166,7 +167,7 @@ public sealed class FeatureServerServiceRbacTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+        await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
     }
 
     [IntegrationTest]
@@ -181,7 +182,7 @@ public sealed class FeatureServerServiceRbacTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -196,7 +197,7 @@ public sealed class FeatureServerServiceRbacTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.BetaService}/FeatureServer/{ServiceRbacTestFixture.BetaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -234,7 +235,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -250,7 +251,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
             new StringContent("{", Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+        await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
     }
 
     [IntegrationTest]
@@ -266,7 +267,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
             new StringContent("{", Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -282,7 +283,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
             new StringContent("{", Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -321,7 +322,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
             new StringContent(syncPayload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(syncResponse, HttpStatusCode.Forbidden);
+        await syncResponse.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -359,7 +360,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
             new StringContent(unregisterPayload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(unregisterResponse, HttpStatusCode.Forbidden);
+        await unregisterResponse.AssertGeoServicesErrorAsync(403);
     }
 }
 
@@ -417,7 +418,10 @@ public sealed class WmsServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0");
 
         var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, body);
+        // PA-069 (#2418): a WMS ServiceExceptionReport MUST be returned with HTTP 200 OK
+        // per WMS 1.3.0 §7.3.3.4 — the access-denied condition is signalled through the
+        // XML exception body (code="AccessDenied"), not the HTTP status.
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         body.Should().Contain("ServiceExceptionReport");
         body.Should().Contain("code=\"AccessDenied\"");
