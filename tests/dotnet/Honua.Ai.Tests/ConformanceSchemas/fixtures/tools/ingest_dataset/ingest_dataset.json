@@ -1,0 +1,15 @@
+{
+  "id": "ingest_dataset.csv_lonlat",
+  "schemaRef": "tools/ingest_dataset.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "format": "csv",
+    "data": "name,longitude,latitude\nCapitol,-97.7404,30.2747\nCity Hall,-97.7470,30.2650\n",
+    "datasetName": "austin_landmarks",
+    "sourceSrid": 4326,
+    "longitudeColumn": "longitude",
+    "latitudeColumn": "latitude"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

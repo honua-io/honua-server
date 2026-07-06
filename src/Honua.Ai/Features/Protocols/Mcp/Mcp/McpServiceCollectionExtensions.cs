@@ -103,6 +103,20 @@ internal static class McpServiceCollectionExtensions
         if (services.Any(d => d.ServiceType == typeof(Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeCoordinatorService)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GeocodeTool>());
+
+            // honua_geocode_addresses: batch companion to honua_geocode_address,
+            // same canonical coordinator, so the same capability gate applies.
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GeocodeAddressesTool>());
+        }
+
+        // honua_ingest_dataset: inline CSV/GeoJSON → catalog table through the
+        // canonical IFileImportService pipeline (the REST admin import service).
+        // Gated on the import service being wired (the Postgres provider
+        // registers it before AddMcpOperatorSurface) so tools/list stays honest
+        // in compositions without an import-capable data provider.
+        if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FileImport.Abstractions.IFileImportService)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, IngestDatasetTool>());
         }
 
         if (services.Any(d => d.ServiceType == typeof(Honua.Routing.Features.Routing.Abstractions.IRoutingProvider)))

@@ -61,6 +61,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_create_map_package"] = "create_map_package",
             ["honua_create_app_package"] = "create_app_package",
             ["honua_geocode_address"] = "geocode_address",
+            ["honua_geocode_addresses"] = "geocode_addresses",
+            ["honua_ingest_dataset"] = "ingest_dataset",
             ["honua_solve_route"] = "solve_route",
             ["honua_list_layers"] = "list_layers",
             ["honua_query_features"] = "query_features",
