@@ -12,6 +12,7 @@ using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -367,7 +368,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     {
         var response = await _communityFixture.Client.GetAsync($"/rest/services/{SceneId}/SceneServer");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -535,7 +536,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _communityFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/geometries/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -546,7 +547,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/geometries/7");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -557,7 +558,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/7/nodes/0/geometries/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -570,7 +571,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{NoGeometrySceneId}/SceneServer/layers/0/nodes/0/geometries/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -581,7 +582,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{ProtectedSceneId}/SceneServer/layers/0/nodes/0/geometries/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
     [IntegrationTest]
@@ -625,7 +626,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _communityFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -636,7 +637,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_99/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -647,7 +648,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/7");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -658,7 +659,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/7/nodes/0/attributes/f_0/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -669,7 +670,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{NoGeometrySceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -680,7 +681,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{ProtectedSceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
     /// <summary>

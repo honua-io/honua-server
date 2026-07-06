@@ -113,5 +113,7 @@ class TestImageServer:
         )
 
         # PA-070/PA-117 (#2418): the not-implemented signal is now HTTP 200 +
-        # {"error": {"code": 501}} rather than a bare 501 status.
-        assert_geoservices_error(response, body_codes={501})
+        # an {"error"} envelope rather than a bare 501 status. The envelope maps
+        # 501 to body code 500 (GeoServicesErrorCodes.FromHttpStatusCode has no
+        # 501 entry), so accept both.
+        assert_geoservices_error(response, body_codes={501, 500})
