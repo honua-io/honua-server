@@ -28,7 +28,9 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Metadata;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Caching;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Share.Abstractions;
@@ -216,12 +218,27 @@ internal static class ServiceCollectionExtensions
             Features.FieldWorkflows.PostgresFieldExportStore>();
 
         // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
+        var metadataEnvironment = configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default";
+
+        // Shared, per-instance snapshot cache (idempotent registration) so repeated catalog reads
+        // reuse one materialized snapshot instead of re-reading the full catalog document on every
+        // MCP tool call / REST/OGC metadata resolution. (mcp A2 hot-path caching.)
+        services.AddMetadataV2GraphSnapshotCache();
+
         services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataV2GraphStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default",
-                configuration["Database:Schema"]));
-        services.AddScoped<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<IMetadataV2GraphStore>());
+                metadataEnvironment,
+                configuration["Database:Schema"],
+                serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>()));
+
+        // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
+        // raw store so read-modify-write publish paths always load a fresh persisted snapshot.
+        services.AddScoped<IMetadataV2GraphProvider>(serviceProvider =>
+            new CachingMetadataV2GraphProvider(
+                serviceProvider.GetRequiredService<IMetadataV2GraphStore>(),
+                serviceProvider.GetRequiredService<MetadataV2GraphSnapshotCache>(),
+                metadataEnvironment));
         // Legacy V1 catalog -> Metadata v2 graph projector (honua-server#2081). Lets compat
         // seeding paths (cloud-demo reset/startup) project freshly-seeded legacy services
         // into the active graph store so the v2 read paths resolve them.

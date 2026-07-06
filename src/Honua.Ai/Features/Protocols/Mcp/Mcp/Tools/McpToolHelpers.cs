@@ -172,22 +172,64 @@ internal static class McpToolHelpers
     }
 
     /// <summary>
-    /// Builds the <see cref="McpToolsCallResult"/> for a successful tool call
-    /// with structured JSON output plus a text block containing the same data.
+    /// Serialized-text size (characters) at or above which the <c>text</c>
+    /// content block stops duplicating the full structured payload and instead
+    /// carries a one-line, information-bearing summary. The MCP spec says a
+    /// result that carries <c>structuredContent</c> SHOULD also include
+    /// functionally-equivalent <c>text</c> for backwards compatibility; small
+    /// payloads honor that literally (the compact JSON is cheap), while larger
+    /// payloads honor it with an informative summary so the same data is not
+    /// billed twice per tool call (honua-server MCP A1 token efficiency).
+    /// ~1&#160;KB keeps validate/dry-run/execute/cancel/count-only results inline
+    /// verbatim and only summarizes the genuinely large ones (feature
+    /// collections, catalogs, generated packages).
     /// </summary>
-    public static McpToolsCallResult SuccessResult<T>(T value, JsonTypeInfo<T> typeInfo)
+    public const int InlineTextThresholdChars = 1024;
+
+    /// <summary>
+    /// Builds the <see cref="McpToolsCallResult"/> for a successful tool call.
+    /// The full payload always travels in <see cref="McpToolsCallResult.StructuredContent"/>
+    /// (validated against the tool's <c>outputSchema</c>); the <c>text</c> block
+    /// carries the compact JSON verbatim when it is small
+    /// (&lt; <see cref="InlineTextThresholdChars"/>) and otherwise a one-line
+    /// information-bearing summary from <paramref name="summarize"/> (counts,
+    /// ids, next-step hints — never a bare "Success"), avoiding the ~2x token
+    /// cost of double-encoding large results. Callers with large payloads SHOULD
+    /// pass <paramref name="summarize"/>; when omitted, a generic size-bearing
+    /// summary is emitted that still points the reader at
+    /// <c>structuredContent</c>.
+    /// </summary>
+    public static McpToolsCallResult SuccessResult<T>(
+        T value,
+        JsonTypeInfo<T> typeInfo,
+        Func<T, string>? summarize = null)
     {
         var (element, text) = SerializeStructured(value, typeInfo);
+        var contentText = text.Length < InlineTextThresholdChars
+            ? text
+            : (summarize?.Invoke(value) ?? DefaultLargePayloadSummary(text));
+
         return new McpToolsCallResult
         {
             IsError = false,
             StructuredContent = element,
             Content =
             [
-                new McpContentBlock { Type = "text", Text = text }
+                new McpContentBlock { Type = "text", Text = contentText }
             ]
         };
     }
+
+    /// <summary>
+    /// Fallback summary for a large structured payload whose caller supplied no
+    /// bespoke summarizer. Information-bearing (serialized size + where the data
+    /// lives) rather than an empty acknowledgement so a reader still learns the
+    /// shape/cost of the elided text.
+    /// </summary>
+    private static string DefaultLargePayloadSummary(string serializedJson) =>
+        string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"Structured result ({serializedJson.Length:N0} chars) returned in structuredContent; text summary elided to conserve context.");
 
     /// <summary>
     /// Builds the <see cref="McpToolsCallResult"/> for a tool execution failure
