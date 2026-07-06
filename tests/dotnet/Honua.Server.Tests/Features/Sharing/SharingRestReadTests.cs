@@ -10,6 +10,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 
@@ -129,7 +130,7 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         using var client = _fixture.CreateClient();
         using var response = await client.GetAsync("/sharing/rest/community/self?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
     [IntegrationTest]
@@ -225,7 +226,7 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         using var client = _fixture.CreateClient();
         using var response = await client.GetAsync($"/sharing/rest/content/items/{PrivateServiceId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         // Esri-shaped error envelope: { error: { code, message, details } }.
         var error = doc.RootElement.GetProperty("error");
@@ -241,7 +242,7 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         using var client = _fixture.CreateClient();
         using var response = await client.GetAsync("/sharing/rest/content/items/does-not-exist?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -272,9 +273,9 @@ public sealed class SharingRestReadTests : IAsyncLifetime
             using var infoResponse = await client.GetAsync("/sharing/rest/info?f=json");
             using var itemResponse = await client.GetAsync($"/sharing/rest/content/items/{PublicServiceId}?f=json");
 
-            searchResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            infoResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            itemResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await searchResponse.AssertGeoServicesErrorAsync(404);
+            await infoResponse.AssertGeoServicesErrorAsync(404);
+            await itemResponse.AssertGeoServicesErrorAsync(404);
         }
         finally
         {

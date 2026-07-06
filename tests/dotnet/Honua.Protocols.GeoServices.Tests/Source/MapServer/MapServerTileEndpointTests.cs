@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -138,7 +139,7 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
         var invalidResponse = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/2/10/10");
 
-        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await invalidResponse.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -149,7 +150,7 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/-1/0/0");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(400, 404);
     }
 
     [IntegrationTest]

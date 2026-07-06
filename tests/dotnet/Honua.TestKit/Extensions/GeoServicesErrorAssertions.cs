@@ -45,26 +45,30 @@ public static class GeoServicesErrorAssertions
         this HttpResponseMessage response,
         int expectedCode,
         bool allowEmpty = false)
-        => response.AssertGeoServicesErrorAsync(new[] { expectedCode }, allowEmpty);
+        => response.AssertGeoServicesErrorCoreAsync(new[] { expectedCode }, allowEmpty);
 
     /// <summary>
-    /// Asserts a GeoServices REST/tiles error response.
+    /// Asserts a GeoServices REST/tiles error response against one or more accepted
+    /// body codes, e.g. <c>AssertGeoServicesErrorAsync(400, 404)</c>. Pass no codes
+    /// to accept any error code (the response must still be an error, never a
+    /// success-shaped body).
     /// </summary>
     /// <param name="response">The HTTP response to inspect.</param>
     /// <param name="expectedCodes">
-    /// If provided, the <c>error.code</c> of a 200 body (or the HTTP status of a
-    /// legacy <c>&gt;= 400</c> response) must be one of these. When null, any
-    /// error code is accepted (the response must still be an error, never a
-    /// success-shaped body).
+    /// The accepted <c>error.code</c> values of a 200 body (or the HTTP status of a
+    /// legacy <c>&gt;= 400</c> response). Empty means any error code is accepted.
     /// </param>
-    /// <param name="allowEmpty">
-    /// Also accept an empty <c>204 No Content</c> (used by tile endpoints that
-    /// emit an empty tile rather than an error body).
-    /// </param>
-    public static async Task AssertGeoServicesErrorAsync(
+    public static Task AssertGeoServicesErrorAsync(
         this HttpResponseMessage response,
-        int[]? expectedCodes = null,
-        bool allowEmpty = false)
+        params int[] expectedCodes)
+        => response.AssertGeoServicesErrorCoreAsync(
+            expectedCodes is { Length: > 0 } ? expectedCodes : null,
+            allowEmpty: false);
+
+    private static async Task AssertGeoServicesErrorCoreAsync(
+        this HttpResponseMessage response,
+        int[]? expectedCodes,
+        bool allowEmpty)
     {
         response.Should().NotBeNull();
 
