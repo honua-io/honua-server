@@ -8,6 +8,7 @@ using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
 
@@ -214,9 +215,10 @@ public class OgcFeaturesErrorHandlingTests : IClassFixture<OgcFeaturesErrorHandl
         // Act - Get error from FeatureServer endpoint for comparison
         var fsResponse = await _fixture.Client.GetAsync("/rest/services/non-existent/FeatureServer");
 
-        // Assert - OGC uses RFC 7807, FeatureServer uses GeoServices
+        // Assert - OGC uses RFC 7807 (real 404), FeatureServer uses the GeoServices
+        // contract: HTTP 200 + {"error":{"code":404}} (#2418, PA-070/PA-117).
         ogcResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        fsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await fsResponse.AssertGeoServicesErrorAsync(404);
 
         var ogcContent = await ogcResponse.Content.ReadAsStringAsync();
         var fsContent = await fsResponse.Content.ReadAsStringAsync();
