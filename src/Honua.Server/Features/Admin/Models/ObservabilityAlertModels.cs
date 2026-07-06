@@ -11,8 +11,8 @@ internal sealed class ObservabilityAlertEventResponse
     /// <summary>Event identifier.</summary>
     public required long EventId { get; init; }
 
-    /// <summary>Source rule identifier.</summary>
-    public required long RuleId { get; init; }
+    /// <summary>Source rule identifier, or <see langword="null"/> for operations notifications not linked to an alert rule.</summary>
+    public required long? RuleId { get; init; }
 
     /// <summary>Source rule name when available.</summary>
     public string? RuleName { get; init; }

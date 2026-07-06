@@ -152,6 +152,6 @@ internal sealed partial class NotifyingWorkflowOperationStore : IWorkflowOperati
     public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
         => _inner.ReleaseLeaseAsync(operationId, ownerId, cancellationToken);
 
-    [LoggerMessage(EventId = 9434, Level = LogLevel.Warning, Message = "Ops notification for terminal deploy {OperationId} could not be enqueued.")]
+    [LoggerMessage(EventId = 9454, Level = LogLevel.Warning, Message = "Ops notification for terminal deploy {OperationId} could not be enqueued.")]
     private static partial void LogNotifyFailed(ILogger logger, string operationId, Exception exception);
 }
