@@ -72,6 +72,7 @@ public sealed class CapabilityRegistryConformanceTests
         "publication.metadata-release",
         "upload.file",
         "edit.features",
+        "versioning.branch",
     ];
 
     // Format descriptors that intentionally exist beyond the SupportedFileFormat
