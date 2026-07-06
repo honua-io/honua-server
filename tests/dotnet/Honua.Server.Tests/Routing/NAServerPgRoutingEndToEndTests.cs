@@ -8,6 +8,7 @@ using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Providers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -159,7 +160,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
             payload,
             CancellationToken.None);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [RoutingTest(RoutingTestEnv)]

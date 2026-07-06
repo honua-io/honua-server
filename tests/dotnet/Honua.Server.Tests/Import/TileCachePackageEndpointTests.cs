@@ -12,6 +12,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
 
@@ -115,7 +116,7 @@ public sealed class TileCachePackageEndpointTests : IAsyncLifetime
 
         // Missing tile -> 404.
         var missing = await _client.GetAsync($"/tiles/imported/{tileCacheId}/3/99/99");
-        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await missing.AssertGeoServicesErrorAsync(404, allowEmpty: true);
     }
 
     [IntegrationTest]
@@ -123,7 +124,7 @@ public sealed class TileCachePackageEndpointTests : IAsyncLifetime
     public async Task GetImportedTileSet_UnknownCache_ReturnsNotFound()
     {
         var response = await _client.GetAsync("/tiles/imported/tilecache:nope:nope:deadbeef");
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     private static byte[] BuildCompactV2Package((int Row, int Col, byte[] Bytes)[] tiles, int level)

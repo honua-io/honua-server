@@ -466,9 +466,7 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
         else
         {
             // If transformation fails, should return informative error
-            response.StatusCode.Should().BeOneOf(
-                System.Net.HttpStatusCode.BadRequest,
-                System.Net.HttpStatusCode.UnprocessableEntity);
+            await response.AssertGeoServicesErrorAsync(new[] { 400, 422 });
         }
     }
 
