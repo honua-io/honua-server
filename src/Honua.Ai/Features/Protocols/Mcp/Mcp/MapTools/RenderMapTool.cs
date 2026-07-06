@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Services;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 
@@ -43,11 +44,13 @@ internal sealed class RenderMapTool : IMcpTool
     {
         Name = ToolName,
         Title = "Render map",
-        Description = "Render a map image (PNG) for one or more published layers over a bbox and return it as an inline image. Layers draw bottom-to-top. Width/height are capped at 1024 px.",
+        Description = "Render a map image (PNG) for one or more published layers over a bbox. Layers draw bottom-to-top. Width/height are capped at 1024 px. "
+            + "By default the result is a fetchable artifact reference (resource_link href) with the image dimensions and byte size in text — NOT an inline base64 image — so a multi-megabyte render never floods the model context. "
+            + "Set maxInlineBytes to opt into inlining the base64 PNG when the encoded image is at or below that size.",
         InputSchema = MapToolSchemas.RenderMapArgumentSchema,
-        // Read-only render. No OutputSchema: this tool returns an image content
-        // block, not a structuredContent payload, so there is no structured
-        // result shape to describe.
+        // Read-only render. No OutputSchema: this tool returns an image or
+        // resource_link content block, not a structuredContent payload, so there
+        // is no structured result shape to describe.
         Annotations = McpToolAnnotationSets.ReadOnly("Render map")
     };
 
@@ -113,19 +116,72 @@ internal sealed class RenderMapTool : IMcpTool
             throw new GeoprocessingStoreUnavailableException("Map rendering produced an empty image.");
         }
 
-        var base64 = Convert.ToBase64String(result.Data);
-        var caption = string.Format(
+        var extentDescription = string.Format(
             CultureInfo.InvariantCulture,
-            "Rendered {0} layer{1} at {2}x{3} px over bbox [{4}, {5}, {6}, {7}] (SRID {8}).",
-            storageLayerIds.Length,
-            storageLayerIds.Length == 1 ? string.Empty : "s",
-            result.Width,
-            result.Height,
+            "over bbox [{0}, {1}, {2}, {3}] (SRID {4})",
             bbox[0],
             bbox[1],
             bbox[2],
             bbox[3],
             bboxSrid);
+        var layerCountDescription = string.Format(
+            CultureInfo.InvariantCulture,
+            "{0} layer{1}",
+            storageLayerIds.Length,
+            storageLayerIds.Length == 1 ? string.Empty : "s");
+
+        // Default: hand back a fetchable artifact href instead of inlining a
+        // multi-megabyte base64 PNG into the model context. Inline only when the
+        // caller opts in via maxInlineBytes AND the encoded image fits under it.
+        var maxInlineBytes = argument.MaxInlineBytes ?? 0;
+        if (maxInlineBytes > 0 && result.Data.Length <= maxInlineBytes)
+        {
+            var inlineCaption = string.Format(
+                CultureInfo.InvariantCulture,
+                "Rendered {0} at {1}x{2} px {3} ({4}, {5:N0} bytes, inlined).",
+                layerCountDescription,
+                result.Width,
+                result.Height,
+                extentDescription,
+                result.ContentType,
+                result.Data.Length);
+
+            return new McpToolsCallResult
+            {
+                IsError = false,
+                Content =
+                [
+                    new McpContentBlock { Type = "text", Text = inlineCaption },
+                    new McpContentBlock
+                    {
+                        Type = "image",
+                        Data = Convert.ToBase64String(result.Data),
+                        MimeType = result.ContentType
+                    }
+                ]
+            };
+        }
+
+        var temporaryFileService = httpContext.RequestServices.GetRequiredService<ITemporaryFileService>();
+        var href = await temporaryFileService
+            .StoreTemporaryFileAsync(
+                result.Data,
+                result.ContentType,
+                TimeSpan.FromHours(1),
+                principal: httpContext.User,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        var caption = string.Format(
+            CultureInfo.InvariantCulture,
+            "Rendered {0} at {1}x{2} px {3} ({4}, {5:N0} bytes). Fetch the image at {6} (expires in 1h); returned as an artifact reference to conserve context. Pass maxInlineBytes >= {5} to inline it instead.",
+            layerCountDescription,
+            result.Width,
+            result.Height,
+            extentDescription,
+            result.ContentType,
+            result.Data.Length,
+            href);
 
         return new McpToolsCallResult
         {
@@ -135,8 +191,9 @@ internal sealed class RenderMapTool : IMcpTool
                 new McpContentBlock { Type = "text", Text = caption },
                 new McpContentBlock
                 {
-                    Type = "image",
-                    Data = base64,
+                    Type = "resource_link",
+                    Uri = href,
+                    Name = "rendered-map",
                     MimeType = result.ContentType
                 }
             ]

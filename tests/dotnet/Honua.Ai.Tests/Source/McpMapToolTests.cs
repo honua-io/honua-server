@@ -14,6 +14,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Services;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -335,9 +336,68 @@ public sealed class McpMapToolTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_QuantizesGeometryToDefaultPrecision()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryResult<Feature>
+            {
+                TotalCount = 1,
+                HasMoreResults = false,
+                Items =
+                [
+                    new Feature
+                    {
+                        Id = 7,
+                        Geometry = [0x01],
+                        Attributes = ImmutableDictionary<string, object?>.Empty
+                    }
+                ]
+            });
+
+        var geometryService = Substitute.For<IGeometryService>();
+        geometryService.ConvertWkbToGeoJson(Arg.Any<byte[]?>())
+            .Returns("""{"type":"Point","coordinates":[1.123456789,2.987654321]}""");
+
+        var surface = BuildSurface();
+
+        // Default precision (6 dp) rounds full-precision coordinate noise away.
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
+            ToolCall("quant-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var coords = response.Result!.Value
+            .GetProperty("structuredContent").GetProperty("geojson").GetProperty("features")[0]
+            .GetProperty("geometry").GetProperty("coordinates");
+        coords[0].GetDouble().Should().Be(1.123457);
+        coords[1].GetDouble().Should().Be(2.987654);
+
+        // A negative precision opts back into full, unrounded coordinates.
+        var fullResponse = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
+            ToolCall("quant-2", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"geometryPrecision":-1}
+                """),
+            CancellationToken.None);
+
+        var fullCoords = fullResponse!.Result!.Value
+            .GetProperty("structuredContent").GetProperty("geojson").GetProperty("features")[0]
+            .GetProperty("geometry").GetProperty("coordinates");
+        fullCoords[0].GetDouble().Should().Be(1.123456789);
+        fullCoords[1].GetDouble().Should().Be(2.987654321);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_render_map")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_RenderMap_ReturnsImageContentBlock()
+    public async Task ToolsCall_RenderMap_ByDefault_ReturnsArtifactReferenceNotInlineImage()
     {
         var pngBytes = Encoding.ASCII.GetBytes("PNGDATA");
         var renderer = Substitute.For<IRasterMapRenderer>();
@@ -353,15 +413,80 @@ public sealed class McpMapToolTests
                 Height = 256
             });
 
+        const string href = "/temp/abc123.png";
+        var temporaryFileService = BuildTemporaryFileService(href);
+
         var surface = BuildSurface();
         var response = await surface.DispatchAsync(
-            AuthenticatedContext(BuildServices(renderer: renderer)),
+            AuthenticatedContext(BuildServices(renderer: renderer, temporaryFileService: temporaryFileService)),
             ToolCall("render-1", RenderMapTool.ToolName, $$"""
                 {
                   "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}],
                   "bbox":[-10,-10,10,10],
                   "width":256,
                   "height":256
+                }
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+
+        var content = result.GetProperty("content").EnumerateArray().ToArray();
+
+        // No base64 image block is inlined by default — the context stays clean.
+        content.Should().NotContain(block => block.GetProperty("type").GetString() == "image",
+            "the default render must not inline a base64 image into the model context");
+
+        var textBlock = content.Single(block => block.GetProperty("type").GetString() == "text");
+        textBlock.GetProperty("text").GetString().Should().Contain(href,
+            "the text block must carry the fetchable artifact href");
+
+        var linkBlock = content.Single(block => block.GetProperty("type").GetString() == "resource_link");
+        linkBlock.GetProperty("uri").GetString().Should().Be(href);
+        linkBlock.GetProperty("mimeType").GetString().Should().Be("image/png");
+
+        await temporaryFileService.Received(1).StoreTemporaryFileAsync(
+            Arg.Is<byte[]>(b => b.SequenceEqual(pngBytes)),
+            "image/png",
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<System.Security.Claims.ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_WithMaxInlineBytes_InlinesBase64Image()
+    {
+        var pngBytes = Encoding.ASCII.GetBytes("PNGDATA");
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderDatasetMapAsync(
+                Arg.Is<int[]>(ids => ids.Length == 1 && ids[0] == StorageLayerId),
+                Arg.Any<MapRenderRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = pngBytes,
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256
+            });
+
+        var temporaryFileService = BuildTemporaryFileService();
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(renderer: renderer, temporaryFileService: temporaryFileService)),
+            ToolCall("render-inline-1", RenderMapTool.ToolName, $$"""
+                {
+                  "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}],
+                  "bbox":[-10,-10,10,10],
+                  "width":256,
+                  "height":256,
+                  "maxInlineBytes":1048576
                 }
                 """),
             CancellationToken.None);
@@ -378,6 +503,14 @@ public sealed class McpMapToolTests
         var data = imageBlock.GetProperty("data").GetString();
         data.Should().NotBeNullOrEmpty();
         Convert.FromBase64String(data!).Should().Equal(pngBytes);
+
+        // The small image fit under maxInlineBytes, so no temp artifact was created.
+        await temporaryFileService.DidNotReceive().StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<System.Security.Claims.ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>());
 
         await renderer.Received(1).RenderDatasetMapAsync(
             Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
@@ -412,7 +545,8 @@ public sealed class McpMapToolTests
     private static ServiceProvider BuildServices(
         IFeatureReader? reader = null,
         IGeometryService? geometryService = null,
-        IRasterMapRenderer? renderer = null)
+        IRasterMapRenderer? renderer = null,
+        ITemporaryFileService? temporaryFileService = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());
@@ -420,7 +554,22 @@ public sealed class McpMapToolTests
         services.AddSingleton(geometryService ?? Substitute.For<IGeometryService>());
         services.AddSingleton(renderer ?? Substitute.For<IRasterMapRenderer>());
         services.AddSingleton(Substitute.For<IFilterExpressionService>());
+        services.AddSingleton(temporaryFileService ?? BuildTemporaryFileService());
         return services.BuildServiceProvider();
+    }
+
+    private static ITemporaryFileService BuildTemporaryFileService(string href = "/temp/rendered-map.png")
+    {
+        var service = Substitute.For<ITemporaryFileService>();
+        service
+            .StoreTemporaryFileAsync(
+                Arg.Any<byte[]>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<System.Security.Claims.ClaimsPrincipal?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(href);
+        return service;
     }
 
     private static DefaultHttpContext AuthenticatedContext(IServiceProvider services)
