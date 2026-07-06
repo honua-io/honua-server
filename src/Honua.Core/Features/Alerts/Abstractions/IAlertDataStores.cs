@@ -259,6 +259,21 @@ public interface IAlertDispatchStore
     /// <returns>Backlog snapshot.</returns>
     Task<AlertDispatchBacklog> GetBacklogAsync(
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Purges delivered dispatch rows whose delivery timestamp is older than
+    /// <paramref name="deliveredBefore"/>, up to <paramref name="batchLimit"/> rows.
+    /// Retention keeps the outbox bounded (delivered rows are otherwise never removed)
+    /// so backlog counts stay cheap.
+    /// </summary>
+    /// <param name="deliveredBefore">Delete delivered rows with <c>delivered_at</c> before this cutoff.</param>
+    /// <param name="batchLimit">Maximum rows to delete in this pass.</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Number of rows deleted.</returns>
+    Task<int> PurgeDeliveredAsync(
+        DateTimeOffset deliveredBefore,
+        int batchLimit,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

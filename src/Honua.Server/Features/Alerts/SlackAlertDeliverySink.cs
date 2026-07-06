@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
@@ -67,30 +68,12 @@ internal sealed class SlackAlertDeliverySink : IAlertDeliverySink
                 _ => "#17a2b8"
             };
 
-            var statusEmoji = alertEvent.IncidentStatus switch
-            {
-                AlertIncidentStatus.Started => ":red_circle:",
-                AlertIncidentStatus.Ongoing => ":large_orange_circle:",
-                AlertIncidentStatus.Ended => ":white_check_mark:",
-                _ => ":bell:"
-            };
+            var attachment = OpsNotificationPresentation.TryResolve(alertEvent) is { } ops
+                ? BuildOpsAttachment(alertEvent, ops, color)
+                : BuildGisAttachment(alertEvent, color);
 
             var payload = JsonSerializer.Serialize(
-                new SlackAlertPayload
-                {
-                    Attachments =
-                    [
-                        new SlackAlertAttachment
-                        {
-                            Color = color,
-                            Fallback = $"Honua Alert: {alertEvent.TriggerType} ({alertEvent.Severity})",
-                            Title = $"{statusEmoji} Honua Alert: {alertEvent.TriggerType}",
-                            Text = $"*Severity:* {alertEvent.Severity}\n*Status:* {alertEvent.IncidentStatus}\n*Rule:* {alertEvent.RuleId}\n*Layer:* {alertEvent.LayerId} / Feature: {alertEvent.ObjectId}",
-                            Footer = "Honua Alerts",
-                            Timestamp = alertEvent.OccurredAt.ToUnixTimeSeconds()
-                        }
-                    ]
-                },
+                new SlackAlertPayload { Attachments = [attachment] },
                 AlertDeliveryJsonContext.Default.SlackAlertPayload);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, destinationValidation.Uri)
@@ -127,5 +110,55 @@ internal sealed class SlackAlertDeliverySink : IAlertDeliverySink
                 Error = "Slack delivery failed."
             };
         }
+    }
+
+    private static SlackAlertAttachment BuildGisAttachment(AlertEventEnvelope alertEvent, string color)
+    {
+        var statusEmoji = alertEvent.IncidentStatus switch
+        {
+            AlertIncidentStatus.Started => ":red_circle:",
+            AlertIncidentStatus.Ongoing => ":large_orange_circle:",
+            AlertIncidentStatus.Ended => ":white_check_mark:",
+            _ => ":bell:"
+        };
+
+        return new SlackAlertAttachment
+        {
+            Color = color,
+            Fallback = $"Honua Alert: {alertEvent.TriggerType} ({alertEvent.Severity})",
+            Title = $"{statusEmoji} Honua Alert: {alertEvent.TriggerType}",
+            Text = $"*Severity:* {alertEvent.Severity}\n*Status:* {alertEvent.IncidentStatus}\n*Rule:* {alertEvent.RuleId}\n*Layer:* {alertEvent.LayerId} / Feature: {alertEvent.ObjectId}",
+            Footer = "Honua Alerts",
+            Timestamp = alertEvent.OccurredAt.ToUnixTimeSeconds()
+        };
+    }
+
+    private static SlackAlertAttachment BuildOpsAttachment(
+        AlertEventEnvelope alertEvent,
+        OpsAlertPayload ops,
+        string color)
+    {
+        var text = new StringBuilder();
+        text.Append("*Severity:* ").Append(alertEvent.Severity).Append("\n*Source:* ").Append(ops.Source);
+        if (!string.IsNullOrWhiteSpace(ops.Body))
+        {
+            text.Append('\n').Append(ops.Body);
+        }
+
+        var attributes = OpsNotificationPresentation.FormatAttributes(ops.Attributes, "\n");
+        if (attributes.Length > 0)
+        {
+            text.Append('\n').Append(attributes);
+        }
+
+        return new SlackAlertAttachment
+        {
+            Color = color,
+            Fallback = $"Honua Ops: {ops.Title} ({alertEvent.Severity})",
+            Title = $"{OpsNotificationPresentation.SeverityEmoji(alertEvent.Severity)} {ops.Title}",
+            Text = text.ToString(),
+            Footer = "Honua Ops",
+            Timestamp = alertEvent.OccurredAt.ToUnixTimeSeconds()
+        };
     }
 }

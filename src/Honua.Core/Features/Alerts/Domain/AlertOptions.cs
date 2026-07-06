@@ -149,11 +149,20 @@ public sealed class AlertDispatchOptions
     public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// Maximum outbound notifications delivered per channel per rolling minute.
-    /// When a channel exceeds this cap, further claimed dispatches for that channel
-    /// are rescheduled (not dead-lettered) until the window frees. Set to <c>0</c> to
-    /// disable the cap. Defaults to a generous 120/minute/channel.
+    /// Maximum outbound notifications delivered per channel per rolling minute,
+    /// enforced <b>per replica</b>. When a channel exceeds this cap, further claimed
+    /// dispatches for that channel are rescheduled (not dead-lettered) until the
+    /// window frees. Set to <c>0</c> to disable the cap. Defaults to a generous
+    /// 120/minute/channel.
     /// </summary>
+    /// <remarks>
+    /// The cap is enforced by a process-local, in-memory sliding window. The alert
+    /// dispatch worker is deliberately multi-consumer (every replica claims work via
+    /// <c>FOR UPDATE SKIP LOCKED</c> for throughput) and is <b>not</b> leader-elected,
+    /// so this cap is best-effort per replica: the effective cluster-wide ceiling is
+    /// approximately <c>value × replicaCount</c>. Size the value against a single
+    /// replica's budget and rely on downstream provider rate limits for hard caps.
+    /// </remarks>
     [Range(0, 1_000_000)]
     public int MaxNotificationsPerMinutePerChannel { get; init; } = 120;
 
@@ -170,6 +179,33 @@ public sealed class AlertDispatchOptions
     /// </summary>
     [Range(1, int.MaxValue)]
     public int UnhealthyDeadLetterThreshold { get; init; } = 1;
+
+    /// <summary>
+    /// Minimum interval between dispatch-backlog recomputations. The backlog count is
+    /// a full aggregate over the outbox, so it is refreshed at most once per interval
+    /// (and always after a non-empty claim batch) rather than on every idle poll.
+    /// </summary>
+    public TimeSpan BacklogRefreshInterval { get; init; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Retention window for delivered (status = delivered) dispatch rows. A periodic
+    /// sweep purges delivered rows older than this so the outbox does not grow
+    /// unbounded and backlog counts stay cheap. Set to <see cref="TimeSpan.Zero"/> or
+    /// negative to disable purging.
+    /// </summary>
+    public TimeSpan DeliveredRetention { get; init; } = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// Minimum interval between delivered-row retention sweeps.
+    /// </summary>
+    public TimeSpan RetentionSweepInterval { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Maximum delivered rows deleted per retention sweep pass (bounded delete to avoid
+    /// long-running transactions).
+    /// </summary>
+    [Range(1, 1_000_000)]
+    public int RetentionBatchSize { get; init; } = 1_000;
 
     /// <summary>
     /// Digest delivery settings.

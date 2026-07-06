@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Alerts;
+using Honua.Alerts.Ops;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
@@ -43,6 +45,48 @@ internal static class AlertTestFixtures
             PayloadJson = "{\"test\":true}",
             IncidentStatus = incidentStatus
         };
+
+    /// <summary>
+    /// Builds an operations-notification envelope (source = ops) whose meaningful
+    /// title/body/attributes live in the payload and whose rule/layer/object scalars
+    /// are inert placeholders (#2427).
+    /// </summary>
+    public static AlertEventEnvelope CreateOpsAlertEvent(
+        AlertSeverity severity = AlertSeverity.Critical,
+        string title = "Deploy prod-web failed",
+        string body = "Deployment of prod-web to production failed during migration.",
+        string source = "deploy-workflow",
+        string operationId = "op-9f3c")
+    {
+        var payload = new OpsAlertPayload
+        {
+            Source = source,
+            Severity = severity.ToString(),
+            Title = title,
+            Body = body,
+            Attributes = new Dictionary<string, string>
+            {
+                ["operationId"] = operationId,
+                ["status"] = "Failed"
+            }
+        };
+
+        return new AlertEventEnvelope
+        {
+            DedupeKey = $"ops:{source}:{operationId}",
+            RuleId = 0,
+            ServiceId = source,
+            LayerId = 0,
+            ObjectId = 0,
+            TriggerType = AlertTriggerType.Threshold,
+            Generation = 0,
+            Severity = severity,
+            OccurredAt = DateTimeOffset.UtcNow,
+            PayloadJson = JsonSerializer.Serialize(payload, OpsNotificationJsonContext.Default.OpsAlertPayload),
+            IncidentStatus = AlertIncidentStatus.Started,
+            Source = AlertEventSources.Ops
+        };
+    }
 }
 
 /// <summary>
