@@ -301,9 +301,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         else
         {
             // If transformation fails, should be informative error, not server crash
-            response.StatusCode.Should().BeOneOf(
-                System.Net.HttpStatusCode.BadRequest,
-                System.Net.HttpStatusCode.UnprocessableEntity);
+            await response.AssertGeoServicesErrorAsync(new[] { 400, 422 });
         }
     }
 
@@ -472,7 +470,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         else
         {
             // If datum not supported, should return informative error
-            response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+            await response.AssertGeoServicesErrorAsync(400);
         }
     }
 
@@ -506,10 +504,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(requestUri);
 
         // Should return appropriate error, not crash
-        response.StatusCode.Should().BeOneOf(
-            System.Net.HttpStatusCode.BadRequest,
-            System.Net.HttpStatusCode.UnprocessableEntity,
-            System.Net.HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(new[] { 400, 422, 404 });
 
         // Should not be a server error (500)
         ((int)response.StatusCode).Should().BeLessThan(500);
@@ -539,9 +534,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(requestUri);
 
         // Should validate and reject invalid coordinates
-        response.StatusCode.Should().BeOneOf(
-            System.Net.HttpStatusCode.BadRequest,
-            System.Net.HttpStatusCode.UnprocessableEntity);
+        await response.AssertGeoServicesErrorAsync(new[] { 400, 422 });
 
         // Should not cause server errors
         ((int)response.StatusCode).Should().BeLessThan(500);

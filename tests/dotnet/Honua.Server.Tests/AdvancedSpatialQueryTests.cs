@@ -185,7 +185,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
             $"&f=json");
 
         // Assert
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     #endregion
@@ -348,7 +348,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
             $"&f=json");
 
         // Assert
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     #endregion
