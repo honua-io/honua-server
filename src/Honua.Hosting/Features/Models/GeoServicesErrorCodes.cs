@@ -82,6 +82,18 @@ internal static class GeoServicesErrorCodes
     public const int TokenRequired = 499;
 
     /// <summary>
+    /// Conflict - The request conflicts with the current state of the resource
+    /// Used for: optimistic-concurrency / version reconcile conflicts
+    /// </summary>
+    public const int Conflict = 409;
+
+    /// <summary>
+    /// Unsupported Media Type - The request payload content type is not supported
+    /// Used for: a GeoServices operation POSTed with an unsupported Content-Type
+    /// </summary>
+    public const int UnsupportedMediaType = 415;
+
+    /// <summary>
     /// Internal Server Error - Unexpected server error
     /// Used for: Database errors, unhandled exceptions
     /// </summary>
@@ -113,7 +125,9 @@ internal static class GeoServicesErrorCodes
         404 => NotFound,
         405 => MethodNotAllowed,
         408 => RequestTimeout,
+        409 => Conflict,
         413 => PayloadTooLarge,
+        415 => UnsupportedMediaType,
         429 => TooManyRequests,
         422 => UnprocessableEntity,
         498 => InvalidToken,
