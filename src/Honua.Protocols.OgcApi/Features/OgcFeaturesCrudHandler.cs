@@ -185,6 +185,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
         {
             throw;
         }
+        catch (ValidationException ex)
+        {
+            // Client-side edit-validation failure (e.g. a genuinely-missing required attribute):
+            // map to a 4xx problem response rather than a 500.
+            HonuaTelemetry.RecordException(Activity.Current, ex);
+            return StandardErrorHelpers.CreateValidationError(context, ex);
+        }
         catch (ResourceConflictException ex)
         {
             HonuaTelemetry.RecordException(Activity.Current, ex);
@@ -313,6 +320,11 @@ internal sealed partial class OgcFeaturesCrudHandler(
         {
             throw;
         }
+        catch (ValidationException ex)
+        {
+            HonuaTelemetry.RecordException(Activity.Current, ex);
+            return StandardErrorHelpers.CreateValidationError(context, ex);
+        }
         catch (Exception ex)
         {
             Log.DeleteFeatureFailed(_logger, collectionId, ex);
@@ -376,14 +388,16 @@ internal sealed partial class OgcFeaturesCrudHandler(
         var editAdapterResult = await _editParameterAdapter.ConvertAsync(request, resource, cancellationToken);
         if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
         {
-            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
+            // Adapter/validation failures are client-input errors: surface as ValidationException so
+            // the handler maps them to a 4xx problem response rather than a generic 500.
+            throw new ValidationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
         }
 
         var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, resource);
         var editValidation = _editProcessor.ValidateEdit(optimizedEdit, resource);
         if (!editValidation.IsValid)
         {
-            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
+            throw new ValidationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
