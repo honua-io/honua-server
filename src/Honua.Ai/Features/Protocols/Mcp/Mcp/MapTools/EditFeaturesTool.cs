@@ -11,8 +11,10 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
+using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
@@ -28,7 +30,11 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 /// executes through <see cref="IFeatureWriter.ApplyEditsAsync(int, FeatureEditBatch, System.Threading.CancellationToken)"/>.
 /// No edit, validation, transaction, or optimistic-concurrency semantics are
 /// reimplemented here — the writer's own transaction is the all-or-nothing
-/// boundary when <c>rollbackOnFailure</c> is set.
+/// boundary when <c>rollbackOnFailure</c> is set. Per-layer edit RBAC is
+/// enforced through the same shared authorization seams as the HTTP edit
+/// surfaces (<see cref="AccessPolicyHelpers.EvaluateResourceAccessAsync"/> and
+/// <see cref="ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync"/>),
+/// per edit type: Insert for adds, Update for updates, Delete for deletes.
 /// </summary>
 internal sealed class EditFeaturesTool : IMcpTool
 {
@@ -42,6 +48,7 @@ internal sealed class EditFeaturesTool : IMcpTool
         + "Geometry is supplied as RFC 7946 GeoJSON geometry objects and attributes as a flat name/value map; the input CRS defaults to EPSG:4326 (override with 'srid'). "
         + "updates must carry an 'objectId'; deletes are a list of object IDs; adds receive store-assigned object IDs. "
         + "Discover the layer first with honua_resolve_entity or honua_list_layers to obtain serviceId/layerId, and verify the attribute/geometry schema by reading a feature with honua_query_features before editing. "
+        + "The caller must hold per-layer edit permission for every edit type in the call (Insert for adds, Update for updates, Delete for deletes); a missing permission rejects the whole request with permission_denied before any edit is applied. "
         + "Returns per-edit results (index, success, objectId, error) plus a transaction summary (applied, failed, rolledBack).";
 
     private readonly IGeoprocessingJobService _jobService;
@@ -83,12 +90,8 @@ internal sealed class EditFeaturesTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         // Standard MCP write authorization: the same operator-grant gate every
-        // MCP write tool (execute_plan, etc.) enforces. The per-layer data-plane
-        // RBAC the HTTP FeatureServer edit path additionally applies
-        // (ServiceDataEditorAuthorization / IPermissionResolver Insert/Update/Delete
-        // grants, AccessPolicy, layer-scoped write keys) lives in the Hosting
-        // protocol layer and is not reachable from the AI protocol slice; wiring
-        // that parity onto the MCP surface is tracked as P2 (see the tool PR).
+        // MCP write tool (execute_plan, etc.) enforces. Per-layer edit RBAC is
+        // enforced separately below, once the target layer is resolved.
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await _jobService
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken)
@@ -114,6 +117,17 @@ internal sealed class EditFeaturesTool : IMcpTool
             throw new GeoprocessingValidationException(
                 "At least one of 'adds', 'updates', or 'deletes' must be provided.");
         }
+
+        // Per-layer edit RBAC through the same shared seams the FeatureServer
+        // single-verb edit endpoints run (BH3-001/BH3-014): the operation-aware
+        // resource-access seam (tenant scope, per-operation grants, AccessPolicy)
+        // plus the data-editor write gate (layer-scoped write keys, explicit write
+        // policy, per-operation RBAC grants, admin/data-editor roles). Every edit
+        // type present in the request is authorized UP FRONT — a caller missing any
+        // required permission gets a structured permission_denied naming the missing
+        // grant and no edit is applied.
+        await EnsureLayerEditAuthorizedAsync(httpContext, layer, hasAdds, hasUpdates, hasDeletes, cancellationToken)
+            .ConfigureAwait(false);
 
         var rollbackOnFailure = argument.RollbackOnFailure ?? true;
         var returnEditResults = argument.ReturnEditResults ?? true;
@@ -150,6 +164,98 @@ internal sealed class EditFeaturesTool : IMcpTool
 
         var output = BuildOutput(layer.Service.Metadata.Id, argument.LayerId!.Value, result, returnEditResults);
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpEditFeaturesOutput);
+    }
+
+    /// <summary>
+    /// Authorizes every edit type present in the request against the resolved
+    /// layer via the shared per-operation authorization seams: adds require
+    /// <see cref="AuthorizationOperation.Insert"/>, updates
+    /// <see cref="AuthorizationOperation.Update"/>, and deletes
+    /// <see cref="AuthorizationOperation.Delete"/>. Checks run before any edit is
+    /// built or applied, so a missing grant rejects the whole request up front
+    /// rather than partially applying it.
+    /// </summary>
+    private static async Task EnsureLayerEditAuthorizedAsync(
+        HttpContext httpContext,
+        MapToolLayerContext layer,
+        bool hasAdds,
+        bool hasUpdates,
+        bool hasDeletes,
+        CancellationToken cancellationToken)
+    {
+        if (hasAdds)
+        {
+            await RequireLayerOperationAsync(httpContext, layer, AuthorizationOperation.Insert, "adds", cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (hasUpdates)
+        {
+            await RequireLayerOperationAsync(httpContext, layer, AuthorizationOperation.Update, "updates", cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (hasDeletes)
+        {
+            await RequireLayerOperationAsync(httpContext, layer, AuthorizationOperation.Delete, "deletes", cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task RequireLayerOperationAsync(
+        HttpContext httpContext,
+        MapToolLayerContext layer,
+        AuthorizationOperation operation,
+        string editKind,
+        CancellationToken cancellationToken)
+    {
+        // 1) Operation-aware resource access (tenant scope, per-operation grants,
+        //    coarse AccessPolicy) — the same seam the FeatureServer edit endpoints
+        //    run pre-body via AccessPolicyHelpers.RequireResourceAccessAsync.
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            httpContext,
+            layer.Resource,
+            layer.Service,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+
+        // 2) The per-edit-type data-editor write gate (layer-scoped write keys,
+        //    explicit write policy, per-operation RBAC grants, admin/data-editor
+        //    roles) — the decision-shaped core of
+        //    ServiceDataEditorAuthorization.RequireResourceDataEditorAsync.
+        if (decision.IsAllowed)
+        {
+            decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+                httpContext,
+                layer.Resource,
+                layer.Service,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        ThrowIfDenied(decision, layer, operation, editKind);
+    }
+
+    private static void ThrowIfDenied(
+        in AccessDecision decision,
+        in MapToolLayerContext layer,
+        AuthorizationOperation operation,
+        string editKind)
+    {
+        if (decision.IsAllowed)
+        {
+            return;
+        }
+
+        if (decision.RequiresAuthentication)
+        {
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: true);
+        }
+
+        throw new GeoprocessingAuthorizationException(
+            requiresAuthentication: false,
+            $"Caller lacks the '{operation}' permission required to apply '{editKind}' on layer "
+            + $"'{layer.Resource.Metadata.Name}' of service '{layer.Service.Metadata.Name}'.");
     }
 
     private static ImmutableArray<EditFeature> BuildCreates(
