@@ -404,7 +404,12 @@ internal sealed class CapabilityManifestService(
                 policyCapability: "features.query"),
             Capability("publication.metadata-release", "publication", context, policyCapability: "catalog.publish", requiresEnvironment: true),
             Capability("upload.file", "upload", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
-            Capability("edit.features", "edit", context, entitlementKey: FeatureCatalog.FeatureServerEditsKey, policyCapability: "features.edit")
+            Capability("edit.features", "edit", context, entitlementKey: FeatureCatalog.FeatureServerEditsKey, policyCapability: "features.edit"),
+            // Branch versioning (VMS) — built-experimental, gated OFF the GA surface by
+            // default (#2480 / ADR-0058). Kept last to mirror the registry descriptor order
+            // (CapabilityRegistry.BuildManifestCapabilityDescriptors) so the hand-curated and
+            // registry-derived Capabilities[] stay byte-identical.
+            Capability("versioning.branch", "versioning", context, entitlementKey: FeatureCatalog.BranchVersioningKey)
         ];
     }
 
@@ -513,6 +518,7 @@ internal sealed class CapabilityManifestService(
             ["publication.metadata-release"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
             ["upload.file"] = new() { EntitlementKey = "import.file", PolicyCapability = "metadata.write" },
             ["edit.features"] = new() { EntitlementKey = FeatureCatalog.FeatureServerEditsKey, PolicyCapability = "features.edit" },
+            ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
         };
     }
 
