@@ -130,20 +130,16 @@ internal static class McpServiceCollectionExtensions
                 services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.QueryFeaturesTool>());
             }
 
-            // honua_edit_features: the transactional feature-editing tool. It is a
-            // thin adapter over the shared edit/transaction pipeline
-            // (IEditProcessor validation + ToFeatureEditBatch, then
-            // IFeatureWriter.ApplyEditsAsync — the same seams FeatureServer
-            // applyEdits, OGC API Features, WFS Transaction, and OData CRUD adapt
-            // to). Advertised only when BOTH the edit processor and the feature
-            // writer are composed, so tools/list never advertises an edit verb the
-            // host cannot back (read-only providers register a ReadOnlyFeatureWriter
-            // but no IEditProcessor unless the edit pipeline is wired).
-            if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Edit.IEditProcessor)) &&
-                services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FeatureStore.Abstractions.IFeatureWriter)))
-            {
-                services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.EditFeaturesTool>());
-            }
+            // NO feature-mutation tool is registered here BY DESIGN. Honua does
+            // not support AI operational data editing: the MCP surface deliberately
+            // exposes no feature-edit verb (no honua_edit_features), per ADR-0028
+            // (docs/internal/contributor/adr/0028-ai-data-editing-not-allowed.md),
+            // founder-reaffirmed 2026-07-06. The shared edit/transaction pipeline
+            // (IEditProcessor + IFeatureWriter.ApplyEditsAsync) remains for the
+            // human-facing protocol adapters (FeatureServer applyEdits, OGC API
+            // Features, WFS Transaction, OData CRUD, admin) — it is intentionally
+            // NOT projected onto any AI/MCP tool. Do not reintroduce an MCP edit
+            // tool without reversing ADR-0028.
 
             // The map-render tool additionally needs the canonical raster
             // renderer (the same IRasterMapRenderer the OGC API Maps / MapServer

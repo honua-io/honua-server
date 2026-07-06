@@ -72,6 +72,7 @@ public sealed class CapabilityRegistryConformanceTests
         "publication.metadata-release",
         "upload.file",
         "edit.features",
+        "versioning.branch",
     ];
 
     // Format descriptors that intentionally exist beyond the SupportedFileFormat
@@ -288,8 +289,6 @@ public sealed class CapabilityRegistryConformanceTests
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.MapTools.EditFeaturesTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.EditFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance),
             new Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool(
