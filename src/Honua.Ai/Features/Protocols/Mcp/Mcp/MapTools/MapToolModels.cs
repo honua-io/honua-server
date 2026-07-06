@@ -140,6 +140,16 @@ internal sealed class McpQueryFeaturesArgument
 
     [JsonPropertyName("outSrid")]
     public int? OutSrid { get; set; }
+
+    /// <summary>
+    /// Number of decimal places to round returned geometry coordinates to
+    /// (x-honua extension over the geospatial-mcp query_features shape). Defaults
+    /// to 6 (~0.1&#160;m at the equator) to keep GeoJSON compact; pass a higher
+    /// value for finer precision or a negative value for full, unrounded
+    /// coordinates. Ignored when <see cref="ReturnGeometry"/> is false.
+    /// </summary>
+    [JsonPropertyName("geometryPrecision")]
+    public int? GeometryPrecision { get; set; }
 }
 
 /// <summary>
@@ -235,6 +245,17 @@ internal sealed class McpRenderMapArgument
 
     [JsonPropertyName("transparent")]
     public bool? Transparent { get; set; }
+
+    /// <summary>
+    /// Opt-in ceiling (bytes) for inlining the rendered PNG as a base64
+    /// <c>image</c> content block (x-honua extension). When the encoded image is
+    /// at or below this size it is returned inline; otherwise — and by default
+    /// (null / 0) — the tool returns a fetchable artifact href
+    /// (<c>resource_link</c>) plus dimensions and byte size in text, so a
+    /// ~2&#160;MB render never floods the model context.
+    /// </summary>
+    [JsonPropertyName("maxInlineBytes")]
+    public int? MaxInlineBytes { get; set; }
 }
 
 /// <summary>
