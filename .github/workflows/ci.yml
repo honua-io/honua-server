@@ -14,6 +14,15 @@ on:
   # gate on `event_name != 'merge_group'`, so the train's workflow_dispatch (and
   # the nightly schedule) still run them; only the per-PR fan-out is dropped.
   # A genuinely-broken PR is caught when the train batches it (attribute+drop).
+  #
+  # SELECTIVE BATCHES: a train/batch/* dispatch is gated like a PR diffed against
+  # trunk — the `changes` + `targeted-shards` jobs run only the shards/lanes the
+  # batch's cumulative diff touches (the smart-ci subset the train computes),
+  # not the whole fanout every batch. The targeted-tests selector self-escalates
+  # to run_all on infra/shared/unmapped changes, and the nightly `schedule` still
+  # runs the FULL matrix as the backstop, so coverage is preserved while the
+  # per-batch rerun of already-green shards is eliminated. `-f full_ci=true`
+  # (or a schedule/non-train dispatch) forces the full lane.
   # Merge queue (LEAN gate): GitHub batches approved PRs and runs CI once on
   # the combined commit before fast-forwarding trunk. The full ~45-job matrix
   # (AOT, docker, the 30+-shard Server Tests fanout, browser/MCP lanes) already
@@ -36,6 +45,11 @@ on:
         description: 'honua-sdk-js git ref for MCP tests (overrides MCP_SDK_REF env)'
         required: false
         default: ''
+      full_ci:
+        description: 'Force the FULL matrix even on a train/batch/* dispatch (overrides the selective-vs-trunk batch gate). No effect off a train/batch ref.'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   # PR runs key on the PR number (re-push cancels the prior run). merge_group
@@ -344,7 +358,15 @@ jobs:
             exit 0
           fi
 
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          # A merge-train batch CI is dispatched via workflow_dispatch on a
+          # `train/batch/*` branch. Treat it like a PR diffed against trunk: gate
+          # only the shards/lanes its cumulative diff touches (the smart-ci subset
+          # the train already computes) instead of re-running the full matrix on
+          # every batch. The targeted-tests script self-escalates to run_all on
+          # infra/shared/unmapped changes, and the nightly `schedule` still runs
+          # the full lane, so coverage is preserved. `-f full_ci=true` forces full.
+          SELECTIVE_BATCH="${{ github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/train/batch/') && inputs.full_ci != true }}"
+          if [ "${{ github.event_name }}" != "pull_request" ] && [ "${SELECTIVE_BATCH}" != "true" ]; then
             echo "build_changes=true" >> "$GITHUB_OUTPUT"
             echo "non_test_changes=true" >> $GITHUB_OUTPUT
             echo "integration_changes=true" >> "$GITHUB_OUTPUT"
@@ -450,10 +472,27 @@ jobs:
         run: |
           set -euo pipefail
           all_shards_json=$(jq -c '[.shards[].name]' .github/ci-shards.json)
+          # Selective base: a PR diffs against its base branch; a merge-train
+          # batch (workflow_dispatch on train/batch/*, no full_ci override) diffs
+          # against trunk so it runs ONLY the shards its cumulative diff touches
+          # — the smart-ci subset — instead of the full fanout every batch.
+          selective_base=""
           if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ needs.changes.outputs.full_ci }}" != "true" ]; then
+            selective_base="origin/${{ github.base_ref }}"
+          elif [ "${{ github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/train/batch/') && inputs.full_ci != true }}" = "true" ]; then
+            selective_base="origin/trunk"
+          fi
+
+          if [ -n "${selective_base}" ]; then
             # Full base history (not --depth=1) so the targeted-tests diff has a merge-base.
-            git fetch --no-tags origin "${{ github.base_ref }}"
-            descriptor=$(scripts/ci/honua-server-targeted-tests.sh --base "origin/${{ github.base_ref }}")
+            git fetch --no-tags origin "${selective_base#origin/}"
+            # Fail SAFE to run_all if the diff/script cannot be computed, so a
+            # batch is never under-tested by a silent selection failure.
+            if ! descriptor=$(scripts/ci/honua-server-targeted-tests.sh --base "${selective_base}"); then
+              echo "::warning::targeted-tests selection failed for base ${selective_base}; falling back to run_all."
+              descriptor=$(jq -nc --argjson shards "${all_shards_json}" \
+                '{run_all: true, shards: $shards, reason: "targeted_selection_failed"}')
+            fi
           else
             reason="scheduled_or_manual_full_ci"
             if [ "${{ github.event_name }}" = "pull_request" ]; then
