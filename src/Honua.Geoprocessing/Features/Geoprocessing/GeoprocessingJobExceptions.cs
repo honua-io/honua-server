@@ -20,6 +20,19 @@ internal sealed class GeoprocessingAuthorizationException : Exception
     {
         RequiresAuthentication = requiresAuthentication;
     }
+
+    /// <summary>
+    /// Creates an authorization failure with a caller-supplied message (e.g. one
+    /// naming the specific permission the caller lacks) so structured error
+    /// contracts can surface an actionable denial.
+    /// </summary>
+    /// <param name="requiresAuthentication">Whether the caller needs authentication (vs. insufficient permissions).</param>
+    /// <param name="message">The denial message surfaced to the caller.</param>
+    public GeoprocessingAuthorizationException(bool requiresAuthentication, string message)
+        : base(message)
+    {
+        RequiresAuthentication = requiresAuthentication;
+    }
 }
 
 /// <summary>
