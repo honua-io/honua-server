@@ -11,6 +11,8 @@ from typing import Any
 import httpx
 import pytest
 
+from shared.geoservices import assert_geoservices_error
+
 POINT_WKB_BASE64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 
@@ -96,7 +98,10 @@ def test_gpserver_python_client_submit_and_poll_workflow(
     assert submit.status_code in (200, 503)
     submit_data = submit.json()
 
-    if submit.status_code == 503:
+    # PA-070/PA-117 (#2418): job-store unavailability is now signalled as
+    # HTTP 200 + {"error":{"code":503}} rather than a 503 status, so branch on
+    # the body error member instead of the HTTP status.
+    if submit.status_code == 503 or "error" in submit_data:
         error = _assert_esri_error(submit, 503)
         details = " ".join(error["error"].get("details") or [])
         assert "Redis-backed durable storage" in details
@@ -121,5 +126,9 @@ def test_gpserver_python_client_missing_job_uses_esri_error_shape(
 
     response = client.missing_job_status()
 
-    assert response.status_code in (404, 503)
-    _assert_esri_error(response, response.status_code)
+    # PA-070/PA-117 (#2418): the missing-job error is now HTTP 200 +
+    # {"error":{"code":404|503}} (or a legacy 404/503 status).
+    assert_geoservices_error(response, body_codes={404, 503})
+    data = response.json()
+    assert data["error"]["message"]
+    assert isinstance(data["error"].get("details"), list)
