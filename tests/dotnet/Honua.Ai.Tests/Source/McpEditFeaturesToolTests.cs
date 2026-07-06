@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -11,7 +13,9 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -21,6 +25,7 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -32,7 +37,11 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// <see cref="IEditProcessor"/> + <see cref="IFeatureWriter"/> and assert the
 /// adapter builds the right protocol-neutral request, routes edits through the
 /// single transactional batch apply, and projects the pipeline result back onto
-/// the MCP per-edit + summary output.
+/// the MCP per-edit + summary output. Per-layer edit RBAC runs through the REAL
+/// shared seams (<see cref="AccessPolicyEvaluator"/>,
+/// <c>ServiceDataEditorAuthorization</c>, <see cref="IPermissionResolver"/>
+/// grants), not lookalikes, so the authorization tests exercise the same
+/// primitives the HTTP edit surfaces enforce.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpEditFeaturesToolTests
@@ -247,6 +256,108 @@ public sealed class McpEditFeaturesToolTests
     [Operation(Operations.Update)]
     [Endpoint("POST /mcp tools/call honua_edit_features")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_EditFeatures_PrincipalWithoutEditGrants_IsPermissionDenied_ForEachEditType()
+    {
+        // An authenticated caller with NO edit roles/grants (query-only) must be
+        // denied per edit type by the shared per-layer RBAC gate — generic
+        // process-execution rights alone cannot mutate a layer.
+        var editProcessor = Substitute.For<IEditProcessor>();
+        var writer = Substitute.For<IFeatureWriter>();
+        var queryOnly = AuthenticatedPrincipal();
+
+        var cases = new (string Arguments, string ExpectedOperation)[]
+        {
+            ($$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"adds":[ {"attributes":{"parcel_id":"A-1"} } ] }""", "Insert"),
+            ($$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"updates":[ {"objectId":42,"attributes":{"zoning":"R2"} } ] }""", "Update"),
+            ($$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"deletes":[99] }""", "Delete"),
+        };
+
+        foreach (var (arguments, expectedOperation) in cases)
+        {
+            var response = await DispatchEditAsync(editProcessor, writer, arguments, principal: queryOnly);
+
+            response!.Error.Should().BeNull();
+            var result = response.Result!.Value;
+            result.GetProperty("isError").GetBoolean().Should().BeTrue(
+                $"a caller without edit grants must be denied '{expectedOperation}'");
+            var structured = result.GetProperty("structuredContent");
+            structured.GetProperty("code").GetString().Should().Be("permission_denied");
+            structured.GetProperty("message").GetString().Should().Contain(expectedOperation,
+                "the structured denial must name the missing permission");
+        }
+
+        // No edit ever reached the pipeline.
+        WriterCallNames(writer).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_edit_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_EditFeatures_InsertOnlyGrant_AllowsAdds_ButRejectsMixedAddUpdateUpFront()
+    {
+        // A per-operation Insert grant (canonical IPermissionResolver, #1376)
+        // authorizes an adds-only call, but a mixed add+update call is rejected
+        // WHOLE and UP FRONT because the caller lacks the Update grant — no
+        // partial application.
+        var resolver = Substitute.For<IPermissionResolver>();
+        resolver.AuthorizeAsync(default!, default!, default!, default, default, default, default)
+            .ReturnsForAnyArgs(ci => ci.ArgAt<AuthorizationOperation>(4) == AuthorizationOperation.Insert
+                ? PermissionDecision.Allow(new PermissionGrant { Service = ServiceName, Layer = "*", Operation = "insert" })
+                : PermissionDecision.NoMatch());
+
+        var fieldCrew = AuthenticatedPrincipal("field-crew");
+
+        var editProcessor = Substitute.For<IEditProcessor>();
+        editProcessor.ValidateEdit(default, default!)
+            .ReturnsForAnyArgs(EditValidationResult.Success());
+        editProcessor.ToFeatureEditBatch(default, default!)
+            .ReturnsForAnyArgs(FeatureEditBatch.Create());
+
+        var writer = Substitute.For<IFeatureWriter>();
+        writer.ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(FeatureEditResult.Success(
+                createdCount: 1,
+                updatedCount: 0,
+                deletedCount: 0,
+                createdIds: [101L],
+                createResults: [EditOperationResult.Success(101)]));
+
+        // adds-only: the Insert grant authorizes the call.
+        var addsOnly = $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"adds":[ {"attributes":{"parcel_id":"A-1"} } ] }""";
+        var allowed = await DispatchEditAsync(editProcessor, writer, addsOnly, principal: fieldCrew, permissionResolver: resolver);
+
+        allowed!.Error.Should().BeNull();
+        allowed.Result!.Value.GetProperty("isError").GetBoolean().Should().BeFalse(
+            "an Insert grant must authorize an adds-only call");
+        WriterCallNames(writer).Should().Equal("ApplyEditsAsync");
+
+        writer.ClearReceivedCalls();
+
+        // add + update: missing Update grant rejects the whole request up front.
+        var mixed = $$"""
+            {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},
+             "adds":[ {"attributes":{"parcel_id":"A-2"} } ],
+             "updates":[ {"objectId":42,"attributes":{"zoning":"R2"} } ] }
+            """;
+        var denied = await DispatchEditAsync(editProcessor, writer, mixed, principal: fieldCrew, permissionResolver: resolver);
+
+        denied!.Error.Should().BeNull();
+        var result = denied.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("code").GetString().Should().Be("permission_denied");
+        structured.GetProperty("message").GetString().Should().Contain("Update",
+            "the structured denial must name the missing grant");
+
+        // Nothing was applied — not even the authorized adds.
+        WriterCallNames(writer).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_edit_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_EditFeatures_NoEdits_ReturnsInvalidArgument()
     {
         var editProcessor = Substitute.For<IEditProcessor>();
@@ -292,7 +403,9 @@ public sealed class McpEditFeaturesToolTests
     private async Task<McpJsonRpcResponse?> DispatchEditAsync(
         IEditProcessor editProcessor,
         IFeatureWriter writer,
-        string argumentsJson)
+        string argumentsJson,
+        ClaimsPrincipal? principal = null,
+        IPermissionResolver? permissionResolver = null)
     {
         var surface = new McpOperatorSurface(
             [new EditFeaturesTool(_jobService, NullLogger<EditFeaturesTool>.Instance)],
@@ -307,15 +420,42 @@ public sealed class McpEditFeaturesToolTests
         services.AddSingleton(editProcessor);
         services.AddSingleton(writer);
         services.AddSingleton(geometryService);
+
+        // The REAL shared authorization seams the HTTP edit surfaces run: the
+        // access-policy evaluator plus the RBAC options that drive the
+        // data-editor role gate ("data-editor" is a global data-editor role in
+        // these tests). A per-operation permission resolver is registered only
+        // when a test exercises grant-based authorization.
+        services.AddSingleton<IAccessPolicyEvaluator>(new AccessPolicyEvaluator());
+        services.AddSingleton(Options.Create(new RbacOptions { DataEditorRoles = ["data-editor"] }));
+        if (permissionResolver is not null)
+        {
+            services.AddSingleton(permissionResolver);
+        }
+
         var provider = services.BuildServiceProvider();
 
-        var context = McpTestFactory.AuthenticatedHttpContext();
-        context.RequestServices = provider;
+        var context = new DefaultHttpContext
+        {
+            RequestServices = provider,
+            User = principal ?? DataEditorPrincipal()
+        };
 
         return await surface.DispatchAsync(
             context,
             ToolCall("edit-1", EditFeaturesTool.ToolName, argumentsJson),
             CancellationToken.None);
+    }
+
+    /// <summary>Authenticated principal holding the global data-editor role.</summary>
+    private static ClaimsPrincipal DataEditorPrincipal() => AuthenticatedPrincipal("data-editor");
+
+    /// <summary>Authenticated principal with the supplied role claims.</summary>
+    private static ClaimsPrincipal AuthenticatedPrincipal(params string[] roles)
+    {
+        var claims = new List<Claim> { new(ClaimTypes.Name, "test-user") };
+        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
     }
 
     private static List<string> WriterCallNames(IFeatureWriter writer) =>
