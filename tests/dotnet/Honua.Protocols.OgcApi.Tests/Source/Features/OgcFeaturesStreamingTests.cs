@@ -75,11 +75,15 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
 
     /// <summary>
     /// Regression for BH4-008: streaming responses must expose an advisory
-    /// <c>numberMatched</c> snapshot count (in the JSON body and
-    /// <c>OGC-NumberMatched</c> header). The value is a pre-flight snapshot
-    /// estimate — it is advisory per OGC API Features Part 1 §7.7, not an
-    /// authoritative exact count — but it must always be a non-negative integer,
-    /// never absent or negative.
+    /// <c>numberMatched</c> snapshot count in the JSON <c>FeatureCollection</c>
+    /// body — the spec-compliant location (OGC 17-069r4 §7.14.4). The value is a
+    /// pre-flight snapshot estimate — advisory per OGC API Features Part 1 §7.7,
+    /// not an authoritative exact count — but it must always be a non-negative
+    /// integer, never absent or negative.
+    ///
+    /// The non-standard <c>OGC-NumberMatched</c> response header was removed in
+    /// #2418 (PA-122/PA-168); this test now guards that it stays absent so the
+    /// count is carried only in its spec-compliant body location.
     /// </summary>
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
@@ -100,13 +104,10 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
         nmProp.GetInt64().Should().BeGreaterThanOrEqualTo(0,
             "numberMatched snapshot estimate must be a non-negative integer");
 
-        // HTTP header form: OGC-NumberMatched must also be set for protocol-level consumers.
-        response.Headers.TryGetValues("OGC-NumberMatched", out var headerValues)
-            .Should().BeTrue("streaming path must set OGC-NumberMatched response header (BH4-008)");
-        var headerValue = headerValues!.First();
-        long.TryParse(headerValue, out var parsedHeader).Should().BeTrue(
-            "OGC-NumberMatched header must be parseable as a long integer");
-        parsedHeader.Should().BeGreaterThanOrEqualTo(0,
-            "OGC-NumberMatched header value must be non-negative");
+        // The non-standard OGC-NumberMatched header was removed in #2418 (PA-122/PA-168):
+        // the count lives only in the spec-compliant JSON body location above. Guard that the
+        // header is not reintroduced.
+        response.Headers.TryGetValues("OGC-NumberMatched", out _)
+            .Should().BeFalse("the non-standard OGC-NumberMatched header was removed in #2418 (PA-122/PA-168)");
     }
 }

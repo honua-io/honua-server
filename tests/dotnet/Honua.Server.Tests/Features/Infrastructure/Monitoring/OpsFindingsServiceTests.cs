@@ -8,10 +8,12 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -261,6 +263,70 @@ public sealed class OpsFindingsServiceTests
                 r.RequestedByAgent == OpsFindingsService.RequestedByAgent &&
                 r.IdempotencyKey == finding.Id),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_ActionableFinding_WithoutOperationGateway_ReturnsGatewayUnavailable()
+    {
+        // Redis-less composition (#2511): OpsFindingsService is constructed without an
+        // IOperationGateway (only wired with the durable control-plane graph). Findings still
+        // evaluate; proposing an otherwise-actionable fix degrades cleanly instead of throwing.
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<WorkflowOperationRecord>
+            {
+                BuildDeployOperation("op-9", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: "rev-1", desiredRevision: "rev-2"),
+            });
+
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new OpsFindingsOptions()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(new ControlPlaneOptions()),
+            new FakeAlertDispatchHealth(),
+            new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            gateway: null,
+            workflowStore: workflowStore);
+
+        var finding = (await service.EvaluateAsync()).Single(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
+        Assert.NotNull(finding.RecommendedAction);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.GatewayUnavailable, result.Status);
+        Assert.Equal(finding.Id, result.FindingId);
+        Assert.False(string.IsNullOrWhiteSpace(result.Message));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ServiceComposition_WithoutRedisOperationGateway_ResolvesOpsFindingsService()
+    {
+        // Reproduces the #2511 startup failure at the composition level: the server registers
+        // IOpsFindingsService unconditionally, but IOperationGateway is only registered when the
+        // durable backend (Redis) is present. With ValidateOnBuild — exactly as Program.cs builds
+        // the host — resolving the service must NOT throw when the gateway is absent.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOptions();
+        services.Configure<OpsFindingsOptions>(_ => { });
+        services.Configure<ControlPlaneOptions>(_ => { });
+        services.AddSingleton<IAlertDispatchHealth>(new FakeAlertDispatchHealth());
+        services.AddSingleton<IDeployPreflightProbe>(new FakeDeployPreflightProbe(BuildDeploySnapshot()));
+
+        // Deliberately no IOperationGateway / IWorkflowOperationStore / IExecutionJobStore —
+        // these are the Redis-gated control-plane registrations.
+        services.AddScoped<IOpsFindingsService, OpsFindingsService>();
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true,
+        });
+
+        using var scope = provider.CreateScope();
+        var resolved = scope.ServiceProvider.GetRequiredService<IOpsFindingsService>();
+
+        Assert.NotNull(resolved);
     }
 
     private static OpsFindingsService CreateService(
