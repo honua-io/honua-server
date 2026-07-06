@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -162,8 +163,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{TestLayerId}/ImageServer/identify?f=json");
 
         // Missing required geometry parameter
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -175,7 +175,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             $"/rest/services/{TestLayerId}/ImageServer/identify?geometry=abc,def&f=json");
 
         // Either 400 (invalid coordinates) or 404 (no rasters)
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(400, 404);
     }
 
     [IntegrationTest]
@@ -186,7 +186,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/identify?geometry=42&f=json");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(400, 404);
     }
 
     [IntegrationTest]
@@ -197,7 +197,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/identify?geometry={{\"invalid\":true}}&f=json");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.NotFound);
+        await response.AssertGeoServicesErrorAsync(400, 404);
     }
 
     #endregion

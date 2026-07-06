@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -69,8 +70,7 @@ public class MvtTileEndpointTests : IClassFixture<WebAppFixture>
         foreach (var coordinate in invalidCoordinates)
         {
             var response = await _fixture.Client.GetAsync(coordinate);
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-                $"coordinate {coordinate} should return BadRequest");
+            await response.AssertGeoServicesErrorAsync(400);
         }
     }
 

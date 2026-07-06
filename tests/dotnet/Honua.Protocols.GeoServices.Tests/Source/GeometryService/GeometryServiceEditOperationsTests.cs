@@ -104,7 +104,7 @@ public sealed class GeometryServiceEditOperationsTests : IClassFixture<WebAppFix
         var target = Uri.EscapeDataString("""{"geometryType":"esriGeometryPolygon","geometries":[{"rings":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}]}""");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/Utilities/Geometry/GeometryServer/cut?target={target}&sr=4326");
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     // --- trimExtend ---
@@ -194,7 +194,7 @@ public sealed class GeometryServiceEditOperationsTests : IClassFixture<WebAppFix
         var polylines = Uri.EscapeDataString("""{"geometryType":"esriGeometryPolyline","geometries":[{"paths":[[[0,0],[2,0]]]}]}""");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/Utilities/Geometry/GeometryServer/trimExtend?polylines={polylines}&sr=4326");
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     // --- offset ---
@@ -276,7 +276,7 @@ public sealed class GeometryServiceEditOperationsTests : IClassFixture<WebAppFix
         var geometries = Uri.EscapeDataString("""{"geometryType":"esriGeometryPolyline","geometries":[{"paths":[[[0,0],[5,0]]]}]}""");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/Utilities/Geometry/GeometryServer/offset?geometries={geometries}&sr=4326");
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     // --- autoComplete ---
@@ -317,7 +317,7 @@ public sealed class GeometryServiceEditOperationsTests : IClassFixture<WebAppFix
     {
         var response = await _fixture.Client.GetAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/autoComplete?sr=4326");
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     // --- reshape ---
@@ -359,7 +359,7 @@ public sealed class GeometryServiceEditOperationsTests : IClassFixture<WebAppFix
         var target = Uri.EscapeDataString("""{"rings":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}""");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/Utilities/Geometry/GeometryServer/reshape?target={target}&sr=4326");
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     // --- findTransformations ---
@@ -394,6 +394,6 @@ public sealed class GeometryServiceEditOperationsTests : IClassFixture<WebAppFix
     {
         var response = await _fixture.Client.GetAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/findTransformations?inSR=4326");
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 }
