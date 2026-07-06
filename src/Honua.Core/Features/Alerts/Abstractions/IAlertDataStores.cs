@@ -277,6 +277,32 @@ public interface IAlertDispatchStore
 }
 
 /// <summary>
+/// Atomically appends an alert event and enqueues its per-channel dispatch rows in a single
+/// transaction, so a crash can never persist the event without its dispatch (or vice versa).
+/// </summary>
+/// <remarks>
+/// Replaces the previous two-step write (append on one connection, enqueue on another), which
+/// left an alert-loss window: a process crash between the two committed the event but never
+/// enqueued its delivery, silently dropping the alert. This is the upstream complement to the
+/// dispatch outbox (FOR UPDATE SKIP LOCKED claim + dead-letter), which is already crash-safe.
+/// </remarks>
+public interface IAlertOutboxWriter
+{
+    /// <summary>
+    /// Appends the event (deduplicating on its dedupe key) and, when a new event row was written,
+    /// enqueues one dispatch row per deliverable channel — both in the same transaction.
+    /// </summary>
+    /// <param name="alertEvent">Event envelope to append.</param>
+    /// <param name="channels">Deliverable channels to enqueue for the appended event.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The persisted event id, or null when the event was deduplicated (no dispatch enqueued).</returns>
+    Task<long?> AppendAndEnqueueAsync(
+        AlertEventEnvelope alertEvent,
+        ImmutableArray<AlertChannelType> channels,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Stores and retrieves durable worker checkpoints.
 /// </summary>
 public interface IAlertCheckpointStore
