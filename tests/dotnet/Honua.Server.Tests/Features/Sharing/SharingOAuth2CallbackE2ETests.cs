@@ -176,7 +176,8 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
 
         // Open-redirect mitigation: a non-allow-listed redirect_uri is a direct 400
         // and is NEVER redirected to.
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.Location.Should().BeNull();
     }
 

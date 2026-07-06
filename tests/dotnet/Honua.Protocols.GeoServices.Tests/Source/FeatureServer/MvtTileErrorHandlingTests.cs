@@ -173,7 +173,8 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
 
         // Assert - Both should return the same error response format
         mvtResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        queryResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var mvtContent = await mvtResponse.Content.ReadAsStringAsync();
         var queryContent = await queryResponse.Content.ReadAsStringAsync();

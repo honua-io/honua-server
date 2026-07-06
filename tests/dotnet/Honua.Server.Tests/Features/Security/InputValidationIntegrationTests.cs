@@ -49,7 +49,8 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         using var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("SQL injection attempt detected");
@@ -109,7 +110,8 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         using var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await response.Content.ReadAsStringAsync()).Should().Contain("SQL injection attempt detected");
     }
 
@@ -140,7 +142,8 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         using var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Path traversal attempt detected");
     }
@@ -233,7 +236,8 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         using var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("SQL injection attempt detected");
     }

@@ -64,7 +64,9 @@ class TestImageServer:
             params={"f": "xml"},
         )
 
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 400
 
     @pytest.mark.integration
     def test_compute_statistics_histograms_valid_request_returns_statistics(
@@ -109,4 +111,6 @@ class TestImageServer:
             },
         )
 
-        assert response.status_code == 501
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 501

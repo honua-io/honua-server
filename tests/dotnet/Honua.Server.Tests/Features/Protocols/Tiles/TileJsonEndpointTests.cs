@@ -71,7 +71,9 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: /tiles is classified as a GeoServices REST surface, so the error is
+        // returned as HTTP 200 with the 404 code in the JSON body (ProtocolRequestClassifier.IsGeoServices).
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

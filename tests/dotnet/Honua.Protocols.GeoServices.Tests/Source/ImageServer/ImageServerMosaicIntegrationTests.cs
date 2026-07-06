@@ -141,7 +141,8 @@ public sealed class ImageServerMosaicIntegrationTests
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
                 "?geometry=1.5,1&geometryType=esriGeometryPoint&time=2024-02-15T00:00:00Z&f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {

@@ -513,9 +513,8 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
                 $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?time={encodedTime}&f=json");
 
             // Assert
-            response.StatusCode.Should().BeOneOf(
-                new[] { HttpStatusCode.BadRequest, HttpStatusCode.InternalServerError },
-                $"Invalid time format should return error: {invalidTime}");
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 
@@ -560,12 +559,10 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
 
         // Assert
         // Should return an appropriate error when no temporal field is available
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.BadRequest,
-            HttpStatusCode.NotFound,
-            HttpStatusCode.InternalServerError);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        if (response.StatusCode == HttpStatusCode.BadRequest)
+        if (response.StatusCode == HttpStatusCode.OK)
         {
             var content = await response.Content.ReadAsStringAsync();
             content.Should().ContainEquivalentOf("temporal");

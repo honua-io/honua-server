@@ -90,7 +90,8 @@ public sealed class MapServerRenderCapacityTests : IClassFixture<MapServerRender
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, content);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         content.Should().Contain("NoApplicableCode");
         content.Should().Contain("Raster rendering capacity is currently exhausted");
     }

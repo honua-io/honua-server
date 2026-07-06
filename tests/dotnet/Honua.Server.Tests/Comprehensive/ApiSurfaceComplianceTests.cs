@@ -104,7 +104,8 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
 
         // Test invalid layer ID
         var invalidResponse = await client.GetAsync("/rest/services/test/FeatureServer/999?f=json");
-        invalidResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 404 code is carried in the JSON body.
+        invalidResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     /// <summary>
@@ -189,15 +190,18 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         var errorTestCases = new[]
         {
             // Invalid service/collection
-            ("/rest/services/invalid/FeatureServer", HttpStatusCode.NotFound, "Invalid service ID"),
+            // PA-070/PA-117: GeoServices always returns HTTP 200; the error code is carried in the JSON body.
+            ("/rest/services/invalid/FeatureServer", HttpStatusCode.OK, "Invalid service ID"),
             ("/ogc/features/collections/invalid/items", HttpStatusCode.NotFound, "Invalid collection ID"),
 
             // Invalid layer ID
-            ("/rest/services/test/FeatureServer/999", HttpStatusCode.NotFound, "Invalid layer ID"),
+            ("/rest/services/test/FeatureServer/999", HttpStatusCode.OK, "Invalid layer ID"),
+            // Non-numeric layer id fails the {layerId:int} route constraint, so routing returns 404
+            // before the GeoServices error formatter runs — this stays a real transport 404.
             ("/rest/services/test/FeatureServer/abc", HttpStatusCode.NotFound, "Non-numeric layer ID"),
 
             // Invalid query parameters
-            ("/rest/services/test/FeatureServer/0/query?where=invalid sql syntax", HttpStatusCode.BadRequest, "Invalid SQL where clause"),
+            ("/rest/services/test/FeatureServer/0/query?where=invalid sql syntax", HttpStatusCode.OK, "Invalid SQL where clause"),
             ("/ogc/features/collections/0/items?bbox=invalid", HttpStatusCode.BadRequest, "Invalid bbox format"),
             ("/ogc/features/collections/0/items?limit=-1", HttpStatusCode.BadRequest, "Negative limit"),
             // OGC API - Features Part 1 /req/core/fc-limit-definition (d): an over-maximum

@@ -111,7 +111,9 @@ class TestGenerateRenderer:
                 "f": "json",
             },
         )
-        assert response.status_code in [400, 501]
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] in (400, 501)
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -126,4 +128,6 @@ class TestGenerateRenderer:
                 "f": "json",
             },
         )
-        assert response.status_code in [400, 404]
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] in (400, 404)

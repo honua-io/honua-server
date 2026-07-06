@@ -135,7 +135,8 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -148,7 +149,8 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -240,7 +242,8 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString", content);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     private static async Task<GeometryServiceToGeoCoordinateStringResponse?> DeserializeToAsync(HttpResponseMessage response)

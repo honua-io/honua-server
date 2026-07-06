@@ -109,7 +109,8 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -174,7 +175,8 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/project?inSR=4326");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -267,7 +269,8 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -290,7 +293,8 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]

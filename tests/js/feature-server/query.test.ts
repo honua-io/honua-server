@@ -83,7 +83,9 @@ describe('Query Basic', () => {
   describe('Invalid Layer', () => {
     it('should return error for nonexistent layer', async () => {
       const response = await client.query({ where: '1=1' }, 99999);
-      expect([400, 404]).toContain(response.status);
+      // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+      expect(response.status).toBe(200);
+      expect([400, 404]).toContain((response.data as { error?: { code?: number } }).error?.code);
     });
   });
 });
@@ -107,7 +109,9 @@ describe('WHERE Clause', () => {
     describe.each(INVALID_WHERE_CASES)('$name', ({ where }) => {
       it(`should reject: ${where}`, async () => {
         const response = await client.query({ where });
-        expect(response.status).toBe(400);
+        // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        expect(response.status).toBe(200);
+        expect((response.data as { error?: { code?: number } }).error?.code).toBe(400);
       });
     });
   });
@@ -409,7 +413,9 @@ describe('Pagination', () => {
         resultOffset: 1000001,
       });
 
-      expect(response.status).toBe(400);
+      // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+      expect(response.status).toBe(200);
+      expect((response.data as { error?: { code?: number } }).error?.code).toBe(400);
     });
   });
 

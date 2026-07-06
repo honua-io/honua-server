@@ -308,7 +308,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
 
         // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -320,7 +321,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
             new StringContent("objectId=1", Encoding.UTF8, "text/plain"));
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -431,7 +433,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment", form);
 
         // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -443,7 +446,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment",
             new StringContent("objectId=1&attachmentId=1", Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -563,7 +567,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments",
             new StringContent("objectId=1&attachmentIds=1", Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -621,7 +626,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{nonExistentAttachmentId}");
 
         // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -642,7 +648,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
 
         // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.RequestEntityTooLarge);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("exceeds maximum allowed size");

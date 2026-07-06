@@ -177,7 +177,8 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
         }
         else
         {
-            response.Be400BadRequest();
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.Be200Ok();
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("exceed configured limits");
             content.Should().Contain("Maximum offset: 1000");
@@ -229,7 +230,8 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.RequestEntityTooLarge); // 413
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("Request payload exceeds maximum allowed size");
         responseContent.Should().Contain("Maximum payload size is 1,048,576 bytes");

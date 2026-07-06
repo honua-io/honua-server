@@ -470,7 +470,9 @@ class TestApplyEditsErrors:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/applyEdits",
             data={"adds": "not valid json", "f": "json"},
         )
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 400
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -488,7 +490,9 @@ class TestApplyEditsErrors:
             f"/rest/services/{test_service_id}/FeatureServer/99999/applyEdits",
             data={"adds": json.dumps(adds), "f": "json"},
         )
-        assert response.status_code in [400, 404]
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] in (400, 404)
 
     @pytest.mark.integration
     @pytest.mark.featureserver

@@ -63,7 +63,8 @@ public sealed class LayerEnablementIntegrationTests : IAsyncLifetime
 
         var featureServerResponse = await _client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}");
-        featureServerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 404 code is carried in the JSON body.
+        featureServerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var ogcResponse = await _client.GetAsync($"/ogc/features/collections/{WebAppFixture.TestLayerId}");
         ogcResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);

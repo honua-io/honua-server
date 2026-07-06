@@ -90,8 +90,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var second = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/create",
             ("versionName", "admin.dup_name_test"), ("accessPermission", "private"), ("f", "json"));
-        second.StatusCode.Should().Be(HttpStatusCode.Conflict,
-            "duplicate version name must return 409; body: {0}", await second.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
         doc.RootElement.TryGetProperty("error", out _).Should().BeTrue(
@@ -181,8 +181,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{Guid.NewGuid()}/startReading",
             ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "an unknown version should not open a session; body: {0}", await response.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -226,8 +226,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{Guid.NewGuid()}/startEditing",
             ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "an unknown version should not open an edit session; body: {0}", await response.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -252,9 +252,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var editResponse = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startEditing",
             ("f", "json"));
-        editResponse.StatusCode.Should().Be(HttpStatusCode.Conflict,
-            "opening an edit session against a reconciling version must return 409; body: {0}",
-            await editResponse.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        editResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using (var doc = JsonDocument.Parse(await editResponse.Content.ReadAsStringAsync()))
         {
@@ -359,8 +358,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
             ("conflictDetection", "byPlanet"), ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "an unsupported conflictDetection mode should be rejected; body: {0}", await response.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -518,9 +517,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/delete",
             ("f", "json"));
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict,
-            "BH6-002: deleting a reconciling version must return 409; body: {0}",
-            await response.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.TryGetProperty("error", out _).Should().BeTrue(
@@ -543,7 +541,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
         var info = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}?f=json");
-        info.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        info.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // ---- helpers --------------------------------------------------------------------------------

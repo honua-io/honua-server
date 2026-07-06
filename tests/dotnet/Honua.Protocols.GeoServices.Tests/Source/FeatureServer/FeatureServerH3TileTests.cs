@@ -34,7 +34,10 @@ public sealed class FeatureServerH3TileTests : IClassFixture<WebAppFixture>
 
         if (response.StatusCode == HttpStatusCode.OK)
         {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.mapbox-vector-tile");
+            // PA-070/PA-117: /tiles is a GeoServices REST surface, so an H3 capability error is
+            // returned as HTTP 200 with a JSON error envelope; a real tile is a vector tile.
+            response.Content.Headers.ContentType?.MediaType.Should().BeOneOf(
+                "application/vnd.mapbox-vector-tile", "application/json");
         }
     }
 

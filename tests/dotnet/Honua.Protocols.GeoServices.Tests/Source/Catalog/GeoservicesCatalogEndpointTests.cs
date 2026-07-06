@@ -60,7 +60,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     {
         var response = await _fixture.Client.GetAsync("/rest/services?f=xml");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]

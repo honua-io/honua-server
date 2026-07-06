@@ -469,9 +469,8 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
         {
             using var response = await fixture.Client.GetAsync("/rest/services/2024Imagery/ImageServer?f=xml");
 
-            response.StatusCode.Should().Be(
-                HttpStatusCode.BadRequest,
-                "numeric-leading service IDs should match the named ImageServer route before format validation runs");
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {

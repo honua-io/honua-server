@@ -78,7 +78,8 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var response = await PostFormAsync(client, "/sharing/rest/community/createGroup",
             ("title", "Field Crew"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -123,7 +124,8 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var response = await PostFormAsync(malloryClient, $"/sharing/rest/community/groups/{groupId}/addUsers?token={malloryToken}",
             ("users", "mallory"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -165,7 +167,8 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var response = await PostFormAsync(client, "/sharing/rest/content/items/svc-rivers/share",
             ("everyone", "true"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -187,7 +190,8 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var response = await PostFormAsync(malloryClient, $"/sharing/rest/content/items/{itemId}/share?token={malloryToken}",
             ("everyone", "true"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -203,7 +207,8 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var anon = _fixture.CreateClient();
         using var response = await anon.GetAsync($"/sharing/rest/community/groups/{groupId}?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -219,7 +224,8 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var lookup = await client.GetAsync($"/sharing/rest/community/groups/{groupId}?token={token}&f=json");
-        lookup.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        lookup.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private async Task<string> CreateGroupAsync(HttpClient client, string token, string title)

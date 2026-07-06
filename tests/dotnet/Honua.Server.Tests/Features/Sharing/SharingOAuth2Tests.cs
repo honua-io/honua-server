@@ -386,7 +386,8 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         using var response = await client.GetAsync(url);
 
         // GET must be rejected — credentials must never travel in the URL.
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -404,7 +405,8 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
         // No OIDC provider is configured in the Test environment, so the callback
         // surface 404s exactly like authorize.
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -427,7 +429,8 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
         // The Test environment configures no OIDC provider, so there is no named-user
         // identity to broker and the surface 404s rather than silently redirecting.
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -488,7 +491,9 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
                 new KeyValuePair<string, string>("token", "x"),
             }));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: /sharing/rest is a GeoServices REST surface, so the disabled-endpoint
+        // 404 is returned as HTTP 200 with the code in the JSON body (ProtocolRequestClassifier.IsGeoServices).
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -515,7 +520,8 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
                     new KeyValuePair<string, string>("code", "x"),
                 }));
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -649,7 +655,8 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
                     new KeyValuePair<string, string>("token", "x"),
                 }));
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {

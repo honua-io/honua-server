@@ -93,7 +93,9 @@ class TestQueryBasic:
             f"/rest/services/{test_service_id}/FeatureServer/99999/query",
             params={"where": "1=1", "f": "json"},
         )
-        assert response.status_code in [400, 404]
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] in (400, 404)
 
 
 class TestQueryWhereClause:
@@ -253,7 +255,9 @@ class TestQueryWhereClause:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={"where": "invalid !!! syntax", "f": "json"},
         )
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 400
 
 
 class TestQuerySpatial:

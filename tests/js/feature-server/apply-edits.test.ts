@@ -526,7 +526,11 @@ describe('ApplyEdits - Error Handling', () => {
         body: new URLSearchParams({ adds: 'not valid json', f: 'json' }),
       });
 
-      expect(response.status).toBe(400);
+      // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+      expect(response.status).toBe(200);
+
+      const data = await response.json() as { error?: { code?: number } };
+      expect(data.error?.code).toBe(400);
     });
   });
 
@@ -543,7 +547,9 @@ describe('ApplyEdits - Error Handling', () => {
         99999,
       );
 
-      expect([400, 404]).toContain(response.status);
+      // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+      expect(response.status).toBe(200);
+      expect([400, 404]).toContain((response.data as { error?: { code?: number } }).error?.code);
     });
   });
 

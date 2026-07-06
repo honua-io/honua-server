@@ -138,11 +138,9 @@ class TestAddAttachment:
             files=files,
             data={"f": "json"},
         )
-        # Should return error
-        assert response.status_code in [400, 404] or (
-            response.status_code == 200 and
-            response.json().get("addAttachmentResult", {}).get("success") is False
-        )
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] in (400, 404)
 
 
 class TestUpdateAttachment:
@@ -161,10 +159,9 @@ class TestUpdateAttachment:
                 "f": "json",
             },
         )
-        assert response.status_code in [400, 404] or (
-            response.status_code == 200 and
-            response.json().get("updateAttachmentResult", {}).get("success") is False
-        )
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] in (400, 404)
 
 
 class TestDeleteAttachments:
@@ -211,7 +208,9 @@ class TestDownloadAttachment:
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/999999999/attachments/999999999"
         )
-        assert response.status_code == 404
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 404
 
 
 class TestAttachmentWorkflow:

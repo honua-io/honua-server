@@ -72,9 +72,11 @@ class TestQueryRelatedRecordsBasic:
 
         if response.status_code == 200:
             data = response.json()
-            # Should have relatedRecordGroups
-            assert "relatedRecordGroups" in data
-            assert isinstance(data["relatedRecordGroups"], list)
+            # PA-070/PA-117: GeoServices may return HTTP 200 with an error code in the body.
+            if "error" not in data:
+                # Should have relatedRecordGroups
+                assert "relatedRecordGroups" in data
+                assert isinstance(data["relatedRecordGroups"], list)
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -86,7 +88,9 @@ class TestQueryRelatedRecordsBasic:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/queryRelatedRecords",
             params={"f": "json"},
         )
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 400
 
 
 class TestQueryRelatedRecordsObjectIds:
@@ -273,7 +277,9 @@ class TestQueryRelatedRecordsErrors:
                 "f": "json",
             },
         )
-        assert response.status_code in [400, 404]
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] in (400, 404)
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -289,4 +295,6 @@ class TestQueryRelatedRecordsErrors:
                 "f": "json",
             },
         )
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 400

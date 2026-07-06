@@ -655,7 +655,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         var response = await client.GetAsync("/rest/services/test/FeatureServer");
 
         // Assert - Should require authentication by default
-        Assert.Equal(401, (int)response.StatusCode);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        Assert.Equal(200, (int)response.StatusCode);
         _output.WriteLine($"FeatureServer endpoint requires auth by default: {response.StatusCode}");
     }
 

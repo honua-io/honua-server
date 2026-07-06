@@ -68,6 +68,10 @@ describe('MapServer Query', () => {
       },
     );
 
-    expect(response.status).toBe(400);
+    // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+    expect(response.status).toBe(200);
+
+    const data = await response.json() as { error?: { code?: number } };
+    expect(data.error?.code).toBe(400);
   });
 });

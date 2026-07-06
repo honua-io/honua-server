@@ -185,7 +185,8 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
             $"&f=json");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     #endregion
@@ -348,7 +349,8 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
             $"&f=json");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     #endregion

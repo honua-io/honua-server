@@ -63,7 +63,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
     public async Task Intersect_GetMissingParameters_Returns400()
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/intersect?sr=4326");
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -101,7 +102,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
     public async Task Union_GetMissingParameters_Returns400()
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/union");
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -211,7 +213,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/clip",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -220,7 +223,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
     public async Task Clip_GetMissingParameters_Returns400()
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/clip?sr=4326");
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -260,7 +264,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
     public async Task Difference_GetMissingParameters_Returns400()
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/difference?sr=4326");
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     // #1308: ArcGIS clients wrap the single operating geometry as
@@ -430,7 +435,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
     public async Task Area_GetMissingParameters_Returns400()
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths?sr=4326");
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -524,7 +530,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
     public async Task Length_GetMissingParameters_Returns400()
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/lengths?sr=4326");
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     // --- Intersect: additional coverage ---
@@ -571,7 +578,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -597,7 +605,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -624,7 +633,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     // --- Union: additional coverage ---
@@ -694,7 +704,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/union",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -718,7 +729,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/union",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     // --- Difference: additional coverage ---
@@ -795,7 +807,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/difference",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -822,7 +835,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/difference",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     // --- Area/Length: missing SR coverage ---
@@ -845,7 +859,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -866,7 +881,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/lengths",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -888,7 +904,8 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/lengths",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiErrorResponse>(content);

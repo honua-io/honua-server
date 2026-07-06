@@ -161,7 +161,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("eps");
     }
@@ -181,7 +182,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("k");
     }
@@ -201,7 +203,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("algorithm");
     }
@@ -228,7 +231,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("outStatistics");
     }
@@ -256,7 +260,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("outStatistics");
         content.Should().Contain("returnHullPerCluster");
@@ -309,7 +314,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             "/rest/services/nonexistent/FeatureServer/0/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // ---------- Spatial Join ----------
@@ -483,7 +489,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("joinLayerId");
     }
@@ -504,7 +511,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("joinLayerId");
     }
@@ -525,7 +533,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("distance");
     }
@@ -546,7 +555,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("predicate");
     }
@@ -567,7 +577,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // ---------- Buffer Aggregate ----------
@@ -699,7 +710,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("distance");
     }
@@ -720,7 +732,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("unit");
     }
@@ -744,7 +757,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("distance");
     }
@@ -770,7 +784,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("outStatistics");
         content.Should().Contain("dissolve");
@@ -852,7 +867,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("cellSize");
     }
@@ -873,7 +889,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("mode");
     }
@@ -894,7 +911,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("cellSize");
     }
@@ -915,7 +933,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             "/rest/services/nonexistent/FeatureServer/0/queryDensity",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // ---------- Fix #1: TryBuildFeatureQuery shared filter parameters ----------
@@ -979,7 +998,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("objectIds");
     }
@@ -1048,7 +1068,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("spatialRel");
     }

@@ -66,7 +66,15 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
             await result.ExecuteAsync(context);
 
             // Assert
-            context.Response.StatusCode.Should().Be(400, $"because path {path} should return 400 Bad Request");
+            if (path.StartsWith("/rest/services", StringComparison.Ordinal))
+            {
+                // PA-070/PA-117: GeoServices always returns HTTP 200; the 400 code is carried in the JSON body.
+                context.Response.StatusCode.Should().Be(200, $"because GeoServices path {path} returns 200 with the error code in the body");
+            }
+            else
+            {
+                context.Response.StatusCode.Should().Be(400, $"because path {path} should return 400 Bad Request");
+            }
         }
     }
 
@@ -94,7 +102,15 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
             await result.ExecuteAsync(context);
 
             // Assert
-            context.Response.StatusCode.Should().Be(404, $"because path {path} should return 404 Not Found");
+            if (path.StartsWith("/rest/services", StringComparison.Ordinal))
+            {
+                // PA-070/PA-117: GeoServices always returns HTTP 200; the 404 code is carried in the JSON body.
+                context.Response.StatusCode.Should().Be(200, $"because GeoServices path {path} returns 200 with the error code in the body");
+            }
+            else
+            {
+                context.Response.StatusCode.Should().Be(404, $"because path {path} should return 404 Not Found");
+            }
         }
     }
 
@@ -122,7 +138,15 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
             await result.ExecuteAsync(context);
 
             // Assert
-            context.Response.StatusCode.Should().Be(409, $"because path {path} should return 409 Conflict");
+            if (path.StartsWith("/rest/services", StringComparison.Ordinal))
+            {
+                // PA-070/PA-117: GeoServices always returns HTTP 200; the 409 code is carried in the JSON body.
+                context.Response.StatusCode.Should().Be(200, $"because GeoServices path {path} returns 200 with the error code in the body");
+            }
+            else
+            {
+                context.Response.StatusCode.Should().Be(409, $"because path {path} should return 409 Conflict");
+            }
         }
     }
 
@@ -179,7 +203,9 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        context.Response.StatusCode.Should().Be(503);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 503 code is carried in the JSON body.
+        // The Retry-After header is still emitted via the shared response-header path.
+        context.Response.StatusCode.Should().Be(200);
         context.Response.Headers.Should().ContainKey("Retry-After");
         context.Response.Headers["Retry-After"].ToString().Should().Be("300");
     }
@@ -334,7 +360,8 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        context.Response.StatusCode.Should().Be(400);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 400 code is carried in the JSON body.
+        context.Response.StatusCode.Should().Be(200);
 
         var responseBody = GetResponseBody(context);
         var apiErrorResponse = JsonSerializer.Deserialize<JsonElement>(responseBody);

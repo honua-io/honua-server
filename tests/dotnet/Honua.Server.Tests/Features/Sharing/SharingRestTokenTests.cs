@@ -125,7 +125,8 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             ("username", "admin"), ("password", "WRONG"),
             ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -137,7 +138,8 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         using var response = await PostFormAsync(client,
             ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -150,7 +152,8 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             ("username", "admin"), ("password", AdminPassword),
             ("client", "referer"), ("f", "json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -227,7 +230,8 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 ("username", "admin"), ("password", AdminPassword),
                 ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -332,7 +336,8 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             ("username", "admin"), ("password", AdminPassword),
             ("client", "referer"), ("referer", SecureRefererA), ("f", "xml"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -356,7 +361,8 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 ("username", "admin"), ("password", AdminPassword),
                 ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -388,7 +394,8 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 $"&password={Uri.EscapeDataString(AdminPassword)}&client=ip&f=json";
             using var response = await client.GetAsync(query);
 
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             var body = await response.Content.ReadAsStringAsync();
             // The error body should mention POST or HTTPS as alternatives so the
             // caller understands how to proceed without the credential exposure risk.

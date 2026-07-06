@@ -78,7 +78,9 @@ class TestServiceMetadata:
         response = http_client.get(
             "/rest/services/nonexistent_service_xyz/FeatureServer"
         )
-        assert response.status_code == 404
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 404
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -209,7 +211,9 @@ class TestLayerMetadata:
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/99999"
         )
-        assert response.status_code == 404
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 404
 
     @pytest.mark.integration
     @pytest.mark.featureserver

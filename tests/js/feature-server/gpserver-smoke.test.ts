@@ -99,7 +99,9 @@ describe('GPServer Smoke', () => {
       },
     );
 
-    expect([200, 503]).toContain(response.status);
+    // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body,
+    // so success vs. error is distinguished by the body, not the transport status.
+    expect(response.status).toBe(200);
 
     const data = await response.json() as {
       error?: { code?: number; details?: string[]; message?: string };
@@ -107,7 +109,7 @@ describe('GPServer Smoke', () => {
       jobStatus?: string;
     };
 
-    if (response.status === 200) {
+    if (!data.error) {
       expect(data.jobId).toBeTruthy();
       expect(data.jobStatus).toBe('esriJobSubmitted');
       return;

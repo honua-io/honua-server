@@ -134,7 +134,9 @@ class TestSpatialRelMatrix:
                 "f": "json",
             },
         )
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 400
 
 
 class TestGeometryTypeMatrix:
@@ -180,7 +182,9 @@ class TestNearestCount:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={"where": "1=1", "nearestCount": 3, "f": "json"},
         )
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 400
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -254,7 +258,9 @@ class TestInputOutputSpatialReference:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={"where": "1=1", "inSR": "invalid", "f": "json"},
         )
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 400
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -263,4 +269,6 @@ class TestInputOutputSpatialReference:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={"where": "1=1", "outSR": "invalid", "f": "json"},
         )
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
+        assert response.json()["error"]["code"] == 400

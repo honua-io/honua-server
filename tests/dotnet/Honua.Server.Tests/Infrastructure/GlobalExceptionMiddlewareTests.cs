@@ -324,7 +324,8 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var response = await _client.GetAsync("/rest/services/throw-general");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 500 code is carried in the JSON body (asserted below).
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);

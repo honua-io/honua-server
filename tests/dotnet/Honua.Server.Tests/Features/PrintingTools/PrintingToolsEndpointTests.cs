@@ -149,7 +149,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         }
         else
         {
-            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 
@@ -242,7 +243,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -278,7 +280,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -303,7 +306,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -328,7 +332,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/submitJob",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -364,7 +369,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -402,7 +408,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -420,7 +427,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -439,7 +447,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -459,7 +468,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // --- Async Job Submission ---
@@ -617,7 +627,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/nonexistent-job-id");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // --- Job Result ---
@@ -659,7 +670,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         }
         else
         {
-            resultResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            resultResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 
@@ -671,7 +683,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/does-not-exist/results/Output_File");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // --- Helper Methods ---

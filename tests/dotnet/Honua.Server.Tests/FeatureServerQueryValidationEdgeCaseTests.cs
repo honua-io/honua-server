@@ -59,7 +59,8 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
             $"?where={Uri.EscapeDataString(where)}" +
             "&f=json");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [Theory]
@@ -79,7 +80,8 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
             $"?outStatistics={outStatistics}" +
             "&f=json");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [Theory]
@@ -117,7 +119,8 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
             $"&outStatistics={outStatistics}" +
             "&f=json");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]

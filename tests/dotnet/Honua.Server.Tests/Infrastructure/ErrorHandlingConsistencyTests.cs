@@ -42,8 +42,17 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
             var response = await _fixture.Client.GetAsync(endpoint);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-                $"endpoint {endpoint} should return 404 Not Found");
+            if (endpoint.StartsWith("/rest/services", StringComparison.Ordinal))
+            {
+                // PA-070/PA-117: GeoServices always returns HTTP 200; the 404 code is carried in the JSON body.
+                response.StatusCode.Should().Be(HttpStatusCode.OK,
+                    $"GeoServices endpoint {endpoint} returns 200 with the error code in the body");
+            }
+            else
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                    $"endpoint {endpoint} should return 404 Not Found");
+            }
         }
     }
 
@@ -157,8 +166,17 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
             var response = await _fixture.Client.GetAsync(endpoint);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-                $"endpoint {endpoint} should return 400 Bad Request for invalid syntax");
+            if (endpoint.StartsWith("/rest/services", StringComparison.Ordinal))
+            {
+                // PA-070/PA-117: GeoServices always returns HTTP 200; the 400 code is carried in the JSON body.
+                response.StatusCode.Should().Be(HttpStatusCode.OK,
+                    $"GeoServices endpoint {endpoint} returns 200 with the error code in the body");
+            }
+            else
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+                    $"endpoint {endpoint} should return 400 Bad Request for invalid syntax");
+            }
         }
     }
 

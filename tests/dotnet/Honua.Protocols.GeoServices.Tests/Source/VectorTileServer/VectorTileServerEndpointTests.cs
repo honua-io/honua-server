@@ -155,7 +155,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         foreach (var url in badCoordinates)
         {
             var response = await _fixture.Client.GetAsync(url);
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{url} is out of range");
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 

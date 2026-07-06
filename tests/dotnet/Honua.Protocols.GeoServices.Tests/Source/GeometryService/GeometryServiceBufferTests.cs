@@ -259,7 +259,8 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -282,7 +283,8 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
         var error = JsonSerializer.Deserialize<ApiErrorResponse>(responseContent);
@@ -314,7 +316,8 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -340,7 +343,8 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "/rest/services/Utilities/Geometry/GeometryServer/buffer",
             new StringContent(requestBody, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("maximum of 1000 geometries");
@@ -371,7 +375,8 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "/rest/services/Utilities/Geometry/GeometryServer/buffer",
             new StringContent(requestBody, Encoding.UTF8, "application/json"));
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("maximum of 1000 values");
@@ -406,7 +411,8 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
     {
         var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer?inSR=4326");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]

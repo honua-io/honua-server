@@ -534,7 +534,8 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         var response = await _client.GetAsync("/rest/services/nonexistent/FeatureServer?f=json");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 404 code is carried in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -546,7 +547,8 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         var response = await _client.GetAsync("/rest/services/test/FeatureServer/99999?f=json");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 404 code is carried in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -558,7 +560,8 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         var response = await _client.GetAsync("/rest/services/test/FeatureServer/1/query?where=INVALID_SQL_SYNTAX&f=json");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 400 code is carried in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     #endregion

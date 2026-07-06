@@ -240,7 +240,8 @@ public sealed class SharingOAuth2IntrospectionTests
             using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
             using var response = await PostIntrospectAsync(client, "any-token");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {

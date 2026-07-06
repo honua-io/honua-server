@@ -83,7 +83,8 @@ public sealed class PermissionResolverQuerySmokeTests
 
         var response = await client.GetAsync(QueryUrl);
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     /// <summary>

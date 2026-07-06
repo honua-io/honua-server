@@ -506,10 +506,8 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(requestUri);
 
         // Should return appropriate error, not crash
-        response.StatusCode.Should().BeOneOf(
-            System.Net.HttpStatusCode.BadRequest,
-            System.Net.HttpStatusCode.UnprocessableEntity,
-            System.Net.HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
 
         // Should not be a server error (500)
         ((int)response.StatusCode).Should().BeLessThan(500);
@@ -539,9 +537,8 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(requestUri);
 
         // Should validate and reject invalid coordinates
-        response.StatusCode.Should().BeOneOf(
-            System.Net.HttpStatusCode.BadRequest,
-            System.Net.HttpStatusCode.UnprocessableEntity);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
 
         // Should not cause server errors
         ((int)response.StatusCode).Should().BeLessThan(500);

@@ -535,7 +535,8 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _communityFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/geometries/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -669,7 +670,8 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{NoGeometrySceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

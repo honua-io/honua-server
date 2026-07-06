@@ -121,7 +121,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
                 new StringContent(payload, Encoding.UTF8, "application/json"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             var body = await response.Content.ReadAsStringAsync();
             body.Should().Contain(FeatureCatalog.FieldOpsOfflineSyncKey);
         }

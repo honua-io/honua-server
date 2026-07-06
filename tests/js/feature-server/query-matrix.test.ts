@@ -126,7 +126,9 @@ describe('Spatial Relationship Matrix', () => {
         // No distance parameter
       });
 
-      expect(response.status).toBe(400);
+      // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+      expect(response.status).toBe(200);
+      expect((response.data as { error?: { code?: number } }).error?.code).toBe(400);
     });
 
     it('should return 400 when distance parameter is missing for esriSpatialRelBeyondDistance', async () => {
@@ -140,7 +142,9 @@ describe('Spatial Relationship Matrix', () => {
         // No distance parameter
       });
 
-      expect(response.status).toBe(400);
+      // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+      expect(response.status).toBe(200);
+      expect((response.data as { error?: { code?: number } }).error?.code).toBe(400);
     });
   });
 });
@@ -239,7 +243,9 @@ describe('Spatial Reference Matrix', () => {
         inSR: 'invalid',
       });
 
-      expect(response.status).toBe(400);
+      // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+      expect(response.status).toBe(200);
+      expect((response.data as { error?: { code?: number } }).error?.code).toBe(400);
     });
   });
 
@@ -280,7 +286,9 @@ describe('Spatial Reference Matrix', () => {
         outSR: 'invalid',
       });
 
-      expect(response.status).toBe(400);
+      // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+      expect(response.status).toBe(200);
+      expect((response.data as { error?: { code?: number } }).error?.code).toBe(400);
     });
   });
 
@@ -332,7 +340,9 @@ describe('Nearest Count Matrix', () => {
       nearestCount: 3,
     } as any);
 
-    expect(response.status).toBe(400);
+    // PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+    expect(response.status).toBe(200);
+    expect((response.data as { error?: { code?: number } }).error?.code).toBe(400);
   });
 
   it('should return features with distance when returnDistance=true', async () => {

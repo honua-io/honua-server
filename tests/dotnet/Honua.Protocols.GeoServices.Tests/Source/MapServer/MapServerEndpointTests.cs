@@ -527,7 +527,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpkx");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         content.Should().Contain("compact");
     }
 
@@ -1335,7 +1336,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         var invalidResponse = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=invalid");
-        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        invalidResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1515,7 +1517,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
             new StringContent(payload, Encoding.UTF8, "text/plain"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
     }
@@ -1527,7 +1530,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await PostTextPlainJsonAsync("/find");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1537,7 +1541,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await PostTextPlainJsonAsync("/export");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1547,7 +1552,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await PostTextPlainJsonAsync("/identify");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1557,7 +1563,8 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await PostTextPlainJsonAsync("/generateKml");
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

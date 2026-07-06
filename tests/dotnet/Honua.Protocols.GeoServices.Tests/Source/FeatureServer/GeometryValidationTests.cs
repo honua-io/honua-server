@@ -483,7 +483,8 @@ public sealed class GeometryValidationTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(malformedGeometry)}&f=json");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     #endregion

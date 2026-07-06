@@ -216,7 +216,8 @@ public class OgcFeaturesErrorHandlingTests : IClassFixture<OgcFeaturesErrorHandl
 
         // Assert - OGC uses RFC 7807, FeatureServer uses GeoServices
         ogcResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        fsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 404 code is carried in the JSON body (asserted below).
+        fsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var ogcContent = await ogcResponse.Content.ReadAsStringAsync();
         var fsContent = await fsResponse.Content.ReadAsStringAsync();

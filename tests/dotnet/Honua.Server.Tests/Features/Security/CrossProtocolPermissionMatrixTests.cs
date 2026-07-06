@@ -116,7 +116,8 @@ public sealed class CrossProtocolPermissionMatrixTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 403 deny is carried in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     // ---- FeatureServer edits (applyEdits) ----
@@ -160,7 +161,8 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             ServiceRbacTestFixture.CreateApplyEditsContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 403 deny is carried in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -176,7 +178,8 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             ServiceRbacTestFixture.CreateApplyEditsContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 403 deny is carried in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     // ---- FeatureServer layer-not-granted (per-layer scoping) ----
@@ -195,7 +198,8 @@ public sealed class CrossProtocolPermissionMatrixTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 403 deny is carried in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -662,9 +666,11 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             payload);
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden,
-            "an insert-only principal must not execute Update operations; body: {0}",
-            await response.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 403 deny is carried in the JSON body.
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, body);
+        JsonSerializer.Deserialize<JsonElement>(body).GetProperty("error").GetProperty("code").GetInt32()
+            .Should().Be(403, "an insert-only principal must not execute Update operations");
     }
 
     [IntegrationTest]
@@ -711,9 +717,11 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             payload);
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden,
-            "a delete-only principal must not execute Update operations; body: {0}",
-            await response.Content.ReadAsStringAsync());
+        // PA-070/PA-117: GeoServices always returns HTTP 200; the 403 deny is carried in the JSON body.
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, body);
+        JsonSerializer.Deserialize<JsonElement>(body).GetProperty("error").GetProperty("code").GetInt32()
+            .Should().Be(403, "a delete-only principal must not execute Update operations");
     }
 
     // ---- WFS GetFeature + Transaction ----

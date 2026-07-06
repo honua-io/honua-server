@@ -57,7 +57,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
             ServiceRbacTestFixture.CreateApplyEditsContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -89,7 +90,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.BetaService}/FeatureServer/{ServiceRbacTestFixture.BetaLayerId}/applyEdits",
             ServiceRbacTestFixture.CreateApplyEditsContent());
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -128,7 +130,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/append",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -151,7 +154,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/append",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -166,7 +170,8 @@ public sealed class FeatureServerServiceRbacTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -181,7 +186,8 @@ public sealed class FeatureServerServiceRbacTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -196,7 +202,8 @@ public sealed class FeatureServerServiceRbacTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.BetaService}/FeatureServer/{ServiceRbacTestFixture.BetaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -234,7 +241,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -250,7 +258,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
             new StringContent("{", Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -266,7 +275,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
             new StringContent("{", Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -282,7 +292,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
             new StringContent("{", Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -321,7 +332,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
             new StringContent(syncPayload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(syncResponse, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(syncResponse, HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -359,7 +371,8 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
             new StringContent(unregisterPayload, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(unregisterResponse, HttpStatusCode.Forbidden);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        await ServiceRbacTestFixture.AssertStatusAsync(unregisterResponse, HttpStatusCode.OK);
     }
 }
 
@@ -417,7 +430,8 @@ public sealed class WmsServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0");
 
         var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, body);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         body.Should().Contain("ServiceExceptionReport");
         body.Should().Contain("code=\"AccessDenied\"");

@@ -390,7 +390,8 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var featureServerResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer?f=json");
-        featureServerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        featureServerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -409,7 +410,8 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var layerMetadataResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer/1?f=json");
-        layerMetadataResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        layerMetadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -428,7 +430,9 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var tileResponse = await _client.GetAsync("/tiles/1/0/0/0.mvt");
-        tileResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // PA-070/PA-117: /tiles is classified as a GeoServices REST surface, so the error is
+        // returned as HTTP 200 with the 404 code in the JSON body (ProtocolRequestClassifier.IsGeoServices).
+        tileResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

@@ -329,7 +329,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&outFields=objectid,,name");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
     }
 
     [IntegrationTest]
@@ -462,7 +463,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields=does_not_exist");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("orderByFields");
@@ -519,7 +521,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords",
             content);
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("Unsupported Media Type");
     }
@@ -592,7 +595,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?relationshipId={TestRelationshipId}");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -614,7 +618,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -636,7 +641,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=invalid,abc&relationshipId={TestRelationshipId}");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -655,7 +661,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,,2&relationshipId={TestRelationshipId}");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -676,7 +683,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2&relationshipId=invalid");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -696,7 +704,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds={objectIds}&relationshipId={TestRelationshipId}");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -716,7 +725,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/nonexistent/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.HaveStatusCode(System.Net.HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -738,7 +748,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/999/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.HaveStatusCode(System.Net.HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -759,7 +770,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId=999");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.HaveStatusCode(System.Net.HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -780,7 +792,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&resultRecordCount=99999");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Query parameters exceed configured limits");
@@ -862,7 +875,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&f=geojson");
 
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -943,7 +957,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&where={maliciousWhere}");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -965,7 +980,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&where={invalidWhere}");
 
         // Assert
-        response.Be400BadRequest();
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -990,7 +1006,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords", null);
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.HaveStatusCode(System.Net.HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1003,7 +1020,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords");
 
         // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.HaveStatusCode(System.Net.HttpStatusCode.OK);
     }
 
     #endregion

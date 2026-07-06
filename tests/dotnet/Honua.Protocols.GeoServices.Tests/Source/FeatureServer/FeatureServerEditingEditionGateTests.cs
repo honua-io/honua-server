@@ -56,7 +56,8 @@ public sealed class FeatureServerEditingEditionGateTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseBody = await response.Content.ReadAsStringAsync();
         responseBody.Should().Contain(FeatureCatalog.FeatureServerEditsKey);
     }

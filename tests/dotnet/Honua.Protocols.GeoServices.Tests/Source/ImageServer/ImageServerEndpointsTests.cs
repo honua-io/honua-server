@@ -1023,7 +1023,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -1135,7 +1136,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -1925,7 +1927,8 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/exportTiles?{query}");
 
             var content = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
             content.Should().Contain("compact");
         }
         finally
@@ -2197,7 +2200,8 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json&classDescriptions={Uri.EscapeDataString(classDescriptions)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
@@ -2223,7 +2227,8 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics",
                 content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {

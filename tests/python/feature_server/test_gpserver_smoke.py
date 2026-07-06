@@ -75,7 +75,8 @@ class TestGPServerSmoke:
             },
         )
 
-        assert response.status_code == 400
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
 
         data = response.json()
         assert data["error"]["code"] == 400
@@ -100,10 +101,11 @@ class TestGPServerSmoke:
             },
         )
 
-        assert response.status_code in (200, 503)
+        # PA-070/PA-117: GeoServices returns HTTP 200 with the error code in the JSON body.
+        assert response.status_code == 200
 
         data = response.json()
-        if response.status_code == 200:
+        if "error" not in data:
             assert data["jobId"]
             assert data["jobStatus"] == "esriJobSubmitted"
             return

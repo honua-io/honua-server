@@ -320,7 +320,8 @@ public sealed class GeocodingEndpointTests
         var records = """[{"attributes":{"SingleLine":"test address"}}]""";
         using var response = await client.GetAsync($"/rest/services/World/GeocodeServer/geocodeAddresses?records={Uri.EscapeDataString(records)}&provider=fake&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("not supported", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -809,7 +810,8 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [IntegrationTest]
@@ -823,7 +825,8 @@ public sealed class GeocodingEndpointTests
         // Missing location parameter
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [IntegrationTest]
@@ -836,7 +839,8 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&provider=nonexistent&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("not found", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -1038,7 +1042,8 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&distance=0&f=json");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("distance", body, StringComparison.OrdinalIgnoreCase);
     }
