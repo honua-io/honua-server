@@ -65,6 +65,8 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         }
 
         _isRunning = true;
+        var lastBacklogRefresh = DateTimeOffset.MinValue;
+        var lastRetentionSweep = DateTimeOffset.MinValue;
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -85,7 +87,27 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                         await ProcessItemAsync(dispatchStore, eventStore, item, stoppingToken).ConfigureAwait(false);
                     }
 
-                    await RefreshBacklogAsync(dispatchStore, stoppingToken).ConfigureAwait(false);
+                    // The backlog count is a full outbox aggregate; recompute it after a
+                    // non-empty batch (state changed) or at most once per refresh interval
+                    // instead of on every idle poll.
+                    if (batch.Count > 0 || now - lastBacklogRefresh >= _options.Dispatch.BacklogRefreshInterval)
+                    {
+                        await RefreshBacklogAsync(dispatchStore, stoppingToken).ConfigureAwait(false);
+                        lastBacklogRefresh = now;
+                    }
+                    else
+                    {
+                        _storagePollFailing = false;
+                    }
+
+                    // Periodically purge delivered rows past the retention window so the
+                    // outbox stays bounded and backlog counts remain cheap.
+                    if (now - lastRetentionSweep >= _options.Dispatch.RetentionSweepInterval)
+                    {
+                        await PurgeDeliveredAsync(dispatchStore, now, stoppingToken).ConfigureAwait(false);
+                        lastRetentionSweep = now;
+                    }
+
                     Interlocked.Exchange(ref _lastPollAtTicks, now.UtcTicks);
 
                     if (batch.Count == 0)
@@ -117,6 +139,27 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         Volatile.Write(ref _lastBacklog, backlog);
         _storagePollFailing = false;
         AlertPipelineMetrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount);
+    }
+
+    private async Task PurgeDeliveredAsync(
+        IAlertDispatchStore dispatchStore,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var retention = _options.Dispatch.DeliveredRetention;
+        if (retention <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        var cutoff = now - retention;
+        var deleted = await dispatchStore
+            .PurgeDeliveredAsync(cutoff, _options.Dispatch.RetentionBatchSize, cancellationToken)
+            .ConfigureAwait(false);
+        if (deleted > 0)
+        {
+            LogDeliveredPurged(_logger, deleted);
+        }
     }
 
     private async Task ProcessItemAsync(
@@ -195,4 +238,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
     [LoggerMessage(EventId = 9424, Level = LogLevel.Information, Message = "Alert dispatch {DispatchId} for {ChannelType} deferred by the per-channel notification rate cap ({MaxPerMinute}/min).")]
     private static partial void LogRateCapped(ILogger logger, long dispatchId, AlertChannelType channelType, int maxPerMinute);
+
+    [LoggerMessage(EventId = 9425, Level = LogLevel.Debug, Message = "Purged {DeletedCount} delivered alert-dispatch rows past the retention window.")]
+    private static partial void LogDeliveredPurged(ILogger logger, int deletedCount);
 }

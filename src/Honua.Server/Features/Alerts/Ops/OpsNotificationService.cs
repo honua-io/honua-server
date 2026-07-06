@@ -134,12 +134,12 @@ internal sealed partial class OpsNotificationService
         };
     }
 
-    [LoggerMessage(EventId = 9430, Level = LogLevel.Debug, Message = "Ops notification from {Source} ({Severity}) skipped: below minimum severity {MinSeverity}.")]
+    [LoggerMessage(EventId = 9450, Level = LogLevel.Debug, Message = "Ops notification from {Source} ({Severity}) skipped: below minimum severity {MinSeverity}.")]
     private static partial void LogBelowMinSeverity(ILogger logger, string source, AlertSeverity severity, AlertSeverity minSeverity);
 
-    [LoggerMessage(EventId = 9431, Level = LogLevel.Warning, Message = "Ops notification channel {ChannelType} for {Source} is not allowed by edition {Edition}; skipping that channel.")]
+    [LoggerMessage(EventId = 9451, Level = LogLevel.Warning, Message = "Ops notification channel {ChannelType} for {Source} is not allowed by edition {Edition}; skipping that channel.")]
     private static partial void LogChannelNotAllowed(ILogger logger, string source, AlertChannelType channelType, AlertEdition edition);
 
-    [LoggerMessage(EventId = 9432, Level = LogLevel.Information, Message = "Ops notification from {Source} ({Severity}) enqueued to {ChannelCount} channel(s) (dedupe {DedupeIdentifier}).")]
+    [LoggerMessage(EventId = 9452, Level = LogLevel.Information, Message = "Ops notification from {Source} ({Severity}) enqueued to {ChannelCount} channel(s) (dedupe {DedupeIdentifier}).")]
     private static partial void LogEnqueued(ILogger logger, string source, AlertSeverity severity, int channelCount, string dedupeIdentifier);
 }

@@ -102,9 +102,11 @@ public sealed record AlertEventSummary
     public required long EventId { get; init; }
 
     /// <summary>
-    /// Source rule identifier.
+    /// Source rule identifier, or <see langword="null"/> for operations
+    /// notifications (deploy/job terminal events) that reuse the alert outbox
+    /// but are not linked to an alert rule (#2427).
     /// </summary>
-    public required long RuleId { get; init; }
+    public required long? RuleId { get; init; }
 
     /// <summary>
     /// Source rule name when available.

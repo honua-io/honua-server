@@ -232,10 +232,28 @@ internal sealed partial class OperationGateway : IOperationGateway
             plan = plan with { ExecutionPayload = request.ExecutionPayload };
         }
 
+        // Honor the idempotency key on the approval path: a repeated proposal (e.g.
+        // propose → refresh → propose) must fold onto the existing active proposal
+        // rather than minting a duplicate AwaitingApproval record (#1693). The
+        // proposal id is derived deterministically from the key so a concurrent
+        // duplicate TryCreate collides and we fetch-and-return the winner (race-safe).
+        var hasIdempotencyKey = !string.IsNullOrWhiteSpace(request.IdempotencyKey);
+        if (hasIdempotencyKey)
+        {
+            var existing = await FindActiveByIdempotencyKeyAsync(request.Kind, request.IdempotencyKey!, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing != null)
+            {
+                return ExistingProposalResult(existing, decision, request.IdempotencyKey!);
+            }
+        }
+
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
         {
-            ProposalId = $"proposal-{Guid.NewGuid():N}",
+            ProposalId = hasIdempotencyKey
+                ? DeriveProposalId(request.Kind, request.IdempotencyKey!)
+                : $"proposal-{Guid.NewGuid():N}",
             Kind = request.Kind,
             Status = OperationProposalStatus.AwaitingApproval,
             RequestedBy = request.RequestedBy,
@@ -257,6 +275,17 @@ internal sealed partial class OperationGateway : IOperationGateway
             .ConfigureAwait(false);
         if (!created)
         {
+            // Lost a race (or an idempotent replay landed) under the same id: fetch and
+            // return the winning proposal instead of failing the caller.
+            if (hasIdempotencyKey)
+            {
+                var winner = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false);
+                if (winner != null)
+                {
+                    return ExistingProposalResult(winner, decision, request.IdempotencyKey!);
+                }
+            }
+
             throw new InvalidOperationException("Failed to durably persist the operation proposal.");
         }
 
@@ -276,6 +305,37 @@ internal sealed partial class OperationGateway : IOperationGateway
             ProposalId = proposal.ProposalId,
             Message = "Proposal created and awaiting approval."
         };
+    }
+
+    private async Task<OperationProposal?> FindActiveByIdempotencyKeyAsync(
+        OperationClass kind,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        var active = await _proposalStore.ListActiveAsync(kind, cancellationToken).ConfigureAwait(false);
+        return active.FirstOrDefault(
+            proposal => string.Equals(proposal.Audit.IdempotencyKey, idempotencyKey, StringComparison.Ordinal));
+    }
+
+    private static OperationGatewayResult ExistingProposalResult(
+        OperationProposal existing,
+        GuardrailDecision decision,
+        string idempotencyKey) => new()
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = decision,
+            ProposalId = existing.ProposalId,
+            Message = $"Existing proposal returned for idempotency key '{idempotencyKey}'.",
+        };
+
+    // Derive a stable proposal id from (kind, idempotency key) so a repeated proposal
+    // maps to the same durable record. This makes TryCreate collide on a duplicate,
+    // giving the gateway a race-safe fetch-and-return instead of a second proposal.
+    private static string DeriveProposalId(OperationClass kind, string idempotencyKey)
+    {
+        var material = System.Text.Encoding.UTF8.GetBytes($"{kind}:{idempotencyKey}");
+        var hash = System.Security.Cryptography.SHA256.HashData(material);
+        return $"proposal-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
     }
 
     private async Task PersistResolutionAsync(OperationProposal proposal, CancellationToken cancellationToken)

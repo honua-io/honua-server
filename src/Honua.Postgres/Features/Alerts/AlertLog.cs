@@ -58,4 +58,12 @@ internal static partial class AlertLog
     public static partial void DispatchDeadLettered(
         ILogger logger,
         long dispatchId);
+
+    [LoggerMessage(
+        EventId = 5607,
+        Level = LogLevel.Debug,
+        Message = "Purged {DeletedCount} delivered alert-dispatch rows past the retention window")]
+    public static partial void DispatchDeliveredPurged(
+        ILogger logger,
+        int deletedCount);
 }
