@@ -88,6 +88,27 @@ public sealed class SlackAlertDeliverySinkTests
     }
 
     [UnitTest]
+    public async Task DeliverAsync_WithOpsEvent_RendersOpsTitleAndOperationIdNotRuleZero()
+    {
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK);
+        var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-slack").Returns(client);
+
+        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithSlack()));
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
+            AlertTestFixtures.CreateOpsAlertEvent());
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(handler.LastRequestBody);
+        Assert.Contains("Deploy prod-web failed", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.Contains("op-9f3c", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.Contains("Critical", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Rule:", handler.LastRequestBody, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void ChannelType_ReturnsSlack()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();

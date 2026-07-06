@@ -233,11 +233,15 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
     {
         // Pending backlog = rows awaiting delivery: pending (0), in-flight/claimed (1),
         // and retriable-failed (3). Dead-lettered (4) rows are counted separately.
+        // The `status <> 2` predicate lets the planner serve the count from the
+        // partial ix_alert_dispatch_active index and skip delivered rows entirely,
+        // so this stays cheap even before retention has purged old delivered rows.
         const string sql = """
             SELECT
                 COUNT(*) FILTER (WHERE status IN (0, 1, 3)) AS pending,
                 COUNT(*) FILTER (WHERE status = 4) AS dead_lettered
             FROM honua.alert_dispatch
+            WHERE status <> 2
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -254,5 +258,45 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             PendingCount = reader.IsDBNull(0) ? 0 : reader.GetInt64(0),
             DeadLetteredCount = reader.IsDBNull(1) ? 0 : reader.GetInt64(1)
         };
+    }
+
+    public async Task<int> PurgeDeliveredAsync(
+        DateTimeOffset deliveredBefore,
+        int batchLimit,
+        CancellationToken cancellationToken = default)
+    {
+        if (batchLimit <= 0)
+        {
+            return 0;
+        }
+
+        // Bounded delete of delivered (status = 2) rows older than the retention
+        // cutoff. The ix_alert_dispatch_delivered partial index serves the victim
+        // selection; the LIMIT keeps each sweep's transaction short.
+        const string sql = """
+            WITH victims AS (
+                SELECT dispatch_id
+                FROM honua.alert_dispatch
+                WHERE status = 2 AND delivered_at < @delivered_before
+                ORDER BY delivered_at
+                LIMIT @limit
+            )
+            DELETE FROM honua.alert_dispatch d
+            USING victims v
+            WHERE d.dispatch_id = v.dispatch_id
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("delivered_before", NpgsqlDbType.TimestampTz, deliveredBefore);
+        command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, batchLimit);
+
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (deleted > 0)
+        {
+            AlertLog.DispatchDeliveredPurged(_logger, deleted);
+        }
+
+        return deleted;
     }
 }

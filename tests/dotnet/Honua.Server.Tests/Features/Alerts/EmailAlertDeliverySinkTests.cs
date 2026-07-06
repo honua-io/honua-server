@@ -79,6 +79,29 @@ public sealed class EmailAlertDeliverySinkTests
     }
 
     [UnitTest]
+    public void BuildContent_WithOpsEvent_UsesOpsTitleBodyAndOmitsRuleHeader()
+    {
+        var content = EmailAlertDeliverySink.BuildContent(AlertTestFixtures.CreateOpsAlertEvent());
+
+        Assert.Contains("[Honua Ops]", content.Subject, StringComparison.Ordinal);
+        Assert.Contains("Deploy prod-web failed", content.Subject, StringComparison.Ordinal);
+        Assert.Contains("Critical", content.Subject, StringComparison.Ordinal);
+        Assert.Contains("Deployment of prod-web", content.Body, StringComparison.Ordinal);
+        Assert.Contains("operationId: op-9f3c", content.Body, StringComparison.Ordinal);
+        // Ops events are not linked to a rule; the rule header must be omitted (not "0").
+        Assert.Null(content.RuleHeader);
+    }
+
+    [UnitTest]
+    public void BuildContent_WithGisEvent_KeepsRuleHeaderAndAlertSubject()
+    {
+        var content = EmailAlertDeliverySink.BuildContent(AlertTestFixtures.CreateAlertEvent());
+
+        Assert.Contains("[Honua Alert]", content.Subject, StringComparison.Ordinal);
+        Assert.Equal("42", content.RuleHeader);
+    }
+
+    [UnitTest]
     public void ChannelType_ReturnsEmail()
     {
         var sink = new EmailAlertDeliverySink(Options.Create(new AlertDeliveryOptions()));
