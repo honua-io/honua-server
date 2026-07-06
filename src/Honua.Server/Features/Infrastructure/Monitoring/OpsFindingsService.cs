@@ -33,7 +33,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     private readonly IOptionsMonitor<ControlPlaneOptions> _controlPlaneOptions;
     private readonly IAlertDispatchHealth _alertHealth;
     private readonly IDeployPreflightProbe _deployProbe;
-    private readonly IOperationGateway _gateway;
+    private readonly IOperationGateway? _gateway;
     private readonly IWorkflowOperationStore? _workflowStore;
     private readonly IExecutionJobStore? _jobStore;
 
@@ -42,7 +42,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
         IAlertDispatchHealth alertHealth,
         IDeployPreflightProbe deployProbe,
-        IOperationGateway gateway,
+        IOperationGateway? gateway = null,
         IWorkflowOperationStore? workflowStore = null,
         IExecutionJobStore? jobStore = null)
     {
@@ -92,6 +92,21 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         if (finding.RecommendedAction is null)
         {
             return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.NoRecommendedAction, FindingId = findingId };
+        }
+
+        // Degraded mode: the operation gateway is only wired when the durable control-plane graph is
+        // registered (which requires Redis — see Program.cs). Without it the server still evaluates
+        // and serves findings, but their recommended fixes cannot be routed for approval. Report a
+        // clear degraded outcome instead of failing to construct the service at startup (#2511).
+        if (_gateway is null)
+        {
+            return new OpsFindingProposalResult
+            {
+                Status = OpsFindingProposalStatus.GatewayUnavailable,
+                FindingId = findingId,
+                Message = "The durable control-plane operation gateway is unavailable "
+                    + "(it requires the durable backend / Redis); the recommended action cannot be proposed.",
+            };
         }
 
         var action = finding.RecommendedAction;
