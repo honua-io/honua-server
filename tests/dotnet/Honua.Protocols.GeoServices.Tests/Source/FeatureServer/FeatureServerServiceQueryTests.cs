@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -163,8 +164,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?where=1=1&f=geojson");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "f=geojson is not supported for service-level queries which always return ServiceQueryResponse JSON");
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]

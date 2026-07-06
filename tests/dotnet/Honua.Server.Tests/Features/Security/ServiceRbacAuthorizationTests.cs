@@ -129,7 +129,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/append",
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
-        await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
+        await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
     [IntegrationTest]
@@ -167,7 +167,7 @@ public sealed class FeatureServerServiceRbacTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
 
-        await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
+        await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
     [IntegrationTest]
@@ -251,7 +251,7 @@ public sealed class FeatureServerServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
             new StringContent("{", Encoding.UTF8, "application/json"));
 
-        await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
+        await response.AssertGeoServicesErrorAsync(401, 499);
     }
 
     [IntegrationTest]

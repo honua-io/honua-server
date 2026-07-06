@@ -60,7 +60,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     {
         var response = await _fixture.Client.GetAsync("/rest/services?f=xml");
 
-        response.Be400BadRequest();
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
