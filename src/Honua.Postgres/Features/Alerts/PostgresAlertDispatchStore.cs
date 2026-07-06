@@ -35,18 +35,11 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             return;
         }
 
-        const string sql = """
-            INSERT INTO honua.alert_dispatch (event_id, channel_type, status, attempts, max_attempts, next_attempt_at)
-            SELECT @event_id, ct, 0, 0, 5, now()
-            FROM unnest(@channel_types) AS ct
-            """;
-
-        var channelTypes = channels.Distinct().Select(static c => c.ToDbValue()).ToArray();
+        var channelTypes = AlertOutboxCommands.ChannelDbValues(channels);
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("event_id", NpgsqlDbType.Bigint, eventId);
-        command.Parameters.AddWithValue("channel_types", NpgsqlDbType.Array | NpgsqlDbType.Smallint, channelTypes);
+        await using var command = new NpgsqlCommand(AlertOutboxCommands.EnqueueDispatchSql, connection);
+        AlertOutboxCommands.BindEnqueue(command, eventId, channelTypes);
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         AlertLog.DispatchEnqueued(_logger, channelTypes.Length, eventId);
