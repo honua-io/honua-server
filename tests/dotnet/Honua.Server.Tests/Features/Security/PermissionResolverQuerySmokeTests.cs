@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
@@ -83,7 +84,9 @@ public sealed class PermissionResolverQuerySmokeTests
 
         var response = await client.GetAsync(QueryUrl);
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        // PA-070/PA-117 (#2418): the GeoServices query surface reports the coarse-policy
+        // deny as HTTP 200 + {"error":{"code":403}} (or a legacy 403).
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     /// <summary>

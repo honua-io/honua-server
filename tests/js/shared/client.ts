@@ -428,3 +428,59 @@ export function assertError(response: { status: number; data: unknown }, expecte
     expect(response.status).toBeGreaterThanOrEqual(400);
   }
 }
+
+/**
+ * Assert a GeoServices REST/tiles error response.
+ *
+ * PA-070 / PA-117 (honua-server #2418) aligned the GeoServices REST surface
+ * (paths under `/rest/services` and `/tiles`) with the Esri ArcGIS REST
+ * convention: operation errors are signalled with **HTTP 200** and an
+ * `{"error": {"code": N, ...}}` JSON body rather than a non-2xx HTTP status.
+ * Modern OGC API (RFC 7807) error paths were intentionally left untouched.
+ *
+ * This helper accepts either the Esri 200 + `{"error": {...}}` body contract
+ * or a legacy `>= 400` status, and FAILS on a success-shaped body — mirroring
+ * `tests/python/shared/geoservices.py::assert_geoservices_error` and the .NET
+ * `Honua.TestKit.Extensions.GeoServicesErrorAssertions`.
+ *
+ * @param response - the `{ status, data }` pair to inspect.
+ * @param options.bodyCodes - if provided, the `error.code` of a 200 body (or
+ *   the HTTP status of a legacy `>= 400` response) must be one of these.
+ * @param options.allowEmpty - also accept an empty `204 No Content` (used by
+ *   tile endpoints that emit an empty tile rather than an error body).
+ */
+export function assertGeoServicesError(
+  response: { status: number; data: unknown },
+  options: { bodyCodes?: number[]; allowEmpty?: boolean } = {},
+): void {
+  const { bodyCodes, allowEmpty = false } = options;
+  const { status, data } = response;
+
+  if (allowEmpty && status === 204) {
+    return;
+  }
+
+  if (status >= 400) {
+    // Legacy transition tolerance: a non-2xx status still counts as an error.
+    if (bodyCodes) {
+      expect(bodyCodes, `unexpected legacy error status ${status}`).toContain(status);
+    }
+    return;
+  }
+
+  expect(status, `expected 200 + {"error"} body or a legacy >= 400 status, got ${status}`).toBe(200);
+
+  const body = data as { error?: { code?: number } } | null | undefined;
+  const error = body && typeof body === 'object' ? body.error : undefined;
+  expect(
+    error && typeof error === 'object',
+    `expected a GeoServices error object {"error": {...}}, got: ${JSON.stringify(data)?.slice(0, 300)}`,
+  ).toBeTruthy();
+
+  if (bodyCodes) {
+    expect(
+      bodyCodes,
+      `unexpected GeoServices error code ${error?.code}: ${JSON.stringify(error)?.slice(0, 300)}`,
+    ).toContain(error?.code);
+  }
+}
