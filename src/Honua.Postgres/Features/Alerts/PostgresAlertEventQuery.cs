@@ -131,7 +131,7 @@ internal sealed class PostgresAlertEventQuery : IAlertEventQuery
         return new AlertEventSummary
         {
             EventId = reader.GetInt64(0),
-            RuleId = reader.GetInt64(1),
+            RuleId = reader.IsDBNull(1) ? null : reader.GetInt64(1),
             RuleName = reader.IsDBNull(2) ? null : reader.GetString(2),
             ZoneId = reader.IsDBNull(3) ? null : reader.GetInt64(3),
             ServiceId = reader.GetString(4),

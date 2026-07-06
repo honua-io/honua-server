@@ -11,9 +11,16 @@ namespace Honua.Alerts;
 /// notifications to <see cref="AlertDispatchOptions.MaxNotificationsPerMinutePerChannel"/>
 /// per rolling minute. The dispatch worker checks it BEFORE calling a delivery sink;
 /// a capped dispatch is rescheduled (retry budget untouched), never dead-lettered.
-/// A cap of <c>0</c> disables limiting. The limiter is process-local, matching the
-/// single-leader dispatcher model.
+/// A cap of <c>0</c> disables limiting.
 /// </summary>
+/// <remarks>
+/// The limiter is process-local. Unlike the alert <i>evaluation</i> service, the
+/// dispatch worker is deliberately multi-consumer (every replica claims work via
+/// <c>FOR UPDATE SKIP LOCKED</c> for throughput) and is <b>not</b> leader-elected, so
+/// this cap is best-effort <b>per replica</b>: the effective cluster-wide ceiling is
+/// approximately <c>cap × replicaCount</c>. It is a fairness/burst guard, not a hard
+/// cluster-wide quota; rely on downstream provider rate limits for hard ceilings.
+/// </remarks>
 internal sealed class AlertNotificationRateLimiter
 {
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
