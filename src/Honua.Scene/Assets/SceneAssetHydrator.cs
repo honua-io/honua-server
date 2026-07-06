@@ -104,6 +104,17 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
             foreach (var relativePath in relativePaths)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // The manifest is untrusted object-store content: a rooted or ../-containing entry
+                // would let Path.Combine escape the temp directory and write anywhere the serving
+                // process can reach. Resolve+contain every entry before fetching or writing anything.
+                if (!TryResolveSafeDestination(tempDirectory, relativePath, out var destination))
+                {
+                    SceneAssetHydratorLog.UnsafeManifestPath(_logger, sceneId);
+                    TryDeleteDirectory(tempDirectory);
+                    return;
+                }
+
                 var objectKey = SceneAssetHydration.BuildObjectKey(prefix, relativePath);
                 var bytes = await _storage.DownloadBytesAsync(objectKey, cancellationToken).ConfigureAwait(false);
                 if (bytes is null)
@@ -113,8 +124,6 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
                     return;
                 }
 
-                var destination = Path.Combine(
-                    tempDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
                 var destinationDir = Path.GetDirectoryName(destination);
                 if (!string.IsNullOrEmpty(destinationDir))
                 {
@@ -139,9 +148,14 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
     }
 
     /// <summary>
-    /// Atomically replaces the local asset root with the freshly downloaded temp
-    /// directory. <see cref="Directory.Move"/> is atomic on the same filesystem, so
-    /// any concurrent reader observes either the previous or the complete new tree.
+    /// Replaces the local asset root with the freshly downloaded temp directory using a move-aside
+    /// swap rather than delete-then-move. The old delete-then-move left a window with no tree at all —
+    /// a recursive delete of a multi-file tree can take a long time, during which readers 404 mid-
+    /// republish, and on Windows an open handle makes the delete throw and destroy the previous tree.
+    /// Here the current tree is renamed aside first, the new tree is renamed into place (a same-
+    /// filesystem rename is atomic on POSIX, so a reader sees either the old or the complete new tree
+    /// across the brief two-rename swap), then the aside tree is deleted best-effort. If putting the
+    /// new tree in place fails, the aside tree is rolled back so serving is never left empty.
     /// </summary>
     private static void InstallAtomically(string tempDirectory, string localAssetRoot)
     {
@@ -150,11 +164,65 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
         {
             Directory.CreateDirectory(parent);
         }
-        if (Directory.Exists(localAssetRoot))
+
+        if (!Directory.Exists(localAssetRoot))
         {
-            Directory.Delete(localAssetRoot, recursive: true);
+            Directory.Move(tempDirectory, localAssetRoot);
+            return;
         }
-        Directory.Move(tempDirectory, localAssetRoot);
+
+        var asidePath = localAssetRoot + ".replaced-" + Guid.NewGuid().ToString("N");
+        Directory.Move(localAssetRoot, asidePath);
+        try
+        {
+            Directory.Move(tempDirectory, localAssetRoot);
+        }
+        catch
+        {
+            // Roll the previous tree back into place so serving is never left without a tree.
+            if (!Directory.Exists(localAssetRoot))
+            {
+                Directory.Move(asidePath, localAssetRoot);
+            }
+
+            throw;
+        }
+
+        TryDeleteDirectory(asidePath);
+    }
+
+    /// <summary>
+    /// Resolves a manifest relative path to an absolute destination under <paramref name="tempDirectory"/>
+    /// and verifies containment. Mirrors the defence-in-depth guard style of
+    /// <c>LocalFileStorage.ValidateObjectKeyOverride</c>/<c>GetSafeFullPath</c>: reject rooted paths and
+    /// explicit <c>..</c> traversal segments, then confirm via <see cref="Path.GetFullPath(string)"/> that
+    /// the resolved path stays inside the temp tree (catching symlinks and platform path-encoding tricks).
+    /// </summary>
+    private static bool TryResolveSafeDestination(string tempDirectory, string relativePath, out string destination)
+    {
+        destination = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath))
+        {
+            return false;
+        }
+
+        var segments = relativePath.Split('/', '\\');
+        if (Array.Exists(segments, segment => segment == ".."))
+        {
+            return false;
+        }
+
+        var root = Path.GetFullPath(tempDirectory) + Path.DirectorySeparatorChar;
+        var combined = Path.GetFullPath(
+            Path.Combine(tempDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        if (!combined.StartsWith(root, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        destination = combined;
+        return true;
     }
 
     private static List<string> ParseManifest(byte[] manifestBytes)
@@ -200,5 +268,9 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
         [LoggerMessage(EventId = 8462, Level = LogLevel.Warning,
             Message = "Scene '{SceneId}' manifest references an object missing from the store; hydration aborted and will retry on the next request.")]
         public static partial void AssetMissing(ILogger logger, string sceneId);
+
+        [LoggerMessage(EventId = 8463, Level = LogLevel.Error,
+            Message = "Scene '{SceneId}' manifest contains an unsafe (rooted or traversing) asset path; hydration aborted and nothing was written outside the cache directory.")]
+        public static partial void UnsafeManifestPath(ILogger logger, string sceneId);
     }
 }

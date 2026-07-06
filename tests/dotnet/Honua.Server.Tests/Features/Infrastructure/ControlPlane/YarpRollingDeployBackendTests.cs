@@ -163,6 +163,102 @@ public sealed class YarpRollingDeployBackendTests
         runtime.StopRequests.Should().Contain(StandbyContainerName());
     }
 
+    [Fact]
+    public void ResolveRunningDestination_PostPromotion_ResolvesToStandbyPort()
+    {
+        // Post-promotion, restart world: the old active replica was deleted at cutover and the new
+        // revision runs on the standby port. Reconstruction from live containers must point the proxy
+        // at the standby port rather than the (deleted) configured active port that in-memory state
+        // would blackhole traffic on.
+        var options = ReconstructionOptions();
+        IReadOnlyList<ContainerSummary> containers =
+        [
+            RunningContainer(StandbyContainerName(), YarpRollingDeployBackend.RoleStandby, DesiredRevision)
+        ];
+
+        SelfHostedProxyReconstruction.ResolveRunningDestination(containers, options).Should().Be(StandbyAddress);
+    }
+
+    [Fact]
+    public void ResolveRunningDestination_PreCutover_ResolvesToActivePort()
+    {
+        var options = ReconstructionOptions();
+        IReadOnlyList<ContainerSummary> containers =
+        [
+            RunningContainer(ActiveContainerName(), YarpRollingDeployBackend.RoleActive, CurrentRevision),
+            RunningContainer(StandbyContainerName(), YarpRollingDeployBackend.RoleStandby, DesiredRevision)
+        ];
+
+        SelfHostedProxyReconstruction.ResolveRunningDestination(containers, options).Should().Be(ActiveAddress);
+    }
+
+    [Fact]
+    public void ResolveRunningDestination_NoRunningReplica_ReturnsNull()
+    {
+        SelfHostedProxyReconstruction.ResolveRunningDestination([], ReconstructionOptions()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RollbackAsync_PostRestartAfterCutover_ClassifiedAsPromoted()
+    {
+        // Drive a real promotion into the shared fake runtime: standby (new revision) launched, then the
+        // old active replica removed at cutover.
+        var runtime = new FakeContainerRuntimeClient();
+        runtime.SeedActive(ActiveContainerName(), CurrentRevision);
+        var probe = new FakeLocalReplicaHealthProbe();
+        var options = ReconstructionIOptions();
+
+        var backendBeforeRestart = new YarpRollingDeployBackend(
+            runtime, new FakeProxyStateSwapper(true, ActiveAddress), probe, options, NullLogger<YarpRollingDeployBackend>.Instance);
+        await backendBeforeRestart.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted));
+        await runtime.StopAsync("docker", ActiveContainerName(), CancellationToken.None);
+
+        // Simulate a front-process restart: a fresh backend and a fresh proxy (in-memory address reset
+        // to the configured active port) over the same live container state.
+        var restartedProxy = new FakeProxyStateSwapper(true, ActiveAddress);
+        var backendAfterRestart = new YarpRollingDeployBackend(
+            runtime, restartedProxy, probe, options, NullLogger<YarpRollingDeployBackend>.Instance);
+
+        var observation = await backendAfterRestart.RollbackAsync(CreateOperation(WorkflowOperationStatus.RollbackRequested));
+
+        // Ground-truth classification: the cutover already happened, so the rollback must take the
+        // post-cutover path (relaunch the previous revision) — NOT the pre-cutover "stop standby only,
+        // RolledBack" path the in-memory proxy address would wrongly select after a restart.
+        observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        restartedProxy.ActiveDestinationAddress.Should().Be(ActiveAddress);
+        runtime.RunRequests.Should().Contain(r => r.ContainerName == ActiveContainerName());
+    }
+
+    private static SelfHostedDeployOptions ReconstructionOptions()
+        => new()
+        {
+            Enabled = true,
+            Host = "127.0.0.1",
+            ActivePort = 18080,
+            StandbyPort = 18081,
+            ContainerPort = 8080,
+            ContainerRuntime = "docker",
+            ContainerNamePrefix = "honua-app",
+            DrainDelaySeconds = 0
+        };
+
+    private static IOptions<SelfHostedDeployOptions> ReconstructionIOptions()
+        => Options.Create(ReconstructionOptions());
+
+    private static ContainerSummary RunningContainer(string name, string role, string revision)
+        => new()
+        {
+            Id = name,
+            Name = name,
+            Running = true,
+            Labels = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [YarpRollingDeployBackend.LabelTarget] = TargetId,
+                [YarpRollingDeployBackend.LabelRole] = role,
+                [YarpRollingDeployBackend.LabelRevision] = revision
+            }
+        };
+
     private static string StandbyContainerName() => "honua-app-18081";
 
     private static string ActiveContainerName() => "honua-app-18080";

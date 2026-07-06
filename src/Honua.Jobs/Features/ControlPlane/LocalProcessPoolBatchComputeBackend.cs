@@ -84,6 +84,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     private readonly LocalProcessPoolOptions _options;
     private readonly SemaphoreSlim _slots;
     private readonly ConcurrentDictionary<string, ProcessExecution> _executions = new(StringComparer.Ordinal);
+    private volatile bool _disposed;
 
     public LocalProcessPoolBatchComputeBackend(
         IOptions<LocalProcessPoolOptions> options,
@@ -170,6 +171,19 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         if (_executions.TryGetValue(job.OperationId, out var execution))
         {
             var snapshot = execution.Snapshot();
+
+            // Report the terminal status once, then evict the tracking entry and its scratch directory.
+            // Eviction here (rather than in MonitorAsync's finally) preserves ObserveAsync's contract that
+            // a just-finished job still reports its true terminal status, while making the retry path work:
+            // once evicted, a reconciler requeue of the same OperationId re-enters StartAsync/Launch and
+            // launches cleanly instead of colliding on "already tracked". It also bounds _executions and
+            // reclaims orphaned working directories. A subsequent observe after eviction falls through to
+            // the not-tracked branch below, which echoes the persisted terminal status on the job record.
+            if (IsTerminal(snapshot.Status))
+            {
+                EvictExecution(job.OperationId);
+            }
+
             return Task.FromResult(new BatchComputeObservation
             {
                 Status = snapshot.Status,
@@ -184,6 +198,20 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         if (IsPendingMarker(job.ProviderOperationId))
         {
             return Task.FromResult(TryLaunchPending(job));
+        }
+
+        // Already-terminal record whose execution was observed and evicted on a prior poll: echo the
+        // persisted terminal status rather than declaring the process lost (which would flip a Succeeded
+        // job to Failed).
+        if (IsTerminal(job.Status))
+        {
+            return Task.FromResult(new BatchComputeObservation
+            {
+                Status = job.Status,
+                ProviderOperationId = job.ProviderOperationId,
+                PercentComplete = job.Status == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
+                Message = "Local process already reached a terminal state."
+            });
         }
 
         Log.ProcessLost(_logger, job.OperationId, job.ProviderOperationId ?? "<none>");
@@ -282,7 +310,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     private string Launch(ExecutionJobRecord job, string executable)
     {
         var arguments = ResolveArguments(job.Spec.Parameters);
-        var workingDirectory = ResolveWorkingDirectory(job);
+        var (workingDirectory, ownedScratch) = ResolveWorkingDirectory(job);
 
         var startInfo = new ProcessStartInfo
         {
@@ -304,10 +332,19 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             startInfo.Environment[variable.Key] = variable.Value;
         }
 
-        var execution = new ProcessExecution(job.OperationId);
+        var execution = new ProcessExecution(job.OperationId, ownedScratch ? workingDirectory : null);
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => execution.AppendTail(e.Data);
         process.ErrorDataReceived += (_, e) => execution.AppendTail(e.Data);
+
+        // A previous attempt for this OperationId that already finished may still be tracked (for
+        // example when a reconciler requeue lands before the terminal status was observed and evicted).
+        // Evict a stale terminal entry so the retry launches cleanly; a still-running entry is a genuine
+        // double-launch and must fail.
+        if (_executions.TryGetValue(job.OperationId, out var existing) && IsTerminal(existing.Snapshot().Status))
+        {
+            EvictExecution(job.OperationId);
+        }
 
         // Register before Start so a fast-exiting process cannot complete before it is observable.
         if (!_executions.TryAdd(job.OperationId, execution))
@@ -363,17 +400,76 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         finally
         {
             process.Dispose();
-            _slots.Release();
+            ReleaseSlot();
         }
     }
 
-    private string ResolveWorkingDirectory(ExecutionJobRecord job)
+    /// <summary>
+    /// Releases a pool slot, tolerating a concurrent <see cref="Dispose"/> that already disposed the
+    /// semaphore. A monitor task can still be draining when the backend is torn down, so the release
+    /// races the disposal; swallowing the disposed-object signal keeps shutdown from surfacing a
+    /// spurious error.
+    /// </summary>
+    private void ReleaseSlot()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            _slots.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The backend was disposed while this monitor was still finishing; nothing to release.
+        }
+    }
+
+    private static bool IsTerminal(ExecutionJobStatus status)
+        => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
+
+    /// <summary>
+    /// Removes a tracked execution and best-effort deletes the scratch directory the backend created
+    /// for it. Caller-supplied working directories are never deleted (only backend-owned scratch dirs
+    /// under <see cref="LocalProcessPoolOptions.WorkingRoot"/> are).
+    /// </summary>
+    private void EvictExecution(string operationId)
+    {
+        if (!_executions.TryRemove(operationId, out var execution))
+        {
+            return;
+        }
+
+        var scratch = execution.ScratchDirectory;
+        execution.Dispose();
+        if (string.IsNullOrEmpty(scratch))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(scratch))
+            {
+                Directory.Delete(scratch, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Best-effort cleanup: a leftover scratch dir is harmless and is reclaimed on the next attempt.
+            Log.ScratchCleanupFailed(_logger, operationId, ex.Message);
+        }
+    }
+
+    private (string Directory, bool OwnedScratch) ResolveWorkingDirectory(ExecutionJobRecord job)
     {
         if (job.Spec.Parameters.TryGetValue(LocalProcessParameterKeys.WorkingDirectory, out var configured)
             && !string.IsNullOrWhiteSpace(configured))
         {
             Directory.CreateDirectory(configured);
-            return configured;
+            return (configured, false);
         }
 
         var root = string.IsNullOrWhiteSpace(_options.WorkingRoot)
@@ -381,7 +477,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             : _options.WorkingRoot;
         var jobDirectory = Path.Combine(root, SanitizeDirectorySegment(job.OperationId));
         Directory.CreateDirectory(jobDirectory);
-        return jobDirectory;
+        return (jobDirectory, true);
     }
 
     private static string ResolveExecutable(IReadOnlyDictionary<string, string> parameters)
@@ -445,11 +541,20 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             }
 
             var name = entry.Key[LocalProcessParameterKeys.EnvironmentPrefix.Length..];
-            if (!string.IsNullOrWhiteSpace(name))
+            if (string.IsNullOrWhiteSpace(name)
+                || string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal))
             {
-                variables.Add(new(name, entry.Value ?? string.Empty));
+                // Never let a workload passthrough shadow the contract-version gate; it is stamped last.
+                continue;
             }
+
+            variables.Add(new(name, entry.Value ?? string.Empty));
         }
+
+        // Serving↔worker job-contract version (ADR-0060 #3b): stamped AFTER the env.* passthrough so a
+        // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value. Mirrors the
+        // cloud backends so a workload behaves identically as a child process or a batch container.
+        variables.Add(new("HONUA_CONTRACT_VERSION", job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)));
 
         return variables;
     }
@@ -495,6 +600,9 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
     public void Dispose()
     {
+        // Signal disposal before cancelling monitors so a monitor draining concurrently can skip its
+        // slot release fast-path; the release itself is still guarded against the disposal race.
+        _disposed = true;
         foreach (var execution in _executions.Values)
         {
             execution.RequestCancel();
@@ -507,7 +615,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     /// In-process tracking state for one launched child process. Terminal status is recorded by the
     /// monitor task once the process exits so <see cref="ObserveAsync"/> can report it.
     /// </summary>
-    private sealed class ProcessExecution(string operationId) : IDisposable
+    private sealed class ProcessExecution(string operationId, string? scratchDirectory) : IDisposable
     {
         private readonly object _sync = new();
         private readonly Queue<string> _tail = new();
@@ -516,6 +624,9 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         private string? _message;
 
         public string OperationId { get; } = operationId;
+
+        /// <summary>Backend-owned scratch directory to reclaim on eviction, or null for a caller-supplied dir.</summary>
+        public string? ScratchDirectory { get; } = scratchDirectory;
 
         public CancellationToken CancellationToken => _cts.Token;
 
@@ -646,6 +757,9 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
         [LoggerMessage(9307, LogLevel.Warning, "Local process monitor failed for execution job {OperationId}: {Reason}")]
         public static partial void ProcessMonitorFailed(ILogger logger, string operationId, string reason);
+
+        [LoggerMessage(9308, LogLevel.Debug, "Failed to delete scratch directory for execution job {OperationId}: {Reason}")]
+        public static partial void ScratchCleanupFailed(ILogger logger, string operationId, string reason);
     }
 }
 

@@ -83,6 +83,38 @@ public sealed class KubernetesJobBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_WorkloadCannotOverrideContractVersionGate()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult
+            {
+                StatusCode = HttpStatusCode.Created,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "job-uid-gate" }
+            });
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-gate", image: "honua/worker:1.0.0");
+        job = job with
+        {
+            Spec = job.Spec with
+            {
+                Parameters = new Dictionary<string, string>(job.Spec.Parameters)
+                {
+                    // A malicious/erroneous workload tries to weaken the serving↔worker contract gate.
+                    ["env.HONUA_CONTRACT_VERSION"] = "999"
+                }
+            }
+        };
+
+        await backend.StartAsync(job);
+
+        await client.Received(1).CreateJobAsync(
+            Arg.Is<KubernetesJobManifest>(m =>
+                m.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "1"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task StartAsync_ResolvedNamespace_ReturnedForPersistence()
     {
         // When the spec didn't pin a namespace, the backend must echo the resolved
