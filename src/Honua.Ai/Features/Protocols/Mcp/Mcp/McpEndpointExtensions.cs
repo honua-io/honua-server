@@ -186,7 +186,14 @@ internal static class McpEndpointExtensions
             // structured error instead of a session header (A3 hardening; #2537).
             if (isInitialize && response.Error is null)
             {
-                if (sessions.TryCreateSession(principalKey, out var sessionId))
+                // honua-server#2484: bind the client's advertised elicitation
+                // capability (recorded on HttpContext.Items during initialize) to
+                // the session so clarification-emitting tools can later choose the
+                // MCP-native elicitation projection over the proprietary envelope.
+                var elicitationSupported =
+                    context.Items.TryGetValue(McpOperatorSurface.ElicitationCapabilityItemKey, out var flag)
+                    && flag is true;
+                if (sessions.TryCreateSession(principalKey, elicitationSupported, out var sessionId))
                 {
                     context.Response.Headers[McpSessionManager.SessionHeaderName] = sessionId;
                     McpLog.SessionIssued(logger, sessionId);

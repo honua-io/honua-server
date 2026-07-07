@@ -139,6 +139,18 @@ internal sealed class McpGroundingOutput
     [JsonPropertyName("clarification")]
     public McpClarificationEnvelope? Clarification { get; set; }
 
+    /// <summary>
+    /// MCP-native elicitation request (honua-server#2484) emitted in place of the
+    /// proprietary <see cref="Clarification"/> envelope when the calling session
+    /// advertised the elicitation capability and the envelope is representable in
+    /// the elicitation schema subset. Mutually exclusive with
+    /// <see cref="Clarification"/>: exactly one is populated on a clarification
+    /// turn. Null when no clarification is needed or the client did not advertise
+    /// elicitation (graceful fallback to the envelope).
+    /// </summary>
+    [JsonPropertyName("elicitation")]
+    public McpElicitationRequest? Elicitation { get; set; }
+
     [JsonPropertyName("engine")]
     public string Engine { get; set; } = string.Empty;
 }
