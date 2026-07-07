@@ -53,6 +53,18 @@ public sealed class StartupDatabaseResilienceTests
     }
 
     [UnitTest]
+    public void IsTransientConnectivityError_WithContractGatePolicyBlock_ReturnsFalse()
+    {
+        // A migration-safety policy block (#2565 gate rejection, or the ADR-0060 unannotated fail-closed)
+        // surfaces as an InvalidOperationException. It must classify as terminal/non-retryable so
+        // degraded-start recovery (#1632) gives up rather than retrying a policy block with backoff.
+        var gateBlock = new InvalidOperationException(
+            "Migration safety gate blocked pending contract-phase migration(s) on an existing database.");
+
+        StartupDatabaseResilience.IsTransientConnectivityError(gateBlock).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void IsTransientConnectivityError_WithAggregateOfAllTransient_ReturnsTrue()
     {
         var aggregate = new AggregateException(new TimeoutException(), new SocketException());
