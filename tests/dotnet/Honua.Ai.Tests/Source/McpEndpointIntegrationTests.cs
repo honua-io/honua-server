@@ -9,6 +9,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -1141,49 +1142,74 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /mcp")]
-    public async Task Get_WithValidSession_OpensEventStream()
+    public async Task Get_ByDefault_Returns405WithAllowHeader()
     {
+        // #2537: server-initiated streaming is off by default, so the optional
+        // GET /mcp stream MUST answer 405 + Allow per the Streamable-HTTP spec.
+        // A spec-compliant SDK client tolerates this and skips the stream —
+        // instead of hanging it at a non-streaming ingress and treating its
+        // teardown as session loss. The default-off posture makes the temporary
+        // CloudFront edge shim (honua-io/honua-iac#114) removable.
         var sessionId = await InitializeAndGetSessionIdAsync();
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");
         request.Headers.Add("Mcp-Session-Id", sessionId);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
-        // The SSE channel stays open for server-initiated messages; read only the
-        // response head (status + headers) so the test does not block on the body.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var response = await _client.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        var allow = response.Content.Headers.Allow;
+        allow.Should().Contain("POST");
+        allow.Should().Contain("DELETE");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task Request_WithSessionBoundToDifferentPrincipal_ReturnsStructuredAuthError()
+    {
+        // A3 binding (#2537): a session is bound at initialize to the principal
+        // that established it; a different identity presenting the id must get a
+        // structured, re-auth-signalling error rather than riding the session.
+        // The test fixture's dev-auth bypass authenticates every HTTP request as
+        // the same test principal, so seed a session bound to a *different*
+        // principal directly through the server's session registry and present
+        // its id over HTTP end to end.
+        var sessions = _fixture.Services
+            .GetRequiredService<Honua.Ai.Protocols.Mcp.McpSessionManager>();
+        sessions.TryCreateSession("sub:someone-else", out var sessionId).Should().BeTrue();
+
+        var response = await PostRpcAsync(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+        using var document = await ReadJsonAsync(response);
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("permission_denied");
+        error.GetProperty("data").GetProperty("requiresReauthentication").GetBoolean().Should().BeTrue();
     }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /mcp")]
-    public async Task Get_WithoutValidSession_Returns404()
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task Request_WithSessionBoundToSamePrincipal_IsAccepted()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-        var response = await _client.SendAsync(request);
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /mcp")]
-    public async Task Get_WithoutEventStreamAccept_Returns405()
-    {
+        // The binding rejects only a *different* principal: the identity that
+        // established the session (the fixture's test principal, identical on
+        // both requests) continues to use it normally.
         var sessionId = await InitializeAndGetSessionIdAsync();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");
-        request.Headers.Add("Mcp-Session-Id", sessionId);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(JsonMediaType));
+        var response = await PostRpcAsync(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId);
 
-        var response = await _client.SendAsync(request);
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
     }
 
     private async Task<string> InitializeAndGetSessionIdAsync()
@@ -1207,7 +1233,11 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         return content;
     }
 
-    private async Task<HttpResponseMessage> PostRpcAsync(string body, string? sessionId = null)
+    private Task<HttpResponseMessage> PostRpcAsync(string body, string? sessionId = null) =>
+        PostRpcAsync(_client, body, sessionId);
+
+    private static async Task<HttpResponseMessage> PostRpcAsync(
+        HttpClient client, string body, string? sessionId = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
         {
@@ -1218,7 +1248,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
             request.Headers.Add("Mcp-Session-Id", sessionId);
         }
 
-        return await _client.SendAsync(request);
+        return await client.SendAsync(request);
     }
 
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
