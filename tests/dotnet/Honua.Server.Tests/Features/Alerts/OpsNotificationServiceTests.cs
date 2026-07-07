@@ -19,25 +19,20 @@ public sealed class OpsNotificationServiceTests
     [UnitTest]
     public async Task NotifyAsync_WhenEnabled_EnqueuesOpsEventToConfiguredChannel()
     {
-        var eventStore = Substitute.For<IAlertEventStore>();
-        var dispatchStore = Substitute.For<IAlertDispatchStore>();
-        eventStore.TryAppendAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<CancellationToken>()).Returns(42L);
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        outbox.AppendAndEnqueueAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>())
+            .Returns(42L);
 
-        var sut = Create(eventStore, dispatchStore, out _, enabled: true, channels: ["webhook"]);
+        var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
-        // Ops event appended with the ops source discriminator.
-        await eventStore.Received(1).TryAppendAsync(
+        // Ops event appended AND its dispatch enqueued atomically, with the ops source discriminator.
+        await outbox.Received(1).AppendAndEnqueueAsync(
             Arg.Is<AlertEventEnvelope>(e =>
                 e.Source == AlertEventSources.Ops &&
                 e.RuleId == 0 &&
                 e.DedupeKey == "ops:deploy-workflow:op-1:Failed"),
-            Arg.Any<CancellationToken>());
-
-        // The outbox row the webhook sink will consume.
-        await dispatchStore.Received(1).EnqueueAsync(
-            42L,
             Arg.Is<ImmutableArray<AlertChannelType>>(c => c.Contains(AlertChannelType.Webhook)),
             Arg.Any<CancellationToken>());
     }
@@ -45,39 +40,38 @@ public sealed class OpsNotificationServiceTests
     [UnitTest]
     public async Task NotifyAsync_WhenDisabled_DoesNotEnqueue()
     {
-        var eventStore = Substitute.For<IAlertEventStore>();
-        var dispatchStore = Substitute.For<IAlertDispatchStore>();
-        var sut = Create(eventStore, dispatchStore, out _, enabled: false, channels: ["webhook"]);
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var sut = Create(outbox, out _, out _, enabled: false, channels: ["webhook"]);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
-        await eventStore.DidNotReceive().TryAppendAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<CancellationToken>());
-        await dispatchStore.DidNotReceive().EnqueueAsync(Arg.Any<long>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>());
+        await outbox.DidNotReceive().AppendAndEnqueueAsync(
+            Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     public async Task NotifyAsync_BelowMinSeverity_DoesNotEnqueue()
     {
-        var eventStore = Substitute.For<IAlertEventStore>();
-        var dispatchStore = Substitute.For<IAlertDispatchStore>();
-        var sut = Create(eventStore, dispatchStore, out _, enabled: true, channels: ["webhook"], minSeverity: AlertSeverity.Warning);
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"], minSeverity: AlertSeverity.Warning);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Info), CancellationToken.None);
 
-        await eventStore.DidNotReceive().TryAppendAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<CancellationToken>());
+        await outbox.DidNotReceive().AppendAndEnqueueAsync(
+            Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     public async Task NotifyAsync_EditionGating_DropsDisallowedChannels()
     {
-        var eventStore = Substitute.For<IAlertEventStore>();
-        var dispatchStore = Substitute.For<IAlertDispatchStore>();
-        eventStore.TryAppendAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<CancellationToken>()).Returns(7L);
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        outbox.AppendAndEnqueueAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>())
+            .Returns(7L);
 
         var sut = Create(
-            eventStore,
-            dispatchStore,
+            outbox,
             out var editionPolicy,
+            out _,
             enabled: true,
             channels: ["webhook", "slack"]);
 
@@ -87,27 +81,29 @@ public sealed class OpsNotificationServiceTests
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
-        await dispatchStore.Received(1).EnqueueAsync(
-            7L,
+        await outbox.Received(1).AppendAndEnqueueAsync(
+            Arg.Any<AlertEventEnvelope>(),
             Arg.Is<ImmutableArray<AlertChannelType>>(c =>
                 c.Contains(AlertChannelType.Webhook) && !c.Contains(AlertChannelType.Slack)),
             Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
-    public async Task NotifyAsync_WhenEventDeduplicated_DoesNotEnqueueDispatch()
+    public async Task NotifyAsync_WhenChannelCircuitOpen_SkipsThatChannel()
     {
-        var eventStore = Substitute.For<IAlertEventStore>();
-        var dispatchStore = Substitute.For<IAlertDispatchStore>();
-        // Duplicate terminal event: the store reports the dedupe key already exists.
-        eventStore.TryAppendAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<CancellationToken>()).Returns((long?)null);
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        outbox.AppendAndEnqueueAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>())
+            .Returns(9L);
 
-        var sut = Create(eventStore, dispatchStore, out _, enabled: true, channels: ["webhook"]);
+        // Threshold 1 so a single dead-letter trips the breaker for the webhook channel.
+        var sut = Create(outbox, out _, out var breaker, enabled: true, channels: ["webhook"], circuitThreshold: 1);
+        breaker.RecordDeadLetter(AlertChannelType.Webhook, DateTimeOffset.UtcNow);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
-        await eventStore.Received(1).TryAppendAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<CancellationToken>());
-        await dispatchStore.DidNotReceive().EnqueueAsync(Arg.Any<long>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>());
+        // The only configured channel is tripped open, so no dispatch is enqueued (bounded dead-letter volume).
+        await outbox.DidNotReceive().AppendAndEnqueueAsync(
+            Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>());
     }
 
     private static OpsNotification Notification(AlertSeverity severity)
@@ -121,14 +117,15 @@ public sealed class OpsNotificationServiceTests
         };
 
     private static OpsNotificationService Create(
-        IAlertEventStore eventStore,
-        IAlertDispatchStore dispatchStore,
+        IAlertOutboxWriter outbox,
         out IAlertEditionPolicy editionPolicy,
+        out AlertChannelCircuitBreaker breaker,
         bool enabled,
         IReadOnlyList<string> channels,
-        AlertSeverity minSeverity = AlertSeverity.Info)
+        AlertSeverity minSeverity = AlertSeverity.Info,
+        int circuitThreshold = 5)
     {
-        var writer = new AlertDispatchWriter(eventStore, dispatchStore, NullLogger<AlertDispatchWriter>.Instance);
+        var writer = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
         editionPolicy = Substitute.For<IAlertEditionPolicy>();
         editionPolicy.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);
 
@@ -141,8 +138,13 @@ public sealed class OpsNotificationServiceTests
                 Channels = channels,
                 MinSeverity = minSeverity,
             },
+            Dispatch = new AlertDispatchOptions
+            {
+                CircuitBreakerThreshold = circuitThreshold,
+            },
         });
 
-        return new OpsNotificationService(writer, editionPolicy, options, NullLogger<OpsNotificationService>.Instance);
+        breaker = new AlertChannelCircuitBreaker(options);
+        return new OpsNotificationService(writer, editionPolicy, breaker, options, NullLogger<OpsNotificationService>.Instance);
     }
 }
