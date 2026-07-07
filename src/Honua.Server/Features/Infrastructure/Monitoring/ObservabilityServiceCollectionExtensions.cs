@@ -58,6 +58,19 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
         services.AddScoped<IOpsFindingsService, OpsFindingsService>();
 
+        // Persisted ops-health rollup store + per-replica sampler (#2553). The store itself is registered by
+        // the Postgres provider; the sampler and history service resolve it as optional so non-Postgres
+        // deployments still expose the (empty) history surface and the realtime flush seam. The flush signal
+        // is the in-process seam the realtime broadcast layer (#2554) subscribes to.
+        services.AddOptions<OpsHealthRollupOptions>()
+            .Bind(configuration.GetSection(OpsHealthRollupOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<OpsHealthFlushSignal>();
+        services.AddScoped<IOpsHealthHistoryService, OpsHealthHistoryService>();
+        services.AddHostedService<OpsHealthRollupSampler>();
+
         // Aggregated operate-status surface (A12): composes the ops-health snapshot + findings into
         // one server-authoritative verdict, and binds the SLO/error-budget contract.
         services.AddOperateStatus(configuration);

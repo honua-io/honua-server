@@ -14,6 +14,7 @@ namespace Honua.Infrastructure.Monitoring;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(OpsHealthSnapshotResponse))]
+[JsonSerializable(typeof(OpsHealthHistoryResponse))]
 [JsonSerializable(typeof(OpsFindingsListResponse))]
 [JsonSerializable(typeof(OpsFindingProposeResponse))]
 internal sealed partial class OpsObservabilityJsonContext : JsonSerializerContext
