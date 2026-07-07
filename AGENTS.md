@@ -139,6 +139,24 @@ Every `honua-server` PR runs a **Validate PR Template Compliance** check (in `ci
 - The compliance check triggers on **push / `labeled` / `ready_for_review`**, **not** on PR-body edits. Editing the body to add the box will *not* re-run it — push a commit, toggle a label, or mark the PR ready-for-review to re-trigger CI.
 - **Known flake, not a break:** integration shards (e.g. `DbUpMigrations.MobileOfflineDemoSeed`, `OGC API Maps and Tiles`) intermittently fail with a transient Postgres `40P01: deadlock detected` under concurrent host load. This is environmental — re-run the failed shard (`gh run rerun <run-id> --failed`) rather than treating it as a code failure. Root-cause serialization lives in `PostgresFixture`/`SeedRunner` (honua-server#1568).
 
+## Merge Train (how PRs actually land)
+
+There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A PR's own events only run CodeQL, GitBook previews, and the drift/OpenAPI governance checks. The required branch-protection check, **`CI Gate`**, is produced exclusively by the train's **batch CI** — so a freshly opened PR always shows as `blocked`; that is normal, not a problem to fix.
+
+Two workflows cooperate:
+
+- **`merge-train.yml` ("Merge Train")** — the batch former. On a ~2-hour schedule (and on manual dispatch) it selects eligible PRs (open, non-draft, no `hold` label, no `train:escalated` label), assembles them oldest-first onto a `train/batch/<trunk-sha>/<id>` branch, computes the smart-CI shard subset for the cumulative diff, and dispatches `ci.yml` on that branch. Batch success stamps `CI Gate` onto the member PR heads.
+- **`pr-merge-train.yml` ("PR merge train")** — the lander. Every few minutes it squash-merges the oldest PR whose `mergeable_state` is `clean` (green + up to date) and freshens green-but-behind PRs onto trunk. One merge per run.
+
+What to do (and not do):
+
+- **Do not admin-merge** around the train, and do not wait for a per-PR CI matrix that will never run. Open the PR, keep it non-draft, and let the train land it.
+- **Manual dispatch is dry-run by default.** To actually form and land a batch: `gh workflow run merge-train.yml -f train_apply=true`. Without `train_apply=true` you get a report only (`TRAIN_APPLY=0`).
+- **Batch failure ⇒ `train:escalated`.** When a batch fails, the train attributes the failure and labels the batch members `train:escalated`, which excludes them from future batches. After fixing the root cause (or determining your PR wasn't the culprit), **remove the label** and re-dispatch with `train_apply=true` — the label does not clear itself.
+- **Batch CI is stricter than local builds.** The Linux batch lane has analyzer rules that may not fire locally on Windows (e.g. `CA1873` on log-argument evaluation). A locally-clean warnings-as-errors build does not guarantee the batch build passes; read the batch log (`gh run view <id> --log-failed`) and fix on the PR branch.
+- Exclude a PR from the train with the `hold` label or by marking it draft.
+- The known `40P01` deadlock flake applies to batch shards too — rerun the failed shard rather than "fixing" it (see Pull Request Policy above).
+
 ## MVP Deferrals (Operational Simplicity)
 
 The MVP intentionally defers enterprise/operational features to reduce complexity:

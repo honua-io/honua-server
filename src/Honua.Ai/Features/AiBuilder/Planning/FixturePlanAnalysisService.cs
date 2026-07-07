@@ -57,7 +57,20 @@ internal sealed class FixturePlanAnalysisService : IPlanAnalysisService
             return Task.FromResult(new McpPlanAnalysisOutput
             {
                 Status = "rejected",
-                Reason = "No AI-builder fixture matches the supplied intent.",
+
+                // #2485: explicitly disclose fixture (demo) mode on the miss path.
+                // The engine:"fixture" discriminator already flags every fixture
+                // response, but the miss reason must also say — in plain language —
+                // that this server replays canned demo plans and how to turn the
+                // live planner on, so a caller (or a cold client LLM) does not read
+                // "rejected" as "your intent is unsupported".
+                Reason = "The plan analyzer is running in fixture (demo) mode: it replays canned "
+                    + "plans for a fixed set of demo intents and found no fixture matching the "
+                    + "supplied intent — it did not attempt to compile the intent. To compile "
+                    + "arbitrary intents into executable plans, configure a live model provider "
+                    + "(PlanAnalysis:Enabled=true with PlanAnalysis:Provider, or "
+                    + "WorkflowGeneration:Enabled=true with a live DefaultProvider). See "
+                    + "docs/guides/connect/mcp-live-planner.md.",
                 Context = context
             });
         }
