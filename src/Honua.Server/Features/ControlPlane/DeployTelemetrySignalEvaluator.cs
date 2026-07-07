@@ -449,7 +449,8 @@ internal sealed class DeployTelemetrySignalEvaluator(
             AuthHeaderName = connection.AuthHeaderName,
             AuthHeaderValue = connection.AuthHeaderValue,
             Region = connection.Region,
-            TimeoutSeconds = connection.TimeoutSeconds
+            TimeoutSeconds = connection.TimeoutSeconds,
+            AllowPrivateNetworks = connection.AllowPrivateNetworks
         };
 
     private static string Format(double value)
@@ -521,7 +522,7 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
         CancellationToken cancellationToken)
     {
         var baseUrlValidation = await OutboundHttpUrlValidator
-            .ValidateAsync(connection.BaseUrl, cancellationToken: cancellationToken)
+            .ValidateAsync(connection.BaseUrl, connection.AllowPrivateNetworks, cancellationToken)
             .ConfigureAwait(false);
 
         if (!baseUrlValidation.IsValid || baseUrlValidation.Uri is null)

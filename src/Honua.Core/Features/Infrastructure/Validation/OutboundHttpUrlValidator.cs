@@ -43,7 +43,21 @@ public static class OutboundHttpUrlValidator
     public static Task<OutboundHttpUrlValidationResult> ValidateAsync(
         string url,
         CancellationToken cancellationToken = default)
-        => ValidateAsync(url, ResolveHostAddressesAsync, cancellationToken);
+        => ValidateAsync(url, allowPrivateNetworks: false, cancellationToken);
+
+    /// <summary>
+    /// Asynchronously validates an outbound HTTP(S) URL. When <paramref name="allowPrivateNetworks"/>
+    /// is <see langword="true"/> the SSRF guard is relaxed as an explicit operator opt-in: an
+    /// <c>http</c> scheme and private/loopback/reserved destinations are permitted (for example an
+    /// on-prem Prometheus at <c>http://localhost:9090</c> or <c>10.x</c>). The default
+    /// (<see langword="false"/>) keeps the strict HTTPS-only, no-private-destination posture; only
+    /// opt in for a trusted, operator-configured endpoint.
+    /// </summary>
+    public static Task<OutboundHttpUrlValidationResult> ValidateAsync(
+        string url,
+        bool allowPrivateNetworks,
+        CancellationToken cancellationToken = default)
+        => ValidateAsync(url, ResolveHostAddressesAsync, allowPrivateNetworks, cancellationToken);
 
     /// <summary>
     /// Synchronously validates an outbound HTTPS URL using a blocking DNS lookup, rejecting
@@ -52,19 +66,36 @@ public static class OutboundHttpUrlValidator
     /// is not available.
     /// </summary>
     public static OutboundHttpUrlValidationResult ValidateConfiguration(string url)
-        => ValidateConfiguration(url, ResolveHostAddresses);
+        => ValidateConfiguration(url, allowPrivateNetworks: false);
+
+    /// <summary>
+    /// Synchronously validates an outbound HTTP(S) URL. When <paramref name="allowPrivateNetworks"/>
+    /// is <see langword="true"/> the SSRF guard is relaxed as an explicit operator opt-in (see the
+    /// <see cref="ValidateAsync(string, bool, CancellationToken)"/> overload); the default keeps the
+    /// strict posture.
+    /// </summary>
+    public static OutboundHttpUrlValidationResult ValidateConfiguration(string url, bool allowPrivateNetworks)
+        => ValidateConfiguration(url, ResolveHostAddresses, allowPrivateNetworks);
+
+    internal static Task<OutboundHttpUrlValidationResult> ValidateAsync(
+        string url,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+        => ValidateAsync(url, hostAddressResolver, allowPrivateNetworks: false, cancellationToken);
 
     internal static async Task<OutboundHttpUrlValidationResult> ValidateAsync(
         string url,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        bool allowPrivateNetworks,
         CancellationToken cancellationToken)
     {
-        if (!TryValidateBaseUri(url, out var failure, out var uri))
+        if (!TryValidateBaseUri(url, allowPrivateNetworks, out var failure, out var uri))
         {
             return failure;
         }
 
-        if (await IsPrivateOrUnresolvableAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
+        if (!allowPrivateNetworks &&
+            await IsPrivateOrUnresolvableAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
         {
             return OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
         }
@@ -75,13 +106,19 @@ public static class OutboundHttpUrlValidator
     internal static OutboundHttpUrlValidationResult ValidateConfiguration(
         string url,
         Func<string, IPAddress[]> hostAddressResolver)
+        => ValidateConfiguration(url, hostAddressResolver, allowPrivateNetworks: false);
+
+    internal static OutboundHttpUrlValidationResult ValidateConfiguration(
+        string url,
+        Func<string, IPAddress[]> hostAddressResolver,
+        bool allowPrivateNetworks)
     {
-        if (!TryValidateBaseUri(url, out var failure, out var uri))
+        if (!TryValidateBaseUri(url, allowPrivateNetworks, out var failure, out var uri))
         {
             return failure;
         }
 
-        if (IsPrivateOrUnresolvableAddress(uri, hostAddressResolver))
+        if (!allowPrivateNetworks && IsPrivateOrUnresolvableAddress(uri, hostAddressResolver))
         {
             return OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
         }
@@ -91,11 +128,12 @@ public static class OutboundHttpUrlValidator
 
     private static bool TryValidateBaseUri(
         string url,
+        bool allowPrivateNetworks,
         out OutboundHttpUrlValidationResult failure,
         out Uri uri)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out uri!) ||
-            uri.Scheme != Uri.UriSchemeHttps)
+            !IsAllowedScheme(uri, allowPrivateNetworks))
         {
             failure = OutboundHttpUrlValidationResult.Failure(InvalidHttpsUrlMessage);
             return false;
@@ -107,7 +145,9 @@ public static class OutboundHttpUrlValidator
             return false;
         }
 
-        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
+        // Loopback/localhost is only rejected under the default (strict) posture. The private-network
+        // opt-in deliberately permits it for trusted operator-configured destinations.
+        if (!allowPrivateNetworks && (uri.IsLoopback || IsLocalhostHostName(uri.Host)))
         {
             failure = OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
             return false;
@@ -116,6 +156,14 @@ public static class OutboundHttpUrlValidator
         failure = default;
         return true;
     }
+
+    /// <summary>
+    /// HTTPS is always allowed; plain HTTP is allowed only under the explicit private-network opt-in,
+    /// where the destination is a trusted operator-configured endpoint inside a private network.
+    /// </summary>
+    private static bool IsAllowedScheme(Uri uri, bool allowPrivateNetworks)
+        => uri.Scheme == Uri.UriSchemeHttps ||
+           (allowPrivateNetworks && uri.Scheme == Uri.UriSchemeHttp);
 
     private static Task<IPAddress[]> ResolveHostAddressesAsync(string host, CancellationToken cancellationToken)
         => Dns.GetHostAddressesAsync(host, cancellationToken);

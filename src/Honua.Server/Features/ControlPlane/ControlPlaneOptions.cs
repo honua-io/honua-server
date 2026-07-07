@@ -339,6 +339,17 @@ internal sealed class DeployTelemetryConnectionOptions
     public string? Region { get; set; }
 
     public int TimeoutSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// Explicit operator opt-in that relaxes the outbound SSRF guard for this telemetry connection so
+    /// a private-network or loopback metrics backend can be used — for example an on-prem/air-gapped
+    /// Prometheus at <c>http://localhost:9090</c> or a <c>10.x</c>/<c>192.168.x</c> address. When
+    /// <see langword="true"/>, <see cref="BaseUrl"/> may use the <c>http</c> scheme and resolve to a
+    /// private, loopback, or reserved address. Defaults to <see langword="false"/>, keeping the strict
+    /// HTTPS-only, no-private-destination posture. Only enable for a trusted, operator-controlled
+    /// endpoint inside your own network.
+    /// </summary>
+    public bool AllowPrivateNetworks { get; set; }
 }
 
 /// <summary>
@@ -415,7 +426,9 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
                 failures.Add($"{propertyPrefix}:Provider cannot be empty");
             }
 
-            var baseUrlValidation = OutboundHttpUrlValidator.ValidateConfiguration(connection.BaseUrl);
+            var baseUrlValidation = OutboundHttpUrlValidator.ValidateConfiguration(
+                connection.BaseUrl,
+                connection.AllowPrivateNetworks);
             if (!baseUrlValidation.IsValid)
             {
                 failures.Add($"{propertyPrefix}:BaseUrl {baseUrlValidation.ErrorMessage ?? "must be a valid HTTPS URL."}");
