@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/ingest_dataset.schema.json",
+  "title": "ingest_dataset inputSchema",
+  "description": "Argument shape for the Publish Data ingest tool (advertised name honua_ingest_dataset). Loads a small inline dataset (CSV with a header row, or a GeoJSON FeatureCollection; 4 MB cap) into the reference implementation's catalog database as a table, returning the {connectionId, schema, table} triple plus row count and per-row errors so the result chains directly into publish_service. CSV point geometry comes from longitude/latitude columns (auto-detected or explicit), a WKT column, or a server-geocoded address column; coordinate order is lon/lat and the CRS defaults to EPSG:4326. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["format", "data", "datasetName"],
+  "properties": {
+    "format": {
+      "type": "string",
+      "enum": ["csv", "geojson"],
+      "description": "Inline data format: \"csv\" (text with a header row) or \"geojson\" (a GeoJSON FeatureCollection document)."
+    },
+    "data": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The dataset content, inline. Capped at 4 MB; larger datasets use the implementation's out-of-band upload surface."
+    },
+    "datasetName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "description": "Target dataset/table name (letters, digits, underscores; must not start with a digit)."
+    },
+    "sourceSrid": {
+      "type": "integer",
+      "default": 4326,
+      "description": "Spatial reference (SRID/WKID) of the input coordinates; data is stored in EPSG:4326. Defaults to 4326 (WGS84 lon/lat)."
+    },
+    "longitudeColumn": {
+      "type": "string",
+      "description": "CSV only: explicit longitude (X) column name. Pair with latitudeColumn. When omitted, lon/lng/long/longitude/x is auto-detected."
+    },
+    "latitudeColumn": {
+      "type": "string",
+      "description": "CSV only: explicit latitude (Y) column name. Pair with longitudeColumn. When omitted, lat/latitude/y is auto-detected."
+    },
+    "addressColumn": {
+      "type": "string",
+      "description": "CSV only: column holding freeform addresses to geocode into point geometry server-side (up to 100 rows). Mutually exclusive with longitudeColumn/latitudeColumn."
+    }
+  }
+}

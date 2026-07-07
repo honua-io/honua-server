@@ -21,11 +21,14 @@ internal static class ObservabilityAlertEndpoints
 
     public static void MapObservabilityAlertEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        // Read-only ops-reader authorization (A12): the GET alert reads additionally admit an ops:read
+        // credential, while the mutating POSTs (acknowledge/suppress/resolve) still require full admin
+        // write — the ops-read policy is method-aware.
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/observability/alerts")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability", "Alerts")
-            .RequireAdminAuthorization();
+            .RequireOpsReadAuthorization();
 
         group.MapGet("", HandleList)
             .WithDisplayName("List Observability Alerts")

@@ -700,6 +700,50 @@
       ]
     },
     {
+      "surfaceId": "operate-status",
+      "displayName": "Aggregated Operational Status API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/operate/status",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/operate"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus OperateStatusEndpointsTests integration tests assert the aggregated status endpoint returns a server-computed verdict, self-describing per-domain rollups, and the availability SLO block, and that the read-only ops:read scope can read status/findings but is denied mutating ops endpoints",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Operate.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Operations/OperateStatusEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "The overall verdict is computed server-side by OperateStatusVerdictEvaluator with documented rules and the availability SLO/error-budget by OperateSloEvaluator; both are unit-pinned, and OperateStatusJsonContext keeps the response DTOs AOT-safe",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Operations/Status/OperateStatusVerdictEvaluator.cs",
+            "src/Honua.Server/Features/Operations/Status/OperateSloEvaluator.cs",
+            "src/Honua.Server/Features/Operations/Status/OperateStatusJsonContext.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "audit-trail-siem",
       "displayName": "Audit trail SIEM export and tamper-evidence API",
       "surfaceKind": "http-route-family",
