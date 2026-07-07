@@ -71,6 +71,17 @@ internal static class McpServiceCollectionExtensions
         // pattern ProposeOperationTool uses for the operation gateway.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishServiceTool>());
 
+        // honua_publish_result (#2482): promotes a completed analysis job's
+        // materialized artifact into a hosted layer. It resolves the job result
+        // package through IGeoprocessingJobService (composed before this method,
+        // like every other job-backed tool) and routes the promotion through the
+        // same canonical IOperationInvoker (service.publish) as PublishServiceTool.
+        // Registered unconditionally and gated at invocation time for the same
+        // reason PublishServiceTool is: the operations toolset is composed later
+        // than AddMcpOperatorSurface, so the tool resolves the invoker per-request
+        // and returns a structured "unavailable" handle when none is composed.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishResultTool>());
+
         // Authoring tools (#1951): create_map_package / create_app_package route
         // through the canonical IMapGenerationService / IAppGenerationService
         // generation pipelines. Those services are registered later in the host
