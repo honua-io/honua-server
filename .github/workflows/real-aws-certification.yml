@@ -15,9 +15,16 @@ name: Real AWS Certification
 #               smallest-tier Batch jobs, one small S3 object, a no-op Lambda alias flip, one
 #               same-revision ECS/ALB weighted cutover on a standing smallest-Fargate service) and
 #               every resource is torn down; the reaper sweeps any crash-orphaned leftover.
-#   * Teardown — every cell namespaces its resources honua-cert-* and tags them honua-cert-run=<runId>
-#               and tears them down in a finally block; a dedicated always() reaper step then reaps
-#               any honua-cert-run-tagged resource older than the TTL, so no standing resources remain.
+#   * Teardown — every cell tears its state down in a finally block. Two DISTINCT teardown contracts:
+#               (1) CREATED resources (the ephemeral per-run Batch job definitions, namespaced
+#               honua-certrun-*, and the S3 artifact objects) are tagged honua-cert-run=<runId>; a
+#               dedicated always() reaper step then reaps any honua-cert-run-tagged JOB DEFINITION or
+#               S3 OBJECT older than the TTL, so crash-orphaned created resources cannot accumulate.
+#               (2) IN-PLACE mutations of STANDING resources (the ECS/ALB listener-rule weights and the
+#               Lambda alias) are NOT reaped — the reaper does not touch ALB weights, the Lambda alias,
+#               or in-flight Batch jobs. Their correctness is each cell's guaranteed baseline-restore in
+#               a finally (the ECS/ALB cell also asserts the baseline at start and fails loudly on drift),
+#               so the shared substrate always returns to stable=100/canary=0 and the original alias state.
 #
 # Never runs on pull_request, so it cannot be triggered by forks or untrusted contributors.
 #
@@ -66,8 +73,13 @@ env:
   CSPROJ: tests/dotnet/Honua.CloudIntegration.Tests/Honua.CloudIntegration.Tests.csproj
 
 concurrency:
-  group: real-aws-certification-${{ github.ref }}
-  cancel-in-progress: true
+  # REF-INDEPENDENT group + cancel-in-progress:false so live runs SERIALIZE against the ONE standing
+  # cert substrate (listener rule / ECS service / Lambda alias) and are never cancelled mid-teardown.
+  # A ref-keyed group would let a scheduled trunk run and a dispatched run mutate the same weights
+  # concurrently (lost update); cancel-in-progress:true would kill an in-flight finally/restore and
+  # strand the substrate off-baseline. Both are unsafe for a shared live-AWS resource.
+  group: real-aws-certification
+  cancel-in-progress: false
 
 jobs:
   certify:
@@ -77,7 +89,7 @@ jobs:
     environment: cert
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -168,7 +180,7 @@ jobs:
 
       - name: Upload results
         if: ${{ always() && vars.REALAWS_CERT_ROLE_ARN != '' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: real-aws-certification-results
           path: tests/TestResults/
