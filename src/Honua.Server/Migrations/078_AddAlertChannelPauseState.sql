@@ -1,7 +1,7 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
--- Migration: 077_AddAlertChannelPauseState.sql
+-- Migration: 078_AddAlertChannelPauseState.sql
 -- Description: Persists a per-channel delivery pause flag for the alert dispatch
 --              pipeline (self-healing ops actuators, #2561). Alert delivery
 --              channels were an enum discriminator only (alert_dispatch.channel_type)
