@@ -35,6 +35,10 @@ internal static class AlertsServiceCollectionExtensions
         // Per-channel outbound notification rate cap (shared by the dispatcher across passes).
         services.AddSingleton<AlertNotificationRateLimiter>();
 
+        // Per-channel delivery circuit breaker (shared by the dispatcher and ops-notification
+        // composition) so a persistently-failing channel produces bounded dead-letter volume.
+        services.AddSingleton<AlertChannelCircuitBreaker>();
+
         // Second outbox consumer: ops notifications (deploy/job terminal events).
         services.AddScoped<Honua.Alerts.Ops.OpsNotificationService>();
         services.AddSingleton<ILeaderElectionStrategy>(serviceProvider =>
