@@ -42,6 +42,37 @@ public sealed class McpSessionManagerTests
     }
 
     [UnitTest]
+    public void SupportsElicitation_ReflectsCapabilityRecordedAtCreation()
+    {
+        // honua-server#2484: the elicitation capability advertised at initialize is
+        // bound to the session and read back by clarification-emitting tools.
+        var manager = new McpSessionManager();
+        manager.TryCreateSession("sub:alice", elicitationSupported: true, out var elicit)
+            .Should().BeTrue();
+        manager.TryCreateSession("sub:bob", elicitationSupported: false, out var plain)
+            .Should().BeTrue();
+
+        manager.SupportsElicitation(elicit).Should().BeTrue();
+        manager.SupportsElicitation(plain).Should().BeFalse();
+        // The default two-arg overload never advertises elicitation.
+        manager.SupportsElicitation(manager.CreateSession()).Should().BeFalse();
+        manager.SupportsElicitation("never-issued").Should().BeFalse();
+        manager.SupportsElicitation(string.Empty).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void SupportsElicitation_ReturnsFalseAfterTermination()
+    {
+        var manager = new McpSessionManager();
+        manager.TryCreateSession("sub:alice", elicitationSupported: true, out var id)
+            .Should().BeTrue();
+        manager.SupportsElicitation(id).Should().BeTrue();
+
+        manager.Terminate(id).Should().BeTrue();
+        manager.SupportsElicitation(id).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void Terminate_RemovesSession_AndIsIdempotent()
     {
         var manager = new McpSessionManager();
