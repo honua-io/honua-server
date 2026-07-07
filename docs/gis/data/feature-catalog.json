@@ -5061,9 +5061,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_WithValidSession_OpensEventStream",
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_WithoutEventStreamAccept_Returns405",
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_WithoutValidSession_Returns404"
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_ByDefault_Returns405WithAllowHeader",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.GetStreamTeardown_LeavesSessionUsable_ToolsListStill200",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.Get_WhenEnabledWithValidSession_OpensEventStream",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.Get_WhenEnabledWithoutEventStreamAccept_Returns405",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.Get_WhenEnabledWithoutValidSession_Returns404"
       ],
       "proof_ledger_surface": "mcp-operator",
       "maturity": "implemented"
@@ -14581,6 +14583,8 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.PromptsList_AdvertisesCuratedCatalog",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithEventStreamAccept_ReturnsSseMessageFrame",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithIssuedSessionId_IsAccepted",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithSessionBoundToDifferentPrincipal_ReturnsStructuredAuthError",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithSessionBoundToSamePrincipal_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithUnknownSessionId_Returns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ResourceTemplatesList_AdvertisesParameterizedUris",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ResourcesList_ExcludesParameterizedUris",
