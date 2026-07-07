@@ -42,6 +42,12 @@ internal static class DeployControlEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployPlanResponse>();
 
+        group.MapGet("/operations", HandleListDeployOperations)
+            .WithDisplayName("List Deploy Operations")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<DeployOperationListResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
         group.MapPost("/operations", HandleCreateDeployOperation)
             .WithDisplayName("Create Deploy Operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
@@ -275,6 +281,88 @@ internal static class DeployControlEndpoints
                 StatusCodes.Status409Conflict,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
                 DeployConflictMessage);
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.Problem(
+                title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                detail: DeployControlUnavailableMessage,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static async Task<IResult> HandleListDeployOperations(
+        HttpRequest request,
+        [FromServices] DeployWorkflowService deployWorkflowService,
+        CancellationToken cancellationToken)
+    {
+        var query = request.Query;
+
+        WorkflowOperationKind? kind = null;
+        var rawKind = QueryFilterParsers.GetString(query, "kind");
+        if (!string.IsNullOrWhiteSpace(rawKind))
+        {
+            if (!QueryFilterParsers.TryParseDefinedEnum<WorkflowOperationKind>(rawKind, out var parsedKind))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status400BadRequest,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                    $"'kind' contains unsupported value '{rawKind}'.");
+            }
+
+            kind = parsedKind;
+        }
+
+        WorkflowOperationStatus? status = null;
+        var rawStatus = QueryFilterParsers.GetString(query, "status");
+        if (!string.IsNullOrWhiteSpace(rawStatus))
+        {
+            if (!QueryFilterParsers.TryParseDefinedEnum<WorkflowOperationStatus>(rawStatus, out var parsedStatus))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status400BadRequest,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                    $"'status' contains unsupported value '{rawStatus}'.");
+            }
+
+            status = parsedStatus;
+        }
+
+        if (!QueryFilterParsers.TryParseInt(query, "page", out var pageValue, out var parseError) ||
+            !QueryFilterParsers.TryParseInt(query, "pageSize", out var pageSizeValue, out parseError))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                parseError);
+        }
+
+        var page = pageValue ?? 1;
+        var pageSize = pageSizeValue ?? 50;
+        if (page < 1 || pageSize < 1)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                "'page' and 'pageSize' must be greater than or equal to 1.");
+        }
+
+        try
+        {
+            var result = await deployWorkflowService
+                .ListDeployOperationsAsync(status, kind, page, pageSize, cancellationToken)
+                .ConfigureAwait(false);
+
+            var response = new DeployOperationListResponse
+            {
+                Items = result.Items.Select(MapOperationResponse).ToArray(),
+                Page = result.Page,
+                PageSize = result.PageSize,
+                TotalCount = result.TotalCount,
+                HasMore = result.HasMore
+            };
+
+            return Results.Json(response, DeployControlJsonContext.Default.DeployOperationListResponse);
         }
         catch (InvalidOperationException)
         {

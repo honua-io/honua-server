@@ -35,13 +35,26 @@ internal static class ControlPlaneReconcileRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // Decorate the workflow-operation store so deploy terminal transitions raise ops
-        // notifications through the shared alert outbox. SetAsync is the single choke point
-        // for every persisted transition (service + reconciler), so this one seam covers
-        // them all; the decorator no-ops when ops notifications are disabled (the default).
+        // Decorate the workflow-operation store so every persisted deploy transition fans out through a
+        // single seam. TryCreate/Set/TrySet are the choke point for every persisted transition (service +
+        // reconciler), so decorating them once covers them all without scattering notification calls
+        // across the reconciler. Two decorators compose over the durable Redis store:
+        //   * TransitionObservingWorkflowOperationStore raises IWorkflowOperationTransitionListener
+        //     observers (created / submitted / promoted / rolled-back / manual-intervention). This ticket
+        //     registers the operate-timeline release producer; the realtime hub (#2554) attaches to the
+        //     same seam as a second listener.
+        //   * NotifyingWorkflowOperationStore raises ops-alert notifications on terminal transitions (it
+        //     no-ops when ops notifications are disabled, the default).
         services.AddSingleton<RedisWorkflowOperationStore>();
+        services.AddSingleton<Honua.Infrastructure.Monitoring.ReleaseTimelineBuffer>();
+        services.AddSingleton<IWorkflowOperationTransitionListener>(sp =>
+            new Honua.Infrastructure.Monitoring.ReleaseTimelineTransitionListener(
+                sp.GetRequiredService<Honua.Infrastructure.Monitoring.ReleaseTimelineBuffer>()));
         services.AddSingleton<IWorkflowOperationStore>(sp => new Honua.Alerts.Ops.NotifyingWorkflowOperationStore(
-            sp.GetRequiredService<RedisWorkflowOperationStore>(),
+            new Honua.ControlPlane.TransitionObservingWorkflowOperationStore(
+                sp.GetRequiredService<RedisWorkflowOperationStore>(),
+                sp.GetServices<IWorkflowOperationTransitionListener>(),
+                sp.GetRequiredService<ILogger<Honua.ControlPlane.TransitionObservingWorkflowOperationStore>>()),
             sp.GetRequiredService<IServiceScopeFactory>(),
             sp.GetRequiredService<IOptions<Honua.Core.Features.Alerts.Domain.AlertOptions>>(),
             sp.GetRequiredService<ILogger<Honua.Alerts.Ops.NotifyingWorkflowOperationStore>>()));
