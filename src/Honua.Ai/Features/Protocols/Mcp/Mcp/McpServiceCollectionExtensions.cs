@@ -103,6 +103,20 @@ internal static class McpServiceCollectionExtensions
         if (services.Any(d => d.ServiceType == typeof(Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeCoordinatorService)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GeocodeTool>());
+
+            // honua_geocode_addresses: batch companion to honua_geocode_address,
+            // same canonical coordinator, so the same capability gate applies.
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GeocodeAddressesTool>());
+        }
+
+        // honua_ingest_dataset: inline CSV/GeoJSON → catalog table through the
+        // canonical IFileImportService pipeline (the REST admin import service).
+        // Gated on the import service being wired (the Postgres provider
+        // registers it before AddMcpOperatorSurface) so tools/list stays honest
+        // in compositions without an import-capable data provider.
+        if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FileImport.Abstractions.IFileImportService)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, IngestDatasetTool>());
         }
 
         if (services.Any(d => d.ServiceType == typeof(Honua.Routing.Features.Routing.Abstractions.IRoutingProvider)))
@@ -130,20 +144,16 @@ internal static class McpServiceCollectionExtensions
                 services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.QueryFeaturesTool>());
             }
 
-            // honua_edit_features: the transactional feature-editing tool. It is a
-            // thin adapter over the shared edit/transaction pipeline
-            // (IEditProcessor validation + ToFeatureEditBatch, then
-            // IFeatureWriter.ApplyEditsAsync — the same seams FeatureServer
-            // applyEdits, OGC API Features, WFS Transaction, and OData CRUD adapt
-            // to). Advertised only when BOTH the edit processor and the feature
-            // writer are composed, so tools/list never advertises an edit verb the
-            // host cannot back (read-only providers register a ReadOnlyFeatureWriter
-            // but no IEditProcessor unless the edit pipeline is wired).
-            if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Edit.IEditProcessor)) &&
-                services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FeatureStore.Abstractions.IFeatureWriter)))
-            {
-                services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.EditFeaturesTool>());
-            }
+            // NO feature-mutation tool is registered here BY DESIGN. Honua does
+            // not support AI operational data editing: the MCP surface deliberately
+            // exposes no feature-edit verb (no honua_edit_features), per ADR-0028
+            // (docs/internal/contributor/adr/0028-ai-data-editing-not-allowed.md),
+            // founder-reaffirmed 2026-07-06. The shared edit/transaction pipeline
+            // (IEditProcessor + IFeatureWriter.ApplyEditsAsync) remains for the
+            // human-facing protocol adapters (FeatureServer applyEdits, OGC API
+            // Features, WFS Transaction, OData CRUD, admin) — it is intentionally
+            // NOT projected onto any AI/MCP tool. Do not reintroduce an MCP edit
+            // tool without reversing ADR-0028.
 
             // The map-render tool additionally needs the canonical raster
             // renderer (the same IRasterMapRenderer the OGC API Maps / MapServer

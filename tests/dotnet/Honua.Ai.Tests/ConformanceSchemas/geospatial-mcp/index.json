@@ -123,11 +123,11 @@
     },
     {
       "standardName": "edit_features",
-      "referenceToolName": "honua_edit_features",
+      "referenceToolName": null,
       "family": "Transactional editing (Honua extension)",
       "schema": "tools/edit_features.schema.json",
-      "implementationStatus": "implemented",
-      "notes": "Honua reference extension: transactional feature editing (adds/updates/deletes) over the shared server edit pipeline. In tension with ADR-0028's Edit-Data exclusion; the reference tool requires an authenticated, authorized caller and is not autonomous unapproved mutation. Pending an ADR-0028 reconciliation decision by the standard maintainers; schema marks x-honua-extension."
+      "implementationStatus": "known-gap",
+      "notes": "Honua does NOT implement this tool: the MCP surface exposes no AI-facing feature-mutation verb per ADR-0028 (AI operational data editing is not supported; founder-reaffirmed 2026-07-06). The schema is retained so the gap stays real and closeable by other adopters of the standard's optional mutation profile, but the reference implementation serves the shared edit pipeline only through its human-facing HTTP adapters. (State-only known-gap edit; a full re-vendor to the current geospatial-mcp pin lands separately.)"
     },
     {
       "standardName": "render_map",
@@ -141,6 +141,13 @@
       "referenceToolName": "honua_geocode_address",
       "family": "Analysis and geoprocessing (reference shape)",
       "schema": "tools/geocode_address.schema.json",
+      "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "geocode_addresses",
+      "referenceToolName": "honua_geocode_addresses",
+      "family": "Analysis and geoprocessing (reference shape)",
+      "schema": "tools/geocode_addresses.schema.json",
       "implementationStatus": "implemented"
     },
     {
@@ -163,6 +170,14 @@
       "family": "Control-plane proposal (reference shape)",
       "schema": "tools/propose_operation.schema.json",
       "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "ingest_dataset",
+      "referenceToolName": "honua_ingest_dataset",
+      "family": "Publishing",
+      "schema": "tools/ingest_dataset.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Publish Data ingest step of the reference implementation: inline CSV/GeoJSON to a catalog table whose {connectionId, schema, table} chains into publish_service. Closes the data-loading gap ahead of the standard's file/URL ingest contract."
     },
     {
       "standardName": "publish_service",

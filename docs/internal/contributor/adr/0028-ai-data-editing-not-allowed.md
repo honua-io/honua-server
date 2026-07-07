@@ -102,3 +102,32 @@ reverses this decision.
 - Ensure the AI operator contract and workflow docs exclude direct editing.
 - Treat QA reports and fix recommendations as first-class non-destructive
   outputs.
+
+## References And Reaffirmation (2026-07-06)
+
+This decision was **reaffirmed by the founder on 2026-07-06**: AI operational
+data editing is not supported by Honua, and it is explicitly forbidden. A
+same-day proposal to reconcile this ADR via a "governed mutation profile" — an
+authenticated, per-edit-type authorized, transactional MCP edit tool — was
+**rejected**. This ADR stands unreconciled; a governed mutation profile is not
+an accepted exception to it.
+
+Enforcement in the codebase:
+
+- The **MCP surface deliberately exposes NO feature-mutation tool.** There is no
+  `honua_edit_features` (or any AI-facing feature-edit verb). The former MCP edit
+  tool was removed — not merely disabled behind a flag — from
+  `src/Honua.Ai/Features/Protocols/Mcp/Mcp/` (registration site, tool, schemas,
+  models, output schema, capability catalog, and MCP tests). Do not reintroduce
+  an MCP edit tool without a new ADR that reverses this decision.
+- The **shared edit/transaction pipeline stays.** `IEditProcessor` /
+  `IFeatureWriter.ApplyEditsAsync` and the shared authorization core
+  (`ServiceDataEditorAuthorization`) continue to serve the **human-facing**
+  protocol adapters (FeatureServer `applyEdits`, OGC API Features, WFS-T, OData
+  CRUD, admin). What ADR-0028 forbids is projecting that pipeline onto an
+  AI/MCP tool — not the pipeline itself.
+- The open **geospatial-mcp** standard keeps an *optional* `mutation` conformance
+  profile for other adopters, but records in its own
+  `docs/adr/0028-governed-feature-mutation.md` (Addendum, 2026-07-06) that the
+  reference implementation (Honua) does **not** implement it. Honua's conformance
+  manifest declares the `base` profile only.

@@ -27,6 +27,12 @@ internal static class LocationToolSchemas
     /// <summary>Maximum number of stops accepted per route solve.</summary>
     public const int MaxRouteStops = 25;
 
+    /// <summary>Minimum number of addresses accepted per batch geocode call.</summary>
+    public const int MinBatchAddresses = 1;
+
+    /// <summary>Maximum number of addresses accepted per batch geocode call.</summary>
+    public const int MaxBatchAddresses = 100;
+
     private const string GeocodeArgumentSchemaJson = """
         {
           "type": "object",
@@ -52,6 +58,38 @@ internal static class LocationToolSchemas
               "type": "integer",
               "default": 4326,
               "description": "Spatial reference (SRID/WKID) for returned candidate coordinates."
+            },
+            "provider": {
+              "type": "string",
+              "description": "Optional preferred geocoding provider name; the server falls back to provider priority order when omitted."
+            }
+          }
+        }
+        """;
+
+    private const string GeocodeAddressesArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["addresses"],
+          "properties": {
+            "addresses": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "description": "Freeform single-line addresses to geocode, in the order results should be returned.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "countryCodes": {
+              "type": "string",
+              "description": "Optional comma-separated ISO 3166 country codes to restrict the search (e.g. \"us,ca\")."
+            },
+            "outSrid": {
+              "type": "integer",
+              "default": 4326,
+              "description": "Spatial reference (SRID/WKID) for returned coordinates. Defaults to 4326 (WGS84 lon/lat)."
             },
             "provider": {
               "type": "string",
@@ -108,6 +146,11 @@ internal static class LocationToolSchemas
     /// Schema for <see cref="McpGeocodeArgument"/>.
     /// </summary>
     public static readonly JsonElement GeocodeArgumentSchema = Parse(GeocodeArgumentSchemaJson);
+
+    /// <summary>
+    /// Schema for <see cref="McpGeocodeAddressesArgument"/>.
+    /// </summary>
+    public static readonly JsonElement GeocodeAddressesArgumentSchema = Parse(GeocodeAddressesArgumentSchemaJson);
 
     /// <summary>
     /// Schema for <see cref="McpRouteArgument"/>.

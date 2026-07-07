@@ -41,10 +41,13 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_ground_candidates",
         "honua_clarify_intent",
         "honua_geocode_address",
+        "honua_geocode_addresses",
+        "honua_ingest_dataset",
         "honua_solve_route",
         "honua_list_layers",
         "honua_query_features",
-        "honua_edit_features",
+        // No honua_edit_features: Honua exposes no AI/MCP feature-mutation tool
+        // per ADR-0028 (AI operational data editing is not supported).
         "honua_render_map",
         "honua_get_style",
         "honua_apply_style_preset",
@@ -215,6 +218,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_ground_candidates",
         "honua_clarify_intent",
         "honua_geocode_address",
+        "honua_geocode_addresses",
         "honua_solve_route",
         "honua_list_layers",
         "honua_query_features",
@@ -233,10 +237,10 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_execute_plan"] = (Destructive: false, Idempotent: true),
             ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
             ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
+            ["honua_ingest_dataset"] = (Destructive: false, Idempotent: false),
             ["honua_publish_service"] = (Destructive: false, Idempotent: false),
             ["honua_create_map_package"] = (Destructive: false, Idempotent: false),
             ["honua_create_app_package"] = (Destructive: false, Idempotent: false),
-            ["honua_edit_features"] = (Destructive: true, Idempotent: false),
             ["honua_apply_style_preset"] = (Destructive: false, Idempotent: true),
         };
 
@@ -575,13 +579,13 @@ public sealed partial class McpTaxonomyAlignmentTests
             new GroundCandidatesTool(groundingService, jobService, NullLogger<GroundCandidatesTool>.Instance),
             new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance),
             new GeocodeTool(jobService, NullLogger<GeocodeTool>.Instance),
+            new GeocodeAddressesTool(jobService, NullLogger<GeocodeAddressesTool>.Instance),
+            new IngestDatasetTool(jobService, NullLogger<IngestDatasetTool>.Instance),
             new RouteTool(jobService, NullLogger<RouteTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
-            new Honua.Ai.Protocols.Mcp.MapTools.EditFeaturesTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.EditFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.GetStyleTool(

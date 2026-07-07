@@ -259,6 +259,90 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    /// <summary>Schema for <c>McpGeocodeAddressesOutput</c>.</summary>
+    public static readonly JsonElement GeocodeAddressesOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["results", "succeeded", "failed", "srid"],
+          "properties": {
+            "results": {
+              "type": "array",
+              "description": "One entry per input address, in the same order as the request.",
+              "items": {
+                "type": "object",
+                "required": ["input", "ok"],
+                "properties": {
+                  "input": { "type": "string" },
+                  "ok": { "type": "boolean" },
+                  "location": {
+                    "type": ["object", "null"],
+                    "properties": {
+                      "x": { "type": "number", "description": "Longitude (X) ordinate." },
+                      "y": { "type": "number", "description": "Latitude (Y) ordinate." },
+                      "srid": { "type": "integer" }
+                    }
+                  },
+                  "score": { "type": ["number", "null"] },
+                  "matchedAddress": { "type": ["string", "null"] },
+                  "matchLevel": { "type": ["string", "null"] },
+                  "provider": { "type": ["string", "null"] },
+                  "error": { "type": ["string", "null"] }
+                }
+              }
+            },
+            "succeeded": { "type": "integer" },
+            "failed": { "type": "integer" },
+            "srid": { "type": "integer" }
+          }
+        }
+        """);
+
+    /// <summary>
+    /// Schema for <see cref="Models.McpIngestDatasetOutput"/>. A successful
+    /// ingest carries the connectionId/schema/table triple (plus geometry column
+    /// and primary key) that chains directly into <c>honua_publish_service</c>;
+    /// per-row issues (e.g. addresses that failed to geocode) ride alongside
+    /// without failing the ingest.
+    /// </summary>
+    public static readonly JsonElement IngestDatasetOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["success", "datasetName", "rowCount"],
+          "properties": {
+            "success": { "type": "boolean" },
+            "datasetName": { "type": "string" },
+            "rowCount": { "type": "integer" },
+            "connectionId": {
+              "type": ["string", "null"],
+              "description": "Registered secure-connection name/id for the catalog database that owns the imported table; pass to honua_publish_service. Null when no registered connection matches the catalog database."
+            },
+            "schema": { "type": ["string", "null"], "description": "Schema that owns the imported table." },
+            "table": { "type": ["string", "null"], "description": "Physical table name to publish." },
+            "srid": { "type": ["integer", "null"] },
+            "geometryColumn": { "type": ["string", "null"] },
+            "primaryKey": { "type": ["string", "null"] },
+            "warnings": { "type": "array", "items": { "type": "string" } },
+            "rowErrors": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["code", "message"],
+                "properties": {
+                  "row": { "type": ["integer", "null"], "description": "1-based data row (header excluded), when known." },
+                  "code": { "type": "string" },
+                  "message": { "type": "string" },
+                  "field": { "type": ["string", "null"] }
+                }
+              }
+            },
+            "errorCode": { "type": ["string", "null"] },
+            "errorMessage": { "type": ["string", "null"] }
+          }
+        }
+        """);
+
     /// <summary>Schema for <c>McpRouteOutput</c>.</summary>
     public static readonly JsonElement RouteOutputSchema = Parse(
         """
@@ -407,47 +491,6 @@ internal static class McpToolOutputSchemas
             "capabilityState": { "type": ["object", "null"] },
             "provider": { "type": ["string", "null"] },
             "model": { "type": ["string", "null"] }
-          }
-        }
-        """);
-
-    /// <summary>
-    /// Schema for <c>McpEditFeaturesOutput</c>: per-edit results grouped by edit
-    /// kind plus the transaction summary emitted by the shared edit pipeline.
-    /// </summary>
-    public static readonly JsonElement EditFeaturesOutputSchema = Parse(
-        """
-        {
-          "type": "object",
-          "required": ["serviceId", "layerId", "addResults", "updateResults", "deleteResults", "summary"],
-          "properties": {
-            "serviceId": { "type": "string" },
-            "layerId": { "type": "integer" },
-            "addResults": { "type": "array", "items": { "$ref": "#/$defs/editResult" } },
-            "updateResults": { "type": "array", "items": { "$ref": "#/$defs/editResult" } },
-            "deleteResults": { "type": "array", "items": { "$ref": "#/$defs/editResult" } },
-            "summary": {
-              "type": "object",
-              "required": ["applied", "failed", "rolledBack"],
-              "properties": {
-                "applied": { "type": "integer", "description": "Count of successfully applied edits." },
-                "failed": { "type": "integer", "description": "Count of failed edits." },
-                "rolledBack": { "type": "boolean", "description": "True when the whole transaction was rolled back." }
-              }
-            }
-          },
-          "$defs": {
-            "editResult": {
-              "type": "object",
-              "required": ["index", "success"],
-              "properties": {
-                "index": { "type": "integer", "description": "Zero-based position of the edit in its submitted array." },
-                "success": { "type": "boolean" },
-                "objectId": { "type": ["integer", "null"] },
-                "globalId": { "type": ["string", "null"] },
-                "error": { "type": ["string", "null"] }
-              }
-            }
           }
         }
         """);
