@@ -1,0 +1,16 @@
+{
+  "id": "publish_result.promote_analysis_layer",
+  "schemaRef": "tools/publish_result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "sourceId": "job_7f3a2c",
+    "artifactId": "artifact_parcels_within_500m",
+    "serviceName": "flood_analysis",
+    "layerName": "Parcels within 500m of flood zone",
+    "targetKind": "published_service",
+    "visibility": "workspace_shared"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["PublishedService"],
+  "notes": "Reference implementation honua_publish_result (honua-server#2482) promotes a completed analysis job's materialized FeatureLayer artifact into a PublishedService target (Analyze / Publish Data). sourceId is the completed job id; the returned serviceId + layerId chain into query_features / render_map."
+}
