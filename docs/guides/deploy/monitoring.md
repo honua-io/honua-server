@@ -18,6 +18,41 @@ You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the 
 | `GET /monitoring/metrics/{connection-pool,cache,resources,upload-queue,database-resilience}` | admin | Focused operational diagnostics |
 | `GET /monitoring/alerts` | admin | Current alert conditions from production thresholds |
 | `GET /api/v1/admin/observability/{errors,telemetry,events,migrations}` | admin | Error history, tracing status, Operate events, migration state |
+| `GET /api/v1/operate/status` | ops-reader or admin | **Server-authoritative aggregated status** — one server-computed verdict plus per-domain rollups and the availability SLO |
+
+## Aggregated operational status
+
+Instead of stitching the endpoints above and inventing your own "is the system healthy" verdict, call the one aggregated surface:
+
+```bash
+curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://localhost:8080/api/v1/operate/status
+```
+
+It returns a server-computed `status` (`healthy` / `degraded` / `unhealthy`) with the machine-readable `reasons` that drove it, per-domain rollups (`deploys`, `jobs`, `alerts`, `migrations`, `findings`, `telemetryBackends`) each carrying a `source` hint you can drill down to, and a `schemaVersion` + `generatedAt` so a consumer can version its parsing. The verdict rules are fixed and documented server-side: the health-check roll-up being `Unhealthy` ⇒ `unhealthy`; a `Critical` finding, a deploy parked in manual intervention, dead-lettered alerts, an impaired dispatcher, or an exhausted SLO error budget ⇒ `degraded`; otherwise `healthy`.
+
+### Availability SLO / error budget
+
+Configure an availability target and the `slo` block evaluates a burn rate and remaining error budget from the in-process, GIS-protocol-partitioned serving-latency window (no metrics database required):
+
+```bash
+Slo__Availability__Target=0.995          # fraction in (0,1); omit to leave the SLO "not configured"
+Slo__Availability__RollingWindowSeconds=300
+```
+
+When no target is set, `slo.configured` is `false` with an explicit reason rather than an invented number. v1 evaluates HTTP-5xx serving availability over the aggregator window; the in-band GeoServices error-envelope signal (2xx error envelopes) is not yet folded into the window.
+
+### Read-only ops credential
+
+Provision an ops-reader credential so a status dashboard or copilot can read the ops posture without holding a key that could `POST /rollback`. Mint an admin API key scoped to the `ops:read` grant (distinct from `admin:read`, which can also read the broader admin surfaces):
+
+```bash
+# With a full-admin key, mint an ops-reader key:
+curl -s -X POST http://localhost:8080/api/v1/admin/api-keys \
+  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H 'Content-Type: application/json' \
+  -d '{"name":"ops-dashboard","permissions":["ops:read"]}'
+```
+
+The returned key authorizes the read-only ops surfaces — `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/{ops-health,findings}`, and `GET /api/v1/admin/observability/alerts` — but is rejected with a `403` on every mutating ops operation (deploy rollback/promote/submit, `findings/{id}/propose`, alert `acknowledge`/`suppress`/`resolve`) and on non-ops admin surfaces such as key management. Full-admin keys and client-certificate admins are unaffected.
 
 ## Steps
 

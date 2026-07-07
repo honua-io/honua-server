@@ -248,6 +248,10 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).
             // Opt in via Capabilities:Experimental:versioning.branch:Enabled=true.
             ("versioning.branch", "versioning", FeatureCatalog.BranchVersioningKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+
+            // Aggregated operational status (A12): the server-authoritative operate/status surface —
+            // one server-computed verdict + per-domain rollups + SLO/error-budget contract. Ungated GA.
+            ("operate.status", "operate", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
         ];
 
         foreach (var (id, category, entitlementKey, kind, packageSchemaVersion, maturity) in capabilities)
