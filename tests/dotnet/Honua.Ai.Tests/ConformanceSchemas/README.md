@@ -20,6 +20,11 @@ implementation.
   (`conformance/fixtures/` at the same commit), minus the upstream `README.md`
   and `validate.py` (not test inputs), plus the two Honua-extension fixture
   directories noted below.
+- The pin is deliberately held at `eb53989` (pre geospatial-mcp#58): the #58
+  platform-ops schemas are marked implemented in the manifest but honua-server
+  does not serve those tools yet, so re-vendoring past #58 would introduce
+  conformance failures. The post-#58 bump is owned by #2555/#2566, which
+  implement the new tools and vendor their schemas together.
 - Do not hand-edit. Re-vendor the whole tree from a single pinned upstream
   commit when the schemas change, and update this note with the new commit.
 - Files are copied to the test output directory (`CopyToOutputDirectory`) and
