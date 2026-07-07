@@ -19,6 +19,43 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
 {
     private static string SleepPath => File.Exists("/usr/bin/sleep") ? "/usr/bin/sleep" : "/bin/sleep";
 
+    private static string ShPath => File.Exists("/usr/bin/sh") ? "/usr/bin/sh" : "/bin/sh";
+
+    [Fact]
+    public async Task BuildEnvironment_WorkloadCannotOverrideContractVersionGate()
+    {
+        using var backend = CreateBackend();
+        var outFile = Path.Combine(Path.GetTempPath(), $"honua-contract-{Guid.NewGuid():N}.txt");
+        try
+        {
+            var job = CreateJob("job-gate", new Dictionary<string, string>
+            {
+                [LocalProcessParameterKeys.Executable] = ShPath,
+                [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "-c",
+                [LocalProcessParameterKeys.ArgumentPrefix + "1"] = "printf '%s' \"$HONUA_CONTRACT_VERSION\" > \"$HONUA_TEST_OUT\"",
+                [LocalProcessParameterKeys.EnvironmentPrefix + "HONUA_TEST_OUT"] = outFile,
+                // A malicious/erroneous workload tries to weaken the serving↔worker contract gate.
+                [LocalProcessParameterKeys.EnvironmentPrefix + "HONUA_CONTRACT_VERSION"] = "999"
+            });
+
+            var start = await backend.StartAsync(job);
+            start.Status.Should().Be(ExecutionJobStatus.Running);
+
+            var running = job with { Status = ExecutionJobStatus.Running, ProviderOperationId = start.ProviderOperationId };
+            (await WaitForTerminalAsync(backend, running)).Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+            (await File.ReadAllTextAsync(outFile)).Should().Be("1",
+                "the stamped contract-version gate must win over a workload env.HONUA_CONTRACT_VERSION passthrough.");
+        }
+        finally
+        {
+            if (File.Exists(outFile))
+            {
+                File.Delete(outFile);
+            }
+        }
+    }
+
     [Fact]
     public void BackendIdentity_MatchesContract()
     {
@@ -150,6 +187,69 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
         });
 
         launched.Status.Should().BeOneOf(ExecutionJobStatus.Running, ExecutionJobStatus.Succeeded);
+    }
+
+    [Fact]
+    public async Task Resubmit_AfterTerminalObservation_RelaunchesSameOperation()
+    {
+        using var backend = CreateBackend();
+        var job = CreateJob("job-retry", new Dictionary<string, string>
+        {
+            [LocalProcessParameterKeys.Executable] = SleepPath,
+            // Invalid interval => sleep exits non-zero, driving the job to Failed.
+            [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "not-a-number"
+        });
+
+        var firstStart = await backend.StartAsync(job);
+        firstStart.Status.Should().Be(ExecutionJobStatus.Running);
+
+        var running = job with { Status = ExecutionJobStatus.Running, ProviderOperationId = firstStart.ProviderOperationId };
+        var terminal = await WaitForTerminalAsync(backend, running);
+        terminal.Status.Should().Be(ExecutionJobStatus.Failed);
+
+        // The reconciler requeues the same OperationId. Before the eviction fix this re-entered Launch,
+        // collided on the still-tracked terminal execution ("already tracked"), and was reported as a
+        // bogus launch failure — so in-host retries never actually relaunched.
+        var resubmit = await backend.StartAsync(job with { Status = ExecutionJobStatus.Queued });
+
+        resubmit.Status.Should().Be(ExecutionJobStatus.Running);
+        resubmit.Message.Should().NotContain("already tracked");
+        resubmit.ProviderOperationId.Should().StartWith(LocalProcessPoolBatchComputeBackend.LaunchedMarkerPrefix);
+
+        // Drain the relaunched attempt so the backend disposes cleanly.
+        await WaitForTerminalAsync(backend, job with
+        {
+            Status = ExecutionJobStatus.Running,
+            ProviderOperationId = resubmit.ProviderOperationId
+        });
+    }
+
+    [Fact]
+    public async Task ObserveAsync_AfterTerminalEviction_EchoesPersistedTerminalStatus()
+    {
+        using var backend = CreateBackend();
+        var job = CreateJob("job-echo", new Dictionary<string, string>
+        {
+            [LocalProcessParameterKeys.Executable] = SleepPath,
+            [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "0"
+        });
+
+        var start = await backend.StartAsync(job);
+        var running = job with { Status = ExecutionJobStatus.Running, ProviderOperationId = start.ProviderOperationId };
+
+        // First terminal observation reports Succeeded and evicts the tracking entry.
+        var terminal = await WaitForTerminalAsync(backend, running);
+        terminal.Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+        // A later poll with the persisted terminal record must NOT flip Succeeded to a "process lost"
+        // Failed just because the execution was evicted.
+        var afterEviction = await backend.ObserveAsync(job with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            ProviderOperationId = start.ProviderOperationId
+        });
+
+        afterEviction.Status.Should().Be(ExecutionJobStatus.Succeeded);
     }
 
     [Fact]

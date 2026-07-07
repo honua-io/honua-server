@@ -486,12 +486,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         ExecutionJobRecord job,
         IReadOnlyDictionary<string, string> parameters)
     {
-        var env = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            // Serving↔worker job-contract version (ADR-0060 #3b): the worker harness re-checks this
-            // and fails closed if it exceeds the version it can run.
-            ["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)
-        };
+        var env = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var pair in parameters)
         {
             if (pair.Key.StartsWith(KubernetesJobParameterKeys.EnvironmentPrefix, StringComparison.Ordinal))
@@ -503,6 +498,11 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 }
             }
         }
+
+        // Serving↔worker job-contract version (ADR-0060 #3b): the worker harness re-checks this and
+        // fails closed if it exceeds the version it can run. Stamped AFTER the env.* passthrough so a
+        // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value.
+        env["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture);
 
         return env;
     }

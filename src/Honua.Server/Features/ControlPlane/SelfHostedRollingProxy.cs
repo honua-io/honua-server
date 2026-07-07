@@ -7,6 +7,7 @@ using System.Text;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Yarp.ReverseProxy.Configuration;
 
 namespace Honua.ControlPlane;
@@ -112,21 +113,73 @@ internal sealed class SelfHostedDeployOptionsValidator : OptionsValidator<SelfHo
 }
 
 /// <summary>
+/// Reconstructs the reverse proxy's forwarding destination from live container state instead of
+/// process-local memory. After a promote+restart the in-memory active address is reset to the
+/// configured active port whose replica was deleted at cutover, which would blackhole traffic; the
+/// running-replica lookup here restores the correct destination from ground truth.
+/// </summary>
+internal static class SelfHostedProxyReconstruction
+{
+    /// <summary>
+    /// Resolves the address the proxy should forward to by inspecting running replica containers.
+    /// Prefers the configured active port; falls back to the standby port when the active replica is
+    /// gone (the post-promotion world). Returns null when neither replica is running so the caller can
+    /// keep its configured default.
+    /// </summary>
+    public static string? ResolveRunningDestination(
+        IReadOnlyList<ContainerSummary> containers,
+        SelfHostedDeployOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(containers);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var prefix = string.IsNullOrWhiteSpace(options.ContainerNamePrefix) ? "honua-app" : options.ContainerNamePrefix;
+        var host = string.IsNullOrWhiteSpace(options.Host) ? "127.0.0.1" : options.Host;
+        var activeName = $"{prefix}-{options.ActivePort.ToString(CultureInfo.InvariantCulture)}";
+        var standbyName = $"{prefix}-{options.StandbyPort.ToString(CultureInfo.InvariantCulture)}";
+
+        if (IsRunning(containers, activeName))
+        {
+            return Address(host, options.ActivePort);
+        }
+
+        if (IsRunning(containers, standbyName))
+        {
+            return Address(host, options.StandbyPort);
+        }
+
+        return null;
+    }
+
+    private static bool IsRunning(IReadOnlyList<ContainerSummary> containers, string name)
+        => containers.Any(container => container.Running && string.Equals(container.Name, name, StringComparison.Ordinal));
+
+    private static string Address(string host, int port)
+        => $"http://{host}:{port.ToString(CultureInfo.InvariantCulture)}/";
+}
+
+/// <summary>
 /// <see cref="IProxyStateSwapper"/> that rewrites the embedded reverse proxy's single cluster
 /// destination through YARP's <see cref="InMemoryConfigProvider"/>, making the cutover an atomic swap.
 /// </summary>
 internal sealed class YarpInMemoryProxyStateSwapper : IProxyStateSwapper
 {
+    private static readonly IReadOnlyDictionary<string, string> NoLabelSelectors =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
     private readonly InMemoryConfigProvider _configProvider;
+    private readonly IContainerRuntimeClient _containerRuntime;
     private readonly SelfHostedDeployOptions _options;
     private readonly object _sync = new();
     private string _activeAddress;
 
     public YarpInMemoryProxyStateSwapper(
         InMemoryConfigProvider configProvider,
+        IContainerRuntimeClient containerRuntime,
         Microsoft.Extensions.Options.IOptions<SelfHostedDeployOptions> options)
     {
         _configProvider = configProvider;
+        _containerRuntime = containerRuntime;
         _options = options.Value;
         _activeAddress = InitialActiveAddress(_options);
     }
@@ -160,8 +213,61 @@ internal sealed class YarpInMemoryProxyStateSwapper : IProxyStateSwapper
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Repoints the proxy at the replica that is actually running, discovered from the container
+    /// runtime. Called at startup so a front-process restart that lost the in-memory swap decision does
+    /// not keep forwarding to a deleted active replica. Best-effort: when no replica is discovered the
+    /// configured active destination is left in place.
+    /// </summary>
+    public async Task ReconcileFromRuntimeAsync(CancellationToken cancellationToken)
+    {
+        var containers = await _containerRuntime
+            .ListAsync(_options.ContainerRuntime, NoLabelSelectors, cancellationToken)
+            .ConfigureAwait(false);
+
+        var destination = SelfHostedProxyReconstruction.ResolveRunningDestination(containers, _options);
+        if (string.IsNullOrEmpty(destination) || string.Equals(destination, ActiveDestinationAddress, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await SwapAsync(destination, cancellationToken).ConfigureAwait(false);
+    }
+
     internal static string InitialActiveAddress(SelfHostedDeployOptions options)
         => $"http://{options.Host}:{options.ActivePort.ToString(CultureInfo.InvariantCulture)}/";
+}
+
+/// <summary>
+/// Startup reconciliation that restores the reverse-proxy forwarding destination from live container
+/// state after a front-process restart, closing the window where a post-promotion restart would
+/// blackhole traffic by re-pointing the proxy at a deleted active replica.
+/// </summary>
+internal sealed partial class SelfHostedProxyReconciliationService(
+    YarpInMemoryProxyStateSwapper swapper,
+    ILogger<SelfHostedProxyReconciliationService> logger) : IHostedService
+{
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await swapper.ReconcileFromRuntimeAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Best-effort: a reconciliation failure must not block startup. The configured active
+            // destination remains in place and the next deploy operation re-establishes ground truth.
+            Log.ReconciliationFailed(logger, ex.Message);
+        }
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private static partial class Log
+    {
+        [LoggerMessage(9332, LogLevel.Warning, "Self-hosted proxy startup reconciliation failed: {Reason}")]
+        public static partial void ReconciliationFailed(ILogger logger, string reason);
+    }
 }
 
 /// <summary>
@@ -530,7 +636,12 @@ internal static class SelfHostedRollingProxyRegistration
                 .LoadFromMemory(
                     SelfHostedProxyConfig.BuildRoutes(options),
                     SelfHostedProxyConfig.BuildClusters(options, initialDestination));
-            services.AddSingleton<IProxyStateSwapper, YarpInMemoryProxyStateSwapper>();
+            services.AddSingleton<YarpInMemoryProxyStateSwapper>();
+            services.AddSingleton<IProxyStateSwapper>(sp => sp.GetRequiredService<YarpInMemoryProxyStateSwapper>());
+
+            // Restore the proxy destination from container ground truth at startup so a post-promotion
+            // restart cannot keep forwarding to a deleted active replica.
+            services.AddHostedService<SelfHostedProxyReconciliationService>();
         }
         else
         {
