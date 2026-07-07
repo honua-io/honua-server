@@ -27,6 +27,7 @@ COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 # `COPY . .` and the --no-restore publish step.  Omitting any referenced .csproj here
 # causes NuGet to skip it during restore; the subsequent publish then fails with
 # NETSDK1004 ("Assets file not found") for those projects.
+COPY src/Honua.Analyzers/*.csproj src/Honua.Analyzers/
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.Postgres.Shared/*.csproj src/Honua.Postgres.Shared/

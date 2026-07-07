@@ -24,6 +24,7 @@ COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 # Copy ALL project files referenced (directly or transitively) by Honua.Server so
 # that `dotnet restore` can generate obj/project.assets.json for every project
 # before `COPY . .` and the --no-restore publish step.
+COPY src/Honua.Analyzers/*.csproj src/Honua.Analyzers/
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Core.Abstractions/*.csproj src/Honua.Core.Abstractions/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
