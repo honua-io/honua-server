@@ -68,6 +68,12 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_query_features"] = "query_features",
             ["honua_render_map"] = "render_map",
             ["honua_publish_service"] = "publish_service",
+            // honua_publish_result (#2482): promotes a completed analysis job's
+            // materialized artifact into a hosted layer. The standard
+            // publish_result requires only `sourceId`; the live schema mirrors that
+            // required set (additionalProperties allowed) so the required-field
+            // match and standard-fixture assertions both hold.
+            ["honua_publish_result"] = "publish_result",
             // Honua extensions over the bare taxonomy (#1949): the standard models
             // entity resolution and capability discovery as CapabilityCatalog reads;
             // the reference implementation exposes them as discrete tools and ships
@@ -92,7 +98,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         "compose_mixed_protocol_map",
         "preview_map_package",
         "preview_app_package",
-        "publish_result",
         // edit_features is the sole member of the standard's optional 'mutation'
         // profile. Honua deliberately does NOT implement it: the MCP surface
         // exposes no AI-facing feature-mutation tool per ADR-0028 (AI operational
