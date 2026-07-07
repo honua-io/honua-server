@@ -36,7 +36,7 @@ internal sealed class ValidatePlanTool : IMcpTool
     {
         Name = ToolName,
         Title = "Validate plan",
-        Description = "Validate an analysis plan for executability, policy gates, and approvals.",
+        Description = "Read-only pre-flight over an analysis plan object: returns isExecutable, requiresApproval, violations[] (blocking structural/policy errors), and warnings[]. Prefer it to confirm a plan is well-formed and clears policy/approval gates before honua_execute_plan. Pairs with honua_dry_run_plan, which pre-flights the same plan object but instead estimates duration/artifacts/side-effects; prefer validate_plan for correctness, dry_run_plan for cost/impact.",
         InputSchema = InputSchemaElement,
         OutputSchema = McpToolOutputSchemas.ValidatePlanOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Validate plan")

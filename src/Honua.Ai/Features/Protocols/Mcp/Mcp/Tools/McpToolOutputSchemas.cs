@@ -234,9 +234,14 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["status"],
+          "required": ["status", "engine"],
           "properties": {
             "status": { "type": "string" },
+            "engine": {
+              "type": "string",
+              "enum": ["live", "fixture"],
+              "description": "Which planner produced this response. engine:\"live\" means the plan was compiled from your intent by a provider-backed model; engine:\"fixture\" means the plan is a canned deterministic template returned because no LLM provider is configured - treat it as a capability demo, not a plan compiled from your intent."
+            },
             "plan": { "type": ["object", "null"] },
             "specDraft": { "type": ["object", "null"] },
             "warnings": { "type": "array", "items": { "type": "object" } },
