@@ -260,6 +260,35 @@ internal static class McpServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Publishes validated operations-toolset descriptors as first-class MCP tools
+    /// (#2483, ADR-0056 Increment 4). Off unless <c>Mcp:PublishOperations:Enabled</c>
+    /// is set, so the advertised catalog is unchanged by default. Must be called
+    /// AFTER the operations toolset is composed (<c>AddOperationsToolset</c>), because
+    /// the tool source resolves the canonical <see cref="Honua.Core.Features.Operations.Abstractions.IOperationCatalog"/>
+    /// — call it from a host that has the operations toolset wired, not from a bare
+    /// <see cref="AddMcpOperatorSurface"/> composition.
+    /// </summary>
+    public static IServiceCollection AddMcpPublishedOperationTools(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddOptions<McpPublishedOperationOptions>()
+            .Bind(configuration.GetSection(McpPublishedOperationOptions.SectionName));
+
+        // Param-keyed deterministic result cache (shared across every published tool)
+        // and the catalog-backed tool source the operator surface merges into
+        // tools/list / tools/call.
+        services.TryAddSingleton<Tools.IPublishedOperationCache, Tools.PublishedOperationCache>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<Tools.IMcpToolSource, Tools.PublishedOperationToolSource>());
+
+        return services;
+    }
+
+    /// <summary>
     /// Registers the hosted-promotion MCP resource handlers (published services,
     /// deployments, map/app packages, and the promotion list index). Callers
     /// must register canonical <see cref="Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore"/>

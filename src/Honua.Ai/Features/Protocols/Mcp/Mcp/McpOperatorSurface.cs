@@ -40,6 +40,7 @@ internal sealed class McpOperatorSurface
     public static string LatestProtocolVersion => SupportedProtocolVersions[0];
 
     private readonly IReadOnlyDictionary<string, IMcpTool> _tools;
+    private readonly List<IMcpToolSource> _toolSources;
     private readonly IReadOnlyList<IMcpResource> _resources;
     private readonly McpSurfaceLimits _limits;
     private readonly ILogger<McpOperatorSurface> _logger;
@@ -48,9 +49,13 @@ internal sealed class McpOperatorSurface
         IEnumerable<IMcpTool> tools,
         IEnumerable<IMcpResource> resources,
         ILogger<McpOperatorSurface> logger,
-        McpSurfaceLimits? limits = null)
+        McpSurfaceLimits? limits = null,
+        IEnumerable<IMcpToolSource>? toolSources = null)
     {
         _tools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
+        // Dynamic, runtime-published tools (#2483). None composed by default, so the
+        // surface behaves exactly as before unless a host opts a source in.
+        _toolSources = toolSources?.ToList() ?? [];
         _resources = resources.ToList();
         _limits = limits ?? McpSurfaceLimits.Default;
         _logger = logger;
@@ -156,7 +161,7 @@ internal sealed class McpOperatorSurface
             return request.Method switch
             {
                 "initialize" => HandleInitialize(httpContext, request),
-                "tools/list" => ListTools(request),
+                "tools/list" => await ListToolsAsync(request, cancellationToken).ConfigureAwait(false),
                 "tools/call" => await CallToolAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "resources/list" => ListResources(request),
                 "resources/templates/list" => ListResourceTemplates(request),
@@ -266,15 +271,26 @@ internal sealed class McpOperatorSurface
         return LatestProtocolVersion;
     }
 
-    private McpJsonRpcResponse ListTools(McpJsonRpcRequest request)
+    private async Task<McpJsonRpcResponse> ListToolsAsync(
+        McpJsonRpcRequest request,
+        CancellationToken cancellationToken)
     {
         if (!TryReadCursor(request, out var cursor, out var error))
         {
             return error;
         }
 
-        var ordered = _tools.Values
-            .Select(t => t.Describe())
+        // Merge the static, registry-bound catalog with any runtime-published tools
+        // (#2483). Static tools always win on a name collision, and the dynamic set is
+        // empty unless a host composed a tool source, so default hosts are unchanged.
+        var describes = _tools.Values.Select(t => t.Describe());
+        var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);
+        if (dynamicTools.Count > 0)
+        {
+            describes = describes.Concat(dynamicTools.Select(t => t.Describe()));
+        }
+
+        var ordered = describes
             .OrderBy(d => d.Name, StringComparer.Ordinal)
             .ToList();
 
@@ -290,6 +306,44 @@ internal sealed class McpOperatorSurface
         {
             return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
         }
+    }
+
+    /// <summary>
+    /// Resolves the runtime-published dynamic tools (#2483) from every registered
+    /// <see cref="IMcpToolSource"/>, excluding any name that collides with a static
+    /// tool (static wins) or a name already yielded by an earlier source (first
+    /// wins). Returns an empty list when no source is composed — the default host.
+    /// </summary>
+    private async Task<IReadOnlyList<IMcpTool>> ResolveDynamicToolsAsync(CancellationToken cancellationToken)
+    {
+        if (_toolSources.Count == 0)
+        {
+            return [];
+        }
+
+        var merged = new List<IMcpTool>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var source in _toolSources)
+        {
+            var tools = await source.GetToolsAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var tool in tools)
+            {
+                if (_tools.ContainsKey(tool.Name) || !seen.Add(tool.Name))
+                {
+                    continue;
+                }
+
+                merged.Add(tool);
+            }
+        }
+
+        return merged;
+    }
+
+    private async Task<IMcpTool?> ResolveDynamicToolAsync(string name, CancellationToken cancellationToken)
+    {
+        var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);
+        return dynamicTools.FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.Ordinal));
     }
 
     private McpJsonRpcResponse ListPrompts(McpJsonRpcRequest request)
@@ -393,11 +447,18 @@ internal sealed class McpOperatorSurface
 
         if (!_tools.TryGetValue(parameters.Name, out var tool))
         {
-            // MCP 2025-03-26 maps unknown tool names to -32602 invalid params; the
-            // tool name is part of the tools/call `params` payload.
-            return ErrorResponse(
-                request.Id,
-                McpErrorMapper.InvalidArgument($"Unknown MCP tool '{parameters.Name}'."));
+            // Fall back to the runtime-published dynamic tools (#2483) before
+            // declaring the name unknown, so a published operation tool advertised in
+            // tools/list is callable. Static tools were checked first, so they win.
+            tool = await ResolveDynamicToolAsync(parameters.Name, cancellationToken).ConfigureAwait(false);
+            if (tool is null)
+            {
+                // MCP 2025-03-26 maps unknown tool names to -32602 invalid params; the
+                // tool name is part of the tools/call `params` payload.
+                return ErrorResponse(
+                    request.Id,
+                    McpErrorMapper.InvalidArgument($"Unknown MCP tool '{parameters.Name}'."));
+            }
         }
 
         McpToolsCallResult result;
