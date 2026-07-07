@@ -1,6 +1,13 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<!--
+  TreatAsLocalProperty shields this netstandard2.0 Roslyn component from the
+  global -p:PublishAot=true the AOT image builds pass on the command line
+  (docker/Dockerfile.aot, Dockerfile.lambda.aot): AOT is meaningless for an
+  analyzer and NETSDK1207-fails the whole publish graph otherwise.
+-->
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="PublishAot">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <PublishAot>false</PublishAot>
     <IsRoslynComponent>true</IsRoslynComponent>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
