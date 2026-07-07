@@ -11,6 +11,7 @@ public static partial class EndpointRegistry
     private static IReadOnlyList<EndpointDefinition> AdminObservabilityEndpoints =>
     [
         new("GET", "/api/v1/admin/observability/ops-health"),
+        new("GET", "/api/v1/admin/observability/ops-health/history"),
         new("GET", "/api/v1/admin/observability/findings"),
         new("POST", "/api/v1/admin/observability/findings/{findingId}/propose"),
     ];
