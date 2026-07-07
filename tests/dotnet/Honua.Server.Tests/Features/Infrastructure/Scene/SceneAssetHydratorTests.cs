@@ -149,6 +149,91 @@ public sealed class SceneAssetHydratorTests : IDisposable
             "concurrent first requests on a fresh node must trigger a single download pass.");
     }
 
+    [UnitTest]
+    public async Task EnsureLocalAsync_ManifestWithTraversalEscape_WritesNothingOutsideTempDirectory()
+    {
+        var storage = new InMemoryCloudFileStorage();
+        var prefix = SceneAssetHydration.BuildPrefix("evil-scene");
+        var localRoot = Path.Combine(_workRoot, "evil-node", "evil-scene");
+
+        // ../../ from the hydrate temp dir (localRoot + ".hydrate-<guid>", under _workRoot/evil-node)
+        // resolves to a sentinel under _workRoot — outside the scene cache tree.
+        var escapeTarget = Path.Combine(_workRoot, "escaped-pwned.txt");
+        var manifest = string.Join('\n', "../../escaped-pwned.txt", "tileset.json");
+        storage.Put(
+            SceneAssetHydration.BuildObjectKey(prefix, SceneAssetHydration.ManifestObjectName),
+            Encoding.UTF8.GetBytes(manifest));
+        // Seed bytes so a naive Path.Combine + WriteAllBytes implementation would actually plant the file.
+        storage.Put(
+            SceneAssetHydration.BuildObjectKey(prefix, "../../escaped-pwned.txt"),
+            Encoding.UTF8.GetBytes("pwned"));
+
+        var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
+        var record = BuildRecord("evil-scene", Guid.NewGuid(), prefix, localRoot);
+
+        await hydrator.EnsureLocalAsync(record, localRoot, CancellationToken.None);
+
+        File.Exists(escapeTarget).Should().BeFalse(
+            "a manifest '..' traversal must never write outside the scene cache directory.");
+        Directory.Exists(localRoot).Should().BeFalse(
+            "hydration must abort on an unsafe manifest path rather than install a partial tree.");
+    }
+
+    [UnitTest]
+    public async Task EnsureLocalAsync_ManifestWithAbsolutePath_WritesNothingOutsideTempDirectory()
+    {
+        var storage = new InMemoryCloudFileStorage();
+        var prefix = SceneAssetHydration.BuildPrefix("abs-scene");
+        var localRoot = Path.Combine(_workRoot, "abs-node", "abs-scene");
+
+        var absoluteTarget = Path.Combine(_workRoot, "abs-pwned.txt");
+        var manifest = string.Join('\n', absoluteTarget, "tileset.json");
+        storage.Put(
+            SceneAssetHydration.BuildObjectKey(prefix, SceneAssetHydration.ManifestObjectName),
+            Encoding.UTF8.GetBytes(manifest));
+        storage.Put(
+            SceneAssetHydration.BuildObjectKey(prefix, absoluteTarget),
+            Encoding.UTF8.GetBytes("pwned"));
+
+        var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
+        var record = BuildRecord("abs-scene", Guid.NewGuid(), prefix, localRoot);
+
+        await hydrator.EnsureLocalAsync(record, localRoot, CancellationToken.None);
+
+        File.Exists(absoluteTarget).Should().BeFalse(
+            "a rooted manifest path must never write outside the scene cache directory.");
+        Directory.Exists(localRoot).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task EnsureLocalAsync_Republish_KeepsAServableTreeThroughoutTheSwap()
+    {
+        var storage = new InMemoryCloudFileStorage();
+        var (prefix, _) = await SeedSceneAsync(storage, "swap-scene");
+
+        var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
+        var localRoot = Path.Combine(_workRoot, "swap", "swap-scene");
+
+        await hydrator.EnsureLocalAsync(
+            BuildRecord("swap-scene", Guid.NewGuid(), prefix, localRoot), localRoot, CancellationToken.None);
+
+        // Republish new content and re-hydrate; the install swap must leave a complete tree in place
+        // (never the delete-then-move window with no tree at all).
+        storage.Put(
+            SceneAssetHydration.BuildObjectKey(prefix, "tileset.json"),
+            Encoding.UTF8.GetBytes("{\"asset\":{\"version\":\"v2\"}}"));
+
+        await hydrator.EnsureLocalAsync(
+            BuildRecord("swap-scene", Guid.NewGuid(), prefix, localRoot), localRoot, CancellationToken.None);
+
+        Directory.Exists(localRoot).Should().BeTrue();
+        File.Exists(Path.Combine(localRoot, "tileset.json")).Should().BeTrue();
+        (await File.ReadAllTextAsync(Path.Combine(localRoot, "tileset.json"))).Should().Contain("v2");
+        // No leftover move-aside sibling should remain after a successful swap.
+        Directory.GetDirectories(Path.Combine(_workRoot, "swap"))
+            .Should().NotContain(d => d.Contains(".replaced-", StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// Writes a small tileset tree to a staging directory and uploads it through
     /// the production uploader so the stored keys/manifest match exactly what the

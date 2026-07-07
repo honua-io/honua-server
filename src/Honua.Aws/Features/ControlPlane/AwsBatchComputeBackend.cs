@@ -874,10 +874,7 @@ internal sealed partial class AwsBatchComputeBackend(
         {
             new("HONUA_OPERATION_ID", job.OperationId),
             new("HONUA_WORKLOAD_NAME", job.Spec.WorkloadName),
-            new("HONUA_JOB_KIND", job.Spec.Kind.ToString()),
-            // Serving↔worker job-contract version (ADR-0060 #3b): the worker harness re-checks this
-            // and fails closed if it exceeds the version it can run.
-            new("HONUA_CONTRACT_VERSION", job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture))
+            new("HONUA_JOB_KIND", job.Spec.Kind.ToString())
         };
 
         if (!string.IsNullOrWhiteSpace(job.Spec.WorkloadId))
@@ -908,8 +905,19 @@ internal sealed partial class AwsBatchComputeBackend(
                 continue;
             }
 
+            // Never let a workload passthrough shadow the contract-version gate; it is stamped last below.
+            if (string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             overrides.Add(new(name, entry.Value ?? string.Empty));
         }
+
+        // Serving↔worker job-contract version (ADR-0060 #3b): the worker harness re-checks this and
+        // fails closed if it exceeds the version it can run. Appended AFTER the env.* passthrough so a
+        // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value.
+        overrides.Add(new("HONUA_CONTRACT_VERSION", job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)));
 
         return overrides;
     }

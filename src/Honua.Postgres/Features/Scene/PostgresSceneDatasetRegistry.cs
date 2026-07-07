@@ -101,6 +101,13 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         _hydrator = hydrator;
     }
 
+    /// <remarks>
+    /// The pooled connection and reader are released <em>before</em> the asset hydration runs. Hydration
+    /// (#2459, ADR-0060) can pull a multi-GB tileset from the object store, so holding the connection
+    /// across it would let a cold-cache request herd pin every pooled connection for the whole download
+    /// and exhaust the pool. The row is fully materialized inside the connection scope; the download and
+    /// projection then happen with no database resources held.
+    /// </remarks>
     public async ValueTask<SceneDataset?> FindAsync(string id, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(id))
@@ -116,26 +123,34 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
 
         try
         {
-            await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            command.Parameters.Add(new NpgsqlParameter("@id", id));
+            SceneDatasetRecord? record;
 
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            // Scope the connection/command/reader so they are disposed (returned to the pool) at the
+            // closing brace, before the potentially long-running hydration below.
+            await using (var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = sql;
+                command.Parameters.Add(new NpgsqlParameter("@id", id));
+
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                record = await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+                    ? MapRow(reader)
+                    : null;
+            }
+
+            if (record is null)
             {
                 return null;
             }
 
-            var record = MapRow(reader);
             var localAssetRoot = CanonicalizeAssetRoot(record.AssetRoot);
 
-            // Read-through hydration seam (#2459, ADR-0060): every serving path
-            // (HTTP, gRPC, I3S, OpenUSD) resolves through FindAsync, so materializing
-            // the local asset cache here — before projection — makes a scene
-            // published on one node servable from any node without touching a single
-            // endpoint. A no-op for legacy rows with no storage prefix, and a fast
-            // marker check once the local cache is current.
+            // Read-through hydration seam (#2459, ADR-0060): every serving path (HTTP, gRPC, I3S,
+            // OpenUSD) resolves through FindAsync, so materializing the local asset cache here — after
+            // the connection is released and before projection — makes a scene published on one node
+            // servable from any node without touching a single endpoint. A no-op for legacy rows with
+            // no storage prefix, and a fast marker check once the local cache is current.
             if (_hydrator is not null && !string.IsNullOrEmpty(record.AssetStoragePrefix))
             {
                 await _hydrator.EnsureLocalAsync(record, localAssetRoot, cancellationToken).ConfigureAwait(false);
