@@ -92,6 +92,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/metadata/prevalidate"),
         new("GET", "/api/v1/admin/deploy/preflight"),
         new("POST", "/api/v1/admin/deploy/plan"),
+        new("GET", "/api/v1/admin/deploy/operations"),
         new("POST", "/api/v1/admin/deploy/operations"),
         new("GET", "/api/v1/admin/deploy/operations/{operationId}"),
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/submit"),

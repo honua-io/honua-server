@@ -517,6 +517,42 @@ public sealed class DeployOperationResponse
 }
 
 /// <summary>
+/// Paged, newest-first collection of durable deploy workflow operations.
+/// </summary>
+public sealed class DeployOperationListResponse
+{
+    /// <summary>
+    /// Operations on this page, ordered newest-first by creation time.
+    /// </summary>
+    [JsonPropertyName("items")]
+    public IReadOnlyList<DeployOperationResponse> Items { get; init; } = Array.Empty<DeployOperationResponse>();
+
+    /// <summary>
+    /// One-based page number that produced this page.
+    /// </summary>
+    [JsonPropertyName("page")]
+    public int Page { get; init; }
+
+    /// <summary>
+    /// Effective page size applied when producing this page.
+    /// </summary>
+    [JsonPropertyName("pageSize")]
+    public int PageSize { get; init; }
+
+    /// <summary>
+    /// Total number of operations matching the filter within the materialized window.
+    /// </summary>
+    [JsonPropertyName("totalCount")]
+    public int TotalCount { get; init; }
+
+    /// <summary>
+    /// Whether at least one more page exists after this one.
+    /// </summary>
+    [JsonPropertyName("hasMore")]
+    public bool HasMore { get; init; }
+}
+
+/// <summary>
 /// Metadata release lifecycle context embedded in a workflow operation response.
 /// </summary>
 public sealed class MetadataReleaseContextResponse

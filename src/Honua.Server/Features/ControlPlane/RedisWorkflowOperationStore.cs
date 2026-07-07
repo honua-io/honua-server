@@ -184,6 +184,138 @@ internal sealed partial class RedisWorkflowOperationStore(
             .ToArray();
     }
 
+    public async Task<WorkflowOperationPage> QueryAsync(
+        WorkflowOperationQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var page = Math.Max(1, query.Page);
+        var pageSize = Math.Clamp(query.PageSize <= 0 ? DefaultPageSize : query.PageSize, 1, MaxPageSize);
+
+        // Candidate identifiers: the active-set index (unordered, non-terminal) unioned with the
+        // terminal-operations index (newest-completed first, bounded to a materialization window).
+        var activeKey = query.Kind.HasValue ? GetKindActiveKey(query.Kind.Value) : ActiveOperationsKey;
+        var activeIds = await _database.SetMembersAsync(activeKey).ConfigureAwait(false);
+        var terminalIds = await _database
+            .SortedSetRangeByRankAsync(TerminalOperationsKey, 0, MaterializationCap - 1, Order.Descending)
+            .ConfigureAwait(false);
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var records = new List<WorkflowOperationRecord>(activeIds.Length + terminalIds.Length);
+        var staleActive = new List<RedisValue>();
+        var staleTerminal = new List<RedisValue>();
+
+        foreach (var id in activeIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await CollectCandidateAsync(id, records, seen, staleActive, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var id in terminalIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await CollectCandidateAsync(id, records, seen, staleTerminal, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (staleActive.Count > 0)
+        {
+            await RemoveStaleMembersAsync(activeKey, staleActive).ConfigureAwait(false);
+        }
+
+        foreach (var staleId in staleTerminal)
+        {
+            await _database.SortedSetRemoveAsync(TerminalOperationsKey, staleId).ConfigureAwait(false);
+        }
+
+        var filtered = records
+            .Where(record => (!query.Kind.HasValue || record.Kind == query.Kind.Value)
+                && (!query.Status.HasValue || record.Status == query.Status.Value))
+            .OrderByDescending(record => record.CreatedAt)
+            .ThenByDescending(record => record.OperationId, StringComparer.Ordinal)
+            .ToArray();
+
+        var skip = (page - 1) * pageSize;
+        var items = filtered.Skip(skip).Take(pageSize).ToArray();
+
+        return new WorkflowOperationPage
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = filtered.Length,
+            HasMore = skip + items.Length < filtered.Length
+        };
+    }
+
+    public async Task<WorkflowOperationRecord?> GetMostRecentSucceededDeployByTargetAsync(
+        string targetId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(targetId))
+        {
+            return null;
+        }
+
+        var normalizedTargetId = targetId.Trim();
+        var indexKey = GetDeploySucceededTargetKey(normalizedTargetId);
+        var operationIds = await _database
+            .SortedSetRangeByRankAsync(indexKey, 0, DeploySucceededTargetCap - 1, Order.Descending)
+            .ConfigureAwait(false);
+
+        foreach (var operationId in operationIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!operationId.HasValue)
+            {
+                continue;
+            }
+
+            var record = await GetAsync(operationId.ToString(), cancellationToken).ConfigureAwait(false);
+            if (record is { Kind: WorkflowOperationKind.Deploy, Status: WorkflowOperationStatus.Succeeded }
+                && string.Equals(record.Deploy?.TargetId, normalizedTargetId, StringComparison.Ordinal))
+            {
+                return record;
+            }
+
+            // The index member expired or the operation is no longer a succeeded deploy for this target
+            // (for example it was subsequently rolled back). Prune it so the newest match stays cheap.
+            await _database.SortedSetRemoveAsync(indexKey, operationId).ConfigureAwait(false);
+        }
+
+        return null;
+    }
+
+    private async Task CollectCandidateAsync(
+        RedisValue operationId,
+        List<WorkflowOperationRecord> records,
+        HashSet<string> seen,
+        List<RedisValue> staleSink,
+        CancellationToken cancellationToken)
+    {
+        if (!operationId.HasValue)
+        {
+            return;
+        }
+
+        var id = operationId.ToString();
+        if (!seen.Add(id))
+        {
+            return;
+        }
+
+        var record = await GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (record == null)
+        {
+            staleSink.Add(operationId);
+            return;
+        }
+
+        records.Add(record);
+    }
+
     public async Task<bool> TrySetAsync(
         WorkflowOperationRecord operation,
         TimeSpan? ttl = null,
@@ -253,12 +385,36 @@ internal sealed partial class RedisWorkflowOperationStore(
         {
             transaction.SetRemoveAsync(ActiveOperationsKey, operationId);
             transaction.SetRemoveAsync(GetKindActiveKey(operation.Kind), operationId);
+
+            // Terminal-operations index: newest-completed first, scored by completion time and bounded so
+            // the list endpoint can surface terminal results and the sweep never grows without limit.
+            var score = GetIndexScore(operation);
+            transaction.SortedSetAddAsync(TerminalOperationsKey, operationId, score);
+            transaction.SortedSetRemoveRangeByRankAsync(TerminalOperationsKey, 0, -(TerminalIndexCap + 1));
+
+            // Per-target succeeded-deploy index backs the converge API's "revision last landed here"
+            // lookup. Only successful deploys are pinned; rollbacks/failures are pruned lazily on read.
+            if (operation.Kind == WorkflowOperationKind.Deploy
+                && operation.Status == WorkflowOperationStatus.Succeeded
+                && operation.Deploy is { TargetId: { Length: > 0 } targetId })
+            {
+                var targetKey = GetDeploySucceededTargetKey(targetId);
+                transaction.SortedSetAddAsync(targetKey, operationId, score);
+                transaction.SortedSetRemoveRangeByRankAsync(targetKey, 0, -(DeploySucceededTargetCap + 1));
+            }
+
             return;
         }
 
         transaction.SetAddAsync(ActiveOperationsKey, operationId);
         transaction.SetAddAsync(GetKindActiveKey(operation.Kind), operationId);
+
+        // Guard against a rare re-activation from a terminal state leaving a stale terminal-index member.
+        transaction.SortedSetRemoveAsync(TerminalOperationsKey, operationId);
     }
+
+    private static double GetIndexScore(WorkflowOperationRecord operation)
+        => (operation.CompletedAt ?? operation.UpdatedAt).ToUnixTimeMilliseconds();
 
     private static void QueueMetadataPackageIndexUpdate(
         ITransaction transaction,
@@ -335,7 +491,16 @@ internal sealed partial class RedisWorkflowOperationStore(
     private static string GetKindActiveKey(WorkflowOperationKind kind)
         => $"controlplane:workflow:active:{kind.ToString().ToLowerInvariant()}";
 
+    private static string GetDeploySucceededTargetKey(string targetId)
+        => $"controlplane:workflow:deploy-succeeded:{targetId}";
+
     private const string ActiveOperationsKey = "controlplane:workflow:active";
+    private const string TerminalOperationsKey = "controlplane:workflow:terminal";
+    private const int DefaultPageSize = 50;
+    private const int MaxPageSize = 200;
+    private const int MaterializationCap = 1000;
+    private const int TerminalIndexCap = 5000;
+    private const int DeploySucceededTargetCap = 50;
 
     private static partial class Log
     {

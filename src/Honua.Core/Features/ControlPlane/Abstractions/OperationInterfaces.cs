@@ -123,6 +123,41 @@ public interface IWorkflowOperationStore : IOperationStore
     Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(
         WorkflowOperationKind? kind = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Queries durable workflow operations newest-first with optional kind and status filters, drawing
+    /// from both the active-set index and the terminal-operations index. The default implementation
+    /// returns an empty page so lightweight test doubles need not implement paging; the durable
+    /// Redis-backed store overrides it.
+    /// </summary>
+    /// <param name="query">Filter and paging criteria.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A page of workflow operations ordered newest-first by creation time.</returns>
+    Task<WorkflowOperationPage> QueryAsync(
+        WorkflowOperationQuery query,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new WorkflowOperationPage
+        {
+            Items = Array.Empty<WorkflowOperationRecord>(),
+            Page = query.Page,
+            PageSize = query.PageSize,
+            TotalCount = 0,
+            HasMore = false
+        });
+
+    /// <summary>
+    /// Returns the most recent terminal-<see cref="WorkflowOperationStatus.Succeeded"/> deploy operation
+    /// for a target, or null when none exists. Backs the platform-release converge API's "what revision
+    /// last landed on this target" lookup. The default implementation returns null; the durable
+    /// Redis-backed store overrides it using a per-target succeeded index.
+    /// </summary>
+    /// <param name="targetId">Deploy target identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The most recent succeeded deploy operation for the target, or null.</returns>
+    Task<WorkflowOperationRecord?> GetMostRecentSucceededDeployByTargetAsync(
+        string targetId,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<WorkflowOperationRecord?>(null);
 }
 
 /// <summary>
