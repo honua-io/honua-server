@@ -124,6 +124,44 @@ public class OpsHealthRollupAggregationTests
         merged.ErrorRate.Should().BeApproximately(0.02, 1e-9);
     }
 
+    [Fact]
+    public void MergeVitalsAcrossReplicas_SumsGpQueueBreakdownPerKey()
+    {
+        var a = new OpsHealthVitalsPoint
+        {
+            OverallStatus = "Healthy",
+            GpQueueTotal = 5,
+            GpQueueBreakdown = new Dictionary<string, int>
+            {
+                ["Queued|local"] = 3,
+                ["Running|local"] = 2,
+            },
+            DbActiveConnections = 1,
+            CacheHitRatio = 1,
+            ErrorRate = 0,
+        };
+        var b = new OpsHealthVitalsPoint
+        {
+            OverallStatus = "Healthy",
+            GpQueueTotal = 4,
+            GpQueueBreakdown = new Dictionary<string, int>
+            {
+                ["Queued|local"] = 1,
+                ["Queued|aws-batch"] = 3,
+            },
+            DbActiveConnections = 1,
+            CacheHitRatio = 1,
+            ErrorRate = 0,
+        };
+
+        var merged = OpsHealthRollupAggregation.MergeVitalsAcrossReplicas([a, b]);
+
+        merged.GpQueueBreakdown.Should().HaveCount(3);
+        merged.GpQueueBreakdown["Queued|local"].Should().Be(4);
+        merged.GpQueueBreakdown["Running|local"].Should().Be(2);
+        merged.GpQueueBreakdown["Queued|aws-batch"].Should().Be(3);
+    }
+
     [Theory]
     [InlineData("Unhealthy", 3)]
     [InlineData("Degraded", 2)]

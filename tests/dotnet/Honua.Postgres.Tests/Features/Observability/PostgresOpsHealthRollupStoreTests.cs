@@ -47,6 +47,9 @@ public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
             vitals.Should().HaveCount(1);
             vitals[0].Point.OverallStatus.Should().Be("Healthy");
             vitals[0].Point.GpQueueTotal.Should().Be(4);
+            vitals[0].Point.GpQueueBreakdown.Should().HaveCount(2);
+            vitals[0].Point.GpQueueBreakdown["Queued|local"].Should().Be(3);
+            vitals[0].Point.GpQueueBreakdown["Running|local"].Should().Be(1);
             vitals[0].Point.AlertPending.Should().Be(7);
         }
         finally
@@ -89,9 +92,13 @@ public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
             var store = new PostgresOpsHealthRollupStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
             var windowStart = new DateTimeOffset(2026, 7, 7, 12, 0, 0, TimeSpan.Zero);
 
-            // Two minute buckets inside the same 5-minute window.
-            await store.WriteSampleAsync(Sample("replica-a", windowStart.AddMinutes(0), ("FeatureServer", 100, 0, 10, 100, 200, 300)));
-            await store.WriteSampleAsync(Sample("replica-a", windowStart.AddMinutes(1), ("FeatureServer", 300, 0, 20, 200, 400, 250)));
+            // Two minute buckets inside the same 5-minute window, with differing GP queue breakdowns.
+            await store.WriteSampleAsync(Sample(
+                "replica-a", windowStart.AddMinutes(0), ("FeatureServer", 100, 0, 10, 100, 200, 300),
+                new Dictionary<string, int> { ["Queued|local"] = 5, ["Running|local"] = 2 }));
+            await store.WriteSampleAsync(Sample(
+                "replica-a", windowStart.AddMinutes(1), ("FeatureServer", 300, 0, 20, 200, 400, 250),
+                new Dictionary<string, int> { ["Queued|local"] = 3, ["Queued|aws-batch"] = 9 }));
 
             var now = windowStart.AddMinutes(30);
             await store.DownsampleAndPruneAsync(now, OpsHealthRollupRetentionPolicy.Default);
@@ -104,6 +111,15 @@ public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
             // Counts store the peak observation.
             fiveMin[0].Point.RequestCount.Should().Be(300);
             fiveMin[0].Point.MaxMs.Should().Be(300);
+
+            // Breakdown is downsampled with a per-key peak (max) across the coarse bucket's minutes.
+            var fiveMinVitals = await store.ReadVitalsAsync(OpsHealthRollupTier.FiveMinute, windowStart.AddMinutes(-1), now);
+            fiveMinVitals.Should().HaveCount(1);
+            var breakdown = fiveMinVitals[0].Point.GpQueueBreakdown;
+            breakdown.Should().HaveCount(3);
+            breakdown["Queued|local"].Should().Be(5);
+            breakdown["Running|local"].Should().Be(2);
+            breakdown["Queued|aws-batch"].Should().Be(9);
 
             var hourly = await store.ReadVitalsAsync(OpsHealthRollupTier.Hourly, windowStart.AddMinutes(-1), now);
             hourly.Should().NotBeEmpty();
@@ -168,7 +184,8 @@ public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
     private static OpsHealthRollupSample Sample(
         string replicaId,
         DateTimeOffset capturedAt,
-        (string Protocol, long Requests, long Errors, double P50, double P95, double P99, double Max) latency)
+        (string Protocol, long Requests, long Errors, double P50, double P95, double P99, double Max) latency,
+        IReadOnlyDictionary<string, int>? gpBreakdown = null)
     {
         return new OpsHealthRollupSample
         {
@@ -191,6 +208,7 @@ public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
             {
                 OverallStatus = "Healthy",
                 GpQueueTotal = 4,
+                GpQueueBreakdown = gpBreakdown ?? new Dictionary<string, int> { ["Queued|local"] = 3, ["Running|local"] = 1 },
                 AlertPending = 7,
                 AlertDeadLettered = 0,
                 DbPoolUtilization = 0.5,
@@ -226,6 +244,7 @@ public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
                 bucket_start          TIMESTAMPTZ      NOT NULL,
                 overall_status        TEXT             NOT NULL DEFAULT 'Unknown',
                 gp_queue_total        INTEGER          NOT NULL DEFAULT 0,
+                gp_queue_breakdown    JSONB            NOT NULL DEFAULT jsonb_build_object(),
                 alert_pending         BIGINT           NULL,
                 alert_dead_lettered   BIGINT           NULL,
                 db_pool_utilization   DOUBLE PRECISION NULL,

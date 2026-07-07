@@ -133,6 +133,14 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
             });
         }
 
+        // Flatten the live snapshot's status×backend GP queue buckets into the persisted breakdown map
+        // ("<status>|<backend>" keys) so history can answer which backend/status was backing up.
+        var gpBreakdown = new Dictionary<string, int>(snapshot.Geoprocessing.Buckets.Count, StringComparer.Ordinal);
+        foreach (var bucket in snapshot.Geoprocessing.Buckets)
+        {
+            gpBreakdown[$"{bucket.Status}|{bucket.Backend}"] = bucket.Count;
+        }
+
         var sample = new OpsHealthRollupSample
         {
             ReplicaId = options.ResolveReplicaId(),
@@ -142,6 +150,7 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
             {
                 OverallStatus = snapshot.OverallStatus,
                 GpQueueTotal = snapshot.Geoprocessing.TotalActive,
+                GpQueueBreakdown = gpBreakdown,
                 AlertPending = snapshot.AlertDispatch.PendingCount,
                 AlertDeadLettered = snapshot.AlertDispatch.DeadLetteredCount,
                 DbPoolUtilization = snapshot.Database.ConnectionPoolUtilization,

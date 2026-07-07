@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
@@ -80,13 +82,14 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
 
         var vitalsSql = $"""
             INSERT INTO {_vitalsTable}
-                (replica_id, tier, bucket_start, overall_status, gp_queue_total, alert_pending, alert_dead_lettered,
+                (replica_id, tier, bucket_start, overall_status, gp_queue_total, gp_queue_breakdown, alert_pending, alert_dead_lettered,
                  db_pool_utilization, db_active_connections, cache_hit_ratio, error_rate, updated_at)
-            VALUES (@replica_id, @tier, @bucket_start, @overall_status, @gp_queue_total, @alert_pending, @alert_dead_lettered,
+            VALUES (@replica_id, @tier, @bucket_start, @overall_status, @gp_queue_total, @gp_queue_breakdown, @alert_pending, @alert_dead_lettered,
                     @db_pool_utilization, @db_active_connections, @cache_hit_ratio, @error_rate, @updated_at)
             ON CONFLICT (replica_id, tier, bucket_start) DO UPDATE SET
                 overall_status = EXCLUDED.overall_status,
                 gp_queue_total = EXCLUDED.gp_queue_total,
+                gp_queue_breakdown = EXCLUDED.gp_queue_breakdown,
                 alert_pending = EXCLUDED.alert_pending,
                 alert_dead_lettered = EXCLUDED.alert_dead_lettered,
                 db_pool_utilization = EXCLUDED.db_pool_utilization,
@@ -104,6 +107,7 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
             vitalsCommand.Parameters.AddWithValue("bucket_start", NpgsqlDbType.TimestampTz, bucketStart);
             vitalsCommand.Parameters.AddWithValue("overall_status", NpgsqlDbType.Text, vitals.OverallStatus);
             vitalsCommand.Parameters.AddWithValue("gp_queue_total", NpgsqlDbType.Integer, vitals.GpQueueTotal);
+            vitalsCommand.Parameters.AddWithValue("gp_queue_breakdown", NpgsqlDbType.Jsonb, SerializeBreakdown(vitals.GpQueueBreakdown));
             vitalsCommand.Parameters.AddWithValue("alert_pending", NpgsqlDbType.Bigint, (object?)vitals.AlertPending ?? DBNull.Value);
             vitalsCommand.Parameters.AddWithValue("alert_dead_lettered", NpgsqlDbType.Bigint, (object?)vitals.AlertDeadLettered ?? DBNull.Value);
             vitalsCommand.Parameters.AddWithValue("db_pool_utilization", NpgsqlDbType.Double, (object?)vitals.DbPoolUtilization ?? DBNull.Value);
@@ -151,7 +155,7 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
     {
         var sql = $"""
             SELECT replica_id, bucket_start, overall_status, gp_queue_total, alert_pending, alert_dead_lettered,
-                   db_pool_utilization, db_active_connections, cache_hit_ratio, error_rate
+                   db_pool_utilization, db_active_connections, cache_hit_ratio, error_rate, gp_queue_breakdown
             FROM {_vitalsTable}
             WHERE tier = @tier AND bucket_start >= @from AND bucket_start <= @to
             ORDER BY bucket_start, replica_id
@@ -181,6 +185,7 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
                     DbActiveConnections = reader.GetInt32(7),
                     CacheHitRatio = reader.GetDouble(8),
                     ErrorRate = reader.GetDouble(9),
+                    GpQueueBreakdown = ParseBreakdown(reader.IsDBNull(10) ? null : reader.GetString(10)),
                 },
             });
         }
@@ -275,34 +280,69 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
 
     private async Task DownsampleVitalsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, short targetTier, int bucketSeconds, DateTimeOffset now, CancellationToken cancellationToken)
     {
+        // The GP queue breakdown map is downsampled with a per-key MAX (peak depth per status|backend key
+        // within the coarse bucket), consistent with the peak-counts semantics used for the scalar columns.
         var sql = $"""
+            WITH source AS (
+                SELECT replica_id,
+                       to_timestamp(floor(extract(epoch FROM bucket_start) / @bucket_seconds) * @bucket_seconds) AS bucket,
+                       overall_status, gp_queue_total, gp_queue_breakdown, alert_pending, alert_dead_lettered,
+                       db_pool_utilization, db_active_connections, cache_hit_ratio, error_rate
+                FROM {_vitalsTable}
+                WHERE tier = @source_tier
+            ),
+            breakdown AS (
+                SELECT replica_id, bucket, jsonb_object_agg(key, peak) AS gp_queue_breakdown
+                FROM (
+                    SELECT s.replica_id, s.bucket, kv.key, MAX((kv.value)::int) AS peak
+                    FROM source s
+                    CROSS JOIN LATERAL jsonb_each_text(s.gp_queue_breakdown) AS kv
+                    GROUP BY s.replica_id, s.bucket, kv.key
+                ) per_key
+                GROUP BY replica_id, bucket
+            )
             INSERT INTO {_vitalsTable}
-                (replica_id, tier, bucket_start, overall_status, gp_queue_total, alert_pending, alert_dead_lettered,
+                (replica_id, tier, bucket_start, overall_status, gp_queue_total, gp_queue_breakdown, alert_pending, alert_dead_lettered,
                  db_pool_utilization, db_active_connections, cache_hit_ratio, error_rate, updated_at)
             SELECT
-                replica_id,
+                agg.replica_id,
                 @target_tier,
-                to_timestamp(floor(extract(epoch FROM bucket_start) / @bucket_seconds) * @bucket_seconds),
-                CASE
-                    WHEN bool_or(overall_status = 'Unhealthy') THEN 'Unhealthy'
-                    WHEN bool_or(overall_status = 'Degraded') THEN 'Degraded'
-                    WHEN bool_or(overall_status = 'Healthy') THEN 'Healthy'
-                    ELSE MAX(overall_status)
-                END,
-                MAX(gp_queue_total),
-                MAX(alert_pending),
-                MAX(alert_dead_lettered),
-                AVG(db_pool_utilization),
-                MAX(db_active_connections),
-                AVG(cache_hit_ratio),
-                MAX(error_rate),
+                agg.bucket,
+                agg.overall_status,
+                agg.gp_queue_total,
+                COALESCE(b.gp_queue_breakdown, jsonb_build_object()),
+                agg.alert_pending,
+                agg.alert_dead_lettered,
+                agg.db_pool_utilization,
+                agg.db_active_connections,
+                agg.cache_hit_ratio,
+                agg.error_rate,
                 @updated_at
-            FROM {_vitalsTable}
-            WHERE tier = @source_tier
-            GROUP BY replica_id, to_timestamp(floor(extract(epoch FROM bucket_start) / @bucket_seconds) * @bucket_seconds)
+            FROM (
+                SELECT
+                    replica_id,
+                    bucket,
+                    CASE
+                        WHEN bool_or(overall_status = 'Unhealthy') THEN 'Unhealthy'
+                        WHEN bool_or(overall_status = 'Degraded') THEN 'Degraded'
+                        WHEN bool_or(overall_status = 'Healthy') THEN 'Healthy'
+                        ELSE MAX(overall_status)
+                    END AS overall_status,
+                    MAX(gp_queue_total) AS gp_queue_total,
+                    MAX(alert_pending) AS alert_pending,
+                    MAX(alert_dead_lettered) AS alert_dead_lettered,
+                    AVG(db_pool_utilization) AS db_pool_utilization,
+                    MAX(db_active_connections) AS db_active_connections,
+                    AVG(cache_hit_ratio) AS cache_hit_ratio,
+                    MAX(error_rate) AS error_rate
+                FROM source
+                GROUP BY replica_id, bucket
+            ) agg
+            LEFT JOIN breakdown b ON b.replica_id = agg.replica_id AND b.bucket = agg.bucket
             ON CONFLICT (replica_id, tier, bucket_start) DO UPDATE SET
                 overall_status = EXCLUDED.overall_status,
                 gp_queue_total = EXCLUDED.gp_queue_total,
+                gp_queue_breakdown = EXCLUDED.gp_queue_breakdown,
                 alert_pending = EXCLUDED.alert_pending,
                 alert_dead_lettered = EXCLUDED.alert_dead_lettered,
                 db_pool_utilization = EXCLUDED.db_pool_utilization,
@@ -328,6 +368,53 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
         command.Parameters.AddWithValue("cutoff", NpgsqlDbType.TimestampTz, cutoff);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    // Manual (reflection-free) JSON shaping for the flat {"<status>|<backend>": count} breakdown map,
+    // keeping the store AOT-safe without a serializer context.
+    private static string SerializeBreakdown(IReadOnlyDictionary<string, int> breakdown)
+    {
+        if (breakdown.Count == 0)
+        {
+            return "{}";
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (var pair in breakdown)
+            {
+                writer.WriteNumber(pair.Key, pair.Value);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static IReadOnlyDictionary<string, int> ParseBreakdown(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "{}")
+        {
+            return EmptyBreakdown;
+        }
+
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        using var document = JsonDocument.Parse(json);
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            if (property.Value.TryGetInt32(out var count))
+            {
+                result[property.Name] = count;
+            }
+        }
+
+        return result;
+    }
+
+    private static readonly IReadOnlyDictionary<string, int> EmptyBreakdown =
+        new Dictionary<string, int>(capacity: 0);
 
     private static DateTimeOffset TruncateToMinute(DateTimeOffset value)
     {

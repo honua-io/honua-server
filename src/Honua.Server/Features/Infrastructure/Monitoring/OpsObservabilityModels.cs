@@ -390,6 +390,15 @@ public sealed class OpsHealthHistoryVitalsPoint
     [JsonPropertyName("gpQueueTotal")]
     public required int GpQueueTotal { get; init; }
 
+    /// <summary>
+    /// Gets the GP queue depth broken down by status and backend, keyed
+    /// <c>"&lt;status&gt;|&lt;backend&gt;"</c> (e.g. <c>"Queued|local"</c>) — the flattened form of the live
+    /// snapshot's status×backend buckets. Cluster-merged points sum each key across replicas; coarser
+    /// resolutions carry the per-key peak within the bucket.
+    /// </summary>
+    [JsonPropertyName("gpQueueBreakdown")]
+    public required IReadOnlyDictionary<string, int> GpQueueBreakdown { get; init; }
+
     /// <summary>Gets the alert-dispatch pending backlog, when available.</summary>
     [JsonPropertyName("alertPending")]
     public long? AlertPending { get; init; }

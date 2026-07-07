@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS honua.ops_health_rollup_vitals (
     bucket_start          TIMESTAMPTZ      NOT NULL,
     overall_status        TEXT             NOT NULL DEFAULT 'Unknown',
     gp_queue_total        INTEGER          NOT NULL DEFAULT 0,
+    gp_queue_breakdown    JSONB            NOT NULL DEFAULT '{}',
     alert_pending         BIGINT           NULL,
     alert_dead_lettered   BIGINT           NULL,
     db_pool_utilization   DOUBLE PRECISION NULL,
@@ -64,3 +65,5 @@ COMMENT ON TABLE honua.ops_health_rollup_vitals IS
     'Persisted per-replica ops-vitals rollup (queue depth, alert backlog, DB/cache vitals) with retention tiers (#2553).';
 COMMENT ON COLUMN honua.ops_health_rollup_vitals.tier IS
     '0=1-minute (retained 24h), 1=5-minute (14d), 2=hourly (90d).';
+COMMENT ON COLUMN honua.ops_health_rollup_vitals.gp_queue_breakdown IS
+    'GP queue depth by status and backend: {"<status>|<backend>": count} (flattened live-snapshot buckets). Cross-replica reads sum per key; downsampling stores the per-key peak.';

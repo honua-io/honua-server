@@ -77,6 +77,12 @@ public static class OpsHealthRollupAggregation
     /// Merges per-replica vitals into one whole-cluster point: worst overall status, summed active DB
     /// connections, peak (max) queue/backlog signals, and averaged utilization/ratio gauges.
     /// </summary>
+    /// <remarks>
+    /// The GP queue breakdown (<c>"&lt;status&gt;|&lt;backend&gt;"</c> keys) is merged with a per-key SUM
+    /// across replicas within a bucket (each replica reports its own view of the shared queue at flush time;
+    /// summing keeps the breakdown consistent with the per-key peak stored when downsampling to coarser
+    /// tiers, which uses a per-key MAX — the same peak-counts semantics as the latency counts).
+    /// </remarks>
     /// <param name="points">The per-replica vitals points (must be non-empty).</param>
     /// <returns>The merged whole-cluster vitals point.</returns>
     public static OpsHealthVitalsPoint MergeVitalsAcrossReplicas(IReadOnlyList<OpsHealthVitalsPoint> points)
@@ -102,9 +108,17 @@ public static class OpsHealthRollupAggregation
         var dbActive = 0;
         double cacheSum = 0;
         double errorSum = 0;
+        var breakdown = new Dictionary<string, int>(StringComparer.Ordinal);
 
         foreach (var point in points)
         {
+            foreach (var bucket in point.GpQueueBreakdown)
+            {
+                breakdown[bucket.Key] = breakdown.TryGetValue(bucket.Key, out var existing)
+                    ? existing + bucket.Value
+                    : bucket.Value;
+            }
+
             var rank = StatusRank(point.OverallStatus);
             if (rank > worstRank)
             {
@@ -138,6 +152,7 @@ public static class OpsHealthRollupAggregation
         {
             OverallStatus = worstStatus,
             GpQueueTotal = gpQueueTotal,
+            GpQueueBreakdown = breakdown,
             AlertPending = alertPending,
             AlertDeadLettered = alertDeadLettered,
             DbPoolUtilization = poolCount > 0 ? poolSum / poolCount : null,

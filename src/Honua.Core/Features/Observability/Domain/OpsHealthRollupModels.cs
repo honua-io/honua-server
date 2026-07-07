@@ -56,11 +56,21 @@ public sealed record OpsHealthLatencyPoint
 /// </summary>
 public sealed record OpsHealthVitalsPoint
 {
+    private static readonly IReadOnlyDictionary<string, int> EmptyBreakdown =
+        new Dictionary<string, int>(capacity: 0);
+
     /// <summary>Gets the overall health roll-up status string (<c>Healthy</c>/<c>Degraded</c>/<c>Unhealthy</c>).</summary>
     public required string OverallStatus { get; init; }
 
     /// <summary>Gets the total active geoprocessing jobs (queued + provisioning + running).</summary>
     public required int GpQueueTotal { get; init; }
+
+    /// <summary>
+    /// Gets the GP queue depth broken down by status and backend, keyed <c>"&lt;status&gt;|&lt;backend&gt;"</c>
+    /// (e.g. <c>"Queued|local"</c>) — the flattened form of the live snapshot's status×backend buckets.
+    /// Empty when no jobs are active or no execution-job store is registered.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> GpQueueBreakdown { get; init; } = EmptyBreakdown;
 
     /// <summary>Gets the alert-dispatch pending backlog count, when available.</summary>
     public long? AlertPending { get; init; }

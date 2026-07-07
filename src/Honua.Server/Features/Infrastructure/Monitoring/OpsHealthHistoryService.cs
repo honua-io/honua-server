@@ -275,6 +275,7 @@ internal sealed class OpsHealthHistoryService : IOpsHealthHistoryService
         ReplicaId = replicaId,
         OverallStatus = point.OverallStatus,
         GpQueueTotal = point.GpQueueTotal,
+        GpQueueBreakdown = point.GpQueueBreakdown,
         AlertPending = point.AlertPending,
         AlertDeadLettered = point.AlertDeadLettered,
         DbPoolUtilization = point.DbPoolUtilization,
