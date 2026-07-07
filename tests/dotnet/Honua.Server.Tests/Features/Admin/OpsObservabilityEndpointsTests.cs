@@ -37,7 +37,16 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            });
+            })
+            // The shared test configuration defaults the ops-health rollup sampler OFF for every
+            // integration host (it would otherwise add background Postgres load across the whole
+            // parallel test fleet). This suite owns the rollup surface, so it opts back in —
+            // PostConfigure wins over the config binding — keeping the enabled/hosted sampler path
+            // booted by at least one host. The sampler's initial jitter + flush interval keep it from
+            // flushing mid-test; the history assertions seed the store directly instead.
+            .ConfigureServices(services =>
+                services.PostConfigure<Honua.Infrastructure.Monitoring.OpsHealthRollupOptions>(
+                    options => options.Enabled = true));
     }
 
     public async Task InitializeAsync()

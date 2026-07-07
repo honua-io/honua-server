@@ -64,7 +64,15 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
 
         try
         {
-            // First flush runs after one interval so startup is never blocked.
+            // Randomized initial delay (5-15s) before the periodic loop. Two reasons: (a) it staggers
+            // replicas that all restarted together so their flush/downsample/prune passes do not land on
+            // the database in lockstep, and (b) short-lived hosts — integration-test servers especially —
+            // are torn down before the first flush ever fires, keeping the sampler's background load off
+            // hosts that never live long enough to produce useful history.
+            var initialJitter = TimeSpan.FromSeconds(Random.Shared.Next(5, 16));
+            await Task.Delay(initialJitter, stoppingToken).ConfigureAwait(false);
+
+            // First flush runs one interval after the jitter so startup is never blocked.
             using var timer = new PeriodicTimer(interval);
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
