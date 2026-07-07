@@ -92,6 +92,14 @@ public sealed class OpsServingLatencyView
     /// <summary>Gets the per-protocol latency entries.</summary>
     [JsonPropertyName("protocols")]
     public required IReadOnlyList<OpsServingLatencyProtocolView> Protocols { get; init; }
+
+    /// <summary>
+    /// Gets the number of replicas merged into this view (the responding instance plus any peers whose recent
+    /// rollup flushes were folded in), when cluster aggregation is active. <c>null</c> or <c>1</c> means the
+    /// view reflects only the responding instance (single-node, or the rollup store is unavailable).
+    /// </summary>
+    [JsonPropertyName("clusterReplicaCount")]
+    public int? ClusterReplicaCount { get; init; }
 }
 
 /// <summary>Per-protocol serving latency entry.</summary>
@@ -256,6 +264,147 @@ public sealed class OpsDatabaseView
     /// <summary>Gets the connection acquisition failure count.</summary>
     [JsonPropertyName("connectionAcquisitionFailures")]
     public required long ConnectionAcquisitionFailures { get; init; }
+
+    /// <summary>Gets the cache hit ratio (0.0 to 1.0).</summary>
+    [JsonPropertyName("cacheHitRatio")]
+    public required double CacheHitRatio { get; init; }
+
+    /// <summary>Gets the live HTTP server error rate (0.0 to 1.0).</summary>
+    [JsonPropertyName("errorRate")]
+    public required double ErrorRate { get; init; }
+}
+
+/// <summary>
+/// Response for <c>GET /api/v{version}/admin/observability/ops-health/history</c> (#2553). Returns a
+/// cluster-aggregated (or per-replica) time series of serving latency and ops vitals at the requested
+/// resolution over the requested window.
+/// </summary>
+/// <remarks>
+/// This endpoint is also the reconnect gap-fill contract for realtime <c>ops-health</c> hub clients
+/// (#2554): after a dropped connection a client backfills the missed interval by requesting the history
+/// window rather than replaying a per-event cursor (there is no Last-Event-ID semantics).
+/// </remarks>
+public sealed class OpsHealthHistoryResponse
+{
+    /// <summary>Gets the UTC time the response was produced.</summary>
+    [JsonPropertyName("generatedAt")]
+    public required DateTimeOffset GeneratedAt { get; init; }
+
+    /// <summary>Gets the resolution label (<c>1m</c>/<c>5m</c>/<c>1h</c>).</summary>
+    [JsonPropertyName("resolution")]
+    public required string Resolution { get; init; }
+
+    /// <summary>Gets the returned window length in seconds (clamped to the tier's retention cap).</summary>
+    [JsonPropertyName("windowSeconds")]
+    public required double WindowSeconds { get; init; }
+
+    /// <summary>Gets the inclusive lower bound of the returned window.</summary>
+    [JsonPropertyName("from")]
+    public required DateTimeOffset From { get; init; }
+
+    /// <summary>Gets the inclusive upper bound of the returned window.</summary>
+    [JsonPropertyName("to")]
+    public required DateTimeOffset To { get; init; }
+
+    /// <summary>Gets a value indicating whether the series is broken down per replica rather than cluster-merged.</summary>
+    [JsonPropertyName("perReplica")]
+    public required bool PerReplica { get; init; }
+
+    /// <summary>Gets the per-protocol serving-latency series.</summary>
+    [JsonPropertyName("latency")]
+    public required IReadOnlyList<OpsHealthHistoryLatencySeries> Latency { get; init; }
+
+    /// <summary>Gets the ops-vitals series (one entry per bucket, or per bucket/replica when broken down).</summary>
+    [JsonPropertyName("vitals")]
+    public required IReadOnlyList<OpsHealthHistoryVitalsPoint> Vitals { get; init; }
+}
+
+/// <summary>A serving-latency series for one protocol (and optionally one replica).</summary>
+public sealed class OpsHealthHistoryLatencySeries
+{
+    /// <summary>Gets the protocol family.</summary>
+    [JsonPropertyName("protocol")]
+    public required string Protocol { get; init; }
+
+    /// <summary>Gets the replica identifier when broken down per replica; <c>null</c> for a cluster-merged series.</summary>
+    [JsonPropertyName("replicaId")]
+    public string? ReplicaId { get; init; }
+
+    /// <summary>Gets the ordered time-series points.</summary>
+    [JsonPropertyName("points")]
+    public required IReadOnlyList<OpsHealthHistoryLatencyPoint> Points { get; init; }
+}
+
+/// <summary>A single serving-latency time-series point.</summary>
+public sealed class OpsHealthHistoryLatencyPoint
+{
+    /// <summary>Gets the bucket start (UTC).</summary>
+    [JsonPropertyName("bucketStart")]
+    public required DateTimeOffset BucketStart { get; init; }
+
+    /// <summary>Gets the request count.</summary>
+    [JsonPropertyName("requestCount")]
+    public required long RequestCount { get; init; }
+
+    /// <summary>Gets the server-error count.</summary>
+    [JsonPropertyName("errorCount")]
+    public required long ErrorCount { get; init; }
+
+    /// <summary>Gets the server-error rate (0.0 to 1.0).</summary>
+    [JsonPropertyName("errorRate")]
+    public required double ErrorRate { get; init; }
+
+    /// <summary>Gets the 50th-percentile duration in milliseconds.</summary>
+    [JsonPropertyName("p50Ms")]
+    public required double P50Ms { get; init; }
+
+    /// <summary>Gets the 95th-percentile duration in milliseconds.</summary>
+    [JsonPropertyName("p95Ms")]
+    public required double P95Ms { get; init; }
+
+    /// <summary>Gets the 99th-percentile duration in milliseconds.</summary>
+    [JsonPropertyName("p99Ms")]
+    public required double P99Ms { get; init; }
+
+    /// <summary>Gets the maximum duration in milliseconds.</summary>
+    [JsonPropertyName("maxMs")]
+    public required double MaxMs { get; init; }
+}
+
+/// <summary>A single ops-vitals time-series point.</summary>
+public sealed class OpsHealthHistoryVitalsPoint
+{
+    /// <summary>Gets the bucket start (UTC).</summary>
+    [JsonPropertyName("bucketStart")]
+    public required DateTimeOffset BucketStart { get; init; }
+
+    /// <summary>Gets the replica identifier when broken down per replica; <c>null</c> for a cluster-merged point.</summary>
+    [JsonPropertyName("replicaId")]
+    public string? ReplicaId { get; init; }
+
+    /// <summary>Gets the overall health status.</summary>
+    [JsonPropertyName("overallStatus")]
+    public required string OverallStatus { get; init; }
+
+    /// <summary>Gets the total active geoprocessing jobs.</summary>
+    [JsonPropertyName("gpQueueTotal")]
+    public required int GpQueueTotal { get; init; }
+
+    /// <summary>Gets the alert-dispatch pending backlog, when available.</summary>
+    [JsonPropertyName("alertPending")]
+    public long? AlertPending { get; init; }
+
+    /// <summary>Gets the alert-dispatch dead-lettered count, when available.</summary>
+    [JsonPropertyName("alertDeadLettered")]
+    public long? AlertDeadLettered { get; init; }
+
+    /// <summary>Gets the database connection-pool utilization ratio, when available.</summary>
+    [JsonPropertyName("dbPoolUtilization")]
+    public double? DbPoolUtilization { get; init; }
+
+    /// <summary>Gets the number of active database connections.</summary>
+    [JsonPropertyName("dbActiveConnections")]
+    public required int DbActiveConnections { get; init; }
 
     /// <summary>Gets the cache hit ratio (0.0 to 1.0).</summary>
     [JsonPropertyName("cacheHitRatio")]

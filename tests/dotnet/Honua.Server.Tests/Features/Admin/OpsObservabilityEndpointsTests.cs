@@ -80,6 +80,44 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/ops-health/history")]
+    public async Task GetOpsHealthHistory_WithAdminAuth_ReturnsClusterAggregatedSeries()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/observability/ops-health/history?window=1h&resolution=1m");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("resolution").GetString().Should().Be("1m");
+        root.GetProperty("perReplica").GetBoolean().Should().BeFalse();
+        root.GetProperty("windowSeconds").GetDouble().Should().BeGreaterThan(0);
+        root.GetProperty("latency").ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetProperty("vitals").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/ops-health/history")]
+    public async Task GetOpsHealthHistory_WithInvalidResolution_Returns400()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/observability/ops-health/history?resolution=13m");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/ops-health/history")]
+    public async Task GetOpsHealthHistory_WithoutAdminAuth_IsUnauthorized()
+    {
+        using var anonymous = _fixture.CreateClient();
+
+        var response = await anonymous.GetAsync("/api/v1/admin/observability/ops-health/history");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/findings")]
     public async Task GetFindings_WithAdminAuth_ReturnsFindingsEnvelope()
     {

@@ -176,6 +176,13 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAuditLogExporter, PostgresAuditLogExporter>();
         services.AddScoped<IAuditLogIntegrityVerifier, PostgresAuditLogIntegrityVerifier>();
         services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
+
+        // Persisted ops-health rollup store (#2553). Schema-qualified so it targets the configured
+        // metadata schema; consumers resolve it as optional so non-Postgres deployments run without history.
+        services.AddScoped<IOpsHealthRollupStore>(serviceProvider =>
+            new PostgresOpsHealthRollupStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
         services.AddScoped<IShareExportStore>(serviceProvider =>
             new PostgresShareExportStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),

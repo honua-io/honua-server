@@ -1236,6 +1236,45 @@ sql:
           CONSTRAINT investigation_links_valid_resource CHECK (length(resource_id) > 0)
       );
   - "CREATE INDEX IF NOT EXISTS idx_investigation_links_investigation ON honua.investigation_links(investigation_id, link_id);"
+  # Persisted ops-health rollup store (#2553). Mirrors migration
+  # 077_CreateOpsHealthRollup.sql so the migration-skipping integration fixture has the tables;
+  # PostgresOpsHealthRollupStore persists per-replica serving-latency + vitals rollups here and the
+  # history endpoint / live-snapshot cluster aggregation read them back.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.ops_health_rollup_latency (
+          replica_id     TEXT             NOT NULL,
+          tier           SMALLINT         NOT NULL,
+          bucket_start   TIMESTAMPTZ      NOT NULL,
+          protocol       TEXT             NOT NULL,
+          request_count  BIGINT           NOT NULL DEFAULT 0,
+          error_count    BIGINT           NOT NULL DEFAULT 0,
+          p50_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
+          p95_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
+          p99_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
+          max_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
+          updated_at     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+          CONSTRAINT ops_health_rollup_latency_pk PRIMARY KEY (replica_id, tier, bucket_start, protocol),
+          CONSTRAINT ops_health_rollup_latency_valid_tier CHECK (tier IN (0, 1, 2))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_ops_health_rollup_latency_tier_bucket ON honua.ops_health_rollup_latency(tier, bucket_start);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.ops_health_rollup_vitals (
+          replica_id            TEXT             NOT NULL,
+          tier                  SMALLINT         NOT NULL,
+          bucket_start          TIMESTAMPTZ      NOT NULL,
+          overall_status        TEXT             NOT NULL DEFAULT 'Unknown',
+          gp_queue_total        INTEGER          NOT NULL DEFAULT 0,
+          alert_pending         BIGINT           NULL,
+          alert_dead_lettered   BIGINT           NULL,
+          db_pool_utilization   DOUBLE PRECISION NULL,
+          db_active_connections INTEGER          NOT NULL DEFAULT 0,
+          cache_hit_ratio       DOUBLE PRECISION NOT NULL DEFAULT 0,
+          error_rate            DOUBLE PRECISION NOT NULL DEFAULT 0,
+          updated_at            TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+          CONSTRAINT ops_health_rollup_vitals_pk PRIMARY KEY (replica_id, tier, bucket_start),
+          CONSTRAINT ops_health_rollup_vitals_valid_tier CHECK (tier IN (0, 1, 2))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_ops_health_rollup_vitals_tier_bucket ON honua.ops_health_rollup_vitals(tier, bucket_start);"
   - |
       CREATE TABLE IF NOT EXISTS honua.operate_fixture_execution_jobs (
           operation_id     TEXT        PRIMARY KEY,

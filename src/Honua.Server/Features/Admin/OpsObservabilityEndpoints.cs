@@ -38,6 +38,12 @@ internal static class OpsObservabilityEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<OpsHealthSnapshotResponse>();
 
+        group.MapGet("/ops-health/history", HandleGetOpsHealthHistory)
+            .WithDisplayName("Get Ops Health History")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<OpsHealthHistoryResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
         group.MapGet("/findings", HandleGetFindings)
             .WithDisplayName("Get Ops Findings")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
@@ -56,6 +62,32 @@ internal static class OpsObservabilityEndpoints
     {
         var snapshot = await service.GetAsync(context.RequestAborted).ConfigureAwait(false);
         return Results.Json(snapshot, OpsObservabilityJsonContext.Default.OpsHealthSnapshotResponse);
+    }
+
+    /// <summary>
+    /// Handles the ops-health history read: an admin-authed, cluster-aggregated time series of serving
+    /// latency and ops vitals at the requested <c>resolution</c> over the requested <c>window</c>, with an
+    /// optional per-replica breakdown (<c>perReplica=true</c>). This endpoint is the reconnect gap-fill
+    /// contract for realtime <c>ops-health</c> hub clients (#2554) — clients backfill a dropped interval by
+    /// requesting the window rather than replaying per-event cursors.
+    /// </summary>
+    private static async Task<IResult> HandleGetOpsHealthHistory(
+        [FromServices] IOpsHealthHistoryService service,
+        HttpContext context,
+        string? window = null,
+        string? resolution = null,
+        bool perReplica = false)
+    {
+        if (!OpsHealthHistoryQuery.TryParse(window, resolution, perReplica, out var error, out var query))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                error ?? "Invalid history query.");
+        }
+
+        var response = await service.GetAsync(query, context.RequestAborted).ConfigureAwait(false);
+        return Results.Json(response, OpsObservabilityJsonContext.Default.OpsHealthHistoryResponse);
     }
 
     private static async Task<IResult> HandleGetFindings(
