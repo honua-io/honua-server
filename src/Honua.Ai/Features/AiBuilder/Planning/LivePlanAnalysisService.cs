@@ -61,6 +61,9 @@ internal sealed class LivePlanAnalysisService : IPlanAnalysisService
     }
 
     /// <inheritdoc />
+    public string Engine => "live";
+
+    /// <inheritdoc />
     public async Task<McpPlanAnalysisOutput> PlanAsync(
         string intent,
         JsonElement? context,
