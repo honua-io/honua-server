@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
 namespace Honua.Ai.Protocols.Mcp;
@@ -119,20 +120,36 @@ internal static class McpEndpointExtensions
         {
             var root = document.RootElement;
             var isInitialize = IsInitialize(root);
+            var principalKey = McpAuthorizationHelper.ResolvePrincipalKey(context.User);
 
             // Streamable-HTTP session enforcement: when the client presents an
             // Mcp-Session-Id it MUST be one this server issued, otherwise the
             // spec requires HTTP 404 so the client knows to re-initialize. The
             // initialize request itself never carries a (validated) session id —
             // it is how a session is established — so it bypasses validation.
+            // A live session is additionally bound to the principal that
+            // established it (A3 binding; #2537): a different identity presenting
+            // the id is rejected with a structured auth error rather than allowed
+            // to ride the session.
             if (!isInitialize
                 && context.Request.Headers.TryGetValue(McpSessionManager.SessionHeaderName, out var presented)
-                && !string.IsNullOrEmpty(presented.ToString())
-                && !sessions.IsValid(presented.ToString()))
+                && !string.IsNullOrEmpty(presented.ToString()))
             {
-                McpLog.SessionRejected(logger, "unknown-or-expired");
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return;
+                switch (sessions.ValidateAccess(presented.ToString(), principalKey))
+                {
+                    case McpSessionValidation.Unknown:
+                        McpLog.SessionRejected(logger, "unknown-or-expired");
+                        context.Response.StatusCode = StatusCodes.Status404NotFound;
+                        return;
+
+                    case McpSessionValidation.PrincipalMismatch:
+                        McpLog.SessionRejected(logger, "principal-mismatch");
+                        await WriteSingleAsync(
+                            context,
+                            ErrorResponse(JsonNullId, McpErrorMapper.SessionPrincipalMismatch()),
+                            cancellationToken).ConfigureAwait(false);
+                        return;
+                }
             }
 
             if (root.ValueKind == JsonValueKind.Array)
@@ -160,14 +177,25 @@ internal static class McpEndpointExtensions
                 return;
             }
 
-            // A successful initialize establishes a session. Issue the id on the
-            // Mcp-Session-Id response header so the client echoes it on every
-            // subsequent request.
+            // A successful initialize establishes a session bound to the calling
+            // principal (anonymous where the endpoint allows it). Issue the id on
+            // the Mcp-Session-Id response header so the client echoes it on every
+            // subsequent request. Under the session cap the registry either evicts
+            // the least-recently-used session or, in reject mode, refuses the new
+            // session — in which case the initialize is answered with a retryable
+            // structured error instead of a session header (A3 hardening; #2537).
             if (isInitialize && response.Error is null)
             {
-                var sessionId = sessions.CreateSession();
-                context.Response.Headers[McpSessionManager.SessionHeaderName] = sessionId;
-                McpLog.SessionIssued(logger, sessionId);
+                if (sessions.TryCreateSession(principalKey, out var sessionId))
+                {
+                    context.Response.Headers[McpSessionManager.SessionHeaderName] = sessionId;
+                    McpLog.SessionIssued(logger, sessionId);
+                }
+                else
+                {
+                    McpLog.SessionRejected(logger, "capacity-reached");
+                    response = ErrorResponse(response.Id ?? JsonNullId, McpErrorMapper.SessionCapacityReached());
+                }
             }
 
             await WriteSingleAsync(context, response, cancellationToken).ConfigureAwait(false);
@@ -187,17 +215,44 @@ internal static class McpEndpointExtensions
     {
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpOperatorSurface>>();
+        var options = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value;
+
+        // Per the Streamable-HTTP spec the standalone GET stream is optional: a
+        // server that does not offer server-initiated messages MUST answer 405
+        // (+ Allow) so the client skips it. This is the default posture (#2537):
+        // it keeps spec-compliant SDK clients — which open this stream
+        // unconditionally after initialize — from hanging it at a non-streaming
+        // ingress (CloudFront → API Gateway → Lambda) and, critically, from
+        // treating the stream's teardown as a signal that the session is gone.
+        if (!options.ServerInitiatedStreamEnabled)
+        {
+            RejectGetMethodNotAllowed(context);
+            return;
+        }
 
         if (!AcceptsEventStream(context))
         {
             // The transport reserves GET for the SSE channel; a client that does
             // not accept text/event-stream cannot use it.
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            RejectGetMethodNotAllowed(context);
             return;
         }
 
         var sessionId = context.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
-        if (string.IsNullOrEmpty(sessionId) || !sessions.TryGetReader(sessionId, out var reader))
+        var principalKey = McpAuthorizationHelper.ResolvePrincipalKey(context.User);
+        var validation = string.IsNullOrEmpty(sessionId)
+            ? McpSessionValidation.Unknown
+            : sessions.ValidateAccess(sessionId, principalKey);
+        if (validation == McpSessionValidation.PrincipalMismatch)
+        {
+            // A live session bound to another identity: refuse the stream rather
+            // than leak server-push traffic across principals.
+            McpLog.SessionRejected(logger, "principal-mismatch");
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        if (validation != McpSessionValidation.Valid || !sessions.TryGetReader(sessionId, out var reader))
         {
             McpLog.SessionRejected(logger, "stream-requires-valid-session");
             context.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -220,6 +275,10 @@ internal static class McpEndpointExtensions
         catch (OperationCanceledException)
         {
             // Client disconnected or session terminated — normal stream teardown.
+            // Critically, this handler NEVER terminates the session on stream
+            // closure (#2537): session lifetime is bounded only by DELETE /mcp or
+            // the idle TTL, so a client whose GET stream is severed by a
+            // non-streaming ingress can keep POSTing on the same session id.
         }
     }
 
@@ -257,12 +316,39 @@ internal static class McpEndpointExtensions
             return Task.CompletedTask;
         }
 
+        // Only the principal that owns the session may terminate it (A3 binding;
+        // #2537): a mismatched identity is forbidden, an unknown/expired id 404s.
+        var principalKey = McpAuthorizationHelper.ResolvePrincipalKey(context.User);
+        switch (sessions.ValidateAccess(sessionId, principalKey))
+        {
+            case McpSessionValidation.PrincipalMismatch:
+                McpLog.SessionRejected(logger, "principal-mismatch");
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return Task.CompletedTask;
+
+            case McpSessionValidation.Unknown:
+                McpLog.SessionTerminated(logger, sessionId, found: false);
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return Task.CompletedTask;
+        }
+
         var found = sessions.Terminate(sessionId);
         McpLog.SessionTerminated(logger, sessionId, found);
         context.Response.StatusCode = found
             ? StatusCodes.Status204NoContent
             : StatusCodes.Status404NotFound;
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Answers a rejected <c>GET /mcp</c> with <c>405 Method Not Allowed</c> and
+    /// the <c>Allow: POST, DELETE</c> header the Streamable-HTTP spec requires when
+    /// the server does not offer the optional server-initiated SSE stream.
+    /// </summary>
+    private static void RejectGetMethodNotAllowed(HttpContext context)
+    {
+        context.Response.Headers[HeaderNames.Allow] = "POST, DELETE";
+        context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
     }
 
     private static async Task HandleBatchAsync(
