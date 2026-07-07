@@ -12,6 +12,12 @@ implementation.
   paired paging fixture) were re-vendored from PR honua-io/geospatial-mcp#46,
   which adds the optional `resultOffset` / `returnGeometry` / `returnCountOnly`
   params.
+- `tools/geocode_addresses.schema.json`, `tools/ingest_dataset.schema.json`,
+  their fixtures, and the matching `index.json` entries are vendored from
+  the `geospatial-mcp` branch `spec/ingest-dataset-geocode-addresses`. Note:
+  upstream trunk has since revised other schema descriptions/enums (PR
+  geospatial-mcp#44); those files are deliberately NOT re-vendored here —
+  reconciling that drift is a separate alignment task.
 - Do not hand-edit. Re-vendor when the upstream schemas change.
 - Files are copied to the test output directory (`CopyToOutputDirectory`) and
   loaded at test time.

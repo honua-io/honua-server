@@ -9,6 +9,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Compression;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Operations.Status;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -56,6 +57,10 @@ internal static class ObservabilityServiceCollectionExtensions
             .ValidateOnStart();
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
         services.AddScoped<IOpsFindingsService, OpsFindingsService>();
+
+        // Aggregated operate-status surface (A12): composes the ops-health snapshot + findings into
+        // one server-authoritative verdict, and binds the SLO/error-budget contract.
+        services.AddOperateStatus(configuration);
 
         return services;
     }

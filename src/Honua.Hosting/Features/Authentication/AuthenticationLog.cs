@@ -171,4 +171,14 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Warning,
         Message = "Scoped admin API key denied {Method} admin request: key permissions do not authorize this operation")]
     public static partial void ScopedAdminKeyDenied(ILogger logger, string method);
+
+    /// <summary>
+    /// Logs when a principal is denied a read-only ops-observability request because it carries
+    /// neither an admin grant nor a read-only <c>ops:</c> grant sufficient for the request method.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4115,
+        Level = LogLevel.Warning,
+        Message = "Ops-reader authorization denied {Method} ops request: principal lacks an admin or ops:read grant authorizing this operation")]
+    public static partial void OpsReaderKeyDenied(ILogger logger, string method);
 }
