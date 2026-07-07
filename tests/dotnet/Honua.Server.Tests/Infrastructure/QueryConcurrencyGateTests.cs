@@ -374,4 +374,67 @@ public sealed class QueryConcurrencyGateTests
 
         gate.Release();
     }
+
+    // ------------------------------------------------------------------
+    // Runtime-tunable admission seam (IRuntimeTunableAdmissionGate, #2561)
+    // ------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void TrySetLimit_WithinRange_AppliesTransientTarget()
+    {
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits { MaxConcurrentQueries = 10 });
+
+        gate.TrySetLimit(3, out var error).Should().BeTrue();
+
+        error.Should().BeNull();
+        gate.CurrentLimit.Should().Be(3);
+        gate.MaxLimit.Should().Be(10, "the configured ceiling never changes");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void TrySetLimit_AboveMax_RejectsWithoutChange()
+    {
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits { MaxConcurrentQueries = 10 });
+
+        gate.TrySetLimit(11, out var error).Should().BeFalse();
+
+        error.Should().NotBeNullOrWhiteSpace();
+        gate.CurrentLimit.Should().Be(10);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void TrySetLimit_BelowFloor_RejectsWithoutChange()
+    {
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits { MaxConcurrentQueries = 10 });
+
+        gate.TrySetLimit(0, out var error).Should().BeFalse();
+
+        error.Should().NotBeNullOrWhiteSpace();
+        gate.CurrentLimit.Should().Be(10);
+        gate.MinLimit.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task TrySetLimit_RaisingLimit_DrainsQueuedWaiters()
+    {
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 4,
+            ConnectionAcquisitionTimeoutSeconds = 5
+        });
+
+        gate.TrySetLimit(1, out _).Should().BeTrue();
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        var queued = gate.WaitAsync(CancellationToken.None);
+        queued.IsCompleted.Should().BeFalse("the tuned-down gate must queue the second waiter");
+
+        gate.TrySetLimit(2, out _).Should().BeTrue();
+
+        (await queued.WaitAsync(TimeSpan.FromSeconds(2))).Should().BeTrue(
+            "raising the admission target must admit queued waiters");
+    }
 }

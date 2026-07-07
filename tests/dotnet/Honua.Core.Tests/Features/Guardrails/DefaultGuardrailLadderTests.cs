@@ -19,7 +19,8 @@ public class DefaultGuardrailLadderTests
 {
     private static DefaultGuardrailLadder CreateLadder(
         HonuaEdition edition = HonuaEdition.Community,
-        GuardrailLadderOptions? options = null)
+        GuardrailLadderOptions? options = null,
+        Honua.Core.Features.Guardrails.Abstractions.IOpsActionGuardrailCatalog? catalog = null)
     {
         var entitlements = new Mock<ILicenseEntitlementService>();
         entitlements
@@ -28,7 +29,8 @@ public class DefaultGuardrailLadderTests
 
         return new DefaultGuardrailLadder(
             entitlements.Object,
-            Options.Create(options ?? new GuardrailLadderOptions()));
+            Options.Create(options ?? new GuardrailLadderOptions()),
+            catalog);
     }
 
     private static LicenseSnapshot CreateSnapshot(HonuaEdition edition) => new(
@@ -160,5 +162,92 @@ public class DefaultGuardrailLadderTests
         var decision = ladder.Resolve((OperationClass)999, HonuaEdition.Pro);
 
         Assert.Equal(GuardrailTier.DirectExecute, decision.Tier);
+    }
+
+    // ------------------------------------------------------------------
+    // Ops-action discriminator resolution (#2561)
+    // ------------------------------------------------------------------
+
+    [UnitTest]
+    public void Resolve_NullDiscriminator_FallsBackToClassResolution()
+    {
+        var ladder = CreateLadder(HonuaEdition.Community, catalog: new StubActionCatalog());
+
+        var decision = ladder.Resolve(OperationClass.AdminConfigChange, actionDiscriminator: null, HonuaEdition.Community);
+
+        Assert.Equal(GuardrailTier.DirectExecute, decision.Tier);
+        Assert.Equal("default-policy", decision.Source);
+    }
+
+    [UnitTest]
+    public void Resolve_UnknownAction_FailsClosedToBlocked()
+    {
+        var ladder = CreateLadder(HonuaEdition.Community, catalog: new StubActionCatalog());
+
+        var decision = ladder.Resolve(OperationClass.AdminConfigChange, "cache.warm_everything", HonuaEdition.Community);
+
+        Assert.Equal(GuardrailTier.Blocked, decision.Tier);
+        Assert.Equal("unknown-action-blocked", decision.Source);
+    }
+
+    [UnitTest]
+    public void Resolve_DiscriminatorWithoutCatalog_FailsClosedToBlocked()
+    {
+        var ladder = CreateLadder(HonuaEdition.Community);
+
+        var decision = ladder.Resolve(OperationClass.AdminConfigChange, "alerts.redrive_dead_letters", HonuaEdition.Community);
+
+        Assert.Equal(GuardrailTier.Blocked, decision.Tier);
+        Assert.Equal("unknown-action-blocked", decision.Source);
+    }
+
+    [UnitTest]
+    public void Resolve_KnownAction_TightensDirectExecuteEditionToActionTier()
+    {
+        var catalog = new StubActionCatalog { ["alerts.redrive_dead_letters"] = GuardrailTier.RequiresApproval };
+        var ladder = CreateLadder(HonuaEdition.Community, catalog: catalog);
+
+        var decision = ladder.Resolve(OperationClass.AdminConfigChange, "alerts.redrive_dead_letters", HonuaEdition.Community);
+
+        Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
+        Assert.Equal("action-catalog:alerts.redrive_dead_letters", decision.Source);
+    }
+
+    [UnitTest]
+    public void Resolve_KnownAction_NeverLoosensEditionPolicy()
+    {
+        // Enterprise resolves AdminConfigChange to RequiresApproval; a DirectExecute
+        // action tier must not loosen it.
+        var catalog = new StubActionCatalog { ["alerts.resume_channel"] = GuardrailTier.DirectExecute };
+        var ladder = CreateLadder(HonuaEdition.Enterprise, catalog: catalog);
+
+        var decision = ladder.Resolve(OperationClass.AdminConfigChange, "alerts.resume_channel", HonuaEdition.Enterprise);
+
+        Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
+    }
+
+    [UnitTest]
+    public void Resolve_DiscriminatorOverload_UsesActiveEditionSnapshot()
+    {
+        var catalog = new StubActionCatalog { ["db.tune_bounded_admission"] = GuardrailTier.RequiresApproval };
+        var ladder = CreateLadder(HonuaEdition.Community, catalog: catalog);
+
+        var decision = ladder.Resolve(OperationClass.AdminConfigChange, "db.tune_bounded_admission");
+
+        Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
+        Assert.Equal(HonuaEdition.Community, decision.Edition);
+    }
+
+    private sealed class StubActionCatalog : Honua.Core.Features.Guardrails.Abstractions.IOpsActionGuardrailCatalog
+    {
+        private readonly Dictionary<string, GuardrailTier> _tiers = new(StringComparer.Ordinal);
+
+        public GuardrailTier this[string action]
+        {
+            set => _tiers[action] = value;
+        }
+
+        public bool TryGetTier(string action, out GuardrailTier tier)
+            => _tiers.TryGetValue(action, out tier);
     }
 }

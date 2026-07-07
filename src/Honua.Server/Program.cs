@@ -514,8 +514,14 @@ if (connectedRedis != null)
 // boundary, not per-endpoint. Safe to register regardless of Redis availability.
 builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IProposalNotifier,
     Honua.Server.Features.Admin.ProposalNotifier>();
+// Real admin-config applier: the payload-discriminated ops-action registry (#2561).
+// Executes self-healing actuators (alert redrive/pause/resume, bounded-admission tune),
+// failing closed on unknown/malformed payloads. Replaces the previous logging stub.
 builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IAdminConfigChangeApplier,
-    Honua.ControlPlane.Executors.LoggingAdminConfigChangeApplier>();
+    Honua.ControlPlane.Executors.OpsActionAdminConfigChangeApplier>();
+// Per-action guardrail tiers for the ops-action discriminator (unknown actions Blocked).
+builder.Services.TryAddSingleton<Honua.Core.Features.Guardrails.Abstractions.IOpsActionGuardrailCatalog,
+    Honua.ControlPlane.Executors.OpsActionGuardrailCatalog>();
 
 // Configure tile options
 InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Configuration);
@@ -1328,6 +1334,9 @@ app.MapAdminSldStyleEndpoints();
 
 // Configure admin alerting zone/rule endpoints
 app.MapAlertAdminEndpoints();
+
+// Configure alert dispatch self-healing ops endpoints (dead-letter redrive, channel pause/resume) (#2561)
+app.MapAlertOpsAdminEndpoints();
 
 // Configure Console Operate observability endpoints (#1168)
 app.MapObservabilityAlertEndpoints();

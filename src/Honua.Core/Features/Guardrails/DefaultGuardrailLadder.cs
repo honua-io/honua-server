@@ -20,25 +20,65 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
 {
     private readonly ILicenseEntitlementService _entitlements;
     private readonly GuardrailLadderOptions _options;
+    private readonly IOpsActionGuardrailCatalog? _actionCatalog;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultGuardrailLadder"/> class.
     /// </summary>
     /// <param name="entitlements">Active license entitlement service.</param>
     /// <param name="options">Operator override options.</param>
+    /// <param name="actionCatalog">
+    /// Optional per-action guardrail catalog. When present, resolution with an
+    /// action discriminator sources the tier from it; when absent, any discriminated
+    /// resolution fails closed to <see cref="GuardrailTier.Blocked"/>.
+    /// </param>
     public DefaultGuardrailLadder(
         ILicenseEntitlementService entitlements,
-        IOptions<GuardrailLadderOptions> options)
+        IOptions<GuardrailLadderOptions> options,
+        IOpsActionGuardrailCatalog? actionCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(entitlements);
         ArgumentNullException.ThrowIfNull(options);
         _entitlements = entitlements;
         _options = options.Value;
+        _actionCatalog = actionCatalog;
     }
 
     /// <inheritdoc />
     public GuardrailDecision Resolve(OperationClass operationClass)
         => Resolve(operationClass, _entitlements.GetSnapshot().Edition);
+
+    /// <inheritdoc />
+    public GuardrailDecision Resolve(OperationClass operationClass, string? actionDiscriminator)
+        => Resolve(operationClass, actionDiscriminator, _entitlements.GetSnapshot().Edition);
+
+    /// <inheritdoc />
+    public GuardrailDecision Resolve(OperationClass operationClass, string? actionDiscriminator, HonuaEdition edition)
+    {
+        // No discriminator: fall back to operation-class-only resolution.
+        if (string.IsNullOrWhiteSpace(actionDiscriminator))
+        {
+            return Resolve(operationClass, edition);
+        }
+
+        // Discriminated resolution: an action the catalog does not recognize (or when
+        // no catalog is registered) fails closed to Blocked, so a malformed or unknown
+        // action can never slip through as direct-execute.
+        if (_actionCatalog is null ||
+            !_actionCatalog.TryGetTier(actionDiscriminator, out var actionTier) ||
+            !Enum.IsDefined(actionTier))
+        {
+            return new GuardrailDecision(GuardrailTier.Blocked, operationClass, edition, "unknown-action-blocked");
+        }
+
+        // Known action: apply the per-action tier as a floor on top of the edition/
+        // operator-override policy. The tier enum is ordered DirectExecute(0) <
+        // RequiresApproval(1) < Blocked(2), so a per-action tier can only TIGHTEN the
+        // guardrail — never loosen the edition policy.
+        var baseline = Resolve(operationClass, edition);
+        var effective = (GuardrailTier)Math.Max((int)actionTier, (int)baseline.Tier);
+        return new GuardrailDecision(effective, operationClass, edition, $"action-catalog:{actionDiscriminator}");
+    }
 
     /// <inheritdoc />
     public GuardrailDecision Resolve(OperationClass operationClass, HonuaEdition edition)
