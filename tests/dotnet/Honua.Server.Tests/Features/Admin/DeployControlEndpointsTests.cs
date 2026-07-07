@@ -278,6 +278,69 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/operations")]
+    public async Task ListDeployOperations_PagesAndFiltersNewestFirst()
+    {
+        // Three deploy operations created oldest-first; the newest must sort to the front.
+        for (var i = 0; i < 3; i++)
+        {
+            var createResponse = await _client.PostAsJsonAsync("/api/v1/admin/deploy/operations", new
+            {
+                targetId = "prod-api",
+                desiredRevision = $"sha256:list{i}",
+                submitImmediately = false
+            });
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+
+        // Page 1 with pageSize 2: newest-first, has-more true, two items.
+        var firstPage = await _client.GetAsync("/api/v1/admin/deploy/operations?kind=Deploy&status=Planned&page=1&pageSize=2");
+        firstPage.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var firstDocument = JsonDocument.Parse(await firstPage.Content.ReadAsStringAsync());
+        var firstRoot = firstDocument.RootElement;
+        firstRoot.GetProperty("page").GetInt32().Should().Be(1);
+        firstRoot.GetProperty("pageSize").GetInt32().Should().Be(2);
+        firstRoot.GetProperty("totalCount").GetInt32().Should().Be(3);
+        firstRoot.GetProperty("hasMore").GetBoolean().Should().BeTrue();
+        var firstItems = firstRoot.GetProperty("items");
+        firstItems.GetArrayLength().Should().Be(2);
+        firstItems[0].GetProperty("kind").GetString().Should().Be("Deploy");
+        firstItems[0].GetProperty("status").GetString().Should().Be("Planned");
+
+        // Page 2 completes the set with the final item and no further pages.
+        var secondPage = await _client.GetAsync("/api/v1/admin/deploy/operations?page=2&pageSize=2");
+        secondPage.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var secondDocument = JsonDocument.Parse(await secondPage.Content.ReadAsStringAsync());
+        var secondRoot = secondDocument.RootElement;
+        secondRoot.GetProperty("items").GetArrayLength().Should().Be(1);
+        secondRoot.GetProperty("hasMore").GetBoolean().Should().BeFalse();
+
+        // The two pages together cover exactly the three created revisions, newest-first by creation time.
+        var pagedItems = firstItems.EnumerateArray().Concat(secondRoot.GetProperty("items").EnumerateArray()).ToArray();
+        pagedItems.Select(item => item.GetProperty("target").GetProperty("desiredRevision").GetString())
+            .Should().BeEquivalentTo(new[] { "sha256:list0", "sha256:list1", "sha256:list2" });
+        var createdAt = pagedItems.Select(item => item.GetProperty("createdAt").GetDateTimeOffset()).ToArray();
+        createdAt.Should().BeInDescendingOrder();
+
+        // Status filter that matches nothing returns an empty page.
+        var emptyPage = await _client.GetAsync("/api/v1/admin/deploy/operations?status=RolledBack");
+        emptyPage.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var emptyDocument = JsonDocument.Parse(await emptyPage.Content.ReadAsStringAsync());
+        emptyDocument.RootElement.GetProperty("items").GetArrayLength().Should().Be(0);
+        emptyDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/operations")]
+    public async Task ListDeployOperations_WithUnsupportedFilterValue_ReturnsBadRequest()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/deploy/operations?status=NotARealStatus");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/deploy/plan")]
     public async Task PlanDeployOperation_WhenTargetDoesNotExist_ReturnsErrorStatus()
     {
@@ -786,6 +849,42 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
                 .ToArray();
 
             return Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>(operations);
+        }
+
+        public Task<WorkflowOperationPage> QueryAsync(WorkflowOperationQuery query, CancellationToken cancellationToken = default)
+        {
+            var filtered = _operations.Values
+                .Where(operation => (!query.Kind.HasValue || operation.Kind == query.Kind.Value)
+                    && (!query.Status.HasValue || operation.Status == query.Status.Value))
+                .OrderByDescending(operation => operation.CreatedAt)
+                .ThenByDescending(operation => operation.OperationId, StringComparer.Ordinal)
+                .ToArray();
+
+            var page = Math.Max(1, query.Page);
+            var pageSize = query.PageSize <= 0 ? 50 : query.PageSize;
+            var skip = (page - 1) * pageSize;
+            var items = filtered.Skip(skip).Take(pageSize).ToArray();
+
+            return Task.FromResult(new WorkflowOperationPage
+            {
+                Items = items,
+                Page = page,
+                PageSize = pageSize,
+                TotalCount = filtered.Length,
+                HasMore = skip + items.Length < filtered.Length
+            });
+        }
+
+        public Task<WorkflowOperationRecord?> GetMostRecentSucceededDeployByTargetAsync(string targetId, CancellationToken cancellationToken = default)
+        {
+            var match = _operations.Values
+                .Where(operation => operation.Kind == WorkflowOperationKind.Deploy
+                    && operation.Status == WorkflowOperationStatus.Succeeded
+                    && string.Equals(operation.Deploy?.TargetId, targetId, StringComparison.Ordinal))
+                .OrderByDescending(operation => operation.CompletedAt ?? operation.UpdatedAt)
+                .FirstOrDefault();
+
+            return Task.FromResult<WorkflowOperationRecord?>(match);
         }
 
         private void IndexMetadataReleaseOperation(WorkflowOperationRecord operation)
