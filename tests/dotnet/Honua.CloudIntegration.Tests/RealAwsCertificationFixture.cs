@@ -83,7 +83,10 @@ public sealed class RealAwsCertificationFixture : IAsyncLifetime
 
     /// <summary>
     /// Cert-stack ALB listener ARN. The ECS/ALB weighted-cutover cell resolves this listener's
-    /// DEFAULT rule (the weighted forward action the backend mutates) at test start.
+    /// weighted NON-DEFAULT rule — the one whose forward action targets BOTH the configured stable
+    /// and canary target groups — at test start (AWS forbids <c>ModifyRule</c> on a listener's
+    /// default rule, so the substrate parks the weighted forward action on a dedicated non-default
+    /// rule, exactly as a production canary deployment is wired).
     /// </summary>
     public const string AlbListenerArnEnvVar = "HONUA_REALAWS_CERT_ALB_LISTENER_ARN";
 
@@ -135,6 +138,22 @@ public sealed class RealAwsCertificationFixture : IAsyncLifetime
     /// certification run is isolated and traceable, and can never be confused with existing infra.
     /// </summary>
     public string ResourcePrefix { get; private set; } = "honua-cert-unset";
+
+    /// <summary>
+    /// Per-run prefix (<c>honua-certrun-{RunId}</c>) for EPHEMERAL Batch job definitions the cert
+    /// tests register/deregister. This is a DISTINCT namespace from <see cref="ResourcePrefix"/> and,
+    /// crucially, from the standing GP job-definition pool (<c>honua-cert-cert-gp-*</c>): the strings
+    /// <c>honua-certrun-*</c> and <c>honua-cert-*</c> share no wildcard-matching prefix (there is no
+    /// <c>-</c> after <c>honua-cert</c> in <c>honua-certrun</c>). The honua-iac OIDC role scopes
+    /// <c>RegisterJobDefinition</c>/<c>DeregisterJobDefinition</c>/<c>TagResource</c> to
+    /// <c>honua-certrun-*</c> ONLY, so a minted per-run definition can never collide with — nor
+    /// deregister — a standing, submittable definition. Coordinated by convention with
+    /// honua-iac <c>examples/aws-cert</c> (<c>certrun_jobdef_name_prefix = "honua-certrun"</c>).
+    /// </summary>
+    public string JobDefinitionRunPrefix { get; private set; } = "honua-certrun-unset";
+
+    /// <summary>Namespace shared by every per-run job definition, independent of the run id.</summary>
+    public const string JobDefinitionRunNamespace = "honua-certrun";
 
     /// <summary><c>gp_job_queue_arn</c> — null when unconfigured.</summary>
     public string? JobQueueArn { get; private set; }
@@ -198,9 +217,10 @@ public sealed class RealAwsCertificationFixture : IAsyncLifetime
 
     /// <summary>
     /// True when the lane is enabled AND every ECS/ALB weighted-cutover input is present: the ECS
-    /// cluster + service, the ALB listener whose default rule is mutated, and both the canary and
-    /// stable target group ARNs. The cell resolves the listener's default rule ARN from
-    /// <see cref="AlbListenerArn"/> at test start, so no separate rule-ARN input is required.
+    /// cluster + service, the ALB listener whose weighted non-default rule is mutated, and both the
+    /// canary and stable target group ARNs. The cell resolves the weighted rule ARN (the non-default
+    /// rule forwarding to both configured target groups) from <see cref="AlbListenerArn"/> at test
+    /// start, so no separate rule-ARN input is required.
     /// </summary>
     public bool EcsAlbConfigured
         => Enabled
@@ -237,6 +257,7 @@ public sealed class RealAwsCertificationFixture : IAsyncLifetime
 
         RunId = Guid.NewGuid().ToString("N")[..8];
         ResourcePrefix = $"honua-cert-{RunId}";
+        JobDefinitionRunPrefix = $"{JobDefinitionRunNamespace}-{RunId}";
 
         JobQueueArn = Read(JobQueueArnEnvVar);
         JobDefinitionArnSmall = Read(JobDefinitionArnSmallEnvVar);

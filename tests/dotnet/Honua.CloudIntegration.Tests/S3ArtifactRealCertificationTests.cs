@@ -7,6 +7,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using FluentAssertions;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
@@ -28,10 +29,12 @@ namespace Honua.CloudIntegration.Tests;
 public sealed class S3ArtifactRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
 {
     private readonly RealAwsCertificationFixture _cert;
+    private readonly ITestOutputHelper _output;
 
-    public S3ArtifactRealCertificationTests(RealAwsCertificationFixture cert)
+    public S3ArtifactRealCertificationTests(RealAwsCertificationFixture cert, ITestOutputHelper output)
     {
         _cert = cert;
+        _output = output;
     }
 
     [SkippableFact]
@@ -93,10 +96,13 @@ public sealed class S3ArtifactRealCertificationTests : IClassFixture<RealAwsCert
             {
                 await client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = bucket, Key = key });
             }
-            catch
+            catch (Exception ex)
             {
                 // Best-effort: a leaked object still carries the honua-cert-run tag and is reaped
-                // by the TTL sweeper, so a transient delete blip cannot accumulate cost.
+                // by the TTL sweeper, so a transient delete blip cannot accumulate cost. Log it so a
+                // failed teardown is visible in CI rather than silently swallowed.
+                _output.WriteLine(
+                    $"[cert] best-effort delete of s3://{bucket}/{key} failed: {ex.Message}");
             }
         }
     }
