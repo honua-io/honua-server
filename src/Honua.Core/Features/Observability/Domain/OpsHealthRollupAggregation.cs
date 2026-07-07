@@ -78,10 +78,12 @@ public static class OpsHealthRollupAggregation
     /// connections, peak (max) queue/backlog signals, and averaged utilization/ratio gauges.
     /// </summary>
     /// <remarks>
-    /// The GP queue breakdown (<c>"&lt;status&gt;|&lt;backend&gt;"</c> keys) is merged with a per-key SUM
-    /// across replicas within a bucket (each replica reports its own view of the shared queue at flush time;
-    /// summing keeps the breakdown consistent with the per-key peak stored when downsampling to coarser
-    /// tiers, which uses a per-key MAX — the same peak-counts semantics as the latency counts).
+    /// GP queue depth (total and the <c>"&lt;status&gt;|&lt;backend&gt;"</c> breakdown) and the alert-dispatch
+    /// backlog are GLOBAL-view sections: every replica queries the same shared job/backlog store, so each
+    /// point reports the whole cluster's queue, not a per-replica share. Merging them across replicas is a
+    /// dedup, taken as a per-key MAX (summing would overcount by the replica count). Genuinely per-replica
+    /// sections merge differently: active DB connections are summed, utilization/ratio gauges are averaged.
+    /// Downsampling to coarser time tiers also stores the per-key MAX (peak within the bucket).
     /// </remarks>
     /// <param name="points">The per-replica vitals points (must be non-empty).</param>
     /// <returns>The merged whole-cluster vitals point.</returns>
@@ -114,8 +116,9 @@ public static class OpsHealthRollupAggregation
         {
             foreach (var bucket in point.GpQueueBreakdown)
             {
+                // Global view reported by every replica — dedup with per-key max, never sum.
                 breakdown[bucket.Key] = breakdown.TryGetValue(bucket.Key, out var existing)
-                    ? existing + bucket.Value
+                    ? Math.Max(existing, bucket.Value)
                     : bucket.Value;
             }
 

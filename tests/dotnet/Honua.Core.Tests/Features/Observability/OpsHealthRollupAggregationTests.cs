@@ -125,8 +125,10 @@ public class OpsHealthRollupAggregationTests
     }
 
     [Fact]
-    public void MergeVitalsAcrossReplicas_SumsGpQueueBreakdownPerKey()
+    public void MergeVitalsAcrossReplicas_DedupsGpQueueBreakdownWithPerKeyMax()
     {
+        // The GP queue is a GLOBAL view: every replica queries the same shared job store, so two replicas
+        // reporting the identical queue must merge to that queue (dedup by max), never to double the depth.
         var a = new OpsHealthVitalsPoint
         {
             OverallStatus = "Healthy",
@@ -140,14 +142,17 @@ public class OpsHealthRollupAggregationTests
             CacheHitRatio = 1,
             ErrorRate = 0,
         };
+        // Same global queue observed slightly later by a second replica: one queued job started running on
+        // aws-batch, so its per-key values differ but describe the same queue.
         var b = new OpsHealthVitalsPoint
         {
             OverallStatus = "Healthy",
-            GpQueueTotal = 4,
+            GpQueueTotal = 5,
             GpQueueBreakdown = new Dictionary<string, int>
             {
-                ["Queued|local"] = 1,
-                ["Queued|aws-batch"] = 3,
+                ["Queued|local"] = 3,
+                ["Running|local"] = 1,
+                ["Running|aws-batch"] = 1,
             },
             DbActiveConnections = 1,
             CacheHitRatio = 1,
@@ -157,9 +162,11 @@ public class OpsHealthRollupAggregationTests
         var merged = OpsHealthRollupAggregation.MergeVitalsAcrossReplicas([a, b]);
 
         merged.GpQueueBreakdown.Should().HaveCount(3);
-        merged.GpQueueBreakdown["Queued|local"].Should().Be(4);
+        // Identical global observation is deduped, not summed (3, never 6).
+        merged.GpQueueBreakdown["Queued|local"].Should().Be(3);
+        // Differing observations of the same key keep the peak.
         merged.GpQueueBreakdown["Running|local"].Should().Be(2);
-        merged.GpQueueBreakdown["Queued|aws-batch"].Should().Be(3);
+        merged.GpQueueBreakdown["Running|aws-batch"].Should().Be(1);
     }
 
     [Theory]

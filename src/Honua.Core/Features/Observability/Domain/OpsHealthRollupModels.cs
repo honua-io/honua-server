@@ -68,14 +68,22 @@ public sealed record OpsHealthVitalsPoint
     /// <summary>
     /// Gets the GP queue depth broken down by status and backend, keyed <c>"&lt;status&gt;|&lt;backend&gt;"</c>
     /// (e.g. <c>"Queued|local"</c>) — the flattened form of the live snapshot's status×backend buckets.
-    /// Empty when no jobs are active or no execution-job store is registered.
+    /// Like <see cref="GpQueueTotal"/>, this is a GLOBAL view (every replica queries the same shared job
+    /// store), so cross-replica merges dedup with a per-key max rather than summing. Empty when no jobs are
+    /// active or no execution-job store is registered.
     /// </summary>
     public IReadOnlyDictionary<string, int> GpQueueBreakdown { get; init; } = EmptyBreakdown;
 
-    /// <summary>Gets the alert-dispatch pending backlog count, when available.</summary>
+    /// <summary>
+    /// Gets the alert-dispatch pending backlog count, when available. Global-view section (shared backlog
+    /// store): cross-replica merges dedup with a max.
+    /// </summary>
     public long? AlertPending { get; init; }
 
-    /// <summary>Gets the alert-dispatch dead-lettered count, when available.</summary>
+    /// <summary>
+    /// Gets the alert-dispatch dead-lettered count, when available. Global-view section (shared backlog
+    /// store): cross-replica merges dedup with a max.
+    /// </summary>
     public long? AlertDeadLettered { get; init; }
 
     /// <summary>Gets the database connection-pool utilization ratio (0.0 to 1.0), when available.</summary>

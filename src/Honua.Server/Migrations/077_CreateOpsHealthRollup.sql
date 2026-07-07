@@ -66,4 +66,4 @@ COMMENT ON TABLE honua.ops_health_rollup_vitals IS
 COMMENT ON COLUMN honua.ops_health_rollup_vitals.tier IS
     '0=1-minute (retained 24h), 1=5-minute (14d), 2=hourly (90d).';
 COMMENT ON COLUMN honua.ops_health_rollup_vitals.gp_queue_breakdown IS
-    'GP queue depth by status and backend: {"<status>|<backend>": count} (flattened live-snapshot buckets). Cross-replica reads sum per key; downsampling stores the per-key peak.';
+    'GP queue depth by status and backend: {"<status>|<backend>": count} (flattened live-snapshot buckets). Every replica reports the same GLOBAL queue view, so cross-replica reads dedup with a per-key max; downsampling over time also stores the per-key peak.';

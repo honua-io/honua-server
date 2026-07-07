@@ -393,8 +393,9 @@ public sealed class OpsHealthHistoryVitalsPoint
     /// <summary>
     /// Gets the GP queue depth broken down by status and backend, keyed
     /// <c>"&lt;status&gt;|&lt;backend&gt;"</c> (e.g. <c>"Queued|local"</c>) — the flattened form of the live
-    /// snapshot's status×backend buckets. Cluster-merged points sum each key across replicas; coarser
-    /// resolutions carry the per-key peak within the bucket.
+    /// snapshot's status×backend buckets. The GP queue is a GLOBAL view (every replica queries the same
+    /// shared job store), so cluster-merged points dedup each key across replicas with a max — matching
+    /// <c>gpQueueTotal</c> — and coarser resolutions carry the per-key peak within the bucket.
     /// </summary>
     [JsonPropertyName("gpQueueBreakdown")]
     public required IReadOnlyDictionary<string, int> GpQueueBreakdown { get; init; }
