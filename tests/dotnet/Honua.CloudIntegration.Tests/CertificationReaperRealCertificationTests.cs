@@ -19,9 +19,17 @@ namespace Honua.CloudIntegration.Tests;
 /// belt-and-braces backstop: it reaps <c>honua-cert-run</c>-tagged resources older than a TTL so
 /// cost stays bounded even when a run dies mid-flight.
 ///
+/// SCOPE (do not overstate): the reaper covers exactly the two CREATED, tag-able resource kinds —
+/// the ephemeral per-run Batch job definitions (<c>honua-certrun-*</c>) and the S3 artifact objects.
+/// It does NOT (and must not) touch the ECS/ALB listener rule weights, the Lambda alias, or in-flight
+/// Batch jobs: those are IN-PLACE mutations of STANDING resources, not created ones, so there is
+/// nothing to tag or reap. Their standing state is protected instead by each cell's guaranteed
+/// baseline-restore in a <c>finally</c> (ECS/ALB and Lambda cells), not by this reaper.
+///
 /// It keys STRICTLY off the <see cref="RealAwsCertificationFixture.RunTagKey"/> tag (never a name
 /// prefix), so it can NEVER touch the standing certification-stack resources — those share the
-/// <c>honua-cert-*</c> NAME prefix but carry no <c>honua-cert-run</c> TAG. Budget is describe/list +
+/// <c>honua-cert-*</c> NAME prefix but carry no <c>honua-cert-run</c> TAG (and the per-run job
+/// definitions live in the disjoint <c>honua-certrun-*</c> namespace). Budget is describe/list +
 /// get-tagging + delete only.
 ///
 /// The reaper runs LAST: it is filtered into a dedicated <c>always()</c> workflow step by
