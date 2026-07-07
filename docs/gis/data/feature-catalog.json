@@ -2672,7 +2672,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetFindings_WithAdminAuth_ReturnsFindingsEnvelope",
-        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetFindings_WithoutAdminAuth_IsUnauthorized"
+        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetFindings_WithoutAdminAuth_IsUnauthorized",
+        "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.OpsReadKey_CanReadStatusAndFindings"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -4523,6 +4524,23 @@
         "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.AnonymousStac_AfterPublish_ExposesCatalogCollectionAndItem_AndDropsThemAfterUnpublish"
       ],
       "proof_ledger_surface": "console-open-data-dcat-stac",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-operate-status",
+      "route": "/api/v1/operate/status",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Operate.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.GetStatus_WithAdminAuth_ReturnsSelfDescribingVerdictAndDomains",
+        "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.GetStatus_WithOpsReadKey_IsAuthorized",
+        "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.GetStatus_WithoutAuth_IsUnauthorized",
+        "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.OpsReadKey_CanReadStatusAndFindings",
+        "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.OpsReadKey_IsNarrowerThanAdminRead_DeniedNonOpsAdminSurface"
+      ],
+      "proof_ledger_surface": "operate-status",
       "maturity": "implemented"
     },
     {
@@ -11899,7 +11917,8 @@
         "Honua.Server.Tests.Features.Admin.MetadataReleaseOperationEndpointsTests.RollbackDeployOperation_MetadataOnlyWithExplicitApproval_RequiresApproval",
         "Honua.Server.Tests.Features.Admin.MetadataReleaseOperationEndpointsTests.RollbackDeployOperation_MetadataOnly_UsesNonDestructiveApprovalPath",
         "Honua.Server.Tests.Features.Admin.MetadataReleaseOperationEndpointsTests.RollbackDeployOperation_WhenRollbackPlanApprovalRequirementChangesAfterApproval_ReturnsConflictWithoutMutation",
-        "Honua.Server.Tests.Features.Admin.MetadataReleaseOperationEndpointsTests.RollbackDeployOperation_WhenRollbackPlanChangesAfterApproval_ReturnsConflictWithoutMutation"
+        "Honua.Server.Tests.Features.Admin.MetadataReleaseOperationEndpointsTests.RollbackDeployOperation_WhenRollbackPlanChangesAfterApproval_ReturnsConflictWithoutMutation",
+        "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.OpsReadKey_CannotInvokeMutatingOpsEndpoints"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -13078,7 +13097,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.ProposeFinding_UnknownId_Returns404",
-        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.ProposeFinding_WithoutAdminAuth_IsUnauthorized"
+        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.ProposeFinding_WithoutAdminAuth_IsUnauthorized",
+        "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.OpsReadKey_CannotInvokeMutatingOpsEndpoints"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"

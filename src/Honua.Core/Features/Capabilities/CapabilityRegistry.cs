@@ -99,13 +99,18 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_create_map_package", "create_map_package", "execution"),
             ("honua_create_app_package", "create_app_package", "execution"),
             ("honua_geocode_address", "geocode_address", "execution"),
+            ("honua_geocode_addresses", "geocode_addresses", "execution"),
             ("honua_solve_route", "solve_route", "execution"),
             ("honua_cancel_job", "cancel_job", "lifecycle"),
             ("honua_propose_operation", "propose_operation", "lifecycle"),
+            ("honua_ingest_dataset", "ingest_dataset", "lifecycle"),
             ("honua_publish_service", "publish_service", "lifecycle"),
             ("honua_list_layers", "list_layers", "results"),
             ("honua_query_features", "query_features", "results"),
-            ("honua_edit_features", "edit_features", "execution"),
+            // No honua_edit_features: Honua does not expose an AI/MCP feature-mutation
+            // tool per ADR-0028 (AI operational data editing is not supported;
+            // founder-reaffirmed 2026-07-06). The shared edit pipeline serves the
+            // human-facing HTTP adapters only.
             ("honua_render_map", "render_map", "results"),
             ("honua_resolve_entity", "resolve_entity", "results"),
             ("honua_list_capabilities", "list_capabilities", "results"),
@@ -248,6 +253,10 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).
             // Opt in via Capabilities:Experimental:versioning.branch:Enabled=true.
             ("versioning.branch", "versioning", FeatureCatalog.BranchVersioningKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+
+            // Aggregated operational status (A12): the server-authoritative operate/status surface —
+            // one server-computed verdict + per-domain rollups + SLO/error-budget contract. Ungated GA.
+            ("operate.status", "operate", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
         ];
 
         foreach (var (id, category, entitlementKey, kind, packageSchemaVersion, maturity) in capabilities)

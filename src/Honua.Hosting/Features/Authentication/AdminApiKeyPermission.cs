@@ -42,6 +42,15 @@ internal static class AdminApiKeyPermission
     public const string PermissionClaimType = "permission";
 
     private const string AdminGrantPrefix = "admin:";
+    private const string OpsGrantPrefix = "ops:";
+
+    /// <summary>
+    /// Ops-reader grants that confer read-only access to the operational observability surfaces
+    /// (aggregated operate status, ops-health, findings, alerts) but no mutating authority — a
+    /// credential distinct from the admin family so a status/monitoring copilot can read the ops
+    /// posture without holding a key that could <c>POST</c> a rollback, promotion, or suppression.
+    /// </summary>
+    private static readonly string[] OpsReadGrants = ["ops:read", "ops:reader", "ops:*"];
 
     /// <summary>
     /// Grants that confer full administration (read and write).
@@ -139,6 +148,79 @@ internal static class AdminApiKeyPermission
         => string.Equals(httpMethod, "GET", StringComparison.OrdinalIgnoreCase)
            || string.Equals(httpMethod, "HEAD", StringComparison.OrdinalIgnoreCase)
            || string.Equals(httpMethod, "OPTIONS", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Determines whether a principal carries a read-only <c>ops:</c> grant (<c>ops:read</c>,
+    /// <c>ops:reader</c>, or <c>ops:*</c>). This is a strictly weaker, ops-scoped credential than the
+    /// admin family: it authorizes the read-only operational surfaces but never a mutating operation,
+    /// and it confers no access to the broader admin surfaces (users, keys, configuration) that
+    /// <c>admin:read</c> can observe.
+    /// </summary>
+    /// <param name="principal">The authenticated principal.</param>
+    /// <returns><see langword="true"/> when a read-only ops grant is present.</returns>
+    public static bool HasOpsReadGrant(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        foreach (var claim in principal.FindAll(PermissionClaimType))
+        {
+            var trimmed = claim.Value?.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                continue;
+            }
+
+            foreach (var grant in OpsReadGrants)
+            {
+                if (string.Equals(trimmed, grant, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            // An unrecognized ops sub-grant (e.g. a future ops:deploy) still proves ops-read intent:
+            // it can observe the ops surfaces but, being non-admin, can never satisfy a mutating
+            // requirement (which requires full admin write).
+            if (trimmed.StartsWith(OpsGrantPrefix, StringComparison.OrdinalIgnoreCase)
+                && trimmed.Length > OpsGrantPrefix.Length)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Determines whether a principal is authorized for an ops-observability request whose HTTP method
+    /// is <paramref name="httpMethod"/>. Safe (read) methods are authorized by an admin key of any
+    /// level (full or <c>admin:read</c>) or by a read-only <c>ops:</c> grant; mutating methods require
+    /// full admin write. This is the enforcement primitive behind the ops-reader authorization policy.
+    /// </summary>
+    /// <param name="principal">The authenticated principal.</param>
+    /// <param name="httpMethod">The request HTTP method.</param>
+    /// <returns><see langword="true"/> when the grants authorize the request.</returns>
+    public static bool IsOpsReadAuthorized(ClaimsPrincipal principal, string? httpMethod)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        var level = ResolveAccessLevel(principal);
+
+        // Full admin authorizes everything, including mutating ops operations.
+        if (level == AdminAccessLevel.Write)
+        {
+            return true;
+        }
+
+        // Mutating ops operations require full admin write; a read-only admin or ops grant cannot pass.
+        if (!IsSafeMethod(httpMethod))
+        {
+            return false;
+        }
+
+        // Safe method: a read-only admin grant or a read-only ops grant is sufficient.
+        return level == AdminAccessLevel.Read || HasOpsReadGrant(principal);
+    }
 
     private static AdminAccessLevel ClassifyGrant(string? grant)
     {
