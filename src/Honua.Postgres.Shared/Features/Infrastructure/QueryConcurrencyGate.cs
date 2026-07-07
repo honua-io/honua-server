@@ -3,14 +3,21 @@
 
 using System.Diagnostics;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Singleton admission-control gate that limits concurrent database operations.
 /// </summary>
-internal sealed class QueryConcurrencyGate : IDisposable
+internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissionGate
 {
+    // Lowest admission target a runtime tune request may set. Independent of the
+    // adaptive floor (_minLimit) so an ops action can lower admission below the
+    // adaptive minimum to relieve database pressure. The tune is transient and
+    // reverts to the configured limits on restart.
+    private const int TunableFloor = 1;
+
     private readonly object _sync = new();
     private readonly Queue<QueuedWaiter> _waiters = new();
     private readonly TimeSpan _acquisitionTimeout;
@@ -155,6 +162,30 @@ internal sealed class QueryConcurrencyGate : IDisposable
     /// </summary>
     public int MaxLimit => _maxLimit;
 
+    /// <inheritdoc />
+    public int MinLimit => TunableFloor;
+
+    /// <inheritdoc />
+    public bool TrySetLimit(int limit, out string? error)
+    {
+        var max = _maxLimit;
+        if (limit < TunableFloor || limit > max)
+        {
+            error = $"Admission limit {limit} is outside the permitted range [{TunableFloor}, {max}].";
+            return false;
+        }
+
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            SetTunedLimitLocked(limit);
+            DrainWaitersLocked();
+        }
+
+        error = null;
+        return true;
+    }
+
     /// <summary>
     /// Number of slots currently available (for diagnostics/telemetry).
     /// </summary>
@@ -276,6 +307,23 @@ internal sealed class QueryConcurrencyGate : IDisposable
         {
             SetTargetLimitLocked(_targetLimit + Math.Max(1, (int)Math.Sqrt(_targetLimit)));
         }
+    }
+
+    // Applies a runtime-tuned target, clamped to [TunableFloor, _maxLimit]. Unlike
+    // SetTargetLimitLocked this can drop below the adaptive floor (_minLimit) so a
+    // deliberate ops tune can shed load; the adaptive controller (when enabled) may
+    // later re-adjust within its own bounds.
+    private void SetTunedLimitLocked(int limit)
+    {
+        var next = Clamp(limit, TunableFloor, _maxLimit);
+        if (next == _targetLimit)
+        {
+            return;
+        }
+
+        _lastAdjustmentDirection = next > _targetLimit ? 1 : -1;
+        _targetLimit = next;
+        _adjustmentCount++;
     }
 
     private void SetTargetLimitLocked(int targetLimit)

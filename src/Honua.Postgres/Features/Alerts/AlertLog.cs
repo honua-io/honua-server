@@ -66,4 +66,21 @@ internal static partial class AlertLog
     public static partial void DispatchDeliveredPurged(
         ILogger logger,
         int deletedCount);
+
+    [LoggerMessage(
+        EventId = 5608,
+        Level = LogLevel.Information,
+        Message = "Redrove {RedrivenCount} dead-lettered alert-dispatch rows back to pending")]
+    public static partial void DispatchDeadLettersRedriven(
+        ILogger logger,
+        int redrivenCount);
+
+    [LoggerMessage(
+        EventId = 5609,
+        Level = LogLevel.Information,
+        Message = "Alert delivery channel {ChannelType} pause state set to {Paused}")]
+    public static partial void DispatchChannelPauseChanged(
+        ILogger logger,
+        short channelType,
+        bool paused);
 }

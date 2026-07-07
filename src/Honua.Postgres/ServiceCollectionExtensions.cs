@@ -101,6 +101,11 @@ internal static class ServiceCollectionExtensions
         // Register concurrency gate as singleton — shared across all scoped providers.
         // Factory form so the DI container tracks the IDisposable for shutdown disposal.
         services.TryAddSingleton(_ => new QueryConcurrencyGate(connectionLimits));
+        // Expose the same singleton through the runtime-tunable admission seam so
+        // control-plane ops actions can transiently tune bounded admission without a
+        // restart (the value reverts to the configured limits on restart).
+        services.TryAddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(
+            sp => sp.GetRequiredService<QueryConcurrencyGate>());
 
         // Singleton cache that resolves the connection string / secret exactly once (PA-077).
         // Scoped factories must await ResolvedConnectionStringTask instead of calling the

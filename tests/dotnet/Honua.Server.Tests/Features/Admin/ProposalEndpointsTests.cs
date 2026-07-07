@@ -250,6 +250,15 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             OperationClass operationClass,
             Honua.Core.Features.Licensing.Domain.HonuaEdition edition)
             => new(Tier, operationClass, edition, "test-stub");
+
+        public GuardrailDecision Resolve(OperationClass operationClass, string? actionDiscriminator)
+            => Resolve(operationClass, actionDiscriminator, Honua.Core.Features.Licensing.Domain.HonuaEdition.Enterprise);
+
+        public GuardrailDecision Resolve(
+            OperationClass operationClass,
+            string? actionDiscriminator,
+            Honua.Core.Features.Licensing.Domain.HonuaEdition edition)
+            => new(Tier, operationClass, edition, "test-stub");
     }
 
     private sealed class RecordingExecutor : IOperationExecutor
