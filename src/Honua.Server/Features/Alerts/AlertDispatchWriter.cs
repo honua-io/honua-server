@@ -23,23 +23,19 @@ internal readonly record struct PendingAlertDispatch(
 /// </summary>
 internal sealed partial class AlertDispatchWriter
 {
-    private readonly IAlertEventStore _eventStore;
-    private readonly IAlertDispatchStore _dispatchStore;
+    private readonly IAlertOutboxWriter _outboxWriter;
     private readonly ILogger<AlertDispatchWriter> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AlertDispatchWriter"/> class.
     /// </summary>
-    /// <param name="eventStore">Store used to append alert events with deduplication semantics.</param>
-    /// <param name="dispatchStore">Store used to enqueue channel dispatches for appended events.</param>
+    /// <param name="outboxWriter">Atomic writer that appends each event and enqueues its dispatch in one transaction.</param>
     /// <param name="logger">Logger for dispatch-persistence diagnostics.</param>
     public AlertDispatchWriter(
-        IAlertEventStore eventStore,
-        IAlertDispatchStore dispatchStore,
+        IAlertOutboxWriter outboxWriter,
         ILogger<AlertDispatchWriter> logger)
     {
-        _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
-        _dispatchStore = dispatchStore ?? throw new ArgumentNullException(nameof(dispatchStore));
+        _outboxWriter = outboxWriter ?? throw new ArgumentNullException(nameof(outboxWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -55,7 +51,11 @@ internal sealed partial class AlertDispatchWriter
     {
         foreach (var pendingDispatch in pendingDispatches)
         {
-            var eventId = await _eventStore.TryAppendAsync(pendingDispatch.AlertEvent, cancellationToken).ConfigureAwait(false);
+            // Atomic: the event append and its dispatch enqueue commit together (or not at all),
+            // so a crash can never leave a persisted event with no delivery enqueued.
+            var eventId = await _outboxWriter
+                .AppendAndEnqueueAsync(pendingDispatch.AlertEvent, pendingDispatch.Channels, cancellationToken)
+                .ConfigureAwait(false);
             if (!eventId.HasValue)
             {
                 LogEventDeduplicated(
@@ -67,8 +67,6 @@ internal sealed partial class AlertDispatchWriter
             }
 
             AlertPipelineMetrics.RecordEventEmitted(pendingDispatch.AlertEvent.TriggerType);
-
-            await _dispatchStore.EnqueueAsync(eventId.Value, pendingDispatch.Channels, cancellationToken).ConfigureAwait(false);
 
             foreach (var channel in pendingDispatch.Channels.Distinct())
             {
