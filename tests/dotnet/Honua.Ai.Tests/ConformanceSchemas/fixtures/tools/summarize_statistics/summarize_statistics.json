@@ -1,0 +1,17 @@
+{
+  "id": "summarize_statistics.population_by_county",
+  "schemaRef": "tools/summarize_statistics.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "source": { "serviceId": "census_tracts", "layerId": 0 },
+    "groupByFields": ["county_fips"],
+    "statistics": [
+      { "statisticType": "sum", "onField": "population", "outField": "total_population" },
+      { "statisticType": "mean", "onField": "median_income", "outField": "avg_median_income" },
+      { "statisticType": "count", "onField": "tract_id" }
+    ],
+    "where": "population > 0"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}

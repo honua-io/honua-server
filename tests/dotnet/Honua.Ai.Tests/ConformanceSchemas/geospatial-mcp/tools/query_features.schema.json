@@ -65,6 +65,10 @@
       "type": "integer",
       "default": 4326,
       "description": "Output spatial reference (SRID/WKID) for returned geometries."
+    },
+    "geometryPrecision": {
+      "type": "integer",
+      "description": "Optional number of decimal places to round returned GeoJSON coordinates to, trading positional precision for a smaller response/context budget. A negative value returns full precision. When omitted, precision is implementation-defined; the reference implementation defaults to 6 (~0.1 m), which cuts coordinate payload roughly 12% at the default and far more for dense geometries. Standardized from the honua-server x-honua extension (geospatial-mcp#52)."
     }
   }
 }
