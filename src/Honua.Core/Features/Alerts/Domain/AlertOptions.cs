@@ -208,6 +208,25 @@ public sealed class AlertDispatchOptions
     public int RetentionBatchSize { get; init; } = 1_000;
 
     /// <summary>
+    /// Number of consecutive dead-lettered deliveries on a single channel that trips the
+    /// per-channel delivery circuit breaker. While the breaker is open, further claimed
+    /// dispatches for that channel are deferred (rescheduled, retry budget untouched) and
+    /// newly composed ops notifications skip the channel — so a permanently-failing channel
+    /// (for example a dead ops webhook) produces bounded dead-letter volume instead of one
+    /// dead-letter per recurring event. A single half-open probe is admitted after
+    /// <see cref="CircuitBreakerCooldown"/>; a success closes the breaker. Set to <c>0</c> to
+    /// disable circuit breaking. Defaults to 5.
+    /// </summary>
+    [Range(0, 1_000_000)]
+    public int CircuitBreakerThreshold { get; init; } = 5;
+
+    /// <summary>
+    /// How long a tripped per-channel delivery circuit breaker stays open before admitting a
+    /// single half-open probe. Defaults to 5 minutes.
+    /// </summary>
+    public TimeSpan CircuitBreakerCooldown { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// Digest delivery settings.
     /// </summary>
     public DigestAlertOptions Digest { get; init; } = new();

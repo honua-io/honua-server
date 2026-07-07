@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Validation;
 using Honua.TestKit.Attributes;
@@ -100,5 +101,56 @@ public sealed class OutboundHttpUrlValidatorTests
 
         result.IsValid.Should().BeFalse();
         result.ErrorMessage.Should().Contain("private");
+    }
+
+    [UnitTest]
+    public void ValidateConfiguration_WithLoopback_AllowPrivateNetworks_ReturnsSuccess()
+    {
+        var result = OutboundHttpUrlValidator.ValidateConfiguration(
+            "http://localhost:9090",
+            allowPrivateNetworks: true);
+
+        result.IsValid.Should().BeTrue("the explicit private-network opt-in permits a loopback on-prem endpoint");
+        result.Uri.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void ValidateConfiguration_WithLiteralPrivateIp_AllowPrivateNetworks_ReturnsSuccess()
+    {
+        var result = OutboundHttpUrlValidator.ValidateConfiguration(
+            "http://10.0.0.1:9090",
+            allowPrivateNetworks: true);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ValidateConfiguration_WithHttpScheme_WithoutOptIn_StillRejected()
+    {
+        var result = OutboundHttpUrlValidator.ValidateConfiguration("http://prometheus.internal:9090");
+
+        result.IsValid.Should().BeFalse("http is only allowed under the private-network opt-in");
+        result.ErrorMessage.Should().Contain("HTTPS");
+    }
+
+    [UnitTest]
+    public void ValidateConfiguration_WithEmbeddedCredentials_AllowPrivateNetworks_StillRejected()
+    {
+        var result = OutboundHttpUrlValidator.ValidateConfiguration(
+            "http://user:pass@10.0.0.1:9090",
+            allowPrivateNetworks: true);
+
+        result.IsValid.Should().BeFalse("embedded credentials are rejected regardless of the network opt-in");
+        result.ErrorMessage.Should().Contain("credentials");
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_WithPrivateAddress_AllowPrivateNetworks_ReturnsSuccess()
+    {
+        var result = await OutboundHttpUrlValidator.ValidateAsync(
+            "http://192.168.1.10:9090",
+            allowPrivateNetworks: true);
+
+        result.IsValid.Should().BeTrue();
     }
 }

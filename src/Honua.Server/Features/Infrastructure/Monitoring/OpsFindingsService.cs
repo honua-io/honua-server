@@ -28,11 +28,17 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     internal const string RulePendingContractMigrations = "pending-contract-migrations";
     internal const string RuleGpQueueDepth = "gp-queue-depth";
     internal const string RuleDeployManualIntervention = "deploy-manual-intervention";
+    internal const string RuleLocalBackendSubstrate = "local-backend-substrate-incompatible";
+
+    // BackendName of the in-process baseline batch backend (which reports a KubernetesJob target kind).
+    private const string InProcessLocalBackendName = "local";
 
     private readonly IOptionsMonitor<OpsFindingsOptions> _options;
     private readonly IOptionsMonitor<ControlPlaneOptions> _controlPlaneOptions;
     private readonly IAlertDispatchHealth _alertHealth;
     private readonly IDeployPreflightProbe _deployProbe;
+    private readonly IReadOnlyList<IBatchComputeBackend> _batchBackends;
+    private readonly Func<string, string?> _environmentAccessor;
     private readonly IOperationGateway? _gateway;
     private readonly IWorkflowOperationStore? _workflowStore;
     private readonly IExecutionJobStore? _jobStore;
@@ -42,6 +48,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
         IAlertDispatchHealth alertHealth,
         IDeployPreflightProbe deployProbe,
+        IEnumerable<IBatchComputeBackend>? batchBackends = null,
+        Func<string, string?>? environmentAccessor = null,
         IOperationGateway? gateway = null,
         IWorkflowOperationStore? workflowStore = null,
         IExecutionJobStore? jobStore = null)
@@ -50,6 +58,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         _controlPlaneOptions = controlPlaneOptions;
         _alertHealth = alertHealth;
         _deployProbe = deployProbe;
+        _batchBackends = batchBackends?.ToList() ?? [];
+        _environmentAccessor = environmentAccessor ?? SubstrateProfileResolver.ReadEnvironment;
         _gateway = gateway;
         _workflowStore = workflowStore;
         _jobStore = jobStore;
@@ -62,6 +72,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         var findings = new List<OpsFinding>();
 
         EvaluateAlertDispatchBacklog(now, options, findings);
+        EvaluateLocalBackendSubstrate(now, findings);
         EvaluatePlatformReleaseSkew(now, findings);
         await EvaluatePendingContractMigrationsAsync(now, findings, cancellationToken).ConfigureAwait(false);
         await EvaluateGpQueueDepthAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
@@ -173,6 +184,52 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             DetectedAt = now,
             Subject = subject,
             EvidenceRefs = ["healthcheck:alert-dispatch", "GET /monitoring/health/comprehensive"],
+            RecommendedAction = null,
+        });
+    }
+
+    // Rule (a2): the single-host local batch-compute backend(s) are registered on a substrate they
+    // cannot work on (serverless, or multi-node without a shared work dir). Critical — this is the
+    // fail-closed operator signal that replaces the previous silent re-queue loop, where a job launched
+    // on the local backend was observed as "process lost" from a node that never launched it and
+    // re-queued with no indication that the backend is fundamentally incompatible with the substrate.
+    private void EvaluateLocalBackendSubstrate(DateTimeOffset now, List<OpsFinding> findings)
+    {
+        var localBackends = _batchBackends
+            .Where(static backend =>
+                backend.TargetKind == BatchComputeTargetKind.LocalProcess
+                || string.Equals(backend.BackendName, InProcessLocalBackendName, StringComparison.Ordinal))
+            .ToList();
+        if (localBackends.Count == 0)
+        {
+            return;
+        }
+
+        var substrate = _controlPlaneOptions.CurrentValue.Substrate;
+        var effectiveProfile = SubstrateProfileResolver.ResolveEffectiveProfile(substrate, _environmentAccessor);
+        var compatibility = LocalBatchComputeSubstrate.Evaluate(effectiveProfile, substrate.SharedWorkDir);
+        if (compatibility.IsCompatible)
+        {
+            return;
+        }
+
+        var backendNames = string.Join(", ", localBackends.Select(static b => b.BackendName).OrderBy(static n => n, StringComparer.Ordinal));
+        var subject = new OpsFindingSubject { Channel = "batch-compute" };
+
+        findings.Add(new OpsFinding
+        {
+            Id = OpsFindingId.Create(RuleLocalBackendSubstrate, subject),
+            Rule = RuleLocalBackendSubstrate,
+            Severity = OpsFindingSeverity.Critical,
+            Title = "Local batch backend cannot work on this substrate",
+            Explanation = $"The local batch-compute backend(s) [{backendNames}] are registered, but the "
+                + $"deployment substrate profile is '{effectiveProfile}'. {compatibility.Reason} Jobs targeting the "
+                + "local backend will not run: route geoprocessing/import workloads to a remote batch backend, or "
+                + "correct the substrate profile / configure a shared work directory. No automatic fix is offered "
+                + "because the safe remediation is a deployment-topology decision.",
+            DetectedAt = now,
+            Subject = subject,
+            EvidenceRefs = ["config:ControlPlane:Substrate", "GET /monitoring/health/comprehensive"],
             RecommendedAction = null,
         });
     }

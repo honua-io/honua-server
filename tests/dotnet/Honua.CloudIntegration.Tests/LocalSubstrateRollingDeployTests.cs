@@ -302,7 +302,7 @@ public sealed class LocalSubstrateRollingDeployTests : IClassFixture<LocalSubstr
             await proxy.StartAsync();
 
             var configProvider = (InMemoryConfigProvider)proxy.Services.GetRequiredService<IProxyConfigProvider>();
-            var swapper = new YarpInMemoryProxyStateSwapper(configProvider, Options.Create(options));
+            var swapper = new YarpInMemoryProxyStateSwapper(configProvider, docker.Runtime, Options.Create(options));
 
             var backend = new YarpRollingDeployBackend(
                 docker.Runtime,

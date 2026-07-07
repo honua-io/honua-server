@@ -165,6 +165,66 @@ internal static class McpToolOutputSchemas
         """);
 
     /// <summary>
+    /// Schema for <see cref="Models.McpPublishResultOutput"/>. Projects the same
+    /// canonical <c>OperationHandle</c> as the publish-service output (the
+    /// promotion routes through <c>service.publish</c>): a completed promotion
+    /// carries <c>serviceId</c> + <c>layerId</c> the agent chains straight into
+    /// <c>honua_query_features</c> / <c>honua_render_map</c>; a requires-approval
+    /// outcome carries <c>approvalLane</c>; a queued outcome carries <c>jobId</c>.
+    /// <c>sourceJobId</c> / <c>artifactId</c> echo the promoted result.
+    /// </summary>
+    public static readonly JsonElement PublishResultOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["status", "requiresApproval", "operationId", "handleId"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Operation handle status: Completed, Queued, Running, RequiresApproval, Denied, or Failed."
+            },
+            "requiresApproval": { "type": "boolean" },
+            "operationId": { "type": "string" },
+            "handleId": { "type": "string" },
+            "sourceJobId": {
+              "type": ["string", "null"],
+              "description": "The completed analysis job id whose artifact was promoted."
+            },
+            "artifactId": {
+              "type": ["string", "null"],
+              "description": "The result artifact that was promoted."
+            },
+            "serviceUri": {
+              "type": ["string", "null"],
+              "description": "honua://published-services/{serviceId} URI of the published service when the promotion completed."
+            },
+            "serviceId": {
+              "type": ["string", "null"],
+              "description": "Published service id (name) — pass to honua_query_features / honua_render_map as serviceId."
+            },
+            "layerId": {
+              "type": ["string", "null"],
+              "description": "Published layer id — pass to honua_query_features / honua_render_map as layerId."
+            },
+            "metadataRevision": {
+              "type": ["integer", "null"],
+              "description": "Metadata v2 graph revision produced by the promotion."
+            },
+            "jobId": {
+              "type": ["string", "null"],
+              "description": "Durable job id when the promotion was queued."
+            },
+            "approvalLane": {
+              "type": ["string", "null"],
+              "description": "Approval lane to wait on when the promotion requires human approval."
+            },
+            "summary": { "type": ["string", "null"] },
+            "message": { "type": ["string", "null"] }
+          }
+        }
+        """);
+
+    /// <summary>
     /// Schema for <see cref="Models.McpPlanAnalysisOutput"/>. The compiled plan,
     /// spec draft, clarification, and estimate are deep nested shapes; the schema
     /// pins the top-level envelope and leaves those sub-objects open so the
@@ -174,9 +234,14 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["status"],
+          "required": ["status", "engine"],
           "properties": {
             "status": { "type": "string" },
+            "engine": {
+              "type": "string",
+              "enum": ["live", "fixture"],
+              "description": "Which planner produced this response. engine:\"live\" means the plan was compiled from your intent by a provider-backed model; engine:\"fixture\" means the plan is a canned deterministic template returned because no LLM provider is configured - treat it as a capability demo, not a plan compiled from your intent."
+            },
             "plan": { "type": ["object", "null"] },
             "specDraft": { "type": ["object", "null"] },
             "warnings": { "type": "array", "items": { "type": "object" } },

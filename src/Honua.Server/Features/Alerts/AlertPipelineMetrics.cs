@@ -60,6 +60,16 @@ internal static class AlertPipelineMetrics
         "notifications",
         "Operations notifications composed for delivery, tagged by source, severity, and outcome.");
 
+    private static readonly Counter<long> DeliveriesSuppressedCounter = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua.alerts.deliveries_suppressed_total",
+        "deliveries",
+        "Alert deliveries deferred because the event is operator-suppressed, tagged by channel.");
+
+    private static readonly Counter<long> DeliveriesCircuitDeferredCounter = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua.alerts.deliveries_circuit_deferred_total",
+        "deliveries",
+        "Alert deliveries deferred because the per-channel delivery circuit breaker is open, tagged by channel.");
+
     private static readonly Histogram<double> DeliveryLatencyHistogram = HonuaTelemetry.Meter.CreateHistogram<double>(
         "honua.alerts.delivery_latency",
         "milliseconds",
@@ -124,6 +134,14 @@ internal static class AlertPipelineMetrics
     /// <summary>Records a delivery deferred by the per-channel notification rate cap.</summary>
     public static void RecordDeliveryRateCapped(AlertChannelType channelType)
         => DeliveriesRateCappedCounter.Add(1, new KeyValuePair<string, object?>(ChannelTag, channelType.ToExternalName()));
+
+    /// <summary>Records a delivery deferred because its event is operator-suppressed.</summary>
+    public static void RecordDeliverySuppressed(AlertChannelType channelType)
+        => DeliveriesSuppressedCounter.Add(1, new KeyValuePair<string, object?>(ChannelTag, channelType.ToExternalName()));
+
+    /// <summary>Records a delivery deferred because the per-channel delivery circuit breaker is open.</summary>
+    public static void RecordDeliveryCircuitDeferred(AlertChannelType channelType)
+        => DeliveriesCircuitDeferredCounter.Add(1, new KeyValuePair<string, object?>(ChannelTag, channelType.ToExternalName()));
 
     /// <summary>Records an operations-notification outcome.</summary>
     public static void RecordOpsNotification(string source, AlertSeverity severity, string outcome)

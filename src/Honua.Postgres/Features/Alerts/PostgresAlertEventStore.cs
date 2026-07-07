@@ -24,42 +24,9 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
     {
         ArgumentNullException.ThrowIfNull(alertEvent);
 
-        const string sql = """
-            INSERT INTO honua.alert_events (
-                dedupe_key, rule_id, zone_id, service_id, layer_id, objectid, trigger_type,
-                generation, severity, occurred_at, payload, incident_status, incident_duration_ms, source)
-            VALUES (
-                @dedupe_key, @rule_id, @zone_id, @service_id, @layer_id, @objectid, @trigger_type,
-                @generation, @severity, @occurred_at, @payload::jsonb, @incident_status, @incident_duration_ms, @source)
-            ON CONFLICT (dedupe_key) DO NOTHING
-            RETURNING event_id
-            """;
-
-        // Operations notifications are not linked to an alert rule; persist rule_id as
-        // NULL for them (the FK still constrains rule-driven events). A positive RuleId
-        // is always a real rule reference.
-        var isOps = string.Equals(alertEvent.Source, AlertEventSources.Ops, StringComparison.Ordinal);
-        var ruleIdValue = isOps || alertEvent.RuleId <= 0
-            ? (object)DBNull.Value
-            : alertEvent.RuleId;
-
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-
-        command.Parameters.AddWithValue("dedupe_key", NpgsqlDbType.Text, alertEvent.DedupeKey);
-        command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, ruleIdValue);
-        command.Parameters.AddWithValue("zone_id", NpgsqlDbType.Bigint, (object?)alertEvent.ZoneId ?? DBNull.Value);
-        command.Parameters.AddWithValue("service_id", NpgsqlDbType.Text, alertEvent.ServiceId);
-        command.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, alertEvent.LayerId);
-        command.Parameters.AddWithValue("objectid", NpgsqlDbType.Bigint, alertEvent.ObjectId);
-        command.Parameters.AddWithValue("trigger_type", NpgsqlDbType.Smallint, alertEvent.TriggerType.ToDbValue());
-        command.Parameters.AddWithValue("generation", NpgsqlDbType.Bigint, alertEvent.Generation);
-        command.Parameters.AddWithValue("severity", NpgsqlDbType.Text, alertEvent.Severity.ToDbValue());
-        command.Parameters.AddWithValue("occurred_at", NpgsqlDbType.TimestampTz, alertEvent.OccurredAt);
-        command.Parameters.AddWithValue("payload", NpgsqlDbType.Text, alertEvent.PayloadJson);
-        command.Parameters.AddWithValue("incident_status", NpgsqlDbType.Smallint, alertEvent.IncidentStatus.ToDbValue());
-        command.Parameters.AddWithValue("incident_duration_ms", NpgsqlDbType.Bigint, alertEvent.IncidentDurationMs);
-        command.Parameters.AddWithValue("source", NpgsqlDbType.Text, (object?)alertEvent.Source ?? DBNull.Value);
+        await using var command = new NpgsqlCommand(AlertOutboxCommands.AppendEventSql, connection);
+        AlertOutboxCommands.BindAppendEvent(command, alertEvent);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long eventId ? eventId : null;

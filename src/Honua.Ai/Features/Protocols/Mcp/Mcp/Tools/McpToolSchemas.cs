@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
@@ -28,6 +29,21 @@ internal static class McpToolSchemas
     /// Canonical artifact-kind names advertised to MCP clients.
     /// </summary>
     public static readonly IReadOnlyList<string> ArtifactKindNames = Enum.GetNames<ArtifactKind>();
+
+    /// <summary>
+    /// Closed set of geoprocessing process ids valid for a <c>Geoprocess</c> plan
+    /// step, sourced from the same built-in process catalog the
+    /// <c>honua://catalog/processes</c> resource serves so the published contract
+    /// cannot drift from the executable registry. Published as the
+    /// <c>processId</c> examples so agents can hand-author plans without guessing
+    /// ids; the catalog resource carries each id's typed parameter documentation.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ProcessIdNames =
+        new BuiltInProcessCatalog()
+            .ListProcesses()
+            .Select(process => process.ProcessId)
+            .OrderBy(processId => processId, StringComparer.Ordinal)
+            .ToArray();
 
     private const string CancelJobArgumentSchemaJson = """
         {
@@ -127,6 +143,54 @@ internal static class McpToolSchemas
               "type": "array",
               "items": { "type": "string" },
               "description": "Subset of attribute columns to publish. All columns are published when omitted."
+            }
+          }
+        }
+        """;
+
+    // The geospatial-mcp publish_result schema marks only `sourceId` required and
+    // sets additionalProperties:true. The live schema mirrors that required set
+    // (so a standard-conformant call is always accepted) and documents the honua
+    // extension selectors (artifactId / serviceName / layerName) the shared
+    // service.publish promotion consumes. `targetKind` / `visibility` /
+    // `routePrefix` mirror the standard promotion-surface fields; the reference
+    // implementation supports `published_service` and returns a structured
+    // failed_precondition for `deployment`.
+    private const string PublishResultArgumentSchemaJson = """
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["sourceId"],
+          "properties": {
+            "sourceId": {
+              "type": "string",
+              "description": "Completed analysis job id (from honua_execute_plan → honua://jobs/{id}) whose result artifact is promoted to a hosted layer."
+            },
+            "artifactId": {
+              "type": "string",
+              "description": "Selects which artifact in the job's result package to promote. Defaults to the single publishable FeatureLayer/Table artifact when the job produced exactly one."
+            },
+            "serviceName": {
+              "type": "string",
+              "description": "Target service name for the published layer. Defaults to the canonical default service when omitted."
+            },
+            "layerName": {
+              "type": "string",
+              "description": "Display name for the published layer. Defaults to the artifact label when omitted."
+            },
+            "targetKind": {
+              "type": "string",
+              "enum": ["published_service", "deployment"],
+              "description": "Promotion-surface target family. published_service (Analyze / Publish Data) is supported; deployment (Build App) is not yet materialized server-side. Defaults to published_service."
+            },
+            "visibility": {
+              "type": "string",
+              "enum": ["workspace_shared", "public"],
+              "description": "Requested promotion visibility scope. Effective visibility is governed by the publish operator gate / RBAC."
+            },
+            "routePrefix": {
+              "type": "string",
+              "description": "Optional route prefix for a deployment target (Build App)."
             }
           }
         }
@@ -396,6 +460,14 @@ internal static class McpToolSchemas
     public static readonly JsonElement IngestDatasetArgumentSchema = Parse(IngestDatasetArgumentSchemaJson);
 
     /// <summary>
+    /// Schema for <see cref="Models.McpPublishResultArgument"/>. Mirrors the
+    /// geospatial-mcp <c>publish_result</c> schema (only <c>sourceId</c> required,
+    /// additionalProperties allowed) so a standard-conformant promotion call is
+    /// always accepted by the live surface.
+    /// </summary>
+    public static readonly JsonElement PublishResultArgumentSchema = Parse(PublishResultArgumentSchemaJson);
+
+    /// <summary>
     /// Schema used by stub tools that accept no arguments.
     /// </summary>
     public static readonly JsonElement EmptyObjectSchema = Parse(EmptyObjectSchemaJson);
@@ -406,6 +478,7 @@ internal static class McpToolSchemas
         var stepKindExamples = string.Join(", ", PlanStepKindNames);
         var artifactKindEnum = JsonStringArray(ArtifactKindNames);
         var artifactKindExamples = string.Join(", ", ArtifactKindNames);
+        var processIdExamples = JsonStringArray(ProcessIdNames);
 
         // Validate/dry-run tools must accept partial plans so the server can
         // report EMPTY_PLAN_ID/EMPTY_STEPS as structured violations; execute
@@ -446,10 +519,15 @@ internal static class McpToolSchemas
                             "enum": {{stepKindEnum}},
                             "description": "Canonical AnalysisPlanStepKind value ({{stepKindExamples}}). Server parsing is case-insensitive but clients should send the canonical PascalCase spelling."
                           },
-                          "processId": { "type": "string" },
+                          "processId": {
+                            "type": "string",
+                            "description": "For a Geoprocess step, the id of the process to run. Valid ids are the closed set advertised by the honua://catalog/processes resource (resources/read) and enumerated in this property's examples; that resource documents each process's typed parameters, allowed values, and output artifact kinds. Read it to discover the correct id and its input shape before hand-authoring a plan.",
+                            "examples": {{processIdExamples}}
+                          },
                           "inputs": {
                             "type": "object",
-                            "additionalProperties": { "type": "string" }
+                            "additionalProperties": { "type": "string" },
+                            "description": "Process inputs keyed by parameter name, as string-encoded values specified by the process catalog entry for this step's processId. Consult honua://catalog/processes for each parameter's name, value type, whether it is required, and how the value must be encoded (for example base64 WKB, a data URI FeatureCollection, an SRID, or a layer id)."
                           },
                           "dependsOn": {
                             "type": "array",

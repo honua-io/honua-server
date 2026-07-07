@@ -48,6 +48,42 @@ internal sealed class ControlPlaneOptions
     /// upgrade is a single diff bumping both planes together.
     /// </summary>
     public PlatformReleaseOptions PlatformRelease { get; set; } = new();
+
+    /// <summary>
+    /// Deployment substrate profile used to fail closed when the single-host local batch-compute
+    /// backends are registered on a substrate they cannot work on (serverless, or multi-node without
+    /// a shared work directory). Defaults to the single-host on-prem profile so existing deployments
+    /// are unaffected.
+    /// </summary>
+    public SubstrateOptions Substrate { get; set; } = new();
+}
+
+/// <summary>
+/// Configuration for the deployment substrate profile (<c>ControlPlane:Substrate</c>).
+/// </summary>
+internal sealed class SubstrateOptions
+{
+    /// <summary>
+    /// The declared deployment substrate profile. Left at
+    /// <see cref="BatchComputeSubstrateProfile.SingleHost"/> for the on-prem/air-gapped default;
+    /// set to <c>MultiNode</c> or <c>Serverless</c> to declare a scale-out/ephemeral substrate.
+    /// </summary>
+    public BatchComputeSubstrateProfile Profile { get; set; } = BatchComputeSubstrateProfile.SingleHost;
+
+    /// <summary>
+    /// Operator assertion that a shared/persistent work directory reachable from every node is
+    /// configured, which is what makes the local process-pool backend safe on a multi-node substrate.
+    /// Ignored for the single-host and serverless profiles.
+    /// </summary>
+    public bool SharedWorkDir { get; set; }
+
+    /// <summary>
+    /// Whether to auto-escalate the effective profile to <see cref="BatchComputeSubstrateProfile.Serverless"/>
+    /// when a well-known serverless runtime is detected from the environment (AWS Lambda, Azure
+    /// Functions, Cloud Run). Defaults to <c>true</c>; the explicit <see cref="Profile"/> always wins
+    /// when it declares a more restrictive substrate.
+    /// </summary>
+    public bool AutoDetectServerless { get; set; } = true;
 }
 
 /// <summary>
@@ -303,6 +339,17 @@ internal sealed class DeployTelemetryConnectionOptions
     public string? Region { get; set; }
 
     public int TimeoutSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// Explicit operator opt-in that relaxes the outbound SSRF guard for this telemetry connection so
+    /// a private-network or loopback metrics backend can be used — for example an on-prem/air-gapped
+    /// Prometheus at <c>http://localhost:9090</c> or a <c>10.x</c>/<c>192.168.x</c> address. When
+    /// <see langword="true"/>, <see cref="BaseUrl"/> may use the <c>http</c> scheme and resolve to a
+    /// private, loopback, or reserved address. Defaults to <see langword="false"/>, keeping the strict
+    /// HTTPS-only, no-private-destination posture. Only enable for a trusted, operator-controlled
+    /// endpoint inside your own network.
+    /// </summary>
+    public bool AllowPrivateNetworks { get; set; }
 }
 
 /// <summary>
@@ -379,7 +426,9 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
                 failures.Add($"{propertyPrefix}:Provider cannot be empty");
             }
 
-            var baseUrlValidation = OutboundHttpUrlValidator.ValidateConfiguration(connection.BaseUrl);
+            var baseUrlValidation = OutboundHttpUrlValidator.ValidateConfiguration(
+                connection.BaseUrl,
+                connection.AllowPrivateNetworks);
             if (!baseUrlValidation.IsValid)
             {
                 failures.Add($"{propertyPrefix}:BaseUrl {baseUrlValidation.ErrorMessage ?? "must be a valid HTTPS URL."}");

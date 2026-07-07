@@ -90,6 +90,17 @@ az functionapp config container set --name honua-prod --resource-group honua \
   --image honuaprod.azurecr.io/honua-server:v1.2.3-functions-aot
 ```
 
+## Ops control plane and batch-compute backends
+
+**Redis is a hard dependency for the ops control plane.** Durable jobs, queued imports, deploy workflows, and the operation gateway are all backed by Redis (ElastiCache / Azure Cache for Redis). Without it these surfaces fail closed — job/import/workflow endpoints return `503` rather than silently running node-local work — and the ops-findings recommended-action gateway reports a degraded, unavailable state. Provision Redis for any environment that runs jobs, imports, workflows, or the deploy control plane; single-host dev/test via Docker Compose is the only tier where you can skip it.
+
+**The local batch-compute backends are single-host only.** The in-process `local` backend and the child-process `honua-local-process` pool track launched jobs in an in-process registry that cannot survive a host restart or be observed from another node. They are the zero-dependency executors for single-host / air-gapped deployments; they **cannot** work on:
+
+- a **serverless** substrate (Lambda, Functions, Cloud Run), whose process and filesystem are frozen or torn down between invocations, or
+- a **multi-node** deployment without a shared work directory, where a job launched on one node is invisible to its siblings.
+
+On those substrates, route geoprocessing/import workloads to a remote batch backend (`honua-aws-batch`, Azure Batch, or a Kubernetes Job) instead. Declare the substrate so the server can fail closed rather than churn: set `ControlPlane:Substrate:Profile` to `MultiNode` or `Serverless` (serverless runtimes are also auto-detected from `AWS_LAMBDA_FUNCTION_NAME` / `FUNCTIONS_WORKER_RUNTIME` / `K_SERVICE`), and `ControlPlane:Substrate:SharedWorkDir=true` if a multi-node deployment provides shared storage. When a local backend is registered on an incompatible substrate, the server raises a persistent Critical ops finding (`local-backend-substrate-incompatible`, visible via `GET /monitoring/health/comprehensive` and the ops-findings feed) instead of silently re-queuing doomed jobs.
+
 ## Verify
 
 After `terraform apply`, run the post-apply validation suite from this repository against the deployed environment:

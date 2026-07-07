@@ -24,8 +24,7 @@ public sealed class AlertPipelineTests
         var changeReader = Substitute.For<IAlertChangeReader>();
         var ruleRepository = Substitute.For<IAlertRuleRepository>();
         var stateStore = Substitute.For<IAlertStateStore>();
-        var eventStore = Substitute.For<IAlertEventStore>();
-        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var outbox = Substitute.For<IAlertOutboxWriter>();
         var featureReader = Substitute.For<IFeatureReader>();
         var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
         var evaluator = Substitute.For<IAlertEvaluator>();
@@ -58,7 +57,7 @@ public sealed class AlertPipelineTests
         evaluator.EvaluateAsync(Arg.Any<AlertChange>(), Arg.Any<Feature?>(), rule, zone, Arg.Any<AlertStateSnapshot?>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new AlertEvaluationResult());
 
-        var dispatchWriter = new AlertDispatchWriter(eventStore, dispatchStore, NullLogger<AlertDispatchWriter>.Instance);
+        var dispatchWriter = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
@@ -95,8 +94,7 @@ public sealed class AlertPipelineTests
         var changeReader = Substitute.For<IAlertChangeReader>();
         var ruleRepository = Substitute.For<IAlertRuleRepository>();
         var stateStore = Substitute.For<IAlertStateStore>();
-        var eventStore = Substitute.For<IAlertEventStore>();
-        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var outbox = Substitute.For<IAlertOutboxWriter>();
         var featureReader = Substitute.For<IFeatureReader>();
         var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
         var evaluator = Substitute.For<IAlertEvaluator>();
@@ -123,7 +121,7 @@ public sealed class AlertPipelineTests
         evaluator.EvaluateAsync(Arg.Any<AlertChange>(), Arg.Any<Feature?>(), rule, zone, Arg.Any<AlertStateSnapshot?>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new AlertEvaluationResult());
 
-        var dispatchWriter = new AlertDispatchWriter(eventStore, dispatchStore, NullLogger<AlertDispatchWriter>.Instance);
+        var dispatchWriter = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
@@ -152,8 +150,7 @@ public sealed class AlertPipelineTests
         var changeReader = Substitute.For<IAlertChangeReader>();
         var ruleRepository = Substitute.For<IAlertRuleRepository>();
         var stateStore = Substitute.For<IAlertStateStore>();
-        var eventStore = Substitute.For<IAlertEventStore>();
-        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var outbox = Substitute.For<IAlertOutboxWriter>();
         var featureReader = Substitute.For<IFeatureReader>();
         var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
         var evaluator = Substitute.For<IAlertEvaluator>();
@@ -198,7 +195,7 @@ public sealed class AlertPipelineTests
                 UpdatedState = CreateState(ruleTwo.RuleId, ruleTwo.LayerId, change.ObjectId, change.Generation)
             });
 
-        var dispatchWriter = new AlertDispatchWriter(eventStore, dispatchStore, NullLogger<AlertDispatchWriter>.Instance);
+        var dispatchWriter = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
@@ -227,8 +224,7 @@ public sealed class AlertPipelineTests
         var changeReader = Substitute.For<IAlertChangeReader>();
         var ruleRepository = Substitute.For<IAlertRuleRepository>();
         var stateStore = Substitute.For<IAlertStateStore>();
-        var eventStore = Substitute.For<IAlertEventStore>();
-        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var outbox = Substitute.For<IAlertOutboxWriter>();
         var featureReader = Substitute.For<IFeatureReader>();
         var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
         var evaluator = Substitute.For<IAlertEvaluator>();
@@ -257,7 +253,7 @@ public sealed class AlertPipelineTests
                 new AlertEvaluationResult { UpdatedState = CreateState(rule.RuleId, rule.LayerId, 100, 1) },
                 new AlertEvaluationResult { UpdatedState = CreateState(rule.RuleId, rule.LayerId, 101, 2) });
 
-        var dispatchWriter = new AlertDispatchWriter(eventStore, dispatchStore, NullLogger<AlertDispatchWriter>.Instance);
+        var dispatchWriter = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,

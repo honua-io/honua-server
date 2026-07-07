@@ -45,7 +45,7 @@ internal sealed class ClarifyIntentTool : IMcpTool
     {
         Name = ToolName,
         Title = "Clarify intent",
-        Description = "Continue a grounding pass with operator clarification answers; returns an updated draft intent and (if ambiguity remains) another clarification envelope.",
+        Description = "Routing: continue a honua_ground_candidates conversation — the required intentId comes from that tool's response. Continues a grounding pass with operator clarification answers; returns an updated draft intent and (if ambiguity remains) another clarification envelope.",
         InputSchema = InputSchemaElement,
         OutputSchema = McpToolOutputSchemas.GroundingOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Clarify intent")

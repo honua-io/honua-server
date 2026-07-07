@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Honua.Core.Features.Infrastructure.Migrations;
@@ -94,6 +95,7 @@ public static class MigrationSafetyClassifier
     [
         CreatePattern("drop-column", @"\bALTER\s+TABLE\b[\s\S]*?\bDROP\s+COLUMN\b"),
         CreatePattern("rename-column", @"\bALTER\s+TABLE\b[\s\S]*?\bRENAME\s+COLUMN\b"),
+        CreatePattern("rename-table", @"\bALTER\s+TABLE\b[\s\S]*?\bRENAME\s+TO\b"),
         CreatePattern("alter-column-type", @"\bALTER\s+TABLE\b[\s\S]*?\bALTER\s+COLUMN\b[\s\S]*?\bTYPE\b"),
         CreatePattern("set-not-null", @"\bALTER\s+TABLE\b[\s\S]*?\bALTER\s+COLUMN\b[\s\S]*?\bSET\s+NOT\s+NULL\b"),
         CreatePattern("drop-table", @"\bDROP\s+TABLE\b"),
@@ -173,26 +175,117 @@ public static class MigrationSafetyClassifier
         return CompatibilityReviewMarker.IsMatch(sql);
     }
 
+    // A single left-to-right lexer pass that removes comments and quoted/dollar-quoted bodies. A
+    // regex-per-construct approach is order-sensitive and unsafe: stripping string literals before
+    // line comments lets an apostrophe inside a `--` comment (e.g. "-- don't ship" ... "-- isn't used")
+    // open a spurious quote span that swallows real DDL between the two comments, hiding a DROP TABLE
+    // and misclassifying a contract migration as expand. A lexer honors the real precedence — a `--`
+    // or `/* */` outside a string starts a comment, and a `'`/`$tag$` outside a comment starts a
+    // literal — so no construct can leak across another's boundary.
     private static string StripCommentsAndQuotedBodies(string sql)
     {
-        var sanitized = Regex.Replace(sql, @"/\*[\s\S]*?\*/", " ", RegexOptions.CultureInvariant);
-        sanitized = Regex.Replace(
-            sanitized,
-            @"\$(?<tag>[A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\k<tag>\$",
-            " ",
-            RegexOptions.Singleline | RegexOptions.CultureInvariant);
-        sanitized = Regex.Replace(
-            sanitized,
-            @"'([^']|'')*'",
-            "''",
-            RegexOptions.Singleline | RegexOptions.CultureInvariant);
-        sanitized = Regex.Replace(
-            sanitized,
-            @"--.*?$",
-            string.Empty,
-            RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        var result = new StringBuilder(sql.Length);
+        var i = 0;
+        var length = sql.Length;
 
-        return sanitized;
+        while (i < length)
+        {
+            var current = sql[i];
+
+            // Line comment: -- to end of line.
+            if (current == '-' && i + 1 < length && sql[i + 1] == '-')
+            {
+                i += 2;
+                while (i < length && sql[i] != '\n')
+                {
+                    i++;
+                }
+
+                result.Append(' ');
+                continue;
+            }
+
+            // Block comment: /* ... */ (Postgres does not nest these by default; a flat scan matches
+            // how the classifier's DDL detection needs it).
+            if (current == '/' && i + 1 < length && sql[i + 1] == '*')
+            {
+                i += 2;
+                while (i + 1 < length && !(sql[i] == '*' && sql[i + 1] == '/'))
+                {
+                    i++;
+                }
+
+                i = Math.Min(length, i + 2);
+                result.Append(' ');
+                continue;
+            }
+
+            // Single-quoted string literal with '' escape.
+            if (current == '\'')
+            {
+                i++;
+                while (i < length)
+                {
+                    if (sql[i] == '\'')
+                    {
+                        if (i + 1 < length && sql[i + 1] == '\'')
+                        {
+                            i += 2;
+                            continue;
+                        }
+
+                        i++;
+                        break;
+                    }
+
+                    i++;
+                }
+
+                result.Append(' ');
+                continue;
+            }
+
+            // Dollar-quoted body: $tag$ ... $tag$ (tag may be empty).
+            if (current == '$' && TryReadDollarTag(sql, i) is { } tag)
+            {
+                var closeIndex = sql.IndexOf(tag, i + tag.Length, StringComparison.Ordinal);
+                i = closeIndex < 0 ? length : closeIndex + tag.Length;
+                result.Append(' ');
+                continue;
+            }
+
+            result.Append(current);
+            i++;
+        }
+
+        return result.ToString();
+    }
+
+    private static string? TryReadDollarTag(string sql, int start)
+    {
+        var length = sql.Length;
+        var i = start + 1;
+
+        // Empty tag: $$.
+        if (i < length && sql[i] == '$')
+        {
+            return "$$";
+        }
+
+        // A named tag must be a valid identifier (letter/underscore first) so a bare parameter
+        // reference such as $1 is not mistaken for the opening of a dollar-quoted body.
+        if (i >= length || !(char.IsAsciiLetter(sql[i]) || sql[i] == '_'))
+        {
+            return null;
+        }
+
+        i++;
+        while (i < length && (char.IsAsciiLetterOrDigit(sql[i]) || sql[i] == '_'))
+        {
+            i++;
+        }
+
+        return i < length && sql[i] == '$' ? sql[start..(i + 1)] : null;
     }
 
     private static (string RuleName, Regex Pattern) CreatePattern(string ruleName, string pattern) =>

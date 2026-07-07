@@ -13,6 +13,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     private readonly Dictionary<AlertChannelType, IAlertDeliverySink> _sinks;
     private readonly AlertOptions _options;
     private readonly AlertNotificationRateLimiter _rateLimiter;
+    private readonly AlertChannelCircuitBreaker _circuitBreaker;
     private readonly ILogger<AlertDispatchBackgroundService> _logger;
 
     private volatile bool _isRunning;
@@ -24,12 +25,14 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         IServiceScopeFactory scopeFactory,
         IEnumerable<IAlertDeliverySink> sinks,
         AlertNotificationRateLimiter rateLimiter,
+        AlertChannelCircuitBreaker circuitBreaker,
         IOptions<AlertOptions> options,
         ILogger<AlertDispatchBackgroundService> logger)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _sinks = (sinks ?? throw new ArgumentNullException(nameof(sinks))).ToDictionary(static sink => sink.ChannelType);
         _rateLimiter = rateLimiter ?? throw new ArgumentNullException(nameof(rateLimiter));
+        _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -77,6 +80,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     await using var scope = _scopeFactory.CreateAsyncScope();
                     var dispatchStore = scope.ServiceProvider.GetRequiredService<IAlertDispatchStore>();
                     var eventStore = scope.ServiceProvider.GetRequiredService<IAlertEventStore>();
+                    var lifecycleStore = scope.ServiceProvider.GetRequiredService<IAlertLifecycleStore>();
 
                     var batch = await dispatchStore
                         .ClaimPendingAsync(_options.Dispatch.ClaimBatchSize, now, stoppingToken)
@@ -84,7 +88,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
                     foreach (var item in batch)
                     {
-                        await ProcessItemAsync(dispatchStore, eventStore, item, stoppingToken).ConfigureAwait(false);
+                        await ProcessItemAsync(dispatchStore, eventStore, lifecycleStore, item, stoppingToken).ConfigureAwait(false);
                     }
 
                     // The backlog count is a full outbox aggregate; recompute it after a
@@ -165,6 +169,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     private async Task ProcessItemAsync(
         IAlertDispatchStore dispatchStore,
         IAlertEventStore eventStore,
+        IAlertLifecycleStore lifecycleStore,
         AlertDispatchItem item,
         CancellationToken cancellationToken)
     {
@@ -189,6 +194,33 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
             return;
         }
 
+        // Operator suppression: an event an operator suppressed must NOT deliver notifications
+        // while the suppression window is open (the event itself stays recorded). The dispatch is
+        // deferred to the suppression expiry — never dead-lettered — so a still-active incident can
+        // still notify once the window ends. Without this check the suppress action had no effect on
+        // delivery at all.
+        var lifecycle = await lifecycleStore.GetAsync(item.EventId, cancellationToken).ConfigureAwait(false);
+        if (lifecycle?.SuppressedUntil is { } suppressedUntil && suppressedUntil > now)
+        {
+            await dispatchStore.RescheduleAsync(item.DispatchId, suppressedUntil, cancellationToken).ConfigureAwait(false);
+            AlertPipelineMetrics.RecordDeliverySuppressed(item.ChannelType);
+            LogSuppressed(_logger, item.DispatchId, item.ChannelType, suppressedUntil);
+            return;
+        }
+
+        // Per-channel delivery circuit breaker: when a channel is persistently failing, defer
+        // (reschedule, retry budget untouched) instead of driving the row through the full
+        // retry→dead-letter cycle, so a dead channel produces bounded dead-letter volume. A single
+        // half-open probe is admitted after the cooldown so recovery is detected.
+        if (!_circuitBreaker.ShouldAttemptDelivery(item.ChannelType, now))
+        {
+            var deferUntil = _circuitBreaker.NextProbeAt(item.ChannelType, now);
+            await dispatchStore.RescheduleAsync(item.DispatchId, deferUntil, cancellationToken).ConfigureAwait(false);
+            AlertPipelineMetrics.RecordDeliveryCircuitDeferred(item.ChannelType);
+            LogCircuitDeferred(_logger, item.DispatchId, item.ChannelType, deferUntil);
+            return;
+        }
+
         // Per-channel notification rate cap: enforced BEFORE the sink call. A capped
         // dispatch is rescheduled (retry budget untouched, never dead-lettered) so a
         // burst is smoothed rather than dropped.
@@ -208,6 +240,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         if (result.Succeeded)
         {
             await dispatchStore.MarkDeliveredAsync(item.DispatchId, now, cancellationToken).ConfigureAwait(false);
+            _circuitBreaker.RecordSuccess(item.ChannelType);
             AlertPipelineMetrics.RecordDeliverySucceeded(item.ChannelType, elapsedMs);
             LogDelivered(_logger, item.DispatchId, item.ChannelType);
             return;
@@ -219,6 +252,11 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         await dispatchStore
             .MarkFailedAsync(item.DispatchId, now, nextAttempt, exhausted, result.Error, cancellationToken)
             .ConfigureAwait(false);
+
+        if (exhausted && _circuitBreaker.RecordDeadLetter(item.ChannelType, now))
+        {
+            LogChannelCircuitOpened(_logger, item.ChannelType, _options.Dispatch.CircuitBreakerCooldown);
+        }
 
         AlertPipelineMetrics.RecordDeliveryFailed(item.ChannelType, exhausted, elapsedMs);
         LogFailed(_logger, item.DispatchId, item.ChannelType, exhausted, result.Error ?? "Delivery failed.");
@@ -241,4 +279,13 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
     [LoggerMessage(EventId = 9425, Level = LogLevel.Debug, Message = "Purged {DeletedCount} delivered alert-dispatch rows past the retention window.")]
     private static partial void LogDeliveredPurged(ILogger logger, int deletedCount);
+
+    [LoggerMessage(EventId = 9426, Level = LogLevel.Debug, Message = "Alert dispatch {DispatchId} for {ChannelType} deferred until {SuppressedUntil:O} because its event is operator-suppressed.")]
+    private static partial void LogSuppressed(ILogger logger, long dispatchId, AlertChannelType channelType, DateTimeOffset suppressedUntil);
+
+    [LoggerMessage(EventId = 9427, Level = LogLevel.Debug, Message = "Alert dispatch {DispatchId} for {ChannelType} deferred until {DeferUntil:O} because the per-channel delivery circuit breaker is open.")]
+    private static partial void LogCircuitDeferred(ILogger logger, long dispatchId, AlertChannelType channelType, DateTimeOffset deferUntil);
+
+    [LoggerMessage(EventId = 9428, Level = LogLevel.Warning, Message = "Alert delivery circuit breaker opened for channel {ChannelType} after repeated dead-letters; deliveries on this channel are deferred for {Cooldown}.")]
+    private static partial void LogChannelCircuitOpened(ILogger logger, AlertChannelType channelType, TimeSpan cooldown);
 }

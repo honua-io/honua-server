@@ -8,6 +8,7 @@ using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Reporting.Abstractions;
 
@@ -70,6 +71,17 @@ internal static class McpServiceCollectionExtensions
         // "unavailable" handle when no operations toolset is composed — the same
         // pattern ProposeOperationTool uses for the operation gateway.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishServiceTool>());
+
+        // honua_publish_result (#2482): promotes a completed analysis job's
+        // materialized artifact into a hosted layer. It resolves the job result
+        // package through IGeoprocessingJobService (composed before this method,
+        // like every other job-backed tool) and routes the promotion through the
+        // same canonical IOperationInvoker (service.publish) as PublishServiceTool.
+        // Registered unconditionally and gated at invocation time for the same
+        // reason PublishServiceTool is: the operations toolset is composed later
+        // than AddMcpOperatorSurface, so the tool resolves the invoker per-request
+        // and returns a structured "unavailable" handle when none is composed.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishResultTool>());
 
         // Authoring tools (#1951): create_map_package / create_app_package route
         // through the canonical IMapGenerationService / IAppGenerationService
@@ -202,10 +214,27 @@ internal static class McpServiceCollectionExtensions
 
         services.TryAddSingleton<McpOperatorSurface>();
 
+        // MCP transport + session-lifecycle options (A3 hardening; #2537):
+        // server-initiated GET-stream toggle, idle TTL, session cap, and eviction
+        // policy. Bound from the `Mcp` section; defaults live on McpOptions.
+        services.AddOptions<McpOptions>()
+            .Bind(configuration.GetSection(McpOptions.SectionName));
+
         // Streamable-HTTP session registry (honua-server#1954). A process-wide
         // singleton so a session id issued on initialize is recognized on every
-        // subsequent POST/GET/DELETE handled by the same host.
-        services.TryAddSingleton<McpSessionManager>();
+        // subsequent POST/GET/DELETE handled by the same host. Constructed via a
+        // factory so it picks up the configured lifecycle bounds and the host
+        // TimeProvider (defaults to TimeProvider.System when none is registered).
+        services.TryAddSingleton(static sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<McpOptions>>().Value;
+            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
+            return new McpSessionManager(
+                options.MaxSessions,
+                options.SessionIdleTimeout,
+                options.SessionEvictionPolicy,
+                timeProvider);
+        });
 
         // Server-push notifications over the session SSE stream (honua-server#1954):
         // the publisher builds notifications/progress + */list_changed frames and

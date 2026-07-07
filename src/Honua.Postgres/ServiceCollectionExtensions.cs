@@ -158,6 +158,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAlertStateStore, PostgresAlertStateStore>();
         services.AddScoped<IAlertEventStore, PostgresAlertEventStore>();
         services.AddScoped<IAlertDispatchStore, PostgresAlertDispatchStore>();
+        services.AddScoped<IAlertOutboxWriter, PostgresAlertOutboxWriter>();
         services.AddScoped<IAlertCheckpointStore, PostgresAlertCheckpointStore>();
         services.AddScoped<IAlertAdminStore, PostgresAlertAdminStore>();
         services.AddScoped<IAlertEventQuery, PostgresAlertEventQuery>();
