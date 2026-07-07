@@ -495,47 +495,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <c>McpEditFeaturesOutput</c>: per-edit results grouped by edit
-    /// kind plus the transaction summary emitted by the shared edit pipeline.
-    /// </summary>
-    public static readonly JsonElement EditFeaturesOutputSchema = Parse(
-        """
-        {
-          "type": "object",
-          "required": ["serviceId", "layerId", "addResults", "updateResults", "deleteResults", "summary"],
-          "properties": {
-            "serviceId": { "type": "string" },
-            "layerId": { "type": "integer" },
-            "addResults": { "type": "array", "items": { "$ref": "#/$defs/editResult" } },
-            "updateResults": { "type": "array", "items": { "$ref": "#/$defs/editResult" } },
-            "deleteResults": { "type": "array", "items": { "$ref": "#/$defs/editResult" } },
-            "summary": {
-              "type": "object",
-              "required": ["applied", "failed", "rolledBack"],
-              "properties": {
-                "applied": { "type": "integer", "description": "Count of successfully applied edits." },
-                "failed": { "type": "integer", "description": "Count of failed edits." },
-                "rolledBack": { "type": "boolean", "description": "True when the whole transaction was rolled back." }
-              }
-            }
-          },
-          "$defs": {
-            "editResult": {
-              "type": "object",
-              "required": ["index", "success"],
-              "properties": {
-                "index": { "type": "integer", "description": "Zero-based position of the edit in its submitted array." },
-                "success": { "type": "boolean" },
-                "objectId": { "type": ["integer", "null"] },
-                "globalId": { "type": ["string", "null"] },
-                "error": { "type": ["string", "null"] }
-              }
-            }
-          }
-        }
-        """);
-
     /// <summary>Schema for <see cref="Models.McpNotImplementedOutput"/>.</summary>
     public static readonly JsonElement NotImplementedOutputSchema = Parse(
         """

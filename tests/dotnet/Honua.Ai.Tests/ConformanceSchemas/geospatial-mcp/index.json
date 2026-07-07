@@ -123,11 +123,11 @@
     },
     {
       "standardName": "edit_features",
-      "referenceToolName": "honua_edit_features",
+      "referenceToolName": null,
       "family": "Transactional editing (Honua extension)",
       "schema": "tools/edit_features.schema.json",
-      "implementationStatus": "implemented",
-      "notes": "Honua reference extension: transactional feature editing (adds/updates/deletes) over the shared server edit pipeline. In tension with ADR-0028's Edit-Data exclusion; the reference tool requires an authenticated, authorized caller and is not autonomous unapproved mutation. Pending an ADR-0028 reconciliation decision by the standard maintainers; schema marks x-honua-extension."
+      "implementationStatus": "known-gap",
+      "notes": "Honua does NOT implement this tool: the MCP surface exposes no AI-facing feature-mutation verb per ADR-0028 (AI operational data editing is not supported; founder-reaffirmed 2026-07-06). The schema is retained so the gap stays real and closeable by other adopters of the standard's optional mutation profile, but the reference implementation serves the shared edit pipeline only through its human-facing HTTP adapters. (State-only known-gap edit; a full re-vendor to the current geospatial-mcp pin lands separately.)"
     },
     {
       "standardName": "render_map",

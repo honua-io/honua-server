@@ -66,7 +66,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_solve_route"] = "solve_route",
             ["honua_list_layers"] = "list_layers",
             ["honua_query_features"] = "query_features",
-            ["honua_edit_features"] = "edit_features",
             ["honua_render_map"] = "render_map",
             ["honua_publish_service"] = "publish_service",
             // Honua extensions over the bare taxonomy (#1949): the standard models
@@ -94,6 +93,13 @@ public sealed partial class McpTaxonomyAlignmentTests
         "preview_map_package",
         "preview_app_package",
         "publish_result",
+        // edit_features is the sole member of the standard's optional 'mutation'
+        // profile. Honua deliberately does NOT implement it: the MCP surface
+        // exposes no AI-facing feature-mutation tool per ADR-0028 (AI operational
+        // data editing is not supported; founder-reaffirmed 2026-07-06). The
+        // standard still publishes the schema, so the gap is real and closeable
+        // by any adopter that makes a different trust decision — but not by Honua.
+        "edit_features",
     };
 
     /// <summary>

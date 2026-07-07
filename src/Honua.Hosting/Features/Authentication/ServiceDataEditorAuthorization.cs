@@ -110,9 +110,11 @@ internal static class ServiceDataEditorAuthorization
 
     /// <summary>
     /// Decision-shaped core of the per-layer data-editor write gate, shared by the
-    /// HTTP <see cref="IResult"/> wrappers above and by non-HTTP-result adapters
-    /// (e.g. the MCP <c>honua_edit_features</c> tool) that surface denials through
-    /// their own error contracts. Semantics are identical to the HTTP path:
+    /// HTTP <see cref="IResult"/> wrappers above and by any non-HTTP-result adapter
+    /// that surfaces denials through its own error contract. (The MCP surface
+    /// exposes no feature-mutation tool per ADR-0028 — AI operational data editing
+    /// is not supported — so this core currently backs only the human-facing HTTP
+    /// edit adapters.) Semantics are identical to the HTTP path:
     /// layer-scoped write keys (#1637) are authoritative for scoped principals; an
     /// explicit <see cref="AccessPolicy"/> write restriction stays authoritative;
     /// otherwise a per-operation RBAC write grant (#1376) on the

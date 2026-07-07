@@ -107,7 +107,10 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_publish_service", "publish_service", "lifecycle"),
             ("honua_list_layers", "list_layers", "results"),
             ("honua_query_features", "query_features", "results"),
-            ("honua_edit_features", "edit_features", "execution"),
+            // No honua_edit_features: Honua does not expose an AI/MCP feature-mutation
+            // tool per ADR-0028 (AI operational data editing is not supported;
+            // founder-reaffirmed 2026-07-06). The shared edit pipeline serves the
+            // human-facing HTTP adapters only.
             ("honua_render_map", "render_map", "results"),
             ("honua_resolve_entity", "resolve_entity", "results"),
             ("honua_list_capabilities", "list_capabilities", "results"),
