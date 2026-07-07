@@ -50,6 +50,11 @@
       "type": "boolean",
       "default": false,
       "description": "Render a transparent background instead of an opaque one."
+    },
+    "maxInlineBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Optional ceiling, in bytes, on inline base64 image content. When the rendered image is at or below this size it may be returned inline; above it, the tool returns a resource_link href to the image instead of inlining megabytes of PNG into model context. When omitted, inlining behavior is implementation-defined; the reference implementation defaults to returning a resource_link href rather than inlining. Standardized from the honua-server x-honua extension (geospatial-mcp#52)."
     }
   }
 }

@@ -1,0 +1,18 @@
+{
+  "id": "deployment.app_package",
+  "schemaRef": "resources/deployment.schema.json",
+  "validates": "inputs",
+  "uri": "honua://deployments/dep_4c12",
+  "deferred": true,
+  "inputs": {
+    "deploymentId": "dep_4c12",
+    "kind": "app_package",
+    "targetRef": "app_8801",
+    "hostingMode": "static_site",
+    "revisionId": "rev_01",
+    "publicationState": "live"
+  },
+  "expected": "resource_projection",
+  "canonicalRefs": ["Deployment", "AppPackage"],
+  "notes": "Responsibility-level: concrete Deployment field set finalizes upstream (honua-server#732); stable deploymentId, kind, and target binding are scoreable now."
+}

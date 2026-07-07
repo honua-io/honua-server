@@ -2,8 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/edit_features.schema.json",
   "title": "edit_features inputSchema",
-  "description": "Argument shape for the transactional feature-editing tool (advertised name honua_edit_features). Applies adds/updates/deletes to a single published editable layer as one all-or-nothing transaction when rollbackOnFailure=true (the default). The bare taxonomy excludes direct data editing per ADR-0028 (AI must not autonomously mutate authoritative records); the reference implementation exposes editing as a discrete tool that requires an authenticated, authorized caller and routes through the shared server edit/transaction pipeline (validation, authorization, optimistic behavior, telemetry) rather than autonomous unapproved mutation. x-honua-extension: this is a documented Honua reference extension over the bare taxonomy, pending formalization (and ADR-0028 reconciliation) in the geospatial-mcp standard. x-honua-reference-shape: this shape tracks the reference implementation.",
-  "x-honua-extension": true,
+  "description": "Argument shape for the transactional feature-editing tool (advertised name honua_edit_features). edit_features is the sole member of the standard's **mutation** conformance profile (see /CONFORMANCE.md and docs/adr/0028-governed-feature-mutation.md): it applies adds/updates/deletes to a single published editable layer as one all-or-nothing transaction when rollbackOnFailure=true (the default). It is governed mutation, not autonomous mutation: an implementation MUST require an authenticated, authorized caller and MUST authorize each edit type independently (insert for adds, update for updates, delete for deletes), rejecting the whole request before any edit is applied if any required permission is missing. An implementation MAY be read-only and still conform to the base profile by not advertising this tool. x-honua-reference-shape: the concrete objectId/globalId/attributes spellings track the reference implementation's shared edit/transaction pipeline; see taxonomy.md §Feature editing (mutation profile).",
   "x-honua-reference-shape": true,
   "type": "object",
   "required": ["serviceId", "layerId"],
@@ -25,23 +24,23 @@
     },
     "adds": {
       "type": "array",
-      "description": "Features to insert. Object IDs are assigned by the store.",
+      "description": "Features to insert. Requires insert authorization on the target layer. Object IDs are assigned by the store.",
       "items": { "$ref": "#/$defs/editFeature" }
     },
     "updates": {
       "type": "array",
-      "description": "Features to update. Each MUST carry an objectId identifying the existing feature.",
+      "description": "Features to update. Requires update authorization on the target layer. Each MUST carry an objectId identifying the existing feature.",
       "items": { "$ref": "#/$defs/editFeature" }
     },
     "deletes": {
       "type": "array",
-      "description": "Object IDs of features to delete.",
+      "description": "Object IDs of features to delete. Requires delete authorization on the target layer.",
       "items": { "type": "integer" }
     },
     "rollbackOnFailure": {
       "type": "boolean",
       "default": true,
-      "description": "When true, any failed edit rolls back the whole transaction (all-or-nothing)."
+      "description": "When true (the default), any failed edit rolls back the whole transaction (all-or-nothing) and the layer is left unchanged; when false, successful edits commit independently and per-edit failures are reported."
     },
     "returnEditResults": {
       "type": "boolean",

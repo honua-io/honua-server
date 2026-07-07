@@ -14,7 +14,7 @@
     },
     "kind": {
       "type": "string",
-      "description": "WorkspaceKind. Canonical enum names are Scratch/Persistent/TempLayer/SavedLayer/ResultCollection; the reference implementation emits the lower_snake_case wire spelling.",
+      "description": "WorkspaceKind. Canonical enum names are Scratch/Persistent/TempLayer/SavedLayer/ResultCollection; the reference implementation emits the lower_snake_case wire spelling. An empty/absent kind is not a legal value — omit the property rather than emitting an empty string.",
       "enum": [
         "scratch",
         "persistent",
@@ -25,8 +25,7 @@
         "Persistent",
         "TempLayer",
         "SavedLayer",
-        "ResultCollection",
-        ""
+        "ResultCollection"
       ]
     },
     "label": { "type": "string", "description": "Human-readable label." },
@@ -36,16 +35,29 @@
       "format": "date-time",
       "description": "Expiration timestamp when applicable."
     },
-    "status": {
+    "lifecycleState": {
       "type": "string",
-      "description": "WorkspaceLifecycleState projection. Reference wire spellings: active, cleanup_pending, sealed, not_found, degraded.",
-      "enum": ["active", "cleanup_pending", "sealed", "not_found", "degraded"]
+      "description": "WorkspaceLifecycleState projection (MCP-layer, not a field of WorkspaceRef — see resources.md §honua://workspaces/{workspace_id}). Canonical enum names are Active/Expired/Archived/Deleted; the reference implementation emits the lower_snake_case wire spelling. Field name matches artifact.schema.json.lifecycleState.",
+      "enum": [
+        "active",
+        "expired",
+        "archived",
+        "deleted",
+        "Active",
+        "Expired",
+        "Archived",
+        "Deleted"
+      ]
     },
     "cleanupScheduledAt": {
       "type": ["string", "null"],
       "format": "date-time"
     },
-    "resultsUri": { "type": ["string", "null"] },
+    "resultsUri": {
+      "type": ["string", "null"],
+      "description": "URI of the result package this workspace's outputs are projected into, when applicable. MUST use the defined honua://results/{result_package_id} route (resources.md §honua://results/{result_package_id}); the spec defines no honua://jobs family (execution/job state is the canonical ExecutionJob object reference, not an MCP resource URI — see planning.md §5.3, conformance.md resource_projection contract).",
+      "pattern": "^honua://results/[^/]+$"
+    },
     "notImplementedReason": { "type": "string" }
   }
 }

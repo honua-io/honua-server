@@ -1,0 +1,15 @@
+{
+  "id": "join_features.spatial_point_in_county",
+  "schemaRef": "tools/join_features.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "target": { "serviceId": "incidents", "layerId": 0 },
+    "join": { "serviceId": "counties", "layerId": 0 },
+    "joinType": "spatial",
+    "spatialRelationship": "within",
+    "joinOperation": "one_to_one",
+    "joinAggregation": "first"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}
