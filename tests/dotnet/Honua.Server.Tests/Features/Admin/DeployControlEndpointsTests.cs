@@ -331,6 +331,83 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/promote")]
+    public async Task PromoteDeployOperation_WhenParkedInReconciling_ForcesCutover()
+    {
+        var promoteStore = new InMemoryWorkflowOperationStore();
+        var backend = new PromotableDeployBackend();
+        var promoteFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDatabaseMigrationRunner>();
+                services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
+                services.RemoveAll<IDeployTargetRegistry>();
+                services.RemoveAll<IWorkflowOperationStore>();
+                services.RemoveAll<IWorkflowOperationReconciler>();
+                services.AddSingleton<IDeployTargetRegistry>(new PromotableTargetRegistry());
+                services.AddSingleton<IWorkflowOperationStore>(promoteStore);
+                services.AddSingleton<IWorkflowOperationReconciler>(new StubWorkflowOperationReconciler());
+                services.AddSingleton<IDeployBackend>(backend);
+            });
+
+        try
+        {
+            await promoteFixture.InitializeAsync();
+            var client = promoteFixture.CreateAdminClient();
+
+            var operationId = $"deploy-{Guid.NewGuid():N}";
+            await promoteStore.TryCreateAsync(CreateParkedOperation(operationId));
+
+            var response = await client.PostAsJsonAsync(
+                $"/api/v1/admin/deploy/operations/{operationId}/promote",
+                new { reason = "Operator forcing cutover; telemetry unavailable" });
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("status").GetString().Should().Be("Succeeded");
+            backend.PromoteCalls.Should().Be(1);
+        }
+        finally
+        {
+            await promoteFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/promote")]
+    public async Task PromoteDeployOperation_NonexistentOperationId_ReturnsNotFound()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/deploy/operations/deploy-does-not-exist/promote",
+            new { reason = "No active deployment exists" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/promote")]
+    public async Task PromoteDeployOperation_WhenNotYetSubmitted_ReturnsConflict()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/admin/deploy/operations", new
+        {
+            targetId = "prod-api",
+            desiredRevision = "sha256:premature-promote",
+            reason = "Create planned operation before promote precondition test",
+            submitImmediately = false
+        });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var operationId = createDocument.RootElement.GetProperty("operationId").GetString();
+        createDocument.RootElement.GetProperty("status").GetString().Should().Be("Planned");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/deploy/operations/{operationId}/promote",
+            new { reason = "Promote before submit" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
     public async Task RollbackDeployOperation_NonexistentOperationId_ReturnsNotFound()
     {
@@ -509,6 +586,102 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             Core.Features.Authorization.Domain.OperatorAuthorizationRequest request)
             => Core.Features.Authorization.Domain.ApprovalRequirement.Required(
                 "operator.test-policy", "test-approval-required");
+    }
+
+    private static WorkflowOperationRecord CreateParkedOperation(string operationId)
+        => new()
+        {
+            OperationId = operationId,
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Reconciling,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            CurrentPhase = "Standby healthy; awaiting promotion.",
+            ProviderOperationId = "test-promote-backend:op",
+            Audit = new OperationAuditInfo { RequestedBy = "alice", Reason = "Rollout" },
+            Concurrency = new OperationConcurrencyPolicy
+            {
+                PartitionKey = "production:onprem-rolling",
+                RequiresExclusiveLease = true
+            },
+            Deploy = new DeployOperationSpec
+            {
+                TargetId = "onprem-rolling",
+                TargetKind = DeployTargetKind.SelfHostedRolling,
+                Backend = "test-promote-backend",
+                Environment = "production",
+                TargetName = "honua-server",
+                CurrentRevision = "sha256:old",
+                DesiredRevision = "sha256:new",
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+            }
+        };
+
+    private sealed class PromotableTargetRegistry : IDeployTargetRegistry
+    {
+        private static readonly DeployTargetDefinition Target = new()
+        {
+            TargetId = "onprem-rolling",
+            TargetKind = DeployTargetKind.SelfHostedRolling,
+            Backend = "test-promote-backend",
+            Environment = "production",
+            TargetName = "honua-server",
+            Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        };
+
+        public Task<IReadOnlyList<DeployTargetDefinition>> ListAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DeployTargetDefinition>>([Target]);
+
+        public Task<DeployTargetDefinition?> GetAsync(string targetId, CancellationToken cancellationToken = default)
+            => Task.FromResult(targetId == Target.TargetId ? Target : null);
+    }
+
+    private sealed class PromotableDeployBackend : IDeployBackend
+    {
+        public int PromoteCalls { get; private set; }
+
+        public string BackendName => "test-promote-backend";
+
+        public DeployTargetKind TargetKind => DeployTargetKind.SelfHostedRolling;
+
+        public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployBackendCapabilities { SupportsRollback = true, SupportsProgressPolling = true });
+
+        public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployPlan { IsReadyToSubmit = true });
+
+        public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeploySubmissionResult { Status = WorkflowOperationStatus.Submitted, Message = "Submitted" });
+
+        public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                PromotionRecommended = true,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.Deploy?.CurrentRevision,
+                Message = "Standby healthy and ready for cutover."
+            });
+
+        public Task<DeployObservation> PromoteAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            PromoteCalls++;
+            return Task.FromResult(new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Succeeded,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.Deploy?.DesiredRevision,
+                Message = "Manual promotion cut traffic over to the new revision."
+            });
+        }
+
+        public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployObservation
+            {
+                Status = WorkflowOperationStatus.RollbackRequested,
+                ProviderOperationId = operation.ProviderOperationId,
+                Message = "Rollback requested"
+            });
     }
 
     private sealed class StubDatabaseMigrationRunner : IDatabaseMigrationRunner

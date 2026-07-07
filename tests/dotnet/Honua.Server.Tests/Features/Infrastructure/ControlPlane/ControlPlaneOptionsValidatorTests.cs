@@ -62,6 +62,29 @@ public sealed class ControlPlaneOptionsValidatorTests
     }
 
     [UnitTest]
+    public void Validate_WithPrivateTelemetryBaseUrl_AndAllowPrivateNetworks_ReturnsSuccess()
+    {
+        var options = new ControlPlaneOptions
+        {
+            TelemetryConnections =
+            [
+                new DeployTelemetryConnectionOptions
+                {
+                    ConnectionId = "onprem-prom",
+                    Provider = "prometheus",
+                    BaseUrl = "http://localhost:9090",
+                    AllowPrivateNetworks = true,
+                    TimeoutSeconds = 10
+                }
+            ]
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded, "the per-connection private-network opt-in permits an on-prem loopback Prometheus");
+    }
+
+    [UnitTest]
     public void Validate_WithDisallowedTelemetryAuthHeader_ReturnsFailure()
     {
         var options = new ControlPlaneOptions
