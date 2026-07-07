@@ -1344,6 +1344,14 @@ sql:
           CONSTRAINT alert_dispatch_valid_max_attempts CHECK (max_attempts > 0)
       );
   - |
+      CREATE TABLE IF NOT EXISTS honua.alert_channel_state (
+          channel_type SMALLINT PRIMARY KEY,
+          is_paused BOOLEAN NOT NULL DEFAULT FALSE,
+          paused_at TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT alert_channel_state_valid_channel CHECK (channel_type BETWEEN 1 AND 10)
+      );
+  - |
       CREATE TABLE IF NOT EXISTS honua.alert_worker_checkpoint (
           worker_name TEXT PRIMARY KEY,
           last_generation BIGINT NOT NULL DEFAULT 0,

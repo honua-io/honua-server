@@ -69,6 +69,10 @@ public sealed class ErrorHandlingPolicyTests
         // Pure route-table partials and dispatcher files whose handlers live
         // in companion files that *do* carry error-handling scaffolding.
         Path.Combine("src", "Honua.Server", "Features", "Admin", "AdminInfoEndpoints.cs"),
+        // Error shaping uses the alert-admin surface's ApiResponse failure envelope
+        // (Results.Json + 400), which the marker scan does not recognize; failures
+        // beyond request validation are handled by the global exception middleware.
+        Path.Combine("src", "Honua.Server", "Features", "Admin", "AlertOpsAdminEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Admin", "FeatureOverviewEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Admin", "GeocodingAdminEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Admin", "LicenseAdminEndpoints.cs"),

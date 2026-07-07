@@ -49,6 +49,15 @@ public sealed record OperationGatewayRequest
     public required OperationClass Kind { get; init; }
 
     /// <summary>
+    /// Optional ops-action discriminator (for example <c>alerts.redrive_dead_letters</c>)
+    /// used to resolve a per-action guardrail tier from the ops-action catalog. When
+    /// set on an <see cref="OperationClass.AdminConfigChange"/> request the gateway
+    /// resolves the action's declared tier; an unknown action fails closed to
+    /// <see cref="Honua.Core.Features.Guardrails.Domain.GuardrailTier.Blocked"/>.
+    /// </summary>
+    public string? ActionDiscriminator { get; init; }
+
+    /// <summary>
     /// Operator or service principal that requested the operation.
     /// </summary>
     public string? RequestedBy { get; init; }

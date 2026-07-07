@@ -49,7 +49,20 @@ internal sealed partial class OperationGateway : IOperationGateway
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var decision = _ladder.Resolve(request.Kind);
+        // For an AdminConfigChange, the ops-action discriminator selects a per-action
+        // guardrail tier. Prefer an explicit discriminator on the request; otherwise
+        // derive it from the {action,...} execution payload so any ops-action routed
+        // through the gateway is guardrail-gated (unknown actions fail closed to Blocked).
+        var actionDiscriminator = request.ActionDiscriminator
+            ?? (request.Kind == OperationClass.AdminConfigChange
+                ? TryReadActionDiscriminator(request.ExecutionPayload)
+                : null);
+
+        // Undiscriminated requests resolve through the classic class-only overload so
+        // their behavior (and existing ladder implementations) is unchanged.
+        var decision = actionDiscriminator is null
+            ? _ladder.Resolve(request.Kind)
+            : _ladder.Resolve(request.Kind, actionDiscriminator);
         Log.OperationRouted(_logger, request.Kind.ToString(), decision.Tier.ToString(), decision.Source);
 
         return decision.Tier switch
@@ -429,6 +442,36 @@ internal sealed partial class OperationGateway : IOperationGateway
             or OperationProposalStatus.Failed
             or OperationProposalStatus.Rejected
             or OperationProposalStatus.RolledBack;
+
+    // Best-effort read of the ops-action name from an AdminConfigChange execution
+    // payload ({action, target, params}). Returns null for absent/blank/malformed
+    // payloads; a malformed payload then resolves to the base tier and the real applier
+    // fails it closed (never partial application).
+    private static string? TryReadActionDiscriminator(string? executionPayload)
+    {
+        if (string.IsNullOrWhiteSpace(executionPayload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(executionPayload);
+            if (document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                document.RootElement.TryGetProperty("action", out var action) &&
+                action.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var name = action.GetString();
+                return string.IsNullOrWhiteSpace(name) ? null : name;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Malformed payload — leave the discriminator unset; the applier fails closed.
+        }
+
+        return null;
+    }
 
     private static OperationGatewayRequest RebuildRequest(OperationProposal proposal) => new()
     {

@@ -274,6 +274,45 @@ public interface IAlertDispatchStore
         DateTimeOffset deliveredBefore,
         int batchLimit,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-enqueues dead-lettered dispatch rows for redelivery: transitions rows in
+    /// the dead-letter state back to pending, resets the attempt counter to zero,
+    /// clears the last error, and schedules the next attempt at <paramref name="now"/>.
+    /// Idempotent — a call when no rows are dead-lettered redrives nothing and returns 0.
+    /// </summary>
+    /// <param name="now">Timestamp used for the re-enqueued rows' next attempt.</param>
+    /// <param name="batchLimit">Maximum rows to redrive in this pass.</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Number of dead-lettered rows re-enqueued.</returns>
+    Task<int> RedriveDeadLettersAsync(
+        DateTimeOffset now,
+        int batchLimit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets the persisted pause flag for a delivery channel. When a channel is
+    /// paused the dispatcher stops claiming its pending rows (they remain enqueued
+    /// and resume delivery once the channel is unpaused). Idempotent.
+    /// </summary>
+    /// <param name="channel">Delivery channel to pause or resume.</param>
+    /// <param name="paused">True to pause the channel; false to resume it.</param>
+    /// <param name="now">Timestamp recorded for the state change.</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    Task SetChannelPausedAsync(
+        AlertChannelType channel,
+        bool paused,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the persisted pause state for every channel that has an explicit
+    /// state row. Channels without a row are implicitly not paused.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Pause state keyed by channel; only channels with an explicit row appear.</returns>
+    Task<IReadOnlyDictionary<AlertChannelType, bool>> GetChannelPauseStatesAsync(
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
