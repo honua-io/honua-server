@@ -361,6 +361,56 @@ internal static class McpToolSchemas
     /// </summary>
     public static readonly JsonElement PublishServiceArgumentSchema = Parse(PublishServiceArgumentSchemaJson);
 
+    private const string IngestDatasetArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["format", "data", "datasetName"],
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": ["csv", "geojson"],
+              "description": "Inline data format: \"csv\" (text with a header row) or \"geojson\" (a GeoJSON FeatureCollection document)."
+            },
+            "data": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The dataset content, inline. Capped at 4 MB; use the REST import upload (POST /api/v1/admin/import/upload) for larger files."
+            },
+            "datasetName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 63,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "description": "Target dataset/table name (letters, digits, underscores; must not start with a digit)."
+            },
+            "sourceSrid": {
+              "type": "integer",
+              "default": 4326,
+              "description": "Spatial reference (SRID/WKID) of the input coordinates; data is stored in EPSG:4326. Defaults to 4326 (WGS84 lon/lat)."
+            },
+            "longitudeColumn": {
+              "type": "string",
+              "description": "CSV only: explicit longitude (X) column name. Pair with latitudeColumn. When omitted, lon/lng/long/longitude/x is auto-detected."
+            },
+            "latitudeColumn": {
+              "type": "string",
+              "description": "CSV only: explicit latitude (Y) column name. Pair with longitudeColumn. When omitted, lat/latitude/y is auto-detected."
+            },
+            "addressColumn": {
+              "type": "string",
+              "description": "CSV only: column holding freeform addresses to geocode into point geometry server-side (up to 100 rows; requires the geocoding.batch entitlement). Mutually exclusive with longitudeColumn/latitudeColumn."
+            }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// Schema for <see cref="Models.McpIngestDatasetArgument"/>. <c>format</c>,
+    /// <c>data</c>, and <c>datasetName</c> are required; the CSV column options
+    /// are validated for mutual consistency at invoke time.
+    /// </summary>
+    public static readonly JsonElement IngestDatasetArgumentSchema = Parse(IngestDatasetArgumentSchemaJson);
+
     /// <summary>
     /// Schema used by stub tools that accept no arguments.
     /// </summary>
