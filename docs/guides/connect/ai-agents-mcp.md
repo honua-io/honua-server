@@ -84,6 +84,59 @@ The list methods (`tools/list`, `resources/list`, `resources/templates/list`, `p
 
 A separate read-only discovery/query MCP server (`@honua/mcp-server`, from the `honua-sdk-js` repository) is also available for agents that only need to browse services and query features rather than run operator workflows.
 
+## Harden the MCP endpoint (production)
+
+`POST /mcp` issues a session id on `initialize` (returned on the `Mcp-Session-Id`
+header) and validates it on every later request. The defaults below bound host
+memory and bind each session to the caller so a public, anonymous-capable
+endpoint cannot be abused. Options live under the `Mcp` configuration section.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `Mcp:ServerInitiatedStreamEnabled` | `false` | Offer the optional server-initiated `GET /mcp` SSE stream (progress / `*/list_changed`). Off by default: `GET /mcp` returns `405 Method Not Allowed` + `Allow: POST, DELETE` per the Streamable-HTTP spec, so spec-compliant SDK clients skip the stream instead of hanging it at a buffering ingress. |
+| `Mcp:SessionIdleTimeout` | `00:30:00` | Sliding idle TTL. Every request (or an opened GET stream) on a session refreshes the window; an untouched session expires and is swept. Expired ids return `404`, so clients re-initialize cleanly. |
+| `Mcp:MaxSessions` | `10000` | Maximum concurrently tracked sessions. Bounds memory on a public endpoint. |
+| `Mcp:SessionEvictionPolicy` | `EvictLeastRecentlyUsed` | What to do at capacity: evict the least-recently-used session, or `RejectNew` (refuse `initialize` with a retryable `unavailable` error and leave live sessions untouched). |
+
+**Server-initiated streaming.** Leave `Mcp:ServerInitiatedStreamEnabled=false`
+behind any ingress that buffers responses — notably serverless gateways
+(CloudFront → API Gateway HTTP API → Lambda), where the SDK's standalone GET
+stream would hang at the origin. Enable it only behind ingress that can hold a
+streaming response open (nginx with `proxy_buffering off`, an ALB, or a direct
+connection). Regardless of this flag, a `GET /mcp` stream's teardown never
+invalidates the session — session lifetime is bounded only by `DELETE /mcp` or
+the idle TTL.
+
+**Principal binding.** A session is bound at `initialize` to the authenticated
+principal (or to anonymous where the endpoint allows anonymous access). A later
+request that presents the id under a *different* identity is rejected with a
+structured `permission_denied` / `requiresReauthentication` error, so a leaked
+`Mcp-Session-Id` cannot be ridden by another caller. This mirrors the existing
+auth posture — it adds no new authentication requirement.
+
+### Rate limiting
+
+Rate limiting stays at the edge by default (nginx/ALB/WAF; ADR-0004). The
+optional app-level limiter (`RateLimiting:Enabled`, off by default) already
+partitions correctly for MCP: by tenant, then the authenticated principal
+(user/API key), falling back to source IP for anonymous traffic. Recommended
+opt-in config for the MCP surface:
+
+```jsonc
+{
+  "RateLimiting": {
+    "Enabled": true,
+    "GlobalRequestsPerMinute": 120   // per principal / per IP; tune to your load
+  }
+}
+```
+
+Do **not** attempt to partition the limiter by `Mcp-Session-Id`: a hostile client
+mints a fresh session per request, so a per-session bucket would be trivially
+bypassable. The principal/IP partition plus the `Mcp:MaxSessions` cap and idle
+TTL are the memory- and abuse-control mechanisms for `initialize` bursts; the
+edge limiter remains the first line of defense.
+
 ## Next steps
 
 - [Run geoprocessing](../query-analyze/run-geoprocessing.md)
