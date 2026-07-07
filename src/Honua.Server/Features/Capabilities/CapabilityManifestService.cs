@@ -406,10 +406,13 @@ internal sealed class CapabilityManifestService(
             Capability("upload.file", "upload", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("edit.features", "edit", context, entitlementKey: FeatureCatalog.FeatureServerEditsKey, policyCapability: "features.edit"),
             // Branch versioning (VMS) — built-experimental, gated OFF the GA surface by
-            // default (#2480 / ADR-0058). Kept last to mirror the registry descriptor order
+            // default (#2480 / ADR-0058). Mirrors the registry descriptor order
             // (CapabilityRegistry.BuildManifestCapabilityDescriptors) so the hand-curated and
             // registry-derived Capabilities[] stay byte-identical.
-            Capability("versioning.branch", "versioning", context, entitlementKey: FeatureCatalog.BranchVersioningKey)
+            Capability("versioning.branch", "versioning", context, entitlementKey: FeatureCatalog.BranchVersioningKey),
+            // Aggregated operate status (A12) — the server-authoritative operate/status surface. Ungated
+            // GA; read-authorized (ops:read) at the HTTP layer. Kept last to mirror the registry order.
+            Capability("operate.status", "operate", context, requiresAuthentication: true)
         ];
     }
 
@@ -519,6 +522,7 @@ internal sealed class CapabilityManifestService(
             ["upload.file"] = new() { EntitlementKey = "import.file", PolicyCapability = "metadata.write" },
             ["edit.features"] = new() { EntitlementKey = FeatureCatalog.FeatureServerEditsKey, PolicyCapability = "features.edit" },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
+            ["operate.status"] = new() { RequiresAuthentication = true },
         };
     }
 

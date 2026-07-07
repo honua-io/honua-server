@@ -38,6 +38,9 @@ public sealed class EndpointAuthorizationGuardTests
         "RequireTemporalHistoryRead",
         "RequireTemporalDiffRead",
         "RequireTemporalRollbackExecute",
+        // Read-only ops-reader policy (A12): a method-aware Require*Authorization helper that admits
+        // ops:read/admin for safe reads while still requiring full admin write for mutating routes.
+        "RequireOpsReadAuthorization",
     };
 
     private static readonly Regex MapMutationRegex = new(

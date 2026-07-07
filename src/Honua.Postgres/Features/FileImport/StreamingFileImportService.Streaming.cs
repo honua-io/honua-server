@@ -24,7 +24,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, string[] warnings)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -115,7 +115,7 @@ internal sealed partial class StreamingFileImportService
             SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gml => GmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, delimiterOverride: null, csvGeometryDiagnostics, cancellationToken),
+            SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, delimiterOverride: null, csvGeometryDiagnostics, request.CsvOptions, cancellationToken),
             SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
             SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
@@ -240,6 +240,22 @@ internal sealed partial class StreamingFileImportService
                 null, _wktUnparseableGeometryWarningFormat, wktGeometryDiagnostics.UnparseableRecords));
         }
 
+        // CSV address rows that could not be geocoded were imported without geometry; surface
+        // a summary warning plus per-row issues so callers can report/repair individual rows.
+        IReadOnlyList<ImportValidationIssue> rowIssues = [];
+        if (csvGeometryDiagnostics is { GeocodeFailureCount: > 0 })
+        {
+            completionWarningsBuilder.Add(string.Format(
+                null, _csvGeocodeFailureWarningFormat, csvGeometryDiagnostics.GeocodeFailureCount));
+            rowIssues = [.. csvGeometryDiagnostics.GeocodeFailures.Select(static failure =>
+                ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.AddressGeocodeFailed,
+                    failure.Address.Length == 0
+                        ? "The address column was empty; the row was imported without geometry."
+                        : $"Address '{failure.Address}' could not be geocoded; the row was imported without geometry.",
+                    featureIndex: failure.RowNumber - 1))];
+        }
+
         if (_limits.ContinueOnError && totalFailed > 0)
         {
             completionWarningsBuilder.Add(string.Format(null, _partialImportWarningFormat, totalFailed));
@@ -270,7 +286,7 @@ internal sealed partial class StreamingFileImportService
             CurrentPhase = "Import completed"
         });
 
-        return (totalImported, totalFailed, completionWarnings);
+        return (totalImported, totalFailed, completionWarnings, rowIssues);
     }
 
     private void RecordImportMetrics(

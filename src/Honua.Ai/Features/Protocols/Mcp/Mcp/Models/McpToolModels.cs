@@ -173,6 +173,114 @@ internal sealed class McpPublishServiceOutput
 }
 
 /// <summary>
+/// Arguments for <c>honua_ingest_dataset</c>: load a small inline CSV or
+/// GeoJSON dataset into the catalog database through the canonical
+/// <c>IFileImportService</c> pipeline so it can be published with
+/// <c>honua_publish_service</c>.
+/// </summary>
+internal sealed class McpIngestDatasetArgument
+{
+    /// <summary>Inline data format: "csv" or "geojson".</summary>
+    [JsonPropertyName("format")]
+    public string? Format { get; set; }
+
+    /// <summary>The dataset content, inline (4 MB cap).</summary>
+    [JsonPropertyName("data")]
+    public string? Data { get; set; }
+
+    /// <summary>Target dataset/table name.</summary>
+    [JsonPropertyName("datasetName")]
+    public string? DatasetName { get; set; }
+
+    /// <summary>Spatial reference (SRID/WKID) of the input coordinates. Defaults to 4326.</summary>
+    [JsonPropertyName("sourceSrid")]
+    public int? SourceSrid { get; set; }
+
+    /// <summary>CSV only: explicit longitude (X) column name.</summary>
+    [JsonPropertyName("longitudeColumn")]
+    public string? LongitudeColumn { get; set; }
+
+    /// <summary>CSV only: explicit latitude (Y) column name.</summary>
+    [JsonPropertyName("latitudeColumn")]
+    public string? LatitudeColumn { get; set; }
+
+    /// <summary>CSV only: address column geocoded server-side into point geometry.</summary>
+    [JsonPropertyName("addressColumn")]
+    public string? AddressColumn { get; set; }
+}
+
+/// <summary>
+/// A per-row issue surfaced by <c>honua_ingest_dataset</c> (for example a CSV
+/// address that failed to geocode, imported without geometry).
+/// </summary>
+internal sealed class McpIngestRowError
+{
+    /// <summary>1-based data row (header excluded), when known.</summary>
+    [JsonPropertyName("row")]
+    public int? Row { get; set; }
+
+    /// <summary>Stable machine-readable issue code (e.g. import.address_geocode_failed).</summary>
+    [JsonPropertyName("code")]
+    public string Code { get; set; } = string.Empty;
+
+    /// <summary>Human-readable issue message.</summary>
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = string.Empty;
+
+    /// <summary>Offending field/column name, when known.</summary>
+    [JsonPropertyName("field")]
+    public string? Field { get; set; }
+}
+
+/// <summary>
+/// Output for <c>honua_ingest_dataset</c>. A successful ingest returns the
+/// connectionId/schema/table triple (plus geometry column and primary key)
+/// that chains directly into <c>honua_publish_service</c>; per-row issues ride
+/// alongside without failing the ingest.
+/// </summary>
+internal sealed class McpIngestDatasetOutput
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("datasetName")]
+    public string DatasetName { get; set; } = string.Empty;
+
+    [JsonPropertyName("rowCount")]
+    public int RowCount { get; set; }
+
+    [JsonPropertyName("connectionId")]
+    public string? ConnectionId { get; set; }
+
+    [JsonPropertyName("schema")]
+    public string? Schema { get; set; }
+
+    [JsonPropertyName("table")]
+    public string? Table { get; set; }
+
+    [JsonPropertyName("srid")]
+    public int? Srid { get; set; }
+
+    [JsonPropertyName("geometryColumn")]
+    public string? GeometryColumn { get; set; }
+
+    [JsonPropertyName("primaryKey")]
+    public string? PrimaryKey { get; set; }
+
+    [JsonPropertyName("warnings")]
+    public IReadOnlyList<string> Warnings { get; set; } = [];
+
+    [JsonPropertyName("rowErrors")]
+    public IReadOnlyList<McpIngestRowError> RowErrors { get; set; } = [];
+
+    [JsonPropertyName("errorCode")]
+    public string? ErrorCode { get; set; }
+
+    [JsonPropertyName("errorMessage")]
+    public string? ErrorMessage { get; set; }
+}
+
+/// <summary>
 /// Arguments for <c>honua_create_map_package</c>: author a MapPackage from a
 /// prompt through the canonical map-generation pipeline (#1951). The standard
 /// geospatial-mcp composition selectors (<c>templateId</c>, <c>styleId</c>,

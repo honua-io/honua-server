@@ -1,0 +1,16 @@
+{
+  "id": "geocode_addresses.basic",
+  "schemaRef": "tools/geocode_addresses.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "addresses": [
+      "1100 Congress Ave, Austin, TX 78701",
+      "600 River St, Austin, TX 78701",
+      "1 Palace Ave, Kailua-Kona, HI 96740"
+    ],
+    "countryCodes": "us",
+    "outSrid": 4326
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

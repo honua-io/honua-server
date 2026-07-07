@@ -187,6 +187,18 @@ public static class ImportValidationErrorCodes
 
     /// <summary>The requested projection transformation is not supported.</summary>
     public const string ProjectionUnsupported = "import.projection_unsupported";
+
+    /// <summary>
+    /// The supplied CSV import options could not be applied (missing/conflicting
+    /// columns or a geocoded-row cap overrun).
+    /// </summary>
+    public const string CsvOptionsInvalid = "import.csv_options_invalid";
+
+    /// <summary>
+    /// A CSV row's address value could not be geocoded; the row was imported
+    /// without geometry.
+    /// </summary>
+    public const string AddressGeocodeFailed = "import.address_geocode_failed";
 }
 
 /// <summary>
