@@ -60,6 +60,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
     private readonly IAuditLogReader? _auditReader;
     private readonly IUniversalProgressStore? _progressStore;
     private readonly IExecutionJobStore? _jobStore;
+    private readonly ReleaseTimelineBuffer? _releaseTimeline;
     private readonly ILogger<LocalOperateEventFeed> _logger;
 
     public LocalOperateEventFeed(
@@ -67,13 +68,15 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         IAlertEventQuery? alertQuery = null,
         IAuditLogReader? auditReader = null,
         IUniversalProgressStore? progressStore = null,
-        IExecutionJobStore? jobStore = null)
+        IExecutionJobStore? jobStore = null,
+        ReleaseTimelineBuffer? releaseTimeline = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _alertQuery = alertQuery;
         _auditReader = auditReader;
         _progressStore = progressStore;
         _jobStore = jobStore;
+        _releaseTimeline = releaseTimeline;
     }
 
     public async Task<OperateEventPage> ListAsync(OperateEventFilter filter, CancellationToken cancellationToken = default)
@@ -98,6 +101,10 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         var jobTask = Wanted(OperateEventKind.Job) && (_progressStore is not null || _jobStore is not null)
             ? LoadJobsAsync(filter, pageSize, cancellationToken)
+            : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
+
+        var releaseTask = Wanted(OperateEventKind.Release) && _releaseTimeline is not null && ReleaseSourceCanMatch(filter)
+            ? LoadReleasesAsync(filter, pageSize)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
         try
@@ -134,6 +141,18 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             sourceErrors ??= new();
             sourceErrors[OperateEventKind.Job] = "job source unavailable";
             ObservabilityFeedLog.JobSourceFailed(_logger, ex);
+        }
+
+        try
+        {
+            collected.AddRange(await releaseTask.ConfigureAwait(false));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            partial = true;
+            sourceErrors ??= new();
+            sourceErrors[OperateEventKind.Release] = "release source unavailable";
+            ObservabilityFeedLog.ReleaseSourceFailed(_logger, ex);
         }
 
         collected.RemoveAll(item => !MatchesFilter(filter, item, matchResourceRef: false));
@@ -323,6 +342,28 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         }
 
         return results.GetRange(0, pageSize);
+    }
+
+    private Task<IReadOnlyList<OperateEvent>> LoadReleasesAsync(OperateEventFilter filter, int pageSize)
+    {
+        Debug.Assert(_releaseTimeline is not null);
+
+        var results = new List<OperateEvent>(pageSize);
+        foreach (var value in _releaseTimeline!.Snapshot())
+        {
+            if (!MatchesFilter(filter, value))
+            {
+                continue;
+            }
+
+            results.Add(value);
+            if (results.Count == pageSize)
+            {
+                break;
+            }
+        }
+
+        return Task.FromResult<IReadOnlyList<OperateEvent>>(results);
     }
 
     private async Task<IReadOnlyList<OperateEvent>> LoadProgressJobsAsync(
@@ -665,6 +706,13 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
            string.IsNullOrWhiteSpace(filter.RequestId) &&
            filter.MinimumSeverity != OperateEventSeverity.Critical;
 
+    private static bool ReleaseSourceCanMatch(OperateEventFilter filter)
+        => string.IsNullOrWhiteSpace(filter.ServiceId) &&
+           filter.LayerId is null &&
+           string.IsNullOrWhiteSpace(filter.TraceId) &&
+           string.IsNullOrWhiteSpace(filter.RequestId) &&
+           string.IsNullOrWhiteSpace(filter.ChangeSetId);
+
     private static bool ProgressJobSourceCanMatch(OperateEventFilter filter)
         => string.IsNullOrWhiteSpace(filter.ServiceId) &&
            filter.LayerId is null &&
@@ -883,6 +931,9 @@ internal static partial class ObservabilityFeedLog
 
     [LoggerMessage(EventId = 7403, Level = LogLevel.Warning, Message = "Operate event feed failed to load job/operation events.")]
     public static partial void JobSourceFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 7405, Level = LogLevel.Warning, Message = "Operate event feed failed to load release/deploy events.")]
+    public static partial void ReleaseSourceFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 7404, Level = LogLevel.Debug, Message = "Operate event feed could not fetch progress for operation {OperationId}.")]
     public static partial void ProgressFetchFailed(ILogger logger, string operationId, Exception exception);

@@ -143,6 +143,12 @@ internal sealed partial class NotifyingWorkflowOperationStore : IWorkflowOperati
     public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)
         => _inner.ListActiveAsync(kind, cancellationToken);
 
+    public Task<WorkflowOperationPage> QueryAsync(WorkflowOperationQuery query, CancellationToken cancellationToken = default)
+        => _inner.QueryAsync(query, cancellationToken);
+
+    public Task<WorkflowOperationRecord?> GetMostRecentSucceededDeployByTargetAsync(string targetId, CancellationToken cancellationToken = default)
+        => _inner.GetMostRecentSucceededDeployByTargetAsync(targetId, cancellationToken);
+
     public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
         => _inner.TryAcquireLeaseAsync(operationId, ownerId, leaseDuration, cancellationToken);
 

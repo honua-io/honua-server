@@ -168,6 +168,129 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         result.Should().BeNull();
     }
 
+    [Fact]
+    public async Task WorkflowStore_QueryAsync_IncludesActiveAndTerminalOperationsNewestFirst()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var targetId = $"query-target-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        var activeOperation = CreateDeployOperationRecord(
+            $"deploy-active-{Guid.NewGuid():N}", targetId, now, WorkflowOperationStatus.Submitted);
+        var terminalOperation = CreateDeployOperationRecord(
+            $"deploy-terminal-{Guid.NewGuid():N}", targetId, now.AddMinutes(-2), WorkflowOperationStatus.Submitted);
+
+        (await store.TryCreateAsync(activeOperation)).Should().BeTrue();
+        (await store.TryCreateAsync(terminalOperation)).Should().BeTrue();
+        await store.SetAsync(terminalOperation with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            UpdatedAt = now,
+            CompletedAt = now
+        });
+
+        var page = await store.QueryAsync(new WorkflowOperationQuery
+        {
+            Kind = WorkflowOperationKind.Deploy,
+            Page = 1,
+            PageSize = 200
+        });
+
+        var ids = page.Items.Select(item => item.OperationId).ToList();
+        ids.Should().Contain(activeOperation.OperationId);
+        ids.Should().Contain(terminalOperation.OperationId);
+
+        // Newest-created (active) must sort ahead of the older terminal operation.
+        ids.IndexOf(activeOperation.OperationId).Should().BeLessThan(ids.IndexOf(terminalOperation.OperationId));
+
+        // Status filter narrows to the terminal operation and excludes the still-active one.
+        var succeededPage = await store.QueryAsync(new WorkflowOperationQuery
+        {
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Succeeded,
+            Page = 1,
+            PageSize = 200
+        });
+        var succeededIds = succeededPage.Items.Select(item => item.OperationId).ToList();
+        succeededIds.Should().Contain(terminalOperation.OperationId);
+        succeededIds.Should().NotContain(activeOperation.OperationId);
+    }
+
+    [Fact]
+    public async Task WorkflowStore_GetMostRecentSucceededDeployByTarget_ReturnsLatestAndPrunesRolledBack()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var targetId = $"succeeded-target-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        (await store.GetMostRecentSucceededDeployByTargetAsync(targetId)).Should().BeNull();
+
+        var older = CreateDeployOperationRecord(
+            $"deploy-old-{Guid.NewGuid():N}", targetId, now.AddMinutes(-30), WorkflowOperationStatus.Submitted);
+        var newer = CreateDeployOperationRecord(
+            $"deploy-new-{Guid.NewGuid():N}", targetId, now.AddMinutes(-10), WorkflowOperationStatus.Submitted);
+
+        (await store.TryCreateAsync(older)).Should().BeTrue();
+        (await store.TryCreateAsync(newer)).Should().BeTrue();
+
+        await store.SetAsync(older with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            UpdatedAt = now.AddMinutes(-25),
+            CompletedAt = now.AddMinutes(-25),
+            Deploy = older.Deploy! with { CurrentRevision = older.Deploy!.DesiredRevision }
+        });
+        await store.SetAsync(newer with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            UpdatedAt = now.AddMinutes(-5),
+            CompletedAt = now.AddMinutes(-5)
+        });
+
+        var latest = await store.GetMostRecentSucceededDeployByTargetAsync(targetId);
+        latest.Should().NotBeNull();
+        latest!.OperationId.Should().Be(newer.OperationId);
+
+        // Rolling the latest back demotes it; the prior succeeded deploy becomes the landed revision.
+        await store.SetAsync(newer with
+        {
+            Status = WorkflowOperationStatus.RolledBack,
+            UpdatedAt = now,
+            CompletedAt = now
+        });
+
+        var afterRollback = await store.GetMostRecentSucceededDeployByTargetAsync(targetId);
+        afterRollback.Should().NotBeNull();
+        afterRollback!.OperationId.Should().Be(older.OperationId);
+    }
+
+    private static WorkflowOperationRecord CreateDeployOperationRecord(
+        string operationId,
+        string targetId,
+        DateTimeOffset createdAt,
+        WorkflowOperationStatus status)
+        => new()
+        {
+            OperationId = operationId,
+            Kind = WorkflowOperationKind.Deploy,
+            Status = status,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+            CurrentPhase = "Test operation.",
+            Deploy = new DeployOperationSpec
+            {
+                TargetId = targetId,
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "honua-gitops-kubernetes",
+                Environment = "production",
+                TargetName = "honua-server",
+                DesiredRevision = "sha256:" + operationId,
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+            }
+        };
+
     private static WorkflowOperationRecord CreateOperationRecord()
     {
         var now = DateTimeOffset.UtcNow;

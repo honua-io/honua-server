@@ -132,6 +132,42 @@ internal sealed partial class DeployWorkflowService
         return await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Lists durable deploy workflow operations newest-first with optional status and kind filters. Draws
+    /// from both the active-set and terminal-operations indexes maintained by the durable store.
+    /// </summary>
+    public async Task<WorkflowOperationPage> ListDeployOperationsAsync(
+        WorkflowOperationStatus? status,
+        WorkflowOperationKind? kind,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureDurableStoreConfigured();
+        return await _workflowStore!.QueryAsync(
+                new WorkflowOperationQuery
+                {
+                    Kind = kind,
+                    Status = status,
+                    Page = page,
+                    PageSize = pageSize
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns the most recent terminal-<see cref="WorkflowOperationStatus.Succeeded"/> deploy operation
+    /// for a target, or null when none exists. Backs the platform-release converge API lookup (#2564).
+    /// </summary>
+    public async Task<WorkflowOperationRecord?> GetMostRecentSucceededDeployAsync(
+        string targetId,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureDurableStoreConfigured();
+        return await _workflowStore!.GetMostRecentSucceededDeployByTargetAsync(targetId, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<WorkflowOperationRecord?> CreateAsync(
         string targetId,
         string desiredRevision,
