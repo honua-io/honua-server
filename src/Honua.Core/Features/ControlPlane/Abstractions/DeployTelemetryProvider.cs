@@ -37,6 +37,14 @@ public sealed record DeployTelemetryConnectionDescriptor
 
     /// <summary>Per-request timeout in seconds.</summary>
     public int TimeoutSeconds { get; init; } = 10;
+
+    /// <summary>
+    /// Explicit operator opt-in that relaxes the outbound SSRF guard for this connection so a
+    /// private-network or loopback metrics endpoint (for example an on-prem Prometheus at
+    /// <c>http://localhost:9090</c>) can be queried. Defaults to <see langword="false"/>, keeping the
+    /// strict HTTPS-only, no-private-destination posture.
+    /// </summary>
+    public bool AllowPrivateNetworks { get; init; }
 }
 
 /// <summary>

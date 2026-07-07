@@ -11888,6 +11888,21 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-admin-deploy-operations-operationid-promote",
+      "route": "/api/v1/admin/deploy/operations/{operationId}/promote",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PromoteDeployOperation_NonexistentOperationId_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PromoteDeployOperation_WhenNotYetSubmitted_ReturnsConflict",
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PromoteDeployOperation_WhenParkedInReconciling_ForcesCutover"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-admin-deploy-operations-operationid-rollback",
       "route": "/api/v1/admin/deploy/operations/{operationId}/rollback",
       "method": "POST",
