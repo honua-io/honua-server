@@ -7,18 +7,21 @@ Honua's live `/mcp` advertised tool input schemas and resource payload shapes
 **conform to the open standard Honua champions** — Honua is the reference
 implementation.
 
-- Source: `geospatial-mcp` `spec/schemas/` (branch `feat/json-schemas-conformance`,
-  PR honua-io/geospatial-mcp#21). `tools/query_features.schema.json` (and the
-  paired paging fixture) were re-vendored from PR honua-io/geospatial-mcp#46,
-  which adds the optional `resultOffset` / `returnGeometry` / `returnCountOnly`
-  params.
-- `tools/geocode_addresses.schema.json`, `tools/ingest_dataset.schema.json`,
-  their fixtures, and the matching `index.json` entries are vendored from
-  the `geospatial-mcp` branch `spec/ingest-dataset-geocode-addresses`. Note:
-  upstream trunk has since revised other schema descriptions/enums (PR
-  geospatial-mcp#44); those files are deliberately NOT re-vendored here —
-  reconciling that drift is a separate alignment task.
-- Do not hand-edit. Re-vendor when the upstream schemas change.
+## Provenance
+
+- `geospatial-mcp/` is byte-identical to `spec/schemas/` of `geospatial-mcp`
+  trunk commit **`eb53989cc61c856261cf017b4b5a8e721317dc41`**
+  ("feat: direct geoprocessing verbs (analysis profile) +
+  geometryPrecision/maxInlineBytes (#55)", 2026-07-06), re-vendored wholesale
+  per honua-server#2496. Verify with
+  `diff -r <geospatial-mcp>/spec/schemas geospatial-mcp/` (compare LF blob
+  content; this repo normalizes to LF).
+- `fixtures/` mirrors the standard's own conformance fixture tree
+  (`conformance/fixtures/` at the same commit), minus the upstream `README.md`
+  and `validate.py` (not test inputs), plus the two Honua-extension fixture
+  directories noted below.
+- Do not hand-edit. Re-vendor the whole tree from a single pinned upstream
+  commit when the schemas change, and update this note with the new commit.
 - Files are copied to the test output directory (`CopyToOutputDirectory`) and
   loaded at test time.
 
@@ -26,9 +29,10 @@ The conformance tests validate representative valid argument/payload instances
 against both Honua's live schema and the vendored standard schema, and assert
 structural alignment (required fields, enum values) for the tools Honua
 implements today. Standard tools Honua does not yet implement as discrete MCP
-tools (the map/app composition and publish families) are tracked as
-**known-gaps**: their absence does not fail the suite; only NON-CONFORMANCE of
-an implemented tool fails.
+tools (the map/app composition and publish families, the `mutation` profile's
+`edit_features` per ADR-0028, and the `analysis` profile's direct
+geoprocessing verbs) are tracked as **known-gaps**: their absence does not
+fail the suite; only NON-CONFORMANCE of an implemented tool fails.
 
 ## Honua extensions (`x-honua-extension`)
 
@@ -48,4 +52,6 @@ These are exposed as first-class reference-implementation tools while the
 upstream standard publishes canonical schemas for them, re-vendor and drop the
 extension marker. They participate in the full conformance assertions (required
 fields + fixture validation) because their live and vendored shapes are authored
-together.
+together; their fixtures under `fixtures/tools/resolve_entity/` and
+`fixtures/tools/list_capabilities/` are maintained here (the upstream fixture
+tree does not carry them yet).

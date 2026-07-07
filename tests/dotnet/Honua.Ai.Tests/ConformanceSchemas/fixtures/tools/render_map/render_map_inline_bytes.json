@@ -1,0 +1,17 @@
+{
+  "id": "render_map.max_inline_bytes",
+  "schemaRef": "tools/render_map.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "layers": [
+      { "serviceId": "county_parcels", "layerId": 0 }
+    ],
+    "bbox": [-97.75, 30.26, -97.73, 30.28],
+    "bboxSrid": 4326,
+    "width": 512,
+    "height": 512,
+    "maxInlineBytes": 65536
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}
