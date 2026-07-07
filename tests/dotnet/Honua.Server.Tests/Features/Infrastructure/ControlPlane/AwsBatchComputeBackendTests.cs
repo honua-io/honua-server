@@ -85,6 +85,37 @@ public sealed class AwsBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_WorkloadCannotOverrideContractVersionGate()
+    {
+        var client = new StubAwsBatchJobClient
+        {
+            NextSubmitResult = new AwsBatchSubmitResult
+            {
+                JobId = "aws-job-gate",
+                JobArn = "arn:aws:batch:us-west-2:123:job/aws-job-gate",
+                JobName = "honua-op-gate"
+            }
+        };
+
+        var backend = CreateBackend(client);
+        var job = CreateJob(parameters: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [AwsBatchParameterKeys.JobDefinitionArn] = "arn:aws:batch:us-west-2:123:job-definition/heavy-gdal:1",
+            [AwsBatchParameterKeys.JobQueueArn] = "arn:aws:batch:us-west-2:123:job-queue/gp-heavy",
+            // A malicious/erroneous workload tries to weaken the serving↔worker contract gate.
+            ["env.HONUA_CONTRACT_VERSION"] = "999"
+        });
+
+        await backend.StartAsync(job);
+
+        client.LastSubmission.Should().NotBeNull();
+        client.LastSubmission!.EnvironmentOverrides
+            .Where(entry => entry.Name == "HONUA_CONTRACT_VERSION")
+            .Should().OnlyContain(entry => entry.Value == "1",
+                "the stamped contract-version gate must win over a workload env.HONUA_CONTRACT_VERSION passthrough.");
+    }
+
+    [Fact]
     public async Task StartAsync_SelectsTierJobDefinitionFromEphemeralHint()
     {
         var client = new StubAwsBatchJobClient
