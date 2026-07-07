@@ -902,6 +902,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-alerts-channels",
+      "route": "/api/v1/admin/alerts/channels",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.ListChannelStates_AfterPause_ReportsPausedChannel"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-alerts-rules",
       "route": "/api/v1/admin/alerts/rules",
       "method": "GET",
@@ -11480,6 +11493,47 @@
         "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.ExceptionUpload_WithoutApiKey_ReturnsUnauthorized"
       ],
       "proof_ledger_surface": "mobile-runtime-auth-diagnostics",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-alerts-channels-channel-pause",
+      "route": "/api/v1/admin/alerts/channels/{channel}/pause",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_StopsDispatchClaims_ResumeRestoresThem",
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_UnknownChannel_Returns400"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-alerts-channels-channel-resume",
+      "route": "/api/v1/admin/alerts/channels/{channel}/resume",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_StopsDispatchClaims_ResumeRestoresThem"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-alerts-dispatch-redrive",
+      "route": "/api/v1/admin/alerts/dispatch/redrive",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.RedriveDeadLetters_IsIdempotent_SecondCallRedrivesNothingNew",
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.RedriveDeadLetters_WithSeededDeadLetterBacklog_DrainsBacklogToPending"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
     },
     {

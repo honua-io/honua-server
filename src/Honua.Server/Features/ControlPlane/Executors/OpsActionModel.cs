@@ -1,0 +1,196 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
+using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
+
+namespace Honua.ControlPlane.Executors;
+
+/// <summary>
+/// Stable identifiers for the control-plane self-healing ops actions. The action
+/// vocabulary is dotted <c>domain.verb_noun</c>, aligned with the operational-workflow
+/// catalog naming (honua-io/honua-devops#132).
+/// </summary>
+internal static class OpsActionNames
+{
+    /// <summary>Re-enqueues dead-lettered alert dispatch rows for redelivery.</summary>
+    public const string RedriveDeadLetters = "alerts.redrive_dead_letters";
+
+    /// <summary>Pauses delivery on an alert channel.</summary>
+    public const string PauseChannel = "alerts.pause_channel";
+
+    /// <summary>Resumes delivery on a paused alert channel.</summary>
+    public const string ResumeChannel = "alerts.resume_channel";
+
+    /// <summary>Transiently tunes the bounded database admission target.</summary>
+    public const string TuneBoundedAdmission = "db.tune_bounded_admission";
+}
+
+/// <summary>
+/// Single source of truth for the registered ops actions and their per-action
+/// guardrail tiers. Consumed by <see cref="OpsActionGuardrailCatalog"/> (guardrail
+/// resolution) and by the applier (dispatch and validation).
+/// </summary>
+internal static class OpsActionCatalog
+{
+    /// <summary>
+    /// Declared guardrail tier per action. The tier is applied as a floor on top of
+    /// the edition guardrail policy (it can tighten but never loosen the edition tier).
+    /// </summary>
+    public static readonly ImmutableDictionary<string, GuardrailTier> GuardrailTiers =
+        ImmutableDictionary.CreateRange(
+            StringComparer.Ordinal,
+            new KeyValuePair<string, GuardrailTier>[]
+            {
+                new(OpsActionNames.RedriveDeadLetters, GuardrailTier.RequiresApproval),
+                new(OpsActionNames.PauseChannel, GuardrailTier.RequiresApproval),
+                new(OpsActionNames.ResumeChannel, GuardrailTier.DirectExecute),
+                new(OpsActionNames.TuneBoundedAdmission, GuardrailTier.RequiresApproval),
+            });
+
+    /// <summary>Returns true when the action name is a registered ops action.</summary>
+    public static bool IsRegistered(string action) => GuardrailTiers.ContainsKey(action);
+}
+
+/// <summary>
+/// Per-action guardrail tier source backed by <see cref="OpsActionCatalog"/>. Registered
+/// so the guardrail ladder can resolve a per-action tier for an ops-action discriminator.
+/// </summary>
+internal sealed class OpsActionGuardrailCatalog : IOpsActionGuardrailCatalog
+{
+    /// <inheritdoc />
+    public bool TryGetTier(string action, out GuardrailTier tier)
+    {
+        if (!string.IsNullOrWhiteSpace(action) &&
+            OpsActionCatalog.GuardrailTiers.TryGetValue(action, out tier))
+        {
+            return true;
+        }
+
+        tier = GuardrailTier.Blocked;
+        return false;
+    }
+}
+
+/// <summary>
+/// Thrown when an ops-action payload is malformed, names an unknown action, or carries
+/// invalid parameters. The applier throws this <em>before</em> any side effect so the
+/// gateway fails closed with a clean error and never partially applies an action.
+/// </summary>
+internal sealed class OpsActionException(string message) : Exception(message);
+
+/// <summary>
+/// Parsed <c>{action, target, params}</c> ops-action payload. Parsing extracts every
+/// typed parameter the registered actions consume so no <see cref="JsonElement"/> outlives
+/// the parsed document.
+/// </summary>
+internal sealed record OpsActionRequest
+{
+    /// <summary>Action discriminator (a registered <see cref="OpsActionNames"/> value).</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Optional free-form action target.</summary>
+    public string? Target { get; init; }
+
+    /// <summary>Optional <c>maxCount</c> parameter (redrive batch bound).</summary>
+    public int? MaxCount { get; init; }
+
+    /// <summary>Optional <c>channel</c> parameter (pause/resume), falling back to <see cref="Target"/>.</summary>
+    public string? Channel { get; init; }
+
+    /// <summary>Optional <c>limit</c> parameter (bounded-admission tune target).</summary>
+    public int? Limit { get; init; }
+
+    /// <summary>
+    /// Parses and validates the payload structure. Throws <see cref="OpsActionException"/>
+    /// for an empty, non-object, non-JSON, or action-less payload — the fail-closed path.
+    /// </summary>
+    public static OpsActionRequest Parse(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            throw new OpsActionException("The ops-action payload is empty.");
+        }
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(payload);
+        }
+        catch (JsonException)
+        {
+            throw new OpsActionException("The ops-action payload is not valid JSON.");
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                throw new OpsActionException("The ops-action payload must be a JSON object.");
+            }
+
+            if (!root.TryGetProperty("action", out var actionElement) ||
+                actionElement.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(actionElement.GetString()))
+            {
+                throw new OpsActionException("The ops-action payload requires a non-empty 'action'.");
+            }
+
+            var name = actionElement.GetString()!.Trim();
+            var target = root.TryGetProperty("target", out var targetElement) && targetElement.ValueKind == JsonValueKind.String
+                ? targetElement.GetString()
+                : null;
+
+            int? maxCount = null;
+            int? limit = null;
+            string? channel = null;
+            if (root.TryGetProperty("params", out var paramsElement) && paramsElement.ValueKind == JsonValueKind.Object)
+            {
+                maxCount = ReadInt(paramsElement, "maxCount");
+                limit = ReadInt(paramsElement, "limit");
+                channel = ReadString(paramsElement, "channel");
+            }
+
+            return new OpsActionRequest
+            {
+                Name = name,
+                Target = string.IsNullOrWhiteSpace(target) ? null : target,
+                MaxCount = maxCount,
+                Limit = limit,
+                Channel = string.IsNullOrWhiteSpace(channel) ? (string.IsNullOrWhiteSpace(target) ? null : target) : channel,
+            };
+        }
+    }
+
+    private static int? ReadInt(JsonElement parent, string property)
+    {
+        if (!parent.TryGetProperty(property, out var element))
+        {
+            return null;
+        }
+
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var number))
+        {
+            return number;
+        }
+
+        if (element.ValueKind == JsonValueKind.String &&
+            int.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
+    private static string? ReadString(JsonElement parent, string property)
+    {
+        return parent.TryGetProperty(property, out var element) && element.ValueKind == JsonValueKind.String
+            ? element.GetString()
+            : null;
+    }
+}
