@@ -197,16 +197,35 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         beforeFailure.Should().NotBeNull();
         var baselineGeneration = beforeFailure!.Value.LastSyncGeneration;
 
+        // Inject a genuinely-invalid geometry so the upload apply fails, proving a failed upload
+        // does NOT advance the replica generation. The previous injection tagged a point geometry
+        // with wkid:3857 and relied on it being rejected as a spatial-reference mismatch against
+        // the WGS84 (4326) test layer; after the #2418 CRS-conformance batch the edit path accepts
+        // that spatial reference and the upload now legitimately succeeds ({"success":true}), which
+        // no longer exercises the failure path. Instead send a polygon (rings) geometry to layer 0,
+        // which is a Point layer (WebAppFixtureMetadataV2Mixin.GetSeededLayerSpatial(0)). The shared
+        // edit pipeline rejects the geometry-type mismatch (FeatureServerEditsHandler
+        // .IsGeometryTypeCompatible) before any CRS/reprojection handling, so the apply fails
+        // deterministically and the handler returns the GeoServices 400 error envelope.
         var invalidEditsJson = JsonSerializer.Serialize(new[]
         {
             new
             {
-                attributes = new { name = "srid-mismatch-upload" },
+                attributes = new { name = "geometry-type-mismatch-upload" },
                 geometry = new
                 {
-                    x = -157.85,
-                    y = 21.30,
-                    spatialReference = new { wkid = 3857 }
+                    rings = new[]
+                    {
+                        new[]
+                        {
+                            new[] { -157.86, 21.29 },
+                            new[] { -157.84, 21.29 },
+                            new[] { -157.84, 21.31 },
+                            new[] { -157.86, 21.31 },
+                            new[] { -157.86, 21.29 }
+                        }
+                    },
+                    spatialReference = new { wkid = 4326 }
                 }
             }
         });
