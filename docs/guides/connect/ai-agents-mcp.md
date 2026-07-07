@@ -38,7 +38,7 @@ The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches
 3. Ask the agent to list tools and start with the safe ones — everything in the planning family is read-only:
 
    - `honua_ground_candidates` / `honua_clarify_intent` — turn a natural-language goal into a drafted intent with candidate datasets and processes
-   - `honua_plan_analysis` — draft an executable plan from an intent
+   - `honua_plan_analysis` — draft an executable plan from an intent. Runs in fixture (demo) mode by default (responses are flagged `engine: "fixture"`); [turn on the live planner](mcp-live-planner.md) to compile arbitrary intents.
    - `honua_validate_plan` — static validation: returns `isExecutable`, `requiresApproval`, violations, and warnings
    - `honua_dry_run_plan` — estimates duration, artifacts, and side effects without executing
    - `honua_validate_package` / `honua_preview_package` — review a map/app package before execute or publish
@@ -139,6 +139,7 @@ edge limiter remains the first line of defense.
 
 ## Next steps
 
+- [Turn on the live MCP planner (Honua-brings-LLM)](mcp-live-planner.md)
 - [Run geoprocessing](../query-analyze/run-geoprocessing.md)
 - [Authentication](../secure/authentication.md)
 - [Protocol overview](../../concepts/protocols.md)

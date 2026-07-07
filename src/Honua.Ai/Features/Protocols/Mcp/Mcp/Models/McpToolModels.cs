@@ -173,6 +173,73 @@ internal sealed class McpPublishServiceOutput
 }
 
 /// <summary>
+/// Structured result of invoking a published operations-toolset operation projected
+/// as a first-class MCP tool (#2483, ADR-0056 Increment 4). Projects the canonical
+/// <c>OperationHandle</c> returned by the operations dispatcher, plus the
+/// determinism/cache provenance the published-tool contract adds: <c>deterministic</c>
+/// reports whether the backing descriptor is AI-free, and <c>cacheHit</c> /
+/// <c>cacheKey</c> report the param-keyed cache decision for a deterministic,
+/// read-only invocation.
+/// </summary>
+internal sealed class McpOperationToolOutput
+{
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("requiresApproval")]
+    public bool RequiresApproval { get; set; }
+
+    /// <summary>
+    /// Whether the backing operation descriptor is deterministic (AI-free). A
+    /// deterministic tool is what "deterministic mode" (a toolset with AI off)
+    /// publishes; only deterministic, read-only invocations are param-keyed cached.
+    /// </summary>
+    [JsonPropertyName("deterministic")]
+    public bool Deterministic { get; set; }
+
+    /// <summary>
+    /// True when this result was served from the param-keyed deterministic cache
+    /// rather than re-executed. Always false for non-deterministic or side-effecting
+    /// operations, which are never cached.
+    /// </summary>
+    [JsonPropertyName("cacheHit")]
+    public bool CacheHit { get; set; }
+
+    /// <summary>
+    /// The param-keyed cache key for a deterministic, read-only invocation
+    /// (operation id + catalog version + normalized parameters). Null when the
+    /// operation is not cacheable.
+    /// </summary>
+    [JsonPropertyName("cacheKey")]
+    public string? CacheKey { get; set; }
+
+    [JsonPropertyName("operationId")]
+    public string OperationId { get; set; } = string.Empty;
+
+    [JsonPropertyName("handleId")]
+    public string HandleId { get; set; } = string.Empty;
+
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; set; }
+
+    [JsonPropertyName("approvalLane")]
+    public string? ApprovalLane { get; set; }
+
+    [JsonPropertyName("metadataRevision")]
+    public long? MetadataRevision { get; set; }
+
+    [JsonPropertyName("summary")]
+    public string? Summary { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("details")]
+    public IReadOnlyDictionary<string, string> Details { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+}
+
+/// <summary>
 /// Arguments for <c>honua_publish_result</c> (geospatial-mcp <c>publish_result</c>,
 /// #2482): promote a completed analysis job's materialized feature/table artifact
 /// into a hosted service + layer. Per the standard schema only <c>sourceId</c>
