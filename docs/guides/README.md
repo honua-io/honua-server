@@ -42,6 +42,7 @@ Task-oriented guides, grouped by what you want to do. New to Honua? Start with t
 | Analyze layers in Excel or Power BI | [Excel and Power BI](connect/excel-power-bi.md) |
 | Build MapLibre web maps | [MapLibre web maps](connect/maplibre-web-maps.md) |
 | Let AI agents use the server via MCP | [AI agents (MCP)](connect/ai-agents-mcp.md) |
+| Turn on the live MCP planner (Honua-brings-LLM) | [Live MCP planner](connect/mcp-live-planner.md) |
 
 ## Edit data
 

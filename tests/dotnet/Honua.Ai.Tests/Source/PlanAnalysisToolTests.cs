@@ -166,8 +166,12 @@ public sealed class PlanAnalysisToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_plan_analysis")]
-    public async Task PlanAnalysis_UnknownPrompt_ReturnsRejectedWithReason()
+    public async Task PlanAnalysis_UnknownPrompt_ReturnsRejectedWithFixtureModeDisclosure()
     {
+        // #2485 AC2: until a live-planner-on profile ships, the fixture path must
+        // explicitly disclose that it is running in fixture (demo) mode — via the
+        // engine discriminator AND a plain-language reason on the miss — so a caller
+        // never reads "rejected" as "your intent is unsupported".
         var tool = CreateTool(_jobService);
         var arguments = McpTestFactory.ParseJson(
             """{"intent":"some completely unmatched utterance"}""");
@@ -177,7 +181,11 @@ public sealed class PlanAnalysisToolTests
 
         var body = result.StructuredContent!.Value;
         body.GetProperty("status").GetString().Should().Be("rejected");
-        body.GetProperty("reason").GetString().Should().NotBeNullOrWhiteSpace();
+        body.GetProperty("engine").GetString().Should().Be("fixture");
+        var reason = body.GetProperty("reason").GetString();
+        reason.Should().NotBeNullOrWhiteSpace();
+        reason.Should().Contain("fixture", "the miss reason must disclose fixture (demo) mode");
+        reason.Should().ContainAny("live", "provider", "PlanAnalysis", "WorkflowGeneration");
     }
 
     [UnitTest]
