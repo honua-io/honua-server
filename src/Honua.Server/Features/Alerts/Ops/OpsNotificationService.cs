@@ -22,17 +22,20 @@ internal sealed partial class OpsNotificationService
 {
     private readonly AlertDispatchWriter _dispatchWriter;
     private readonly IAlertEditionPolicy _editionPolicy;
+    private readonly AlertChannelCircuitBreaker _circuitBreaker;
     private readonly AlertOptions _options;
     private readonly ILogger<OpsNotificationService> _logger;
 
     public OpsNotificationService(
         AlertDispatchWriter dispatchWriter,
         IAlertEditionPolicy editionPolicy,
+        AlertChannelCircuitBreaker circuitBreaker,
         IOptions<AlertOptions> options,
         ILogger<OpsNotificationService> logger)
     {
         _dispatchWriter = dispatchWriter ?? throw new ArgumentNullException(nameof(dispatchWriter));
         _editionPolicy = editionPolicy ?? throw new ArgumentNullException(nameof(editionPolicy));
+        _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -61,7 +64,7 @@ internal sealed partial class OpsNotificationService
             return;
         }
 
-        var channels = ResolveChannels(ops.Channels, notification.Source);
+        var channels = ResolveChannels(ops.Channels, notification.Source, DateTimeOffset.UtcNow);
         if (channels.IsDefaultOrEmpty)
         {
             AlertPipelineMetrics.RecordOpsNotification(notification.Source, notification.Severity, "no_channel");
@@ -77,7 +80,7 @@ internal sealed partial class OpsNotificationService
         LogEnqueued(_logger, notification.Source, notification.Severity, channels.Length, notification.DedupeIdentifier);
     }
 
-    private ImmutableArray<AlertChannelType> ResolveChannels(IReadOnlyList<string> configured, string source)
+    private ImmutableArray<AlertChannelType> ResolveChannels(IReadOnlyList<string> configured, string source, DateTimeOffset now)
     {
         var builder = ImmutableArray.CreateBuilder<AlertChannelType>();
         var seen = new HashSet<AlertChannelType>();
@@ -92,6 +95,15 @@ internal sealed partial class OpsNotificationService
             if (!_editionPolicy.IsChannelAllowed(channelType))
             {
                 LogChannelNotAllowed(_logger, source, channelType, _options.Edition);
+                continue;
+            }
+
+            // Skip a channel whose delivery circuit breaker is tripped open: enqueuing a dispatch
+            // that is certain to dead-letter is exactly the storm this bounds. Recurring ops
+            // notifications resume on the channel once a half-open probe confirms recovery.
+            if (_circuitBreaker.IsOpen(channelType, now))
+            {
+                LogChannelCircuitOpen(_logger, source, channelType);
                 continue;
             }
 
@@ -139,6 +151,9 @@ internal sealed partial class OpsNotificationService
 
     [LoggerMessage(EventId = 9451, Level = LogLevel.Warning, Message = "Ops notification channel {ChannelType} for {Source} is not allowed by edition {Edition}; skipping that channel.")]
     private static partial void LogChannelNotAllowed(ILogger logger, string source, AlertChannelType channelType, AlertEdition edition);
+
+    [LoggerMessage(EventId = 9453, Level = LogLevel.Warning, Message = "Ops notification channel {ChannelType} for {Source} skipped: the delivery circuit breaker is open (channel is persistently failing).")]
+    private static partial void LogChannelCircuitOpen(ILogger logger, string source, AlertChannelType channelType);
 
     [LoggerMessage(EventId = 9452, Level = LogLevel.Information, Message = "Ops notification from {Source} ({Severity}) enqueued to {ChannelCount} channel(s) (dedupe {DedupeIdentifier}).")]
     private static partial void LogEnqueued(ILogger logger, string source, AlertSeverity severity, int channelCount, string dedupeIdentifier);
