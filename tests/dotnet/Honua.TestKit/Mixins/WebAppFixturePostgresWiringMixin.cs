@@ -266,6 +266,12 @@ internal static class WebAppFixturePostgresWiringMixin
 
         OverrideNonMultiplexingDataSource(services, connectionString);
 
+        // Mirror the production composition root: wrap the provider raster-coverage
+        // renderer with the vector-aware styled-render decorator (honua-server#2498) so
+        // integration tests exercise the same IRasterMapRenderer the running server uses.
+        Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
+            .AddVectorAwareRasterMapRendering(services);
+
         // Replace the Postgres-backed Metadata v2 provider with an in-memory fixture so
         // endpoints read the seeded snapshot without a migrated snapshot row being
         // present in the test database.
@@ -297,6 +303,12 @@ internal static class WebAppFixturePostgresWiringMixin
         Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
+
+        // Mirror the production composition root: wrap the provider raster-coverage
+        // renderer with the vector-aware styled-render decorator (honua-server#2498) so
+        // integration tests exercise the same IRasterMapRenderer the running server uses.
+        Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
+            .AddVectorAwareRasterMapRendering(services);
 
         // Replace the Postgres-backed Metadata v2 provider with an in-memory fixture so
         // endpoints read the seeded snapshot without a migrated snapshot row being
