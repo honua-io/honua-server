@@ -258,7 +258,7 @@ public sealed class CapabilityRegistryConformanceTests
     // -----------------------------------------------------------------------
     // Live-surface construction — mirrors McpTaxonomyAlignmentTests.BuildTools /
     // BuildResources, extended with the two package-review tools those tests
-    // construct separately, so this enumerates the full advertised 20-tool roster.
+    // construct separately, so this enumerates the full advertised 22-tool roster.
     // -----------------------------------------------------------------------
     private static IMcpTool[] BuildLiveTools()
     {
@@ -282,6 +282,8 @@ public sealed class CapabilityRegistryConformanceTests
             new GroundCandidatesTool(groundingService, jobService, NullLogger<GroundCandidatesTool>.Instance),
             new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance),
             new GeocodeTool(jobService, NullLogger<GeocodeTool>.Instance),
+            new GeocodeAddressesTool(jobService, NullLogger<GeocodeAddressesTool>.Instance),
+            new IngestDatasetTool(jobService, NullLogger<IngestDatasetTool>.Instance),
             new RouteTool(jobService, NullLogger<RouteTool>.Instance),
             new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
             new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
