@@ -71,6 +71,7 @@ using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Studio;
 using Honua.PackageReview;
 using Honua.Server.Features.Operations;
+using Honua.Server.Features.Operations.Status;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Features.WorkflowPackages;
 using Honua.Server.Startup;
@@ -1311,6 +1312,9 @@ app.MapProposalEndpoints();
 
 // Consolidated ops-health snapshot + deterministic ops-findings engine (ADR-0060 WS4 / #2457).
 app.MapOpsObservabilityEndpoints();
+
+// Server-authoritative aggregated operational status + read-only ops scope (A12).
+app.MapOperateStatusEndpoints();
 
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();

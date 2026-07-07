@@ -28,6 +28,15 @@ public static class AuthenticationExtensions
     public const string AdminPolicyAlias = "AdminPolicy";
 
     /// <summary>
+    /// Authorization policy name for the read-only operational-observability surfaces (A12).
+    /// Admits the admin family (full admin or <c>admin:read</c>) or a dedicated read-only
+    /// <c>ops:read</c> credential for safe reads, while still requiring full admin write for any
+    /// mutating request routed through it. Distinct from <see cref="AdminPolicy"/> so an ops-reader
+    /// key can observe the ops posture without holding a credential that could mutate.
+    /// </summary>
+    public const string OpsReadPolicy = "OpsRead";
+
+    /// <summary>
     /// Authorization policy name for temporal-history read access (honua-server#1166).
     /// Distinct from the current-read and admin surfaces so it can be tightened to a
     /// dedicated permission grant in a later slice without touching endpoint code. In
@@ -65,6 +74,10 @@ public static class AuthenticationExtensions
         // in every policy that adds AdminPermissionRequirement below.
         services.AddSingleton<IAuthorizationHandler, AdminPermissionAuthorizationHandler>();
 
+        // Enforces the read-only ops-reader split (A12): admits admin or ops:read grants for safe
+        // reads while requiring full admin write for mutating requests routed through OpsReadPolicy.
+        services.AddSingleton<IAuthorizationHandler, OpsReadAuthorizationHandler>();
+
         // Add authentication with API key scheme
         _ = services.AddAuthentication(defaultScheme: ApiKeyScheme)
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
@@ -76,6 +89,7 @@ public static class AuthenticationExtensions
         {
             options.AddPolicy(AdminPolicy, ConfigureAdminPolicy);
             options.AddPolicy(AdminPolicyAlias, ConfigureAdminPolicy);
+            options.AddPolicy(OpsReadPolicy, ConfigureOpsReadPolicy);
             options.AddPolicy(TemporalHistoryReadPolicy, ConfigureAdminPolicy);
             options.AddPolicy(TemporalDiffReadPolicy, ConfigureAdminPolicy);
             options.AddPolicy(TemporalRollbackExecutePolicy, ConfigureAdminPolicy);
@@ -100,6 +114,21 @@ public static class AuthenticationExtensions
     }
 
     /// <summary>
+    /// Configures the read-only ops-reader authorization policy (A12). Unlike the admin family it
+    /// does NOT require the <c>admin</c> role — a key minted with only an <c>ops:read</c> grant
+    /// authenticates as a non-admin scoped principal — so authorization is decided by
+    /// <see cref="OpsReadRequirement"/> (via <see cref="AdminApiKeyPermission.IsOpsReadAuthorized"/>):
+    /// admin (any level) or ops:read for safe methods; full admin write for mutating methods.
+    /// </summary>
+    private static void ConfigureOpsReadPolicy(AuthorizationPolicyBuilder policy)
+    {
+        _ = policy.RequireAuthenticatedUser();
+        _ = policy.AddRequirements(new OpsReadRequirement());
+        policy.AuthenticationSchemes.Add(ApiKeyScheme);
+        policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+    }
+
+    /// <summary>
     /// Adds authentication middleware to the request pipeline
     /// </summary>
     public static IApplicationBuilder UseApiKeyAuthentication(this IApplicationBuilder app)
@@ -113,6 +142,16 @@ public static class AuthenticationExtensions
     /// </summary>
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
+
+    /// <summary>
+    /// Requires read-only ops-reader authorization for an endpoint or group (A12). Safe reads are
+    /// authorized by an admin key (any level) or a read-only <c>ops:read</c> grant; a mutating
+    /// request routed through this policy still requires full admin write, so applying it to a mixed
+    /// read/write group keeps every mutation admin-only while additionally admitting ops-reader keys
+    /// to the reads.
+    /// </summary>
+    public static TBuilder RequireOpsReadAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(OpsReadPolicy);
 
     /// <summary>
     /// Requires the distinct temporal-history read authorization for an endpoint or group
