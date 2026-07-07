@@ -56,10 +56,14 @@ public sealed partial class McpTaxonomyAlignmentTests
         _output?.WriteLine($"tools/list: {descriptors.Length} tools, {serialized.Length:N0} chars, ~{tokens:N0} tokens");
 
         // The teaching descriptions (#2499) are worth their tokens; response
-        // shaping — not description trimming — is the A1 lever. Guard only against
-        // gross bloat so a future doubling of the catalog cost is caught.
-        tokens.Should().BeLessThan(15000,
-            "tools/list token cost must not balloon; the A1 win comes from response shaping, not from gutting teaching descriptions");
+        // shaping — not description trimming — is the A1 lever. Guard DENSITY
+        // (average tokens per tool), not a fixed total: a legitimately growing
+        // tool surface must not trip the guard, while description bloat that
+        // inflates the per-tool cost must. The 23-tool surface averaged ~640
+        // tokens/tool; 700 leaves headroom without hiding drift.
+        var perToolTokens = tokens / descriptors.Length;
+        perToolTokens.Should().BeLessThan(700,
+            "tools/list token DENSITY must not balloon; the A1 win comes from response shaping, not from gutting teaching descriptions");
     }
 
     [UnitTest]

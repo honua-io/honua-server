@@ -58,17 +58,17 @@
     },
     {
       "standardName": "get_style",
-      "referenceToolName": null,
+      "referenceToolName": "honua_get_style",
       "family": "Style inspection",
       "schema": "tools/get_style.schema.json",
-      "implementationStatus": "known-gap"
+      "implementationStatus": "implemented"
     },
     {
       "standardName": "apply_style_preset",
-      "referenceToolName": null,
-      "family": "Map composition",
+      "referenceToolName": "honua_apply_style_preset",
+      "family": "Map composition (reference shape)",
       "schema": "tools/apply_style_preset.schema.json",
-      "implementationStatus": "known-gap"
+      "implementationStatus": "implemented"
     },
     {
       "standardName": "compose_mixed_protocol_map",

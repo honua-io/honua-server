@@ -113,6 +113,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // founder-reaffirmed 2026-07-06). The shared edit pipeline serves the
             // human-facing HTTP adapters only.
             ("honua_render_map", "render_map", "results"),
+            ("honua_get_style", "get_style", "results"),
+            ("honua_apply_style_preset", "apply_style_preset", "execution"),
             ("honua_resolve_entity", "resolve_entity", "results"),
             ("honua_list_capabilities", "list_capabilities", "results"),
         ];

@@ -174,6 +174,19 @@ internal static class McpServiceCollectionExtensions
             {
                 services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.RenderMapTool>());
             }
+
+            // Styling tools (#2482, ADR-0048): honua_get_style (read the StyleRef
+            // for a layer/style over the OGC API - Styles surface) and
+            // honua_apply_style_preset (bind a catalog styleId as a layer's
+            // primary/default style, persisting through the styleId-keyed
+            // IStyleCatalog + Metadata v2 graph). Thin adapters over the same
+            // canonical style seams the /ogc/styles endpoints drive. Registered
+            // alongside the catalog tools (they resolve IStyleCatalog /
+            // IMetadataV2StyleGraphSync / IOgcStyleProjection per request and
+            // return a structured store-unavailable result if a host wired the
+            // metadata graph without the style catalog).
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.GetStyleTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.ApplyStylePresetTool>());
         }
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobStatusResource>());

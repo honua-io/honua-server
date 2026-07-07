@@ -1,0 +1,13 @@
+{
+  "id": "get_style.resolve",
+  "schemaRef": "tools/get_style.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "styleId": "style_flood_depth",
+    "encoding": "mapbox-style",
+    "includeStylesheet": true
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["StyleRef"],
+  "notes": "Reference implementation (honua_get_style) resolves a read-only StyleRef projection from honua://styles/{style_id} over the OGC API – Styles surface."
+}

@@ -259,7 +259,7 @@ public sealed class CapabilityRegistryConformanceTests
     // -----------------------------------------------------------------------
     // Live-surface construction — mirrors McpTaxonomyAlignmentTests.BuildTools /
     // BuildResources, extended with the two package-review tools those tests
-    // construct separately, so this enumerates the full advertised 23-tool roster.
+    // construct separately, so this enumerates the full advertised 25-tool roster.
     // -----------------------------------------------------------------------
     private static IMcpTool[] BuildLiveTools()
     {
@@ -295,6 +295,10 @@ public sealed class CapabilityRegistryConformanceTests
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.GetStyleTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.GetStyleTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.ApplyStylePresetTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ApplyStylePresetTool>.Instance),
             new Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool>.Instance),
             new Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool(

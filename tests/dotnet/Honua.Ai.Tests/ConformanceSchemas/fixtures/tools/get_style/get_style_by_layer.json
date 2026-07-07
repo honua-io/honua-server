@@ -1,0 +1,13 @@
+{
+  "id": "get_style.by_layer",
+  "schemaRef": "tools/get_style.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "serviceId": "county_parcels",
+    "layerId": 0,
+    "encoding": "esri-drawing-info"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["StyleRef"],
+  "notes": "Reference-implementation shape: resolves the primary/default StyleRef bound to a published (serviceId, layerId) when no styleId is supplied."
+}

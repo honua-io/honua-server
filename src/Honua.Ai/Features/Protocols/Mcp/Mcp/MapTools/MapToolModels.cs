@@ -269,3 +269,146 @@ internal sealed class McpRenderLayerRef
     [JsonPropertyName("layerId")]
     public int? LayerId { get; set; }
 }
+
+// -----------------------------------------------------------------------
+// honua_get_style
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// Arguments for <c>honua_get_style</c>. Resolve a single style by
+/// <see cref="StyleId"/>, or a published layer's primary/default style by
+/// <see cref="ServiceId"/>+<see cref="LayerId"/>; omit all three to list the
+/// available styles.
+/// </summary>
+internal sealed class McpGetStyleArgument
+{
+    [JsonPropertyName("styleId")]
+    public string? StyleId { get; set; }
+
+    [JsonPropertyName("serviceId")]
+    public string? ServiceId { get; set; }
+
+    [JsonPropertyName("layerId")]
+    public int? LayerId { get; set; }
+
+    /// <summary>StyleEncoding to select when inlining a stylesheet; defaults to <c>mapbox-style</c>.</summary>
+    [JsonPropertyName("encoding")]
+    public string? Encoding { get; set; }
+
+    /// <summary>When true, inline the resolved stylesheet body for the selected encoding.</summary>
+    [JsonPropertyName("includeStylesheet")]
+    public bool? IncludeStylesheet { get; set; }
+}
+
+/// <summary>
+/// Output for <c>honua_get_style</c>. In resolve mode carries the StyleRef
+/// projection (<see cref="StyleId"/>/<see cref="Title"/>/<see cref="Encodings"/>);
+/// in list mode carries the <see cref="Styles"/> discovery catalog. Only one set
+/// of fields is populated per call.
+/// </summary>
+internal sealed class McpGetStyleOutput
+{
+    [JsonPropertyName("styleId")]
+    public string? StyleId { get; set; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("styleVersion")]
+    public int? StyleVersion { get; set; }
+
+    /// <summary>Advertised encodings for the resolved style (resolve mode).</summary>
+    [JsonPropertyName("encodings")]
+    public IReadOnlyList<McpStyleEncodingRef>? Encodings { get; set; }
+
+    /// <summary>Discovery catalog of available styles (list mode).</summary>
+    [JsonPropertyName("styles")]
+    public IReadOnlyList<McpStyleSummary>? Styles { get; set; }
+}
+
+/// <summary>
+/// One advertised style encoding. Carries the stylesheet body inline
+/// (<see cref="InlineBody"/>) when requested for the selected encoding; otherwise
+/// advertises the encoding by reference (<see cref="StorageRef"/>).
+/// </summary>
+internal sealed class McpStyleEncodingRef
+{
+    /// <summary>Encoding token: <c>mapbox-style</c>, <c>esri-drawing-info</c>, <c>sld-1.0.0</c>, <c>sld-1.1.0</c>.</summary>
+    [JsonPropertyName("encoding")]
+    public string Encoding { get; set; } = string.Empty;
+
+    [JsonPropertyName("mediaType")]
+    public string MediaType { get; set; } = string.Empty;
+
+    /// <summary>Inlined stylesheet content for the selected encoding; null when advertised by reference.</summary>
+    [JsonPropertyName("inlineBody")]
+    public string? InlineBody { get; set; }
+
+    /// <summary>Resource reference (<c>honua://styles/{styleId}</c>) when the encoding is advertised by reference.</summary>
+    [JsonPropertyName("storageRef")]
+    public string? StorageRef { get; set; }
+}
+
+/// <summary>
+/// One entry in the <c>honua_get_style</c> discovery catalog (list mode).
+/// </summary>
+internal sealed class McpStyleSummary
+{
+    [JsonPropertyName("styleId")]
+    public string StyleId { get; set; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("uri")]
+    public string Uri { get; set; } = string.Empty;
+}
+
+// -----------------------------------------------------------------------
+// honua_apply_style_preset
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// Arguments for <c>honua_apply_style_preset</c>: the published
+/// <see cref="ServiceId"/>+<see cref="LayerId"/> to style and the preset
+/// <see cref="StyleId"/> to apply as its primary/default style.
+/// </summary>
+internal sealed class McpApplyStylePresetArgument
+{
+    [JsonPropertyName("serviceId")]
+    public string? ServiceId { get; set; }
+
+    [JsonPropertyName("layerId")]
+    public int? LayerId { get; set; }
+
+    [JsonPropertyName("styleId")]
+    public string? StyleId { get; set; }
+}
+
+/// <summary>
+/// Output for <c>honua_apply_style_preset</c>: the layer that was styled and the
+/// preset that is now its primary/default style.
+/// </summary>
+internal sealed class McpApplyStylePresetOutput
+{
+    [JsonPropertyName("serviceId")]
+    public string ServiceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("layerId")]
+    public int LayerId { get; set; }
+
+    [JsonPropertyName("styleId")]
+    public string StyleId { get; set; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("styleVersion")]
+    public int StyleVersion { get; set; }
+
+    [JsonPropertyName("applied")]
+    public bool Applied { get; set; }
+}

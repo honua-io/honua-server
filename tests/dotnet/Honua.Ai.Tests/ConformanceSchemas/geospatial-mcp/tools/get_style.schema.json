@@ -2,13 +2,23 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/get_style.schema.json",
   "title": "get_style inputSchema",
-  "description": "Argument shape for get_style (Analyze, Publish Data, Build App). Read-only style inspection: with styleId, resolves a single canonical StyleRef (style_id/title/encodings) from the server OGC API – Styles surface; without styleId, lists the available styles (honua://styles). Like every MCP tool it is read-only and never mutates server-side styles. See taxonomy.md §Style inspection and resources.md §honua://styles/{style_id}.",
+  "description": "Argument shape for get_style (Analyze, Publish Data, Build App). Read-only style inspection: with styleId, resolves a single canonical StyleRef (style_id/title/encodings) from the server OGC API – Styles surface; with serviceId+layerId (a reference-implementation convenience) resolves the primary/default StyleRef bound to that published layer; with none of these, lists the available styles (honua://styles). Like every MCP tool it is read-only and never mutates server-side styles. See taxonomy.md §Style inspection and resources.md §honua://styles.",
   "type": "object",
   "properties": {
     "styleId": {
       "type": "string",
       "minLength": 1,
-      "description": "StyleRef identifier (style_…) to resolve. When omitted, the tool lists the available styles (honua://styles)."
+      "description": "StyleRef identifier (style_…) to resolve. When omitted, the tool resolves the styleId bound to serviceId+layerId, or lists the available styles (honua://styles) when neither is given."
+    },
+    "serviceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference-implementation shape (honua_get_style): published service identifier or name. Paired with layerId, resolves that layer's primary/default StyleRef when styleId is omitted."
+    },
+    "layerId": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Reference-implementation shape (honua_get_style): service-local layer index. Paired with serviceId, resolves that layer's primary/default StyleRef when styleId is omitted."
     },
     "encoding": {
       "type": "string",
@@ -24,7 +34,7 @@
     },
     "includeStylesheet": {
       "type": "boolean",
-      "description": "When true and styleId is set, include the resolved stylesheet body (inlineBody) for the selected encoding; otherwise the StyleRef projection advertises derived encodings by reference (storageRef)."
+      "description": "When true and a single style resolves, include the resolved stylesheet body (inlineBody) for the selected encoding; otherwise the StyleRef projection advertises derived encodings by reference (storageRef)."
     }
   }
 }
