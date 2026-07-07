@@ -197,16 +197,37 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         beforeFailure.Should().NotBeNull();
         var baselineGeneration = beforeFailure!.Value.LastSyncGeneration;
 
+        // Inject an edit whose apply deterministically fails, proving a failed upload does NOT
+        // advance the replica generation. Use the per-layer edits form with an UPDATE targeting an
+        // objectid that does not exist: the shared applyEdits pipeline fails it per-edit with code
+        // 1002 "Feature not found" while resolving the existing feature — independent of any
+        // geometry/CRS validation — so the sync apply reports failure and the handler returns the
+        // GeoServices 400 error envelope.
+        //
+        // Deliberately NOT the legacy flat form (a bare array of features): since the BH5-013
+        // disambiguation (#2472), a flat feature array also deserializes successfully as
+        // SynchronizeReplicaLayerEdits[] (unknown members ignored, id defaulting to layer 0,
+        // adds/updates/deletes null) and is routed as an all-empty per-layer no-op, so a flat-form
+        // upload is silently dropped and the sync reports success. That silent drop is what turned
+        // this test's original flat-form injection into a false success; the product bug is
+        // tracked in #2571.
         var invalidEditsJson = JsonSerializer.Serialize(new[]
         {
             new
             {
-                attributes = new { name = "srid-mismatch-upload" },
-                geometry = new
+                id = 0,
+                updates = new[]
                 {
-                    x = -157.85,
-                    y = 21.30,
-                    spatialReference = new { wkid = 3857 }
+                    new
+                    {
+                        attributes = new { objectid = 99_999_999, name = "missing-oid-upload" },
+                        geometry = new
+                        {
+                            x = -157.85,
+                            y = 21.30,
+                            spatialReference = new { wkid = 4326 }
+                        }
+                    }
                 }
             }
         });
