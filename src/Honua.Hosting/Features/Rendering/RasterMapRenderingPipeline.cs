@@ -513,6 +513,107 @@ internal static class RasterMapRenderingPipeline
         return VectorCollectionRenderResult.Success(imageBytes, totalFeatureCount);
     }
 
+    /// <summary>
+    /// Describes one vector layer to composite through
+    /// <see cref="RenderBoundStyleVectorLayersAsync"/>. When
+    /// <see cref="ExplicitMapLibreStyleJson"/> is <c>null</c> the layer's bound style is
+    /// resolved from the shared <see cref="ILayerStyleCatalog"/>; otherwise the supplied
+    /// MapLibre document overrides it (the styleId-resolved path).
+    /// </summary>
+    internal readonly record struct BoundStyleVectorLayer(
+        int LayerId,
+        MetadataV2GeometryType GeometryType,
+        int StorageSrid,
+        string? ExplicitMapLibreStyleJson);
+
+    /// <summary>
+    /// Composites one or more vector layers onto a single raster image, applying each
+    /// layer's bound MapLibre/drawingInfo style (fill/stroke/width/opacity for
+    /// polygon/line/point) through the shared Skia draw path — the same
+    /// <see cref="StyleTranslator"/> / <see cref="RenderLayerToCanvas"/> primitives WMS
+    /// GetMap, MapServer export, and OGC API Maps use. This is the canonical styled
+    /// vector→raster helper the vector-aware <see cref="Honua.Core.Features.Raster.Abstractions.IRasterMapRenderer"/>
+    /// composite drives so the MCP <c>honua_render_map</c> tool and the OGC/MapServer
+    /// surfaces reflect a bound style identically, with no protocol-local rasterization.
+    /// Layers draw bottom-to-top in the supplied order.
+    /// </summary>
+    internal static async Task<byte[]> RenderBoundStyleVectorLayersAsync(
+        IFeatureReader featureReader,
+        ILayerStyleCatalog styleCatalog,
+        IReadOnlyList<BoundStyleVectorLayer> layers,
+        SkiaMapRenderer.RenderExtent requestExtent,
+        int requestSrid,
+        int imageWidth,
+        int imageHeight,
+        int maxFeatures,
+        string format,
+        bool transparent,
+        SKColor? backgroundColor,
+        CancellationToken cancellationToken)
+    {
+        using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
+        if (surface is null)
+        {
+            throw new InvalidOperationException($"Skia failed to allocate a render surface at {imageWidth}x{imageHeight}.");
+        }
+
+        var canvas = surface.Canvas;
+        var effectiveTransparent = transparent && string.Equals(format, "png", StringComparison.OrdinalIgnoreCase);
+        canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor ?? SKColors.White);
+
+        var transform = SkiaMapRenderer.BuildTransform(requestExtent, imageWidth, imageHeight);
+
+        foreach (var layer in layers)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (layer.GeometryType == MetadataV2GeometryType.None)
+            {
+                continue;
+            }
+
+            var stylePlan = layer.ExplicitMapLibreStyleJson is { } explicitJson
+                ? BuildRasterStylePlanFromJson(explicitJson)
+                : await GetRasterStylePlanAsync(styleCatalog, layer.LayerId, cancellationToken).ConfigureAwait(false);
+
+            var spatialFilter = CreateBboxSpatialFilter(requestExtent, requestSrid);
+            var featureQuery = CreateRasterFeatureQuery(
+                stylePlan,
+                spatialFilter,
+                layer.StorageSrid,
+                requestSrid,
+                maxFeatures);
+
+            var renderedPointCount = await TryRenderRasterPointFastPathAsync(
+                canvas,
+                featureReader,
+                layer.LayerId,
+                layer.GeometryType,
+                stylePlan,
+                featureQuery,
+                requestExtent,
+                imageWidth,
+                imageHeight,
+                transform,
+                cancellationToken).ConfigureAwait(false);
+            if (renderedPointCount >= 0)
+            {
+                continue;
+            }
+
+            var features = await QueryRasterFeaturesAsync(featureReader, layer.LayerId, featureQuery, cancellationToken)
+                .ConfigureAwait(false);
+            if (features.Length == 0)
+            {
+                continue;
+            }
+
+            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, layer.GeometryType);
+        }
+
+        return SkiaMapRenderer.EncodeSurface(surface, format);
+    }
+
     internal static void RenderLayerToCanvas(
         SKCanvas canvas,
         ImmutableArray<Feature> features,
