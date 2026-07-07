@@ -368,6 +368,178 @@ internal sealed partial class DeployWorkflowService
         }
     }
 
+    /// <summary>
+    /// Distinct outcomes of a manual promotion attempt so the admin endpoint can return a structured
+    /// error when preconditions are not met, without conflating "not found" with "wrong state".
+    /// </summary>
+    internal enum DeployPromotionOutcome
+    {
+        /// <summary>The operation id did not resolve to a deploy operation.</summary>
+        NotFound,
+
+        /// <summary>The operation is in a state from which it cannot be promoted (structured 409).</summary>
+        PreconditionFailed,
+
+        /// <summary>The promotion was driven to the backend and the record updated.</summary>
+        Promoted
+    }
+
+    /// <summary>Result of a manual promotion attempt.</summary>
+    internal sealed record DeployPromotionResult(
+        DeployPromotionOutcome Outcome,
+        WorkflowOperationRecord? Operation,
+        string? PreconditionDetail);
+
+    /// <summary>
+    /// Manual promotion escape hatch (#2543): forces the cutover on a deploy operation that is parked
+    /// awaiting promotion — for example an on-prem rolling deploy whose standby replica is healthy but
+    /// which has no telemetry gate to auto-clear. Drives <see cref="IDeployBackend.PromoteAsync"/>
+    /// directly (a full cutover, not a canary ramp step) and records the operator on the audit trail.
+    /// Returns a structured precondition failure when the operation is terminal, not yet submitted, or
+    /// mid-rollback rather than throwing, so the endpoint can surface a clear reason.
+    /// </summary>
+    public async Task<DeployPromotionResult> PromoteAsync(
+        string operationId,
+        string? requestedBy,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureDurableStoreConfigured();
+
+        var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        if (operation == null)
+        {
+            return new DeployPromotionResult(DeployPromotionOutcome.NotFound, null, null);
+        }
+
+        if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
+        {
+            return new DeployPromotionResult(
+                DeployPromotionOutcome.PreconditionFailed,
+                operation,
+                "Only deploy workflow operations can be promoted.");
+        }
+
+        var preconditionDetail = DescribePromotionPrecondition(operation.Status);
+        if (preconditionDetail != null)
+        {
+            return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, preconditionDetail);
+        }
+
+        var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);
+        var backend = target == null ? null : ResolveBackend(target);
+        if (backend == null)
+        {
+            var updatedNoBackend = operation with
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Manual promotion requested but no backend is registered for this target.",
+                ErrorMessage = "Manual promotion is not possible because no deploy backend is registered for this target.",
+                Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
+            };
+
+            await _workflowStore.SetAsync(updatedNoBackend, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return new DeployPromotionResult(DeployPromotionOutcome.Promoted, updatedNoBackend, null);
+        }
+
+        DeployObservation observation;
+        try
+        {
+            observation = await backend.PromoteAsync(operation, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.DeployManualPromotionFailed(_logger, operation.OperationId, operation.Deploy.TargetId, ex);
+            var failed = operation with
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Manual promotion failed at the deploy backend.",
+                ErrorMessage = $"Manual promotion failed ({ex.GetType().Name}).",
+                Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
+            };
+
+            await _workflowStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return new DeployPromotionResult(DeployPromotionOutcome.Promoted, failed, null);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var updated = operation with
+        {
+            Status = observation.Status,
+            UpdatedAt = now,
+            CompletedAt = observation.Status is WorkflowOperationStatus.Succeeded
+                or WorkflowOperationStatus.Failed
+                or WorkflowOperationStatus.RolledBack
+                or WorkflowOperationStatus.ManualInterventionRequired
+                ? now
+                : null,
+            ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId,
+            CurrentPhase = observation.Message ?? "Manual promotion requested.",
+            ObservedState = observation.ObservedRevision ?? operation.ObservedState,
+            ErrorMessage = observation.Status == WorkflowOperationStatus.Failed
+                ? observation.Message ?? operation.ErrorMessage
+                : null,
+            Deploy = operation.Deploy with
+            {
+                CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
+                    ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
+                    : operation.Deploy.CurrentRevision
+            },
+            Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
+        };
+
+        await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        Log.DeployManuallyPromoted(
+            _logger,
+            operation.OperationId,
+            operation.Deploy.TargetId,
+            requestedBy ?? "(unattributed)",
+            updated.Status.ToString());
+
+        return new DeployPromotionResult(DeployPromotionOutcome.Promoted, updated, null);
+    }
+
+    /// <summary>
+    /// Returns a human-readable reason when an operation cannot be manually promoted from its current
+    /// status, or <see langword="null"/> when promotion may proceed. Promotion is valid only while the
+    /// rollout is in flight (<see cref="WorkflowOperationStatus.Submitted"/> /
+    /// <see cref="WorkflowOperationStatus.Reconciling"/>).
+    /// </summary>
+    private static string? DescribePromotionPrecondition(WorkflowOperationStatus status)
+        => status switch
+        {
+            WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling => null,
+            WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval =>
+                "The deploy operation must be submitted before it can be promoted.",
+            WorkflowOperationStatus.RollbackRequested =>
+                "The deploy operation is rolling back and cannot be promoted.",
+            WorkflowOperationStatus.Succeeded =>
+                "The deploy operation has already been promoted.",
+            WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed
+                or WorkflowOperationStatus.ManualInterventionRequired =>
+                $"The deploy operation is already in a terminal state ({status}) and cannot be promoted.",
+            _ => $"The deploy operation cannot be promoted from status {status}."
+        };
+
+    private static OperationAuditInfo MergePromotionAudit(OperationAuditInfo audit, string? requestedBy, string? reason)
+        => audit with
+        {
+            RequestedBy = audit.RequestedBy ?? requestedBy,
+            Reason = string.IsNullOrWhiteSpace(reason)
+                ? audit.Reason
+                : string.IsNullOrWhiteSpace(audit.Reason)
+                    ? reason
+                    : $"{audit.Reason} | promote: {reason}"
+        };
+
     public async Task<WorkflowOperationRecord?> RequestRollbackAsync(
         string operationId,
         string? requestedBy,
@@ -676,6 +848,21 @@ internal sealed partial class DeployWorkflowService
 
         [LoggerMessage(9101, LogLevel.Error, "Deploy backend submission failed for operation {OperationId}, target {TargetId}")]
         public static partial void DeploySubmissionFailed(
+            ILogger logger,
+            string operationId,
+            string targetId,
+            Exception exception);
+
+        [LoggerMessage(9102, LogLevel.Information, "Deploy operation {OperationId} (target {TargetId}) manually promoted by {RequestedBy}; backend status {Status}")]
+        public static partial void DeployManuallyPromoted(
+            ILogger logger,
+            string operationId,
+            string targetId,
+            string requestedBy,
+            string status);
+
+        [LoggerMessage(9103, LogLevel.Error, "Manual promotion failed for deploy operation {OperationId}, target {TargetId}")]
+        public static partial void DeployManualPromotionFailed(
             ILogger logger,
             string operationId,
             string targetId,
