@@ -212,6 +212,13 @@ internal static class InfrastructureCompositionRoot
                 return new CachingLayerStyleCatalog(innerStyleCatalog, cacheService, options, schemaContext);
             });
         }
+
+        // Wrap the provider's raster-coverage IRasterMapRenderer so a layer's bound vector
+        // style is applied at pixel level on the shared render path (honua-server#2498).
+        // Raster-backed renders keep the provider's native bytes; only feature layers with
+        // no raster coverage fall back to the shared Skia styled-vector pipeline.
+        Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
+            .AddVectorAwareRasterMapRendering(services);
     }
 
     /// <summary>Bind + validate <see cref="LimitsOptions"/> from configuration.</summary>
