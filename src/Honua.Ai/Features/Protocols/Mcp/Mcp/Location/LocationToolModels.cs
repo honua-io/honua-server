@@ -38,6 +38,31 @@ internal sealed class McpGeocodeArgument
 }
 
 /// <summary>
+/// Arguments for <c>honua_geocode_addresses</c>: a batch of freeform addresses
+/// resolved through the same canonical
+/// <see cref="Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeCoordinatorService"/>
+/// pipeline as the single-address tool, one top candidate per input.
+/// </summary>
+internal sealed class McpGeocodeAddressesArgument
+{
+    /// <summary>Freeform single-line addresses to geocode, in result order (1-100).</summary>
+    [JsonPropertyName("addresses")]
+    public IReadOnlyList<string?>? Addresses { get; set; }
+
+    /// <summary>Optional comma-separated ISO country codes to restrict the search.</summary>
+    [JsonPropertyName("countryCodes")]
+    public string? CountryCodes { get; set; }
+
+    /// <summary>Spatial reference (SRID/WKID) for returned coordinates. Defaults to 4326.</summary>
+    [JsonPropertyName("outSrid")]
+    public int? OutSrid { get; set; }
+
+    /// <summary>Optional preferred geocoding provider name (e.g. "nominatim").</summary>
+    [JsonPropertyName("provider")]
+    public string? Provider { get; set; }
+}
+
+/// <summary>
 /// A single stop in a <c>honua_solve_route</c> request. Coordinates are
 /// nullable so missing ordinates surface as <c>invalid_argument</c> instead of
 /// silently defaulting to 0.
@@ -127,6 +152,87 @@ internal sealed class McpGeocodeOutput
     /// <summary>Ranked geocode candidates for the input address.</summary>
     [JsonPropertyName("candidates")]
     public IReadOnlyList<McpGeocodeCandidate> Candidates { get; set; } = [];
+}
+
+/// <summary>
+/// Resolved coordinate for one input address in a
+/// <c>honua_geocode_addresses</c> batch.
+/// </summary>
+internal sealed class McpGeocodeAddressLocation
+{
+    /// <summary>X (longitude) ordinate in <see cref="Srid"/>.</summary>
+    [JsonPropertyName("x")]
+    public double X { get; set; }
+
+    /// <summary>Y (latitude) ordinate in <see cref="Srid"/>.</summary>
+    [JsonPropertyName("y")]
+    public double Y { get; set; }
+
+    /// <summary>Spatial reference (SRID/WKID) of the coordinates.</summary>
+    [JsonPropertyName("srid")]
+    public int Srid { get; set; }
+}
+
+/// <summary>
+/// Per-address result in a <c>honua_geocode_addresses</c> batch. Results are
+/// returned in input order; a failed address carries <c>ok=false</c> and an
+/// error message without failing the rest of the batch.
+/// </summary>
+internal sealed class McpGeocodeAddressResult
+{
+    /// <summary>The input address exactly as supplied.</summary>
+    [JsonPropertyName("input")]
+    public string Input { get; set; } = string.Empty;
+
+    /// <summary>Whether the address resolved to a location.</summary>
+    [JsonPropertyName("ok")]
+    public bool Ok { get; set; }
+
+    /// <summary>Resolved coordinate of the top candidate; null when <see cref="Ok"/> is false.</summary>
+    [JsonPropertyName("location")]
+    public McpGeocodeAddressLocation? Location { get; set; }
+
+    /// <summary>Provider match score (0-100) of the top candidate.</summary>
+    [JsonPropertyName("score")]
+    public double? Score { get; set; }
+
+    /// <summary>Matched address text of the top candidate.</summary>
+    [JsonPropertyName("matchedAddress")]
+    public string? MatchedAddress { get; set; }
+
+    /// <summary>Match level (e.g. "exact", "interpolated"), when the provider reports one.</summary>
+    [JsonPropertyName("matchLevel")]
+    public string? MatchLevel { get; set; }
+
+    /// <summary>Name of the geocoding provider that produced the candidate.</summary>
+    [JsonPropertyName("provider")]
+    public string? Provider { get; set; }
+
+    /// <summary>Failure reason when <see cref="Ok"/> is false.</summary>
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// Structured output for <c>honua_geocode_addresses</c>.
+/// </summary>
+internal sealed class McpGeocodeAddressesOutput
+{
+    /// <summary>Per-address results, in the same order as the input addresses.</summary>
+    [JsonPropertyName("results")]
+    public IReadOnlyList<McpGeocodeAddressResult> Results { get; set; } = [];
+
+    /// <summary>Number of addresses that resolved to a location.</summary>
+    [JsonPropertyName("succeeded")]
+    public int Succeeded { get; set; }
+
+    /// <summary>Number of addresses that failed to resolve.</summary>
+    [JsonPropertyName("failed")]
+    public int Failed { get; set; }
+
+    /// <summary>Spatial reference (SRID/WKID) of the returned coordinates.</summary>
+    [JsonPropertyName("srid")]
+    public int Srid { get; set; }
 }
 
 /// <summary>

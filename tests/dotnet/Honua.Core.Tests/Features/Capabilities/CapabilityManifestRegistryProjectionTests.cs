@@ -57,6 +57,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "upload.file",
         "edit.features",
         "versioning.branch",
+        "operate.status",
     ];
 
     private static bool IsManifestCapability(CapabilityDescriptor descriptor)

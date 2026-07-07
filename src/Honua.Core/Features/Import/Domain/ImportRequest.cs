@@ -119,6 +119,13 @@ public sealed record ImportRequest
     public IReadOnlyList<string> KeyColumns { get; init; } = [];
 
     /// <summary>
+    /// Optional CSV-specific options (explicit longitude/latitude column names or an
+    /// address column resolved through a caller-supplied geocoder). Ignored for
+    /// non-CSV formats. When omitted the CSV reader's header auto-detection applies.
+    /// </summary>
+    public CsvImportOptions? CsvOptions { get; init; }
+
+    /// <summary>
     /// The resolved load mode, reconciling the legacy <see cref="OverwriteExisting"/> flag
     /// with the explicit <see cref="LoadMode"/>. <see cref="LoadMode"/> wins when it is set
     /// to a non-default value; otherwise <see cref="OverwriteExisting"/> selects replace.

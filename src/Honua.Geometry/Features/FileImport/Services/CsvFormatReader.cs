@@ -89,10 +89,26 @@ internal static class CsvFormatReader
     /// recorded on <paramref name="diagnostics"/> so the caller can surface a warning rather
     /// than silently importing a null geometry.
     /// </summary>
+    internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
+        Stream stream,
+        char? delimiterOverride,
+        CsvGeometryDiagnostics? diagnostics,
+        CancellationToken cancellationToken)
+        => ReadStreamingAsync(stream, delimiterOverride, diagnostics, options: null, cancellationToken);
+
+    /// <summary>
+    /// Stream features from a CSV file with optional explicit <see cref="CsvImportOptions"/>.
+    /// When the options carry explicit longitude/latitude column names they replace the
+    /// header auto-detection heuristics; when they carry an address column, each row's
+    /// address value is resolved into a point through the caller-supplied
+    /// <see cref="CsvImportOptions.AddressGeocoder"/> (failed rows keep their attributes
+    /// and are recorded on <paramref name="diagnostics"/>).
+    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         char? delimiterOverride,
         CsvGeometryDiagnostics? diagnostics,
+        CsvImportOptions? options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
@@ -104,6 +120,8 @@ internal static class CsvFormatReader
         var wkbReader = GeometryValueParser.CreateWkbReader();
         var sampleRecords = await ReadSampleRecordsAsync(reader, cancellationToken);
         var delimiter = delimiterOverride ?? DetectDelimiter(sampleRecords);
+        var dataRowNumber = 0;
+        var geocodedRows = 0;
 
         Feature? ProcessRecord(string record)
         {
@@ -116,11 +134,50 @@ internal static class CsvFormatReader
             if (headers == null)
             {
                 headers = NormalizeHeaders(fields);
-                mapping = BuildMapping(headers);
+                mapping = BuildMapping(headers, options);
                 return null;
             }
 
+            dataRowNumber++;
             return BuildFeature(headers, fields, mapping, geometryFactory, wktReader, wkbReader, diagnostics);
+        }
+
+        async Task ApplyAddressGeocodeAsync(Feature feature)
+        {
+            if (mapping.AddressIndex is not { } addressIndex || options?.AddressGeocoder is not { } geocoder)
+            {
+                return;
+            }
+
+            if (feature.Geometry != null)
+            {
+                return;
+            }
+
+            var headerName = headers![addressIndex];
+            var addressValue = feature.Attributes.Exists(headerName) ? feature.Attributes[headerName] as string : null;
+            if (string.IsNullOrWhiteSpace(addressValue))
+            {
+                diagnostics?.RecordGeocodeFailure(dataRowNumber, string.Empty);
+                return;
+            }
+
+            geocodedRows++;
+            if (options.MaxGeocodedRows is { } cap && geocodedRows > cap)
+            {
+                throw new CsvImportOptionsException(
+                    $"CSV address geocoding is capped at {cap} rows per import. "
+                    + "Geocode larger datasets in batches first, then import the coordinates directly.");
+            }
+
+            var resolved = await geocoder(addressValue.Trim(), cancellationToken).ConfigureAwait(false);
+            if (resolved is null)
+            {
+                diagnostics?.RecordGeocodeFailure(dataRowNumber, addressValue.Trim());
+                return;
+            }
+
+            feature.Geometry = geometryFactory.CreatePoint(new Coordinate(resolved.Longitude, resolved.Latitude));
         }
 
         foreach (var sampleRecord in sampleRecords)
@@ -129,6 +186,7 @@ internal static class CsvFormatReader
             var feature = ProcessRecord(sampleRecord);
             if (feature != null)
             {
+                await ApplyAddressGeocodeAsync(feature).ConfigureAwait(false);
                 yield return feature;
             }
         }
@@ -150,6 +208,7 @@ internal static class CsvFormatReader
             var feature = ProcessRecord(record);
             if (feature != null)
             {
+                await ApplyAddressGeocodeAsync(feature).ConfigureAwait(false);
                 yield return feature;
             }
         }
@@ -249,13 +308,28 @@ internal static class CsvFormatReader
                 unparseableGeometryValue = null;
                 return geometryFactory.CreatePoint(new Coordinate(longitude, latitude));
             }
+
+            // Caller-specified coordinate columns that carried values but failed to parse
+            // are surfaced (heuristic mappings keep the historical silent-null behavior so
+            // attribute-only CSVs do not suddenly emit warnings).
+            if (mapping.ExplicitCoordinates
+                && (!string.IsNullOrWhiteSpace(longitudeValue) || !string.IsNullOrWhiteSpace(latitudeValue)))
+            {
+                unparseableGeometryValue = $"{longitudeValue},{latitudeValue}".Trim();
+            }
         }
 
         return null;
     }
 
-    private static CsvColumnMapping BuildMapping(string[] headers)
+    private static CsvColumnMapping BuildMapping(string[] headers, CsvImportOptions? options)
     {
+        if (options is not null
+            && (options.LongitudeColumn is not null || options.LatitudeColumn is not null || options.AddressColumn is not null))
+        {
+            return BuildExplicitMapping(headers, options);
+        }
+
         int? wktIndex = null;
         int? longitudeIndex = null;
         int? latitudeIndex = null;
@@ -287,6 +361,82 @@ internal static class CsvFormatReader
         }
 
         return new CsvColumnMapping(wktIndex, longitudeIndex, latitudeIndex);
+    }
+
+    private static CsvColumnMapping BuildExplicitMapping(string[] headers, CsvImportOptions options)
+    {
+        if (options.AddressColumn is not null
+            && (options.LongitudeColumn is not null || options.LatitudeColumn is not null))
+        {
+            throw new CsvImportOptionsException(
+                "An address column and explicit longitude/latitude columns are mutually exclusive; specify one geometry source.");
+        }
+
+        if (options.AddressColumn is { } addressColumn)
+        {
+            var addressIndex = FindColumn(headers, addressColumn)
+                ?? throw new CsvImportOptionsException(
+                    $"CSV header does not contain the requested address column '{addressColumn}'. {DescribeHeaders(headers)}");
+            return new CsvColumnMapping(null, null, null, AddressIndex: addressIndex);
+        }
+
+        if (options.LongitudeColumn is null || options.LatitudeColumn is null)
+        {
+            throw new CsvImportOptionsException(
+                "Explicit coordinate columns must be specified as a pair: both the longitude and the latitude column name are required.");
+        }
+
+        var longitudeIndex = FindColumn(headers, options.LongitudeColumn)
+            ?? throw new CsvImportOptionsException(
+                $"CSV header does not contain the requested longitude column '{options.LongitudeColumn}'. {DescribeHeaders(headers)}");
+        var latitudeIndex = FindColumn(headers, options.LatitudeColumn)
+            ?? throw new CsvImportOptionsException(
+                $"CSV header does not contain the requested latitude column '{options.LatitudeColumn}'. {DescribeHeaders(headers)}");
+        if (longitudeIndex == latitudeIndex)
+        {
+            throw new CsvImportOptionsException(
+                "The longitude and latitude column names resolve to the same CSV column.");
+        }
+
+        return new CsvColumnMapping(null, longitudeIndex, latitudeIndex, ExplicitCoordinates: true);
+    }
+
+    private static int? FindColumn(string[] headers, string requested)
+    {
+        var trimmed = requested.Trim();
+        for (var i = 0; i < headers.Length; i++)
+        {
+            if (string.Equals(headers[i], trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        // Fall back to the tolerant normalization used by the heuristics so
+        // "Longitude " or "longitude_deg" style requests match their headers.
+        var normalizedRequest = NormalizeColumnName(trimmed);
+        if (normalizedRequest.Length == 0)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < headers.Length; i++)
+        {
+            if (string.Equals(NormalizeColumnName(headers[i]), normalizedRequest, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return null;
+    }
+
+    private static string DescribeHeaders(string[] headers)
+    {
+        const int maxListed = 25;
+        var listed = headers.Length <= maxListed ? headers : headers[..maxListed];
+        var suffix = headers.Length > maxListed ? ", …" : string.Empty;
+        return $"Available columns: {string.Join(", ", listed)}{suffix}.";
     }
 
     private static bool IsGeometrySourceColumn(int index, CsvColumnMapping mapping)
@@ -568,8 +718,19 @@ internal static class CsvFormatReader
     private readonly record struct CsvColumnMapping(
         int? WktIndex,
         int? LongitudeIndex,
-        int? LatitudeIndex);
+        int? LatitudeIndex,
+        int? AddressIndex = null,
+        bool ExplicitCoordinates = false);
 }
+
+/// <summary>
+/// A CSV row whose configured address column could not be resolved into a
+/// coordinate. The row is imported without geometry; the failure is surfaced as
+/// a per-row validation issue on the import result.
+/// </summary>
+/// <param name="RowNumber">1-based data-row ordinal (header excluded).</param>
+/// <param name="Address">The trimmed address text that failed to resolve; empty when the row had no address value.</param>
+internal readonly record struct CsvGeocodeFailure(int RowNumber, string Address);
 
 /// <summary>
 /// Collects diagnostics emitted while streaming a CSV so the import pipeline can surface
@@ -579,6 +740,14 @@ internal static class CsvFormatReader
 internal sealed class CsvGeometryDiagnostics
 {
     /// <summary>
+    /// Upper bound on individually recorded geocode failures so a pathological
+    /// input cannot grow the diagnostics without bound; the count keeps advancing.
+    /// </summary>
+    private const int MaxRecordedGeocodeFailures = 100;
+
+    private List<CsvGeocodeFailure>? _geocodeFailures;
+
+    /// <summary>
     /// Number of rows whose mapped geometry column held a value that could not be parsed as
     /// WKT, EWKT, or WKB/EWKB hex. Such rows are imported without geometry but with the raw
     /// value preserved as an attribute.
@@ -587,4 +756,27 @@ internal sealed class CsvGeometryDiagnostics
 
     /// <summary>Records that a row had an unparseable geometry value.</summary>
     public void RecordUnparseableGeometry() => UnparseableGeometryRows++;
+
+    /// <summary>Total number of rows whose address value could not be geocoded.</summary>
+    public int GeocodeFailureCount { get; private set; }
+
+    /// <summary>
+    /// Individually recorded geocode failures, capped at 100 entries
+    /// (<see cref="GeocodeFailureCount"/> is not capped).
+    /// </summary>
+    public IReadOnlyList<CsvGeocodeFailure> GeocodeFailures =>
+        (IReadOnlyList<CsvGeocodeFailure>?)_geocodeFailures ?? [];
+
+    /// <summary>Records that a row's address value could not be geocoded.</summary>
+    /// <param name="rowNumber">1-based data-row ordinal (header excluded).</param>
+    /// <param name="address">The trimmed address text; empty when the row had no address value.</param>
+    public void RecordGeocodeFailure(int rowNumber, string address)
+    {
+        GeocodeFailureCount++;
+        _geocodeFailures ??= [];
+        if (_geocodeFailures.Count < MaxRecordedGeocodeFailures)
+        {
+            _geocodeFailures.Add(new CsvGeocodeFailure(rowNumber, address));
+        }
+    }
 }

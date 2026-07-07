@@ -23,11 +23,15 @@ internal static class OpsObservabilityEndpoints
     /// <param name="endpoints">The endpoint route builder.</param>
     public static void MapOpsObservabilityEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        // Read-only ops-reader authorization (A12): the GET reads (ops-health, findings) additionally
+        // admit an ops:read credential, while the mutating POST (findings/propose) still requires full
+        // admin write — the ops-read policy is method-aware, so applying it at the group keeps every
+        // mutation admin-only.
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/observability")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability")
-            .RequireAdminAuthorization();
+            .RequireOpsReadAuthorization();
 
         group.MapGet("/ops-health", HandleGetOpsHealth)
             .WithDisplayName("Get Ops Health Snapshot")
