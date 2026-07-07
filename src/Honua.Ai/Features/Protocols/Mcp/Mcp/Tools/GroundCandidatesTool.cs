@@ -44,7 +44,7 @@ internal sealed class GroundCandidatesTool : IMcpTool
     {
         Name = ToolName,
         Title = "Ground candidates",
-        Description = "Ground a natural-language goal to a workflow family, ranked catalog candidates, a draft intent, and an optional clarification envelope.",
+        Description = "Routing: an analysis GOAL -> workflow family + candidate datasets/processes + a draft intent; use it to explore what is possible before planning. Grounds a natural-language goal to a workflow family, ranked catalog candidates, a draft intent, and an optional clarification envelope. When it returns a clarification envelope, answer it with honua_clarify_intent (carrying the returned intentId).",
         InputSchema = InputSchemaElement,
         OutputSchema = McpToolOutputSchemas.GroundingOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Ground candidates")
