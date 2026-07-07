@@ -264,4 +264,39 @@ internal static class McpErrorMapper
             RequiresReauthentication = true
         }
     };
+
+    /// <summary>
+    /// Creates the structured error returned when a request presents a valid
+    /// <c>Mcp-Session-Id</c> that is bound to a different principal than the caller
+    /// (A3 session binding; honua-server#2537). Signals
+    /// <see cref="McpErrorData.RequiresReauthentication"/> so the client discards
+    /// the session and re-initializes to obtain one bound to its own identity.
+    /// </summary>
+    public static McpJsonRpcError SessionPrincipalMismatch() => new()
+    {
+        Code = JsonRpcServerError,
+        Message = "The MCP session is bound to a different principal. Re-initialize to obtain a session for the current identity.",
+        Data = new McpErrorData
+        {
+            Code = Codes.PermissionDenied,
+            RequiresReauthentication = true
+        }
+    };
+
+    /// <summary>
+    /// Creates the structured, retryable error returned when a new
+    /// <c>initialize</c> is refused because the session cap is reached and the
+    /// configured policy is to reject rather than evict (A3 session hardening;
+    /// honua-server#2537).
+    /// </summary>
+    public static McpJsonRpcError SessionCapacityReached() => new()
+    {
+        Code = JsonRpcServerError,
+        Message = "The MCP server is at session capacity. Retry shortly.",
+        Data = new McpErrorData
+        {
+            Code = Codes.Unavailable,
+            Retryable = true
+        }
+    };
 }

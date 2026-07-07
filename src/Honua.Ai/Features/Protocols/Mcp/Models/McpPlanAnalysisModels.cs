@@ -38,6 +38,16 @@ internal sealed class McpPlanAnalysisOutput
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Which planning engine produced this response: <c>"live"</c> when the plan
+    /// was compiled from the intent by a provider-backed model, or
+    /// <c>"fixture"</c> when it was replayed from a canned deterministic template
+    /// because no live LLM provider is configured. An <c>engine:"fixture"</c>
+    /// plan is a capability demo, not compiled from the caller's intent.
+    /// </summary>
+    [JsonPropertyName("engine")]
+    public string Engine { get; set; } = string.Empty;
+
     [JsonPropertyName("plan")]
     public McpAnalysisPlanOutput? Plan { get; set; }
 

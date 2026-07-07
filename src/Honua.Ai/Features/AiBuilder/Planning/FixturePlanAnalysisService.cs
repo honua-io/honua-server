@@ -36,6 +36,9 @@ internal sealed class FixturePlanAnalysisService : IPlanAnalysisService
     }
 
     /// <inheritdoc />
+    public string Engine => "fixture";
+
+    /// <inheritdoc />
     public Task<McpPlanAnalysisOutput> PlanAsync(
         string intent,
         JsonElement? context,
