@@ -47,6 +47,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_query_features",
         "honua_edit_features",
         "honua_render_map",
+        "honua_get_style",
+        "honua_apply_style_preset",
         "honua_resolve_entity",
         "honua_list_capabilities"
     };
@@ -218,6 +220,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_list_layers",
         "honua_query_features",
         "honua_render_map",
+        "honua_get_style",
         "honua_resolve_entity",
         "honua_list_capabilities",
     };
@@ -236,6 +239,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_create_map_package"] = (Destructive: false, Idempotent: false),
             ["honua_create_app_package"] = (Destructive: false, Idempotent: false),
             ["honua_edit_features"] = (Destructive: true, Idempotent: false),
+            ["honua_apply_style_preset"] = (Destructive: false, Idempotent: true),
         };
 
     [UnitTest]
@@ -583,6 +587,10 @@ public sealed partial class McpTaxonomyAlignmentTests
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.EditFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.GetStyleTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.GetStyleTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.ApplyStylePresetTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ApplyStylePresetTool>.Instance),
             new Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool>.Instance),
             new Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool(

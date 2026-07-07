@@ -2,11 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Services;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -16,12 +18,14 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 
 /// <summary>
 /// MCP tool that renders a map image for one or more published layers and
-/// returns it as an MCP <c>image</c> content block (base64 PNG) so the client
-/// can display it inline. Thin adapter over the canonical
-/// <see cref="IRasterMapRenderer"/> pipeline — the same renderer the OGC API
-/// Maps / MapServer export / WMS GetMap surfaces drive — so no rasterization or
-/// styling logic is reimplemented here. Layers are resolved through the same
-/// Metadata v2 snapshot the GeoServices surfaces use and passed bottom-to-top.
+/// returns it as a fetchable artifact reference (<c>resource_link</c> href) by
+/// default, or as an inline base64 <c>image</c> content block when the caller
+/// opts in via <c>maxInlineBytes</c> and the encoded image fits. Thin adapter
+/// over the canonical <see cref="IRasterMapRenderer"/> pipeline — the same
+/// renderer the OGC API Maps / MapServer export / WMS GetMap surfaces drive —
+/// so no rasterization or styling logic is reimplemented here. Layers are
+/// resolved through the same Metadata v2 snapshot the GeoServices surfaces use
+/// and passed bottom-to-top, each rendering with its primary/default style.
 /// </summary>
 internal sealed class RenderMapTool : IMcpTool
 {
@@ -46,7 +50,9 @@ internal sealed class RenderMapTool : IMcpTool
         Title = "Render map",
         Description = "Render a map image (PNG) for one or more published layers over a bbox. Layers draw bottom-to-top. Width/height are capped at 1024 px. "
             + "By default the result is a fetchable artifact reference (resource_link href) with the image dimensions and byte size in text — NOT an inline base64 image — so a multi-megabyte render never floods the model context. "
-            + "Set maxInlineBytes to opt into inlining the base64 PNG when the encoded image is at or below that size.",
+            + "Set maxInlineBytes to opt into inlining the base64 PNG when the encoded image is at or below that size. "
+            + "Each layer renders with its primary/default style, which the caption reports; change a layer's style first with honua_apply_style_preset (discover presets with honua_get_style) and re-render to reflect it. "
+            + "To render analysis results as a styled map: run the analysis, then honua_publish_result to promote the result to a serviceId/layerId, then optionally honua_apply_style_preset, then render that layer here.",
         InputSchema = MapToolSchemas.RenderMapArgumentSchema,
         // Read-only render. No OutputSchema: this tool returns an image or
         // resource_link content block, not a structuredContent payload, so there
@@ -87,12 +93,23 @@ internal sealed class RenderMapTool : IMcpTool
         var graphProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
+        // The styleId-keyed catalog is the canonical binding honua_apply_style_preset
+        // writes and the /ogc/styles surface authors. Resolving each layer's primary
+        // style here makes the applied preset observable in a subsequent render (the
+        // caption reports it). Rasterizing vector styles at the IRasterMapRenderer
+        // seam is not yet supported (RenderStyledMapAsync throws) and is out of scope
+        // for this tool; the pixels come from the raster mosaic path.
+        var styleCatalog = httpContext.RequestServices.GetService<IStyleCatalog>();
+
         var storageLayerIds = new int[argument.Layers.Count];
+        var effectiveStyleIds = new string?[argument.Layers.Count];
         for (var i = 0; i < argument.Layers.Count; i++)
         {
             var layerRef = argument.Layers[i];
             var resolved = MapToolLayerResolver.Resolve(snapshot, layerRef.ServiceId, layerRef.LayerId);
             storageLayerIds[i] = resolved.StorageLayerId;
+            effectiveStyleIds[i] = await ResolveEffectiveStyleIdAsync(styleCatalog, resolved.StorageLayerId, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var request = new MapRenderRequest
@@ -130,6 +147,10 @@ internal sealed class RenderMapTool : IMcpTool
             storageLayerIds.Length,
             storageLayerIds.Length == 1 ? string.Empty : "s");
 
+        // The effective per-layer styles are reported on both result shapes so an
+        // applied preset (honua_apply_style_preset) stays observable in the caption.
+        var styleNote = BuildStyleNote(effectiveStyleIds);
+
         // Default: hand back a fetchable artifact href instead of inlining a
         // multi-megabyte base64 PNG into the model context. Inline only when the
         // caller opts in via maxInlineBytes AND the encoded image fits under it.
@@ -145,6 +166,10 @@ internal sealed class RenderMapTool : IMcpTool
                 extentDescription,
                 result.ContentType,
                 result.Data.Length);
+            if (styleNote is not null)
+            {
+                inlineCaption = inlineCaption + " " + styleNote;
+            }
 
             return new McpToolsCallResult
             {
@@ -182,6 +207,10 @@ internal sealed class RenderMapTool : IMcpTool
             result.ContentType,
             result.Data.Length,
             href);
+        if (styleNote is not null)
+        {
+            caption = caption + " " + styleNote;
+        }
 
         return new McpToolsCallResult
         {
@@ -217,6 +246,43 @@ internal sealed class RenderMapTool : IMcpTool
         }
 
         return [minX, minY, maxX, maxY];
+    }
+
+    private static async Task<string?> ResolveEffectiveStyleIdAsync(
+        IStyleCatalog? styleCatalog,
+        int storageLayerId,
+        CancellationToken cancellationToken)
+    {
+        if (styleCatalog is null)
+        {
+            return null;
+        }
+
+        var styles = await styleCatalog.GetStylesForLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        // Ordinal 0 (first) is the primary/default style by convention.
+        return styles.Count > 0 ? styles[0].StyleId : null;
+    }
+
+    private static string? BuildStyleNote(string?[] effectiveStyleIds)
+    {
+        if (effectiveStyleIds.Length == 0 || Array.TrueForAll(effectiveStyleIds, id => id is null))
+        {
+            return null;
+        }
+
+        var builder = new StringBuilder("Layer styles: ");
+        for (var i = 0; i < effectiveStyleIds.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append(effectiveStyleIds[i] ?? "(default)");
+        }
+
+        builder.Append('.');
+        return builder.ToString();
     }
 
     private static int ResolveSize(int? requested, string field)
