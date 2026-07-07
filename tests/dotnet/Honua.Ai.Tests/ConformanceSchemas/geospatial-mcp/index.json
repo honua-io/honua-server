@@ -101,10 +101,11 @@
     },
     {
       "standardName": "publish_result",
-      "referenceToolName": null,
+      "referenceToolName": "honua_publish_result",
       "family": "Publishing",
       "schema": "tools/publish_result.schema.json",
-      "implementationStatus": "known-gap"
+      "implementationStatus": "implemented",
+      "notes": "honua_publish_result (honua-server#2482) promotes a completed analysis job's materialized FeatureLayer/Table artifact (sourceId = the job id) into a hosted published service + layer, routing through the same canonical service.publish promotion as honua_publish_service. The standard schema requires only sourceId; the reference tool adds honua extension selectors (artifactId / serviceName / layerName) under additionalProperties. Analyze / Publish Data (published_service) is implemented; Build App (deployment) promotion is deferred (honua-server#730/#732)."
     },
     {
       "standardName": "list_layers",

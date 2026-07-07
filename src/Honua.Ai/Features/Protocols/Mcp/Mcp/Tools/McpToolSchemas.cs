@@ -148,6 +148,54 @@ internal static class McpToolSchemas
         }
         """;
 
+    // The geospatial-mcp publish_result schema marks only `sourceId` required and
+    // sets additionalProperties:true. The live schema mirrors that required set
+    // (so a standard-conformant call is always accepted) and documents the honua
+    // extension selectors (artifactId / serviceName / layerName) the shared
+    // service.publish promotion consumes. `targetKind` / `visibility` /
+    // `routePrefix` mirror the standard promotion-surface fields; the reference
+    // implementation supports `published_service` and returns a structured
+    // failed_precondition for `deployment`.
+    private const string PublishResultArgumentSchemaJson = """
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["sourceId"],
+          "properties": {
+            "sourceId": {
+              "type": "string",
+              "description": "Completed analysis job id (from honua_execute_plan → honua://jobs/{id}) whose result artifact is promoted to a hosted layer."
+            },
+            "artifactId": {
+              "type": "string",
+              "description": "Selects which artifact in the job's result package to promote. Defaults to the single publishable FeatureLayer/Table artifact when the job produced exactly one."
+            },
+            "serviceName": {
+              "type": "string",
+              "description": "Target service name for the published layer. Defaults to the canonical default service when omitted."
+            },
+            "layerName": {
+              "type": "string",
+              "description": "Display name for the published layer. Defaults to the artifact label when omitted."
+            },
+            "targetKind": {
+              "type": "string",
+              "enum": ["published_service", "deployment"],
+              "description": "Promotion-surface target family. published_service (Analyze / Publish Data) is supported; deployment (Build App) is not yet materialized server-side. Defaults to published_service."
+            },
+            "visibility": {
+              "type": "string",
+              "enum": ["workspace_shared", "public"],
+              "description": "Requested promotion visibility scope. Effective visibility is governed by the publish operator gate / RBAC."
+            },
+            "routePrefix": {
+              "type": "string",
+              "description": "Optional route prefix for a deployment target (Build App)."
+            }
+          }
+        }
+        """;
+
     // The geospatial-mcp create_map_package / create_app_package schemas mark NO
     // field required and set additionalProperties:true, so a standard-conformant
     // client composes a map/app from any subset of the composition selectors. The
@@ -410,6 +458,14 @@ internal static class McpToolSchemas
     /// are validated for mutual consistency at invoke time.
     /// </summary>
     public static readonly JsonElement IngestDatasetArgumentSchema = Parse(IngestDatasetArgumentSchemaJson);
+
+    /// <summary>
+    /// Schema for <see cref="Models.McpPublishResultArgument"/>. Mirrors the
+    /// geospatial-mcp <c>publish_result</c> schema (only <c>sourceId</c> required,
+    /// additionalProperties allowed) so a standard-conformant promotion call is
+    /// always accepted by the live surface.
+    /// </summary>
+    public static readonly JsonElement PublishResultArgumentSchema = Parse(PublishResultArgumentSchemaJson);
 
     /// <summary>
     /// Schema used by stub tools that accept no arguments.
