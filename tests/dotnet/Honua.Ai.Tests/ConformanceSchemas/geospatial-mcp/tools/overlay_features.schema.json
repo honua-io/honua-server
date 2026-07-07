@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/overlay_features.schema.json",
+  "title": "overlay_features inputSchema",
+  "description": "Direct geoprocessing verb (advertised name honua_overlay_features): compute a two-input topological overlay (intersect, union, difference, erase, or clip) and return the result features. Use this for a single self-contained overlay step (\"intersect the flood zones with the parcels\"); for multi-step analysis with dependencies and a packaged result, use plan_analysis + execute_plan instead. Member of the standard's opt-in **analysis** conformance profile (see /CONFORMANCE.md and docs/adr/0029-direct-geoprocessing-verbs.md). Long-running calls return an ExecutionJob handle (honua://jobs/{job_id}), pollable and cancelable via cancel_job; small/fast calls may return an inline result. Advertised readOnlyHint: true (computes a derived result; mutates no server state). x-honua-reference-shape: the concrete source (serviceId/layerId, artifactId) spellings track the reference pipeline.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["source", "overlay", "operation"],
+  "properties": {
+    "source": {
+      "description": "Primary input dataset: EITHER a published layer (serviceId + layerId) OR a prior-result artifact (artifactId).",
+      "oneOf": [
+        { "$ref": "#/$defs/layerRef" },
+        { "$ref": "#/$defs/artifactRef" }
+      ]
+    },
+    "overlay": {
+      "description": "Overlay dataset combined with source: EITHER a published layer (serviceId + layerId) OR a prior-result artifact (artifactId).",
+      "oneOf": [
+        { "$ref": "#/$defs/layerRef" },
+        { "$ref": "#/$defs/artifactRef" }
+      ]
+    },
+    "operation": {
+      "type": "string",
+      "enum": ["intersect", "union", "difference", "erase", "clip"],
+      "description": "Overlay operation. intersect: geometry AND attributes of both where they overlap. union: full combination of both inputs. difference: source minus overlay (source attributes kept). erase: remove the overlay area from source. clip: cut source to the overlay boundary (source attributes only)."
+    },
+    "outSrid": {
+      "type": "integer",
+      "description": "Output spatial reference (SRID/WKID) for the returned overlay features; defaults to the source CRS."
+    }
+  },
+  "$defs": {
+    "layerRef": {
+      "type": "object",
+      "required": ["serviceId", "layerId"],
+      "additionalProperties": false,
+      "properties": {
+        "serviceId": { "type": "string", "minLength": 1, "description": "Published service identifier or name (from list_layers.serviceId or resolve_entity)." },
+        "layerId": { "type": "integer", "minimum": 0, "description": "Service-local layer index (from list_layers.layerId)." }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "required": ["artifactId"],
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1, "description": "Identifier (artifact_…) of a prior-result ArtifactRef produced by an earlier analysis job or verb. See resources/artifact.schema.json." }
+      }
+    }
+  }
+}
