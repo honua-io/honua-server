@@ -359,15 +359,16 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                 updated_at = EXCLUDED.updated_at
             """;
 
+        var channelValue = channel.ToDbValue();
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("channel_type", NpgsqlDbType.Smallint, channel.ToDbValue());
+        command.Parameters.AddWithValue("channel_type", NpgsqlDbType.Smallint, channelValue);
         command.Parameters.AddWithValue("is_paused", NpgsqlDbType.Boolean, paused);
         command.Parameters.AddWithValue("paused_at", NpgsqlDbType.TimestampTz, paused ? now : (object)DBNull.Value);
         command.Parameters.AddWithValue("updated_at", NpgsqlDbType.TimestampTz, now);
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-        AlertLog.DispatchChannelPauseChanged(_logger, channel.ToDbValue(), paused);
+        AlertLog.DispatchChannelPauseChanged(_logger, channelValue, paused);
     }
 
     public async Task<IReadOnlyDictionary<AlertChannelType, bool>> GetChannelPauseStatesAsync(
