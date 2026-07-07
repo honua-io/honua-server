@@ -29,8 +29,20 @@
     },
     "lifecycleState": {
       "type": "string",
-      "description": "ArtifactLifecycleState (MCP-layer projection from the workspace lifecycle service).",
-      "enum": ["Pending", "Available", "Promoted", "Expired", "Deleted"]
+      "description": "ArtifactLifecycleState (MCP-layer projection from the workspace lifecycle service). Canonical enum names are Pending/Available/Promoted/Expired/Deleted; the reference implementation emits the lower_snake_case wire spelling, consistent with the sibling sourceWorkspaceKind projection and workspace.schema.json.",
+      "x-honua-reference-shape": true,
+      "enum": [
+        "pending",
+        "available",
+        "promoted",
+        "expired",
+        "deleted",
+        "Pending",
+        "Available",
+        "Promoted",
+        "Expired",
+        "Deleted"
+      ]
     },
     "promotionSourceReady": {
       "type": "boolean",
@@ -38,7 +50,20 @@
     },
     "sourceWorkspaceKind": {
       "type": "string",
-      "enum": ["Scratch", "Persistent", "TempLayer", "SavedLayer", "ResultCollection"]
+      "description": "WorkspaceKind of the owning workspace. Same canonical value set and reference wire spellings as workspace.schema.json.kind: canonical enum names are Scratch/Persistent/TempLayer/SavedLayer/ResultCollection; the reference implementation emits the lower_snake_case wire spelling. The same WorkspaceKind value must validate identically across both projections.",
+      "x-honua-reference-shape": true,
+      "enum": [
+        "scratch",
+        "persistent",
+        "temp_layer",
+        "saved_layer",
+        "result_collection",
+        "Scratch",
+        "Persistent",
+        "TempLayer",
+        "SavedLayer",
+        "ResultCollection"
+      ]
     }
   }
 }
