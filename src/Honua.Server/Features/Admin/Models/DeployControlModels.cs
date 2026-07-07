@@ -354,6 +354,16 @@ public sealed class SubmitDeployOperationRequest
 }
 
 /// <summary>
+/// Request payload for manually promoting (forcing the cutover of) a deploy operation that is parked
+/// awaiting promotion.
+/// </summary>
+public sealed class PromoteDeployOperationRequest
+{
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+}
+
+/// <summary>
 /// Response payload for deploy planning.
 /// </summary>
 public sealed class DeployPlanResponse

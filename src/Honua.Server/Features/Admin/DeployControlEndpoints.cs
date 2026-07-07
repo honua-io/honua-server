@@ -57,6 +57,12 @@ internal static class DeployControlEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>();
 
+        group.MapPost("/operations/{operationId}/promote", HandlePromoteDeployOperation)
+            .WithDisplayName("Promote Deploy Operation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .Produces<DeployOperationResponse>()
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         group.MapPost("/operations/{operationId}/rollback", HandleRollbackDeployOperation)
             .WithDisplayName("Rollback Deploy Operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
@@ -344,6 +350,59 @@ internal static class DeployControlEndpoints
             }
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
+        }
+        catch (ResourceConflictException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+                DeployConflictMessage);
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.Problem(
+                title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                detail: DeployControlUnavailableMessage,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static async Task<IResult> HandlePromoteDeployOperation(
+        string operationId,
+        [FromBody] PromoteDeployOperationRequest? request,
+        [FromServices] DeployWorkflowService deployWorkflowService,
+        HttpContext context)
+    {
+        // Manual promotion is the operator escape hatch for a deploy parked awaiting promotion (for
+        // example an on-prem rolling deploy with no telemetry gate to auto-clear). It is a forward,
+        // non-destructive cutover, so it rides the group-level admin authorization plus audit logging
+        // rather than the rollback destructive-action gate — the whole point is that it stays reachable.
+        try
+        {
+            var result = await deployWorkflowService.PromoteAsync(
+                    operationId,
+                    ResolveRequestedBy(context),
+                    request?.Reason,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
+
+            switch (result.Outcome)
+            {
+                case DeployWorkflowService.DeployPromotionOutcome.NotFound:
+                    return ProblemDetailsHelpers.CreateAdminProblem(
+                        StatusCodes.Status404NotFound,
+                        ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
+                        $"Deploy operation '{operationId}' was not found.");
+                case DeployWorkflowService.DeployPromotionOutcome.PreconditionFailed:
+                    return ProblemDetailsHelpers.CreateAdminProblem(
+                        StatusCodes.Status409Conflict,
+                        ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+                        result.PreconditionDetail ?? DeployConflictMessage);
+                default:
+                    return Results.Json(
+                        MapOperationResponse(result.Operation!),
+                        DeployControlJsonContext.Default.DeployOperationResponse);
+            }
         }
         catch (ResourceConflictException)
         {
