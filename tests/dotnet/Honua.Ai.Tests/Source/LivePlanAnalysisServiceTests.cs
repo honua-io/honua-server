@@ -15,6 +15,7 @@ using Honua.Ai.AiBuilder.Planning;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.WorkflowGeneration;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
@@ -61,6 +62,32 @@ public sealed class LivePlanAnalysisServiceTests
         domainPlan.Steps[0].ProcessId.Should().Be("geometry.buffer");
         domainPlan.Steps[1].Kind.Should().Be(AnalysisPlanStepKind.QueryFeatures);
         domainPlan.Steps[1].DependsOn.Should().Contain("buffer-flood");
+    }
+
+    [UnitTest]
+    public async Task PlanAsync_LivePlan_FlowsThroughValidateLaneBeyondPlanAnalysis()
+    {
+        // #2485 checklist ("live lanes beyond plan_analysis"): the live planner's
+        // compiled plan is not a dead end at plan_analysis — it must feed the same
+        // validate/dry-run lane the fixture plans flow through. Convert the live
+        // output to a domain plan and run it through the exact validator the
+        // honua_validate_plan tool uses (ProcessPlanValidator over the built-in
+        // process catalog), proving the live lane extends past plan_analysis.
+        var service = CreateLiveService(FakeProvider.Generated(CannedGraph()));
+
+        var output = await service.PlanAsync(BufferIntent, context: null, CancellationToken.None);
+        output.Status.Should().Be("planned");
+
+        var domainPlan = ToDomainPlan(output.Plan!);
+        var (violations, _) = ProcessPlanValidator.Validate(domainPlan, new BuiltInProcessCatalog());
+
+        // The validator ran over the live plan and produced a structured result
+        // (the lane is wired), and the buffer step resolves to the canonical
+        // geometry.buffer process — i.e. the live lane's plan is validate-ready,
+        // not a plan-analysis-only artifact.
+        violations.Should().NotBeNull();
+        domainPlan.Steps.Should().HaveCount(2);
+        domainPlan.Steps[0].ProcessId.Should().Be("geometry.buffer");
     }
 
     [UnitTest]
@@ -369,6 +396,40 @@ public sealed class LivePlanAnalysisServiceTests
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IPlanAnalysisService>()
             .Should().BeOfType<LivePlanAnalysisService>();
+    }
+
+    [UnitTest]
+    public void AddAiBuilderPlanAnalysis_DocumentedLivePlannerProfile_ResolvesLivePlanner()
+    {
+        // #2485 AC1: the supported "live-planner-on" configuration profile documented
+        // in docs/guides/connect/mcp-live-planner.md must actually select the live
+        // planner. This pins that profile verbatim (WorkflowGeneration enabled with a
+        // bedrock provider + the dedicated PlanAnalysis gate/provider) so the doc and
+        // the composition can never drift apart silently.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IWorkflowGenerationService>());
+        services.AddSingleton(Substitute.For<IWorkflowNodeRegistry>());
+
+        var profile = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["WorkflowGeneration:Enabled"] = "true",
+                ["WorkflowGeneration:DefaultProvider"] = "bedrock",
+                ["WorkflowGeneration:Providers:bedrock:Model"] =
+                    "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                ["WorkflowGeneration:Providers:bedrock:Region"] = "us-west-2",
+                ["PlanAnalysis:Enabled"] = "true",
+                ["PlanAnalysis:Provider"] = "bedrock",
+            })
+            .Build();
+
+        services.AddAiBuilderPlanAnalysis(profile);
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IPlanAnalysisService>()
+            .Should().BeOfType<LivePlanAnalysisService>();
+        AiBuilderServiceCollectionExtensions.ShouldUseLivePlanner(profile).Should().BeTrue();
     }
 
     // Builds the live service over the REAL WorkflowGenerationService so the test

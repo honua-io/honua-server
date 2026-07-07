@@ -636,6 +636,60 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    /// <summary>
+    /// Schema for <see cref="Models.McpOperationToolOutput"/> — the structured
+    /// result of a published operations-toolset operation projected as a
+    /// first-class MCP tool (#2483). Projects the canonical <c>OperationHandle</c>
+    /// plus the determinism/cache provenance the published-tool contract adds.
+    /// </summary>
+    public static readonly JsonElement OperationToolOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["status", "requiresApproval", "deterministic", "cacheHit", "operationId", "handleId"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Operation handle status: Completed, Queued, Running, RequiresApproval, DryRunRequired, Denied, or Failed."
+            },
+            "requiresApproval": { "type": "boolean" },
+            "deterministic": {
+              "type": "boolean",
+              "description": "Whether the backing operation descriptor is deterministic (AI-free)."
+            },
+            "cacheHit": {
+              "type": "boolean",
+              "description": "True when served from the param-keyed deterministic cache instead of re-executed."
+            },
+            "cacheKey": {
+              "type": ["string", "null"],
+              "description": "Param-keyed cache key (operation id + catalog version + normalized parameters) for a deterministic, read-only invocation; null when not cacheable."
+            },
+            "operationId": { "type": "string" },
+            "handleId": { "type": "string" },
+            "jobId": {
+              "type": ["string", "null"],
+              "description": "Durable job id when the operation was queued."
+            },
+            "approvalLane": {
+              "type": ["string", "null"],
+              "description": "Approval lane to wait on when the operation requires human approval."
+            },
+            "metadataRevision": {
+              "type": ["integer", "null"],
+              "description": "Metadata v2 graph revision produced by the operation, when it mutated the graph."
+            },
+            "summary": { "type": ["string", "null"] },
+            "message": { "type": ["string", "null"] },
+            "details": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Operation-specific result detail values keyed by name."
+            }
+          }
+        }
+        """);
+
     private static string ArtifactKindEnum => JsonStringArray(Enum.GetNames<ArtifactKind>());
 
     private static string JsonStringArray(string[] values)
