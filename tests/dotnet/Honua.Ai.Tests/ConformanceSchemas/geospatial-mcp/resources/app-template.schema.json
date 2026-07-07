@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/app-template.schema.json",
+  "title": "App template resource payload",
+  "description": "Responsibility-level projection of an application scaffold template at honua://templates/apps/{app_template_id}. The identifier is registry-defined; the canonical app-template shape is deferred (see resources.md §honua://templates/apps/{app_template_id}), so only the identifier is fixed here. Sourced from AppPackage.templateId.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["appTemplateId"],
+  "properties": {
+    "appTemplateId": {
+      "type": "string",
+      "description": "Registry-defined app-template identifier."
+    }
+  }
+}

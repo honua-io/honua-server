@@ -106,6 +106,18 @@ public sealed partial class McpTaxonomyAlignmentTests
         // standard still publishes the schema, so the gap is real and closeable
         // by any adopter that makes a different trust decision — but not by Honua.
         "edit_features",
+        // Direct geoprocessing verbs: members of the standard's opt-in 'analysis'
+        // conformance profile (geospatial-mcp#55, upstream ADR-0029). The index
+        // marks them known-gap for the reference implementation; they are required
+        // for FULL only when a manifest declares the analysis profile. Honua does
+        // not ship direct verbs yet (#2555/#2566 and the A8/analysis track) —
+        // plan_analysis/execute_plan cover those workflows today.
+        "buffer_features",
+        "overlay_features",
+        "summarize_statistics",
+        "reproject_features",
+        "join_features",
+        "export_dataset",
     };
 
     /// <summary>
