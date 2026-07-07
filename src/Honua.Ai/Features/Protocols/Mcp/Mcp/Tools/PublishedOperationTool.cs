@@ -26,9 +26,11 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// <see cref="OperationRequest"/> and hands it to the dispatcher, which consults the
 /// policy decision point (allow / require-approval / dry-run-first / deny) before any
 /// executor runs. For a deterministic, read-only descriptor the result is param-keyed
-/// cached (<see cref="IPublishedOperationCache"/>): identical inputs return an
-/// identical result without re-execution. Non-deterministic or side-effecting
-/// descriptors are never cached.
+/// cached (<see cref="IPublishedOperationCache"/>): identical inputs from the
+/// identical principal context (principal id + tier + roles are part of the key)
+/// return an identical result without re-execution, so a cached policy-allowed result
+/// is never served across principals. Non-deterministic or side-effecting descriptors
+/// are never cached.
 /// </remarks>
 internal sealed class PublishedOperationTool : IMcpTool
 {
@@ -122,15 +124,27 @@ internal sealed class PublishedOperationTool : IMcpTool
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
 
+        // The policy context is resolved BEFORE the cache is consulted because it is
+        // part of the cache key: the cache-hit fast path skips the policy decision
+        // point, so a hit may only ever serve a result to the identical principal
+        // context (principal id + tier + roles) that was already policy-allowed for
+        // these exact inputs. A different caller — or the same caller with changed
+        // roles/tier — always misses and takes a fresh policy round-trip.
+        var context = new OperationPolicyContext
+        {
+            PrincipalId = principal.Identity?.Name,
+            Tier = ResolveTier(httpContext),
+            Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
+        };
+
         var parameters = ReadParameters(arguments);
         var dryRun = ReadBool(arguments, "dryRun");
         var cacheKey = IsCacheable && !dryRun
-            ? IPublishedOperationCache.BuildKey(_descriptor.OperationId, _catalogVersion, parameters)
+            ? IPublishedOperationCache.BuildKey(_descriptor.OperationId, _catalogVersion, parameters, context)
             : null;
 
-        // Deterministic, read-only cache hit: identical inputs → identical result,
-        // no re-execution and no policy round-trip needed (a read-only deterministic
-        // op that was allowed once stays allowed for the same principal context).
+        // Deterministic, read-only cache hit: identical inputs from the identical
+        // principal context → identical result, no re-execution.
         if (cacheKey is not null)
         {
             var cache = httpContext.RequestServices.GetService<IPublishedOperationCache>();
@@ -162,13 +176,6 @@ internal sealed class PublishedOperationTool : IMcpTool
             ServiceName = ReadString(arguments, "serviceName"),
             Parameters = parameters,
             DryRun = dryRun,
-        };
-
-        var context = new OperationPolicyContext
-        {
-            PrincipalId = principal.Identity?.Name,
-            Tier = ResolveTier(httpContext),
-            Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
         };
 
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);

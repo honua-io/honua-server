@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
@@ -13,11 +14,17 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// an identical result without re-executing the operation.
 /// </summary>
 /// <remarks>
-/// The key is <c>{operationId}|{catalogVersion}|{normalizedParameters}</c>, so a
-/// catalog change (a republished descriptor) invalidates prior entries by producing
-/// a different key. Side-effecting or AI-assisted operations are never cached — a
-/// cache would either skip a side effect or return a stale AI turn — so this cache
-/// is deliberately only consulted from the deterministic, read-only path.
+/// The key is
+/// <c>{operationId}|{catalogVersion}|{principalId}|{tier}|{sortedRoles}|{normalizedParameters}</c>.
+/// A catalog change (a republished descriptor) invalidates prior entries by producing
+/// a different key. The full policy-relevant principal context (principal id, resolved
+/// tier, sorted roles) is part of the key ON PURPOSE: the cache-hit path skips the
+/// policy decision point, so a hit may only ever serve a result back to the identical
+/// principal context that was already policy-allowed for those exact inputs — a
+/// different caller, or the same caller with changed roles/tier, always misses and
+/// takes a fresh policy round-trip. Side-effecting or AI-assisted operations are never
+/// cached — a cache would either skip a side effect or return a stale AI turn — so
+/// this cache is deliberately only consulted from the deterministic, read-only path.
 /// </remarks>
 internal interface IPublishedOperationCache
 {
@@ -32,12 +39,20 @@ internal interface IPublishedOperationCache
 
     /// <summary>
     /// Builds the param-keyed cache key for a deterministic, read-only invocation.
+    /// The key binds the result to the invoking principal context
+    /// (<see cref="OperationPolicyContext.PrincipalId"/>,
+    /// <see cref="OperationPolicyContext.Tier"/>, sorted
+    /// <see cref="OperationPolicyContext.Roles"/>) so a cached policy-allowed result
+    /// can never be served across principals, tiers, or role sets.
     /// </summary>
     static string BuildKey(
         string operationId,
         string catalogVersion,
-        IReadOnlyDictionary<string, string?> parameters)
+        IReadOnlyDictionary<string, string?> parameters,
+        OperationPolicyContext principalContext)
     {
+        ArgumentNullException.ThrowIfNull(principalContext);
+
         // Order-independent, null-safe normalization so identical inputs supplied in
         // any order produce the same key.
         var normalized = string.Join(
@@ -45,7 +60,12 @@ internal interface IPublishedOperationCache
             parameters
                 .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
                 .Select(kvp => $"{kvp.Key}={kvp.Value}"));
-        return $"{operationId}|{catalogVersion}|{normalized}";
+
+        var roles = string.Join(
+            ",",
+            principalContext.Roles.OrderBy(role => role, StringComparer.Ordinal));
+
+        return $"{operationId}|{catalogVersion}|{principalContext.PrincipalId}|{principalContext.Tier}|{roles}|{normalized}";
     }
 }
 

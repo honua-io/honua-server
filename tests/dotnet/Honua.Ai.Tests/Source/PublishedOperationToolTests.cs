@@ -179,6 +179,81 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public async Task Invoke_SameParams_DifferentPrincipal_MissesCacheAndTakesFreshPolicyRoundTrip()
+    {
+        // Security regression (PR #2584 review): the cache key includes the full
+        // policy-relevant principal context, and a cache hit skips the policy
+        // decision point — so a result cached under a policy-ALLOWED privileged
+        // caller must NEVER be served to a different caller with the same params.
+        // Policy here: role "admin" → Allow, everyone else → Deny. Caller A (admin)
+        // executes and is cached; caller B (no roles), same params, must MISS the
+        // cache, take a fresh policy round-trip, and be DENIED — not receive A's
+        // cached result.
+        var executor = new RecordingExecutor(DeterministicReadOnlyOpId);
+        var invoker = Dispatcher(
+            DeterministicReadOnlyDescriptor(),
+            executor,
+            new OperationPolicyOptions
+            {
+                Enabled = true,
+                DefaultDecision = PolicyDecisionKind.Deny,
+                DefaultReason = "Denied for non-admin callers.",
+                Rules =
+                {
+                    new OperationPolicyRule { OperationId = "*", Role = "admin", Decision = PolicyDecisionKind.Allow },
+                },
+            });
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        // Privileged caller A: allowed, executed, cached.
+        var first = await tool.InvokeAsync(
+            Context(invoker, cache, roles: ["admin"], principalName: "agent-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        first.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Completed");
+        executor.SubmitCount.Should().Be(1);
+
+        // Low-privilege caller B, identical params: fresh policy round-trip → Denied.
+        var second = await tool.InvokeAsync(
+            Context(invoker, cache, roles: null, principalName: "agent-b"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        var body = second.StructuredContent!.Value;
+        body.GetProperty("status").GetString().Should().Be("Denied",
+            "the policy decision point must be consulted for B instead of serving A's cached allow");
+        body.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+        executor.SubmitCount.Should().Be(1, "the denied caller never reaches the executor");
+
+        // And A's own cache entry is unaffected: A re-invoking with the same params
+        // is a hit with no re-execution.
+        var third = await tool.InvokeAsync(
+            Context(invoker, cache, roles: ["admin"], principalName: "agent-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        third.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
+        executor.SubmitCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task Invoke_SameParams_SamePrincipalDifferentRoles_MissesCache()
+    {
+        // Roles are part of the cache key: the same principal whose role set changed
+        // (e.g. a revoked grant) must not ride a result cached under the old roles.
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        await tool.InvokeAsync(
+            Context(invoker, cache, roles: ["admin"]), Args("""{"layerId":"7"}"""), CancellationToken.None);
+        await tool.InvokeAsync(
+            Context(invoker, cache, roles: ["viewer"]), Args("""{"layerId":"7"}"""), CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(2, "a changed role set is a distinct principal context and misses the cache");
+    }
+
+    [UnitTest]
     public async Task Invoke_MutatingOperation_IsNeverCached()
     {
         var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
@@ -356,7 +431,8 @@ public sealed class PublishedOperationToolTests
         IOperationInvoker? invoker,
         IPublishedOperationCache? cache = null,
         ILicenseEntitlementService? license = null,
-        string[]? roles = null)
+        string[]? roles = null,
+        string principalName = "agent-x")
     {
         var services = new ServiceCollection();
         if (invoker is not null)
@@ -370,7 +446,7 @@ public sealed class PublishedOperationToolTests
             services.AddSingleton(license);
         }
 
-        var claims = new List<Claim> { new(ClaimTypes.Name, "agent-x") };
+        var claims = new List<Claim> { new(ClaimTypes.Name, principalName) };
         claims.AddRange((roles ?? []).Select(r => new Claim(ClaimTypes.Role, r)));
 
         return new DefaultHttpContext
