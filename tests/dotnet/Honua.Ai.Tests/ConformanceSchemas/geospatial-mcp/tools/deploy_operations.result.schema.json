@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/deploy_operations.result.schema.json",
+  "title": "deploy_operations result payload",
+  "description": "Response payload for the deploy_operations tool: the paged deploy-operations envelope copied VERBATIM from the wire contract pinned in honua-server#2562 / PR #2577 (GET /api/v1/admin/deploy/operations). camelCase; null-valued properties are OMITTED (DefaultIgnoreCondition = WhenWritingNull), so a missing key means null. items is DeployOperationResponse[], newest-first by createdAt. warnings / blockingReasons / target.parameters / metadataRelease.jobIds|evidenceRefs|blockers|warnings are always present (possibly empty). x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items", "page", "pageSize", "totalCount", "hasMore"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "DeployOperationResponse[], newest-first by createdAt.",
+      "items": { "$ref": "#/$defs/deployOperation" }
+    },
+    "page": { "type": "integer", "description": "Effective 1-based page." },
+    "pageSize": { "type": "integer", "description": "Effective (clamped) page size." },
+    "totalCount": { "type": "integer", "description": "Match count within the materialized window." },
+    "hasMore": { "type": "boolean", "description": "At least one more page exists." }
+  },
+  "$defs": {
+    "deployOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "kind", "status", "priority", "warnings", "blockingReasons", "createdAt", "updatedAt"],
+      "properties": {
+        "operationId": { "type": "string" },
+        "kind": { "type": "string", "description": "WorkflowOperationKind enum name, e.g. \"Deploy\"." },
+        "status": { "type": "string", "description": "WorkflowOperationStatus enum name, e.g. \"Submitted\"." },
+        "priority": { "type": "string", "description": "Priority enum name, e.g. \"Normal\"." },
+        "target": { "$ref": "#/$defs/target" },
+        "metadataRelease": { "$ref": "#/$defs/metadataRelease" },
+        "providerOperationId": { "type": "string" },
+        "currentPhase": { "type": "string" },
+        "observedState": { "type": "string" },
+        "errorMessage": { "type": "string" },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "blockingReasons": { "type": "array", "items": { "type": "string" } },
+        "requestedBy": { "type": "string" },
+        "reason": { "type": "string" },
+        "correlationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetId", "targetKind", "backend", "environment", "targetName", "desiredRevision", "parameters"],
+      "properties": {
+        "targetId": { "type": "string" },
+        "targetKind": { "type": "string", "description": "Enum name." },
+        "backend": { "type": "string" },
+        "environment": { "type": "string" },
+        "targetName": { "type": "string" },
+        "artifactReference": { "type": "string" },
+        "runtimeProfile": { "type": "string" },
+        "currentRevision": { "type": "string" },
+        "desiredRevision": { "type": "string" },
+        "parameters": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "metadataRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageId", "desiredRevision", "targetEnvironment", "jobIds", "evidenceRefs", "currentStage", "blockers", "warnings"],
+      "properties": {
+        "packageId": { "type": "string" },
+        "gitOperationId": { "type": "string" },
+        "prUrl": { "type": "string" },
+        "commitSha": { "type": "string" },
+        "desiredRevision": { "type": "string" },
+        "targetEnvironment": { "type": "string" },
+        "deployOperationId": { "type": "string" },
+        "jobIds": { "type": "array", "items": { "type": "string" } },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } },
+        "currentStage": { "type": "string", "description": "Enum name." },
+        "rollbackPlan": { "$ref": "#/$defs/rollbackPlan" },
+        "blockers": { "type": "array", "items": { "type": "string" } },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "refId", "at"],
+      "properties": {
+        "kind": { "type": "string" },
+        "refId": { "type": "string" },
+        "uri": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "rollbackPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "isDataAffecting", "requiresExplicitApproval", "steps", "evidenceRequired"],
+      "properties": {
+        "class": { "type": "string", "description": "Enum name." },
+        "isDataAffecting": { "type": "boolean" },
+        "requiresExplicitApproval": { "type": "boolean" },
+        "steps": { "type": "array", "items": { "type": "string" } },
+        "evidenceRequired": { "type": "array", "items": { "type": "string" } },
+        "approvalPolicyRef": { "type": "string" }
+      }
+    }
+  }
+}

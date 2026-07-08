@@ -108,38 +108,6 @@
       "notes": "honua_publish_result (honua-server#2482) promotes a completed analysis job's materialized FeatureLayer/Table artifact (sourceId = the job id) into a hosted published service + layer, routing through the same canonical service.publish promotion as honua_publish_service. The standard schema requires only sourceId; the reference tool adds honua extension selectors (artifactId / serviceName / layerName) under additionalProperties. Analyze / Publish Data (published_service) is implemented; Build App (deployment) promotion is deferred (honua-server#730/#732)."
     },
     {
-      "standardName": "ops_health",
-      "referenceToolName": "honua_ops_health",
-      "family": "Platform operations (reference shape)",
-      "schema": "tools/ops_health.schema.json",
-      "implementationStatus": "implemented",
-      "notes": "Read-only platform-ops health snapshot; mirror of honua-server GET /api/v1/admin/observability/ops-health. Response payload is the honua://ops/health resource."
-    },
-    {
-      "standardName": "ops_findings",
-      "referenceToolName": "honua_ops_findings",
-      "family": "Platform operations (reference shape)",
-      "schema": "tools/ops_findings.schema.json",
-      "implementationStatus": "implemented",
-      "notes": "Read-only deterministic ops findings list/get; mirror of honua-server GET /api/v1/admin/observability/findings. Response payload is the honua://ops/findings resource."
-    },
-    {
-      "standardName": "alert_events",
-      "referenceToolName": "honua_alert_events",
-      "family": "Platform operations (reference shape)",
-      "schema": "tools/alert_events.schema.json",
-      "implementationStatus": "implemented",
-      "notes": "Read-only, cursor-paged alert-event query over source/severity/rule/lifecycle/time filters."
-    },
-    {
-      "standardName": "operate_events",
-      "referenceToolName": "honua_operate_events",
-      "family": "Platform operations (reference shape)",
-      "schema": "tools/operate_events.schema.json",
-      "implementationStatus": "implemented",
-      "notes": "Read-only, paged fused Operate timeline query over kind/correlation/operation/release/time filters."
-    },
-    {
       "standardName": "list_layers",
       "referenceToolName": "honua_list_layers",
       "family": "Discovery and query (reference shape)",
@@ -257,7 +225,64 @@
       "referenceToolName": "honua_propose_operation",
       "family": "Control-plane proposal (reference shape)",
       "schema": "tools/propose_operation.schema.json",
-      "implementationStatus": "implemented"
+      "implementationStatus": "implemented",
+      "notes": "Amended with x-honua-supported-kinds runtime capability discovery (geospatial-mcp#57): the kind enum stays the full wire-compatible OperationClass set, but the routable subset is discoverable at runtime (Seed is currently not routable in the reference)."
+    },
+    {
+      "standardName": "ops_health",
+      "referenceToolName": "honua_ops_health",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/ops_health.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only platform-ops health snapshot; mirror of honua-server GET /api/v1/admin/observability/ops-health (OpsHealthSnapshotResponse, incl. the additive clusterReplicaCount from honua-server#2576). Response payload is the honua://ops/health resource (resources/ops-health.schema.json). Reference surface lands via honua-server#2555 (read-tools impl) under epic #2552 and is kept in sync with the vendored schema copy per honua-server#2496."
+    },
+    {
+      "standardName": "ops_findings",
+      "referenceToolName": "honua_ops_findings",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/ops_findings.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only deterministic ops findings (list/get via optional findingId); mirror of honua-server GET /api/v1/admin/observability/findings. Each finding carries recommendedAction {kind, summary, reason} + evidenceRefs; the action is proposed (never executed) by finding id (honua-server ADR-0028 posture). Response payload is the honua://ops/findings resource (resources/ops-findings.schema.json). Reference surface lands via honua-server#2555 under epic #2552; vendored copy synced per honua-server#2496."
+    },
+    {
+      "standardName": "alert_events",
+      "referenceToolName": "honua_alert_events",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/alert_events.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only, cursor-paged alert-event query (filters: source gis|ops, severity, rule, lifecycle state, time range). Mirror of the honua-server Console Operate alert-event API. Response envelope in tools/alert_events.result.schema.json. Reference surface lands via honua-server#2555 under epic #2552; vendored copy synced per honua-server#2496."
+    },
+    {
+      "standardName": "operate_events",
+      "referenceToolName": "honua_operate_events",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/operate_events.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only, paged fused Operate timeline (filters: kind, correlationId, operationId, releaseId, time range). Mirror of honua-server GET /api/v1/admin/observability/events; the ReleaseId filter is fed by the Release events added in honua-server#2577. Response envelope in tools/operate_events.result.schema.json. Reference surface lands via honua-server#2555 under epic #2552; vendored copy synced per honua-server#2496."
+    },
+    {
+      "standardName": "platform_release_status",
+      "referenceToolName": "honua_platform_release_status",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/platform_release_status.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only platform_release / server_upgrade co-versioning + skew snapshot (declared release, co-versioning, per-plane serving/execution projections, skewed plane ids). Mirror of the honua-server platformRelease projection (DeployPreflightPlatformRelease). Distinct from the hosted-content Deployment resource. Response in tools/platform_release_status.result.schema.json. Reference surface lands via honua-server#2555 under epic #2552; vendored copy synced per honua-server#2496."
+    },
+    {
+      "standardName": "deploy_operations",
+      "referenceToolName": "honua_deploy_operations",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/deploy_operations.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only platform_release / server_upgrade operation surface (list/get via optional operationId; list filters status, kind, page, pageSize). Paged response envelope {items, page, pageSize, totalCount, hasMore} copied VERBATIM from the wire contract pinned in honua-server#2562 / PR #2577 (tools/deploy_operations.result.schema.json). Distinct from the hosted-content Deployment resource. Reference surface lands via honua-server#2577 under epic #2552; vendored copy synced per honua-server#2496."
+    },
+    {
+      "standardName": "propose_rollback",
+      "referenceToolName": "honua_propose_rollback",
+      "family": "Control-plane proposal (reference shape)",
+      "schema": "tools/propose_rollback.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Action tool: proposes a platform rollback as a NEW FORWARD Deploy operation to the target's prior revision (not an in-flight-operation abort); returns a proposal id / honua://proposals/{id} like propose_operation, approval-gated behind the human console inbox (honua-server ADR-0028 posture). Reference surface lands under epic #2552 (backed by the prior-succeeded-deploy lookup added in honua-server#2577); vendored copy synced per honua-server#2496."
     },
     {
       "standardName": "ingest_dataset",
@@ -341,20 +366,6 @@
       "implementationStatus": "implemented"
     },
     {
-      "family": "Ops health",
-      "uriForm": "honua://ops/health",
-      "schema": "resources/ops-health.schema.json",
-      "shapeFidelity": "concrete-reference",
-      "implementationStatus": "implemented"
-    },
-    {
-      "family": "Ops findings",
-      "uriForm": "honua://ops/findings",
-      "schema": "resources/ops-findings.schema.json",
-      "shapeFidelity": "concrete-reference",
-      "implementationStatus": "implemented"
-    },
-    {
       "family": "Workspace artifact",
       "uriForm": "honua://workspaces/{workspace_id}/artifacts/{artifact_id}",
       "schema": "resources/artifact.schema.json",
@@ -417,6 +428,22 @@
       "schema": "resources/deployment.schema.json",
       "shapeFidelity": "responsibility-level",
       "implementationStatus": "implemented"
+    },
+    {
+      "family": "Ops health",
+      "uriForm": "honua://ops/health",
+      "schema": "resources/ops-health.schema.json",
+      "shapeFidelity": "concrete-reference",
+      "implementationStatus": "implemented",
+      "notes": "Read-only, admin-gated consolidated operational-health snapshot; mirror of honua-server OpsHealthSnapshotResponse (incl. the additive clusterReplicaCount from honua-server#2576). Same gated pattern as the promotion-surface resources. Response of the ops_health tool. Reference surface lands via honua-server#2555 under epic #2552; vendored copy synced per honua-server#2496."
+    },
+    {
+      "family": "Ops findings",
+      "uriForm": "honua://ops/findings",
+      "schema": "resources/ops-findings.schema.json",
+      "shapeFidelity": "concrete-reference",
+      "implementationStatus": "implemented",
+      "notes": "Read-only, admin-gated deterministic ops findings (recommendedAction {kind, summary, reason} + evidence refs); mirror of honua-server OpsFindingsListResponse. Same gated pattern as the promotion-surface resources. Response of the ops_findings tool. Reference surface lands via honua-server#2555 under epic #2552; vendored copy synced per honua-server#2496."
     }
   ],
   "common": [

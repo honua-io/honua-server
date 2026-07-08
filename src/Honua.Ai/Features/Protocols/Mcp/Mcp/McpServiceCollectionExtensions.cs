@@ -112,6 +112,16 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, OperateEventsTool>());
         }
 
+        // Platform-ops tools (#2566) are thin MCP adapters over the deploy
+        // control-plane read/proposal seams. Tool advertisement is gated on the
+        // host providing the server-side reader, so minimal compositions stay truthful.
+        if (services.Any(d => d.ServiceType == typeof(IMcpPlatformOpsReader)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlatformReleaseStatusTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DeployOperationsTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeRollbackTool>());
+        }
+
         // honua_list_capabilities (#1949): a self-describing manifest of the live
         // tool/resource surface for a cold client LLM. Registered unconditionally
         // because it only reflects whatever catalog the composition wired — it has
