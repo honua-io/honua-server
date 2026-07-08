@@ -70,6 +70,7 @@
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Aws\Honua.Aws.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
+    <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
     <!-- LocalProcessPoolBatchComputeBackend (GP lane) lives in Honua.Jobs; the real
          PostgresDatabaseMigrationRunner (migration-gate lane) lives in Honua.Postgres. Both are
          internal and made visible via InternalsVisibleTo on those assemblies. -->
