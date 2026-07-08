@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/conformance/manifest.schema.json",
+  "title": "geospatial-mcp conformance manifest",
+  "description": "Static, server-emitted declaration of the MCP tool and resource surface an implementation advertises, used to check coverage of the geospatial-mcp standard vocabulary without running a live scenario harness. A conformant server produces this manifest from its own tools/list and resources/templates/list capability advertisement. See /CONFORMANCE.md and spec/conformance.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["specDate", "implementation", "tools", "resources"],
+  "properties": {
+    "specDate": {
+      "type": "string",
+      "description": "The Date header of the spec/conformance.md document this manifest was produced against (e.g. 2026-04-19), per spec/conformance.md §8 'Conformance spec identifier per run'.",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "implementation": {
+      "type": "object",
+      "description": "Identity of the implementation under test.",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "description": "Implementation name (e.g. 'Honua /mcp')." },
+        "version": { "type": "string", "description": "Optional implementation version or build identifier." },
+        "isReferenceImplementation": {
+          "type": "boolean",
+          "description": "True only for the reference implementation named in /CONFORMANCE.md (Honua). Other implementations omit this or set it false."
+        },
+        "profiles": {
+          "type": "array",
+          "description": "Conformance profiles this implementation claims (default ['base'] when omitted). 'base' is the read-only floor; additive profiles such as 'mutation' require the implementation to advertise every tool the index assigns to that profile to reach FULL. See /CONFORMANCE.md §Conformance Profiles.",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "description": "The tools the implementation advertises that map onto standard vocabulary.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["standardName", "advertisedName"],
+        "properties": {
+          "standardName": {
+            "type": "string",
+            "description": "The bare taxonomy.md tool name this advertised tool implements (e.g. 'plan_analysis'). MUST match a tools[].standardName in spec/schemas/index.json."
+          },
+          "advertisedName": {
+            "type": "string",
+            "description": "The name the server advertises on tools/list (e.g. 'honua_plan_analysis'). MAY be vendor-prefixed."
+          },
+          "workflowFamily": {
+            "type": "string",
+            "description": "Optional workflow-family tag the server attaches to the tool, for coverage reporting."
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "array",
+      "description": "The resource families the implementation advertises that map onto standard vocabulary.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["family", "uriForm"],
+        "properties": {
+          "family": {
+            "type": "string",
+            "description": "Resource family name. MUST match a resources[].family in spec/schemas/index.json."
+          },
+          "uriForm": {
+            "type": "string",
+            "description": "The honua:// URI template the server advertises for the family (e.g. honua://results/{result_package_id}).",
+            "pattern": "^honua://"
+          }
+        }
+      }
+    }
+  }
+}

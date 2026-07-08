@@ -1,0 +1,19 @@
+{
+  "id": "artifact.workspace_view_reference_wire_kind",
+  "schemaRef": "resources/artifact.schema.json",
+  "validates": "inputs",
+  "uri": "honua://workspaces/ws_91/artifacts/artifact_exposed_facilities",
+  "inputs": {
+    "artifactId": "artifact_exposed_facilities",
+    "kind": "FeatureLayer",
+    "label": "Exposed facilities",
+    "uri": "honua://workspaces/ws_91/layers/exposed_facilities",
+    "contentType": "application/geo+json",
+    "metadata": { "count": "23" },
+    "lifecycleState": "Available",
+    "promotionSourceReady": true,
+    "sourceWorkspaceKind": "temp_layer"
+  },
+  "expected": "resource_projection",
+  "canonicalRefs": ["ArtifactRef"]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "export_dataset.result_to_geopackage",
+  "schemaRef": "tools/export_dataset.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "source": { "artifactId": "artifact_intersect_result" },
+    "format": "geopackage",
+    "returnGeometry": true,
+    "outSrid": 4326
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["ArtifactRef"]
+}

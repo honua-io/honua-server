@@ -1,0 +1,18 @@
+{
+  "id": "create_map_package.from_template",
+  "schemaRef": "tools/create_map_package.schema.json",
+  "validates": "inputs",
+  "deferred": true,
+  "inputs": {
+    "templateId": "analysis_default",
+    "sourceBindings": [
+      { "bindingId": "b1", "datasetId": "buffered_parcels", "protocol": "ogc_api_features" }
+    ],
+    "styleId": "style_choropleth_acreage",
+    "themeId": "theme_operational_dark",
+    "initialView": { "bbox": [-97.95, 30.15, -97.55, 30.55], "crs": 4326 }
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["BuilderIntent", "MapPackage", "SourceBinding", "StyleRef", "ThemeSpec", "MapTemplate"],
+  "notes": "Reference implementation does not yet ship create_map_package as a discrete tool; responsibility-level shape, marked deferred per spec/conformance.md §2.4."
+}
