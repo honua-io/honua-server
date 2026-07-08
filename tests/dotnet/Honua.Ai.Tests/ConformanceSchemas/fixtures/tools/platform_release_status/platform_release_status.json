@@ -1,0 +1,8 @@
+{
+  "id": "platform_release_status.snapshot",
+  "schemaRef": "tools/platform_release_status.schema.json",
+  "validates": "inputs",
+  "inputs": {},
+  "expected": "tool_result",
+  "canonicalRefs": ["DeployPreflightPlatformRelease"]
+}

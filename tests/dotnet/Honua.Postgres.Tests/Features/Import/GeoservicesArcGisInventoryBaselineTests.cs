@@ -367,6 +367,7 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
 
     private static void AssertMatchesBaseline(string scenario, string actualJson)
     {
+        var normalizedActualJson = NormalizeLineEndings(actualJson);
         var baselineFile = $"{scenario}-expected.json";
         var outputBaselinePath = Path.Combine(
             AppContext.BaseDirectory,
@@ -393,20 +394,23 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         if (regenRequested)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(sourceBaselinePath)!);
-            File.WriteAllText(sourceBaselinePath, actualJson);
+            File.WriteAllText(sourceBaselinePath, normalizedActualJson);
             Directory.CreateDirectory(Path.GetDirectoryName(outputBaselinePath)!);
-            File.WriteAllText(outputBaselinePath, actualJson);
+            File.WriteAllText(outputBaselinePath, normalizedActualJson);
             return;
         }
 
         File.Exists(sourceBaselinePath).Should().BeTrue(
             $"baseline {baselineFile} must exist at {sourceBaselinePath}. Re-run with UPDATE_ARCGIS_INVENTORY_BASELINES=1 to regenerate it and commit the result.");
 
-        var expectedJson = File.ReadAllText(sourceBaselinePath);
-        actualJson.Should().Be(
+        var expectedJson = NormalizeLineEndings(File.ReadAllText(sourceBaselinePath));
+        normalizedActualJson.Should().Be(
             expectedJson,
             $"baseline {baselineFile} should match scanner output. Re-run with UPDATE_ARCGIS_INVENTORY_BASELINES=1 to refresh after intentional model changes.");
     }
+
+    private static string NormalizeLineEndings(string value) =>
+        value.Replace("\r\n", "\n", StringComparison.Ordinal);
 
     private static GeoservicesImportService CreateService(HttpMessageHandler handler)
     {

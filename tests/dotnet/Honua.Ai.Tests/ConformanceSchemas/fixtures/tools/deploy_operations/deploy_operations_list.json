@@ -1,0 +1,13 @@
+{
+  "id": "deploy_operations.list_filtered",
+  "schemaRef": "tools/deploy_operations.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "status": "Submitted",
+    "kind": "Deploy",
+    "page": 1,
+    "pageSize": 50
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["DeployOperationResponse"]
+}

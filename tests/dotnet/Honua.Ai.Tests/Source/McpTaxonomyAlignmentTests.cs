@@ -49,6 +49,9 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_ops_findings",
         "honua_alert_events",
         "honua_operate_events",
+        "honua_platform_release_status",
+        "honua_deploy_operations",
+        "honua_propose_rollback",
         "honua_list_layers",
         "honua_query_features",
         // No honua_edit_features: Honua exposes no AI/MCP feature-mutation tool
@@ -233,6 +236,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_ops_findings",
         "honua_alert_events",
         "honua_operate_events",
+        "honua_platform_release_status",
+        "honua_deploy_operations",
         "honua_list_layers",
         "honua_query_features",
         "honua_render_map",
@@ -250,6 +255,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_execute_plan"] = (Destructive: false, Idempotent: true),
             ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
             ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
+            ["honua_propose_rollback"] = (Destructive: false, Idempotent: true),
             ["honua_ingest_dataset"] = (Destructive: false, Idempotent: false),
             ["honua_publish_service"] = (Destructive: false, Idempotent: false),
             ["honua_publish_result"] = (Destructive: false, Idempotent: false),
@@ -601,6 +607,9 @@ public sealed partial class McpTaxonomyAlignmentTests
             new OpsFindingsTool(NullLogger<OpsFindingsTool>.Instance),
             new AlertEventsTool(NullLogger<AlertEventsTool>.Instance),
             new OperateEventsTool(NullLogger<OperateEventsTool>.Instance),
+            new PlatformReleaseStatusTool(NullLogger<PlatformReleaseStatusTool>.Instance),
+            new DeployOperationsTool(NullLogger<DeployOperationsTool>.Instance),
+            new ProposeRollbackTool(NullLogger<ProposeRollbackTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
