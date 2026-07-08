@@ -345,6 +345,125 @@ public sealed class RollbackDeployOperationRequest
 }
 
 /// <summary>
+/// Request payload for converging the running serving targets onto the declared platform release
+/// (ADR-0060 WS2). The endpoint takes <b>no version argument</b>: it always converges to the release
+/// declared in <c>ControlPlane:PlatformRelease</c>. Only optional operator metadata is accepted.
+/// </summary>
+public sealed class PlatformReleaseConvergeRequest
+{
+    /// <summary>
+    /// Optional operator reason recorded on every deploy operation the converge creates.
+    /// </summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+
+    /// <summary>
+    /// Optional correlation identifier propagated onto the created deploy operations/proposals.
+    /// </summary>
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; init; }
+}
+
+/// <summary>
+/// Response payload for a platform-release converge invocation. Lists the per-target outcome of
+/// actuating the declared serving release and states that worker images are not deployed here.
+/// </summary>
+public sealed class PlatformReleaseConvergeResponse
+{
+    /// <summary>
+    /// Declared platform release version the converge targeted.
+    /// </summary>
+    [JsonPropertyName("releaseVersion")]
+    public string ReleaseVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Declared serving artifact reference the divergent targets are converged onto.
+    /// </summary>
+    [JsonPropertyName("servingArtifactReference")]
+    public string? ServingArtifactReference { get; init; }
+
+    /// <summary>
+    /// Whether the serving plane was already fully converged: no deploy operation or proposal was
+    /// created by this call (every target was already-converged or skipped).
+    /// </summary>
+    [JsonPropertyName("converged")]
+    public bool Converged { get; init; }
+
+    /// <summary>
+    /// Always <see langword="true"/>: this API deliberately does not deploy geoprocessing worker
+    /// images. Workers converge at the next geoprocessing dispatch via
+    /// <c>PlatformReleaseProjection.ResolveWorkerArtifact</c>.
+    /// </summary>
+    [JsonPropertyName("workersDeferred")]
+    public bool WorkersDeferred { get; init; } = true;
+
+    /// <summary>
+    /// Operator-facing note explaining that worker images are not deployed by converge.
+    /// </summary>
+    [JsonPropertyName("workerConvergenceNote")]
+    public string WorkerConvergenceNote { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Per-target converge outcomes.
+    /// </summary>
+    [JsonPropertyName("targets")]
+    public IReadOnlyList<PlatformReleaseConvergeTargetOutcome> Targets { get; init; } = Array.Empty<PlatformReleaseConvergeTargetOutcome>();
+
+    /// <summary>
+    /// Timestamp when the converge result was generated.
+    /// </summary>
+    [JsonPropertyName("generatedAt")]
+    public DateTimeOffset GeneratedAt { get; init; }
+}
+
+/// <summary>
+/// One serving deploy target's outcome from a platform-release converge.
+/// </summary>
+public sealed class PlatformReleaseConvergeTargetOutcome
+{
+    /// <summary>
+    /// Stable deploy target identifier.
+    /// </summary>
+    [JsonPropertyName("targetId")]
+    public string TargetId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Converge classification for this target. One of <c>operation-created</c>,
+    /// <c>skipped-pinned</c>, <c>already-converged</c>, <c>unknown-treated-divergent</c>, or the
+    /// defensive <c>blocked</c> when the guardrail gateway denied the deploy.
+    /// </summary>
+    [JsonPropertyName("outcome")]
+    public string Outcome { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Deploy operation id when the gateway executed the converge deploy directly. For an
+    /// approval-mediated route the id is carried on <see cref="ProposalId"/> instead.
+    /// </summary>
+    [JsonPropertyName("operationId")]
+    public string? OperationId { get; init; }
+
+    /// <summary>
+    /// Proposal id when the guardrail gateway routed the converge deploy to human approval.
+    /// </summary>
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; init; }
+
+    /// <summary>
+    /// Last-applied serving revision detected for the target (the <c>DesiredRevision</c> of its most
+    /// recent terminal-Succeeded deploy operation), or null when no terminal-Succeeded operation
+    /// exists (unknown → treated as divergent).
+    /// </summary>
+    [JsonPropertyName("lastAppliedRevision")]
+    public string? LastAppliedRevision { get; init; }
+
+    /// <summary>
+    /// Operator-facing detail for this target's outcome.
+    /// </summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+}
+
+/// <summary>
 /// Request payload for submitting or approving a planned deploy operation.
 /// </summary>
 public sealed class SubmitDeployOperationRequest
