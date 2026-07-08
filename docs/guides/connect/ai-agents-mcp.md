@@ -2,6 +2,8 @@
 
 Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol.
 
+For operations work, MCP is the agent seat in the same control loop that Console `/operate` uses. See [Operating Honua](../operate/README.md) for the observe -> diagnose -> propose -> approve model, the autonomy ladder, and the current line between shipped MCP observability tools and in-progress platform-ops tools.
+
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)). Tool calls require an authenticated identity — see [authentication](../secure/authentication.md).
 
 The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches), MCP protocol revision `2025-03-26`. The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant.
@@ -57,6 +59,15 @@ The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches
    - `honua://workspaces/{workspaceId}` — workspace lifecycle for job outputs
 
    Additional published-service/deployment/package resources exist but are opt-in surfaces that hosts enable explicitly; they are not advertised by a default deployment.
+
+6. For operational observability, use the read-only ops tools:
+
+   - `honua_ops_health` and `honua://ops/health` - current operational posture.
+   - `honua_ops_findings` and `honua://ops/findings` - deterministic findings and recommended actions where real executors exist.
+   - `honua_alert_events` - GIS alert events and ops notifications.
+   - `honua_operate_events` - fused Operate timeline events.
+
+   To propose a mutating control-plane operation, use `honua_propose_operation` and inspect the returned `supportedKinds`. Approval still resolves through the Console inbox; MCP does not approve its own proposals. Platform release status, deploy operation listing, and rollback-specific MCP tools are tracked separately and should not be assumed in a default deployment.
 
 ## Verify
 
@@ -139,6 +150,7 @@ edge limiter remains the first line of defense.
 
 ## Next steps
 
+- [Operating Honua](../operate/README.md)
 - [Turn on the live MCP planner (Honua-brings-LLM)](mcp-live-planner.md)
 - [Run geoprocessing](../query-analyze/run-geoprocessing.md)
 - [Authentication](../secure/authentication.md)

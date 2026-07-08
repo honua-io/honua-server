@@ -73,6 +73,7 @@ Task-oriented guides, grouped by what you want to do. New to Honua? Start with t
 | Deploy on AWS, Azure, or GCP | [Cloud deployments](deploy/cloud-deployments.md) |
 | Choose a deployment topology | [Deployment scenarios](deploy/cloud-deployments.md) |
 | Configure the server with environment variables | [Configuration](deploy/configuration.md) |
+| Understand the operate loop, two seats, autonomy ladder, and rollback taxonomy | [Operating Honua](operate/README.md) |
 | Monitor health, metrics, and alerts | [Monitoring](deploy/monitoring.md) |
 | Run day-2 operations | [Operations](deploy/backup-and-restore.md) |
 | Back up and restore | [Backup and restore](deploy/backup-and-restore.md) |

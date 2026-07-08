@@ -68,6 +68,7 @@
   - [Production checklist](guides/secure/production-checklist.md)
   - [Compliance](guides/secure/compliance.md)
 - Deploy & operate
+  - [Operating Honua](guides/operate/README.md)
   - [Docker Compose](guides/deploy/docker-compose.md)
   - [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md)
   - [Kubernetes](guides/deploy/kubernetes.md)
