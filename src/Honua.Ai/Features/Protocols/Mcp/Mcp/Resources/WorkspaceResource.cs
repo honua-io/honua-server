@@ -114,9 +114,6 @@ internal sealed class WorkspaceResource : IMcpResource
     private static McpWorkspaceResource CreateDegradedResource(string workspaceId) => new()
     {
         WorkspaceId = workspaceId,
-        Kind = string.Empty,
-        Label = string.Empty,
-        Status = "degraded",
         NotImplementedReason = LifecycleUnavailableReason
     };
 
@@ -127,7 +124,7 @@ internal sealed class WorkspaceResource : IMcpResource
         Label = workspace.Label,
         Uri = workspace.Uri,
         ExpiresAt = workspace.ExpiresAt,
-        Status = ToWireStatus(workspace.State),
+        LifecycleState = ToWireLifecycleState(workspace.State),
         CleanupScheduledAt = workspace.State == WorkspaceLifecycleState.Expired
             ? workspace.ExpiresAt
             : null,
@@ -144,12 +141,12 @@ internal sealed class WorkspaceResource : IMcpResource
         _ => kind.ToString()
     };
 
-    private static string ToWireStatus(WorkspaceLifecycleState state) => state switch
+    private static string ToWireLifecycleState(WorkspaceLifecycleState state) => state switch
     {
         WorkspaceLifecycleState.Active => "active",
-        WorkspaceLifecycleState.Expired => "cleanup_pending",
-        WorkspaceLifecycleState.Archived => "sealed",
-        WorkspaceLifecycleState.Deleted => "not_found",
+        WorkspaceLifecycleState.Expired => "expired",
+        WorkspaceLifecycleState.Archived => "archived",
+        WorkspaceLifecycleState.Deleted => "deleted",
         _ => state.ToString()
     };
 
@@ -157,12 +154,12 @@ internal sealed class WorkspaceResource : IMcpResource
     {
         foreach (var artifact in workspace.Artifacts)
         {
-            if (TryGetMetadataValue(artifact.Metadata, "jobId", out var jobId)
-                || TryGetMetadataValue(artifact.Metadata, "job.id", out jobId)
-                || TryGetMetadataValue(artifact.Metadata, "honua.jobId", out jobId)
-                || TryGetMetadataValue(artifact.Metadata, "sourceJobId", out jobId))
+            if (TryGetMetadataValue(artifact.Metadata, "resultPackageId", out var resultPackageId)
+                || TryGetMetadataValue(artifact.Metadata, "result.package.id", out resultPackageId)
+                || TryGetMetadataValue(artifact.Metadata, "honua.resultPackageId", out resultPackageId)
+                || TryGetMetadataValue(artifact.Metadata, "sourceResultPackageId", out resultPackageId))
             {
-                return McpResourceUris.JobResultsUri(jobId);
+                return McpResourceUris.ResultPackageUri(resultPackageId);
             }
         }
 

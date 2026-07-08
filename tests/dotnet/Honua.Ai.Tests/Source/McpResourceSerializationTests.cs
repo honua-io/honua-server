@@ -203,7 +203,8 @@ public sealed class McpResourceSerializationTests
         result.Contents.Should().HaveCount(1);
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
         body.GetProperty("workspaceId").GetString().Should().Be("ws-42");
-        body.GetProperty("status").GetString().Should().Be("degraded");
+        body.TryGetProperty("kind", out _).Should().BeFalse();
+        body.TryGetProperty("lifecycleState", out _).Should().BeFalse();
         body.GetProperty("notImplementedReason").GetString().Should().NotBeNullOrEmpty();
     }
 
@@ -235,7 +236,7 @@ public sealed class McpResourceSerializationTests
                         WorkspaceId = "ws-42",
                         Metadata = new Dictionary<string, string>
                         {
-                            ["jobId"] = "job-123"
+                            ["resultPackageId"] = "result-123"
                         }
                     }
                 ]
@@ -259,8 +260,9 @@ public sealed class McpResourceSerializationTests
         body.GetProperty("kind").GetString().Should().Be("result_collection");
         body.GetProperty("label").GetString().Should().Be("Linked dashboard results");
         body.GetProperty("uri").GetString().Should().Be("honua://workspace-storage/ws-42");
-        body.GetProperty("status").GetString().Should().Be("active");
-        body.GetProperty("resultsUri").GetString().Should().Be("honua://jobs/job-123/results");
+        body.GetProperty("lifecycleState").GetString().Should().Be("active");
+        body.TryGetProperty("status", out _).Should().BeFalse();
+        body.GetProperty("resultsUri").GetString().Should().Be("honua://results/result-123");
         body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
     }
 
