@@ -37,8 +37,9 @@ jobs:
     name: Analyze C#
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
-    # PR gate budget: scheduled full scan can run longer if needed.
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 90 }}
+    # PR gate budget matches the scheduled full scan: the current C# surface and
+    # security-extended query pack routinely need more than 45 minutes to finish.
+    timeout-minutes: 90
     permissions:
       actions: read
       contents: read
