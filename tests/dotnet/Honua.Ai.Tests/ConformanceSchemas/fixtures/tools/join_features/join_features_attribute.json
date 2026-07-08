@@ -1,0 +1,15 @@
+{
+  "id": "join_features.attribute_demographics",
+  "schemaRef": "tools/join_features.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "target": { "serviceId": "census_tracts", "layerId": 0 },
+    "join": { "serviceId": "demographics_table", "layerId": 0 },
+    "joinType": "attribute",
+    "targetField": "geoid",
+    "joinField": "tract_geoid",
+    "joinOperation": "one_to_one"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}

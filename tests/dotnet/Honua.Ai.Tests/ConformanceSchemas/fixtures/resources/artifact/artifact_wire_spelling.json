@@ -1,0 +1,19 @@
+{
+  "id": "artifact.feature_layer_wire_spelling",
+  "schemaRef": "resources/artifact.schema.json",
+  "validates": "inputs",
+  "uri": "honua://workspaces/ws_91/artifacts/artifact_exposed_facilities_snake",
+  "inputs": {
+    "artifactId": "artifact_exposed_facilities_snake",
+    "kind": "FeatureLayer",
+    "label": "Exposed facilities (reference wire spelling)",
+    "uri": "honua://workspaces/ws_91/layers/exposed_facilities_snake",
+    "contentType": "application/geo+json",
+    "metadata": { "count": "23" },
+    "lifecycleState": "available",
+    "promotionSourceReady": true,
+    "sourceWorkspaceKind": "temp_layer"
+  },
+  "expected": "resource_projection",
+  "canonicalRefs": ["ArtifactRef"]
+}

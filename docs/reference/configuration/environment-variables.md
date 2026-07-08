@@ -158,7 +158,10 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | --- | --- | --- |
 | `HONUA_SERVE_API_DOCS` (`ServeApiDocs`) | `true` in Development, else `false` | Serve the interactive API explorer at `/docs` ([details](../openapi-and-explorer.md)). |
 | `HONUA_SERVE_STAC_DEMO` (`ServeStacOpsDemo`) | `true` in Development/Test, else `false` | Serve the hosted STAC operations demo at `/samples/stac-ops/`. |
-| `HONUA_SKIP_MIGRATIONS` | `false` | Skip database migrations on startup. |
+| `HONUA_SKIP_MIGRATIONS` | `false` | Skip database migrations on startup (out-of-band migration flows own their own upgrade safety — the migration-safety settings below do not apply). |
+| `Database__MigrationSafety__ContractApplyPolicy` | `Auto` | `Gate` requires explicit approval before pending reviewed contract-phase (schema-narrowing) migrations apply on an existing database. Journal-scoped: fresh installs always provision fully. See [Deploy with Docker Compose — Upgrade & Rollback](../../guides/deploy/docker-compose.md#upgrade--rollback). |
+| `HONUA_APPROVE_CONTRACT_MIGRATIONS` | `false` | One-shot operator approval that lets gated contract-phase migrations apply under `ContractApplyPolicy=Gate`. Unset it after the upgrade. |
+| `Database__MigrationSafety__BackupCommand` | — (none) | Optional shell command run immediately before contract-phase migrations apply on an existing database (e.g. `pg_dump ...`); non-zero exit aborts the migration run. Configuration-source only — never settable via the admin API or database. |
 | `FeatureChangeEvents__Webhook__Enabled` | `false` | Enable outbound webhook delivery of feature-change events. |
 | `FeatureChangeEvents__Webhook__Url` / `FeatureChangeEvents__Webhook__Secret` | — | Webhook target URL and HMAC signing secret. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | `5` | Delivery attempts per event (exponential backoff). |
