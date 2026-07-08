@@ -14,6 +14,8 @@ namespace Honua.FileStorage;
 
 internal sealed class AwsS3FileStorage : CloudFileStorageBase
 {
+    private const string TemporaryFilesFolder = "temporary-files";
+
     private readonly TimeSpan _signedUrlLifetime;
 
     private readonly AwsS3Options _options;
@@ -490,7 +492,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
     public override async Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        var prefix = CloudStoragePath.BuildPrefix(null, _options.KeyPrefix);
+        var prefix = CloudStoragePath.BuildPrefix(TemporaryFilesFolder, _options.KeyPrefix);
         var request = new ListObjectsV2Request
         {
             BucketName = _options.BucketName,

@@ -1405,25 +1405,9 @@ internal static partial class FeatureServerEndpoints
             .DistinctBy(layer => layer.PublicLayerId)
             .ToDictionary(layer => layer.PublicLayerId, layer => layer.Resource);
 
-        var trimmed = editsJson.TrimStart();
-
-        // The per-layer form is an array of objects ("[{...}]"); the legacy flat form is an array of
-        // features which are also objects. Disambiguate by probing for the per-layer "id" shape.
-        SynchronizeReplicaLayerEdits[]? perLayer = null;
-        var parsedPerLayer = false;
-        if (trimmed.StartsWith('['))
+        if (!TryClassifySynchronizeReplicaEdits(editsJson, out var editsShape, out error))
         {
-            try
-            {
-                perLayer = System.Text.Json.JsonSerializer.Deserialize(
-                    editsJson, FeatureServerJsonContext.Default.SynchronizeReplicaLayerEditsArray);
-                parsedPerLayer = perLayer is { Length: > 0 }
-                    && perLayer.All(static entry => entry is not null);
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                parsedPerLayer = false;
-            }
+            return false;
         }
 
         var builder = ImmutableArray.CreateBuilder<ReplicaUploadLayerEdits>();
@@ -1434,8 +1418,26 @@ internal static partial class FeatureServerEndpoints
         // caused all-empty per-layer payloads to fall through to the legacy flat-form branch,
         // where the per-layer JSON objects were re-deserialized as GeoServicesFeature[] and
         // submitted as phantom creates against the first replica layer.
-        if (parsedPerLayer && perLayer is not null)
+        if (editsShape == SynchronizeReplicaEditsShape.PerLayer)
         {
+            SynchronizeReplicaLayerEdits[]? perLayer;
+            try
+            {
+                perLayer = System.Text.Json.JsonSerializer.Deserialize(
+                    editsJson, FeatureServerJsonContext.Default.SynchronizeReplicaLayerEditsArray);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                error = "edits must be a valid JSON array of per-layer edit objects.";
+                return false;
+            }
+
+            if (perLayer is null)
+            {
+                error = "edits must be a valid JSON array of per-layer edit objects.";
+                return false;
+            }
+
             foreach (var entry in perLayer)
             {
                 if (!storageByPublicId.TryGetValue(entry.Id, out var storageLayerId))
@@ -1485,6 +1487,11 @@ internal static partial class FeatureServerEndpoints
             return true;
         }
 
+        if (editsShape == SynchronizeReplicaEditsShape.EmptyArray)
+        {
+            return true;
+        }
+
         // Legacy flat form: an array of features applied as adds to the first replica layer.
         GeoServicesFeature[]? features;
         try
@@ -1512,6 +1519,102 @@ internal static partial class FeatureServerEndpoints
 
         layerEdits = builder.ToImmutable();
         return true;
+    }
+
+    private enum SynchronizeReplicaEditsShape
+    {
+        EmptyArray,
+        PerLayer,
+        FlatFeatures
+    }
+
+    private static bool TryClassifySynchronizeReplicaEdits(
+        string editsJson,
+        out SynchronizeReplicaEditsShape shape,
+        out string? error)
+    {
+        shape = SynchronizeReplicaEditsShape.EmptyArray;
+        error = null;
+
+        System.Text.Json.JsonDocument document;
+        try
+        {
+            document = System.Text.Json.JsonDocument.Parse(editsJson);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            error = "edits must be a valid JSON array of features or per-layer edit objects.";
+            return false;
+        }
+
+        using (document)
+        {
+            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                error = "edits must be a JSON array of features or per-layer edit objects.";
+                return false;
+            }
+
+            var hasEntries = false;
+            var allPerLayer = true;
+            var allFlatFeatures = true;
+            foreach (var entry in document.RootElement.EnumerateArray())
+            {
+                hasEntries = true;
+                if (entry.ValueKind != System.Text.Json.JsonValueKind.Object)
+                {
+                    error = "edits array entries must be JSON objects.";
+                    return false;
+                }
+
+                allPerLayer &= IsSynchronizeReplicaLayerEditObject(entry);
+                allFlatFeatures &= IsGeoServicesFeatureObject(entry);
+            }
+
+            if (!hasEntries)
+            {
+                shape = SynchronizeReplicaEditsShape.EmptyArray;
+                return true;
+            }
+
+            if (allPerLayer)
+            {
+                shape = SynchronizeReplicaEditsShape.PerLayer;
+                return true;
+            }
+
+            if (allFlatFeatures)
+            {
+                shape = SynchronizeReplicaEditsShape.FlatFeatures;
+                return true;
+            }
+        }
+
+        error = "edits must be a JSON array containing either feature objects or per-layer edit objects.";
+        return false;
+    }
+
+    private static bool IsSynchronizeReplicaLayerEditObject(System.Text.Json.JsonElement entry)
+        => HasProperty(entry, "id")
+           && (HasProperty(entry, "adds")
+               || HasProperty(entry, "updates")
+               || HasProperty(entry, "deletes"));
+
+    private static bool IsGeoServicesFeatureObject(System.Text.Json.JsonElement entry)
+        => HasProperty(entry, "attributes")
+           || HasProperty(entry, "geometry");
+
+    private static bool HasProperty(System.Text.Json.JsonElement entry, string propertyName)
+    {
+        foreach (var property in entry.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
