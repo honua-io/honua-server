@@ -44,6 +44,9 @@ public sealed record OpsFindingSubject
     /// <summary>Gets the platform release version this finding concerns, when applicable.</summary>
     public string? ReleaseVersion { get; init; }
 
+    /// <summary>Gets the GIS protocol family this finding concerns, when applicable.</summary>
+    public string? Protocol { get; init; }
+
     /// <summary>
     /// Produces a canonical, order-stable key over the populated identifiers, used to derive the
     /// finding's deterministic identifier. The format is fixed so the same condition instance always
@@ -57,7 +60,8 @@ public sealed record OpsFindingSubject
             $"workload={WorkloadId}",
             $"channel={Channel}",
             $"operation={OperationId}",
-            $"release={ReleaseVersion}");
+            $"release={ReleaseVersion}",
+            $"protocol={Protocol}");
 }
 
 /// <summary>

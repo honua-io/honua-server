@@ -3,10 +3,12 @@
 
 using Honua.Alerts;
 using Honua.ControlPlane;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
@@ -28,8 +30,10 @@ public sealed class OpsFindingsServiceTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithNoAction()
+    public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction()
     {
+        // #2556: the registered alerts.redrive_dead_letters actuator (#2579) means dead-letters now
+        // carry a real recommended action instead of being purely informational.
         var alertHealth = new FakeAlertDispatchHealth
         {
             IsDispatcherEnabled = true,
@@ -42,8 +46,30 @@ public sealed class OpsFindingsServiceTests
 
         var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleAlertDispatchBacklog);
         Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
-        Assert.Null(finding.RecommendedAction);
         Assert.Equal("alert-dispatch", finding.Subject.Channel);
+        Assert.NotNull(finding.RecommendedAction);
+        Assert.Equal(OperationClass.AdminConfigChange, finding.RecommendedAction!.Kind);
+        Assert.Contains("\"action\":\"alerts.redrive_dead_letters\"", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_AlertDispatchPendingBacklogOnly_ProducesWarningFindingWithNoAction()
+    {
+        // A pending-only backlog (no dead-letters yet) has no safe redrive target: informational.
+        var alertHealth = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 300, DeadLetteredCount = 0 },
+        };
+        var service = CreateService(alertHealth: alertHealth);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleAlertDispatchBacklog);
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.Null(finding.RecommendedAction);
     }
 
     [UnitTest]
@@ -174,6 +200,283 @@ public sealed class OpsFindingsServiceTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DbPoolPressureWithAdmissionGateHeadroom_ProducesCriticalFindingWithTuneAction()
+    {
+        var pressureSignal = new FakeDatabasePressureSignal
+        {
+            Snapshot = new DatabasePressureSnapshot(
+                HasConnectionPoolUtilization: true,
+                ConnectionPoolUtilization: 0.95,
+                ConnectionAcquisitionTimeouts: 10,
+                ConnectionAcquisitionFailures: 1),
+        };
+        var admissionGate = new FakeAdmissionGate { CurrentLimit = 40, MinLimit = 5, MaxLimit = 100 };
+        var service = CreateService(databasePressureSignal: pressureSignal, admissionGate: admissionGate);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleDbBoundedAdmissionPressure);
+        Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
+        Assert.NotNull(finding.RecommendedAction);
+        Assert.Equal(OperationClass.AdminConfigChange, finding.RecommendedAction!.Kind);
+        Assert.Contains("\"action\":\"db.tune_bounded_admission\"", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+        // The tuned target must be strictly below the current limit.
+        Assert.Contains("\"limit\":30", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DbPoolPressureWithoutAdmissionGate_ProducesInformationalFinding()
+    {
+        var pressureSignal = new FakeDatabasePressureSignal
+        {
+            Snapshot = new DatabasePressureSnapshot(
+                HasConnectionPoolUtilization: true,
+                ConnectionPoolUtilization: 0.95,
+                ConnectionAcquisitionTimeouts: 10,
+                ConnectionAcquisitionFailures: 1),
+        };
+        var service = CreateService(databasePressureSignal: pressureSignal);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleDbBoundedAdmissionPressure);
+        Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
+        Assert.Null(finding.RecommendedAction);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DbPoolBelowThresholds_ProducesNoFinding()
+    {
+        var pressureSignal = new FakeDatabasePressureSignal
+        {
+            Snapshot = new DatabasePressureSnapshot(
+                HasConnectionPoolUtilization: true,
+                ConnectionPoolUtilization: 0.10,
+                ConnectionAcquisitionTimeouts: 0,
+                ConnectionAcquisitionFailures: 0),
+        };
+        var service = CreateService(databasePressureSignal: pressureSignal);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleDbBoundedAdmissionPressure);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ServingLatencySloBreach_ProducesInformationalWarning()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var rollupStore = Substitute.For<IOpsHealthRollupStore>();
+        rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new List<OpsHealthLatencyRow>
+            {
+                new()
+                {
+                    ReplicaId = "replica-1",
+                    BucketStart = now.AddMinutes(-1),
+                    Point = new OpsHealthLatencyPoint
+                    {
+                        Protocol = "OgcApiFeatures",
+                        RequestCount = 100,
+                        ErrorCount = 0,
+                        P50Ms = 100,
+                        P95Ms = 5000,
+                        P99Ms = 6000,
+                        MaxMs = 7000,
+                    },
+                },
+            });
+        var service = CreateService(rollupStore: rollupStore);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleServingLatencySlo);
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.Null(finding.RecommendedAction);
+        Assert.Equal("OgcApiFeatures", finding.Subject.Protocol);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ServingLatencyBelowThresholds_ProducesNoFinding()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var rollupStore = Substitute.For<IOpsHealthRollupStore>();
+        rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new List<OpsHealthLatencyRow>
+            {
+                new()
+                {
+                    ReplicaId = "replica-1",
+                    BucketStart = now.AddMinutes(-1),
+                    Point = new OpsHealthLatencyPoint
+                    {
+                        Protocol = "OgcApiFeatures",
+                        RequestCount = 100,
+                        ErrorCount = 0,
+                        P50Ms = 50,
+                        P95Ms = 150,
+                        P99Ms = 200,
+                        MaxMs = 250,
+                    },
+                },
+            });
+        var service = CreateService(rollupStore: rollupStore);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleServingLatencySlo);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_PlatformReleaseRuntimeDivergence_UnknownTargetTreatedAsDivergent()
+    {
+        var controlPlane = new ControlPlaneOptions
+        {
+            PlatformRelease = new PlatformReleaseOptions
+            {
+                Version = "2026.07.0",
+                ServingArtifactReference = "registry/honua-serving:2026.07.0",
+                Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "registry/honua-worker:2026.07.0" }],
+            },
+            DeployTargets = [new DeployTargetOptions { TargetId = "serving-a" }],
+        };
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        workflowStore.GetMostRecentSucceededDeployByTargetAsync("serving-a", Arg.Any<CancellationToken>())
+            .Returns((WorkflowOperationRecord?)null);
+        var service = CreateService(controlPlaneOptions: controlPlane, workflowStore: workflowStore);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.Equal("serving-a", finding.Subject.TargetId);
+        Assert.Equal("2026.07.0", finding.Subject.ReleaseVersion);
+        Assert.NotNull(finding.RecommendedAction);
+        Assert.Equal(OperationClass.Deploy, finding.RecommendedAction!.Kind);
+        Assert.Contains("registry/honua-serving:2026.07.0", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_PlatformReleaseRuntimeDivergence_MismatchedLastAppliedRevisionIsDivergent()
+    {
+        var controlPlane = new ControlPlaneOptions
+        {
+            PlatformRelease = new PlatformReleaseOptions
+            {
+                Version = "2026.07.0",
+                ServingArtifactReference = "registry/honua-serving:2026.07.0",
+                Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "registry/honua-worker:2026.07.0" }],
+            },
+            DeployTargets = [new DeployTargetOptions { TargetId = "serving-a" }],
+        };
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        workflowStore.GetMostRecentSucceededDeployByTargetAsync("serving-a", Arg.Any<CancellationToken>())
+            .Returns(BuildSucceededDeployOperation("op-1", "serving-a", "registry/honua-serving:OLD"));
+        var service = CreateService(controlPlaneOptions: controlPlane, workflowStore: workflowStore);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
+        Assert.Contains("registry/honua-serving:OLD", finding.EvidenceRefs.First(e => e.StartsWith("terminal-index:", StringComparison.Ordinal)));
+        Assert.NotNull(finding.RecommendedAction);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_PlatformReleaseRuntimeDivergence_ConvergedTargetProducesNoFinding()
+    {
+        var controlPlane = new ControlPlaneOptions
+        {
+            PlatformRelease = new PlatformReleaseOptions
+            {
+                Version = "2026.07.0",
+                ServingArtifactReference = "registry/honua-serving:2026.07.0",
+                Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "registry/honua-worker:2026.07.0" }],
+            },
+            DeployTargets = [new DeployTargetOptions { TargetId = "serving-a" }],
+        };
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        workflowStore.GetMostRecentSucceededDeployByTargetAsync("serving-a", Arg.Any<CancellationToken>())
+            .Returns(BuildSucceededDeployOperation("op-1", "serving-a", "registry/honua-serving:2026.07.0"));
+        var service = CreateService(controlPlaneOptions: controlPlane, workflowStore: workflowStore);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_PlatformReleaseRuntimeDivergence_ConfigPinnedTargetIsSkipped()
+    {
+        // A target with an explicit ArtifactReference pin is the platform-release-skew rule's concern —
+        // config-derived skew cannot be cleared at runtime, so this rule must not also fire for it.
+        var controlPlane = new ControlPlaneOptions
+        {
+            PlatformRelease = new PlatformReleaseOptions
+            {
+                Version = "2026.07.0",
+                ServingArtifactReference = "registry/honua-serving:2026.07.0",
+                Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "registry/honua-worker:2026.07.0" }],
+            },
+            DeployTargets = [new DeployTargetOptions { TargetId = "serving-pinned", ArtifactReference = "registry/honua-serving:PINNED" }],
+        };
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        var service = CreateService(controlPlaneOptions: controlPlane, workflowStore: workflowStore);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
+        await workflowStore.DidNotReceive().GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_PlatformReleaseRuntimeDivergence_NoReleaseDeclared_ProducesNoFinding()
+    {
+        var controlPlane = new ControlPlaneOptions
+        {
+            DeployTargets = [new DeployTargetOptions { TargetId = "serving-a" }],
+        };
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        var service = CreateService(controlPlaneOptions: controlPlane, workflowStore: workflowStore);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void AllRecommendedActions_AdminConfigChangeActionNamesAreRegistered()
+    {
+        // RC-2556: every recommendedAction's embedded ops-action name (for AdminConfigChange-kind
+        // actions) must exist in the actuator registry (#2579) — enumerate both sides and assert subset.
+        var registeredActions = new[]
+        {
+            OpsActionExecutionPayloads.RedriveDeadLetters(),
+            OpsActionExecutionPayloads.TuneBoundedAdmission(10),
+        };
+
+        foreach (var payload in registeredActions)
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(payload);
+            var action = document.RootElement.GetProperty("action").GetString();
+            Assert.NotNull(action);
+            Assert.True(
+                OpsActionCatalog.IsRegistered(action!),
+                $"Ops-findings action '{action}' is not a registered actuator in OpsActionCatalog.");
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_HealthyInstance_ProducesNoFindings()
     {
         var service = CreateService();
@@ -220,7 +523,7 @@ public sealed class OpsFindingsServiceTests
         var alertHealth = new FakeAlertDispatchHealth
         {
             IsDispatcherEnabled = true,
-            LastBacklog = new AlertDispatchBacklog { PendingCount = 1, DeadLetteredCount = 5 },
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 300, DeadLetteredCount = 0 },
         };
         var service = CreateService(alertHealth: alertHealth);
         var finding = (await service.EvaluateAsync()).Single(f => f.Rule == OpsFindingsService.RuleAlertDispatchBacklog);
@@ -412,7 +715,10 @@ public sealed class OpsFindingsServiceTests
         FakeDeployPreflightProbe? deployProbe = null,
         IOperationGateway? gateway = null,
         IWorkflowOperationStore? workflowStore = null,
-        IExecutionJobStore? jobStore = null)
+        IExecutionJobStore? jobStore = null,
+        IOpsDatabasePressureSignal? databasePressureSignal = null,
+        IRuntimeTunableAdmissionGate? admissionGate = null,
+        IOpsHealthRollupStore? rollupStore = null)
         => new(
             new StaticOptionsMonitor<OpsFindingsOptions>(options ?? new OpsFindingsOptions()),
             new StaticOptionsMonitor<ControlPlaneOptions>(controlPlaneOptions ?? new ControlPlaneOptions()),
@@ -420,7 +726,13 @@ public sealed class OpsFindingsServiceTests
             deployProbe ?? new FakeDeployPreflightProbe(BuildDeploySnapshot()),
             gateway: gateway ?? Substitute.For<IOperationGateway>(),
             workflowStore: workflowStore,
-            jobStore: jobStore);
+            jobStore: jobStore,
+            extendedSignals: new OpsFindingsExtendedSignals
+            {
+                DatabasePressureSignal = databasePressureSignal,
+                AdmissionGate = admissionGate,
+                RollupStore = rollupStore,
+            });
 
     private static DeployPreflightSnapshot BuildDeploySnapshot(
         bool hasPendingContractScripts = false,
@@ -453,6 +765,26 @@ public sealed class OpsFindingsServiceTests
                 Backend = backend,
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = "test-workload",
+            },
+        };
+
+    private static WorkflowOperationRecord BuildSucceededDeployOperation(string operationId, string targetId, string desiredRevision)
+        => new()
+        {
+            OperationId = operationId,
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Deploy = new DeployOperationSpec
+            {
+                TargetId = targetId,
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "k8s",
+                Environment = "prod",
+                TargetName = "serving",
+                CurrentRevision = null,
+                DesiredRevision = desiredRevision,
             },
         };
 
@@ -501,6 +833,29 @@ public sealed class OpsFindingsServiceTests
 
         public Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(_snapshot);
+    }
+
+    private sealed class FakeDatabasePressureSignal : IOpsDatabasePressureSignal
+    {
+        public DatabasePressureSnapshot Snapshot { get; set; }
+
+        public DatabasePressureSnapshot GetSnapshot() => Snapshot;
+    }
+
+    private sealed class FakeAdmissionGate : IRuntimeTunableAdmissionGate
+    {
+        public int CurrentLimit { get; set; }
+
+        public int MaxLimit { get; set; } = 100;
+
+        public int MinLimit { get; set; } = 5;
+
+        public bool TrySetLimit(int limit, out string? error)
+        {
+            error = null;
+            CurrentLimit = limit;
+            return true;
+        }
     }
 
     private sealed class StaticOptionsMonitor<T> : IOptionsMonitor<T>
