@@ -8,6 +8,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.ControlPlane;
+using Honua.ControlPlane.Executors;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
@@ -74,6 +76,19 @@ internal static class DeployControlEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>()
             .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        var platformReleaseGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin/platform-release")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
+            .WithTags("Admin", "Deploy")
+            .RequireAdminAuthorization();
+
+        platformReleaseGroup.MapPost("/converge", HandleConvergePlatformRelease)
+            .WithDisplayName("Converge Platform Release")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .Produces<PlatformReleaseConvergeResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> HandleGetDeployPreflight(
@@ -573,6 +588,220 @@ internal static class DeployControlEndpoints
                 detail: DeployControlUnavailableMessage,
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
+    }
+
+    private const string PlatformReleaseWorkerNote =
+        "Worker images are not deployed by converge; they converge at the next geoprocessing dispatch via PlatformReleaseProjection.ResolveWorkerArtifact.";
+
+    /// <summary>
+    /// Actuates the declared platform release across the serving deploy targets (ADR-0060 WS2, #2564).
+    /// Takes no version argument: it always converges to the release declared in
+    /// <c>ControlPlane:PlatformRelease</c>. Per-target divergence is decided against the pinned
+    /// contract — a target's last-applied revision is the <c>DesiredRevision</c> of its most recent
+    /// terminal-Succeeded deploy operation; a target with no such operation is unknown and treated as
+    /// divergent. Config-pinned targets (an explicit artifact diverging from the release) are skipped.
+    /// Each divergent target's deploy routes through the guardrail gateway like any other Deploy, keyed
+    /// by <c>converge:{version}:{targetId}</c> so a repeated converge folds onto the in-flight operation.
+    /// Worker images are not deployed here.
+    /// </summary>
+    private static async Task<IResult> HandleConvergePlatformRelease(
+        [FromBody] PlatformReleaseConvergeRequest? request,
+        [FromServices] IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
+        [FromServices] DeployWorkflowService deployWorkflowService,
+        HttpContext context,
+        [FromServices] IOperationGateway? gateway = null)
+    {
+        var options = controlPlaneOptions.CurrentValue;
+        var release = options.PlatformRelease.ToDefinition();
+
+        // Validate co-versioning FIRST: a release must bind both planes and declare a serving artifact
+        // before the serving plane can be actuated.
+        var failures = new List<string>();
+        if (release is null)
+        {
+            failures.Add($"{ControlPlaneOptions.SectionName}:PlatformRelease is not declared; there is nothing to converge.");
+        }
+        else
+        {
+            PlatformReleaseValidation.Validate(release, $"{ControlPlaneOptions.SectionName}:PlatformRelease", failures);
+        }
+
+        if (failures.Count > 0)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                string.Join(" ", failures));
+        }
+
+        // Co-versioning validation guarantees a serving artifact is declared.
+        var declaredServing = release!.ServingArtifactReference!;
+        var declaredVersion = release.Version;
+
+        // Converge routes through the guardrail gateway like any Deploy (no direct-execute bypass). The
+        // gateway is only registered when durable control-plane storage is configured.
+        if (gateway is null)
+        {
+            return Results.Problem(
+                title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                detail: DeployControlUnavailableMessage,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var requestedBy = ResolveRequestedBy(context);
+        var reason = string.IsNullOrWhiteSpace(request?.Reason)
+            ? $"Converge serving targets to platform release {declaredVersion}."
+            : request!.Reason!;
+
+        var outcomes = new List<PlatformReleaseConvergeTargetOutcome>();
+        var actuated = false;
+
+        foreach (var target in options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)))
+        {
+            // Config-pinned targets that pin a DIFFERENT artifact are skipped: config-derived skew
+            // cannot be cleared at runtime. A target pinning the SAME artifact is still convergable.
+            var explicitPin = target.ArtifactReference;
+            if (!string.IsNullOrWhiteSpace(explicitPin) &&
+                !string.Equals(explicitPin, declaredServing, StringComparison.Ordinal))
+            {
+                outcomes.Add(new PlatformReleaseConvergeTargetOutcome
+                {
+                    TargetId = target.TargetId,
+                    Outcome = ConvergeOutcomes.SkippedPinned,
+                    Message = "Target pins an explicit artifact that diverges from the release; config-derived skew cannot be cleared at runtime.",
+                });
+                continue;
+            }
+
+            // Divergence contract: last-applied revision = DesiredRevision of the most recent
+            // terminal-Succeeded deploy operation for this target. The lookup tolerates the durable
+            // store's lazy prune-on-read of demoted (rolled-back) operations — a pruned target simply
+            // resolves to null and is treated as divergent below.
+            var lastOp = await deployWorkflowService
+                .GetMostRecentSucceededDeployAsync(target.TargetId, context.RequestAborted)
+                .ConfigureAwait(false);
+            var lastApplied = lastOp?.Deploy?.DesiredRevision;
+
+            if (!string.IsNullOrWhiteSpace(lastApplied) &&
+                string.Equals(lastApplied, declaredServing, StringComparison.Ordinal))
+            {
+                // declared == observed: converge is a no-op. NEVER actuate.
+                outcomes.Add(new PlatformReleaseConvergeTargetOutcome
+                {
+                    TargetId = target.TargetId,
+                    Outcome = ConvergeOutcomes.AlreadyConverged,
+                    LastAppliedRevision = lastApplied,
+                    Message = "Last-applied revision already matches the declared serving release.",
+                });
+                continue;
+            }
+
+            var isUnknown = string.IsNullOrWhiteSpace(lastApplied);
+            var outcome = await RouteConvergeDeployAsync(
+                    gateway,
+                    target.TargetId,
+                    declaredServing,
+                    declaredVersion,
+                    requestedBy,
+                    reason,
+                    request?.CorrelationId,
+                    isUnknown,
+                    lastApplied,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
+            outcomes.Add(outcome);
+            if (outcome.OperationId != null || outcome.ProposalId != null)
+            {
+                actuated = true;
+            }
+        }
+
+        var response = new PlatformReleaseConvergeResponse
+        {
+            ReleaseVersion = declaredVersion,
+            ServingArtifactReference = declaredServing,
+            Converged = !actuated,
+            WorkersDeferred = true,
+            WorkerConvergenceNote = PlatformReleaseWorkerNote,
+            Targets = outcomes,
+            GeneratedAt = DateTimeOffset.UtcNow,
+        };
+
+        return Results.Json(response, DeployControlJsonContext.Default.PlatformReleaseConvergeResponse);
+    }
+
+    private static async Task<PlatformReleaseConvergeTargetOutcome> RouteConvergeDeployAsync(
+        IOperationGateway gateway,
+        string targetId,
+        string declaredServing,
+        string declaredVersion,
+        string? requestedBy,
+        string reason,
+        string? correlationId,
+        bool isUnknown,
+        string? lastApplied,
+        CancellationToken cancellationToken)
+    {
+        var payload = new DeployExecutionPayload
+        {
+            TargetId = targetId,
+            DesiredRevision = declaredServing,
+        }.Serialize();
+
+        var gatewayRequest = new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = requestedBy,
+            Reason = reason,
+            CorrelationId = correlationId,
+            // Stable idempotency key so a double-converge folds onto one operation/proposal per target.
+            IdempotencyKey = $"converge:{declaredVersion}:{targetId}",
+            ExecutionPayload = payload,
+        };
+
+        var result = await gateway.RouteAsync(gatewayRequest, cancellationToken).ConfigureAwait(false);
+
+        var divergentOutcome = isUnknown
+            ? ConvergeOutcomes.UnknownTreatedDivergent
+            : ConvergeOutcomes.OperationCreated;
+
+        return result.Outcome switch
+        {
+            OperationGatewayOutcome.Executed => new PlatformReleaseConvergeTargetOutcome
+            {
+                TargetId = targetId,
+                Outcome = divergentOutcome,
+                OperationId = result.ExecutionOperationId,
+                LastAppliedRevision = lastApplied,
+                Message = result.Message,
+            },
+            OperationGatewayOutcome.ProposalCreated => new PlatformReleaseConvergeTargetOutcome
+            {
+                TargetId = targetId,
+                Outcome = divergentOutcome,
+                ProposalId = result.ProposalId,
+                LastAppliedRevision = lastApplied,
+                Message = result.Message,
+            },
+            // Blocked / NotSupported: the guardrail gateway denied or cannot run the deploy. No
+            // operation was created — report a defensive blocked outcome so callers see nothing ran.
+            _ => new PlatformReleaseConvergeTargetOutcome
+            {
+                TargetId = targetId,
+                Outcome = ConvergeOutcomes.Blocked,
+                LastAppliedRevision = lastApplied,
+                Message = result.Message,
+            },
+        };
+    }
+
+    private static class ConvergeOutcomes
+    {
+        public const string OperationCreated = "operation-created";
+        public const string SkippedPinned = "skipped-pinned";
+        public const string AlreadyConverged = "already-converged";
+        public const string UnknownTreatedDivergent = "unknown-treated-divergent";
+        public const string Blocked = "blocked";
     }
 
     private static DeployPlanResponse MapPlanResponse(DeployWorkflowPlanResult result)

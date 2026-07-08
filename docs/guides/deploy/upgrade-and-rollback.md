@@ -54,8 +54,25 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 | `POST /api/v1/admin/deploy/operations/{operationId}/submit` | Start the rollout |
 | `POST /api/v1/admin/deploy/operations/{operationId}/promote` | Force the cutover of a rollout parked awaiting promotion |
 | `POST /api/v1/admin/deploy/operations/{operationId}/rollback` | Roll the operation back |
+| `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all serving targets in one call |
 
 Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), `honua-azure-container-apps-revision` (revision traffic split), `honua-gitops-azure-functions` (slot swap), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository (Honua's Terraform modules are available to customers through support).
+
+### Converge the whole platform release in one call
+
+When you declare a versioned platform release under `ControlPlane__PlatformRelease__*` (a `Version`, a `ServingArtifactReference`, and one or more `Workers`; ADR-0060 WS2), `POST /api/v1/admin/platform-release/converge` actuates the serving plane onto it in a single call — no per-target scripting. It takes **no version argument**: it always converges to the currently declared release, and it validates co-versioning first (a release must bind both planes), returning `400` if the declaration is missing or one-sided.
+
+Per-target behaviour follows a fixed divergence contract:
+
+- **Last-applied revision** for a target is the `DesiredRevision` of its most recent terminal-**Succeeded** deploy operation. A target with **no** such operation is *unknown* and treated as divergent.
+- **`already-converged`** — last-applied already equals the declared serving artifact. Converge never actuates a target that is already at the declared release (a no-op stays a no-op).
+- **`operation-created`** — last-applied differs from the declared artifact; converge creates one deploy operation with `DesiredRevision` = the declared serving artifact.
+- **`unknown-treated-divergent`** — no terminal-Succeeded operation exists; converge creates a deploy operation. On a **first converge of a pre-existing install** the terminal index is empty, so every unpinned target deploys.
+- **`skipped-pinned`** — the target pins an explicit artifact that diverges from the release. Config-derived skew cannot be cleared at runtime, so the target is skipped; change its configuration instead.
+
+Every created deploy is routed through the same guardrail gateway and approval flow as any other deploy (Enterprise editions land the deploys as approval proposals in the console inbox, not a direct execute), and each is keyed by `converge:{version}:{targetId}` so re-invoking converge folds onto the in-flight operations rather than creating duplicates. The response lists the per-target outcome (with the created operation or proposal id).
+
+**Workers are not deployed by converge.** The geoprocessing worker images converge on the next GP dispatch via the release projection; the converge response states this explicitly (`workersDeferred: true`).
 
 ### Synthetic health-probe gate
 

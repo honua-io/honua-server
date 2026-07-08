@@ -98,6 +98,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/submit"),
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/promote"),
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/rollback"),
+        new("POST", "/api/v1/admin/platform-release/converge"),
         new("GET", "/api/v1/admin/proposals"),
         new("GET", "/api/v1/admin/proposals/{id}"),
         new("POST", "/api/v1/admin/proposals/{id}/approve"),
