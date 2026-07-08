@@ -508,6 +508,16 @@ if (connectedRedis != null)
         Honua.ControlPlane.Executors.DeployOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.AdminConfigOperationExecutor>();
+    // MetadataRelease executor is create-only BY DESIGN (#2563): rollback and the coordinated-release
+    // approval-gate model stay endpoint/cockpit-driven — see MetadataReleaseOperationExecutor remarks.
+    // Seed has NO executor here — it is enum-only on trunk with no runner to adapt (#2563); the gateway
+    // continues to return NotSupported for it, and IOperationExecutorCatalog reports that truthfully.
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
+        Honua.ControlPlane.Executors.MetadataReleaseOperationExecutor>();
+    // Executor-discovery capability surface (#2563): reflects the exact executors registered above so
+    // discovery consumers (honua_propose_operation's supportedKinds) can never drift from routing reality.
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutorCatalog,
+        Honua.ControlPlane.OperationExecutorCatalog>();
 }
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store
