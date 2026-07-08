@@ -1,15 +1,21 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Discovery;
+using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Schema;
@@ -393,6 +399,126 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     [UnitTest]
+    public async Task LiveWorkspacePayload_ConformsToVendoredWorkspaceSchema()
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetWorkspaceAsync("ws-42", Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = "ws-42",
+                Kind = WorkspaceKind.ResultCollection,
+                Label = "Result workspace",
+                OwnerId = "test-user",
+                State = WorkspaceLifecycleState.Active,
+                Uri = "honua://workspace-storage/ws-42",
+                CreatedAt = DateTimeOffset.Parse("2026-05-18T12:00:00Z", CultureInfo.InvariantCulture),
+                ExpiresAt = DateTimeOffset.Parse("2026-05-19T12:00:00Z", CultureInfo.InvariantCulture),
+                Artifacts =
+                [
+                    new Artifact
+                    {
+                        ArtifactId = "artifact-1",
+                        Kind = ArtifactKind.FeatureLayer,
+                        Label = "Output layer",
+                        State = ArtifactLifecycleState.Available,
+                        WorkspaceId = "ws-42",
+                        CreatedAt = DateTimeOffset.Parse("2026-05-18T12:05:00Z", CultureInfo.InvariantCulture),
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["resultPackageId"] = "result_3f21"
+                        }
+                    }
+                ]
+            });
+
+        await using var services = new ServiceCollection()
+            .AddScoped(_ => lifecycle)
+            .BuildServiceProvider();
+        var resource = new WorkspaceResource(
+            Substitute.For<IGeoprocessingJobService>(),
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<WorkspaceResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://workspaces/ws-42",
+            CancellationToken.None);
+
+        var payload = JToken.Parse(result.Contents[0].Text);
+        payload["lifecycleState"]!.Value<string>().Should().Be("active");
+        payload["resultsUri"]!.Value<string>().Should().Be("honua://results/result_3f21");
+        payload["status"].Should().BeNull();
+        AssertPayloadConformsToResourceSchema(payload, "workspace.schema.json", "live workspace payload");
+    }
+
+    [UnitTest]
+    public async Task LiveResultPayload_ConformsToVendoredResultPackageSchema()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobResultsAsync("job-xyz", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(AnalysisResultPackage.CreateCompleted(
+                "result_3f21",
+                new ResultSummary
+                {
+                    Title = "Buffered parcels",
+                    Description = "5-meter parcel buffers"
+                },
+                [
+                    new ArtifactRef
+                    {
+                        ArtifactId = "artifact-1",
+                        Kind = ArtifactKind.FeatureLayer,
+                        Label = "Buffered output",
+                        Uri = "honua://artifacts/artifact-1",
+                        ContentType = "application/geo+json",
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["resultPackageId"] = "result_3f21"
+                        }
+                    }
+                ],
+                [
+                    new WorkspaceRef
+                    {
+                        WorkspaceId = "ws-42",
+                        Kind = WorkspaceKind.Scratch,
+                        Label = "Scratch workspace",
+                        Uri = "honua://workspace-storage/ws-42",
+                        ExpiresAt = DateTimeOffset.Parse("2026-05-19T12:00:00Z", CultureInfo.InvariantCulture)
+                    }
+                ],
+                new ProvenanceRecord
+                {
+                    Sources =
+                    [
+                        new ProvenanceSource
+                        {
+                            SourceId = "parcels",
+                            Version = "v1",
+                            Description = "County parcels"
+                        }
+                    ],
+                    ProcessDefinitions = ["geometry.buffer"],
+                    Assumptions = ["buffers use planar meters"],
+                    ClarificationsAsked = ["distance_units"],
+                    ClarificationsAnswered = ["meters"],
+                    ExecutedAt = DateTimeOffset.Parse("2026-05-18T12:05:00Z", CultureInfo.InvariantCulture),
+                    GeneratedArtifactIds = ["artifact-1"]
+                },
+                assumptions: ["output uses source CRS"]));
+
+        var resource = new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance);
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://jobs/job-xyz/results",
+            CancellationToken.None);
+
+        var payload = JToken.Parse(result.Contents[0].Text);
+        payload["resultPackageId"]!.Value<string>().Should().Be("result_3f21");
+        AssertPayloadConformsToResourceSchema(payload, "result-package.schema.json", "live result payload");
+    }
+
+    [UnitTest]
     public void HonuaResourceFamilies_AreCoveredByTheStandardResourceSchemas()
     {
         // Every resource family Honua advertises that the standard defines a
@@ -667,6 +793,13 @@ public sealed partial class McpTaxonomyAlignmentTests
         }
 
         return root.TryGetValue("inputs", out var inputs) ? inputs : null;
+    }
+
+    private static void AssertPayloadConformsToResourceSchema(JToken payload, string schemaFile, string reason)
+    {
+        var schema = LoadSchema(Path.Combine(SchemaRoot, "resources", schemaFile));
+        payload.IsValid(schema, out IList<string> errors);
+        errors.Should().BeEmpty($"{reason} must conform to '{schemaFile}'");
     }
 
     /// <summary>
