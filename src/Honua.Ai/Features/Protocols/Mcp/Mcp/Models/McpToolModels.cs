@@ -79,6 +79,16 @@ internal sealed class McpProposeOperationOutput
     [JsonPropertyName("executionOperationId")]
     public string? ExecutionOperationId { get; set; }
 
+    /// <summary>
+    /// Operation classes that have a genuinely registered executor and are therefore routable
+    /// through the gateway (#2563). Reported on every response, including rejections, so an
+    /// agent proposing an unsupported kind (Seed today) learns the real supported set instead of
+    /// discovering it only after a dead-end <c>NotSupported</c> outcome. Null when the executor
+    /// catalog is unavailable.
+    /// </summary>
+    [JsonPropertyName("supportedKinds")]
+    public string[]? SupportedKinds { get; set; }
+
     [JsonPropertyName("message")]
     public string? Message { get; set; }
 }

@@ -59,6 +59,15 @@ internal sealed class ProposeOperationTool : IMcpTool
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpProposeOperationArgument);
 
+        // Executor-discovery surface (#2563): report which kinds are genuinely routable on every
+        // response, including rejections, so an agent proposing an unsupported kind (Seed today)
+        // learns the real supported set instead of hitting a silent dead end.
+        var catalog = httpContext.RequestServices.GetService<IOperationExecutorCatalog>();
+        var supportedKinds = catalog?.SupportedKinds
+            .Select(supportedKind => supportedKind.ToString())
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
         if (string.IsNullOrWhiteSpace(argument.Kind) ||
             !Enum.TryParse<OperationClass>(argument.Kind, ignoreCase: true, out var kind) ||
             !Enum.IsDefined(kind))
@@ -68,6 +77,7 @@ internal sealed class ProposeOperationTool : IMcpTool
                 {
                     Outcome = "rejected",
                     RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
                     Message = "Unknown or missing operation 'kind'. Expected one of: AdminConfigChange, Deploy, MetadataRelease, Seed."
                 },
                 McpJsonContext.Default.McpProposeOperationOutput);
@@ -81,6 +91,7 @@ internal sealed class ProposeOperationTool : IMcpTool
                 {
                     Outcome = "unavailable",
                     RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
                     Message = "The operation gateway is unavailable (durable storage is not configured)."
                 },
                 McpJsonContext.Default.McpProposeOperationOutput);
@@ -106,6 +117,7 @@ internal sealed class ProposeOperationTool : IMcpTool
             ProposalId = result.ProposalId,
             ResourceUri = result.ProposalId == null ? null : McpResourceUris.ProposalUri(result.ProposalId),
             ExecutionOperationId = result.ExecutionOperationId,
+            SupportedKinds = supportedKinds,
             Message = result.Message,
         };
 
