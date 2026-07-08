@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Migrations;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Xunit;
@@ -44,6 +45,11 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         """
         -- honua:compatibility-review reason=legacy_name removed in the contract phase after v2 rollout
         ALTER TABLE honua_ci_demo DROP COLUMN legacy_name;
+        """;
+
+    private const string SecondExpandScript =
+        """
+        ALTER TABLE honua_ci_demo ADD COLUMN note TEXT;
         """;
 
     private readonly LocalSubstratePostgresFixture _postgres;
@@ -127,8 +133,226 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         plan.UnannotatedBreakingScriptNames.Should().Contain(name => name.EndsWith("002_drop_legacy_unannotated.sql", StringComparison.Ordinal));
     }
 
+    [SkippableFact]
+    public async Task RunMigrations_FreshInstallUnderGate_ProvisionsFullyAndSkipsBackup()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        // A fresh install (empty journal) under Gate must provision fully with zero approval — the gate
+        // is journal-scoped — and the backup hook must NOT fire (nothing to protect on a brand-new DB).
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var sentinel = ReserveSentinelPath();
+        var runner = CreateRunner(
+            new MigrationSafetyOptions
+            {
+                Enforce = true,
+                ContractApplyPolicy = ContractApplyPolicy.Gate,
+                BackupCommand = SentinelCommand(sentinel),
+            });
+        var assembly = SyntheticMigrationsCompiler.Compile(
+            $"honua_synthetic_freshgate_{Guid.NewGuid():N}",
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+
+        var result = await runner.RunMigrationsAsync(connectionString, assembly);
+
+        result.Successful.Should().BeTrue(
+            $"a fresh install always provisions fully regardless of the gate. Error: {result.ErrorMessage}");
+        result.AppliedScripts.Should().HaveCount(2);
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name")).Should().BeFalse();
+        File.Exists(sentinel).Should().BeFalse("the backup hook does not run on a fresh install (empty journal)");
+    }
+
+    [SkippableFact]
+    public async Task RunMigrations_UpgradeUnderGate_BlocksAnnotatedContractWithoutApproval()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_upgradegate_{Guid.NewGuid():N}";
+
+        // First upgrade establishes a non-empty journal (this is now an existing database).
+        await ApplyExpandBaselineAsync(connectionString, assemblyName);
+
+        var runner = CreateRunner(new MigrationSafetyOptions
+        {
+            Enforce = true,
+            ContractApplyPolicy = ContractApplyPolicy.Gate,
+        });
+        var upgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+
+        var result = await runner.RunMigrationsAsync(connectionString, upgrade);
+
+        result.Successful.Should().BeFalse("the gate blocks pending annotated contract scripts on an existing database");
+        result.ErrorMessage.Should().NotBeNull();
+        result.ErrorMessage!.Should().Contain("002_drop_legacy_annotated.sql", "the block names the offending script");
+        result.ErrorMessage!.Should().Contain("/api/v1/admin/deploy/preflight", "the block names the preflight endpoint");
+        result.ErrorMessage!.Should().Contain("/api/v1/admin/observability/migrations", "the block names the migrations endpoint");
+        result.ErrorMessage!.Should().Contain("HONUA_APPROVE_CONTRACT_MIGRATIONS", "the block names the approval switch");
+
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name"))
+            .Should().BeTrue("the blocked contract migration must not have applied");
+    }
+
+    [SkippableFact]
+    public async Task RunMigrations_UpgradeUnderGate_AppliesAnnotatedContractWhenApproved()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_upgradeapprove_{Guid.NewGuid():N}";
+        await ApplyExpandBaselineAsync(connectionString, assemblyName);
+
+        var runner = CreateRunner(
+            new MigrationSafetyOptions
+            {
+                Enforce = true,
+                ContractApplyPolicy = ContractApplyPolicy.Gate,
+            },
+            approveContract: true);
+        var upgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+
+        var result = await runner.RunMigrationsAsync(connectionString, upgrade);
+
+        result.Successful.Should().BeTrue(
+            $"HONUA_APPROVE_CONTRACT_MIGRATIONS=true approves the gated contract migration. Error: {result.ErrorMessage}");
+        result.AppliedScripts.Should().ContainSingle(name => name.EndsWith("002_drop_legacy_annotated.sql", StringComparison.Ordinal));
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name"))
+            .Should().BeFalse("the approved contract migration dropped the legacy column");
+    }
+
+    [SkippableFact]
+    public async Task RunMigrations_BackupHookFailure_FailsClosedBeforeApplyingContract()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_backupfail_{Guid.NewGuid():N}";
+        await ApplyExpandBaselineAsync(connectionString, assemblyName);
+
+        // Auto policy so the gate is not what blocks; a failing backup hook (exit 1) must fail the run
+        // closed before the pending contract script is applied.
+        var runner = CreateRunner(new MigrationSafetyOptions
+        {
+            Enforce = true,
+            ContractApplyPolicy = ContractApplyPolicy.Auto,
+            BackupCommand = "exit 1",
+        });
+        var upgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+
+        var result = await runner.RunMigrationsAsync(connectionString, upgrade);
+
+        result.Successful.Should().BeFalse("a failing backup hook fails the migration run closed");
+        result.ErrorMessage.Should().NotBeNull();
+        result.ErrorMessage!.Should().Contain("BackupCommand", "the failure names the backup hook");
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name"))
+            .Should().BeTrue("no contract script may apply after the backup hook failed (fail closed, ordering)");
+    }
+
+    [SkippableFact]
+    public async Task RunMigrations_BackupHook_RunsBeforeContractApplyAndSucceeds()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_backupok_{Guid.NewGuid():N}";
+        await ApplyExpandBaselineAsync(connectionString, assemblyName);
+
+        var sentinel = ReserveSentinelPath();
+        var runner = CreateRunner(new MigrationSafetyOptions
+        {
+            Enforce = true,
+            ContractApplyPolicy = ContractApplyPolicy.Auto,
+            BackupCommand = SentinelCommand(sentinel),
+        });
+        var upgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+
+        var result = await runner.RunMigrationsAsync(connectionString, upgrade);
+
+        result.Successful.Should().BeTrue($"the backup hook succeeded so the contract migration applies. Error: {result.ErrorMessage}");
+        File.Exists(sentinel).Should().BeTrue("the backup hook ran before the contract script applied");
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name")).Should().BeFalse();
+    }
+
+    [SkippableFact]
+    public async Task RunMigrations_BackupHook_SkippedWhenNoPendingContractScripts()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_backupskip_{Guid.NewGuid():N}";
+        await ApplyExpandBaselineAsync(connectionString, assemblyName);
+
+        var sentinel = ReserveSentinelPath();
+        var runner = CreateRunner(new MigrationSafetyOptions
+        {
+            Enforce = true,
+            ContractApplyPolicy = ContractApplyPolicy.Auto,
+            BackupCommand = SentinelCommand(sentinel),
+        });
+
+        // A purely additive (expand) upgrade — the backup hook must not fire.
+        var upgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_add_note_expand.sql", SecondExpandScript));
+
+        var result = await runner.RunMigrationsAsync(connectionString, upgrade);
+
+        result.Successful.Should().BeTrue($"an additive upgrade applies cleanly. Error: {result.ErrorMessage}");
+        result.AppliedScripts.Should().ContainSingle(name => name.EndsWith("002_add_note_expand.sql", StringComparison.Ordinal));
+        File.Exists(sentinel).Should().BeFalse("the backup hook is skipped when no contract-class script is pending");
+    }
+
+    private async Task ApplyExpandBaselineAsync(string connectionString, string assemblyName)
+    {
+        // Applies only the 001 expand script under the SAME assembly name so its journal entry matches
+        // the later upgrade's 001 (DbUp journals by script name); the follow-up run then sees only the
+        // 002 script as pending against a non-empty journal.
+        var baseline = SyntheticMigrationsCompiler.Compile(assemblyName, ("001_expand.sql", ExpandScript));
+        var result = await CreateRunner(new MigrationSafetyOptions { Enforce = true })
+            .RunMigrationsAsync(connectionString, baseline);
+        result.Successful.Should().BeTrue($"the expand baseline must apply. Error: {result.ErrorMessage}");
+    }
+
     private static PostgresDatabaseMigrationRunner CreateEnforcingRunner()
         => new(Options.Create(new MigrationSafetyOptions { Enforce = true }));
+
+    private static PostgresDatabaseMigrationRunner CreateRunner(
+        MigrationSafetyOptions options,
+        bool approveContract = false)
+    {
+        IConfiguration? configuration = null;
+        if (approveContract)
+        {
+            configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [MigrationSafetyOptions.ApproveContractMigrationsKey] = "true",
+                })
+                .Build();
+        }
+
+        return new PostgresDatabaseMigrationRunner(Options.Create(options), configuration);
+    }
+
+    private static string ReserveSentinelPath()
+        => Path.Combine(Path.GetTempPath(), $"honua_backup_{Guid.NewGuid():N}.marker");
+
+    private static string SentinelCommand(string path)
+        => OperatingSystem.IsWindows() ? $"type nul > \"{path}\"" : $": > '{path}'";
 
     private static async Task<bool> TableExistsAsync(string connectionString, string table)
     {

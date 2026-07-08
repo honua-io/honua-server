@@ -1,0 +1,15 @@
+{
+  "id": "query_features.geometry_precision",
+  "schemaRef": "tools/query_features.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "serviceId": "county_parcels",
+    "layerId": 0,
+    "where": "zoning = 'R1'",
+    "limit": 200,
+    "geometryPrecision": 6,
+    "outSrid": 4326
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}

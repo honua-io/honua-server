@@ -6,7 +6,7 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 
 ## Policy
 
-1. Zero-downtime upgrades are supported only for backward-compatible (expand-contract) migrations: add columns/tables first, deploy, drop old columns in a later release. Potentially breaking migrations carry an explicit `-- honua:compatibility-review` marker in the SQL — treat those as gated rollouts with a documented rollback path.
+1. Zero-downtime upgrades are supported only for backward-compatible (expand-contract) migrations: add columns/tables first, deploy, drop old columns in a later release. Potentially breaking migrations carry an explicit `-- honua:compatibility-review` marker in the SQL — treat those as gated rollouts with a documented rollback path. On an existing database you can require explicit approval before those apply: set `Database__MigrationSafety__ContractApplyPolicy=Gate` (fresh installs are unaffected), approve one upgrade with `HONUA_APPROVE_CONTRACT_MIGRATIONS=true`, and optionally run a pre-migration backup hook via `Database__MigrationSafety__BackupCommand` — see [Deploy with Docker Compose — Upgrade & Rollback](docker-compose.md#upgrade--rollback).
 2. The default recovery is rolling back the application image; the previous version keeps working against the expanded schema.
 3. Database restore is the last resort, only when a destructive migration or data corruption makes the previous version unusable.
 
