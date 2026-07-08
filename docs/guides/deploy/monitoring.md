@@ -1,8 +1,8 @@
 # Monitor Honua Server
 
-You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice.
+You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice. For the higher-level operate story - the loop, Console and MCP seats, autonomy ladder, rollback taxonomy, and when Grafana is optional depth - start with [Operating Honua](../operate/README.md).
 
-**Prerequisites:** A running deployment, the admin password (admin endpoints authenticate with the `X-API-Key` header), and a metrics backend (managed Prometheus, self-hosted Prometheus, or any OTLP-compatible stack).
+**Prerequisites:** A running deployment and the admin password (admin endpoints authenticate with the `X-API-Key` header). A metrics backend (managed Prometheus, self-hosted Prometheus, or any OTLP-compatible stack) is needed for long-retention metrics and deep traces/logs, but the built-in operate status, ops-health, findings, and timeline surfaces do not require Grafana or Prometheus.
 
 ## Endpoints
 
@@ -122,6 +122,7 @@ Expected: `Healthy` followed by a JSON health snapshot with status fields.
 
 ## Next steps
 
+- [Operating Honua](../operate/README.md)
 - [Scale and tune performance](scaling-and-performance.md)
 - [Troubleshoot Honua Server](troubleshooting.md)
 - [Upgrade and roll back](upgrade-and-rollback.md)

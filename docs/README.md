@@ -19,7 +19,7 @@ curl http://localhost:8080/healthz/ready
 | You are a… | Start here |
 |---|---|
 | **Developer** building apps and integrations | [Quickstart](get-started/quickstart.md) · [Make your first map](get-started/first-map.md) · [Protocols](concepts/protocols.md) |
-| **Admin / operator** running the server | [Deploy with Docker Compose](guides/deploy/docker-compose.md) · [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md) · [Set up authentication](guides/secure/authentication.md) |
+| **Admin / operator** running the server | [Operating Honua](guides/operate/README.md) · [Deploy with Docker Compose](guides/deploy/docker-compose.md) · [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md) · [Set up authentication](guides/secure/authentication.md) |
 | **Analyst** consuming the data | [Connect Excel and Power BI](guides/connect/excel-power-bi.md) · [Query features](guides/query-analyze/query-features.md) · [Export data](guides/query-analyze/export-data.md) |
 
 ## What do you want to do?
@@ -32,7 +32,7 @@ curl http://localhost:8080/healthz/ready
 | Connect QGIS, ArcGIS Pro, Excel, web maps, or AI agents | [Connect clients](guides/README.md#connect-clients) |
 | Edit features and react to changes | [Edit data](guides/README.md#edit-data) |
 | Lock down authentication and access | [Secure](guides/README.md#secure) |
-| Deploy, monitor, back up, and scale | [Deploy and operate](guides/README.md#deploy-and-operate) |
+| Deploy, monitor, back up, and scale | [Operating Honua](guides/operate/README.md) · [Deploy and operate](guides/README.md#deploy-and-operate) |
 | **Migrate from ArcGIS Server or GeoServer** — discover services, dry-run, import with parity evidence | [Migrate from Esri or GeoServer](guides/README.md#migrate-from-esri-or-geoserver) |
 
 ## Why teams trust it

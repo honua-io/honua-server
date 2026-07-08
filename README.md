@@ -16,6 +16,7 @@ The full table of contents for everything under `docs/` lives at **[docs/README.
 
 Frequent destinations:
 
+- [Operating Honua](docs/guides/operate/README.md) - the operate loop, Console and MCP seats, autonomy ladder, rollback taxonomy
 - [Operator Guide](docs/archive/role-indexes/operator-README.md) — deploy, configure, monitor
 - [GIS User Guide](docs/archive/role-indexes/gis-README.md) — connect QGIS, ArcGIS Pro, Power BI, Excel
 - [Developer Guide](docs/archive/role-indexes/developer-README.md) — APIs, SDKs, integration patterns
