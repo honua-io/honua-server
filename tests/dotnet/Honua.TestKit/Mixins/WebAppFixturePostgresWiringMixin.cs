@@ -83,6 +83,13 @@ internal static class WebAppFixturePostgresWiringMixin
             ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
             ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
             ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt,
+            // The ops-health rollup sampler (#2553) is a hosted background service that would
+            // otherwise boot in EVERY integration-test host and add constant background
+            // Postgres sampling/flush/downsample/prune load across the whole parallel
+            // Server.Tests fleet — enough to time out already-contended CI shards. Default it
+            // OFF in test hosts; the rollup's own tests opt back in explicitly (see
+            // OpsObservabilityEndpointsTests) and the production default stays enabled.
+            ["Observability:OpsHealthRollup:Enabled"] = "false",
         };
 
         if (extraSettings is not null)

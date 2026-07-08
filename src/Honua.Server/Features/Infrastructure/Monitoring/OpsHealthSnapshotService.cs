@@ -4,6 +4,8 @@
 using Honua.Alerts;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Observability.Abstractions;
+using Honua.Core.Features.Observability.Domain;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -33,7 +35,9 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     private readonly IOptionsMonitor<ControlPlaneOptions> _controlPlaneOptions;
     private readonly IAlertDispatchHealth _alertHealth;
     private readonly ProductionMetricsCollector _metricsCollector;
+    private readonly IOptions<OpsHealthRollupOptions> _rollupOptions;
     private readonly IExecutionJobStore? _jobStore;
+    private readonly IOpsHealthRollupStore? _rollupStore;
 
     public OpsHealthSnapshotService(
         HealthCheckService healthCheckService,
@@ -41,14 +45,18 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
         IAlertDispatchHealth alertHealth,
         ProductionMetricsCollector metricsCollector,
-        IExecutionJobStore? jobStore = null)
+        IOptions<OpsHealthRollupOptions> rollupOptions,
+        IExecutionJobStore? jobStore = null,
+        IOpsHealthRollupStore? rollupStore = null)
     {
         _healthCheckService = healthCheckService;
         _deployProbe = deployProbe;
         _controlPlaneOptions = controlPlaneOptions;
         _alertHealth = alertHealth;
         _metricsCollector = metricsCollector;
+        _rollupOptions = rollupOptions;
         _jobStore = jobStore;
+        _rollupStore = rollupStore;
     }
 
     public async Task<OpsHealthSnapshotResponse> GetAsync(CancellationToken cancellationToken = default)
@@ -57,13 +65,14 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         var deploySnapshot = await _deployProbe.ProbeAsync(cancellationToken).ConfigureAwait(false);
         var gpQueue = await BuildGpQueueViewAsync(cancellationToken).ConfigureAwait(false);
         var healthMetrics = _metricsCollector.GetHealthMetrics();
+        var servingLatency = await BuildServingLatencyViewAsync(cancellationToken).ConfigureAwait(false);
 
         return new OpsHealthSnapshotResponse
         {
             GeneratedAt = DateTimeOffset.UtcNow,
             OverallStatus = healthReport.Status.ToString(),
             Health = BuildHealthView(healthReport),
-            ServingLatency = BuildServingLatencyView(),
+            ServingLatency = servingLatency,
             Geoprocessing = gpQueue,
             AlertDispatch = BuildAlertDispatchView(),
             Deploy = BuildDeployView(deploySnapshot),
@@ -103,20 +112,87 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         };
     }
 
-    private static OpsServingLatencyView BuildServingLatencyView()
+    // Builds the serving-latency view. On a multi-node deployment the responding instance's live in-process
+    // window is merged with peers' most-recent persisted rollup flushes so the snapshot reports whole-cluster
+    // health, not just the instance that served the request (#2553). Fail-open: a rollup-store outage or a
+    // missing store (non-Postgres) transparently degrades to the local-only view.
+    private async Task<OpsServingLatencyView> BuildServingLatencyViewAsync(CancellationToken cancellationToken)
     {
         var snapshot = HonuaTelemetry.GetServingLatencySnapshot();
-        var protocols = snapshot.Protocols
-            .Select(protocol => new OpsServingLatencyProtocolView
+
+        // Seed the per-protocol accumulator with this replica's live points.
+        var local = new Dictionary<string, List<OpsHealthLatencyPoint>>(StringComparer.Ordinal);
+        foreach (var protocol in snapshot.Protocols)
+        {
+            local[protocol.Protocol] = new List<OpsHealthLatencyPoint>
             {
-                Protocol = protocol.Protocol,
-                RequestCount = protocol.RequestCount,
-                ErrorCount = protocol.ErrorCount,
-                ErrorRate = protocol.ErrorRate,
-                P50Ms = protocol.P50Ms,
-                P95Ms = protocol.P95Ms,
-                P99Ms = protocol.P99Ms,
-                MaxMs = protocol.MaxMs,
+                new()
+                {
+                    Protocol = protocol.Protocol,
+                    RequestCount = protocol.RequestCount,
+                    ErrorCount = protocol.ErrorCount,
+                    P50Ms = protocol.P50Ms,
+                    P95Ms = protocol.P95Ms,
+                    P99Ms = protocol.P99Ms,
+                    MaxMs = protocol.MaxMs,
+                },
+            };
+        }
+
+        var clusterReplicaCount = 1;
+        if (_rollupStore is not null)
+        {
+            try
+            {
+                var options = _rollupOptions.Value;
+                var since = DateTimeOffset.UtcNow.AddSeconds(-options.LiveMergeRecencyWindowSeconds);
+                var selfReplicaId = options.ResolveReplicaId();
+                var recent = await _rollupStore.ReadRecentLatencyAsync(since, selfReplicaId, cancellationToken).ConfigureAwait(false);
+
+                // Keep only the most recent bucket per (replica, protocol) so overlapping rolling-window
+                // flushes are not double-counted.
+                var latestPerReplicaProtocol = recent
+                    .GroupBy(row => (row.ReplicaId, row.Point.Protocol))
+                    .Select(group => group.OrderByDescending(row => row.BucketStart).First());
+
+                var peerReplicas = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var row in latestPerReplicaProtocol)
+                {
+                    peerReplicas.Add(row.ReplicaId);
+                    if (!local.TryGetValue(row.Point.Protocol, out var list))
+                    {
+                        list = new List<OpsHealthLatencyPoint>();
+                        local[row.Point.Protocol] = list;
+                    }
+
+                    list.Add(row.Point);
+                }
+
+                clusterReplicaCount += peerReplicas.Count;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Fail-open: report the responding instance only.
+                clusterReplicaCount = 1;
+            }
+        }
+
+        var protocols = local
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair =>
+            {
+                var merged = OpsHealthRollupAggregation.MergeAcrossReplicas(pair.Key, pair.Value);
+                return new OpsServingLatencyProtocolView
+                {
+                    Protocol = merged.Protocol,
+                    RequestCount = merged.RequestCount,
+                    ErrorCount = merged.ErrorCount,
+                    ErrorRate = merged.ErrorRate,
+                    P50Ms = merged.P50Ms,
+                    P95Ms = merged.P95Ms,
+                    P99Ms = merged.P99Ms,
+                    MaxMs = merged.MaxMs,
+                };
             })
             .ToList();
 
@@ -124,6 +200,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         {
             WindowSeconds = snapshot.WindowSeconds,
             Protocols = protocols,
+            ClusterReplicaCount = clusterReplicaCount,
         };
     }
 
