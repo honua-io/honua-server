@@ -258,7 +258,11 @@ internal static class McpToolOutputSchemas
     /// Schema for <c>McpGroundingOutput</c> (shared by honua_ground_candidates
     /// and honua_clarify_intent). The classification, draft intent, candidate
     /// ranking, and optional clarification envelope are deep nested shapes; the
-    /// schema pins the top-level envelope and leaves those sub-objects open.
+    /// schema pins the top-level envelope and leaves those sub-objects open. On a
+    /// clarification turn exactly one of <c>clarification</c> (proprietary
+    /// envelope) or <c>elicitation</c> (MCP-native elicitation request, emitted
+    /// when the session advertised the elicitation capability; honua-server#2484)
+    /// is populated.
     /// </summary>
     public static readonly JsonElement GroundingOutputSchema = Parse(
         """
@@ -270,6 +274,7 @@ internal static class McpToolOutputSchemas
             "draftIntent": { "type": "object" },
             "candidates": { "type": "object" },
             "clarification": { "type": ["object", "null"] },
+            "elicitation": { "type": ["object", "null"] },
             "engine": { "type": "string" }
           }
         }
