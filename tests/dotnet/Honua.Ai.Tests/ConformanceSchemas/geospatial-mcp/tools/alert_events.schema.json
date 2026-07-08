@@ -1,0 +1,49 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/alert_events.schema.json",
+  "title": "alert_events inputSchema",
+  "description": "Argument shape for the platform-operations alert-events query tool (advertised name honua_alert_events). Read-only, paged (cursor-based): queries the alert-event history surfaced through the honua-server Console Operate alert API. Alert events come from two sources — spatial/threshold GIS alert rules (gis) and operations notifications not linked to an alert rule (ops). Filter by source, severity, rule, operator lifecycle state, and time range. The response is a page of alert events; see alert_events.result.schema.json. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "Filter by alert source: 'gis' for spatial/threshold alert-rule events, 'ops' for operations notifications not linked to an alert rule.",
+      "enum": ["gis", "ops"]
+    },
+    "severity": {
+      "type": "string",
+      "description": "Filter by normalized alert severity (lower-case).",
+      "enum": ["info", "warning", "critical"]
+    },
+    "rule": {
+      "type": "string",
+      "description": "Filter by source alert-rule identifier or name."
+    },
+    "lifecycleState": {
+      "type": "string",
+      "description": "Filter by operator lifecycle status.",
+      "enum": ["open", "acknowledged", "suppressed", "resolved"]
+    },
+    "from": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Inclusive lower bound (ISO-8601) on the event observation time."
+    },
+    "to": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Exclusive upper bound (ISO-8601) on the event observation time."
+    },
+    "pageSize": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum number of events to return in one page. The surface applies a server-defined default and maximum; an over-maximum request is clamped, not rejected."
+    },
+    "cursor": {
+      "type": "string",
+      "description": "Opaque continuation token from a prior page's nextCursor; absent on the first page."
+    }
+  },
+  "additionalProperties": false
+}

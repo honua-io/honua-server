@@ -1,0 +1,138 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/ops-health.schema.json",
+  "title": "Ops health resource payload",
+  "description": "Read-only, admin-gated projection of the consolidated operational-health snapshot at honua://ops/health. Mirrors the honua-server OpsHealthSnapshotResponse (GET /api/v1/admin/observability/ops-health): overall status roll-up, comprehensive health-check entries, in-process serving latency, geoprocessing queue depth, alert-dispatch backlog, coordinated-deploy readiness + platform-release skew, and database/cache utilization. Read-only — no control paths. Same gated pattern as the promotion-surface resources. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["generatedAt", "overallStatus", "health", "servingLatency", "geoprocessing", "alertDispatch", "deploy", "database"],
+  "properties": {
+    "generatedAt": { "type": "string", "format": "date-time", "description": "UTC time the snapshot was produced." },
+    "overallStatus": { "type": "string", "description": "Overall status roll-up: Healthy / Degraded / Unhealthy." },
+    "clusterReplicaCount": {
+      "type": "integer",
+      "description": "Number of replicas whose recent flushes contributed to this snapshot (additive; honua-server#2576 ops-health rollup). Absent when the rollup store is unavailable and the snapshot is local-only."
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "totalDurationMs", "entries"],
+      "properties": {
+        "status": { "type": "string" },
+        "totalDurationMs": { "type": "number" },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["name", "status", "durationMs"],
+            "properties": {
+              "name": { "type": "string" },
+              "status": { "type": "string" },
+              "description": { "type": "string" },
+              "durationMs": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "servingLatency": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["windowSeconds", "protocols"],
+      "properties": {
+        "windowSeconds": { "type": "number" },
+        "protocols": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["protocol", "requestCount", "errorCount", "errorRate", "p50Ms", "p95Ms", "p99Ms", "maxMs"],
+            "properties": {
+              "protocol": { "type": "string" },
+              "requestCount": { "type": "integer" },
+              "errorCount": { "type": "integer" },
+              "errorRate": { "type": "number" },
+              "p50Ms": { "type": "number" },
+              "p95Ms": { "type": "number" },
+              "p99Ms": { "type": "number" },
+              "maxMs": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "geoprocessing": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["totalActive", "available", "buckets"],
+      "properties": {
+        "totalActive": { "type": "integer" },
+        "available": { "type": "boolean" },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["status", "backend", "count"],
+            "properties": {
+              "status": { "type": "string" },
+              "backend": { "type": "string" },
+              "count": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "alertDispatch": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["dispatcherRunning", "dispatcherEnabled", "storagePollFailing"],
+      "properties": {
+        "dispatcherRunning": { "type": "boolean" },
+        "dispatcherEnabled": { "type": "boolean" },
+        "storagePollFailing": { "type": "boolean" },
+        "lastPollAt": { "type": "string", "format": "date-time" },
+        "pendingCount": { "type": "integer" },
+        "deadLetteredCount": { "type": "integer" }
+      }
+    },
+    "deploy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "readyForCoordinatedDeploy", "pendingMigrationsCount", "pendingContractScriptsCount", "platformRelease"],
+      "properties": {
+        "status": { "type": "string", "description": "Preflight status: ready / blocked." },
+        "readyForCoordinatedDeploy": { "type": "boolean" },
+        "pendingMigrationsCount": { "type": "integer" },
+        "pendingContractScriptsCount": { "type": "integer" },
+        "platformRelease": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["releaseDeclared", "isCoVersioned", "skewedIds"],
+          "properties": {
+            "releaseVersion": { "type": "string" },
+            "releaseDeclared": { "type": "boolean" },
+            "isCoVersioned": { "type": "boolean" },
+            "skewedIds": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["hasConnectionPoolData", "activeConnections", "connectionAcquisitionTimeouts", "connectionAcquisitionFailures", "cacheHitRatio", "errorRate"],
+      "properties": {
+        "connectionPoolUtilization": { "type": "number" },
+        "hasConnectionPoolData": { "type": "boolean" },
+        "activeConnections": { "type": "integer" },
+        "connectionAcquisitionTimeouts": { "type": "integer" },
+        "connectionAcquisitionFailures": { "type": "integer" },
+        "cacheHitRatio": { "type": "number" },
+        "errorRate": { "type": "number" }
+      }
+    }
+  }
+}

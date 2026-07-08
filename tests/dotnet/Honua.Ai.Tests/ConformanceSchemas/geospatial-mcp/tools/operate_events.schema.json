@@ -1,0 +1,46 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/operate_events.schema.json",
+  "title": "operate_events inputSchema",
+  "description": "Argument shape for the platform-operations fused-timeline tool (advertised name honua_operate_events). Read-only, paged: queries the unified Operate event timeline (mirror of GET /api/v1/admin/observability/events), which fuses alert, audit, job, release, sync-conflict, temporal, and log events into one normalized stream. Filter by event kind, correlation id, operation id, release id, and time range to trace a platform_release / server_upgrade or a long-running operation across sources. The response is a page of normalized events; see operate_events.result.schema.json. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "array",
+      "description": "Filter to one or more event categories (camelCase wire names).",
+      "items": {
+        "type": "string",
+        "enum": ["alert", "audit", "job", "release", "syncConflict", "temporalOp", "log"]
+      }
+    },
+    "correlationId": {
+      "type": "string",
+      "description": "Filter to events carrying this cross-cutting correlation id (typically the request X-Correlation-ID)."
+    },
+    "operationId": {
+      "type": "string",
+      "description": "Filter to events tied to this operation/job id."
+    },
+    "releaseId": {
+      "type": "string",
+      "description": "Filter to events tied to this platform_release / deploy release id (a Deploy operation's desiredRevision, or a metadata release's packageId)."
+    },
+    "from": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Inclusive lower bound (ISO-8601) on the event occurrence time."
+    },
+    "to": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Exclusive upper bound (ISO-8601) on the event occurrence time."
+    },
+    "pageSize": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum number of events to return in one page. The surface applies a server-defined default and maximum; an over-maximum request is clamped, not rejected."
+    }
+  },
+  "additionalProperties": false
+}

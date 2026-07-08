@@ -65,7 +65,7 @@ internal static class ObservabilityAlertEndpoints
         var page = await query.ListAsync(filter, cancellationToken).ConfigureAwait(false);
         var response = new ObservabilityAlertEventPageResponse
         {
-            Items = page.Items.Select(MapSummary).ToArray(),
+            Items = page.Items.Select(ObservabilityAlertEventResponseMapper.Map).ToArray(),
             NextCursor = page.NextCursor
         };
 
@@ -84,7 +84,9 @@ internal static class ObservabilityAlertEndpoints
                 StatusCodes.Status404NotFound, ProblemDetailsHelpers.GetTitle(404), $"Alert event '{eventId}' was not found.");
         }
 
-        return Results.Json(MapSummary(summary), ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
+        return Results.Json(
+            ObservabilityAlertEventResponseMapper.Map(summary),
+            ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
     }
 
     private static Task<IResult> HandleAcknowledge(
@@ -149,7 +151,9 @@ internal static class ObservabilityAlertEndpoints
             return NotFound(eventId);
         }
 
-        return Results.Json(MapSummary(refreshed), ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
+        return Results.Json(
+            ObservabilityAlertEventResponseMapper.Map(refreshed),
+            ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
     }
 
     private static Task<IResult> HandleResolve(
@@ -204,7 +208,9 @@ internal static class ObservabilityAlertEndpoints
             return NotFound(eventId);
         }
 
-        return Results.Json(MapSummary(refreshed), ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
+        return Results.Json(
+            ObservabilityAlertEventResponseMapper.Map(refreshed),
+            ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
     }
 
     private static Task RecordAuditAsync(
@@ -278,32 +284,6 @@ internal static class ObservabilityAlertEndpoints
         };
 
         return true;
-    }
-
-    private static ObservabilityAlertEventResponse MapSummary(AlertEventSummary summary)
-    {
-        return new ObservabilityAlertEventResponse
-        {
-            EventId = summary.EventId,
-            RuleId = summary.RuleId,
-            RuleName = summary.RuleName,
-            ZoneId = summary.ZoneId,
-            ServiceId = summary.ServiceId,
-            LayerId = summary.LayerId,
-            ObjectId = summary.ObjectId,
-            TriggerType = summary.TriggerType.ToString().ToLowerInvariant(),
-            Severity = summary.Severity.ToString().ToLowerInvariant(),
-            OccurredAt = summary.OccurredAt,
-            IncidentStatus = summary.IncidentStatus.ToString().ToLowerInvariant(),
-            IncidentDurationMs = summary.IncidentDurationMs,
-            LifecycleStatus = summary.LifecycleStatus.ToString().ToLowerInvariant(),
-            AcknowledgedAt = summary.AcknowledgedAt,
-            AcknowledgedBy = summary.AcknowledgedBy,
-            SuppressedUntil = summary.SuppressedUntil,
-            ResolvedAt = summary.ResolvedAt,
-            ResolvedBy = summary.ResolvedBy,
-            ResourceRef = "alert/" + summary.EventId.ToString(CultureInfo.InvariantCulture)
-        };
     }
 
     private static string ResolveActor(HttpContext context)

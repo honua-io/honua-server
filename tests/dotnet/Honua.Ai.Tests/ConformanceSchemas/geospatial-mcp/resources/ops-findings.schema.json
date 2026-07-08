@@ -1,0 +1,61 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/ops-findings.schema.json",
+  "title": "Ops findings resource payload",
+  "description": "Read-only, admin-gated projection of the deterministic ops findings at honua://ops/findings. Mirrors the honua-server OpsFindingsListResponse (GET /api/v1/admin/observability/findings): the evaluation time plus the active findings ordered by descending severity. Each finding carries a kebab-case rule, severity, plain-language explanation, subject identifiers, evidence references, and a recommendedAction {kind, summary, reason} (null for informational findings) that the console proposes by finding id — the opaque execution payload is never surfaced and is never autonomously executed (honua-server ADR-0028 posture). Read-only — no control paths. Same gated pattern as the promotion-surface resources. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["generatedAt", "findings"],
+  "properties": {
+    "generatedAt": { "type": "string", "format": "date-time", "description": "UTC time the findings were evaluated." },
+    "findings": {
+      "type": "array",
+      "description": "Active findings, ordered by descending severity.",
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "rule", "severity", "title", "explanation", "detectedAt", "subject", "evidenceRefs"],
+      "properties": {
+        "id": { "type": "string", "description": "Deterministic finding identifier (used to propose its action)." },
+        "rule": { "type": "string", "description": "Kebab-case rule identifier." },
+        "severity": { "type": "string", "enum": ["Info", "Warning", "Critical"] },
+        "title": { "type": "string" },
+        "explanation": { "type": "string", "description": "Plain-language explanation." },
+        "detectedAt": { "type": "string", "format": "date-time" },
+        "subject": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Subject identifiers a finding pins to (all optional).",
+          "properties": {
+            "targetId": { "type": "string" },
+            "workloadId": { "type": "string" },
+            "channel": { "type": "string" },
+            "operationId": { "type": "string" },
+            "releaseVersion": { "type": "string" }
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "description": "Supporting evidence references.",
+          "items": { "type": "string" }
+        },
+        "recommendedAction": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Recommended action, or absent/null when the finding is informational. Proposed by finding id through the operation gateway; never autonomously executed.",
+          "required": ["kind", "summary", "reason"],
+          "properties": {
+            "kind": { "type": "string", "description": "OperationClass the action routes through: AdminConfigChange / Deploy / MetadataRelease / Seed." },
+            "summary": { "type": "string", "description": "Plain-language action summary." },
+            "reason": { "type": "string", "description": "Operator-facing reason recorded on the proposal." }
+          }
+        }
+      }
+    }
+  }
+}

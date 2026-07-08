@@ -1,0 +1,35 @@
+﻿{
+  "id": "operate_events.result_page",
+  "schemaRef": "tools/operate_events.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "items": [
+      {
+        "eventId": "release:2026.07.01",
+        "kind": "release",
+        "severity": "info",
+        "occurredAt": "2026-07-07T09:05:00+00:00",
+        "title": "Deploy submitted: Serving (us-west)",
+        "summary": "Platform release 2026.07.01 submitted to serving-us-west.",
+        "operationId": "op_5f31c2",
+        "releaseId": "rev_2026_07_01",
+        "correlationId": "corr-9f2a",
+        "resourceRef": "release/rev_2026_07_01"
+      },
+      {
+        "eventId": "job:job_1",
+        "kind": "job",
+        "severity": "notice",
+        "occurredAt": "2026-07-07T08:52:00+00:00",
+        "title": "Metadata release job completed",
+        "operationId": "op_4a10bd",
+        "providerLinks": [
+          { "provider": "ci", "label": "CI run 8891", "url": "https://ci.honua.io/runs/8891" }
+        ]
+      }
+    ],
+    "partialResult": false
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["OperateEventResponse"]
+}

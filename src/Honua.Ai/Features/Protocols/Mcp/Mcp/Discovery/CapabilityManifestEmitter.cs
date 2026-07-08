@@ -173,6 +173,10 @@ internal static class CapabilityManifestEmitter
                 Resource("Published service", "honua://published-services/{published_service_id}"),
             [McpTelemetry.ResourceFamily.Deployments] =
                 Resource("Deployment", "honua://deployments/{deployment_id}"),
+            [McpTelemetry.ResourceFamily.OpsHealth] =
+                Resource("Ops health", "honua://ops/health"),
+            [McpTelemetry.ResourceFamily.OpsFindings] =
+                Resource("Ops findings", "honua://ops/findings"),
         };
 
     /// <summary>

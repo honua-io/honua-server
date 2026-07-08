@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO.Compression;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
@@ -64,6 +65,7 @@ internal static class ObservabilityServiceCollectionExtensions
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
         });
         services.AddScoped<IOpsFindingsService, OpsFindingsService>();
+        services.AddScoped<IMcpOpsObservabilityReader, McpOpsObservabilityReader>();
 
         // Persisted ops-health rollup store + per-replica sampler (#2553). The store itself is registered by
         // the Postgres provider; the sampler and history service resolve it as optional so non-Postgres

@@ -107,6 +107,8 @@ internal static class McpTelemetry
         public const string MapPackages = "map-packages";
         public const string AppPackages = "app-packages";
         public const string PromotionIndex = "promotion-index";
+        public const string OpsHealth = "ops-health";
+        public const string OpsFindings = "ops-findings";
         public const string Unknown = "unknown";
     }
 
