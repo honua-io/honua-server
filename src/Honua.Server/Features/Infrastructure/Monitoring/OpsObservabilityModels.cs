@@ -499,6 +499,10 @@ public sealed class OpsFindingSubjectView
     /// <summary>Gets the platform release version, when applicable.</summary>
     [JsonPropertyName("releaseVersion")]
     public string? ReleaseVersion { get; init; }
+
+    /// <summary>Gets the GIS protocol family, when applicable.</summary>
+    [JsonPropertyName("protocol")]
+    public string? Protocol { get; init; }
 }
 
 /// <summary>

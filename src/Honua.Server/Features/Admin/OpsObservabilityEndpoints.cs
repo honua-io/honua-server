@@ -162,6 +162,7 @@ internal static class OpsObservabilityEndpoints
                 Channel = finding.Subject.Channel,
                 OperationId = finding.Subject.OperationId,
                 ReleaseVersion = finding.Subject.ReleaseVersion,
+                Protocol = finding.Subject.Protocol,
             },
             EvidenceRefs = finding.EvidenceRefs,
             RecommendedAction = finding.RecommendedAction is null
