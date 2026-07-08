@@ -1,0 +1,16 @@
+{
+  "id": "create_app_package.dashboard",
+  "schemaRef": "tools/create_app_package.schema.json",
+  "validates": "inputs",
+  "deferred": true,
+  "inputs": {
+    "templateId": "analysis_dashboard",
+    "targetSdk": "honua-sdk-js",
+    "mapPackageId": "map_5a90",
+    "boundArtifactIds": ["artifact_summary_report"],
+    "runtimeConfig": { "title": "Flood Exposure Dashboard" }
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["BuilderIntent", "AppPackage", "MapPackage", "ArtifactRef"],
+  "notes": "Reference implementation does not yet ship create_app_package as a discrete tool; responsibility-level shape, marked deferred per spec/conformance.md §2.4."
+}

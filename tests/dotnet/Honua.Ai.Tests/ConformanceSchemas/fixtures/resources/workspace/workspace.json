@@ -9,8 +9,8 @@
     "label": "Flood analysis scratch",
     "uri": "honua://workspaces/ws_91",
     "expiresAt": "2026-06-28T00:00:00Z",
-    "status": "active",
-    "resultsUri": "honua://jobs/job_7f3a/results"
+    "lifecycleState": "active",
+    "resultsUri": "honua://results/result_3f21"
   },
   "expected": "resource_projection",
   "canonicalRefs": ["WorkspaceRef"]

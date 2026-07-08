@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/join_features.schema.json",
+  "title": "join_features inputSchema",
+  "description": "Direct geoprocessing verb (advertised name honua_join_features): join a second dataset onto a target dataset — either an attribute join on matching key fields or a spatial join by geometric relationship — and return the joined features. Use this for a single self-contained join step (\"attach the demographics table to the tracts\", \"tag each incident with the county it falls in\"); for multi-step analysis with dependencies and a packaged result, use plan_analysis + execute_plan instead. Member of the standard's opt-in **analysis** conformance profile (see /CONFORMANCE.md and docs/adr/0029-direct-geoprocessing-verbs.md). Long-running calls return an ExecutionJob handle (honua://jobs/{job_id}), pollable and cancelable via cancel_job; small/fast calls may return an inline result. Advertised readOnlyHint: true (computes a derived result; mutates no server state). x-honua-reference-shape: the concrete source (serviceId/layerId, artifactId) spellings track the reference pipeline.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["target", "join", "joinType"],
+  "properties": {
+    "target": {
+      "description": "Target (left) dataset whose features are kept and enriched: EITHER a published layer (serviceId + layerId) OR a prior-result artifact (artifactId).",
+      "oneOf": [
+        { "$ref": "#/$defs/layerRef" },
+        { "$ref": "#/$defs/artifactRef" }
+      ]
+    },
+    "join": {
+      "description": "Join (right) dataset supplying attributes to append: EITHER a published layer (serviceId + layerId) OR a prior-result artifact (artifactId).",
+      "oneOf": [
+        { "$ref": "#/$defs/layerRef" },
+        { "$ref": "#/$defs/artifactRef" }
+      ]
+    },
+    "joinType": {
+      "type": "string",
+      "enum": ["attribute", "spatial"],
+      "description": "attribute: match on equal key fields (targetField = joinField). spatial: match by geometric relationship (spatialRelationship)."
+    },
+    "targetField": {
+      "type": "string",
+      "description": "Attribute join only: key field on the target dataset. Required when joinType is attribute."
+    },
+    "joinField": {
+      "type": "string",
+      "description": "Attribute join only: key field on the join dataset matched against targetField. Required when joinType is attribute."
+    },
+    "spatialRelationship": {
+      "type": "string",
+      "enum": ["intersects", "contains", "within", "nearest"],
+      "description": "Spatial join only: geometric predicate relating a target feature to join features. Required when joinType is spatial."
+    },
+    "joinOperation": {
+      "type": "string",
+      "default": "one_to_one",
+      "enum": ["one_to_one", "one_to_many"],
+      "description": "one_to_one: one output row per target feature (matches aggregated per joinAggregation on conflict). one_to_many: one output row per matching pair."
+    },
+    "joinAggregation": {
+      "type": "string",
+      "enum": ["first", "count", "sum", "min", "max", "mean"],
+      "description": "one_to_one only: how to reduce multiple matches for a target feature. Defaults to an implementation-defined first-match when omitted."
+    }
+  },
+  "$defs": {
+    "layerRef": {
+      "type": "object",
+      "required": ["serviceId", "layerId"],
+      "additionalProperties": false,
+      "properties": {
+        "serviceId": { "type": "string", "minLength": 1, "description": "Published service identifier or name (from list_layers.serviceId or resolve_entity)." },
+        "layerId": { "type": "integer", "minimum": 0, "description": "Service-local layer index (from list_layers.layerId)." }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "required": ["artifactId"],
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1, "description": "Identifier (artifact_…) of a prior-result ArtifactRef produced by an earlier analysis job or verb. See resources/artifact.schema.json." }
+      }
+    }
+  }
+}

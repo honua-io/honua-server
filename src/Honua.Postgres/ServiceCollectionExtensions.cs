@@ -354,7 +354,10 @@ internal static class ServiceCollectionExtensions
 
         // Expand/contract migration-safety gate (#2462, ADR-0060 principle #3a): the runner rejects
         // pending contract-phase migrations that lack the compatibility-review marker. Enforce
-        // defaults TRUE; set Database:MigrationSafety:Enforce=false to override.
+        // defaults TRUE; set Database:MigrationSafety:Enforce=false to override. The same options carry
+        // the journal-scoped contract-apply policy and the optional pre-migration backup hook for safe
+        // single-node upgrades (#2565): ContractApplyPolicy defaults to Auto (today's behavior), and
+        // BackupCommand is configuration-source only (never writable via API/DB — RCE guard).
         services.AddOptions<Honua.Core.Configuration.MigrationSafetyOptions>()
             .Bind(configuration.GetSection(Honua.Core.Configuration.MigrationSafetyOptions.SectionName))
             .ValidateDataAnnotations();

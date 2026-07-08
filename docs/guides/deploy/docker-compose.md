@@ -120,8 +120,60 @@ source .env && curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://127.0.0.1:80
 - **`503` on OGC Processes or import job routes** — those need Redis; enable the `redis` profile and set `ConnectionStrings__Redis`.
 - **Container restarts in a loop** — check `docker compose logs honua` for migration failures; the server applies database migrations at startup.
 
+## Upgrade & Rollback
+
+A single-node compose deployment cannot upgrade with zero downtime — there is one server process, so stopping the old container and starting the new one always leaves a brief gap. Plan the short outage rather than expecting a seamless roll. The safe order is **preflight → backup → pull → verify**, with rollback to the previous tag first and a database restore only if a schema-narrowing migration actually ran. See [Upgrade and roll back](upgrade-and-rollback.md) for the full policy (and Kubernetes/cloud rollouts).
+
+1. Preflight against the running instance before pulling anything. Proceed only when `readyForCoordinatedDeploy` is `true` and no unexpected migrations are pending.
+
+```bash
+source .env
+curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://127.0.0.1:8080/api/v1/admin/deploy/preflight?includeDiagnostics=true
+curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://127.0.0.1:8080/api/v1/admin/observability/migrations
+```
+
+2. Back up the database (this is your rollback floor for any destructive migration).
+
+```bash
+docker compose exec -T postgres pg_dump -U honua -d honua -Fc > "honua-$(date +%F).dump"
+```
+
+3. Pull the new tag and recreate the server. Migrations run automatically when the new container starts.
+
+```bash
+sed -i 's/^HONUA_TAG=.*/HONUA_TAG=vX.Y.Z/' .env   # pin the new version
+docker compose pull honua
+docker compose up -d honua
+```
+
+4. Verify readiness, then confirm no migration failure in the logs.
+
+```bash
+curl -s http://127.0.0.1:8080/healthz/ready   # expect: Ready
+docker compose logs --tail=50 honua
+```
+
+**Roll back:** re-pin `HONUA_TAG` to the previous version and `docker compose up -d honua`. Additive (expand) migrations leave the schema backward-compatible, so the previous image runs against it unchanged. Restore the database (`pg_restore` from your dump) **only** when a contract-phase (schema-narrowing) migration ran and made the old version unusable — stop the container first, restore, then start the previous tag.
+
+### Gating contract-phase migrations (optional)
+
+By default the server applies reviewed contract-phase migrations automatically at startup. To turn a schema-narrowing upgrade into a deliberate, approved step on this existing database, set the journal-scoped gate — it applies only to an already-migrated database, so a first install still provisions fully with no extra config:
+
+```yaml
+    environment:
+      # ... existing env ...
+      Database__MigrationSafety__ContractApplyPolicy: Gate
+      # Optional: run a backup automatically, just before any contract-phase script applies.
+      # A non-zero exit aborts the upgrade (fail closed). This value is read only from
+      # configuration/env — it is never settable through the admin API or database.
+      Database__MigrationSafety__BackupCommand: "pg_dump -h postgres -U honua -d honua -Fc -f /tmp/honua-pre-migrate.dump"
+```
+
+Under `Gate`, a pending reviewed contract migration blocks startup with a message naming the scripts and the preflight endpoints above. Approve it for one upgrade by starting the container with `HONUA_APPROVE_CONTRACT_MIGRATIONS=true`; unset it again afterward. Setting `HONUA_SKIP_MIGRATIONS=true` bypasses migrations entirely (for out-of-band migration flows such as serverless) and is **outside** this policy — those paths own their own upgrade safety.
+
 ## Next steps
 
+- [Upgrade and roll back](upgrade-and-rollback.md)
 - [Monitor Honua Server](monitoring.md)
 - [Back up and restore](backup-and-restore.md)
 - [Production checklist](../secure/production-checklist.md)

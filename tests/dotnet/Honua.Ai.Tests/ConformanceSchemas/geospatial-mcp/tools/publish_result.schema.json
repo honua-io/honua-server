@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/publish_result.schema.json",
   "title": "publish_result inputSchema",
-  "description": "Argument shape for publish_result (Analyze, Publish Data, Build App). Promotes a result/package to a canonical promotion-surface target: PublishedService for Publish Data, Deployment for Analyze and Build App (resources.md §Promotion-Surface Resources). Publish/PolicyBoundary clarifications fire before handoff (planning.md). Responsibility-level: concrete promotion field set finalizes upstream (honua-server#730/#732).",
+  "description": "Argument shape for publish_result (Analyze, Publish Data, Build App). Promotes a result/package to a canonical promotion-surface target: PublishedService for Analyze and Publish Data, Deployment for Build App (resources.md §Promotion-Surface Resources). Publish/PolicyBoundary clarifications fire before handoff (planning.md). Responsibility-level: concrete promotion field set finalizes upstream (honua-server#730/#732).",
   "type": "object",
   "additionalProperties": true,
   "required": ["sourceId"],
@@ -13,7 +13,7 @@
     },
     "targetKind": {
       "type": "string",
-      "description": "Promotion-surface target family. Published_service for Publish Data; deployment for Analyze and Build App.",
+      "description": "Promotion-surface target family. published_service for Analyze and Publish Data; deployment for Build App.",
       "enum": ["published_service", "deployment"]
     },
     "visibility": {
