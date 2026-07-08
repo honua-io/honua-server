@@ -150,6 +150,39 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
+    public void AddMcpOperatorSurface_WithoutPlatformOpsReader_DoesNotRegisterPlatformOpsTools()
+    {
+        var services = BuildBaseServices();
+
+        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+
+        RegisteredToolHandlers(services)
+            .Should().NotContain(new[]
+            {
+                typeof(PlatformReleaseStatusTool),
+                typeof(DeployOperationsTool),
+                typeof(ProposeRollbackTool)
+            }, "platform-ops tools must only be advertised when the server reader is wired");
+    }
+
+    [UnitTest]
+    public void AddMcpOperatorSurface_WithPlatformOpsReader_RegistersPlatformOpsTools()
+    {
+        var services = BuildBaseServices();
+        services.AddScoped(_ => Substitute.For<IMcpPlatformOpsReader>());
+
+        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+
+        RegisteredToolHandlers(services)
+            .Should().Contain(new[]
+            {
+                typeof(PlatformReleaseStatusTool),
+                typeof(DeployOperationsTool),
+                typeof(ProposeRollbackTool)
+            }, "the full server composition registers the MCP platform-ops reader before the operator surface");
+    }
+
+    [UnitTest]
     public void AddMcpPromotionSurface_RegistersPromotionResourceHandlersOnly()
     {
         var services = BuildBaseServices();

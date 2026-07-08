@@ -18,6 +18,15 @@ for stale_file in CLAUDE.md CODEX.md; do
     fi
     continue
   fi
+  # Windows checkouts with core.symlinks=false materialize an indexed symlink
+  # as a regular file containing the symlink target. Treat that exact Git
+  # placeholder as equivalent to the sanctioned symlink so local gates can run
+  # on Windows without weakening the duplicate-file guard.
+  if [[ -f "$stale_file" ]] &&
+     git ls-files -s -- "$stale_file" | grep -q '^120000 ' &&
+     [[ "$(cat "$stale_file")" == "AGENTS.md" ]]; then
+    continue
+  fi
   if [[ -f "$stale_file" ]]; then
     echo "::error::Stale duplicate instruction file found: $stale_file. Use AGENTS.md as the canonical source (a symlink to AGENTS.md is allowed)."
     exit 1

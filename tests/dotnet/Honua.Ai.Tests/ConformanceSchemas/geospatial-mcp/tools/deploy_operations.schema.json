@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/deploy_operations.schema.json",
+  "title": "deploy_operations inputSchema",
+  "description": "Argument shape for the deploy-operations tool (advertised name honua_deploy_operations). Read-only over the platform_release / server_upgrade operation workflow (mirror of GET /api/v1/admin/deploy/operations, whose wire contract is pinned by honua-server#2562 / PR #2577). Two modes: omit operationId to LIST deploy operations (newest-first by createdAt, paged) filtered by status and kind; provide operationId to GET a single operation. Uses platform_release / server_upgrade vocabulary — this is the platform-upgrade operation surface, distinct from the hosted-content honua://deployments/{deployment_id} resource. The response is a paged envelope of DeployOperationResponse items copied verbatim from the pinned contract; see deploy_operations.result.schema.json. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Deploy-operation identifier to fetch a single operation (get mode). When omitted, the tool lists deploy operations (list mode)."
+    },
+    "status": {
+      "type": "string",
+      "description": "List-mode filter: WorkflowOperationStatus name (case-insensitive).",
+      "enum": [
+        "Planned",
+        "AwaitingApproval",
+        "Submitted",
+        "Reconciling",
+        "Succeeded",
+        "Failed",
+        "RollbackRequested",
+        "RolledBack",
+        "ManualInterventionRequired"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "description": "List-mode filter: WorkflowOperationKind name (case-insensitive).",
+      "enum": ["Deploy", "Rollback", "Migration", "MetadataRelease", "CoordinatedRelease"]
+    },
+    "page": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "List-mode 1-based page number (default 1, must be >= 1)."
+    },
+    "pageSize": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 50,
+      "description": "List-mode page size (default 50, clamped server-side to 1..200)."
+    }
+  },
+  "additionalProperties": false
+}

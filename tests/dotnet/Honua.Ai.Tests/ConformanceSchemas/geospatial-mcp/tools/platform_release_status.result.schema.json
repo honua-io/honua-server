@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/platform_release_status.result.schema.json",
+  "title": "platform_release_status result payload",
+  "description": "Response payload for the platform_release_status tool: the declared platform_release / server_upgrade co-versioning + skew snapshot, mirroring the honua-server platformRelease projection (DeployPreflightPlatformRelease). Reports the declared release version, whether all planes are co-versioned, the per-plane serving/execution projections, and the identifiers of planes skewed from the declared release. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["releaseDeclared", "isCoVersioned", "serving", "execution", "skewedIds"],
+  "properties": {
+    "releaseVersion": {
+      "type": "string",
+      "description": "Declared platform release version, or absent/null when no release is configured."
+    },
+    "releaseDeclared": {
+      "type": "boolean",
+      "description": "Whether a platform release is declared."
+    },
+    "isCoVersioned": {
+      "type": "boolean",
+      "description": "Whether all planes are co-versioned with the declared release."
+    },
+    "serving": {
+      "type": "array",
+      "description": "Per-plane serving projections.",
+      "items": { "$ref": "#/$defs/plane" }
+    },
+    "execution": {
+      "type": "array",
+      "description": "Per-plane execution projections.",
+      "items": { "$ref": "#/$defs/plane" }
+    },
+    "skewedIds": {
+      "type": "array",
+      "description": "Identifiers of planes skewed from the declared release.",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "plane": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "projectedFromRelease", "skewed"],
+      "properties": {
+        "id": { "type": "string" },
+        "runtimeProfile": { "type": "string" },
+        "effectiveArtifactReference": { "type": "string" },
+        "projectedFromRelease": { "type": "boolean" },
+        "skewed": { "type": "boolean" }
+      }
+    }
+  }
+}

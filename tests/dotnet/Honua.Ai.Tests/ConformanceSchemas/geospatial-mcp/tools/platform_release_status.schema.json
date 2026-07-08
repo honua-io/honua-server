@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/platform_release_status.schema.json",
+  "title": "platform_release_status inputSchema",
+  "description": "Argument shape for the platform-release status tool (advertised name honua_platform_release_status). Read-only: returns the declared platform_release / server_upgrade co-versioning snapshot (mirror of the platformRelease projection on the honua-server coordinated-deploy preflight) — the declared release version, whether all planes are co-versioned with it, the per-plane serving/execution projections, and the identifiers of any planes skewed from the declared release. Takes no arguments. Uses platform_release / server_upgrade vocabulary; this is distinct from the hosted-content honua://deployments/{deployment_id} resource. The response is the release-status snapshot; see platform_release_status.result.schema.json. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
