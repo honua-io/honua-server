@@ -184,9 +184,9 @@ else
     SHARD_REASON="$(jq -r '.reason // "unknown"' <<< "${TARGETED}")"
     echo "   Honua.Server.Tests shards (router: ${SHARD_REASON})..."
     if [[ "${RUN_ALL_SHARDS}" == "true" ]]; then
-        SELECTED_SHARDS="$(jq -r '.shards[].shard_name' .github/ci-shards.json)"
+        SELECTED_SHARDS="$(jq -r '.shards[].shard_name' .github/ci-shards.json | tr -d '\r')"
     else
-        SELECTED_SHARDS="$(jq -r '.shards[]?' <<< "${TARGETED}")"
+        SELECTED_SHARDS="$(jq -r '.shards[]?' <<< "${TARGETED}" | tr -d '\r')"
     fi
     if [[ -z "${SELECTED_SHARDS//[[:space:]]/}" ]]; then
         echo "   (no server-test shards selected for this diff)"
@@ -197,6 +197,7 @@ else
 
         run_one_shard() {
             local shard_name="$1"
+            shard_name="${shard_name%$'\r'}"
             local safe="${shard_name//[^A-Za-z0-9_]/_}"
             local shard_json log_name filter max_cpu_count test_timeout_minutes csproj
             shard_json="$(jq -c --arg n "${shard_name}" '.shards[] | select(.shard_name==$n)' .github/ci-shards.json)"

@@ -133,15 +133,11 @@ public sealed class InMemoryImportJobServiceCleanupTests
     private static async Task TriggerCleanupAsync(InMemoryImportJobService jobService)
     {
         var type = typeof(InMemoryImportJobService);
-        var intervalField = type.GetField("_cleanupInterval", BindingFlags.NonPublic | BindingFlags.Static);
-        intervalField.Should().NotBeNull();
-        var interval = (TimeSpan)(intervalField?.GetValue(null) ?? TimeSpan.Zero);
+        var cleanupMethod = type.GetMethod("CleanupCompletedJobs", BindingFlags.NonPublic | BindingFlags.Instance);
+        cleanupMethod.Should().NotBeNull();
 
-        var lastCleanupField = type.GetField("_lastCleanupTick", BindingFlags.NonPublic | BindingFlags.Instance);
-        lastCleanupField.Should().NotBeNull();
-        lastCleanupField?.SetValue(jobService, Environment.TickCount64 - (long)interval.TotalMilliseconds - 1);
-
-        _ = await jobService.GetProgressAsync("force-cleanup");
+        cleanupMethod?.Invoke(jobService, [DateTimeOffset.UtcNow]);
+        await Task.CompletedTask;
     }
 
     private sealed class FakeFileImportService : IFileImportService

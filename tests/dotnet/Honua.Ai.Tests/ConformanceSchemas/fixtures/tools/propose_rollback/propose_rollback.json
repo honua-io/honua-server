@@ -1,0 +1,13 @@
+{
+  "id": "propose_rollback.prior_revision",
+  "schemaRef": "tools/propose_rollback.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "targetId": "serving-us-west",
+    "toRevision": "rev_2026_06_30",
+    "reason": "p99 regression after 2026.07.01; roll forward to the prior good revision.",
+    "idempotencyKey": "rb-serving-us-west-2026-07-07"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

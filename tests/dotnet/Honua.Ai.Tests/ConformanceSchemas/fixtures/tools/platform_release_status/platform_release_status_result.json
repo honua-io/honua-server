@@ -1,0 +1,38 @@
+{
+  "id": "platform_release_status.result_snapshot",
+  "schemaRef": "tools/platform_release_status.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "releaseVersion": "2026.07.01",
+    "releaseDeclared": true,
+    "isCoVersioned": false,
+    "serving": [
+      {
+        "id": "serving-us-west",
+        "runtimeProfile": "linux_x64_aot",
+        "effectiveArtifactReference": "ghcr.io/honua-io/server:2026.07.01",
+        "projectedFromRelease": true,
+        "skewed": false
+      },
+      {
+        "id": "serving-us-east",
+        "runtimeProfile": "linux_x64_aot",
+        "effectiveArtifactReference": "ghcr.io/honua-io/server:2026.06.30",
+        "projectedFromRelease": false,
+        "skewed": true
+      }
+    ],
+    "execution": [
+      {
+        "id": "gp-batch",
+        "runtimeProfile": "linux_x64",
+        "effectiveArtifactReference": "ghcr.io/honua-io/gp:2026.07.01",
+        "projectedFromRelease": true,
+        "skewed": false
+      }
+    ],
+    "skewedIds": ["serving-us-east"]
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["DeployPreflightPlatformRelease"]
+}
