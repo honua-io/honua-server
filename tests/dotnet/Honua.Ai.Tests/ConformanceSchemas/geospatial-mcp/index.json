@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "geospatial-mcp JSON Schema index",
-  "description": "Machine-readable map from standard MCP tool names and resource family URIs to their JSON Schema (draft 2020-12) files. 'standardName' is the bare taxonomy.md tool name; 'referenceToolName' is the name the reference implementation (Honua /mcp) advertises. 'implementationStatus' records whether the reference implementation ships the tool/resource family today (implemented) or whether it is a standard family not yet served by the reference (known-gap). For resources, 'implementationStatus' gates the FULL conformance level the same way it does for tools: a manifest must advertise every 'implemented' resource family to reach FULL; 'known-gap' families are reported as informational notes only.",
-  "date": "2026-07-01",
+  "description": "Machine-readable map from standard MCP tool names and resource family URIs to their JSON Schema (draft 2020-12) files. 'standardName' is the bare taxonomy.md tool name; 'referenceToolName' is the name the reference implementation (Honua /mcp) advertises. 'implementationStatus' records whether the reference implementation ships the tool/resource family today (implemented) or whether it is a standard family not yet served by the reference (known-gap). For resources, 'implementationStatus' gates the FULL conformance level the same way it does for tools: a manifest must advertise every 'implemented' resource family to reach FULL; 'known-gap' families are reported as informational notes only. 'profile' (optional; default 'base') assigns a tool to a conformance profile: 'base' tools are required for the base FULL verdict; tools in an additive profile such as 'mutation' are required for FULL only when a manifest declares that profile, and are otherwise reported as informational notes (see /CONFORMANCE.md §Conformance Profiles).",
+  "date": "2026-07-06",
   "dialect": "https://json-schema.org/draft/2020-12/schema",
   "tools": [
     {
@@ -125,10 +125,11 @@
     {
       "standardName": "edit_features",
       "referenceToolName": null,
-      "family": "Transactional editing (Honua extension)",
+      "family": "Feature editing",
       "schema": "tools/edit_features.schema.json",
       "implementationStatus": "known-gap",
-      "notes": "Honua does NOT implement this tool: the MCP surface exposes no AI-facing feature-mutation verb per ADR-0028 (AI operational data editing is not supported; founder-reaffirmed 2026-07-06). The schema is retained so the gap stays real and closeable by other adopters of the standard's optional mutation profile, but the reference implementation serves the shared edit pipeline only through its human-facing HTTP adapters. (State-only known-gap edit; a full re-vendor to the current geospatial-mcp pin lands separately.)"
+      "profile": "mutation",
+      "notes": "Sole member of the optional mutation conformance profile (docs/adr/0028-governed-feature-mutation.md). Governed transactional editing: an implementation must require an authenticated, authorized caller and authorize each edit type (insert/update/delete) independently. The reference implementation (Honua) does NOT serve this tool — Honua does not support AI operational data editing (honua-server ADR-0028, founder-reaffirmed 2026-07-06); its referenceToolName is null and its implementationStatus is known-gap. Base-profile (read-only) implementations conform without advertising this tool; it is required for FULL only when an adopter's manifest declares the mutation profile."
     },
     {
       "standardName": "render_map",
@@ -157,6 +158,60 @@
       "family": "Analysis and geoprocessing (reference shape)",
       "schema": "tools/solve_route.schema.json",
       "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "buffer_features",
+      "referenceToolName": null,
+      "family": "Analysis verbs",
+      "schema": "tools/buffer_features.schema.json",
+      "implementationStatus": "known-gap",
+      "profile": "analysis",
+      "notes": "Direct geoprocessing verb; member of the opt-in analysis conformance profile (docs/adr/0029-direct-geoprocessing-verbs.md, geospatial-mcp#53). Single-step buffer, an alternative to a plan_analysis/execute_plan Geoprocess step. The reference implementation does not ship a direct verb yet; required for FULL only when a manifest declares the analysis profile."
+    },
+    {
+      "standardName": "overlay_features",
+      "referenceToolName": null,
+      "family": "Analysis verbs",
+      "schema": "tools/overlay_features.schema.json",
+      "implementationStatus": "known-gap",
+      "profile": "analysis",
+      "notes": "Direct geoprocessing verb (analysis profile; docs/adr/0029-direct-geoprocessing-verbs.md, geospatial-mcp#53). Two-input overlay: intersect/union/difference/erase/clip. Not yet shipped by the reference; required for FULL only when a manifest declares the analysis profile."
+    },
+    {
+      "standardName": "summarize_statistics",
+      "referenceToolName": null,
+      "family": "Analysis verbs",
+      "schema": "tools/summarize_statistics.schema.json",
+      "implementationStatus": "known-gap",
+      "profile": "analysis",
+      "notes": "Direct geoprocessing verb (analysis profile; docs/adr/0029-direct-geoprocessing-verbs.md, geospatial-mcp#53). Group-by + statistics over a layer or a prior overlay/verb result. Not yet shipped by the reference; required for FULL only when a manifest declares the analysis profile."
+    },
+    {
+      "standardName": "reproject_features",
+      "referenceToolName": null,
+      "family": "Analysis verbs",
+      "schema": "tools/reproject_features.schema.json",
+      "implementationStatus": "known-gap",
+      "profile": "analysis",
+      "notes": "Direct geoprocessing verb (analysis profile; docs/adr/0029-direct-geoprocessing-verbs.md, geospatial-mcp#53). Reproject a dataset to a targetSrid; the sibling verbs also carry an optional outSrid output-CRS param. Not yet shipped by the reference; required for FULL only when a manifest declares the analysis profile."
+    },
+    {
+      "standardName": "join_features",
+      "referenceToolName": null,
+      "family": "Analysis verbs",
+      "schema": "tools/join_features.schema.json",
+      "implementationStatus": "known-gap",
+      "profile": "analysis",
+      "notes": "Direct geoprocessing verb (analysis profile; docs/adr/0029-direct-geoprocessing-verbs.md, geospatial-mcp#53). Attribute or spatial join of two datasets. Not yet shipped by the reference; required for FULL only when a manifest declares the analysis profile."
+    },
+    {
+      "standardName": "export_dataset",
+      "referenceToolName": null,
+      "family": "Analysis verbs",
+      "schema": "tools/export_dataset.schema.json",
+      "implementationStatus": "known-gap",
+      "profile": "analysis",
+      "notes": "Direct geoprocessing verb (analysis profile; docs/adr/0029-direct-geoprocessing-verbs.md, geospatial-mcp#53). Materialize a layer/result to a GeoJSON/GeoPackage/CSV/Parquet artifact. Advertised readOnlyHint:false (writes a new artifact) but non-destructive and not a mutation-profile tool. Not yet shipped by the reference; required for FULL only when a manifest declares the analysis profile."
     },
     {
       "standardName": "cancel_job",

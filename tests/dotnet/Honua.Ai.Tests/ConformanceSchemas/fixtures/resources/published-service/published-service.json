@@ -1,0 +1,15 @@
+{
+  "id": "published-service.multi_protocol",
+  "schemaRef": "resources/published-service.schema.json",
+  "validates": "inputs",
+  "uri": "honua://services/county_parcels_published",
+  "deferred": true,
+  "inputs": {
+    "serviceId": "county_parcels_published",
+    "protocols": ["GeoServices", "OGC API Features", "WMS", "WFS"],
+    "refreshState": "current"
+  },
+  "expected": "resource_projection",
+  "canonicalRefs": ["PublishedService"],
+  "notes": "Responsibility-level: concrete PublishedService field set finalizes upstream (honua-server#730); stable serviceId and protocol enumeration are scoreable now."
+}

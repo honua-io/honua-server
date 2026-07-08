@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/export_dataset.schema.json",
+  "title": "export_dataset inputSchema",
+  "description": "Direct geoprocessing verb (advertised name honua_export_dataset): materialize a dataset — a published layer or a prior verb/job result — into a downloadable artifact in the requested format and return an ArtifactRef with a content locator. Use this for a single self-contained export step (\"export the intersect result as GeoPackage\"); for multi-step analysis with dependencies and a packaged result, use plan_analysis + execute_plan instead. Member of the standard's opt-in **analysis** conformance profile (see /CONFORMANCE.md and docs/adr/0029-direct-geoprocessing-verbs.md). Long-running calls return an ExecutionJob handle (honua://jobs/{job_id}), pollable and cancelable via cancel_job; small/fast calls may return an inline result referencing the produced artifact. Advertised readOnlyHint: false — it writes a new downloadable artifact — but non-destructive (it creates a new artifact and mutates no source records) and idempotent. It is NOT feature mutation and is not part of the mutation profile. x-honua-reference-shape: the concrete source (serviceId/layerId, artifactId) spellings track the reference pipeline.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["source", "format"],
+  "properties": {
+    "source": {
+      "description": "Dataset to export: EITHER a published layer (serviceId + layerId) OR a prior-result artifact (artifactId) from an earlier analysis job or verb.",
+      "oneOf": [
+        { "$ref": "#/$defs/layerRef" },
+        { "$ref": "#/$defs/artifactRef" }
+      ]
+    },
+    "format": {
+      "type": "string",
+      "enum": ["geojson", "geopackage", "csv", "parquet"],
+      "description": "Output format. geojson: RFC 7946 features. geopackage: OGC GeoPackage (.gpkg). csv: attribute rows (geometry as WKT when returnGeometry). parquet: (Geo)Parquet columnar."
+    },
+    "where": {
+      "type": "string",
+      "description": "Optional attribute filter (ArcGIS/SQL WHERE clause) selecting which features to export."
+    },
+    "outFields": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional attribute fields to include; omit for all fields."
+    },
+    "returnGeometry": {
+      "type": "boolean",
+      "default": true,
+      "description": "When false, export attributes only (no geometry). csv/parquet exports of attribute tables commonly set this false."
+    },
+    "outSrid": {
+      "type": "integer",
+      "description": "Output spatial reference (SRID/WKID) for exported geometries; defaults to the source CRS."
+    }
+  },
+  "$defs": {
+    "layerRef": {
+      "type": "object",
+      "required": ["serviceId", "layerId"],
+      "additionalProperties": false,
+      "properties": {
+        "serviceId": { "type": "string", "minLength": 1, "description": "Published service identifier or name (from list_layers.serviceId or resolve_entity)." },
+        "layerId": { "type": "integer", "minimum": 0, "description": "Service-local layer index (from list_layers.layerId)." }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "required": ["artifactId"],
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1, "description": "Identifier (artifact_…) of a prior-result ArtifactRef produced by an earlier analysis job or verb. See resources/artifact.schema.json." }
+      }
+    }
+  }
+}
