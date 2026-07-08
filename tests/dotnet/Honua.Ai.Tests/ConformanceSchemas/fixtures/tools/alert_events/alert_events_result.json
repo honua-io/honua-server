@@ -1,0 +1,44 @@
+﻿{
+  "id": "alert_events.result_page",
+  "schemaRef": "tools/alert_events.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "items": [
+      {
+        "eventId": 42,
+        "ruleId": 7,
+        "ruleName": "geofence-breach",
+        "zoneId": 3,
+        "serviceId": "vessels",
+        "layerId": 0,
+        "objectId": 100821,
+        "triggerType": "enter",
+        "severity": "critical",
+        "occurredAt": "2026-07-06T14:22:10+00:00",
+        "incidentStatus": "ongoing",
+        "incidentDurationMs": 45000,
+        "lifecycleStatus": "open",
+        "resourceRef": "alert/42"
+      },
+      {
+        "eventId": 43,
+        "ruleId": null,
+        "serviceId": "ops",
+        "layerId": 0,
+        "objectId": 0,
+        "triggerType": "threshold",
+        "severity": "warning",
+        "occurredAt": "2026-07-06T14:20:00+00:00",
+        "incidentStatus": "ended",
+        "incidentDurationMs": 12000,
+        "lifecycleStatus": "acknowledged",
+        "acknowledgedAt": "2026-07-06T14:25:00+00:00",
+        "acknowledgedBy": "mike@honua.io",
+        "resourceRef": "alert/43"
+      }
+    ],
+    "nextCursor": "eyJvZmZzZXQiOjUwfQ=="
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["ObservabilityAlertEventResponse"]
+}

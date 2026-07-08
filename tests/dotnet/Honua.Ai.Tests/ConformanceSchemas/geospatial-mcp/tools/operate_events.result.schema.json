@@ -1,0 +1,67 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/operate_events.result.schema.json",
+  "title": "operate_events result payload",
+  "description": "Response payload for the operate_events tool: a page of normalized events off the unified Operate timeline, mirroring the honua-server wire shape (OperateEventPageResponse / OperateEventResponse). items are newest-first; partialResult is true when at least one source produced a partial result, with per-source diagnostics in sourceErrors (keyed by lower-case kind). x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "Normalized events in this page (newest first).",
+      "items": { "$ref": "#/$defs/operateEvent" }
+    },
+    "partialResult": {
+      "type": "boolean",
+      "description": "True when at least one source produced a partial result."
+    },
+    "sourceErrors": {
+      "type": "object",
+      "description": "Per-source diagnostic messages keyed by lower-case kind.",
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "operateEvent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["eventId", "kind", "severity", "occurredAt", "title"],
+      "properties": {
+        "eventId": { "type": "string", "description": "Source-prefixed event id, e.g. \"alert:42\"." },
+        "kind": { "type": "string", "enum": ["alert", "audit", "job", "release", "syncConflict", "temporalOp", "log"] },
+        "severity": { "type": "string", "enum": ["info", "notice", "warning", "error", "critical"] },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "layerId": { "type": "integer" },
+        "objectId": { "type": "integer" },
+        "actor": { "type": "string" },
+        "correlationId": { "type": "string" },
+        "traceId": { "type": "string" },
+        "requestId": { "type": "string" },
+        "operationId": { "type": "string" },
+        "releaseId": { "type": "string", "description": "Release id when tied to a platform_release / deploy release." },
+        "replicaId": { "type": "string" },
+        "changeSetId": { "type": "string" },
+        "resourceRef": { "type": "string" },
+        "providerLinks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["provider", "label", "url"],
+            "properties": {
+              "provider": { "type": "string" },
+              "label": { "type": "string" },
+              "url": { "type": "string" }
+            }
+          }
+        },
+        "detailsJson": { "type": "string", "description": "Source-specific structured payload as JSON text." }
+      }
+    }
+  }
+}

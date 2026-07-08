@@ -287,6 +287,10 @@ public sealed class CapabilityRegistryConformanceTests
             new GeocodeAddressesTool(jobService, NullLogger<GeocodeAddressesTool>.Instance),
             new IngestDatasetTool(jobService, NullLogger<IngestDatasetTool>.Instance),
             new RouteTool(jobService, NullLogger<RouteTool>.Instance),
+            new OpsHealthTool(NullLogger<OpsHealthTool>.Instance),
+            new OpsFindingsTool(NullLogger<OpsFindingsTool>.Instance),
+            new AlertEventsTool(NullLogger<AlertEventsTool>.Instance),
+            new OperateEventsTool(NullLogger<OperateEventsTool>.Instance),
             new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
             new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
@@ -321,6 +325,8 @@ public sealed class CapabilityRegistryConformanceTests
             new WorkspaceResource(jobService, NullLogger<WorkspaceResource>.Instance),
             new ProcessCatalogResource(jobService, NullLogger<ProcessCatalogResource>.Instance),
             new FeatureCatalogResource(jobService, NullLogger<FeatureCatalogResource>.Instance),
+            new OpsHealthResource(NullLogger<OpsHealthResource>.Instance),
+            new OpsFindingsResource(NullLogger<OpsFindingsResource>.Instance),
             new PublishedServiceResource(
                 services, deployments, jobService, NullLogger<PublishedServiceResource>.Instance),
             new DeploymentResource(deployments, jobService, NullLogger<DeploymentResource>.Instance),

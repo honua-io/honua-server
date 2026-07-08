@@ -40,4 +40,21 @@ internal static class McpResourceHelpers
             ]
         };
     }
+
+    /// <summary>
+    /// Builds an <see cref="McpResourcesReadResult"/> from an already serialized
+    /// JSON payload.
+    /// </summary>
+    public static McpResourcesReadResult SingleJsonContent(string uri, JsonElement value) => new()
+    {
+        Contents =
+        [
+            new McpResourceContent
+            {
+                Uri = uri,
+                MimeType = JsonMimeType,
+                Text = value.GetRawText()
+            }
+        ]
+    };
 }

@@ -1,0 +1,64 @@
+﻿{
+  "id": "ops-health.snapshot",
+  "schemaRef": "resources/ops-health.schema.json",
+  "validates": "inputs",
+  "uri": "honua://ops/health",
+  "inputs": {
+    "generatedAt": "2026-07-07T09:10:00+00:00",
+    "overallStatus": "Degraded",
+    "clusterReplicaCount": 3,
+    "health": {
+      "status": "Degraded",
+      "totalDurationMs": 41.2,
+      "entries": [
+        { "name": "database", "status": "Healthy", "durationMs": 8.1 },
+        { "name": "alert-dispatch", "status": "Degraded", "description": "backlog above threshold", "durationMs": 3.4 }
+      ]
+    },
+    "servingLatency": {
+      "windowSeconds": 300,
+      "protocols": [
+        { "protocol": "geoservices", "requestCount": 12045, "errorCount": 12, "errorRate": 0.001, "p50Ms": 18.0, "p95Ms": 92.0, "p99Ms": 180.0, "maxMs": 640.0 }
+      ]
+    },
+    "geoprocessing": {
+      "totalActive": 4,
+      "available": true,
+      "buckets": [
+        { "status": "Running", "backend": "aws-batch", "count": 3 },
+        { "status": "Queued", "backend": "aws-batch", "count": 1 }
+      ]
+    },
+    "alertDispatch": {
+      "dispatcherRunning": true,
+      "dispatcherEnabled": true,
+      "storagePollFailing": false,
+      "lastPollAt": "2026-07-07T09:09:50+00:00",
+      "pendingCount": 128,
+      "deadLetteredCount": 2
+    },
+    "deploy": {
+      "status": "blocked",
+      "readyForCoordinatedDeploy": false,
+      "pendingMigrationsCount": 1,
+      "pendingContractScriptsCount": 0,
+      "platformRelease": {
+        "releaseVersion": "2026.07.01",
+        "releaseDeclared": true,
+        "isCoVersioned": false,
+        "skewedIds": ["serving-us-east"]
+      }
+    },
+    "database": {
+      "connectionPoolUtilization": 0.42,
+      "hasConnectionPoolData": true,
+      "activeConnections": 21,
+      "connectionAcquisitionTimeouts": 0,
+      "connectionAcquisitionFailures": 0,
+      "cacheHitRatio": 0.97,
+      "errorRate": 0.0008
+    }
+  },
+  "expected": "resource_projection",
+  "canonicalRefs": ["OpsHealthSnapshotResponse"]
+}

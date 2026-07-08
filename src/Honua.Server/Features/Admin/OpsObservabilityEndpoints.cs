@@ -98,7 +98,7 @@ internal static class OpsObservabilityEndpoints
         var response = new OpsFindingsListResponse
         {
             GeneratedAt = DateTimeOffset.UtcNow,
-            Findings = findings.Select(MapFinding).ToList(),
+            Findings = findings.Select(OpsFindingResponseMapper.Map).ToList(),
         };
 
         return Results.Json(response, OpsObservabilityJsonContext.Default.OpsFindingsListResponse);
@@ -146,32 +146,4 @@ internal static class OpsObservabilityEndpoints
         return Results.Json(response, OpsObservabilityJsonContext.Default.OpsFindingProposeResponse);
     }
 
-    private static OpsFindingView MapFinding(OpsFinding finding)
-        => new()
-        {
-            Id = finding.Id,
-            Rule = finding.Rule,
-            Severity = finding.Severity.ToString(),
-            Title = finding.Title,
-            Explanation = finding.Explanation,
-            DetectedAt = finding.DetectedAt,
-            Subject = new OpsFindingSubjectView
-            {
-                TargetId = finding.Subject.TargetId,
-                WorkloadId = finding.Subject.WorkloadId,
-                Channel = finding.Subject.Channel,
-                OperationId = finding.Subject.OperationId,
-                ReleaseVersion = finding.Subject.ReleaseVersion,
-                Protocol = finding.Subject.Protocol,
-            },
-            EvidenceRefs = finding.EvidenceRefs,
-            RecommendedAction = finding.RecommendedAction is null
-                ? null
-                : new OpsFindingActionView
-                {
-                    Kind = finding.RecommendedAction.Kind.ToString(),
-                    Summary = finding.RecommendedAction.Summary,
-                    Reason = finding.RecommendedAction.Reason,
-                },
-        };
 }

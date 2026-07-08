@@ -364,8 +364,7 @@ internal static class ServiceCollectionExtensions
         // single-node upgrades (#2565): ContractApplyPolicy defaults to Auto (today's behavior), and
         // BackupCommand is configuration-source only (never writable via API/DB — RCE guard).
         services.AddOptions<Honua.Core.Configuration.MigrationSafetyOptions>()
-            .Bind(configuration.GetSection(Honua.Core.Configuration.MigrationSafetyOptions.SectionName))
-            .ValidateDataAnnotations();
+            .Bind(configuration.GetSection(Honua.Core.Configuration.MigrationSafetyOptions.SectionName));
 
         // Register database compatibility checker for PostGIS preflight validation
         services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();

@@ -1,0 +1,11 @@
+﻿{
+  "id": "ops_findings.list_by_severity",
+  "schemaRef": "tools/ops_findings.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "severity": "Warning",
+    "rule": "deploy-target-skew"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["OpsFindingsListResponse"]
+}

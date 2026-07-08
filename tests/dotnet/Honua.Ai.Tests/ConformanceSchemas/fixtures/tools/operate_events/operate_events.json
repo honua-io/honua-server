@@ -1,0 +1,14 @@
+﻿{
+  "id": "operate_events.release_by_id",
+  "schemaRef": "tools/operate_events.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "kind": ["release"],
+    "releaseId": "2026.07.01",
+    "correlationId": "corr-9f2a",
+    "from": "2026-07-01T00:00:00+00:00",
+    "pageSize": 50
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["OperateEventResponse"]
+}

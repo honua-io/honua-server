@@ -19,6 +19,8 @@ internal static class McpResourceUris
     public const string ProposalsPrefix = "honua://proposals/";
     public const string CatalogProcesses = "honua://catalog/processes";
     public const string CatalogFeatures = "honua://catalog/features";
+    public const string OpsHealth = "honua://ops/health";
+    public const string OpsFindings = "honua://ops/findings";
 
     public const string PublishedServicesRoot = "honua://published-services";
     public const string PublishedServicesPrefix = "honua://published-services/";

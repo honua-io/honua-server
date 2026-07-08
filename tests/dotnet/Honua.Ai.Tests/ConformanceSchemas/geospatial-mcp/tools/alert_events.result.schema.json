@@ -1,0 +1,49 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/alert_events.result.schema.json",
+  "title": "alert_events result payload",
+  "description": "Response payload for the alert_events tool: a cursor-paged page of alert events, mirroring the honua-server Console Operate alert-event wire shape (ObservabilityAlertEventResponse). items are newest-first; nextCursor is present when more events remain and absent on the final page. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "Alert events in this page (newest first).",
+      "items": { "$ref": "#/$defs/alertEvent" }
+    },
+    "nextCursor": {
+      "type": "string",
+      "description": "Opaque continuation token for the next page, or absent when none remain."
+    }
+  },
+  "$defs": {
+    "alertEvent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["eventId", "ruleId", "serviceId", "layerId", "objectId", "triggerType", "severity", "occurredAt", "incidentStatus", "incidentDurationMs", "lifecycleStatus", "resourceRef"],
+      "properties": {
+        "eventId": { "type": "integer", "description": "Event identifier." },
+        "ruleId": { "type": ["integer", "null"], "description": "Source alert-rule id, or null for ops notifications not linked to a rule." },
+        "ruleName": { "type": "string", "description": "Source rule name when available." },
+        "zoneId": { "type": "integer", "description": "Zone identifier when the rule targets a geofence." },
+        "serviceId": { "type": "string" },
+        "layerId": { "type": "integer" },
+        "objectId": { "type": "integer" },
+        "triggerType": { "type": "string", "description": "Lower-case: enter / exit / dwell / threshold." },
+        "severity": { "type": "string", "enum": ["info", "warning", "critical"] },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "incidentStatus": { "type": "string", "description": "Incident lifecycle status: started / ongoing / ended." },
+        "incidentDurationMs": { "type": "integer" },
+        "lifecycleStatus": { "type": "string", "enum": ["open", "acknowledged", "suppressed", "resolved"] },
+        "acknowledgedAt": { "type": "string", "format": "date-time" },
+        "acknowledgedBy": { "type": "string" },
+        "suppressedUntil": { "type": "string", "format": "date-time" },
+        "resolvedAt": { "type": "string", "format": "date-time" },
+        "resolvedBy": { "type": "string" },
+        "resourceRef": { "type": "string", "description": "Source-prefixed deep-link reference, e.g. \"alert/42\"." }
+      }
+    }
+  }
+}

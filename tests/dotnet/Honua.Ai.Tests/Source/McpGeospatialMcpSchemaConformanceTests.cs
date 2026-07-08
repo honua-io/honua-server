@@ -76,6 +76,10 @@ public sealed partial class McpTaxonomyAlignmentTests
             // required set (additionalProperties allowed) so the required-field
             // match and standard-fixture assertions both hold.
             ["honua_publish_result"] = "publish_result",
+            ["honua_ops_health"] = "ops_health",
+            ["honua_ops_findings"] = "ops_findings",
+            ["honua_alert_events"] = "alert_events",
+            ["honua_operate_events"] = "operate_events",
             // Honua extensions over the bare taxonomy (#1949): the standard models
             // entity resolution and capability discovery as CapabilityCatalog reads;
             // the reference implementation exposes them as discrete tools and ships
@@ -262,7 +266,9 @@ public sealed partial class McpTaxonomyAlignmentTests
 
             foreach (var fixtureFile in Directory.EnumerateFiles(fixtureDir, "*.json"))
             {
-                var inputs = ReadFixtureInputs(fixtureFile);
+                var inputs = ReadFixtureInputs(
+                    fixtureFile,
+                    expectedSchemaRef: "tools/" + standardName + ".schema.json");
                 if (inputs is null)
                 {
                     continue;
@@ -355,6 +361,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             ("artifact", "artifact.schema.json"),
             ("provenance", "provenance.schema.json"),
             ("workspace", "workspace.schema.json"),
+            ("ops-health", "ops-health.schema.json"),
+            ("ops-findings", "ops-findings.schema.json"),
         };
 
         var asserted = 0;
@@ -395,6 +403,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             "result-package", "artifact", "provenance", "workspace",
             "map-package", "app-package", "style", "theme",
             "map-template", "published-service", "deployment",
+            "ops-health", "ops-findings",
         };
 
         foreach (var family in standardResourceFamilies)
@@ -475,15 +484,18 @@ public sealed partial class McpTaxonomyAlignmentTests
             indexEntry.Status.Should().Be("implemented",
                 $"family '{standardFamily}' is served by the live surface, so the index must mark it implemented");
 
-            var templates = resource.DescribeTemplates();
-            templates.Should().NotBeEmpty(
-                $"served family '{standardFamily}' must advertise a URI template");
+            var uriForms = resource.DescribeTemplates()
+                .Select(t => t.UriTemplate)
+                .Concat(resource.Describe().Select(d => d.Uri))
+                .ToArray();
+            uriForms.Should().NotBeEmpty(
+                $"served family '{standardFamily}' must advertise a URI form");
 
-            foreach (var template in templates)
+            foreach (var uriForm in uriForms)
             {
-                NormalizeUriTemplate(template.UriTemplate).Should().Be(
+                NormalizeUriTemplate(uriForm).Should().Be(
                     NormalizeUriTemplate(indexEntry.UriForm),
-                    $"live URI template '{template.UriTemplate}' for family '{standardFamily}' must match "
+                    $"live URI form '{uriForm}' for family '{standardFamily}' must match "
                     + $"the Decision A uriForm '{indexEntry.UriForm}' pinned in the vendored index.json");
             }
 
@@ -644,9 +656,16 @@ public sealed partial class McpTaxonomyAlignmentTests
         }
     }
 
-    private static JToken? ReadFixtureInputs(string fixtureFile)
+    private static JToken? ReadFixtureInputs(string fixtureFile, string? expectedSchemaRef = null)
     {
         var root = JObject.Parse(File.ReadAllText(fixtureFile));
+        if (expectedSchemaRef is not null &&
+            root.TryGetValue("schemaRef", out var schemaRef) &&
+            !string.Equals(schemaRef.Value<string>(), expectedSchemaRef, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         return root.TryGetValue("inputs", out var inputs) ? inputs : null;
     }
 
