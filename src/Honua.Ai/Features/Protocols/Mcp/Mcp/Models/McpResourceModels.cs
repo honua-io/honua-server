@@ -265,10 +265,10 @@ internal sealed class McpWorkspaceResource
     public string WorkspaceId { get; set; } = string.Empty;
 
     [JsonPropertyName("kind")]
-    public string Kind { get; set; } = string.Empty;
+    public string? Kind { get; set; }
 
     [JsonPropertyName("label")]
-    public string Label { get; set; } = string.Empty;
+    public string? Label { get; set; }
 
     [JsonPropertyName("uri")]
     public string? Uri { get; set; }
@@ -276,8 +276,8 @@ internal sealed class McpWorkspaceResource
     [JsonPropertyName("expiresAt")]
     public DateTimeOffset? ExpiresAt { get; set; }
 
-    [JsonPropertyName("status")]
-    public string Status { get; set; } = string.Empty;
+    [JsonPropertyName("lifecycleState")]
+    public string? LifecycleState { get; set; }
 
     [JsonPropertyName("cleanupScheduledAt")]
     public DateTimeOffset? CleanupScheduledAt { get; set; }

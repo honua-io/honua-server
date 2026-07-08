@@ -301,6 +301,41 @@ public sealed class OpsFindingsServiceTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ServingErrorRateSloBreach_ProducesInformationalWarning()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var rollupStore = Substitute.For<IOpsHealthRollupStore>();
+        rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new List<OpsHealthLatencyRow>
+            {
+                new()
+                {
+                    ReplicaId = "replica-1",
+                    BucketStart = now.AddMinutes(-1),
+                    Point = new OpsHealthLatencyPoint
+                    {
+                        Protocol = "WMS",
+                        RequestCount = 100,
+                        ErrorCount = 8,
+                        P50Ms = 50,
+                        P95Ms = 150,
+                        P99Ms = 200,
+                        MaxMs = 250,
+                    },
+                },
+            });
+        var service = CreateService(rollupStore: rollupStore);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleServingLatencySlo);
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.Null(finding.RecommendedAction);
+        Assert.Equal("WMS", finding.Subject.Protocol);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_ServingLatencyBelowThresholds_ProducesNoFinding()
     {
         var now = DateTimeOffset.UtcNow;
@@ -570,6 +605,106 @@ public sealed class OpsFindingsServiceTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_AlertDeadLetterFinding_RoutesRedriveActionThroughGateway()
+    {
+        var alertHealth = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
+        };
+        var gateway = CreateProposalGateway(OperationClass.AdminConfigChange, "proposal-alert-redrive");
+        var service = CreateService(alertHealth: alertHealth, gateway: gateway);
+        var finding = (await service.EvaluateAsync()).Single(f => f.Rule == OpsFindingsService.RuleAlertDispatchBacklog);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.ProposalCreated, result.Status);
+        Assert.Equal("proposal-alert-redrive", result.ProposalId);
+        await gateway.Received(1).RouteAsync(
+            Arg.Is<OperationGatewayRequest>(r =>
+                r.Kind == OperationClass.AdminConfigChange &&
+                r.RequestedByAgent == OpsFindingsService.RequestedByAgent &&
+                r.IdempotencyKey == finding.Id &&
+                r.ExecutionPayload != null &&
+                r.ExecutionPayload.Contains("\"action\":\"alerts.redrive_dead_letters\"", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_DbPoolPressureFinding_RoutesTuneBoundedAdmissionActionThroughGateway()
+    {
+        var pressureSignal = new FakeDatabasePressureSignal
+        {
+            Snapshot = new DatabasePressureSnapshot(
+                HasConnectionPoolUtilization: true,
+                ConnectionPoolUtilization: 0.95,
+                ConnectionAcquisitionTimeouts: 10,
+                ConnectionAcquisitionFailures: 1),
+        };
+        var admissionGate = new FakeAdmissionGate { CurrentLimit = 40, MinLimit = 5, MaxLimit = 100 };
+        var gateway = CreateProposalGateway(OperationClass.AdminConfigChange, "proposal-db-tune");
+        var service = CreateService(
+            gateway: gateway,
+            databasePressureSignal: pressureSignal,
+            admissionGate: admissionGate);
+        var finding = (await service.EvaluateAsync()).Single(f => f.Rule == OpsFindingsService.RuleDbBoundedAdmissionPressure);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.ProposalCreated, result.Status);
+        Assert.Equal("proposal-db-tune", result.ProposalId);
+        await gateway.Received(1).RouteAsync(
+            Arg.Is<OperationGatewayRequest>(r =>
+                r.Kind == OperationClass.AdminConfigChange &&
+                r.RequestedByAgent == OpsFindingsService.RequestedByAgent &&
+                r.IdempotencyKey == finding.Id &&
+                r.ExecutionPayload != null &&
+                r.ExecutionPayload.Contains("\"action\":\"db.tune_bounded_admission\"", StringComparison.Ordinal) &&
+                r.ExecutionPayload.Contains("\"limit\":30", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_PlatformReleaseRuntimeDivergenceFinding_RoutesDeployConvergeActionThroughGateway()
+    {
+        var controlPlane = new ControlPlaneOptions
+        {
+            PlatformRelease = new PlatformReleaseOptions
+            {
+                Version = "2026.07.0",
+                ServingArtifactReference = "registry/honua-serving:2026.07.0",
+                Workers = [new PlatformReleaseWorkerImageOptions { ArtifactReference = "registry/honua-worker:2026.07.0" }],
+            },
+            DeployTargets = [new DeployTargetOptions { TargetId = "serving-a" }],
+        };
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        workflowStore.GetMostRecentSucceededDeployByTargetAsync("serving-a", Arg.Any<CancellationToken>())
+            .Returns(BuildSucceededDeployOperation("op-old", "serving-a", "registry/honua-serving:OLD"));
+        var gateway = CreateProposalGateway(OperationClass.Deploy, "proposal-release-converge");
+        var service = CreateService(controlPlaneOptions: controlPlane, gateway: gateway, workflowStore: workflowStore);
+        var finding = (await service.EvaluateAsync()).Single(f => f.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.ProposalCreated, result.Status);
+        Assert.Equal("proposal-release-converge", result.ProposalId);
+        await gateway.Received(1).RouteAsync(
+            Arg.Is<OperationGatewayRequest>(r =>
+                r.Kind == OperationClass.Deploy &&
+                r.RequestedByAgent == OpsFindingsService.RequestedByAgent &&
+                r.IdempotencyKey == finding.Id &&
+                r.ExecutionPayload != null &&
+                r.ExecutionPayload.Contains("\"targetId\":\"serving-a\"", StringComparison.Ordinal) &&
+                r.ExecutionPayload.Contains("\"desiredRevision\":\"registry/honua-serving:2026.07.0\"", StringComparison.Ordinal) &&
+                r.ExecutionPayload.Contains("\"currentRevision\":\"registry/honua-serving:OLD\"", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Propose_ActionableFinding_WithoutOperationGateway_ReturnsGatewayUnavailable()
     {
         // Redis-less composition (#2511): OpsFindingsService is constructed without an
@@ -706,6 +841,19 @@ public sealed class OpsFindingsServiceTests
         backend.BackendName.Returns(backendName);
         backend.TargetKind.Returns(targetKind);
         return backend;
+    }
+
+    private static IOperationGateway CreateProposalGateway(OperationClass operationClass, string proposalId)
+    {
+        var gateway = Substitute.For<IOperationGateway>();
+        gateway.RouteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.ProposalCreated,
+                Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, operationClass, HonuaEdition.Pro, "test"),
+                ProposalId = proposalId,
+            });
+        return gateway;
     }
 
     private static OpsFindingsService CreateService(
