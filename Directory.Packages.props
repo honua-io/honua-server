@@ -49,7 +49,8 @@
     <PackageVersion Include="Grpc.Net.Client" Version="2.76.0" />
     <PackageVersion Include="Grpc.Net.Client.Web" Version="2.76.0" />
     <PackageVersion Include="Mapsui" Version="5.0.2" />
-    <!-- Transitive of NBomber.Contracts; pinned directly to clear GHSA-hv8m-jj95-wg3x (NU1903). -->
+    <!-- Transitive of NBomber.Contracts (tests) and Microsoft.AspNetCore.SignalR.StackExchangeRedis (server
+         admin realtime backplane, #2554); pinned directly to clear GHSA-hv8m-jj95-wg3x (NU1903). -->
     <PackageVersion Include="MessagePack" Version="2.5.301" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.6" />
@@ -64,6 +65,8 @@
          first patched release and stays API-compatible within the 2.x line. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageVersion Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.6" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.6" />
