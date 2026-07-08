@@ -140,6 +140,40 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     }
 
     [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_InvalidSpatialReferenceFromProvider_Returns400()
+    {
+        var fixture = await CreateFixtureWithProviderAsync(
+            new TestRoutingProvider(
+                new RoutingProviderCapabilities(SupportsRoute: true),
+                new InvalidSpatialReferenceException(999999)));
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
+                new KeyValuePair<string, string>("outSR", "999999"),
+            ]);
+
+            var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var error = document.RootElement.GetProperty("error");
+            error.GetProperty("code").GetInt32().Should().Be(400);
+            error.GetProperty("details").EnumerateArray().Select(d => d.GetString())
+                .Should().Contain(d => d!.Contains("Invalid or unknown spatial reference"));
+            document.RootElement.TryGetProperty("routes", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ServiceArea)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
     public async Task ServiceArea_ProviderWithoutServiceAreaSupport_ReturnsError()
@@ -354,12 +388,15 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     }
 
     private static async Task<WebAppFixture> CreateFixtureWithCapabilitiesAsync(RoutingProviderCapabilities capabilities)
+        => await CreateFixtureWithProviderAsync(new TestRoutingProvider(capabilities));
+
+    private static async Task<WebAppFixture> CreateFixtureWithProviderAsync(IRoutingProvider provider)
     {
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IRoutingProvider>();
-                services.AddScoped<IRoutingProvider>(_ => new TestRoutingProvider(capabilities));
+                services.AddScoped(_ => provider);
             });
 
         await fixture.InitializeAsync();

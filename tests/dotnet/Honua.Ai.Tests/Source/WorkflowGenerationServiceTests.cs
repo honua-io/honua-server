@@ -128,6 +128,35 @@ public sealed class WorkflowGenerationServiceTests
     }
 
     [UnitTest]
+    public async Task GenerateAsync_OversizedPrompt_ReturnsUnsupportedWithoutCallingProvider()
+    {
+        var registry = Substitute.For<IWorkflowNodeRegistry>();
+        var provider = Substitute.For<IWorkflowGenerationProvider>();
+        provider.ProviderId.Returns(WorkflowGenerationConfiguration.DeterministicProviderId);
+        provider.IsConfigured.Returns(true);
+
+        var service = new WorkflowGenerationService(
+            [provider],
+            registry,
+            Options.Create(new WorkflowGenerationConfiguration
+            {
+                Enabled = true,
+                DefaultProvider = WorkflowGenerationConfiguration.DeterministicProviderId
+            }),
+            NullLogger<WorkflowGenerationService>.Instance);
+
+        var result = await service.GenerateAsync(new WorkflowGenerationRequest
+        {
+            Prompt = new string('x', WorkflowGenerationPromptLimits.MaxPromptCharacters + 1)
+        });
+
+        result.Status.Should().Be(WorkflowGenerationStatus.Unsupported);
+        result.Rationale.Should().Be(WorkflowGenerationPromptLimits.ExceededMessage);
+        await provider.DidNotReceiveWithAnyArgs().GenerateAsync(default!, default);
+        await registry.DidNotReceiveWithAnyArgs().GetSnapshotAsync(default);
+    }
+
+    [UnitTest]
     public async Task GetProvidersAsync_WhenEnabled_ReportsTheDeterministicProviderAsAvailable()
     {
         var service = CreateService(enabled: true);

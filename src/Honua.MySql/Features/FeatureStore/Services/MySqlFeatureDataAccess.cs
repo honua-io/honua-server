@@ -271,7 +271,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
     #endregion
 
     private static NotSupportedException NotSupported(string operation)
-        => new($"Operation '{operation}' is not supported by the MySQL/MariaDB provider.");
+        => MySqlUnsupportedOperation.Create(operation);
 
     private static DbCommand CreateCommand(DbConnection connection, ParameterizedQuery query)
     {

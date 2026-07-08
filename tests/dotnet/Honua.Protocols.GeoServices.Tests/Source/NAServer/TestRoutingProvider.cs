@@ -19,6 +19,7 @@ internal sealed class TestRoutingProvider : IRoutingProvider
 {
     private const double MetersPerDegree = 111_320.0;
     private const double MetersPerMinute = 50_000.0 / 60.0;
+    private readonly Exception? _solveException;
 
     /// <summary>
     /// Creates a provider advertising full capabilities (route + service area, both
@@ -57,10 +58,11 @@ internal sealed class TestRoutingProvider : IRoutingProvider
     /// travel direction not advertised).
     /// </summary>
     /// <param name="capabilities">Capabilities the provider should advertise.</param>
-    public TestRoutingProvider(RoutingProviderCapabilities capabilities)
+    public TestRoutingProvider(RoutingProviderCapabilities capabilities, Exception? solveException = null)
     {
         ArgumentNullException.ThrowIfNull(capabilities);
         Capabilities = capabilities;
+        _solveException = solveException;
     }
 
     public string Name => "test";
@@ -72,6 +74,10 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (_solveException is not null)
+        {
+            return Task.FromException<RouteSolveResult>(_solveException);
+        }
 
         if (request.Stops.Count < 2)
         {
@@ -99,6 +105,10 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (_solveException is not null)
+        {
+            return Task.FromException<ServiceAreaSolveResult>(_solveException);
+        }
 
         var polygons = new List<ServiceAreaPolygon>();
         var orderedBreaks = request.Breaks.Where(b => b > 0).Distinct().OrderBy(b => b).ToArray();
@@ -124,6 +134,10 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (_solveException is not null)
+        {
+            return Task.FromException<ClosestFacilitySolveResult>(_solveException);
+        }
 
         var targetCount = Math.Max(1, request.DefaultTargetFacilityCount);
         var routes = new List<ClosestFacilityRoute>();
@@ -161,6 +175,10 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (_solveException is not null)
+        {
+            return Task.FromException<OdCostMatrixSolveResult>(_solveException);
+        }
 
         var lines = new List<OdLine>();
         for (var originId = 0; originId < request.Origins.Count; originId++)
@@ -201,6 +219,10 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (_solveException is not null)
+        {
+            return Task.FromException<LocationAllocationSolveResult>(_solveException);
+        }
 
         // Greedy nearest-facility allocation: choose the requested number of
         // facilities minimizing demand-weighted haversine impedance.

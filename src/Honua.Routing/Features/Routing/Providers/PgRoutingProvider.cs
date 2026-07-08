@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -788,17 +789,24 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             LIMIT 1;
             """;
 
-        return await session.QuerySingleOrDefaultAsync<long?>(
-                sql,
-                static row => row.IsNull(0) ? null : row.GetFieldValue<long>(0),
-                new Dictionary<string, object?>
-                {
-                    ["lon"] = point.Lon,
-                    ["lat"] = point.Lat,
-                    ["in_srid"] = inSrid,
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            return await session.QuerySingleOrDefaultAsync<long?>(
+                    sql,
+                    static row => row.IsNull(0) ? null : row.GetFieldValue<long>(0),
+                    new Dictionary<string, object?>
+                    {
+                        ["lon"] = point.Lon,
+                        ["lat"] = point.Lat,
+                        ["in_srid"] = inSrid,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (DbException ex) when (IsInvalidSpatialReferenceDbException(ex))
+        {
+            throw new InvalidSpatialReferenceException(inSrid, ex);
+        }
     }
 
     private static async Task<(IReadOnlyList<RouteStep> Steps, double Cost)?> SolveDijkstraLegAsync(
@@ -892,19 +900,27 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             FROM oriented;
             """;
 
-        var result = await session.QuerySingleOrDefaultAsync<(string GeometryGeoJson, double LengthMeters)>(
-                sql,
-                static row => (
-                    row.IsNull(0) ? string.Empty : row.GetFieldValue<string>(0),
-                    row.IsNull(1) ? 0 : row.GetFieldValue<double>(1)),
-                new Dictionary<string, object?>
-                {
-                    ["edge_ids"] = steps.Select(s => s.Edge).ToArray(),
-                    ["nodes"] = steps.Select(s => s.Node).ToArray(),
-                    ["out_srid"] = outSrid,
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
+        (string GeometryGeoJson, double LengthMeters) result;
+        try
+        {
+            result = await session.QuerySingleOrDefaultAsync<(string GeometryGeoJson, double LengthMeters)>(
+                    sql,
+                    static row => (
+                        row.IsNull(0) ? string.Empty : row.GetFieldValue<string>(0),
+                        row.IsNull(1) ? 0 : row.GetFieldValue<double>(1)),
+                    new Dictionary<string, object?>
+                    {
+                        ["edge_ids"] = steps.Select(s => s.Edge).ToArray(),
+                        ["nodes"] = steps.Select(s => s.Node).ToArray(),
+                        ["out_srid"] = outSrid,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (DbException ex) when (IsInvalidSpatialReferenceDbException(ex))
+        {
+            throw new InvalidSpatialReferenceException(outSrid, ex);
+        }
 
         return result;
     }
@@ -953,18 +969,25 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             FROM hull;
             """;
 
-        return await session.QuerySingleOrDefaultAsync(
-                sql,
-                static row => row.IsNull(0) ? string.Empty : row.GetFieldValue<string>(0),
-                new Dictionary<string, object?>
-                {
-                    ["edges_sql"] = edgesSql,
-                    ["facility"] = facilityVertex,
-                    ["break_cost"] = breakCost,
-                    ["out_srid"] = outSrid,
-                },
-                cancellationToken)
-            .ConfigureAwait(false) ?? string.Empty;
+        try
+        {
+            return await session.QuerySingleOrDefaultAsync(
+                    sql,
+                    static row => row.IsNull(0) ? string.Empty : row.GetFieldValue<string>(0),
+                    new Dictionary<string, object?>
+                    {
+                        ["edges_sql"] = edgesSql,
+                        ["facility"] = facilityVertex,
+                        ["break_cost"] = breakCost,
+                        ["out_srid"] = outSrid,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false) ?? string.Empty;
+        }
+        catch (DbException ex) when (IsInvalidSpatialReferenceDbException(ex))
+        {
+            throw new InvalidSpatialReferenceException(outSrid, ex);
+        }
     }
 
     /// <summary>
@@ -1039,18 +1062,25 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             """;
 
         var gids = new List<long>();
-        await foreach (var gid in session.QueryAsync(
-                           sql,
-                           static row => row.GetFieldValue<long>(0),
-                           new Dictionary<string, object?>
-                           {
-                               ["geojson"] = geoJson,
-                               ["kinds"] = kinds,
-                               ["in_srid"] = inSrid,
-                           },
-                           cancellationToken).ConfigureAwait(false))
+        try
         {
-            gids.Add(gid);
+            await foreach (var gid in session.QueryAsync(
+                               sql,
+                               static row => row.GetFieldValue<long>(0),
+                               new Dictionary<string, object?>
+                               {
+                                   ["geojson"] = geoJson,
+                                   ["kinds"] = kinds,
+                                   ["in_srid"] = inSrid,
+                               },
+                               cancellationToken).ConfigureAwait(false))
+            {
+                gids.Add(gid);
+            }
+        }
+        catch (DbException ex) when (IsInvalidSpatialReferenceDbException(ex))
+        {
+            throw new InvalidSpatialReferenceException(inSrid, ex);
         }
 
         return gids;
@@ -1085,6 +1115,26 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             ",",
             blockedEdges.Select(id => id.ToString(CultureInfo.InvariantCulture)));
         return $"{baseEdgesSql} WHERE gid NOT IN ({idList})";
+    }
+
+    private static bool IsInvalidSpatialReferenceDbException(DbException exception)
+    {
+        var message = exception.Message;
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        var sqlState = exception.SqlState;
+        var mayBeClientSridFailure = sqlState == "XX000"
+            || (sqlState is { Length: >= 2 } && sqlState.StartsWith("22", StringComparison.Ordinal));
+
+        return mayBeClientSridFailure
+            && message.Contains("SRID", StringComparison.OrdinalIgnoreCase)
+            && (message.Contains("unknown", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("out of range", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("maximum", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("invalid", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

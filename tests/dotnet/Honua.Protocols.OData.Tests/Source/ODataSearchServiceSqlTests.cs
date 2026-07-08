@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -43,5 +44,39 @@ public sealed class ODataSearchServiceSqlTests
 
         fragment.Sql.Should().Contain("attributes->>'O''Reilly'");
         fragment.Sql.Should().NotContain("attributes->>'O'Reilly'");
+    }
+
+    [Fact]
+    public void Merge_WithExistingSqlFilter_ReindexesFragmentParameters()
+    {
+        var query = new FeatureQuery
+        {
+            Where = "legacy",
+            SqlFilter = new SqlFragment("attributes->>'state' = @p0", ["CA"])
+        };
+        var fragment = new SqlFragment(
+            "(attributes->>'name' ILIKE @p0 OR attributes->>'city' ILIKE @p1)",
+            ["%San%", "%LA%"]);
+
+        var merged = ODataSqlFragmentMerger.Merge(query, fragment);
+
+        merged.Where.Should().BeNull();
+        merged.SqlFilter.Should().NotBeNull();
+        merged.SqlFilter!.Sql.Should().Be(
+            "(attributes->>'state' = @p0) AND ((attributes->>'name' ILIKE @p1 OR attributes->>'city' ILIKE @p2))");
+        merged.SqlFilter.Parameters.Should().Equal("CA", "%San%", "%LA%");
+    }
+
+    [Fact]
+    public void Merge_WithNullFragment_LeavesQueryUnchanged()
+    {
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("attributes->>'state' = @p0", ["CA"])
+        };
+
+        var merged = ODataSqlFragmentMerger.Merge(query, null);
+
+        merged.Should().Be(query);
     }
 }

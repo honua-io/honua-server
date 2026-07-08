@@ -162,6 +162,10 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer route parameters."),
                 "Invalid NAServer route parameters");
         }
+        catch (InvalidSpatialReferenceException ex)
+        {
+            return InvalidSpatialReferenceResult(context, ex);
+        }
     }
 
     private static async Task<IResult> HandleServiceArea(
@@ -228,6 +232,10 @@ internal static class NAServerEndpoints
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer service-area parameters."),
                 "Invalid NAServer service-area parameters");
+        }
+        catch (InvalidSpatialReferenceException ex)
+        {
+            return InvalidSpatialReferenceResult(context, ex);
         }
     }
 
@@ -370,6 +378,10 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer closest-facility parameters.", [ex.Message]),
                 "Invalid NAServer closest-facility parameters");
         }
+        catch (InvalidSpatialReferenceException ex)
+        {
+            return InvalidSpatialReferenceResult(context, ex);
+        }
     }
 
     private static async Task<IResult> HandleOdCostMatrix(
@@ -422,6 +434,10 @@ internal static class NAServerEndpoints
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer OD cost matrix parameters.", [ex.Message]),
                 "Invalid NAServer OD cost matrix parameters");
+        }
+        catch (InvalidSpatialReferenceException ex)
+        {
+            return InvalidSpatialReferenceResult(context, ex);
         }
     }
 
@@ -486,7 +502,19 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer location-allocation parameters.", [ex.Message]),
                 "Invalid NAServer location-allocation parameters");
         }
+        catch (InvalidSpatialReferenceException ex)
+        {
+            return InvalidSpatialReferenceResult(context, ex);
+        }
     }
+
+    private static IResult InvalidSpatialReferenceResult(HttpContext context, InvalidSpatialReferenceException exception)
+        => SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid spatial reference.",
+                [exception.Message]),
+            "Invalid NAServer spatial reference");
 
     private static bool ReadBool(IReadOnlyDictionary<string, string> parameters, string key, bool defaultValue)
     {
