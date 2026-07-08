@@ -160,7 +160,7 @@ internal sealed class McpOperatorSurface
         {
             return request.Method switch
             {
-                "initialize" => HandleInitialize(request),
+                "initialize" => HandleInitialize(httpContext, request),
                 "tools/list" => await ListToolsAsync(request, cancellationToken).ConfigureAwait(false),
                 "tools/call" => await CallToolAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "resources/list" => ListResources(request),
@@ -178,7 +178,16 @@ internal sealed class McpOperatorSurface
         }
     }
 
-    private static McpJsonRpcResponse HandleInitialize(McpJsonRpcRequest request)
+    /// <summary>
+    /// <see cref="HttpContext.Items"/> key under which <c>initialize</c> records
+    /// whether the client advertised the MCP elicitation capability, so the
+    /// transport can bind the flag to the session it issues on success
+    /// (honua-server#2484). Request-scoped: initialize and the session-creating
+    /// code run within the same <see cref="HttpContext"/>.
+    /// </summary>
+    internal const string ElicitationCapabilityItemKey = "honua.mcp.client.elicitation";
+
+    private static McpJsonRpcResponse HandleInitialize(HttpContext httpContext, McpJsonRpcRequest request)
     {
         var parameters = ParseParams(request.Params, McpJsonContext.Default.McpInitializeParams);
         if (parameters is null)
@@ -211,6 +220,13 @@ internal sealed class McpOperatorSurface
                 McpErrorMapper.InvalidArgument("initialize.params.clientInfo.name is required."));
         }
 
+        // honua-server#2484: record whether the client advertised the elicitation
+        // capability so the session issued on success carries it. Per MCP
+        // 2025-06-18 an elicitation-capable client sends `capabilities.elicitation`
+        // as an object; presence of the key (as an object) is the signal.
+        httpContext.Items[ElicitationCapabilityItemKey] =
+            AdvertisesElicitation(parameters.Capabilities.Value);
+
         var negotiatedVersion = NegotiateProtocolVersion(parameters.ProtocolVersion);
         var result = new McpInitializeResult
         {
@@ -229,6 +245,18 @@ internal sealed class McpOperatorSurface
         };
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpInitializeResult);
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when the client's <c>initialize</c> capabilities object
+    /// advertises the MCP elicitation capability (honua-server#2484). Per MCP
+    /// 2025-06-18 a supporting client declares <c>"elicitation": {}</c>; presence
+    /// of the key as an object is the contract. A non-object <c>elicitation</c>
+    /// value is treated as not advertised.
+    /// </summary>
+    private static bool AdvertisesElicitation(JsonElement capabilities) =>
+        capabilities.ValueKind == JsonValueKind.Object
+        && capabilities.TryGetProperty("elicitation", out var elicitation)
+        && elicitation.ValueKind == JsonValueKind.Object;
 
     private static string NegotiateProtocolVersion(string requestedVersion)
     {

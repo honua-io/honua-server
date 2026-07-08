@@ -137,7 +137,8 @@ internal sealed class McpSessionManager
     /// Creates and registers a new session bound to the anonymous principal,
     /// returning its id. Retained for callers and tests that do not thread a
     /// principal; production <c>initialize</c> handling uses
-    /// <see cref="TryCreateSession"/> so it can honor the capacity policy.
+    /// <see cref="TryCreateSession(string?, bool, out string)"/> so it can honor
+    /// the capacity policy.
     /// </summary>
     public string CreateSession()
     {
@@ -155,7 +156,18 @@ internal sealed class McpSessionManager
     /// policy is <see cref="McpSessionEvictionPolicy.RejectNew"/>. Invoked when the
     /// server accepts an <c>initialize</c> request in stateful mode.
     /// </summary>
-    public bool TryCreateSession(string? principalKey, out string sessionId)
+    public bool TryCreateSession(string? principalKey, out string sessionId) =>
+        TryCreateSession(principalKey, elicitationSupported: false, out sessionId);
+
+    /// <summary>
+    /// Creates and registers a new session, additionally recording whether the
+    /// client advertised the MCP elicitation capability at <c>initialize</c>
+    /// (honua-server#2484). Behaves identically to
+    /// <see cref="TryCreateSession(string?, out string)"/> otherwise; the flag is
+    /// later read by <see cref="SupportsElicitation"/> so clarification-emitting
+    /// tools can choose the elicitation projection over the proprietary envelope.
+    /// </summary>
+    public bool TryCreateSession(string? principalKey, bool elicitationSupported, out string sessionId)
     {
         var now = _timeProvider.GetUtcNow();
         lock (_capacityGate)
@@ -174,10 +186,28 @@ internal sealed class McpSessionManager
             }
 
             var id = GenerateSessionId();
-            _sessions[id] = new McpSession(principalKey ?? AnonymousPrincipalKey, now);
+            _sessions[id] = new McpSession(principalKey ?? AnonymousPrincipalKey, now, elicitationSupported);
             sessionId = id;
             return true;
         }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the session identified by <paramref name="sessionId"/>
+    /// is active and its client advertised the MCP elicitation capability at
+    /// <c>initialize</c> (honua-server#2484). An unknown, terminated, or
+    /// idle-expired id — or a session whose client did not advertise elicitation —
+    /// reports <c>false</c>. Does not refresh the sliding idle window: this is a
+    /// read of state established at handshake, not client activity.
+    /// </summary>
+    public bool SupportsElicitation(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId) || !_sessions.TryGetValue(sessionId, out var session))
+        {
+            return false;
+        }
+
+        return !IsExpired(session, _timeProvider.GetUtcNow()) && session.ElicitationSupported;
     }
 
     /// <summary>
@@ -400,10 +430,11 @@ internal sealed class McpSessionManager
 
     private sealed class McpSession
     {
-        public McpSession(string principalKey, DateTimeOffset createdUtc)
+        public McpSession(string principalKey, DateTimeOffset createdUtc, bool elicitationSupported = false)
         {
             PrincipalKey = principalKey;
             LastAccessUtc = createdUtc;
+            ElicitationSupported = elicitationSupported;
         }
 
         /// <summary>
@@ -411,6 +442,13 @@ internal sealed class McpSessionManager
         /// (<see cref="AnonymousPrincipalKey"/> for an anonymous session).
         /// </summary>
         public string PrincipalKey { get; }
+
+        /// <summary>
+        /// Whether the client advertised the MCP elicitation capability at
+        /// <c>initialize</c> (honua-server#2484). Immutable for the session
+        /// lifetime — capabilities are negotiated once at handshake.
+        /// </summary>
+        public bool ElicitationSupported { get; }
 
         /// <summary>
         /// Last time a client request touched this session; drives the sliding idle

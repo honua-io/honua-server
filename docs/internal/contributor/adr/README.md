@@ -62,6 +62,8 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0056](0056-mcp-redesign-unified-governed-surface.md) | MCP Redesign — Unified, Client-Agnostic, Governed Surface (Sequencing Plan) | Proposed | 2026-06 |
 | [0058](0058-unified-capability-registry-single-source-of-truth.md) | Unified Capability Registry as Single Source of Truth for MCP, Spec Conformance, and Studio AI | Accepted | 2026-07 |
 | [0059](0059-first-release-scope-and-fix-forward-operate-model.md) | First-Release Scope and Fix-Forward Operate Model | Accepted | 2026-07 |
+| [0060](0060-two-plane-operability-architecture.md) | Two-Plane Operability Architecture — Substrate-Neutral Executors Over a Unified Catalog | Proposed | 2026-07 |
+| [0061](0061-mcp-native-elicitation-mapping.md) | Map the Clarification Envelope onto MCP-Native Elicitation | Accepted | 2026-07 |
 
 ## Template
 

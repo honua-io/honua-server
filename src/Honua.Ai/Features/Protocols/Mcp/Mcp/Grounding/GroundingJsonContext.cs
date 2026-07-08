@@ -29,6 +29,9 @@ namespace Honua.Ai.Protocols.Mcp.Grounding;
 [JsonSerializable(typeof(McpClarificationEnvelope))]
 [JsonSerializable(typeof(McpClarificationQuestionView))]
 [JsonSerializable(typeof(McpClarificationOptionView))]
+[JsonSerializable(typeof(McpElicitationRequest))]
+[JsonSerializable(typeof(McpElicitationSchema))]
+[JsonSerializable(typeof(McpElicitationProperty))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
