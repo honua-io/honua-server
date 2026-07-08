@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 
@@ -193,4 +194,73 @@ internal sealed record OpsActionRequest
             ? element.GetString()
             : null;
     }
+}
+
+/// <summary>
+/// Builds serialized <c>{action, target, params}</c> execution payloads for the registered
+/// <see cref="OpsActionNames"/> vocabulary, mirroring exactly what <see cref="OpsActionRequest.Parse"/>
+/// expects. Single-sourcing the wire shape here (next to the parser) keeps producers — for example the
+/// deterministic ops-findings engine — from hand-rolling JSON that could drift from the parser's contract.
+/// </summary>
+internal static class OpsActionExecutionPayloads
+{
+    /// <summary>Builds the payload for <see cref="OpsActionNames.RedriveDeadLetters"/>.</summary>
+    /// <param name="maxCount">Optional redrive batch bound.</param>
+    public static string RedriveDeadLetters(int? maxCount = null)
+        => Build(OpsActionNames.RedriveDeadLetters, target: null, maxCount: maxCount, limit: null, channel: null);
+
+    /// <summary>Builds the payload for <see cref="OpsActionNames.TuneBoundedAdmission"/>.</summary>
+    /// <param name="limit">The requested admission target.</param>
+    public static string TuneBoundedAdmission(int limit)
+        => Build(OpsActionNames.TuneBoundedAdmission, target: null, maxCount: null, limit: limit, channel: null);
+
+    private static string Build(string action, string? target, int? maxCount, int? limit, string? channel)
+    {
+        var parameters = maxCount is null && limit is null && channel is null
+            ? null
+            : new OpsActionExecutionParams { MaxCount = maxCount, Limit = limit, Channel = channel };
+
+        var payload = new OpsActionExecutionPayload
+        {
+            Action = action,
+            Target = target,
+            Params = parameters,
+        };
+
+        return JsonSerializer.Serialize(payload, OpsActionExecutionPayloadJsonContext.Default.OpsActionExecutionPayload);
+    }
+}
+
+/// <summary>Wire shape for a serialized ops-action execution payload (see <see cref="OpsActionRequest.Parse"/>).</summary>
+internal sealed record OpsActionExecutionPayload
+{
+    /// <summary>Action discriminator (a registered <see cref="OpsActionNames"/> value).</summary>
+    public required string Action { get; init; }
+
+    /// <summary>Optional free-form action target.</summary>
+    public string? Target { get; init; }
+
+    /// <summary>Optional action parameters.</summary>
+    public OpsActionExecutionParams? Params { get; init; }
+}
+
+/// <summary>Optional parameters carried by an ops-action execution payload.</summary>
+internal sealed record OpsActionExecutionParams
+{
+    /// <summary>Redrive batch bound.</summary>
+    public int? MaxCount { get; init; }
+
+    /// <summary>Bounded-admission tune target.</summary>
+    public int? Limit { get; init; }
+
+    /// <summary>Pause/resume channel name.</summary>
+    public string? Channel { get; init; }
+}
+
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(OpsActionExecutionPayload))]
+internal sealed partial class OpsActionExecutionPayloadJsonContext : JsonSerializerContext
+{
 }

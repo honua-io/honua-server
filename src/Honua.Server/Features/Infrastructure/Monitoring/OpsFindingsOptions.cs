@@ -37,4 +37,48 @@ public sealed class OpsFindingsOptions
     /// </summary>
     [Range(1, int.MaxValue)]
     public int GpQueueDepthThreshold { get; set; } = 200;
+
+    /// <summary>
+    /// Gets or sets the database connection-pool utilization ratio (0.0-1.0) at or above which the
+    /// <c>db-bounded-admission-pressure</c> rule raises a finding. Default is 0.9 (90%).
+    /// </summary>
+    [Range(0.01, 1.0)]
+    public double DbPoolUtilizationThreshold { get; set; } = 0.9;
+
+    /// <summary>
+    /// Gets or sets the connection-acquisition timeout count at or above which the
+    /// <c>db-bounded-admission-pressure</c> rule raises a finding. Default is 5.
+    /// </summary>
+    [Range(1, long.MaxValue)]
+    public long DbConnectionAcquisitionTimeoutThreshold { get; set; } = 5;
+
+    /// <summary>
+    /// Gets or sets the fraction (0.0-1.0, exclusive of the current admission target) by which a
+    /// proposed <c>db.tune_bounded_admission</c> action lowers the current admission target when
+    /// database connection-pool pressure is elevated. Default is 0.25 (a 25% reduction, floored at
+    /// the gate's configured minimum).
+    /// </summary>
+    [Range(0.01, 0.9)]
+    public double DbBoundedAdmissionTuneDownFraction { get; set; } = 0.25;
+
+    /// <summary>
+    /// Gets or sets the per-protocol 95th-percentile serving-latency threshold (milliseconds) at or
+    /// above which the <c>serving-latency-slo-breach</c> rule raises a finding. Default is 2000ms.
+    /// </summary>
+    [Range(1, double.MaxValue)]
+    public double ServingLatencyP95ThresholdMs { get; set; } = 2000;
+
+    /// <summary>
+    /// Gets or sets the per-protocol server-error rate (0.0-1.0) at or above which the
+    /// <c>serving-latency-slo-breach</c> rule raises a finding. Default is 0.05 (5%).
+    /// </summary>
+    [Range(0.0001, 1.0)]
+    public double ServingErrorRateThreshold { get; set; } = 0.05;
+
+    /// <summary>
+    /// Gets or sets the lookback window (minutes) the <c>serving-latency-slo-breach</c> rule reads
+    /// from the persisted ops-health rollup store's 1-minute tier (#2553). Default is 5 minutes.
+    /// </summary>
+    [Range(1, 1440)]
+    public double ServingLatencyLookbackMinutes { get; set; } = 5;
 }

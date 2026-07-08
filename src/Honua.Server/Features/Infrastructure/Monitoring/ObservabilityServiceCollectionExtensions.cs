@@ -30,6 +30,7 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddPerformanceMonitoring();
         services.TryAddSingleton<ConnectionPoolMetrics>();
         services.AddSingleton<ProductionMetricsCollector>();
+        services.AddSingleton<IOpsDatabasePressureSignal, ProductionMetricsDatabasePressureSignal>();
         services.Configure<RecentErrorBufferOptions>(
             configuration.GetSection(RecentErrorBufferOptions.SectionName));
         services.AddSingleton<RecentErrorBuffer>();
@@ -56,6 +57,12 @@ internal static class ObservabilityServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
+        services.AddScoped(sp => new OpsFindingsExtendedSignals
+        {
+            DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),
+            AdmissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(),
+            RollupStore = sp.GetService<IOpsHealthRollupStore>(),
+        });
         services.AddScoped<IOpsFindingsService, OpsFindingsService>();
 
         // Persisted ops-health rollup store + per-replica sampler (#2553). The store itself is registered by
