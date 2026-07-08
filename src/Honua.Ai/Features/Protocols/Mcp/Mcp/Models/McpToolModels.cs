@@ -134,6 +134,47 @@ internal sealed class McpOperateEventsArgument
 }
 
 /// <summary>
+/// Arguments for <c>honua_deploy_operations</c>: list deploy operations or
+/// fetch one deploy operation by stable operation id.
+/// </summary>
+internal sealed class McpDeployOperationsArgument
+{
+    [JsonPropertyName("operationId")]
+    public string? OperationId { get; set; }
+
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("kind")]
+    public string? Kind { get; set; }
+
+    [JsonPropertyName("page")]
+    public int? Page { get; set; }
+
+    [JsonPropertyName("pageSize")]
+    public int? PageSize { get; set; }
+}
+
+/// <summary>
+/// Arguments for <c>honua_propose_rollback</c>: propose rolling a deploy
+/// target forward to a prior revision through the shared operation gateway.
+/// </summary>
+internal sealed class McpProposeRollbackArgument
+{
+    [JsonPropertyName("targetId")]
+    public string? TargetId { get; set; }
+
+    [JsonPropertyName("toRevision")]
+    public string? ToRevision { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; set; }
+}
+
+/// <summary>
 /// Output for <c>honua_propose_operation</c>. On <c>requiresApproval</c> the
 /// agent polls the <c>resourceUri</c> until the proposal resolves (#1696).
 /// </summary>

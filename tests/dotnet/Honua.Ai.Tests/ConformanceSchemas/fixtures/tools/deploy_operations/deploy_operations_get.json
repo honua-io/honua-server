@@ -1,0 +1,10 @@
+{
+  "id": "deploy_operations.get_by_id",
+  "schemaRef": "tools/deploy_operations.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "operationId": "op_5f31c2"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["DeployOperationResponse"]
+}

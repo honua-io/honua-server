@@ -110,6 +110,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_ops_findings", "ops_findings", "results"),
             ("honua_alert_events", "alert_events", "results"),
             ("honua_operate_events", "operate_events", "results"),
+            ("honua_platform_release_status", "platform_release_status", "results"),
+            ("honua_deploy_operations", "deploy_operations", "results"),
+            ("honua_propose_rollback", "propose_rollback", "lifecycle"),
             ("honua_list_layers", "list_layers", "results"),
             ("honua_query_features", "query_features", "results"),
             // No honua_edit_features: Honua does not expose an AI/MCP feature-mutation

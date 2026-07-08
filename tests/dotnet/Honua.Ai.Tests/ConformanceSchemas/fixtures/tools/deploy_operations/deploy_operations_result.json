@@ -1,0 +1,72 @@
+{
+  "id": "deploy_operations.result_paged_envelope",
+  "schemaRef": "tools/deploy_operations.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "items": [
+      {
+        "operationId": "op_5f31c2",
+        "kind": "Deploy",
+        "status": "Submitted",
+        "priority": "Normal",
+        "target": {
+          "targetId": "serving-us-west",
+          "targetKind": "Serving",
+          "backend": "ecs",
+          "environment": "prod",
+          "targetName": "Serving (us-west)",
+          "currentRevision": "rev_2026_06_30",
+          "desiredRevision": "rev_2026_07_01",
+          "parameters": { "region": "us-west-2" }
+        },
+        "warnings": [],
+        "blockingReasons": [],
+        "requestedBy": "mike@honua.io",
+        "reason": "Ship 2026.07.01 platform release.",
+        "correlationId": "corr-9f2a",
+        "createdAt": "2026-07-07T09:00:00+00:00",
+        "updatedAt": "2026-07-07T09:05:00+00:00"
+      },
+      {
+        "operationId": "op_4a10bd",
+        "kind": "MetadataRelease",
+        "status": "Succeeded",
+        "priority": "Normal",
+        "metadataRelease": {
+          "packageId": "pkg_maui_nui",
+          "prUrl": "https://github.com/honua-io/honua-content/pull/42",
+          "commitSha": "abc1234",
+          "desiredRevision": "2026.07.01",
+          "targetEnvironment": "prod",
+          "deployOperationId": "op_5f31c2",
+          "jobIds": ["job_1", "job_2"],
+          "evidenceRefs": [
+            { "kind": "ci-run", "refId": "run-8891", "uri": "https://ci.honua.io/runs/8891", "at": "2026-07-07T08:50:00+00:00" }
+          ],
+          "currentStage": "Applied",
+          "rollbackPlan": {
+            "class": "MetadataOnly",
+            "isDataAffecting": false,
+            "requiresExplicitApproval": false,
+            "steps": ["revert PR", "re-release prior metadata snapshot"],
+            "evidenceRequired": ["ci-run"]
+          },
+          "blockers": [],
+          "warnings": []
+        },
+        "warnings": [],
+        "blockingReasons": [],
+        "createdAt": "2026-07-07T08:40:00+00:00",
+        "updatedAt": "2026-07-07T08:55:00+00:00",
+        "completedAt": "2026-07-07T08:55:00+00:00"
+      }
+    ],
+    "page": 1,
+    "pageSize": 50,
+    "totalCount": 2,
+    "hasMore": false
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["DeployOperationResponse"],
+  "notes": "Response envelope copied verbatim from the honua-server#2562 / PR #2577 pinned wire contract; nulls are omitted (missing key == null)."
+}
