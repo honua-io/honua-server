@@ -1,0 +1,52 @@
+# Geospatial MCP operations parity map.
+#
+# Format:
+# routes:
+#   "METHOD /api/v1/example/{id}":
+#     tool: honua_tool_name
+#     # or:
+#     resource: honua://resource/{id}
+#     # or:
+#     human-only: "Required justification for an operator-only action."
+#
+# Each route in the architecture-test enforced operate/admin-observability/deploy/proposals
+# partition must appear exactly once with exactly one of `tool`, `resource`, or `human-only`.
+# `human-only` is reserved for actions that must remain human controls, such as approval,
+# rejection, staged submit, and promotion.
+routes:
+  "GET /api/v1/operate/status":
+    tool: honua_ops_health
+  "GET /api/v1/admin/observability/ops-health":
+    tool: honua_ops_health
+  "GET /api/v1/admin/observability/ops-health/history":
+    resource: honua://ops/health
+  "GET /api/v1/admin/observability/findings":
+    tool: honua_ops_findings
+  "POST /api/v1/admin/observability/findings/{findingId}/propose":
+    tool: honua_propose_operation
+  "GET /api/v1/admin/deploy/preflight":
+    tool: honua_ops_health
+  "POST /api/v1/admin/deploy/plan":
+    tool: honua_propose_operation
+  "GET /api/v1/admin/deploy/operations":
+    tool: honua_operate_events
+  "POST /api/v1/admin/deploy/operations":
+    tool: honua_propose_operation
+  "GET /api/v1/admin/deploy/operations/{operationId}":
+    tool: honua_operate_events
+  "POST /api/v1/admin/deploy/operations/{operationId}/submit":
+    human-only: "Submitting a staged deploy operation is an operator control; agents propose operations and observe status instead."
+  "POST /api/v1/admin/deploy/operations/{operationId}/promote":
+    human-only: "Promoting a staged deploy operation is an operator control; agents propose operations and observe status instead."
+  "POST /api/v1/admin/deploy/operations/{operationId}/rollback":
+    tool: honua_propose_operation
+  "POST /api/v1/admin/platform-release/converge":
+    tool: honua_propose_operation
+  "GET /api/v1/admin/proposals":
+    resource: honua://proposals/{proposalId}
+  "GET /api/v1/admin/proposals/{id}":
+    resource: honua://proposals/{proposalId}
+  "POST /api/v1/admin/proposals/{id}/approve":
+    human-only: "Approving a proposal must be performed by a human operator; agents can propose and poll honua://proposals/{proposalId}."
+  "POST /api/v1/admin/proposals/{id}/reject":
+    human-only: "Rejecting a proposal must be performed by a human operator; agents can propose and poll honua://proposals/{proposalId}."
