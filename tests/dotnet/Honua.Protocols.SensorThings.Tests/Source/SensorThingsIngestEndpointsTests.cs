@@ -33,11 +33,12 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.SensorThings, "sensor.ingest")]
     public async Task PostObservation_SingleIntoSeededDatastream_PersistsAndIsReadable()
     {
+        using var adminClient = _fixture.CreateAdminClient();
         var payload = Json("""
             { "phenomenonTime": "2026-06-20T12:00:00Z", "result": 42.5, "Datastream": { "@iot.id": 1 } }
             """);
 
-        var response = await _fixture.Client.PostAsync("/sta/v1.1/Observations", payload);
+        var response = await adminClient.PostAsync("/sta/v1.1/Observations", payload);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -56,6 +57,7 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.SensorThings, "sensor.ingest")]
     public async Task PostObservations_BulkEnvelope_PersistsAllRows()
     {
+        using var adminClient = _fixture.CreateAdminClient();
         var payload = Json("""
             { "value": [
                 { "phenomenonTime": "2026-06-20T13:00:00Z", "result": 1.0, "Datastream": { "@iot.id": 1 } },
@@ -64,7 +66,7 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
             ] }
             """);
 
-        var response = await _fixture.Client.PostAsync("/sta/v1.1/Observations", payload);
+        var response = await adminClient.PostAsync("/sta/v1.1/Observations", payload);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -78,9 +80,10 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.SensorThings, "sensor.ingest")]
     public async Task PostObservation_OnDatastreamNavigation_PersistsToThatDatastream()
     {
+        using var adminClient = _fixture.CreateAdminClient();
         var payload = Json("""{ "result": 7.0 }""");
 
-        var response = await _fixture.Client.PostAsync("/sta/v1.1/Datastreams(1)/Observations", payload);
+        var response = await adminClient.PostAsync("/sta/v1.1/Datastreams(1)/Observations", payload);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -92,9 +95,10 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
     [Endpoint("POST /sta/v1.1/Observations")]
     public async Task PostObservation_MissingDatastream_Returns404()
     {
+        using var adminClient = _fixture.CreateAdminClient();
         var payload = Json("""{ "result": 1.0, "Datastream": { "@iot.id": 999999 } }""");
 
-        var response = await _fixture.Client.PostAsync("/sta/v1.1/Observations", payload);
+        var response = await adminClient.PostAsync("/sta/v1.1/Observations", payload);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -105,6 +109,7 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.SensorThings, "datastream.create")]
     public async Task PostDatastream_WithInlineRelatedEntities_CreatesQueryableDatastream()
     {
+        using var adminClient = _fixture.CreateAdminClient();
         var payload = Json("""
             {
               "name": "Test Wind Speed",
@@ -116,7 +121,7 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
             }
             """);
 
-        var response = await _fixture.Client.PostAsync("/sta/v1.1/Datastreams", payload);
+        var response = await adminClient.PostAsync("/sta/v1.1/Datastreams", payload);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -128,7 +133,7 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
         read.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var observation = Json("""{ "result": 5.5 }""");
-        var ingest = await _fixture.Client.PostAsync($"/sta/v1.1/Datastreams({id})/Observations", observation);
+        var ingest = await adminClient.PostAsync($"/sta/v1.1/Datastreams({id})/Observations", observation);
         ingest.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var observations = await _fixture.Client.GetAsync($"/sta/v1.1/Datastreams({id})/Observations");
@@ -141,7 +146,9 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
     [Endpoint("POST /sta/v1.1/Datastreams")]
     public async Task PostDatastream_MissingBody_Returns400()
     {
-        var response = await _fixture.Client.PostAsync("/sta/v1.1/Datastreams", Json("{}"));
+        using var adminClient = _fixture.CreateAdminClient();
+
+        var response = await adminClient.PostAsync("/sta/v1.1/Datastreams", Json("{}"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
