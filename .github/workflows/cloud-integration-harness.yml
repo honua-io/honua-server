@@ -145,6 +145,16 @@ jobs:
     name: Local Substrate (YARP rolling + local process + migration gate)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     # ADR-0060 substrate-neutral lane (#2166, #2457): proves the single-host, zero-cloud (containers
     # only — no Kubernetes, no cloud) deploy / rolling-upgrade / expand-contract-migration / rollback
     # story on BOTH planes. Serving = YarpRollingDeployBackend + real embedded YARP + real docker
@@ -179,6 +189,7 @@ jobs:
       - name: Run local-substrate tests
         env:
           TESTCONTAINERS_RYUK_DISABLED: false
+          HONUA_TEST_REDIS_URL: localhost:6379
         run: |
           mkdir -p ./tests/TestResults
           dotnet test ${{ env.CSPROJ }} \
