@@ -198,11 +198,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         var baselineGeneration = beforeFailure!.Value.LastSyncGeneration;
 
         // Inject an edit whose apply deterministically fails, proving a failed upload does NOT
-        // advance the replica generation. Use the per-layer edits form with an UPDATE targeting an
-        // objectid that does not exist: the shared applyEdits pipeline fails it per-edit with code
-        // 1002 "Feature not found" while resolving the existing feature — independent of any
-        // geometry/CRS validation — so the sync apply reports failure and the handler returns the
-        // GeoServices 400 error envelope.
+        // advance the replica generation. Use the per-layer edits form with a polygon-shaped ADD
+        // against layer 0, whose schema is esriGeometryPoint: the shared applyEdits pipeline fails
+        // it per-edit with code 1006 before WKB conversion, so the sync apply reports failure and
+        // the handler returns the GeoServices 400 error envelope.
         //
         // Use the per-layer edits form here so the failure path specifically proves update errors do
         // not advance the replica generation; flat-form feature-array upload coverage lives with the
@@ -212,15 +211,24 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             new
             {
                 id = 0,
-                updates = new[]
+                adds = new[]
                 {
                     new
                     {
-                        attributes = new { objectid = 99_999_999, name = "missing-oid-upload" },
+                        attributes = new { name = "polygon-on-point-layer-upload" },
                         geometry = new
                         {
-                            x = -157.85,
-                            y = 21.30,
+                            rings = new[]
+                            {
+                                new[]
+                                {
+                                    new[] { -157.85, 21.30 },
+                                    new[] { -157.84, 21.30 },
+                                    new[] { -157.84, 21.31 },
+                                    new[] { -157.85, 21.31 },
+                                    new[] { -157.85, 21.30 }
+                                }
+                            },
                             spatialReference = new { wkid = 4326 }
                         }
                     }
