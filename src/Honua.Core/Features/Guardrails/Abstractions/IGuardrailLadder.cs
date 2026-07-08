@@ -36,4 +36,29 @@ public interface IGuardrailLadder
     /// <param name="operationClass">Mutating operation class being evaluated.</param>
     /// <returns>The resolved guardrail decision.</returns>
     GuardrailDecision Resolve(OperationClass operationClass);
+
+    /// <summary>
+    /// Resolves the guardrail tier for the supplied operation class, optionally
+    /// discriminated by a control-plane ops action. When
+    /// <paramref name="actionDiscriminator"/> is supplied the ladder resolves the
+    /// per-action tier from the registered ops-action catalog; an action the
+    /// catalog does not recognize fails closed to <see cref="GuardrailTier.Blocked"/>.
+    /// When it is <see langword="null"/> the ladder falls back to
+    /// operation-class-only resolution.
+    /// </summary>
+    /// <param name="operationClass">Mutating operation class being evaluated.</param>
+    /// <param name="actionDiscriminator">Optional ops-action discriminator.</param>
+    /// <returns>The resolved guardrail decision.</returns>
+    GuardrailDecision Resolve(OperationClass operationClass, string? actionDiscriminator);
+
+    /// <summary>
+    /// Resolves the guardrail tier for the supplied operation class and edition,
+    /// optionally discriminated by a control-plane ops action. See
+    /// <see cref="Resolve(OperationClass, string?)"/> for the discriminator semantics.
+    /// </summary>
+    /// <param name="operationClass">Mutating operation class being evaluated.</param>
+    /// <param name="actionDiscriminator">Optional ops-action discriminator.</param>
+    /// <param name="edition">Active platform edition.</param>
+    /// <returns>The resolved guardrail decision.</returns>
+    GuardrailDecision Resolve(OperationClass operationClass, string? actionDiscriminator, HonuaEdition edition);
 }

@@ -89,6 +89,11 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                     OR (@exclude_channel = true AND channel_type <> @channel_type)
                     OR (@exclude_channel = false AND channel_type = @channel_type)
                   )
+                  -- Channel pause: never claim rows for a paused channel. Paused rows
+                  -- stay enqueued and become claimable again once the channel resumes.
+                  AND channel_type NOT IN (
+                    SELECT channel_type FROM honua.alert_channel_state WHERE is_paused = true
+                  )
                 ORDER BY next_attempt_at, dispatch_id
                 FOR UPDATE SKIP LOCKED
                 LIMIT @max_count
@@ -291,5 +296,96 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         }
 
         return deleted;
+    }
+
+    public async Task<int> RedriveDeadLettersAsync(
+        DateTimeOffset now,
+        int batchLimit,
+        CancellationToken cancellationToken = default)
+    {
+        if (batchLimit <= 0)
+        {
+            return 0;
+        }
+
+        // Re-enqueue dead-lettered rows (status = 4) for redelivery: return them to
+        // Pending (0), reset the attempt counter and last error, and make them due now.
+        // Bounded by @limit so one redrive pass stays a short transaction; idempotent
+        // because a pass with no dead-letters updates nothing and returns 0.
+        const string sql = """
+            WITH candidates AS (
+                SELECT dispatch_id
+                FROM honua.alert_dispatch
+                WHERE status = 4
+                ORDER BY dispatch_id
+                LIMIT @limit
+            )
+            UPDATE honua.alert_dispatch d
+            SET status = 0,
+                attempts = 0,
+                next_attempt_at = @now,
+                last_error = NULL,
+                updated_at = now()
+            FROM candidates c
+            WHERE d.dispatch_id = c.dispatch_id
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("now", NpgsqlDbType.TimestampTz, now);
+        command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, batchLimit);
+
+        var redriven = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (redriven > 0)
+        {
+            AlertLog.DispatchDeadLettersRedriven(_logger, redriven);
+        }
+
+        return redriven;
+    }
+
+    public async Task SetChannelPausedAsync(
+        AlertChannelType channel,
+        bool paused,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            INSERT INTO honua.alert_channel_state (channel_type, is_paused, paused_at, updated_at)
+            VALUES (@channel_type, @is_paused, @paused_at, @updated_at)
+            ON CONFLICT (channel_type) DO UPDATE
+            SET is_paused = EXCLUDED.is_paused,
+                paused_at = EXCLUDED.paused_at,
+                updated_at = EXCLUDED.updated_at
+            """;
+
+        var channelValue = channel.ToDbValue();
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("channel_type", NpgsqlDbType.Smallint, channelValue);
+        command.Parameters.AddWithValue("is_paused", NpgsqlDbType.Boolean, paused);
+        command.Parameters.AddWithValue("paused_at", NpgsqlDbType.TimestampTz, paused ? now : (object)DBNull.Value);
+        command.Parameters.AddWithValue("updated_at", NpgsqlDbType.TimestampTz, now);
+        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        AlertLog.DispatchChannelPauseChanged(_logger, channelValue, paused);
+    }
+
+    public async Task<IReadOnlyDictionary<AlertChannelType, bool>> GetChannelPauseStatesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = "SELECT channel_type, is_paused FROM honua.alert_channel_state";
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        var states = new Dictionary<AlertChannelType, bool>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            states[AlertStoreConversions.ToChannelType(reader.GetInt16(0))] = reader.GetBoolean(1);
+        }
+
+        return states;
     }
 }

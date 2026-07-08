@@ -24,5 +24,10 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/alerts/rules/{ruleId}/health"),
         new("GET", "/api/v1/admin/alerts/rules/{ruleId}/events"),
         new("DELETE", "/api/v1/admin/alerts/rules/{ruleId}"),
+        // Alert dispatch self-healing ops actuators (#2561).
+        new("POST", "/api/v1/admin/alerts/dispatch/redrive"),
+        new("GET", "/api/v1/admin/alerts/channels"),
+        new("POST", "/api/v1/admin/alerts/channels/{channel}/pause"),
+        new("POST", "/api/v1/admin/alerts/channels/{channel}/resume"),
     ];
 }
