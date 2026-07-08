@@ -66,6 +66,7 @@ internal static class ObservabilityServiceCollectionExtensions
         });
         services.AddScoped<IOpsFindingsService, OpsFindingsService>();
         services.AddScoped<IMcpOpsObservabilityReader, McpOpsObservabilityReader>();
+        services.AddScoped<IMcpPlatformOpsReader, McpPlatformOpsReader>();
 
         // Persisted ops-health rollup store + per-replica sampler (#2553). The store itself is registered by
         // the Postgres provider; the sampler and history service resolve it as optional so non-Postgres
