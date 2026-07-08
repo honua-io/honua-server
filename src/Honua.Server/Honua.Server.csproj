@@ -118,6 +118,10 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+    <!-- Force the audited-safe MessagePack (2.5.301) over the vulnerable 2.5.187 that the SignalR Redis
+         backplane pulls transitively (transitive pinning is not enabled repo-wide). See #2554. -->
+    <PackageReference Include="MessagePack" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Polly" />
     <PackageReference Include="Serilog.AspNetCore" />

@@ -47,7 +47,7 @@ internal static class ObservabilityEventEndpoints
         var page = await feed.ListAsync(filter, cancellationToken).ConfigureAwait(false);
         var response = new OperateEventPageResponse
         {
-            Items = page.Items.Select(MapEvent).ToArray(),
+            Items = page.Items.Select(OperateEventResponseMapper.Map).ToArray(),
             PartialResult = page.PartialResult,
             SourceErrors = page.SourceErrors?.ToDictionary(
                 pair => pair.Key.ToString().ToLowerInvariant(),
@@ -134,45 +134,4 @@ internal static class ObservabilityEventEndpoints
         return true;
     }
 
-    private static OperateEventResponse MapEvent(OperateEvent value)
-    {
-        return new OperateEventResponse
-        {
-            EventId = value.EventId,
-            Kind = ToCamel(value.Kind.ToString()),
-            Severity = value.Severity.ToString().ToLowerInvariant(),
-            OccurredAt = value.OccurredAt,
-            Title = value.Title,
-            Summary = value.Summary,
-            ServiceId = value.ServiceId,
-            LayerId = value.LayerId,
-            ObjectId = value.ObjectId,
-            Actor = value.Actor,
-            CorrelationId = value.CorrelationId,
-            TraceId = value.TraceId,
-            RequestId = value.RequestId,
-            OperationId = value.OperationId,
-            ReleaseId = value.ReleaseId,
-            ReplicaId = value.ReplicaId,
-            ChangeSetId = value.ChangeSetId,
-            ResourceRef = value.ResourceRef,
-            ProviderLinks = value.ProviderLinks?.Select(link => new OperateProviderLinkResponse
-            {
-                Provider = link.Provider,
-                Label = link.Label,
-                Url = link.Url
-            }).ToArray(),
-            DetailsJson = value.DetailsJson
-        };
-    }
-
-    private static string ToCamel(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return value;
-        }
-
-        return char.ToLowerInvariant(value[0]) + value[1..];
-    }
 }

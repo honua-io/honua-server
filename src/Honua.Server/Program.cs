@@ -714,7 +714,7 @@ builder.Services.AddOperationsToolset(builder.Configuration);
 // operations toolset so the tool source can resolve the canonical IOperationCatalog.
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
-builder.Services.AddAdminRealtime();
+builder.Services.AddAdminRealtime(builder.Configuration);
 if (!isTestEnvironment)
 {
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
