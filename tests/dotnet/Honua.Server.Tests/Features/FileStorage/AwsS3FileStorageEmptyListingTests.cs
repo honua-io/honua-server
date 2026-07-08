@@ -73,14 +73,14 @@ public sealed class AwsS3FileStorageEmptyListingTests
     }
 
     [UnitTest]
-    public async Task CleanupExpiredFilesAsync_ListsOnlyTemporaryFilesPrefix()
+    public async Task CleanupExpiredFilesAsync_ListsProviderRootForGlobalCleanup()
     {
         using var stub = EmptyListObjectsStub.Start();
         var storage = CreateStorage(stub.ServiceUrl);
 
         _ = await storage.CleanupExpiredFilesAsync();
 
-        stub.ListRequestPrefixes.Should().ContainSingle().Which.Should().Be("temporary-files/");
+        stub.ListRequestPrefixes.Should().ContainSingle().Which.Should().BeNull();
     }
 
     [UnitTest]

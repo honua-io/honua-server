@@ -109,7 +109,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
             try
             {
-                await _cloudFileStorage.CleanupExpiredFilesAsync(processingToken).ConfigureAwait(false);
+                await TryCleanupExpiredTemporaryCloudFilesAsync(processingToken).ConfigureAwait(false);
                 await EnsureCloudStorageCapacityAsync(data.Length, processingToken).ConfigureAwait(false);
 
                 var extension = GetFileExtension(contentType);
@@ -289,7 +289,46 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             return;
         }
 
-        _ = await _cloudFileStorage.CleanupExpiredFilesAsync(cancellationToken).ConfigureAwait(false);
+        _ = await CleanupExpiredTemporaryCloudFilesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<int> TryCleanupExpiredTemporaryCloudFilesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await CleanupExpiredTemporaryCloudFilesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            CloudBackedTemporaryFileLog.SharedStorageCleanupFailed(
+                _logger,
+                _cloudFileStorage.Provider,
+                TemporaryPrefix,
+                ex);
+            return 0;
+        }
+    }
+
+    private async Task<int> CleanupExpiredTemporaryCloudFilesAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var files = await _cloudFileStorage
+            .ListFilesAsync(TemporaryFolder, int.MaxValue, includeMetadata: true, cancellationToken)
+            .ConfigureAwait(false);
+        var cleanedCount = 0;
+
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (file.ExpiresAt.HasValue
+                && file.ExpiresAt.Value <= now
+                && await _cloudFileStorage.DeleteAsync(file.FileId, cancellationToken).ConfigureAwait(false))
+            {
+                cleanedCount++;
+            }
+        }
+
+        return cleanedCount;
     }
 
     private void ValidateCloudStorageRequest(byte[] data, string contentType)

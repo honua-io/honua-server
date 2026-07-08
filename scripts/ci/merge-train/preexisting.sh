@@ -52,9 +52,15 @@ train_run_failing_job_names() {
 
 # train_run_failing_job_records <run-id>: emit failing job records as
 # "<job-id><TAB><job-name>", one per line. The job id is empty for fixture
-# overrides that only provide names.
+# overrides that only provide names. Test override:
+# TRAIN_FAILING_JOB_RECORDS_FOR_RUN <cmd> is invoked with the run id and must
+# print the same tab-separated records.
 train_run_failing_job_records() {
   local run_id="$1"
+  if [[ -n "${TRAIN_FAILING_JOB_RECORDS_FOR_RUN:-}" ]]; then
+    "${TRAIN_FAILING_JOB_RECORDS_FOR_RUN}" "${run_id}" | sed '/^$/d' | sort -u
+    return 0
+  fi
   if [[ -n "${TRAIN_FAILING_JOBS_FOR_RUN:-}" ]]; then
     train_run_failing_job_names "${run_id}" | awk '{ print "\t" $0 }'
     return 0
@@ -70,11 +76,12 @@ train_run_failing_job_records() {
 # train_run_job_log <run-id> <job-name> [job-id]: emit the log for one failed
 # job. Live path prefers the bounded per-job log so the signature extractor sees
 # real Build & Format / shard error lines even when whole-run logs are huge.
-# Test override: TRAIN_JOB_LOG_FOR_RUN <cmd> is called with (run id, job name).
+# Test override: TRAIN_JOB_LOG_FOR_RUN <cmd> is called with
+# (run id, job name, job id).
 train_run_job_log() {
   local run_id="$1" job="$2" job_id="${3:-}"
   if [[ -n "${TRAIN_JOB_LOG_FOR_RUN:-}" ]]; then
-    "${TRAIN_JOB_LOG_FOR_RUN}" "${run_id}" "${job}"
+    "${TRAIN_JOB_LOG_FOR_RUN}" "${run_id}" "${job}" "${job_id}"
     return 0
   fi
   if [[ -n "${TRAIN_RUN_LOG_FOR:-}" ]]; then
@@ -182,11 +189,25 @@ train_emit_job_failure_signatures() {
 # "<job-name><TAB><signature>" records for the supplied jobs. When job names are
 # omitted, the failed jobs are discovered from the run.
 train_run_failure_signatures() {
-  local run_id="$1" job_names="${2:-}" job record job_id
+  local run_id="$1" job_names="${2:-}" job record job_id record_job records matched
   if [[ -n "$(printf '%s' "${job_names}" | sed '/^$/d')" ]]; then
+    records="$(train_run_failing_job_records "${run_id}")"
     while IFS= read -r job; do
       [[ -z "${job}" ]] && continue
-      train_emit_job_failure_signatures "${run_id}" "${job}"
+      matched=0
+      while IFS= read -r record; do
+        [[ -z "${record}" ]] && continue
+        job_id="${record%%$'\t'*}"
+        record_job="${record#*$'\t'}"
+        [[ "${record_job}" == "${record}" ]] && { record_job="${record}"; job_id=""; }
+        if [[ "${record_job}" == "${job}" ]]; then
+          matched=1
+          train_emit_job_failure_signatures "${run_id}" "${record_job}" "${job_id}"
+        fi
+      done <<<"${records}"
+      if [[ "${matched}" -eq 0 ]]; then
+        train_emit_job_failure_signatures "${run_id}" "${job}"
+      fi
     done <<<"$(printf '%s\n' "${job_names}" | sed '/^$/d' | sort -u)"
     return 0
   fi

@@ -367,6 +367,49 @@ public sealed class TemporaryFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CleanupExpiredFilesAsync_WithRemoteCloudStorage_RemovesOnlyExpiredTemporaryFiles()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                BaseUrl = "/temp"
+            },
+            cloudStorage);
+        var expiredTemporary = await cloudStorage.UploadAsync(new ByteArrayUploadRequest
+        {
+            Content = [1],
+            FileName = "expired-temp.bin",
+            ContentType = "application/octet-stream",
+            Folder = "temporary-files",
+            TimeToLive = TimeSpan.FromMilliseconds(-1)
+        });
+        var expiredExport = await cloudStorage.UploadAsync(new ByteArrayUploadRequest
+        {
+            Content = [2],
+            FileName = "expired-export.bin",
+            ContentType = "application/octet-stream",
+            Folder = "exports",
+            TimeToLive = TimeSpan.FromMilliseconds(-1)
+        });
+        var activeTemporary = await cloudStorage.UploadAsync(new ByteArrayUploadRequest
+        {
+            Content = [3],
+            FileName = "active-temp.bin",
+            ContentType = "application/octet-stream",
+            Folder = "temporary-files",
+            TimeToLive = TimeSpan.FromMinutes(5)
+        });
+
+        await service.CleanupExpiredFilesAsync();
+
+        (await cloudStorage.ExistsAsync(expiredTemporary.File!.FileId)).Should().BeFalse();
+        (await cloudStorage.ExistsAsync(expiredExport.File!.FileId)).Should().BeTrue();
+        (await cloudStorage.ExistsAsync(activeTemporary.File!.FileId)).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageAndRedisLease_SerializesQuotaAcrossInstances()
     {
         var cloudStorage = new FakeCloudFileStorage(
@@ -538,11 +581,12 @@ public sealed class TemporaryFileServiceTests : IDisposable
         retrieved.Should().NotBeNull();
         retrieved!.Value.data.Should().Equal(4, 5, 6);
         retrieved.Value.contentType.Should().Be("image/png");
-        logger.Entries.Should().ContainSingle(entry =>
+        logger.Entries.Should().Contain(entry =>
             entry.Level == LogLevel.Warning &&
             entry.Exception == capacityFailure &&
             entry.Message.Contains("AwsS3", StringComparison.Ordinal) &&
-            entry.Message.Contains("temporary-files/", StringComparison.Ordinal));
+            entry.Message.Contains("temporary-files/", StringComparison.Ordinal) &&
+            entry.Message.Contains("capacity check failed", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
