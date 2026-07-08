@@ -2682,6 +2682,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
         "Honua.Server.Tests.Features.Admin.DeployReleaseTimelineTests.DeployLifecycle_RaisesReleaseTimelineEvents_FilterableByReleaseId",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.OperateEvents_FilterByCorrelation_ReturnsDurableJobEvent",
         "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ListEvents_NormalizesItemsAndPropagatesPartialResult",
@@ -2699,6 +2700,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetFindings_WithAdminAuth_ReturnsFindingsEnvelope",
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetFindings_WithoutAdminAuth_IsUnauthorized",
         "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.OpsReadKey_CanReadStatusAndFindings"
@@ -13182,6 +13184,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.ProposeFinding_UnknownId_Returns404",
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.ProposeFinding_WithoutAdminAuth_IsUnauthorized",
         "Honua.Server.Tests.Features.OperateStatus.OperateStatusEndpointsTests.OpsReadKey_CannotInvokeMutatingOpsEndpoints"
@@ -13344,6 +13347,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AlreadyResolved_ReturnsConflict",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_HappyPath_ExecutesAndMarksSubmitted",
