@@ -1,0 +1,16 @@
+﻿{
+  "id": "alert_events.gis_open_critical",
+  "schemaRef": "tools/alert_events.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "source": "gis",
+    "severity": "critical",
+    "rule": "geofence-breach",
+    "lifecycleState": "open",
+    "from": "2026-07-01T00:00:00+00:00",
+    "to": "2026-07-07T00:00:00+00:00",
+    "pageSize": 50
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["ObservabilityAlertEventResponse"]
+}

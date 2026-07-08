@@ -59,6 +59,81 @@ internal sealed class McpProposeOperationArgument
 }
 
 /// <summary>
+/// Arguments for <c>honua_ops_findings</c>: list active deterministic ops
+/// findings, or fetch a single finding by its stable identifier.
+/// </summary>
+internal sealed class McpOpsFindingsArgument
+{
+    [JsonPropertyName("findingId")]
+    public string? FindingId { get; set; }
+
+    [JsonPropertyName("severity")]
+    public string? Severity { get; set; }
+
+    [JsonPropertyName("rule")]
+    public string? Rule { get; set; }
+}
+
+/// <summary>
+/// Arguments for <c>honua_alert_events</c>: cursor-paged alert-event reads
+/// across GIS alert rules and ops notifications.
+/// </summary>
+internal sealed class McpAlertEventsArgument
+{
+    [JsonPropertyName("source")]
+    public string? Source { get; set; }
+
+    [JsonPropertyName("severity")]
+    public string? Severity { get; set; }
+
+    [JsonPropertyName("rule")]
+    public string? Rule { get; set; }
+
+    [JsonPropertyName("lifecycleState")]
+    public string? LifecycleState { get; set; }
+
+    [JsonPropertyName("from")]
+    public DateTimeOffset? From { get; set; }
+
+    [JsonPropertyName("to")]
+    public DateTimeOffset? To { get; set; }
+
+    [JsonPropertyName("pageSize")]
+    public int? PageSize { get; set; }
+
+    [JsonPropertyName("cursor")]
+    public string? Cursor { get; set; }
+}
+
+/// <summary>
+/// Arguments for <c>honua_operate_events</c>: paged reads over the fused
+/// Operate timeline.
+/// </summary>
+internal sealed class McpOperateEventsArgument
+{
+    [JsonPropertyName("kind")]
+    public IReadOnlyList<string>? Kind { get; set; }
+
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; set; }
+
+    [JsonPropertyName("operationId")]
+    public string? OperationId { get; set; }
+
+    [JsonPropertyName("releaseId")]
+    public string? ReleaseId { get; set; }
+
+    [JsonPropertyName("from")]
+    public DateTimeOffset? From { get; set; }
+
+    [JsonPropertyName("to")]
+    public DateTimeOffset? To { get; set; }
+
+    [JsonPropertyName("pageSize")]
+    public int? PageSize { get; set; }
+}
+
+/// <summary>
 /// Output for <c>honua_propose_operation</c>. On <c>requiresApproval</c> the
 /// agent polls the <c>resourceUri</c> until the proposal resolves (#1696).
 /// </summary>

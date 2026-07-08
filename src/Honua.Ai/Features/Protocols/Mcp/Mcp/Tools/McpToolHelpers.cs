@@ -221,6 +221,32 @@ internal static class McpToolHelpers
     }
 
     /// <summary>
+    /// Builds a successful tool result from an already serialized JSON payload.
+    /// Used by adapter tools that project an existing server wire response
+    /// without owning the response DTO type.
+    /// </summary>
+    public static McpToolsCallResult SuccessJsonElement(
+        JsonElement value,
+        Func<JsonElement, string>? summarize = null)
+    {
+        var element = value.Clone();
+        var text = element.GetRawText();
+        var contentText = text.Length < InlineTextThresholdChars
+            ? text
+            : (summarize?.Invoke(element) ?? DefaultLargePayloadSummary(text));
+
+        return new McpToolsCallResult
+        {
+            IsError = false,
+            StructuredContent = element,
+            Content =
+            [
+                new McpContentBlock { Type = "text", Text = contentText }
+            ]
+        };
+    }
+
+    /// <summary>
     /// Fallback summary for a large structured payload whose caller supplied no
     /// bespoke summarizer. Information-bearing (serialized size + where the data
     /// lives) rather than an empty acknowledgement so a reader still learns the
@@ -292,6 +318,57 @@ internal static class McpToolHelpers
         {
             throw new GeoprocessingValidationException(
                 $"Tool arguments are not valid JSON: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Parses optional object arguments. Missing, null, or undefined arguments
+    /// produce a default instance so read tools with all-optional filters accept
+    /// the MCP-standard empty call shape.
+    /// </summary>
+    public static T ParseOptionalArguments<T>(JsonElement? arguments, JsonTypeInfo<T> typeInfo)
+        where T : class, new()
+    {
+        if (arguments is null || arguments.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return new T();
+        }
+
+        if (arguments.Value.ValueKind != JsonValueKind.Object)
+        {
+            throw new GeoprocessingValidationException("Tool arguments must be a JSON object.");
+        }
+
+        try
+        {
+            return arguments.Value.Deserialize(typeInfo) ?? new T();
+        }
+        catch (JsonException ex)
+        {
+            throw new GeoprocessingValidationException(
+                $"Tool arguments are not valid JSON: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Validates a no-argument tool invocation, accepting the MCP-standard
+    /// missing/null argument bag and an empty JSON object.
+    /// </summary>
+    public static void EnsureNoArguments(JsonElement? arguments)
+    {
+        if (arguments is null || arguments.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return;
+        }
+
+        if (arguments.Value.ValueKind != JsonValueKind.Object)
+        {
+            throw new GeoprocessingValidationException("Tool arguments must be an empty JSON object.");
+        }
+
+        if (arguments.Value.EnumerateObject().Any())
+        {
+            throw new GeoprocessingValidationException("This tool does not accept arguments.");
         }
     }
 }

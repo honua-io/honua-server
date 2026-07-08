@@ -1,0 +1,25 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/ops_findings.schema.json",
+  "title": "ops_findings inputSchema",
+  "description": "Argument shape for the platform-operations findings tool (advertised name honua_ops_findings). Read-only over the deterministic ops findings surface (mirror of GET /api/v1/admin/observability/findings). Two modes: omit findingId to LIST the active findings (server-ordered by descending severity), optionally narrowed by severity and rule; provide findingId to GET a single finding by its deterministic identifier. Each finding carries a recommendedAction {kind, summary, reason} and evidence references; the action is proposed (never executed) by finding id through the operation gateway, consistent with the honua-server ADR-0028 no-direct-AI-mutation posture. The response payload is the honua://ops/findings resource projection (see resources/ops-findings.schema.json). x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {
+    "findingId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Deterministic finding identifier to fetch a single finding (get mode). When omitted, the tool lists active findings (list mode)."
+    },
+    "severity": {
+      "type": "string",
+      "description": "Optional list-mode filter: return only findings at this severity.",
+      "enum": ["Info", "Warning", "Critical"]
+    },
+    "rule": {
+      "type": "string",
+      "description": "Optional list-mode filter: return only findings produced by this kebab-case rule identifier."
+    }
+  },
+  "additionalProperties": false
+}

@@ -98,6 +98,20 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ClarifyIntentTool>());
 
+        // Platform-operations observability tools (#2555) are read-only adapters
+        // over the admin ops-health/findings/alert/timeline surfaces. The server
+        // composition root registers IMcpOpsObservabilityReader after the same
+        // ops-read/admin authorization dependencies as the REST endpoints, so
+        // this gate keeps tools/list honest in minimal hosts and unit-test
+        // compositions.
+        if (services.Any(d => d.ServiceType == typeof(IMcpOpsObservabilityReader)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, OpsHealthTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, OpsFindingsTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, AlertEventsTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, OperateEventsTool>());
+        }
+
         // honua_list_capabilities (#1949): a self-describing manifest of the live
         // tool/resource surface for a cold client LLM. Registered unconditionally
         // because it only reflects whatever catalog the composition wired — it has
@@ -201,6 +215,12 @@ internal static class McpServiceCollectionExtensions
         // it has no runtime persistence dependency and cannot advertise an empty
         // or stale surface.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, FeatureCatalogResource>());
+
+        if (services.Any(d => d.ServiceType == typeof(IMcpOpsObservabilityReader)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, OpsHealthResource>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, OpsFindingsResource>());
+        }
 
         // Only advertise the report resource when the host has actually wired
         // IAnalysisReportService. AddAnalysisReporting is the canonical

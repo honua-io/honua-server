@@ -1,0 +1,43 @@
+﻿{
+  "id": "ops-findings.list",
+  "schemaRef": "resources/ops-findings.schema.json",
+  "validates": "inputs",
+  "uri": "honua://ops/findings",
+  "inputs": {
+    "generatedAt": "2026-07-07T09:10:00+00:00",
+    "findings": [
+      {
+        "id": "finding-deploy-target-skew-serving-us-east",
+        "rule": "deploy-target-skew",
+        "severity": "Warning",
+        "title": "Serving plane skewed from declared release",
+        "explanation": "serving-us-east is running 2026.06.30 while the declared platform release is 2026.07.01.",
+        "detectedAt": "2026-07-07T09:09:00+00:00",
+        "subject": {
+          "targetId": "serving-us-east",
+          "releaseVersion": "2026.07.01"
+        },
+        "evidenceRefs": ["ops-health:deploy.platformRelease.skewedIds", "deploy-operation:op_5f31c2"],
+        "recommendedAction": {
+          "kind": "Deploy",
+          "summary": "Roll serving-us-east forward to 2026.07.01.",
+          "reason": "Co-version the serving plane with the declared platform release."
+        }
+      },
+      {
+        "id": "finding-alert-backlog-high",
+        "rule": "alert-dispatch-backlog-high",
+        "severity": "Info",
+        "title": "Alert-dispatch backlog elevated",
+        "explanation": "Pending alert-dispatch backlog is above the informational threshold but draining.",
+        "detectedAt": "2026-07-07T09:09:00+00:00",
+        "subject": {
+          "channel": "email-primary"
+        },
+        "evidenceRefs": ["ops-health:alertDispatch.pendingCount"]
+      }
+    ]
+  },
+  "expected": "resource_projection",
+  "canonicalRefs": ["OpsFindingsListResponse"]
+}

@@ -1,0 +1,10 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/ops_health.schema.json",
+  "title": "ops_health inputSchema",
+  "description": "Argument shape for the platform-operations health tool (advertised name honua_ops_health). Read-only: returns a single consolidated operational-health snapshot mirroring the honua-server admin endpoint GET /api/v1/admin/observability/ops-health (health-check roll-up, serving latency, geoprocessing queue depth, alert-dispatch backlog, coordinated-deploy readiness + platform-release skew, database/cache utilization). Takes no arguments. The response payload is the honua://ops/health resource projection (see resources/ops-health.schema.json). x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

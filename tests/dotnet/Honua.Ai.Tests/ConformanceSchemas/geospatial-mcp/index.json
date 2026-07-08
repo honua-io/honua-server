@@ -108,6 +108,38 @@
       "notes": "honua_publish_result (honua-server#2482) promotes a completed analysis job's materialized FeatureLayer/Table artifact (sourceId = the job id) into a hosted published service + layer, routing through the same canonical service.publish promotion as honua_publish_service. The standard schema requires only sourceId; the reference tool adds honua extension selectors (artifactId / serviceName / layerName) under additionalProperties. Analyze / Publish Data (published_service) is implemented; Build App (deployment) promotion is deferred (honua-server#730/#732)."
     },
     {
+      "standardName": "ops_health",
+      "referenceToolName": "honua_ops_health",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/ops_health.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only platform-ops health snapshot; mirror of honua-server GET /api/v1/admin/observability/ops-health. Response payload is the honua://ops/health resource."
+    },
+    {
+      "standardName": "ops_findings",
+      "referenceToolName": "honua_ops_findings",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/ops_findings.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only deterministic ops findings list/get; mirror of honua-server GET /api/v1/admin/observability/findings. Response payload is the honua://ops/findings resource."
+    },
+    {
+      "standardName": "alert_events",
+      "referenceToolName": "honua_alert_events",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/alert_events.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only, cursor-paged alert-event query over source/severity/rule/lifecycle/time filters."
+    },
+    {
+      "standardName": "operate_events",
+      "referenceToolName": "honua_operate_events",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/operate_events.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only, paged fused Operate timeline query over kind/correlation/operation/release/time filters."
+    },
+    {
       "standardName": "list_layers",
       "referenceToolName": "honua_list_layers",
       "family": "Discovery and query (reference shape)",
@@ -305,6 +337,20 @@
       "family": "Workspace",
       "uriForm": "honua://workspaces/{workspace_id}",
       "schema": "resources/workspace.schema.json",
+      "shapeFidelity": "concrete-reference",
+      "implementationStatus": "implemented"
+    },
+    {
+      "family": "Ops health",
+      "uriForm": "honua://ops/health",
+      "schema": "resources/ops-health.schema.json",
+      "shapeFidelity": "concrete-reference",
+      "implementationStatus": "implemented"
+    },
+    {
+      "family": "Ops findings",
+      "uriForm": "honua://ops/findings",
+      "schema": "resources/ops-findings.schema.json",
       "shapeFidelity": "concrete-reference",
       "implementationStatus": "implemented"
     },

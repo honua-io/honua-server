@@ -103,6 +103,53 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
+    public void AddMcpOperatorSurface_WithoutOpsObservabilityReader_DoesNotRegisterOpsObservabilitySurface()
+    {
+        var services = BuildBaseServices();
+
+        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+
+        RegisteredToolHandlers(services)
+            .Should().NotContain(new[]
+            {
+                typeof(OpsHealthTool),
+                typeof(OpsFindingsTool),
+                typeof(AlertEventsTool),
+                typeof(OperateEventsTool)
+            }, "ops observability tools must only be advertised when the server reader is wired");
+        RegisteredResourceHandlers(services)
+            .Should().NotContain(new[]
+            {
+                typeof(OpsHealthResource),
+                typeof(OpsFindingsResource)
+            }, "ops resources must only be advertised when the server reader is wired");
+    }
+
+    [UnitTest]
+    public void AddMcpOperatorSurface_WithOpsObservabilityReader_RegistersOpsObservabilitySurface()
+    {
+        var services = BuildBaseServices();
+        services.AddScoped(_ => Substitute.For<IMcpOpsObservabilityReader>());
+
+        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+
+        RegisteredToolHandlers(services)
+            .Should().Contain(new[]
+            {
+                typeof(OpsHealthTool),
+                typeof(OpsFindingsTool),
+                typeof(AlertEventsTool),
+                typeof(OperateEventsTool)
+            }, "the full server composition registers the MCP ops reader before the operator surface");
+        RegisteredResourceHandlers(services)
+            .Should().Contain(new[]
+            {
+                typeof(OpsHealthResource),
+                typeof(OpsFindingsResource)
+            }, "ops health/findings are fixed MCP resources backed by the same reader");
+    }
+
+    [UnitTest]
     public void AddMcpPromotionSurface_RegistersPromotionResourceHandlersOnly()
     {
         var services = BuildBaseServices();
