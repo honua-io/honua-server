@@ -39,10 +39,7 @@ public sealed class GeoPackagePreviewTests
         }
         finally
         {
-            if (File.Exists(filePath))
-            {
-                File.Delete(filePath);
-            }
+            await DeleteGeoPackageAsync(filePath);
         }
     }
 
@@ -66,10 +63,7 @@ public sealed class GeoPackagePreviewTests
         }
         finally
         {
-            if (File.Exists(filePath))
-            {
-                File.Delete(filePath);
-            }
+            await DeleteGeoPackageAsync(filePath);
         }
     }
 
@@ -99,16 +93,13 @@ public sealed class GeoPackagePreviewTests
         }
         finally
         {
-            if (File.Exists(filePath))
-            {
-                File.Delete(filePath);
-            }
+            await DeleteGeoPackageAsync(filePath);
         }
     }
 
     private static void CreateGeoPackage(string filePath, bool includeSecondLayer = false)
     {
-        using var connection = new SqliteConnection($"Data Source={filePath}");
+        using var connection = new SqliteConnection($"Data Source={filePath};Pooling=False");
         connection.Open();
 
         ExecuteNonQuery(connection, """
@@ -230,4 +221,25 @@ public sealed class GeoPackagePreviewTests
     private static IFileImportService CreateService() =>
         PreviewImportServiceFactory.Create();
 
+    private static async Task DeleteGeoPackageAsync(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            return;
+        }
+
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            SqliteConnection.ClearAllPools();
+            try
+            {
+                File.Delete(filePath);
+                return;
+            }
+            catch (IOException) when (attempt < 5)
+            {
+                await Task.Delay(100).ConfigureAwait(false);
+            }
+        }
+    }
 }

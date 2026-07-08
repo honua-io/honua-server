@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/propose_rollback.schema.json",
+  "title": "propose_rollback inputSchema",
+  "description": "Argument shape for the platform-rollback proposal tool (advertised name honua_propose_rollback). Proposes rolling a deploy target back to its prior revision by requesting a NEW FORWARD Deploy operation to that prior revision — it is NOT an in-flight-operation abort/undo and does not reverse an operation already running; it converges the target forward onto the previous known-good revision. Like propose_operation, this proposes an in-scope mutating control-plane operation for human approval and is NEVER autonomously executed: a deterministic server records the proposal and returns a proposal id / honua://proposals/{id}; execution stays approval-gated behind the human console inbox. Consistent with the honua-server ADR-0028 posture reconciled by the standard's ADR-0028 (deterministic server, approval-gated mutation, no autonomous AI data edits). Uses platform_release / server_upgrade vocabulary; distinct from the hosted-content honua://deployments/{deployment_id} resource. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["targetId"],
+  "properties": {
+    "targetId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Deploy target to roll back (from deploy_operations[].target.targetId or ops findings/health subject.targetId)."
+    },
+    "toRevision": {
+      "type": "string",
+      "description": "Optional prior revision to roll forward to. When omitted, the server selects the target's most recent prior succeeded Deploy revision (a rolled-back latest deploy is demoted; the prior succeeded deploy is chosen)."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Operator-facing reason recorded on the proposal."
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "description": "Stable idempotency key for the underlying forward Deploy operation."
+    }
+  },
+  "additionalProperties": false
+}
