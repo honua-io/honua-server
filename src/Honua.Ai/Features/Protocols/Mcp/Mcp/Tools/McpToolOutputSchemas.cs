@@ -114,6 +114,11 @@ internal static class McpToolOutputSchemas
               "description": "honua://proposals/{proposalId} resource URI to poll when human approval is required."
             },
             "executionOperationId": { "type": ["string", "null"] },
+            "supportedKinds": {
+              "type": ["array", "null"],
+              "items": { "type": "string" },
+              "description": "Operation classes with a genuinely registered executor (routable through the gateway); reported on every response, including rejections, so proposing an unsupported kind is never a silent dead end (#2563)."
+            },
             "message": { "type": ["string", "null"] }
           }
         }

@@ -24,10 +24,15 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class ProposeOperationToolTests
 {
-    private static DefaultHttpContext ContextWithGateway(IOperationGateway gateway)
+    private static DefaultHttpContext ContextWithGateway(IOperationGateway gateway, IOperationExecutorCatalog? catalog = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(gateway);
+        if (catalog != null)
+        {
+            services.AddSingleton(catalog);
+        }
+
         return new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
@@ -106,6 +111,42 @@ public sealed class ProposeOperationToolTests
         var result = await tool.InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
 
         result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /mcp tools/call honua_propose_operation")]
+    public async Task ProposeOperation_ReportsSupportedKindsFromCatalog_OnEveryOutcome()
+    {
+        // #2563: supportedKinds must reflect genuinely registered executors (MetadataRelease
+        // appears, Seed does not) so an agent never hits a silent dead end.
+        var gateway = new FakeGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.NotSupported,
+            Decision = new GuardrailDecision(GuardrailTier.DirectExecute, OperationClass.Seed, default, "test"),
+            Message = "No executor is registered for operation kind 'Seed'; the operation was not performed."
+        });
+        var catalog = new FakeExecutorCatalog([OperationClass.AdminConfigChange, OperationClass.Deploy, OperationClass.MetadataRelease]);
+
+        var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument { Kind = "Seed" },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await tool.InvokeAsync(ContextWithGateway(gateway, catalog), arguments, CancellationToken.None);
+
+        var content = result.StructuredContent!.Value;
+        content.GetProperty("outcome").GetString().Should().Be("NotSupported");
+        var supportedKinds = content.GetProperty("supportedKinds").EnumerateArray()
+            .Select(element => element.GetString())
+            .ToArray();
+        supportedKinds.Should().BeEquivalentTo(["AdminConfigChange", "Deploy", "MetadataRelease"]);
+        supportedKinds.Should().NotContain("Seed", "Seed has no registered executor and must never be advertised as supported");
+    }
+
+    private sealed class FakeExecutorCatalog(IReadOnlyCollection<OperationClass> supportedKinds) : IOperationExecutorCatalog
+    {
+        public IReadOnlyCollection<OperationClass> SupportedKinds { get; } = supportedKinds;
     }
 
     private sealed class FakeGateway(OperationGatewayResult result) : IOperationGateway
