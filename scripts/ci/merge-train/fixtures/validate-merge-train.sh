@@ -23,6 +23,8 @@
 #                                FQNs => rc2 (fall back, never a full shard rerun).
 #   Cap.2 escalation          -> labels every culprit train:escalated, removes
 #                                train:landing, clears active_batch (phase=select).
+#   Cap.2b green rerun recovery -> clears stale train:escalated + stamps CI Gate
+#                                  only for still-open escalated batch members.
 #   Cap.4 autofix gate        -> TRAIN_AUTOFIX=0 inert (escalate like today);
 #                                TRAIN_AUTOFIX=1 fix path (mock agent commits,
 #                                no bot attribution; cap enforced; decline=>escalate).
@@ -102,6 +104,7 @@ export TRAIN_REPO_ROOT="${WORK}"
 . "${TRAIN_DIR}/land.sh"
 . "${TRAIN_DIR}/select.sh"
 . "${TRAIN_DIR}/state.sh"
+. "${TRAIN_DIR}/recovery.sh"
 
 # Point shard config + targeted script at the REAL repo files so attribution and
 # smart-CI exercise production routing.
@@ -590,6 +593,38 @@ csj="$(printf '%s\n' "${cleared}" | awk '/^```json/{f=1;next}/^```/{f=0}f')"
 assert_eq "escalate: active_batch.branch cleared" "$(jq -r '.active_batch.branch' <<<"${csj}")" ""
 assert_eq "escalate: active_batch.included cleared" "$(jq -rc '.active_batch.included' <<<"${csj}")" "[]"
 assert_eq "escalate: phase reset to select" "$(jq -r '.active_batch.phase' <<<"${csj}")" "select"
+
+echo
+echo "== Roll-forward Cap. 2b: green rerun recovery clears stale escalation =="
+__recover_prs() {
+  case "$1" in
+    train/batch/deadbee/123) printf '1944\n1961\n1969\n' ;;
+    *) : ;;
+  esac
+}
+__recover_info() {
+  case "$1" in
+    1944) printf 'sha1944\tOPEN\ttrain:escalated,train:landing\n' ;;
+    1961) printf 'sha1961\tOPEN\ttrain:landing\n' ;;
+    1969) printf 'sha1969\tCLOSED\ttrain:escalated\n' ;;
+    *) return 1 ;;
+  esac
+}
+export -f __recover_prs __recover_info
+export TRAIN_RECOVERY_PRS_FOR_BRANCH=__recover_prs
+export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info
+RECOVERY_LOG="$(
+  GITHUB_REPOSITORY=honua-io/honua-server \
+  TRAIN_APPLY=0 \
+  train_recover_green_batch_rerun 123 train/batch/deadbee/123 https://github.example/runs/123 2>&1
+)"
+assert_contains "recovery: escalated PR gets CI Gate status" "${RECOVERY_LOG}" "gh api repos/honua-io/honua-server/statuses/sha1944"
+assert_contains "recovery: CI Gate context stamped" "${RECOVERY_LOG}" "-f context=CI Gate"
+assert_contains "recovery: clears train:escalated" "${RECOVERY_LOG}" "gh pr edit 1944 --remove-label train:escalated"
+assert_contains "recovery: clears train:landing" "${RECOVERY_LOG}" "gh pr edit 1944 --remove-label train:landing"
+assert_not_contains "recovery: non-escalated PR is not stamped" "${RECOVERY_LOG}" "statuses/sha1961"
+assert_not_contains "recovery: closed PR is not stamped" "${RECOVERY_LOG}" "statuses/sha1969"
+unset TRAIN_RECOVERY_PRS_FOR_BRANCH TRAIN_RECOVERY_PR_INFO_FOR
 
 echo
 echo "== Roll-forward Cap. 4: autofix disabled (TRAIN_AUTOFIX=0) => behaves like today =="
