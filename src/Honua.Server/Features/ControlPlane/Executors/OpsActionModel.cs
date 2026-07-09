@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 
@@ -38,22 +39,48 @@ internal static class OpsActionNames
 internal static class OpsActionCatalog
 {
     /// <summary>
-    /// Declared guardrail tier per action. The tier is applied as a floor on top of
-    /// the edition guardrail policy (it can tighten but never loosen the edition tier).
+    /// Declared metadata per action. The guardrail tier is applied as a floor on top of
+    /// the edition guardrail policy (it can tighten but never loosen the edition tier);
+    /// the auto-safe marker is consumed by the autonomy evaluator and never loosens a
+    /// guardrail by itself.
     /// </summary>
-    public static readonly ImmutableDictionary<string, GuardrailTier> GuardrailTiers =
+    public static readonly ImmutableDictionary<string, OpsActionDescriptor> Actions =
         ImmutableDictionary.CreateRange(
             StringComparer.Ordinal,
-            new KeyValuePair<string, GuardrailTier>[]
+            new KeyValuePair<string, OpsActionDescriptor>[]
             {
-                new(OpsActionNames.RedriveDeadLetters, GuardrailTier.RequiresApproval),
-                new(OpsActionNames.PauseChannel, GuardrailTier.RequiresApproval),
-                new(OpsActionNames.ResumeChannel, GuardrailTier.DirectExecute),
-                new(OpsActionNames.TuneBoundedAdmission, GuardrailTier.RequiresApproval),
+                new(OpsActionNames.RedriveDeadLetters, new OpsActionDescriptor(GuardrailTier.RequiresApproval, true)),
+                new(OpsActionNames.PauseChannel, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
+                new(OpsActionNames.ResumeChannel, new OpsActionDescriptor(GuardrailTier.DirectExecute, false)),
+                new(OpsActionNames.TuneBoundedAdmission, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
             });
 
     /// <summary>Returns true when the action name is a registered ops action.</summary>
-    public static bool IsRegistered(string action) => GuardrailTiers.ContainsKey(action);
+    public static bool IsRegistered(string action) => Actions.ContainsKey(action);
+}
+
+/// <summary>
+/// Registered ops-action metadata.
+/// </summary>
+internal sealed record OpsActionDescriptor(GuardrailTier GuardrailTier, bool IsAutoSafe);
+
+/// <summary>
+/// Per-action auto-safe metadata source backed by <see cref="OpsActionCatalog"/>.
+/// </summary>
+internal sealed class OpsActionSafetyCatalog : IOpsActionSafetyCatalog
+{
+    /// <inheritdoc />
+    public bool IsAutoSafe(OperationClass operationClass, string? actionDiscriminator)
+    {
+        if (operationClass != OperationClass.AdminConfigChange ||
+            string.IsNullOrWhiteSpace(actionDiscriminator))
+        {
+            return false;
+        }
+
+        return OpsActionCatalog.Actions.TryGetValue(actionDiscriminator, out var descriptor)
+            && descriptor.IsAutoSafe;
+    }
 }
 
 /// <summary>
@@ -66,8 +93,9 @@ internal sealed class OpsActionGuardrailCatalog : IOpsActionGuardrailCatalog
     public bool TryGetTier(string action, out GuardrailTier tier)
     {
         if (!string.IsNullOrWhiteSpace(action) &&
-            OpsActionCatalog.GuardrailTiers.TryGetValue(action, out tier))
+            OpsActionCatalog.Actions.TryGetValue(action, out var descriptor))
         {
+            tier = descriptor.GuardrailTier;
             return true;
         }
 

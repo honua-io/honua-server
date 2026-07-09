@@ -522,6 +522,14 @@ public sealed class OpsFindingActionView
     /// <summary>Gets the operator-facing reason recorded on the proposal.</summary>
     [JsonPropertyName("reason")]
     public required string Reason { get; init; }
+
+    /// <summary>Gets a value indicating whether the action is marked safe for autonomous apply.</summary>
+    [JsonPropertyName("autoSafe")]
+    public required bool AutoSafe { get; init; }
+
+    /// <summary>Gets the bounded blast-radius estimate used by autonomy guardrails.</summary>
+    [JsonPropertyName("blastRadius")]
+    public required int BlastRadius { get; init; }
 }
 
 /// <summary>Response for <c>POST /api/v{version}/admin/observability/findings/{findingId}/propose</c>.</summary>
@@ -546,4 +554,140 @@ public sealed class OpsFindingProposeResponse
     /// <summary>Gets an operator-facing message describing the outcome, when available.</summary>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
+}
+
+/// <summary>Response for <c>GET /api/v{version}/admin/observability/autonomy/policies</c>.</summary>
+public sealed class OpsAutonomyPolicyListResponse
+{
+    /// <summary>Gets the UTC time the policy list was produced.</summary>
+    [JsonPropertyName("generatedAt")]
+    public required DateTimeOffset GeneratedAt { get; init; }
+
+    /// <summary>Gets the durable per-rule autonomy policies.</summary>
+    [JsonPropertyName("policies")]
+    public required IReadOnlyList<OpsAutonomyPolicyResponse> Policies { get; init; }
+}
+
+/// <summary>Wire response for one ops-finding autonomy policy.</summary>
+public sealed class OpsAutonomyPolicyResponse
+{
+    /// <summary>Gets the kebab-case ops-finding rule identifier.</summary>
+    [JsonPropertyName("rule")]
+    public required string Rule { get; init; }
+
+    /// <summary>Gets the effective autonomy mode (<c>ProposeOnly</c> or <c>AutoApply</c>).</summary>
+    [JsonPropertyName("mode")]
+    public required string Mode { get; init; }
+
+    /// <summary>Gets the maximum autonomous actions allowed in the rolling window.</summary>
+    [JsonPropertyName("maxAutoActionsPerWindow")]
+    public required int MaxAutoActionsPerWindow { get; init; }
+
+    /// <summary>Gets the rolling rate-limit window in seconds.</summary>
+    [JsonPropertyName("windowSeconds")]
+    public required int WindowSeconds { get; init; }
+
+    /// <summary>Gets the maximum allowed blast-radius value.</summary>
+    [JsonPropertyName("maxBlastRadius")]
+    public required int MaxBlastRadius { get; init; }
+
+    /// <summary>Gets the UTC time the durable policy was last updated.</summary>
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset? UpdatedAt { get; init; }
+
+    /// <summary>Gets the actor that last updated the durable policy.</summary>
+    [JsonPropertyName("updatedBy")]
+    public string? UpdatedBy { get; init; }
+
+    /// <summary>Gets the aggregate outcome counters for the rule.</summary>
+    [JsonPropertyName("trackRecord")]
+    public required OpsAutonomyTrackRecordResponse TrackRecord { get; init; }
+}
+
+/// <summary>Wire response for global ops-finding autonomy settings.</summary>
+public sealed class OpsAutonomySettingsResponse
+{
+    /// <summary>Gets a value indicating whether all autonomous remediation is disabled.</summary>
+    [JsonPropertyName("killSwitchEnabled")]
+    public required bool KillSwitchEnabled { get; init; }
+
+    /// <summary>Gets the UTC time the settings were last updated.</summary>
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset? UpdatedAt { get; init; }
+
+    /// <summary>Gets the actor that last updated the settings.</summary>
+    [JsonPropertyName("updatedBy")]
+    public string? UpdatedBy { get; init; }
+}
+
+/// <summary>Wire response for aggregate per-rule autonomy counters.</summary>
+public sealed class OpsAutonomyTrackRecordResponse
+{
+    /// <summary>Gets the number of proposals raised for the rule.</summary>
+    [JsonPropertyName("proposalsRaised")]
+    public required long ProposalsRaised { get; init; }
+
+    /// <summary>Gets the number of proposals approved for the rule.</summary>
+    [JsonPropertyName("proposalsApproved")]
+    public required long ProposalsApproved { get; init; }
+
+    /// <summary>Gets the number of proposals rejected for the rule.</summary>
+    [JsonPropertyName("proposalsRejected")]
+    public required long ProposalsRejected { get; init; }
+
+    /// <summary>Gets the number of autonomous actions that succeeded.</summary>
+    [JsonPropertyName("autoApplied")]
+    public required long AutoApplied { get; init; }
+
+    /// <summary>Gets the number of autonomous actions that rolled back.</summary>
+    [JsonPropertyName("rolledBack")]
+    public required long RolledBack { get; init; }
+
+    /// <summary>Gets the number of autonomous actions that failed.</summary>
+    [JsonPropertyName("failed")]
+    public required long Failed { get; init; }
+
+    /// <summary>Gets the first known activity timestamp.</summary>
+    [JsonPropertyName("firstActivityAt")]
+    public DateTimeOffset? FirstActivityAt { get; init; }
+
+    /// <summary>Gets the most recent known activity timestamp.</summary>
+    [JsonPropertyName("lastActivityAt")]
+    public DateTimeOffset? LastActivityAt { get; init; }
+}
+
+/// <summary>Request body for upserting a per-rule autonomy policy.</summary>
+public sealed class OpsAutonomyPolicyUpdateRequest
+{
+    /// <summary>Gets the requested mode (<c>ProposeOnly</c> or <c>AutoApply</c>).</summary>
+    [JsonPropertyName("mode")]
+    public string? Mode { get; init; }
+
+    /// <summary>Gets the maximum autonomous actions allowed in the rolling window.</summary>
+    [JsonPropertyName("maxAutoActionsPerWindow")]
+    public int? MaxAutoActionsPerWindow { get; init; }
+
+    /// <summary>Gets the rolling rate-limit window in seconds.</summary>
+    [JsonPropertyName("windowSeconds")]
+    public int? WindowSeconds { get; init; }
+
+    /// <summary>Gets the maximum allowed blast-radius value.</summary>
+    [JsonPropertyName("maxBlastRadius")]
+    public int? MaxBlastRadius { get; init; }
+
+    /// <summary>Gets an optional operator reason persisted with the audit event.</summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+}
+
+/// <summary>Request body for changing global autonomy settings.</summary>
+public sealed class OpsAutonomySettingsUpdateRequest
+{
+    /// <summary>Gets a value indicating whether all autonomous remediation should be disabled.</summary>
+    [JsonPropertyName("killSwitchEnabled")]
+    public bool? KillSwitchEnabled { get; init; }
+
+    /// <summary>Gets an optional operator reason persisted with the audit event.</summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
 }
