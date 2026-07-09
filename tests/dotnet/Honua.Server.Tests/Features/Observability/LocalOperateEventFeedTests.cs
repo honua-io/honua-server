@@ -63,7 +63,8 @@ public sealed class LocalOperateEventFeedTests
                     ResourceId = "10",
                     Action = "alert.acknowledge",
                     Outcome = AuditOutcome.Success,
-                    CorrelationId = "corr-1"
+                    CorrelationId = "corr-1",
+                    Details = """{"durationMs":42}"""
                 }
             }
         };
@@ -74,6 +75,7 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().HaveCount(2);
         page.Items[0].Kind.Should().Be(OperateEventKind.Audit);
+        page.Items[0].DetailsJson.Should().Be("""{"durationMs":42}""");
         page.Items[1].Kind.Should().Be(OperateEventKind.Alert);
         page.PartialResult.Should().BeFalse();
     }

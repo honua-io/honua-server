@@ -84,6 +84,12 @@ internal sealed class WorkflowGenerationService : IWorkflowGenerationService
             return Unsupported("AI workflow generation is disabled on this server.");
         }
 
+        if (request.Prompt.Length > _configuration.MaxPromptCharacters)
+        {
+            return Error(
+                $"Workflow generation prompt exceeds the configured {nameof(WorkflowGenerationConfiguration.MaxPromptCharacters)} limit.");
+        }
+
         var providerId = string.IsNullOrWhiteSpace(request.ProviderId)
             ? _configuration.DefaultProvider
             : request.ProviderId;
@@ -186,6 +192,12 @@ internal sealed class WorkflowGenerationService : IWorkflowGenerationService
     private static WorkflowGenerationResult Unsupported(string reason) => new()
     {
         Status = WorkflowGenerationStatus.Unsupported,
+        Rationale = reason
+    };
+
+    private static WorkflowGenerationResult Error(string reason) => new()
+    {
+        Status = WorkflowGenerationStatus.Error,
         Rationale = reason
     };
 

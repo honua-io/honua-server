@@ -3,6 +3,7 @@
 
 using System.IO.Compression;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
@@ -28,6 +29,7 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddSingleton<OutputCacheInvalidationService>();
         services.AddETags();
         services.TryAddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
+        services.TryAddSingleton<IMigrationBackupHookOutcomeStore, InMemoryMigrationBackupHookOutcomeStore>();
         services.AddPerformanceMonitoring();
         services.TryAddSingleton<ConnectionPoolMetrics>();
         services.AddSingleton<ProductionMetricsCollector>();
