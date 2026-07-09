@@ -73,6 +73,17 @@ public sealed class AwsS3FileStorageEmptyListingTests
     }
 
     [UnitTest]
+    public async Task CleanupExpiredFilesAsync_ListsProviderRootForGlobalCleanup()
+    {
+        using var stub = EmptyListObjectsStub.Start();
+        var storage = CreateStorage(stub.ServiceUrl);
+
+        _ = await storage.CleanupExpiredFilesAsync();
+
+        stub.ListRequestPrefixes.Should().ContainSingle().Which.Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task DeleteBatchAsync_EmptyPrefix_ReturnsZeroInsteadOfThrowing()
     {
         using var stub = EmptyListObjectsStub.Start();
@@ -116,11 +127,24 @@ public sealed class AwsS3FileStorageEmptyListingTests
         private readonly HttpListener _listener;
         private readonly CancellationTokenSource _shutdown = new();
         private readonly Task _serveLoop;
+        private readonly object _listRequestPrefixesSync = new();
+        private readonly List<string?> _listRequestPrefixes = [];
         private int _listRequestCount;
 
         public string ServiceUrl { get; }
 
         public int ListRequestCount => Volatile.Read(ref _listRequestCount);
+
+        public IReadOnlyList<string?> ListRequestPrefixes
+        {
+            get
+            {
+                lock (_listRequestPrefixesSync)
+                {
+                    return _listRequestPrefixes.ToArray();
+                }
+            }
+        }
 
         private EmptyListObjectsStub(HttpListener listener, string serviceUrl)
         {
@@ -179,6 +203,11 @@ public sealed class AwsS3FileStorageEmptyListingTests
                         context.Request.QueryString["list-type"] == "2")
                     {
                         Interlocked.Increment(ref _listRequestCount);
+                        lock (_listRequestPrefixesSync)
+                        {
+                            _listRequestPrefixes.Add(context.Request.QueryString["prefix"]);
+                        }
+
                         var payload = Encoding.UTF8.GetBytes(EmptyListBucketResultXml);
                         context.Response.StatusCode = 200;
                         context.Response.ContentType = "application/xml";

@@ -22,6 +22,7 @@ namespace Honua.Infrastructure.Services;
 internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, IDisposable
 {
     private const string TemporaryFolder = "temporary-files";
+    private const string TemporaryPrefix = TemporaryFolder + "/";
     private const string AuthorizedPrincipalMetadataKey = "honua-temp-principal";
     private const string CloudTemporaryFileKeyPrefix = "honua:temporary-files:cloud:";
     private const string CloudTemporaryQuotaLeaseKey = "honua:temporary-files:cloud:quota";
@@ -108,7 +109,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
             try
             {
-                await _cloudFileStorage.CleanupExpiredFilesAsync(processingToken).ConfigureAwait(false);
+                await TryCleanupExpiredTemporaryCloudFilesAsync(processingToken).ConfigureAwait(false);
                 await EnsureCloudStorageCapacityAsync(data.Length, processingToken).ConfigureAwait(false);
 
                 var extension = GetFileExtension(contentType);
@@ -288,7 +289,46 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             return;
         }
 
-        _ = await _cloudFileStorage.CleanupExpiredFilesAsync(cancellationToken).ConfigureAwait(false);
+        _ = await CleanupExpiredTemporaryCloudFilesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<int> TryCleanupExpiredTemporaryCloudFilesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await CleanupExpiredTemporaryCloudFilesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            CloudBackedTemporaryFileLog.SharedStorageCleanupFailed(
+                _logger,
+                _cloudFileStorage.Provider,
+                TemporaryPrefix,
+                ex);
+            return 0;
+        }
+    }
+
+    private async Task<int> CleanupExpiredTemporaryCloudFilesAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var files = await _cloudFileStorage
+            .ListFilesAsync(TemporaryFolder, int.MaxValue, includeMetadata: true, cancellationToken)
+            .ConfigureAwait(false);
+        var cleanedCount = 0;
+
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (file.ExpiresAt.HasValue
+                && file.ExpiresAt.Value <= now
+                && await _cloudFileStorage.DeleteAsync(file.FileId, cancellationToken).ConfigureAwait(false))
+            {
+                cleanedCount++;
+            }
+        }
+
+        return cleanedCount;
     }
 
     private void ValidateCloudStorageRequest(byte[] data, string contentType)
@@ -311,41 +351,52 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             return;
         }
 
-        var maxResults = _options.MaxTotalStorageBytes > 0
-            ? int.MaxValue
-            : Math.Max(_options.MaxFileCount > 0 ? _options.MaxFileCount + 1 : 0, 1000);
-        // Capacity accounting reads each file's expiry (a custom-metadata field), so request the
-        // full per-object metadata rather than the cheap size-only listing.
-        var files = await _cloudFileStorage
-            .ListFilesAsync(TemporaryFolder, maxResults, includeMetadata: true, cancellationToken)
-            .ConfigureAwait(false);
-        var now = DateTimeOffset.UtcNow;
-        var activeFiles = files.Where(file => !file.ExpiresAt.HasValue || file.ExpiresAt.Value > now).ToArray();
         var provider = _cloudFileStorage.Provider;
-
-        if (_options.MaxFileCount > 0 && activeFiles.Length >= _options.MaxFileCount)
+        try
         {
-            CloudBackedTemporaryFileLog.SharedStorageFileCountLimitReached(
-                _logger,
-                provider,
-                activeFiles.Length,
-                _options.MaxFileCount);
-            throw new TemporaryStorageLimitExceededException(
-                $"Temporary file storage has reached the maximum file count ({_options.MaxFileCount}).",
-                _options.StorageFullRetryAfterSeconds);
+            var maxResults = _options.MaxTotalStorageBytes > 0
+                ? int.MaxValue
+                : Math.Max(_options.MaxFileCount > 0 ? _options.MaxFileCount + 1 : 0, 1000);
+            // Capacity accounting reads each file's expiry (a custom-metadata field), so request the
+            // full per-object metadata rather than the cheap size-only listing.
+            var files = await _cloudFileStorage
+                .ListFilesAsync(TemporaryFolder, maxResults, includeMetadata: true, cancellationToken)
+                .ConfigureAwait(false);
+            var now = DateTimeOffset.UtcNow;
+            var activeFiles = files.Where(file => !file.ExpiresAt.HasValue || file.ExpiresAt.Value > now).ToArray();
+
+            if (_options.MaxFileCount > 0 && activeFiles.Length >= _options.MaxFileCount)
+            {
+                CloudBackedTemporaryFileLog.SharedStorageFileCountLimitReached(
+                    _logger,
+                    provider,
+                    activeFiles.Length,
+                    _options.MaxFileCount);
+                throw new TemporaryStorageLimitExceededException(
+                    $"Temporary file storage has reached the maximum file count ({_options.MaxFileCount}).",
+                    _options.StorageFullRetryAfterSeconds);
+            }
+
+            var projectedTotalBytes = activeFiles.Sum(static file => file.SizeBytes) + incomingDataSizeBytes + MetadataOverheadBytes;
+            if (_options.MaxTotalStorageBytes > 0 && projectedTotalBytes > _options.MaxTotalStorageBytes)
+            {
+                CloudBackedTemporaryFileLog.SharedStorageCapacityExceeded(
+                    _logger,
+                    provider,
+                    projectedTotalBytes,
+                    _options.MaxTotalStorageBytes);
+                throw new TemporaryStorageLimitExceededException(
+                    $"Temporary file storage has reached the maximum capacity ({_options.MaxTotalStorageBytes} bytes).",
+                    _options.StorageFullRetryAfterSeconds);
+            }
         }
-
-        var projectedTotalBytes = activeFiles.Sum(static file => file.SizeBytes) + incomingDataSizeBytes + MetadataOverheadBytes;
-        if (_options.MaxTotalStorageBytes > 0 && projectedTotalBytes > _options.MaxTotalStorageBytes)
+        catch (Exception ex) when (ex is not OperationCanceledException and not TemporaryStorageLimitExceededException)
         {
-            CloudBackedTemporaryFileLog.SharedStorageCapacityExceeded(
+            CloudBackedTemporaryFileLog.SharedStorageCapacityCheckFailed(
                 _logger,
                 provider,
-                projectedTotalBytes,
-                _options.MaxTotalStorageBytes);
-            throw new TemporaryStorageLimitExceededException(
-                $"Temporary file storage has reached the maximum capacity ({_options.MaxTotalStorageBytes} bytes).",
-                _options.StorageFullRetryAfterSeconds);
+                TemporaryPrefix,
+                ex);
         }
     }
 

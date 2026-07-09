@@ -100,10 +100,13 @@ public sealed class QueryConcurrencyGateTests
         // Exhaust the slot
         (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
 
-        // Cancel while waiting
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        using var cts = new CancellationTokenSource();
+        var queued = gate.WaitAsync(cts.Token);
+        queued.IsCompleted.Should().BeFalse("the second waiter is queued behind the held slot");
+        await cts.CancelAsync();
+
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => gate.WaitAsync(cts.Token));
+            async () => await queued);
 
         gate.Release();
         (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
@@ -123,7 +126,7 @@ public sealed class QueryConcurrencyGateTests
 
         using var cts = new CancellationTokenSource();
         var queued = gate.WaitAsync(cts.Token);
-        await Task.Delay(50);
+        queued.IsCompleted.Should().BeFalse("the second waiter is queued behind the held slot");
 
         gate.Release();
         await cts.CancelAsync();
@@ -166,7 +169,6 @@ public sealed class QueryConcurrencyGateTests
 
         (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
         var queued = gate.WaitAsync(CancellationToken.None);
-        await Task.Delay(50);
         queued.IsCompleted.Should().BeFalse();
 
         gate.SetTargetLimit(2);
@@ -257,7 +259,6 @@ public sealed class QueryConcurrencyGateTests
         var queued = Enumerable.Range(0, 4)
             .Select(_ => gate.WaitAsync(CancellationToken.None))
             .ToArray();
-        await Task.Delay(50);
 
         gate.GetSnapshot().QueuedWaiters.Should().Be(4);
 
@@ -274,6 +275,7 @@ public sealed class QueryConcurrencyGateTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Release_WithQueuedWaiter_ReportsQueueWaitEwma()
     {
+        var clock = new ManualTimeProvider();
         var gate = new QueryConcurrencyGate(new ConnectionLimits
         {
             MaxConcurrentQueries = 2,
@@ -284,17 +286,18 @@ public sealed class QueryConcurrencyGateTests
             AdaptiveConcurrencyInitialQueries = 1,
             AdaptiveConcurrencyTargetDurationMs = 100,
             AdaptiveConcurrencyUpdateIntervalMs = 0
-        });
+        }, clock);
 
         (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
         var queued = gate.WaitAsync(CancellationToken.None);
-        await Task.Delay(50);
+        queued.IsCompleted.Should().BeFalse("the second waiter is queued behind the held slot");
+        clock.Advance(TimeSpan.FromMilliseconds(125));
 
         gate.Release(TimeSpan.FromMilliseconds(1));
         (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
 
         var snapshot = gate.GetSnapshot();
-        snapshot.QueueWaitEwmaMs.Should().BeGreaterThan(0);
+        snapshot.QueueWaitEwmaMs.Should().BeApproximately(125, 0.01);
 
         gate.Release();
     }
@@ -317,7 +320,6 @@ public sealed class QueryConcurrencyGateTests
 
         (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
         var queued = gate.WaitAsync(CancellationToken.None);
-        await Task.Delay(50);
         queued.IsCompleted.Should().BeFalse();
 
         gate.Release(TimeSpan.FromMilliseconds(1));
@@ -330,6 +332,7 @@ public sealed class QueryConcurrencyGateTests
     [Operation(Operations.TestInfrastructure)]
     public async Task GetSnapshot_ReportsAdaptiveAdmissionState()
     {
+        var clock = new ManualTimeProvider();
         var gate = new QueryConcurrencyGate(new ConnectionLimits
         {
             MaxConcurrentQueries = 4,
@@ -340,7 +343,7 @@ public sealed class QueryConcurrencyGateTests
             AdaptiveConcurrencyInitialQueries = 1,
             AdaptiveConcurrencyTargetDurationMs = 100,
             AdaptiveConcurrencyUpdateIntervalMs = 0
-        });
+        }, clock);
 
         var snapshot = gate.GetSnapshot();
         snapshot.AdaptiveEnabled.Should().BeTrue();
@@ -352,12 +355,12 @@ public sealed class QueryConcurrencyGateTests
 
         (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
         var queued = gate.WaitAsync(CancellationToken.None);
-        await Task.Delay(50);
 
         snapshot = gate.GetSnapshot();
         snapshot.InFlight.Should().Be(1);
         snapshot.AvailableSlots.Should().Be(0);
         snapshot.QueuedWaiters.Should().Be(1);
+        clock.Advance(TimeSpan.FromMilliseconds(75));
 
         gate.Release(TimeSpan.FromMilliseconds(1));
         (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
@@ -368,7 +371,7 @@ public sealed class QueryConcurrencyGateTests
         snapshot.AvailableSlots.Should().Be(1);
         snapshot.QueuedWaiters.Should().Be(0);
         snapshot.DurationEwmaMs.Should().BeApproximately(1, 0.01);
-        snapshot.QueueWaitEwmaMs.Should().BeGreaterThan(0);
+        snapshot.QueueWaitEwmaMs.Should().BeApproximately(75, 0.01);
         snapshot.AdjustmentCount.Should().Be(1);
         snapshot.LastAdjustmentDirection.Should().Be("increase");
 
@@ -436,5 +439,16 @@ public sealed class QueryConcurrencyGateTests
 
         (await queued.WaitAsync(TimeSpan.FromSeconds(2))).Should().BeTrue(
             "raising the admission target must admit queued waiters");
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long _timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => Interlocked.Read(ref _timestamp);
+
+        public void Advance(TimeSpan elapsed) => Interlocked.Add(ref _timestamp, elapsed.Ticks);
     }
 }

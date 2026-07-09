@@ -57,6 +57,64 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_FlatFormUpload_AppliesEdits()
+    {
+        var replicaId = await CreateReplicaAsync("FlatFormUpload", "0");
+        var featureName = $"flat_form_sync_add_{Guid.NewGuid():N}";
+
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new { attributes = new { name = featureName } }
+        });
+
+        var root = await SynchronizeUploadAsync(replicaId, edits);
+
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        root.GetProperty("appliedAdds").GetInt32().Should().Be(1);
+        root.GetProperty("appliedUpdates").GetInt32().Should().Be(0);
+        root.GetProperty("appliedDeletes").GetInt32().Should().Be(0);
+
+        var matches = await CountFeaturesByNameAsync(featureName);
+        matches.Should().Be(1, "legacy flat-form feature arrays must apply through the shared edit pipeline");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_FlatFormFailingEdit_ReturnsErrorEnvelope()
+    {
+        var featureCountBefore = await CountAllFeaturesAsync();
+        var replicaId = await CreateReplicaAsync("FlatFormInvalidGeometry", "0");
+
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new
+            {
+                attributes = new { name = $"flat_form_invalid_{Guid.NewGuid():N}" },
+                geometry = new { x = -157.85 }
+            }
+        });
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "upload",
+            edits,
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        await response.AssertGeoServicesErrorAsync(400);
+
+        var featureCountAfter = await CountAllFeaturesAsync();
+        featureCountAfter.Should().Be(featureCountBefore, "a failing flat-form upload must not be silently treated as a no-op");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_UploadThenExtract_ExcludesOwnEdits()
     {
         var replicaId = await CreateReplicaAsync("RoundTrip", "0");

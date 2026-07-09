@@ -8,6 +8,7 @@ using Honua.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -366,6 +367,49 @@ public sealed class TemporaryFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CleanupExpiredFilesAsync_WithRemoteCloudStorage_RemovesOnlyExpiredTemporaryFiles()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                BaseUrl = "/temp"
+            },
+            cloudStorage);
+        var expiredTemporary = await cloudStorage.UploadAsync(new ByteArrayUploadRequest
+        {
+            Content = [1],
+            FileName = "expired-temp.bin",
+            ContentType = "application/octet-stream",
+            Folder = "temporary-files",
+            TimeToLive = TimeSpan.FromMilliseconds(-1)
+        });
+        var expiredExport = await cloudStorage.UploadAsync(new ByteArrayUploadRequest
+        {
+            Content = [2],
+            FileName = "expired-export.bin",
+            ContentType = "application/octet-stream",
+            Folder = "exports",
+            TimeToLive = TimeSpan.FromMilliseconds(-1)
+        });
+        var activeTemporary = await cloudStorage.UploadAsync(new ByteArrayUploadRequest
+        {
+            Content = [3],
+            FileName = "active-temp.bin",
+            ContentType = "application/octet-stream",
+            Folder = "temporary-files",
+            TimeToLive = TimeSpan.FromMinutes(5)
+        });
+
+        await service.CleanupExpiredFilesAsync();
+
+        (await cloudStorage.ExistsAsync(expiredTemporary.File!.FileId)).Should().BeFalse();
+        (await cloudStorage.ExistsAsync(expiredExport.File!.FileId)).Should().BeTrue();
+        (await cloudStorage.ExistsAsync(activeTemporary.File!.FileId)).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageAndRedisLease_SerializesQuotaAcrossInstances()
     {
         var cloudStorage = new FakeCloudFileStorage(
@@ -507,6 +551,45 @@ public sealed class TemporaryFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task StoreTemporaryFileAsync_WhenRemoteCapacityCheckThrows_StoresFileAndLogsWarning()
+    {
+        var capacityFailure = new InvalidOperationException("list failed");
+        var cloudStorage = new FakeCloudFileStorage(
+            CloudStorageProvider.AwsS3,
+            listFilesException: capacityFailure);
+        var redis = CreateRedisLeaseMultiplexer();
+        var logger = new ListLogger<CloudBackedTemporaryFileService>();
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+                MaxFileCount = 1,
+                MaxTotalStorageBytes = 1,
+                DefaultExpiration = TimeSpan.FromMinutes(5)
+            },
+            cloudStorage,
+            redis: redis,
+            logger: logger);
+
+        var url = await service.StoreTemporaryFileAsync([4, 5, 6], "image/png");
+
+        var fileId = Path.GetFileName(url);
+        fileId.Should().NotBeNullOrWhiteSpace();
+
+        var retrieved = await service.GetTemporaryFileAsync(fileId);
+        retrieved.Should().NotBeNull();
+        retrieved!.Value.data.Should().Equal(4, 5, 6);
+        retrieved.Value.contentType.Should().Be("image/png");
+        logger.Entries.Should().Contain(entry =>
+            entry.Level == LogLevel.Warning &&
+            entry.Exception == capacityFailure &&
+            entry.Message.Contains("AwsS3", StringComparison.Ordinal) &&
+            entry.Message.Contains("temporary-files/", StringComparison.Ordinal) &&
+            entry.Message.Contains("capacity check failed", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageAndNoDistributedCache_UsesOpaqueRoundTrippableToken()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
@@ -556,14 +639,15 @@ public sealed class TemporaryFileServiceTests : IDisposable
         ICloudFileStorage cloudStorage,
         IDistributedCache? distributedCache = null,
         IHttpContextAccessor? httpContextAccessor = null,
-        IConnectionMultiplexer? redis = null)
+        IConnectionMultiplexer? redis = null,
+        ILogger<CloudBackedTemporaryFileService>? logger = null)
     {
         var localService = CreateService(options, httpContextAccessor);
         return new CloudBackedTemporaryFileService(
             localService,
             cloudStorage,
             Options.Create(options),
-            NullLogger<CloudBackedTemporaryFileService>.Instance,
+            logger ?? NullLogger<CloudBackedTemporaryFileService>.Instance,
             httpContextAccessor,
             distributedCache,
             redis);
@@ -703,15 +787,18 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         private readonly TimeSpan _uploadDelay;
         private readonly bool _completeUploads;
+        private readonly Exception? _listFilesException;
 
         public FakeCloudFileStorage(
             CloudStorageProvider provider,
             TimeSpan? uploadDelay = null,
-            bool completeUploads = true)
+            bool completeUploads = true,
+            Exception? listFilesException = null)
         {
             Provider = provider;
             _uploadDelay = uploadDelay ?? TimeSpan.Zero;
             _completeUploads = completeUploads;
+            _listFilesException = listFilesException;
         }
 
         public CloudStorageProvider Provider { get; }
@@ -814,6 +901,11 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         public Task<IReadOnlyList<CloudFile>> ListFilesAsync(string? folder = null, int maxResults = 1000, bool includeMetadata = true, CancellationToken cancellationToken = default)
         {
+            if (_listFilesException != null)
+            {
+                throw _listFilesException;
+            }
+
             IReadOnlyList<CloudFile> files = _files.Values
                 .Where(file => string.IsNullOrWhiteSpace(folder) || file.StoragePath.StartsWith(folder, StringComparison.Ordinal))
                 .OrderBy(file => file.UploadedAt)
@@ -844,6 +936,38 @@ public sealed class TemporaryFileServiceTests : IDisposable
             }
 
             return Task.FromResult(removed);
+        }
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull
+            => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add(new LogEntry(logLevel, eventId, formatter(state, exception), exception));
+        }
+    }
+
+    private sealed record LogEntry(LogLevel Level, EventId EventId, string Message, Exception? Exception);
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+
+        public void Dispose()
+        {
         }
     }
 }
