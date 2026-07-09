@@ -503,12 +503,62 @@ __trunk_jobs() {  # <run-id>
   case "${PE_CASE:-}" in
     all_pre)  printf 'Server Tests (STAC and API Governance)\n' ;;   # trunk already red here
     some_new) printf 'Server Tests (STAC and API Governance)\n' ;;
+    buildfmt_20260705) printf 'Build & Format Check\n' ;;
     none_pre) : ;;
     *) : ;;
   esac
 }
 export -f __trunk_jobs
 export TRAIN_FAILING_JOBS_FOR_RUN=__trunk_jobs
+__preexisting_job_records() {  # <run-id>
+  case "${PE_CASE:-}:$1" in
+    jobid_join:trunk-run-1)
+      printf '101\tServer Tests (Shared Failure)\n'
+      ;;
+    jobid_join:batch-run-jobids)
+      printf '201\tServer Tests (Shared Failure)\n'
+      printf '202\tServer Tests (New Failure)\n'
+      ;;
+    *) : ;;
+  esac
+}
+export -f __preexisting_job_records
+__preexisting_job_log() {  # <run-id> <job-name> [job-id]
+  local run_id="$1" job="$2" job_id="${3:-}"
+  if [[ "${PE_CASE:-}" == "jobid_join" ]]; then
+    case "${run_id}:${job_id}" in
+      trunk-run-1:101|batch-run-jobids:201)
+        printf 'Failed Honua.Server.Tests.Shared.AlreadyFails [12 ms]\n'
+        ;;
+      batch-run-jobids:202)
+        printf 'Failed Honua.Server.Tests.New.IntroducedFailure [12 ms]\n'
+        ;;
+      batch-run-jobids:)
+        printf 'Failed Honua.Server.Tests.Shared.AlreadyFails [12 ms]\n'
+        printf 'Failed Honua.Server.Tests.New.IntroducedFailure [12 ms]\n'
+        ;;
+      *) : ;;
+    esac
+    return 0
+  fi
+  case "${PE_CASE:-}:${run_id}:${job}" in
+    all_pre:*:"Server Tests (STAC and API Governance)"|some_new:*:"Server Tests (STAC and API Governance)")
+      printf '[xUnit.net 00:00:00.42]    Honua.Server.Tests.Stac.ItemTests.Returns200 [FAIL]\n'
+      ;;
+    some_new:batch-run-9:"Server Tests (FeatureServer Endpoints)")
+      printf 'Failed Honua.Server.Tests.GeoServices.FeatureServer.QueryEndpointTests.Query_Returns200 [12 ms]\n'
+      ;;
+    buildfmt_20260705:trunk-run-1:"Build & Format Check")
+      printf "Build & Format Check\tFormat Verification\tFormatted code file '/home/runner/work/honua-server/src/Honua.Server/Program.cs'.\n"
+      ;;
+    buildfmt_20260705:batch-run-20260705:"Build & Format Check")
+      printf "/home/runner/work/honua-server/src/Honua.Server/Features/BrokenHandler.cs(42,14): error CS0535: 'BrokenHandler' does not implement interface member 'IHandler.HandleAsync(CancellationToken)'\n"
+      ;;
+    *) : ;;
+  esac
+}
+export -f __preexisting_job_log
+export TRAIN_JOB_LOG_FOR_RUN=__preexisting_job_log
 
 # (a) ALL batch failures are also on trunk => filter returns rc11 (treat as PASS).
 set +e
@@ -535,10 +585,30 @@ rc_pe3=$?
 set -e
 assert_eq "preexisting: clean-trunk => all introduced (rc0)" "${rc_pe3}" "0"
 assert_contains "preexisting: introduced survives on clean trunk" "${survivors2}" "FeatureServer Endpoints"
+# (d) Regression for 2026-07-05: same job name, different cause. Trunk has
+# format drift, but the batch has a C# compile error, so this is NOT pre-existing.
+set +e
+survivors3="$(PE_CASE=buildfmt_20260705 train_preexisting_filter batch-run-20260705 'Build & Format Check')"
+rc_pe4=$?
+set -e
+assert_eq "preexisting: same job different cause => rc0 (act)" "${rc_pe4}" "0"
+assert_contains "preexisting: Build & Format Check CS0535 survives format drift" "${survivors3}" "Build & Format Check"
+# (e) Live train supplies failing job names to the filter, but signatures must
+# still come from per-job logs. This guards against assigning every failed
+# run-log signature to every supplied job name.
+export TRAIN_FAILING_JOB_RECORDS_FOR_RUN=__preexisting_job_records
+set +e
+survivors4="$(PE_CASE=jobid_join train_preexisting_filter batch-run-jobids \
+  $'Server Tests (Shared Failure)\nServer Tests (New Failure)')"
+rc_pe5=$?
+set -e
+assert_eq "preexisting: supplied names use per-job ids => rc0 (act)" "${rc_pe5}" "0"
+assert_contains "preexisting: per-job id new failure survives" "${survivors4}" "New Failure"
+assert_not_contains "preexisting: per-job id shared failure stripped" "${survivors4}" "Shared Failure"
 # subtraction primitive
 assert_eq "preexisting: subtract removes baseline lines" \
   "$(train_subtract_lines $'a\nb' $'a\nb\nc' | tr '\n' ' ' | xargs)" "c"
-unset TRAIN_TRUNK_RUN_ID TRAIN_FAILING_JOBS_FOR_RUN
+unset TRAIN_TRUNK_RUN_ID TRAIN_FAILING_JOBS_FOR_RUN TRAIN_FAILING_JOB_RECORDS_FOR_RUN TRAIN_JOB_LOG_FOR_RUN
 
 echo
 echo "== Roll-forward Cap. 3: surgical retry (filter built from failed FQNs) =="

@@ -203,13 +203,9 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         // it per-edit with code 1006 before WKB conversion, so the sync apply reports failure and
         // the handler returns the GeoServices 400 error envelope.
         //
-        // Deliberately NOT the legacy flat form (a bare array of features): since the BH5-013
-        // disambiguation (#2472), a flat feature array also deserializes successfully as
-        // SynchronizeReplicaLayerEdits[] (unknown members ignored, id defaulting to layer 0,
-        // adds/updates/deletes null) and is routed as an all-empty per-layer no-op, so a flat-form
-        // upload is silently dropped and the sync reports success. That silent drop is what turned
-        // this test's original flat-form injection into a false success; the product bug is
-        // tracked in #2571.
+        // Use the per-layer edits form here so the failure path specifically proves update errors do
+        // not advance the replica generation; flat-form feature-array upload coverage lives with the
+        // synchronizeReplica parser regressions.
         var invalidEditsJson = JsonSerializer.Serialize(new[]
         {
             new
