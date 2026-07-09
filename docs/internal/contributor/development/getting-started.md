@@ -26,9 +26,10 @@ The root `docker-compose.yml` provisions:
 | Service | Default port | Credentials |
 |---------|-------------|-------------|
 | PostGIS | 5432 | `honua_user` / `honua_password`, database `honua_dev` |
+| Redis | 6379 | none |
 | Honua Server | 8080 | — |
 
-Database migrations run automatically on first boot.
+Database migrations run automatically on first boot. The root compose stack also sets the journal-scoped `Gate` policy for contract-phase migrations on existing databases.
 
 ## 2. Verify it works
 
@@ -45,8 +46,9 @@ curl http://localhost:8080/rest/services?f=json
 Add these as needed — none are required for basic development:
 
 ```bash
-# Redis (distributed caching)
-HONUA_REDIS_URL=redis:6379 docker compose --profile redis up -d
+# Console ops dashboard (requires a compatible published honua-console image)
+HONUA_CONSOLE_IMAGE=ghcr.io/honua-io/honua-console:replace-with-compatible-tag \
+  docker compose --profile console up -d
 
 # MinIO (S3-compatible storage for file imports)
 HONUA_STORAGE_PROVIDER=AwsS3 HONUA_S3_BUCKET=honua-dev \

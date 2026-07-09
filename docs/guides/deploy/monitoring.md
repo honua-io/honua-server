@@ -1,6 +1,6 @@
 # Monitor Honua Server
 
-You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice. For the higher-level operate story - the loop, Console and MCP seats, autonomy ladder, rollback taxonomy, and when Grafana is optional depth - start with [Operating Honua](../operate/README.md).
+You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice. For the higher-level operate story - the loop, Console and MCP seats, autonomy ladder, rollback taxonomy, and when Grafana is optional depth - start with [Operating Honua](../operate/README.md). The profiled Console Operate service in the Docker quickstart is the first local ops view once a compatible Console image is published; Grafana and Prometheus are optional depth for teams that want an external metrics backend.
 
 **Prerequisites:** A running deployment and the admin password (admin endpoints authenticate with the `X-API-Key` header). A metrics backend (managed Prometheus, self-hosted Prometheus, or any OTLP-compatible stack) is needed for long-retention metrics and deep traces/logs, but the built-in operate status, ops-health, findings, and timeline surfaces do not require Grafana or Prometheus.
 
@@ -29,6 +29,8 @@ curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://localhost:8080/api/v1/opera
 ```
 
 It returns a server-computed `status` (`healthy` / `degraded` / `unhealthy`) with the machine-readable `reasons` that drove it, per-domain rollups (`deploys`, `jobs`, `alerts`, `migrations`, `findings`, `telemetryBackends`) each carrying a `source` hint you can drill down to, and a `schemaVersion` + `generatedAt` so a consumer can version its parsing. The verdict rules are fixed and documented server-side: the health-check roll-up being `Unhealthy` ⇒ `unhealthy`; a `Critical` finding, a deploy parked in manual intervention, dead-lettered alerts, an impaired dispatcher, or an exhausted SLO error budget ⇒ `degraded`; otherwise `healthy`.
+
+With the quickstart `console` profile enabled, open <http://localhost:5174/operate/health> for this status plus the Console health dashboard, and <http://localhost:5174/operate/copilot> for deterministic findings and proposal entry points. Those pages read the same server-owned APIs described here.
 
 ### Availability SLO / error budget
 
@@ -88,7 +90,7 @@ On Azure Monitor managed Prometheus, define rule-group resources (ARM/Bicep/Terr
 helm install monitoring prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace
 ```
 
-5. (One-command Docker option) For local or single-node deployments, bring up the curated Grafana + Prometheus bundle — provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards — against a running server:
+5. (Optional one-command Docker depth) For local or single-node deployments that also need Grafana and Prometheus, bring up the curated bundle - provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards - against a running server:
 
 ```bash
 docker compose -f docker/monitoring/compose.yml up -d

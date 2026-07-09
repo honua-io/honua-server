@@ -1,7 +1,13 @@
 # Monitoring Docker Assets
 
 Reusable self-hosted monitoring assets for Docker-based environments, plus a curated
-Grafana + Prometheus bundle ("Splunk out of the box") that deploys in one command.
+Grafana + Prometheus bundle that deploys in one command.
+
+The root quickstart includes a profiled Honua Console Operate service at
+`http://localhost:5174/operate` once a compatible Console image is published.
+Use this monitoring bundle when you want
+external Prometheus storage, Grafana dashboards, or alert-rule experiments beyond
+the built-in Console view.
 
 ## Quick start (one command)
 
