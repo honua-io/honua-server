@@ -244,6 +244,8 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         // closed before the pending contract script is applied.
         var outcomeStore = new CapturingMigrationBackupHookOutcomeStore();
         var auditLog = new CapturingAuditLog();
+        const string SensitiveStderr = "backup hook failed Password=super-secret token=abc123 Bearer abc.def.ghi";
+        const string SanitizedStderr = "backup hook failed Password=*** token=*** Bearer ***";
         using var serviceProvider = new ServiceCollection()
             .AddSingleton<IAuditLog>(auditLog)
             .BuildServiceProvider();
@@ -251,7 +253,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         {
             Enforce = true,
             ContractApplyPolicy = ContractApplyPolicy.Auto,
-            BackupCommand = FailingBackupCommand("backup hook failed"),
+            BackupCommand = FailingBackupCommand(SensitiveStderr),
         }, outcomeStore: outcomeStore, scopeFactory: serviceProvider.GetRequiredService<IServiceScopeFactory>());
         var upgrade = SyntheticMigrationsCompiler.Compile(
             assemblyName,
@@ -263,17 +265,24 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         result.Successful.Should().BeFalse("a failing backup hook fails the migration run closed");
         result.ErrorMessage.Should().NotBeNull();
         result.ErrorMessage!.Should().Contain("BackupCommand", "the failure names the backup hook");
+        result.ErrorMessage.Should().Contain(SanitizedStderr);
+        result.ErrorMessage.Should().NotContain("super-secret");
+        result.ErrorMessage.Should().NotContain("abc123");
+        result.ErrorMessage.Should().NotContain("abc.def.ghi");
         outcomeStore.LastOutcome.Should().NotBeNull();
         outcomeStore.LastOutcome!.Succeeded.Should().BeFalse();
         outcomeStore.LastOutcome.ExitCode.Should().Be(1);
-        outcomeStore.LastOutcome.TruncatedStderr.Should().Be("backup hook failed");
+        outcomeStore.LastOutcome.TruncatedStderr.Should().Be(SanitizedStderr);
         outcomeStore.LastOutcome.PendingScripts.Should().ContainSingle(name => name.EndsWith("002_drop_legacy_annotated.sql", StringComparison.Ordinal));
         outcomeStore.LastOutcome.PendingSetFingerprint.Should().StartWith("sha256:");
         auditLog.Events.Should().ContainSingle();
         auditLog.Events[0].Action.Should().Be("migration.backup_hook");
         auditLog.Events[0].Outcome.Should().Be(AuditOutcome.Failure);
         auditLog.Events[0].CorrelationId.Should().Be(outcomeStore.LastOutcome.MigrationRunId);
-        auditLog.Events[0].Details.Should().Contain("\"truncatedStderr\":\"backup hook failed\"");
+        auditLog.Events[0].Details.Should().Contain($"\"truncatedStderr\":\"{SanitizedStderr}\"");
+        auditLog.Events[0].Details.Should().NotContain("super-secret");
+        auditLog.Events[0].Details.Should().NotContain("abc123");
+        auditLog.Events[0].Details.Should().NotContain("abc.def.ghi");
         (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name"))
             .Should().BeTrue("no contract script may apply after the backup hook failed (fail closed, ordering)");
     }

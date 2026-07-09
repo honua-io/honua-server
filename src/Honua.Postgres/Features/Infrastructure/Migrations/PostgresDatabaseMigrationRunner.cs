@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using DbUp;
 using DbUp.Engine;
 using Honua.Core.Configuration;
@@ -29,6 +30,24 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan _backupCommandTimeout = TimeSpan.FromHours(1);
+    private static readonly Regex _backupHookUriUserInfoPattern = new(
+        "\\b([A-Za-z][A-Za-z0-9+.-]*://)([^/@\\s]+)@",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex _backupHookSensitiveQueryPattern = new(
+        "([?&](?:password|pwd|secret|token|api[-_]?key|access[-_]?key|client[-_]?secret)=)[^&#\\s]+",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex _backupHookSensitiveKeyValuePattern = new(
+        "\\b([A-Za-z0-9_.-]*(?:password|pwd|secret|token|api[-_]?key|access[-_]?key|client[-_]?secret|connection[-_]?string|connstr)[A-Za-z0-9_.-]*)\\b\\s*([:=])\\s*([^;\\s]+)",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex _backupHookSensitiveOptionPattern = new(
+        "(--(?:password|pwd|secret|token|api[-_]?key|access[-_]?key|client[-_]?secret)\\s+)([^\\s]+)",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex _backupHookAuthorizationPattern = new(
+        "\\bauthorization\\b\\s*([:=])\\s*([^;\\s]+)",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex _backupHookBearerPattern = new(
+        "\\bbearer\\s+[A-Za-z0-9-._~+/]+=*",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     private readonly MigrationSafetyOptions _safetyOptions;
     private readonly bool _contractMigrationsApproved;
@@ -350,7 +369,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         async Task<Exception?> CompleteAsync(
             bool succeeded,
             int? exitCode,
-            string? stderr,
+            string? sanitizedStderr,
             Exception? failure)
         {
             stopwatch.Stop();
@@ -364,7 +383,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
                 StartedAt = startedAt,
                 CompletedAt = DateTimeOffset.UtcNow,
                 ExitCode = exitCode,
-                TruncatedStderr = string.IsNullOrWhiteSpace(stderr) ? null : Truncate(stderr.Trim(), 500)
+                TruncatedStderr = sanitizedStderr
             };
 
             await RecordBackupHookOutcomeAsync(outcome, CancellationToken.None).ConfigureAwait(false);
@@ -402,7 +421,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
                 return await CompleteAsync(
                     succeeded: false,
                     exitCode: null,
-                    stderr: null,
+                    sanitizedStderr: null,
                     failure: new InvalidOperationException(
                     "The pre-migration backup command (Database:MigrationSafety:BackupCommand) failed to " +
                     "start; the migration run was aborted before applying any contract-phase script."))
@@ -425,7 +444,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
                 return await CompleteAsync(
                     succeeded: false,
                     exitCode: null,
-                    stderr: null,
+                    sanitizedStderr: null,
                     failure: new TimeoutException(
                     $"The pre-migration backup command (Database:MigrationSafety:BackupCommand) exceeded " +
                     $"{_backupCommandTimeout.TotalMinutes:F0} minute(s) and was terminated; the migration run " +
@@ -438,13 +457,14 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 
             if (process.ExitCode != 0)
             {
-                var detail = string.IsNullOrWhiteSpace(stderr)
+                var sanitizedStderr = SanitizeBackupHookStderr(stderr);
+                var detail = string.IsNullOrWhiteSpace(sanitizedStderr)
                     ? string.Empty
-                    : $" Details: {Truncate(stderr.Trim(), 500)}";
+                    : $" Details: {sanitizedStderr}";
                 return await CompleteAsync(
                     succeeded: false,
                     exitCode: process.ExitCode,
-                    stderr: stderr,
+                    sanitizedStderr: sanitizedStderr,
                     failure: new InvalidOperationException(
                     "The pre-migration backup command (Database:MigrationSafety:BackupCommand) exited with " +
                     $"code {process.ExitCode}; the migration run was aborted (fail closed) before applying any " +
@@ -455,7 +475,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             return await CompleteAsync(
                     succeeded: true,
                     exitCode: process.ExitCode,
-                    stderr: null,
+                    sanitizedStderr: null,
                     failure: null)
                 .ConfigureAwait(false);
         }
@@ -464,7 +484,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             return await CompleteAsync(
                 succeeded: false,
                 exitCode: null,
-                stderr: null,
+                sanitizedStderr: null,
                 failure: new InvalidOperationException(
                 "The pre-migration backup command (Database:MigrationSafety:BackupCommand) could not be run; " +
                 "the migration run was aborted (fail closed) before applying any contract-phase script.",
@@ -579,6 +599,23 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         }
 
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static string? SanitizeBackupHookStderr(string? stderr)
+    {
+        if (string.IsNullOrWhiteSpace(stderr))
+        {
+            return null;
+        }
+
+        var sanitized = stderr.Trim();
+        sanitized = _backupHookUriUserInfoPattern.Replace(sanitized, "$1***@");
+        sanitized = _backupHookSensitiveQueryPattern.Replace(sanitized, "$1***");
+        sanitized = _backupHookSensitiveKeyValuePattern.Replace(sanitized, "$1$2***");
+        sanitized = _backupHookSensitiveOptionPattern.Replace(sanitized, "$1***");
+        sanitized = _backupHookAuthorizationPattern.Replace(sanitized, "Authorization$1***");
+        sanitized = _backupHookBearerPattern.Replace(sanitized, "Bearer ***");
+        return Truncate(sanitized, 500);
     }
 
     private static string Truncate(string value, int maxLength) =>

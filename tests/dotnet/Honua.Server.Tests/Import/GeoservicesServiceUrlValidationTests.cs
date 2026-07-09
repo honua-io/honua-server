@@ -152,6 +152,20 @@ public sealed class GeoservicesServiceUrlValidationTests
     }
 
     [UnitTest]
+    public async Task ValidateAsync_AllowlistConfigured_RequiresHostLabelBoundary()
+    {
+        var allowedSuffixes = new[] { "allowed.example.com" };
+
+        var result = await GeoservicesServiceUrlValidation.ValidateAsync(
+            "https://evilallowed.example.com/arcgis/rest/services/Test/FeatureServer",
+            allowedSuffixes,
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Be(GeoservicesServiceUrlValidation.DisallowedHostMessage);
+    }
+
+    [UnitTest]
     public async Task ValidateAsync_AllowlistConfigured_NonMatchingSuffix_ReturnsFailure()
     {
         var allowedSuffixes = new[] { ".arcgisonline.com" };
