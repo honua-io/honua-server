@@ -55,6 +55,13 @@ internal static class OpsActionCatalog
                 new(OpsActionNames.TuneBoundedAdmission, new OpsActionDescriptor(GuardrailTier.RequiresApproval, false)),
             });
 
+    /// <summary>Compatibility projection of registered ops-action guardrail tiers.</summary>
+    public static readonly ImmutableDictionary<string, GuardrailTier> GuardrailTiers =
+        Actions.ToImmutableDictionary(
+            static action => action.Key,
+            static action => action.Value.GuardrailTier,
+            StringComparer.Ordinal);
+
     /// <summary>Returns true when the action name is a registered ops action.</summary>
     public static bool IsRegistered(string action) => Actions.ContainsKey(action);
 }
