@@ -152,7 +152,7 @@ What to do (and not do):
 
 - **Do not admin-merge** around the train, and do not wait for a per-PR CI matrix that will never run. Open the PR, keep it non-draft, and let the train land it.
 - **Manual dispatch is dry-run by default.** To actually form and land a batch: `gh workflow run merge-train.yml -f train_apply=true`. Without `train_apply=true` you get a report only (`TRAIN_APPLY=0`).
-- **Batch failure ⇒ `train:escalated`.** When a batch fails, the train attributes the failure and labels the batch members `train:escalated`, which excludes them from future batches. After fixing the root cause (or determining your PR wasn't the culprit), **remove the label** and re-dispatch with `train_apply=true` — the label does not clear itself.
+- **Batch failure ⇒ `train:escalated`.** When a batch fails, the train attributes the failure and labels the batch members `train:escalated`, which excludes them from future batches. If a later rerun of that same `train/batch/*` CI run turns green, `merge-train-rerun-recovery.yml` clears the stale escalation labels and stamps `CI Gate` on the member PR heads. If the failure is real, fix the root cause, remove the label, and re-dispatch with `train_apply=true`.
 - **Batch CI is stricter than local builds.** The Linux batch lane has analyzer rules that may not fire locally on Windows (e.g. `CA1873` on log-argument evaluation). A locally-clean warnings-as-errors build does not guarantee the batch build passes; read the batch log (`gh run view <id> --log-failed`) and fix on the PR branch.
 - Exclude a PR from the train with the `hold` label or by marking it draft.
 - The known `40P01` deadlock flake applies to batch shards too — rerun the failed shard rather than "fixing" it (see Pull Request Policy above).

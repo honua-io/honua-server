@@ -11,7 +11,7 @@ namespace Honua.Postgres.Features.AuditLog;
 
 /// <summary>
 /// PostgreSQL-backed <see cref="IAuditLog"/> writing to <c>honua.audit_log</c>.
-/// Append-only by design (see migration 033) — only INSERTs are issued, and
+/// Append-only by design (see migration 033): only INSERTs are issued, and
 /// transient failures are swallowed (logged) so that an audit-write hiccup
 /// never blocks the security-relevant action being audited.
 /// </summary>
@@ -60,7 +60,7 @@ internal sealed class PostgresAuditLog : IAuditLog
         ArgumentNullException.ThrowIfNull(auditEvent);
 
         // Compute the stored (truncated) field values up front so the hash chain
-        // is built over exactly what is persisted — the verifier replays the same
+        // is built over exactly what is persisted; the verifier replays the same
         // stored values, so the two hashes must agree.
         var actor = Truncate(auditEvent.Actor, MaxActorLength);
         var resourceType = Truncate(auditEvent.ResourceType, MaxResourceTypeLength);
@@ -150,7 +150,7 @@ internal sealed class PostgresAuditLog : IAuditLog
         }
         catch (OperationCanceledException)
         {
-            // Honour cooperative cancellation — do not log; the caller is shutting down.
+            // Honour cooperative cancellation; do not log, the caller is shutting down.
             throw;
         }
         catch (Exception ex)

@@ -108,7 +108,7 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
         var id = Guid.NewGuid();
         var channel = Channel.CreateBounded<ObservationStreamFrame>(new BoundedChannelOptions(_maxBufferPerConnection)
         {
-            FullMode = BoundedChannelFullMode.DropWrite,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false
         });
@@ -226,17 +226,9 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
                 continue;
             }
 
-            // DropWrite bounded channel: a full buffer drops the frame and the reader
-            // observes the gap. Track the drop for slow-consumer visibility.
-            //
-            // NOTE (found while wiring PA-112's OTel export): ChannelWriter<T>.TryWrite
-            // returns true for BoundedChannelFullMode.DropWrite even when the item is
-            // silently discarded — it only returns false once the writer is completed,
-            // which this manager never does. That means this branch, and therefore both
-            // counters below, are effectively unreachable via the current code path. Fixing
-            // the drop-detection itself (e.g. checking channel occupancy around the write) is
-            // a separate, more invasive change and is out of scope here; the counter is wired
-            // correctly so it starts reporting real drops once that detection bug is fixed.
+            // Wait-mode bounded channel with non-blocking TryWrite: a full buffer
+            // reports false, allowing this fan-out path to drop the new frame and
+            // count the slow-consumer gap without blocking ingest.
             if (!entry.Channel.Writer.TryWrite(frame))
             {
                 Interlocked.Increment(ref _slowConsumerDrops);

@@ -1,0 +1,45 @@
+name: Merge Train Rerun Recovery
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: merge-train-rerun-recovery-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Recover green batch rerun
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'train/batch/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Recover escalated PRs from green rerun
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TRAIN_APPLY: 1
+        run: |
+          set -euo pipefail
+          . scripts/ci/merge-train/lib.sh
+          . scripts/ci/merge-train/recovery.sh
+          train_recover_green_batch_rerun \
+            "${{ github.event.workflow_run.id }}" \
+            "${{ github.event.workflow_run.head_branch }}" \
+            "${{ github.event.workflow_run.html_url }}"
