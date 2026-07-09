@@ -418,4 +418,44 @@ public class SqlServerFeatureQueryBuilderTests
 
         Assert.Contains("STGeomFromWKB(@p0, 4326)", result.Sql, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
+    {
+        // Temporal analytics went GA (#2429); providers that cannot translate a temporal
+        // predicate must fail loud rather than silently return rows outside the requested
+        // window. The SQL Server provider has no T-SQL temporal translation in this slice.
+        var query = new FeatureQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "observed_at",
+                PropertyType = TemporalPropertyType.DateTime
+            }
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns));
+        Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CountObjectIdsAndExtentQueries_TemporalFilter_ThrowNotSupported()
+    {
+        // The guard must fire on every build path, not just SELECT, so a temporal window
+        // can never be silently dropped by count/id/extent envelopes either.
+        var query = new FeatureQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "observed_at",
+                PropertyType = TemporalPropertyType.DateTime
+            }
+        };
+        var mapping = BuildMapping();
+
+        Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query));
+    }
 }

@@ -81,10 +81,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
     // experimental-disabled, so the registry-derived manifest omits them.
     private static readonly string[] ExperimentalManifestCapabilityIds =
     [
-        "temporal.filtering",
-        "temporal.extent-discovery",
-        "temporal.histogram",
-        "temporal.time-series-tiles",
+        // temporal.* promoted to Implemented (GA) in #2429 — no longer omitted.
         "sync.offline",
         "realtime.feature-streams",
         // alerts.geofence promoted to Implemented (GA) in #2427 — no longer omitted.
