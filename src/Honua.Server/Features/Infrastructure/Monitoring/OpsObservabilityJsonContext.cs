@@ -17,6 +17,11 @@ namespace Honua.Infrastructure.Monitoring;
 [JsonSerializable(typeof(OpsHealthHistoryResponse))]
 [JsonSerializable(typeof(OpsFindingsListResponse))]
 [JsonSerializable(typeof(OpsFindingProposeResponse))]
+[JsonSerializable(typeof(OpsAutonomyPolicyListResponse))]
+[JsonSerializable(typeof(OpsAutonomyPolicyResponse))]
+[JsonSerializable(typeof(OpsAutonomySettingsResponse))]
+[JsonSerializable(typeof(OpsAutonomyPolicyUpdateRequest))]
+[JsonSerializable(typeof(OpsAutonomySettingsUpdateRequest))]
 internal sealed partial class OpsObservabilityJsonContext : JsonSerializerContext
 {
 }

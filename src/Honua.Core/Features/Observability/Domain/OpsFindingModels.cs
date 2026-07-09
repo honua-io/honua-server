@@ -75,6 +75,12 @@ public sealed record OpsFindingRecommendedAction
     /// <summary>Gets the operation class the gateway routes this action through.</summary>
     public required OperationClass Kind { get; init; }
 
+    /// <summary>
+    /// Gets the optional action discriminator for <see cref="OperationClass.AdminConfigChange"/>
+    /// actions, used by the gateway and autonomy evaluator to resolve action-specific guardrails.
+    /// </summary>
+    public string? ActionDiscriminator { get; init; }
+
     /// <summary>Gets a short, plain-language summary of what the action does.</summary>
     public required string Summary { get; init; }
 
@@ -86,6 +92,19 @@ public sealed record OpsFindingRecommendedAction
 
     /// <summary>Gets the operator-facing reason recorded on the resulting gateway request/proposal.</summary>
     public required string Reason { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the rule producer has marked this recommended action as
+    /// safe for autonomous apply. The route-time evaluator still checks the action safety catalog;
+    /// this marker alone never grants auto-apply.
+    /// </summary>
+    public bool AutoSafe { get; init; }
+
+    /// <summary>
+    /// Gets the bounded blast-radius estimate for the action. The autonomy policy must allow this
+    /// value before route-time auto-apply can be reserved.
+    /// </summary>
+    public int BlastRadius { get; init; } = 1;
 }
 
 /// <summary>
