@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Domain;
+
 namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
@@ -52,6 +54,11 @@ internal sealed record MigrationObservabilityResponse
     /// Error detail when the plan could not be generated.
     /// </summary>
     public string? PlanError { get; init; }
+
+    /// <summary>
+    /// Latest observed pre-migration backup hook outcome for this instance.
+    /// </summary>
+    public MigrationBackupHookOutcome? LastBackupHookOutcome { get; init; }
 
     /// <summary>
     /// Timestamp when the response was generated.

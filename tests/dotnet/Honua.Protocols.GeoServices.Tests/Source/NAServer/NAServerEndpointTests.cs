@@ -210,6 +210,43 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     }
 
     [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_ProviderInvalidSridFailure_ReturnsSanitized400()
+    {
+        var provider = new TestRoutingProvider(
+            new RoutingProviderCapabilities(SupportsRoute: true, SupportsServiceArea: true),
+            _ => new InvalidOperationException("PostGIS ST_Transform failed: invalid SRID 999999 in spatial_ref_sys."));
+        var fixture = await CreateFixtureWithRoutingProviderAsync(provider);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
+                new KeyValuePair<string, string>("outSR", "999999"),
+            ]);
+
+            var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().NotContain("PostGIS");
+            body.Should().NotContain("ST_Transform");
+            using var document = JsonDocument.Parse(body);
+            var error = document.RootElement.GetProperty("error");
+            error.GetProperty("code").GetInt32().Should().Be(400);
+            error.GetProperty("details").EnumerateArray().Select(d => d.GetString())
+                .Should().Contain(d => d!.Contains("spatial reference"));
+            document.RootElement.TryGetProperty("routes", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ServiceArea)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
     public async Task ServiceArea_UnsupportedTravelDirection_Returns400()
@@ -367,6 +404,19 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             {
                 services.RemoveAll<IRoutingProvider>();
                 services.AddScoped<IRoutingProvider>(_ => new TestRoutingProvider(capabilities));
+            });
+
+        await fixture.InitializeAsync();
+        return fixture;
+    }
+
+    private static async Task<WebAppFixture> CreateFixtureWithRoutingProviderAsync(IRoutingProvider provider)
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRoutingProvider>();
+                services.AddScoped(_ => provider);
             });
 
         await fixture.InitializeAsync();
