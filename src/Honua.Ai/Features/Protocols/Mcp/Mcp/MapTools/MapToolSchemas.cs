@@ -102,6 +102,10 @@ internal static class MapToolSchemas
               "default": 0,
               "description": "Number of matching features to skip before returning results (pagination). Pair with limit to page mechanically through large result sets: when a response reports exceededTransferLimit=true, re-issue the same query with resultOffset set to the returned nextOffset until exceededTransferLimit is false."
             },
+            "cursor": {
+              "type": "string",
+              "description": "Opaque cursor alias returned as nextCursor by a previous page. Echo this instead of resultOffset when using generic MCP cursor pagination."
+            },
             "returnGeometry": {
               "type": "boolean",
               "default": true,

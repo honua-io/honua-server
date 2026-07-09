@@ -165,7 +165,7 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
 {
     private const string ApiVersion = "2024-03-01";
     private static readonly Uri ManagementScope = new("https://management.azure.com/.default");
-    private readonly TokenCredential _credential = new DefaultAzureCredential();
+    private readonly TokenCredential _credential = AzureControlPlaneCredential.SharedDefault;
 
     public async Task<AzureContainerAppsTrafficState> GetTrafficStateAsync(
         string subscriptionId, string resourceGroupName, string appName,

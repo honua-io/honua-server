@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -829,8 +830,28 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             Summary = $"{record.EventType} by {record.Actor}",
             Actor = record.Actor,
             CorrelationId = record.CorrelationId,
-            ResourceRef = ref_
+            ResourceRef = ref_,
+            DetailsJson = TryGetJsonDetails(record.Details)
         };
+    }
+
+    private static string? TryGetJsonDetails(string details)
+    {
+        if (string.IsNullOrWhiteSpace(details))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(details);
+            _ = document.RootElement.ValueKind;
+            return details;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static OperateEvent MapProgress(IOperationProgress progress)
