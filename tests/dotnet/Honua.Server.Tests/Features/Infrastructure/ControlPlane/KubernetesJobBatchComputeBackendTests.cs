@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.Geoprocessing.CustomCode;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -111,6 +112,48 @@ public sealed class KubernetesJobBatchComputeBackendTests
         await client.Received(1).CreateJobAsync(
             Arg.Is<KubernetesJobManifest>(m =>
                 m.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "1"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_ForwardsGenericEnvPassThroughForCustomCode()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult
+            {
+                StatusCode = HttpStatusCode.Created,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "job-uid-customcode" }
+            });
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-customcode-env", image: "honua/worker:1.0.0") with
+        {
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = KubernetesJobBatchComputeBackend.BackendId,
+                WorkloadId = "wl",
+                WorkloadName = "workload",
+                Artifact = "honua/worker:1.0.0",
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [CustomCodeJobContract.BaseUrlEnvParam] = "https://api.honua.test",
+                    [CustomCodeJobContract.JobTokenEnvParam] = "scoped-token",
+                    [CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.RepoUrlEnvName)] =
+                        "https://github.com/honua-io/example.git"
+                }
+            }
+        };
+
+        await backend.StartAsync(job);
+
+        await client.Received(1).CreateJobAsync(
+            Arg.Is<KubernetesJobManifest>(m =>
+                m.EnvironmentVariables[CustomCodeJobContract.BaseUrlEnvName] == "https://api.honua.test" &&
+                m.EnvironmentVariables[CustomCodeJobContract.JobTokenEnvName] == "scoped-token" &&
+                m.EnvironmentVariables[CustomCodeJobContract.RepoUrlEnvName] ==
+                    "https://github.com/honua-io/example.git"),
             Arg.Any<CancellationToken>());
     }
 
