@@ -153,3 +153,31 @@ They must not be renamed to `arcgis-stub`; that lane remains REST-only.
 | Emits standard `.cert.json` envelopes with `client_lane: "desktop-arcgis"` | Implemented by the runner and validated by unit tests plus the workflow validator. |
 | Captures screenshots/logs/project artifacts without credentials | Artifact layout, manifest generation, redaction scan, and strict evidence-ref validation are implemented; operators must use clean templates and review artifacts. |
 | Migration evidence doc links successful run and distinguishes licensed evidence from stubs | The docs distinguish the lane, but no successful licensed run is linked yet. #1019 remains open until that exists. |
+
+## Portal/Sharing facade evidence (epic #1240 / #1372)
+
+The Portal facade lets ArcGIS Pro "Add Portal" and Field Maps bind through Portal
+items + tokens instead of raw `/rest/services` URLs. The unlicensed automated
+proof is the `arcgis-stub` `portal` protocol lane (CERT-PRTL-\*, see the
+[certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md#arcgis-portal-facade-lane-arcgis-stub-portal-protocol));
+the **licensed** proof — the real-client gate for the epic acceptance criteria —
+is an operator-provisioned run on the self-hosted Windows ArcGIS Pro runner:
+
+1. Deploy a Portal-enabled Honua seeded with
+   [`tests/seed/portal-compat.yaml`](../../../tests/seed/portal-compat.yaml)
+   (`identity.portal-sharing` + `identity.portal-token` entitlements active; over
+   HTTPS so `RequireHttps` stays on). See
+   [`PORTAL_FACADE_SEED_CONTRACT.md`](../../gis/PORTAL_FACADE_SEED_CONTRACT.md).
+2. **ArcGIS Pro:** *Add Portal* → `<base>/sharing/rest` → sign in with a named
+   user (OAuth2) → confirm the `portal_public`/`portal_org` items are discoverable
+   and open to their FeatureServer URLs; `portal_private` is hidden unless the
+   user holds `portal-admin`.
+3. **Field Maps:** sign in via the OAuth2 named-user flow and confirm content
+   discovery.
+4. Emit a `client_lane: "desktop-arcgis"`, `protocol: "portal"` `.cert.json`
+   substantiating the CERT-PRTL-\* IDs and link it here + from the migration
+   evidence doc.
+
+Until that operator run exists, the CERT-PRTL token/OAuth2 IDs are baselined
+`skip` (see the matrix). This linkage is tracked on #1372 (real-client gate) and
+#1096 (runner provisioning).
