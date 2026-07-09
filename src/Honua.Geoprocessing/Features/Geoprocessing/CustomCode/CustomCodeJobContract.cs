@@ -96,7 +96,7 @@ public static class CustomCodeJobContract
     /// </summary>
     public const string OutputPrefixParam = "customcode.output_prefix";
 
-    // --- injected env.* pass-through (AwsBatchComputeBackend.BuildEnvironmentOverrides) ---
+    // --- injected env.* pass-through (batch backend container environment) ---
 
     /// <summary>
     /// Spec-parameter key that injects the Honua API base URL into the container as
@@ -122,8 +122,7 @@ public static class CustomCodeJobContract
     // its job definition from either a CUSTOMCODE_JOB_SPEC file or these discrete
     // CUSTOMCODE_* environment variables. The server projects each present
     // customcode.* spec parameter to the matching env.CUSTOMCODE_* spec key so
-    // AwsBatchComputeBackend.BuildEnvironmentOverrides (which strips the env. prefix)
-    // surfaces it to the container under these exact names. These names are the
+    // batch backends surface it to the container under these exact names. These names are the
     // SERVER half of a cross-piece contract and must match the harness 1:1 (#2191).
 
     /// <summary>The <c>env.</c> spec-parameter prefix the Batch backend strips to derive a container env var name.</summary>
