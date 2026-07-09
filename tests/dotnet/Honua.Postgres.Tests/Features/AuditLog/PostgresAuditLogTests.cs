@@ -161,7 +161,7 @@ public sealed class PostgresAuditLogTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task RecordAsync_TruncatesOverlongActor_AndStillPersists()
     {
-        // Sanity check on the truncation logic — a 1KB actor should not blow up
+        // Sanity check on the truncation logic: a 1KB actor should not blow up
         // the VARCHAR(256) constraint; instead the value is truncated with a
         // visible marker.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogTests));
@@ -186,7 +186,7 @@ public sealed class PostgresAuditLogTests(PostgresFixture fixture)
             var rows = await ReadAllAsync(schema);
             rows.Should().HaveCount(1);
             rows[0].Actor.Length.Should().BeLessThanOrEqualTo(256);
-            rows[0].Actor.Should().EndWith("…");
+            rows[0].Actor.Should().EndWith("\u2026");
         }
         finally
         {

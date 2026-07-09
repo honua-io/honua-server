@@ -37,6 +37,7 @@ internal sealed partial class AzureBatchComputeBackend(
     private const string ParamTaskTimeoutMinutes = "azure.batch.task_timeout_minutes";
     private const string ParamOutputContainerUrl = "azure.storage.output_container_url";
     private const string EnvPrefix = "azure.batch.env.";
+    private const string GenericEnvPrefix = "env.";
 
     public string BackendName => BackendIdentifier;
 
@@ -482,21 +483,30 @@ internal sealed partial class AzureBatchComputeBackend(
             settings["HONUA_RUNTIME_PROFILE"] = job.Spec.RuntimeProfile;
         }
 
+        ApplyEnvironmentSettings(settings, parameters, GenericEnvPrefix);
+        ApplyEnvironmentSettings(settings, parameters, EnvPrefix);
+
+        return settings;
+    }
+
+    private static void ApplyEnvironmentSettings(
+        Dictionary<string, string> settings,
+        IReadOnlyDictionary<string, string> parameters,
+        string prefix)
+    {
         foreach (var (key, value) in parameters)
         {
-            if (!key.StartsWith(EnvPrefix, StringComparison.Ordinal))
+            if (!key.StartsWith(prefix, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var envName = key[EnvPrefix.Length..];
-            if (!string.IsNullOrWhiteSpace(envName))
+            var name = key[prefix.Length..];
+            if (!string.IsNullOrWhiteSpace(name))
             {
-                settings[envName] = value;
+                settings[name] = value;
             }
         }
-
-        return settings;
     }
 
     private static string? GetParameter(IReadOnlyDictionary<string, string> parameters, string key)

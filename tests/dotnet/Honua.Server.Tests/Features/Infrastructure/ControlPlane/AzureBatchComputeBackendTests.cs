@@ -6,6 +6,7 @@ using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.Geoprocessing.CustomCode;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -167,6 +168,30 @@ public sealed class AzureBatchComputeBackendTests
             .WhoseValue.Should().Be("gdal-heavy");
         stub.LastSubmission.EnvironmentSettings.Should().ContainKey("HONUA_JOB_ID");
         stub.LastSubmission.EnvironmentSettings.Should().ContainKey("HONUA_WORKLOAD_NAME");
+    }
+
+    [Fact]
+    public async Task StartAsync_ForwardsGenericEnvPassThroughForCustomCode()
+    {
+        var stub = new StubAzureBatchClient();
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        await backend.StartAsync(CreateJob(parameters: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["azure.batch.account_url"] = "https://acct.eastus.batch.azure.com",
+            ["azure.batch.pool_id"] = "default-pool",
+            [CustomCodeJobContract.BaseUrlEnvParam] = "https://api.honua.test",
+            [CustomCodeJobContract.JobTokenEnvParam] = "scoped-token",
+            [CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.RepoUrlEnvName)] =
+                "https://github.com/honua-io/example.git"
+        }));
+
+        stub.LastSubmission!.EnvironmentSettings.Should().ContainKey(CustomCodeJobContract.BaseUrlEnvName)
+            .WhoseValue.Should().Be("https://api.honua.test");
+        stub.LastSubmission.EnvironmentSettings.Should().ContainKey(CustomCodeJobContract.JobTokenEnvName)
+            .WhoseValue.Should().Be("scoped-token");
+        stub.LastSubmission.EnvironmentSettings.Should().ContainKey(CustomCodeJobContract.RepoUrlEnvName)
+            .WhoseValue.Should().Be("https://github.com/honua-io/example.git");
     }
 
     [Fact]

@@ -19,8 +19,8 @@ namespace Honua.Geoprocessing.CustomCode;
 /// The token is the Phase-0 <see cref="IScopedJobTokenIssuer"/> credential: bound to
 /// the JobId, scoped to <c>declared_scope ∩ owner</c>, expiring at the job timeout
 /// plus a grace. It is injected through the existing <c>env.*</c> pass-through so
-/// <c>AwsBatchComputeBackend.BuildEnvironmentOverrides</c> surfaces it to the
-/// container as <c>HONUA_JOB_TOKEN</c> / <c>HONUA_BASE_URL</c>.
+/// batch backends surface it to the container as <c>HONUA_JOB_TOKEN</c> /
+/// <c>HONUA_BASE_URL</c>.
 /// </remarks>
 internal sealed class CustomCodeSubmitCoordinator(
     IScopedJobTokenIssuer tokenIssuer,
@@ -142,8 +142,8 @@ internal sealed class CustomCodeSubmitCoordinator(
 
         // Project the customcode.* parameters to the env.CUSTOMCODE_* pass-through the
         // user-code harness reads (docker/worker-customcode-python/harness/jobspec.py).
-        // AwsBatchComputeBackend.BuildEnvironmentOverrides strips the env. prefix and
-        // surfaces each as the matching CUSTOMCODE_* container env var. This is the
+        // Batch backends strip the env. prefix and surface each as the matching
+        // CUSTOMCODE_* container env var. This is the
         // SERVER half of the cross-piece param->env contract (#2191); only project
         // keys that are actually present so optional parameters stay unset. The
         // Round-4 harness drift guard pins the same map via ParameterToEnv.
