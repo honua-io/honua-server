@@ -64,6 +64,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0059](0059-first-release-scope-and-fix-forward-operate-model.md) | First-Release Scope and Fix-Forward Operate Model | Accepted | 2026-07 |
 | [0060](0060-two-plane-operability-architecture.md) | Two-Plane Operability Architecture — Substrate-Neutral Executors Over a Unified Catalog | Proposed | 2026-07 |
 | [0061](0061-mcp-native-elicitation-mapping.md) | Map the Clarification Envelope onto MCP-Native Elicitation | Accepted | 2026-07 |
+| [0062](0062-graduated-ops-autonomy-policy.md) | Graduated Autonomy Policy for Ops Findings | Accepted | 2026-07 |
 
 ## Template
 

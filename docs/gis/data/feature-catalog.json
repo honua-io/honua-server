@@ -2658,6 +2658,45 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-observability-autonomy-policies",
+      "route": "/api/v1/admin/observability/autonomy/policies",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-observability-autonomy-policies-rule",
+      "route": "/api/v1/admin/observability/autonomy/policies/{rule}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-observability-autonomy-settings",
+      "route": "/api/v1/admin/observability/autonomy/settings",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-observability-errors",
       "route": "/api/v1/admin/observability/errors",
       "method": "GET",
@@ -18252,6 +18291,33 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "put-api-v1-admin-observability-autonomy-policies-rule",
+      "route": "/api/v1/admin/observability/autonomy/policies/{rule}",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip",
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrud_InvalidMode_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "put-api-v1-admin-observability-autonomy-settings",
+      "route": "/api/v1/admin/observability/autonomy/settings",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"

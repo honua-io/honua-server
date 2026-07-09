@@ -188,6 +188,11 @@ internal static class ServiceCollectionExtensions
             new PostgresOpsHealthRollupStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+        services.AddScoped<IOpsAutonomyPolicyStore>(serviceProvider =>
+            new PostgresOpsAutonomyPolicyStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetService<IAuditLog>(),
+                configuration["Database:Schema"]));
         services.AddScoped<IShareExportStore>(serviceProvider =>
             new PostgresShareExportStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
