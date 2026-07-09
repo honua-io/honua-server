@@ -5,10 +5,14 @@
 # train:escalated labels and stamp CI Gate on the original member PR heads so the
 # regular PR merge train can drain them.
 
-train_recovery_batch_prs() {
+train_recovery_batch_pr_records() {
   local batch="$1"
+  if [[ -n "${TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH:-}" ]]; then
+    "${TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH}" "${batch}" | sed '/^$/d'
+    return 0
+  fi
   if [[ -n "${TRAIN_RECOVERY_PRS_FOR_BRANCH:-}" ]]; then
-    "${TRAIN_RECOVERY_PRS_FOR_BRANCH}" "${batch}"
+    "${TRAIN_RECOVERY_PRS_FOR_BRANCH}" "${batch}" | sed '/^$/d' | awk '{ print $0 "\t" }'
     return 0
   fi
 
@@ -25,9 +29,22 @@ train_recovery_batch_prs() {
     range="${base_ref}..${batch_ref}"
   fi
 
-  git -C "${TRAIN_REPO_ROOT}" log --reverse --format=%s "${range}" \
-    | sed -nE 's/^train: merge #([0-9]+)$/\1/p' \
-    | awk '!seen[$0]++'
+  git -C "${TRAIN_REPO_ROOT}" log --reverse --format='%H%x09%s' "${range}" \
+    | while IFS=$'\t' read -r merge_commit subject; do
+        if [[ "${subject}" =~ ^train:\ merge\ \#([0-9]+)$ ]]; then
+          local pr="${BASH_REMATCH[1]}" validated_head
+          validated_head="$(
+            git -C "${TRAIN_REPO_ROOT}" rev-list --parents -n 1 "${merge_commit}" \
+              | awk '{ print $3 }'
+          )"
+          [[ -n "${validated_head}" ]] && printf '%s\t%s\n' "${pr}" "${validated_head}"
+        fi
+      done \
+    | awk -F '\t' '!seen[$1]++'
+}
+
+train_recovery_batch_prs() {
+  train_recovery_batch_pr_records "$1" | awk -F '\t' '{ print $1 }'
 }
 
 train_recovery_pr_info() {
@@ -44,6 +61,11 @@ train_recovery_pr_info() {
 train_recovery_labels_contain() {
   local labels_csv="$1" label="$2"
   tr ',' '\n' <<<"${labels_csv}" | grep -Fxq "${label}"
+}
+
+train_recovery_short_sha() {
+  local sha="$1"
+  printf '%s' "${sha:0:12}"
 }
 
 train_recovery_stamp_ci_gate() {
@@ -75,8 +97,10 @@ train_recover_green_batch_rerun() {
     run_url="https://github.com/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${run_id}"
   fi
 
-  local recovered=0 pr
-  while IFS= read -r pr; do
+  local recovered=0 record
+  while IFS= read -r record; do
+    local pr validated_sha
+    IFS=$'\t' read -r pr validated_sha <<<"${record}"
     [[ -z "${pr}" ]] && continue
 
     local info sha state labels
@@ -96,11 +120,19 @@ train_recover_green_batch_rerun() {
       train_warn "recovery skipped #${pr}: missing head SHA"
       continue
     fi
+    if [[ -z "${validated_sha}" || "${validated_sha}" == "null" ]]; then
+      train_warn "recovery skipped #${pr}: missing validated batch head SHA"
+      continue
+    fi
+    if [[ "${sha}" != "${validated_sha}" ]]; then
+      train_warn "recovery skipped #${pr}: current head $(train_recovery_short_sha "${sha}") differs from validated batch head $(train_recovery_short_sha "${validated_sha}")"
+      continue
+    fi
 
     train_recovery_stamp_ci_gate "${pr}" "${sha}" "${run_url}" "${batch}" "${labels}"
     recovered=$((recovered + 1))
     train_decision "RECOVERED #${pr}: green batch rerun ${run_id} stamped CI Gate and cleared ${TRAIN_LABEL_ESCALATED}"
-  done < <(train_recovery_batch_prs "${batch}")
+  done < <(train_recovery_batch_pr_records "${batch}")
 
   if [[ "${recovered}" -eq 0 ]]; then
     train_log "recovery complete: no escalated open PRs matched ${batch}"

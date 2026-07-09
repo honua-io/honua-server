@@ -596,9 +596,14 @@ assert_eq "escalate: phase reset to select" "$(jq -r '.active_batch.phase' <<<"$
 
 echo
 echo "== Roll-forward Cap. 2b: green rerun recovery clears stale escalation =="
-__recover_prs() {
+__recover_records() {
   case "$1" in
-    train/batch/deadbee/123) printf '1944\n1961\n1969\n' ;;
+    train/batch/deadbee/123)
+      printf '1944\tsha1944\n'
+      printf '1961\tsha1961\n'
+      printf '1969\tsha1969\n'
+      printf '1972\toldsha1972\n'
+      ;;
     *) : ;;
   esac
 }
@@ -607,11 +612,12 @@ __recover_info() {
     1944) printf 'sha1944\tOPEN\ttrain:escalated,train:landing\n' ;;
     1961) printf 'sha1961\tOPEN\ttrain:landing\n' ;;
     1969) printf 'sha1969\tCLOSED\ttrain:escalated\n' ;;
+    1972) printf 'newsha1972\tOPEN\ttrain:escalated\n' ;;
     *) return 1 ;;
   esac
 }
-export -f __recover_prs __recover_info
-export TRAIN_RECOVERY_PRS_FOR_BRANCH=__recover_prs
+export -f __recover_records __recover_info
+export TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH=__recover_records
 export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info
 RECOVERY_LOG="$(
   GITHUB_REPOSITORY=honua-io/honua-server \
@@ -624,7 +630,11 @@ assert_contains "recovery: clears train:escalated" "${RECOVERY_LOG}" "gh pr edit
 assert_contains "recovery: clears train:landing" "${RECOVERY_LOG}" "gh pr edit 1944 --remove-label train:landing"
 assert_not_contains "recovery: non-escalated PR is not stamped" "${RECOVERY_LOG}" "statuses/sha1961"
 assert_not_contains "recovery: closed PR is not stamped" "${RECOVERY_LOG}" "statuses/sha1969"
-unset TRAIN_RECOVERY_PRS_FOR_BRANCH TRAIN_RECOVERY_PR_INFO_FOR
+assert_not_contains "recovery: advanced PR head is not stamped" "${RECOVERY_LOG}" "statuses/newsha1972"
+assert_not_contains "recovery: stale batch head is not stamped" "${RECOVERY_LOG}" "statuses/oldsha1972"
+assert_not_contains "recovery: advanced PR keeps escalation label" "${RECOVERY_LOG}" "gh pr edit 1972 --remove-label train:escalated"
+assert_contains "recovery: advanced PR explains skipped SHA mismatch" "${RECOVERY_LOG}" "current head newsha1972 differs from validated batch head oldsha1972"
+unset TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH TRAIN_RECOVERY_PR_INFO_FOR
 
 echo
 echo "== Roll-forward Cap. 4: autofix disabled (TRAIN_AUTOFIX=0) => behaves like today =="
