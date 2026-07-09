@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
+using Honua.MySql;
 using Honua.MySql.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 
@@ -271,7 +272,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
     #endregion
 
     private static NotSupportedException NotSupported(string operation)
-        => new($"Operation '{operation}' is not supported by the MySQL/MariaDB provider.");
+        => MySqlUnsupportedFeature.Operation(operation);
 
     private static DbCommand CreateCommand(DbConnection connection, ParameterizedQuery query)
     {

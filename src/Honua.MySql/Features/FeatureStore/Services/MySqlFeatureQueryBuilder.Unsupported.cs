@@ -9,14 +9,14 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.MySql;
 
 namespace Honua.MySql.Features.FeatureStore.Services;
 
 internal sealed partial class MySqlFeatureQueryBuilder
 {
     private static ParameterizedQuery ThrowNotSupported([CallerMemberName] string operation = "")
-        => throw new NotSupportedException(
-            $"Operation '{operation}' is not supported by the MySQL/MariaDB provider.");
+        => throw MySqlUnsupportedFeature.Operation(operation);
 
     /// <inheritdoc />
     public ParameterizedQuery BuildProjectedPointQuery(

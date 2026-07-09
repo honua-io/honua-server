@@ -98,9 +98,11 @@ internal static class OgcCoverageImportEndpoints
         }
 
         var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
+        var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
         var urlValidation = await OgcServiceUrlValidation.ValidateAsync(
             request.ServiceUrl,
             allowUnsafeLocalUrls,
+            allowedHostSuffixes,
             cancellationToken).ConfigureAwait(false);
         if (!urlValidation.IsValid)
         {
