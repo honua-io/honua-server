@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Infrastructure.Licensing;
 
@@ -49,6 +50,7 @@ namespace Honua.Infrastructure.Monitoring;
 [JsonSerializable(typeof(ObservabilityRealtimeStatus))]
 [JsonSerializable(typeof(ObservabilityStatusResponse))]
 [JsonSerializable(typeof(MigrationObservabilityResponse))]
+[JsonSerializable(typeof(MigrationBackupHookOutcome))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(StreamingMetrics))]
 [JsonSerializable(typeof(ProductionHealthResponse))]

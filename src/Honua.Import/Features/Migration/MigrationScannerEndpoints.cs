@@ -94,6 +94,7 @@ internal static class MigrationScannerEndpoints
         try
         {
             MigrationSourceInventoryArtifact artifact;
+            var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
 
             switch (sourceKind)
             {
@@ -103,6 +104,7 @@ internal static class MigrationScannerEndpoints
                         var validation = await GeoServerServiceUrlValidation.ValidateAsync(
                             request.SourceUrl,
                             allowUnsafeLocalUrls,
+                            allowedHostSuffixes,
                             cancellationToken).ConfigureAwait(false);
                         if (!validation.IsValid)
                         {
@@ -138,6 +140,7 @@ internal static class MigrationScannerEndpoints
                         var validation = await OgcServiceUrlValidation.ValidateAsync(
                             request.SourceUrl,
                             allowUnsafeLocalUrls,
+                            allowedHostSuffixes,
                             cancellationToken).ConfigureAwait(false);
                         if (!validation.IsValid)
                         {
@@ -167,6 +170,7 @@ internal static class MigrationScannerEndpoints
                         var validation = await OgcServiceUrlValidation.ValidateAsync(
                             request.SourceUrl,
                             allowUnsafeLocalUrls,
+                            allowedHostSuffixes,
                             cancellationToken).ConfigureAwait(false);
                         if (!validation.IsValid)
                         {
@@ -192,6 +196,7 @@ internal static class MigrationScannerEndpoints
                     {
                         var validation = await GeoservicesServiceUrlValidation.ValidateAsync(
                             request.SourceUrl,
+                            allowedHostSuffixes,
                             cancellationToken).ConfigureAwait(false);
                         if (!validation.IsValid)
                         {

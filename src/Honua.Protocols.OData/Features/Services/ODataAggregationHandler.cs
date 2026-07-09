@@ -777,48 +777,6 @@ internal sealed class ODataAggregationHandler
         }
 
         var sqlFragment = _queryService.ConvertODataFilterToSqlFragment(filterExpression, resource);
-        return MergeFilters(query, sqlFragment);
-    }
-
-    private static FeatureQuery MergeFilters(FeatureQuery query, SqlFragment? sqlFragment)
-    {
-        if (query.SqlFilter != null)
-        {
-            if (sqlFragment != null)
-            {
-                var offset = query.SqlFilter.Parameters.Count;
-                var reindexedSql = ReindexSqlParameters(sqlFragment.Sql, offset);
-                var combinedSql = $"({query.SqlFilter.Sql}) AND ({reindexedSql})";
-                var combinedParameters = query.SqlFilter.Parameters.Concat(sqlFragment.Parameters).ToArray();
-                return query with { SqlFilter = new SqlFragment(combinedSql, combinedParameters), Where = null };
-            }
-
-            return query;
-        }
-
-        if (sqlFragment != null)
-        {
-            return query with { SqlFilter = sqlFragment, Where = null };
-        }
-
-        return query;
-    }
-
-    private static string ReindexSqlParameters(string sql, int offset)
-    {
-        if (offset == 0)
-        {
-            return sql;
-        }
-
-        return Regex.Replace(
-            sql,
-            @"@p(\d+)",
-            match =>
-            {
-                var index = int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-                return $"@p{index + offset}";
-            },
-            RegexOptions.None);
+        return ODataSqlFragmentMergeHelper.Merge(query, sqlFragment);
     }
 }

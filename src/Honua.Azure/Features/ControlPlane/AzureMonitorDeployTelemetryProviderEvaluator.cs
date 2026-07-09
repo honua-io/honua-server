@@ -48,7 +48,7 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
     // on the telemetry connection's BaseUrl.
     internal const string DefaultEndpoint = "https://api.loganalytics.io";
 
-    private readonly TokenCredential _credential = new DefaultAzureCredential();
+    private readonly TokenCredential _credential = AzureControlPlaneCredential.Default;
 
     public async Task<double?> GetScalarValueAsync(
         string workspaceId,

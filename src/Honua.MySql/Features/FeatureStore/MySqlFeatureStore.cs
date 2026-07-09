@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.MySql;
 
 namespace Honua.MySql.Features.FeatureStore;
 
@@ -97,7 +98,7 @@ internal sealed class MySqlFeatureStore :
 
     /// <inheritdoc />
     public Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
+        => throw MySqlUnsupportedFeature.Create(
             "Native FlatGeobuf output is not supported by the MySQL/MariaDB provider in this slice. " +
             "The FeatureServer guard rejects f=fgb against this provider before reaching the store; " +
             "this throw is defense-in-depth in case a caller invokes the reader directly.");
@@ -131,14 +132,14 @@ internal sealed class MySqlFeatureStore :
     /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
+        => throw MySqlUnsupportedFeature.Create(
             "Aggregate statistics queries are not supported by the MySQL/MariaDB provider in this slice. " +
             "Check FeatureProviderCapabilities.SupportsStatistics before invoking.");
 
     /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
+        => throw MySqlUnsupportedFeature.Create(
             "Temporal extent queries are not supported by the MySQL/MariaDB provider in this slice.");
 
     /// <inheritdoc />
@@ -158,25 +159,25 @@ internal sealed class MySqlFeatureStore :
     /// <inheritdoc />
     public Task<QueryResult<Feature>> QueryTopFeaturesAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
+        => throw MySqlUnsupportedFeature.Create(
             "Top-features queries are not supported by the MySQL/MariaDB provider in this slice.");
 
     /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
         int layerId, FeatureQuery query, DateBinDefinition dateBin, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
+        => throw MySqlUnsupportedFeature.Create(
             "Date-binning queries are not supported by the MySQL/MariaDB provider in this slice.");
 
     /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
         int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
+        => throw MySqlUnsupportedFeature.Create(
             "Numeric-binning queries are not supported by the MySQL/MariaDB provider in this slice.");
 
     /// <inheritdoc />
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
+        => throw MySqlUnsupportedFeature.Create(
             "H3 hexagonal aggregation is not supported by the MySQL/MariaDB provider.");
 
     /// <inheritdoc />
@@ -291,7 +292,7 @@ internal sealed class MySqlFeatureStore :
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
+        => throw MySqlUnsupportedFeature.Create(
             "Streaming GML features is not supported by the MySQL/MariaDB provider in this slice.");
 
     /// <summary>

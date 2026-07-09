@@ -120,9 +120,11 @@ internal static class OgcApiFeaturesImportEndpoints
         }
 
         var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
+        var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
         var validation = await OgcServiceUrlValidation.ValidateAsync(
             request.ServiceUrl,
             allowUnsafeLocalUrls,
+            allowedHostSuffixes,
             cancellationToken).ConfigureAwait(false);
         if (!validation.IsValid)
         {

@@ -245,7 +245,7 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
     public AzureBatchDataPlaneClient(
         IHttpClientFactory httpClientFactory,
         ILogger<AzureBatchDataPlaneClient> logger)
-        : this(httpClientFactory, logger, new DefaultAzureCredential())
+        : this(httpClientFactory, logger, AzureControlPlaneCredential.Default)
     {
     }
 

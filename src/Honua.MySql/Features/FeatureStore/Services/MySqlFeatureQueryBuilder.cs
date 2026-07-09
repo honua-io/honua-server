@@ -7,6 +7,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.MySql;
 using Honua.MySql.Features.Infrastructure;
 
 namespace Honua.MySql.Features.FeatureStore.Services;
@@ -132,7 +133,7 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
                 MAX(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 3))),
                 MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 3)))
                 """,
-            _ => throw new NotSupportedException(
+            _ => throw MySqlUnsupportedFeature.Create(
                 $"Extent queries on {mapping.GeometryType} layers are not supported by the MySQL/MariaDB " +
                 "provider in this slice. Supported geometry types: Point, Polygon, MultiPolygon. " +
                 "Compute extents in the application layer or use a PostGIS-backed layer.")
@@ -212,7 +213,7 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
     {
         if (query.OutputSrid.HasValue && query.OutputSrid.Value != mapping.Srid)
         {
-            throw new NotSupportedException(
+            throw MySqlUnsupportedFeature.Create(
                 $"Output SRID transforms are not supported by the MySQL/MariaDB provider " +
                 $"(layer SRID is {mapping.Srid}, requested {query.OutputSrid.Value}). " +
                 $"Pre-project geometries to the layer SRID or use a PostGIS-backed layer.");
@@ -224,7 +225,7 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         // cannot silently lose the constraint and return unfiltered rows.
         if (query.TemporalFilter.HasValue)
         {
-            throw new NotSupportedException(
+            throw MySqlUnsupportedFeature.Create(
                 "Temporal filters are not supported by the MySQL/MariaDB provider in this slice. " +
                 "Apply temporal filtering in the calling layer or use a PostGIS-backed layer.");
         }

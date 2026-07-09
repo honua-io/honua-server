@@ -6,6 +6,7 @@ using System.Text;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.MySql;
 using Honua.MySql.Features.Infrastructure;
 
 namespace Honua.MySql.Features.FeatureStore.Services;
@@ -26,7 +27,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
         if (filter.Srid.HasValue && filter.Srid.Value > 0 && filter.Srid.Value != mapping.Srid)
         {
-            throw new NotSupportedException(
+            throw MySqlUnsupportedFeature.Create(
                 $"Cross-SRID spatial filters are not supported by the MySQL/MariaDB provider " +
                 $"(layer SRID is {mapping.Srid}, filter SRID is {filter.Srid.Value}). " +
                 $"Pre-project filter geometries to the layer SRID before querying.");
@@ -34,7 +35,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
         if (filter.SpatialRelationship == SpatialRelationship.NearestNeighbor)
         {
-            throw new NotSupportedException(
+            throw MySqlUnsupportedFeature.Create(
                 "Nearest-neighbor (KNN) spatial queries are not supported by the MySQL/MariaDB provider. " +
                 "Check FeatureProviderCapabilities.SupportsNearestNeighbor before invoking.");
         }
@@ -68,7 +69,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
                 BuildDistanceClause(geomCol, filterGeom, filter, mapping, withinDistance: true, ref paramIndex, parameters),
             SpatialRelationship.BeyondDistance when filter.Distance.HasValue =>
                 BuildDistanceClause(geomCol, filterGeom, filter, mapping, withinDistance: false, ref paramIndex, parameters),
-            _ => throw new NotSupportedException(
+            _ => throw MySqlUnsupportedFeature.Create(
                 $"Spatial relationship '{filter.SpatialRelationship}' is not supported by the MySQL/MariaDB provider.")
         };
 
@@ -106,7 +107,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         // for points; polygon/line distance would silently degrade to centroid math.
         if (mapping.GeometryType is not GeometryType.Point and not GeometryType.MultiPoint)
         {
-            throw new NotSupportedException(
+            throw MySqlUnsupportedFeature.Create(
                 $"Distance spatial filters are only supported for point layers in the MySQL/MariaDB provider " +
                 $"(layer geometry is {mapping.GeometryType}). ST_Distance_Sphere expects point geometries.");
         }
@@ -117,7 +118,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         // canonical WGS84-approximation contract documented in mysql-provider.md.
         if (!MySqlSpatialSql.IsDistanceSphereCompatibleSrid(mapping.Srid))
         {
-            throw new NotSupportedException(
+            throw MySqlUnsupportedFeature.Create(
                 $"Distance spatial filters require the layer SRID to be EPSG:4326 or SRID 0 in the MySQL/MariaDB provider " +
                 $"(layer SRID is {mapping.Srid}). ST_Distance_Sphere is documented as a WGS84 spherical approximation; " +
                 $"pre-project the layer to EPSG:4326 before issuing distance filters.");

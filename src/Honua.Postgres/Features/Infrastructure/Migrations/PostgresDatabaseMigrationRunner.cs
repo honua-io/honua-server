@@ -2,14 +2,21 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using DbUp;
 using DbUp.Engine;
 using Honua.Core.Configuration;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -25,12 +32,18 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 
     private readonly MigrationSafetyOptions _safetyOptions;
     private readonly bool _contractMigrationsApproved;
+    private readonly IMigrationBackupHookOutcomeStore? _backupHookOutcomeStore;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
 
     public PostgresDatabaseMigrationRunner(
         IOptions<MigrationSafetyOptions>? safetyOptions = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        IMigrationBackupHookOutcomeStore? backupHookOutcomeStore = null,
+        IServiceScopeFactory? serviceScopeFactory = null)
     {
         _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
+        _backupHookOutcomeStore = backupHookOutcomeStore;
+        _serviceScopeFactory = serviceScopeFactory;
 
         // The contract-apply approval is an explicit top-level operator signal
         // (HONUA_APPROVE_CONTRACT_MIGRATIONS=true), read via the IConfiguration indexer (Abstractions
@@ -325,6 +338,39 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             return null;
         }
 
+        var pendingScripts = classifications
+            .Where(c => c.IsBreaking)
+            .Select(c => c.ScriptName)
+            .ToArray();
+        var migrationRunId = Guid.NewGuid().ToString("N");
+        var pendingSetFingerprint = ComputePendingSetFingerprint(pendingScripts);
+        var startedAt = DateTimeOffset.UtcNow;
+        var stopwatch = Stopwatch.StartNew();
+
+        async Task<Exception?> CompleteAsync(
+            bool succeeded,
+            int? exitCode,
+            string? stderr,
+            Exception? failure)
+        {
+            stopwatch.Stop();
+            var outcome = new MigrationBackupHookOutcome
+            {
+                MigrationRunId = migrationRunId,
+                PendingSetFingerprint = pendingSetFingerprint,
+                PendingScripts = pendingScripts,
+                Succeeded = succeeded,
+                DurationMs = Math.Max(0, (long)stopwatch.Elapsed.TotalMilliseconds),
+                StartedAt = startedAt,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ExitCode = exitCode,
+                TruncatedStderr = string.IsNullOrWhiteSpace(stderr) ? null : Truncate(stderr.Trim(), 500)
+            };
+
+            await RecordBackupHookOutcomeAsync(outcome, CancellationToken.None).ConfigureAwait(false);
+            return failure;
+        }
+
         var isWindows = OperatingSystem.IsWindows();
         var startInfo = new ProcessStartInfo
         {
@@ -353,9 +399,14 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             using var process = new Process { StartInfo = startInfo };
             if (!process.Start())
             {
-                return new InvalidOperationException(
+                return await CompleteAsync(
+                    succeeded: false,
+                    exitCode: null,
+                    stderr: null,
+                    failure: new InvalidOperationException(
                     "The pre-migration backup command (Database:MigrationSafety:BackupCommand) failed to " +
-                    "start; the migration run was aborted before applying any contract-phase script.");
+                    "start; the migration run was aborted before applying any contract-phase script."))
+                    .ConfigureAwait(false);
             }
 
             var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
@@ -371,10 +422,15 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 TryKill(process);
-                return new TimeoutException(
+                return await CompleteAsync(
+                    succeeded: false,
+                    exitCode: null,
+                    stderr: null,
+                    failure: new TimeoutException(
                     $"The pre-migration backup command (Database:MigrationSafety:BackupCommand) exceeded " +
                     $"{_backupCommandTimeout.TotalMinutes:F0} minute(s) and was terminated; the migration run " +
-                    "was aborted before applying any contract-phase script.");
+                    "was aborted before applying any contract-phase script."))
+                    .ConfigureAwait(false);
             }
 
             var stderr = await stderrTask.ConfigureAwait(false);
@@ -385,20 +441,35 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
                 var detail = string.IsNullOrWhiteSpace(stderr)
                     ? string.Empty
                     : $" Details: {Truncate(stderr.Trim(), 500)}";
-                return new InvalidOperationException(
+                return await CompleteAsync(
+                    succeeded: false,
+                    exitCode: process.ExitCode,
+                    stderr: stderr,
+                    failure: new InvalidOperationException(
                     "The pre-migration backup command (Database:MigrationSafety:BackupCommand) exited with " +
                     $"code {process.ExitCode}; the migration run was aborted (fail closed) before applying any " +
-                    $"contract-phase script.{detail}");
+                    $"contract-phase script.{detail}"))
+                    .ConfigureAwait(false);
             }
 
-            return null;
+            return await CompleteAsync(
+                    succeeded: true,
+                    exitCode: process.ExitCode,
+                    stderr: null,
+                    failure: null)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return new InvalidOperationException(
+            return await CompleteAsync(
+                succeeded: false,
+                exitCode: null,
+                stderr: null,
+                failure: new InvalidOperationException(
                 "The pre-migration backup command (Database:MigrationSafety:BackupCommand) could not be run; " +
                 "the migration run was aborted (fail closed) before applying any contract-phase script.",
-                ex);
+                ex))
+                .ConfigureAwait(false);
         }
     }
 
@@ -415,6 +486,99 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         {
             // Best-effort cleanup; the process may have already exited.
         }
+    }
+
+    private async Task RecordBackupHookOutcomeAsync(
+        MigrationBackupHookOutcome outcome,
+        CancellationToken cancellationToken)
+    {
+        _backupHookOutcomeStore?.Record(outcome);
+
+        if (_serviceScopeFactory is null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var auditLog = scope.ServiceProvider.GetService<IAuditLog>();
+            if (auditLog is null)
+            {
+                return;
+            }
+
+            await auditLog.RecordAsync(
+                    new AuditEvent
+                    {
+                        Timestamp = outcome.CompletedAt,
+                        EventType = AuditEventType.AdminAction,
+                        Actor = "honua-server",
+                        ActorType = AuditActorType.System,
+                        ResourceType = "database_migration_run",
+                        ResourceId = outcome.MigrationRunId,
+                        Action = "migration.backup_hook",
+                        Outcome = outcome.Succeeded ? AuditOutcome.Success : AuditOutcome.Failure,
+                        CorrelationId = outcome.MigrationRunId,
+                        Details = BuildBackupHookOutcomeDetailsJson(outcome)
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Best-effort audit publication must not change migration fail-closed behavior.
+        }
+    }
+
+    private static string ComputePendingSetFingerprint(IReadOnlyList<string> pendingScripts)
+    {
+        var material = string.Join('\n', pendingScripts);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
+        return "sha256:" + Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static string BuildBackupHookOutcomeDetailsJson(MigrationBackupHookOutcome outcome)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("migrationRunId", outcome.MigrationRunId);
+            writer.WriteString("pendingSetFingerprint", outcome.PendingSetFingerprint);
+            writer.WriteStartArray("pendingScripts");
+            foreach (var script in outcome.PendingScripts)
+            {
+                writer.WriteStringValue(script);
+            }
+
+            writer.WriteEndArray();
+            writer.WriteBoolean("succeeded", outcome.Succeeded);
+            writer.WriteNumber("durationMs", outcome.DurationMs);
+            writer.WriteString("startedAt", outcome.StartedAt);
+            writer.WriteString("completedAt", outcome.CompletedAt);
+            if (outcome.ExitCode.HasValue)
+            {
+                writer.WriteNumber("exitCode", outcome.ExitCode.Value);
+            }
+            else
+            {
+                writer.WriteNull("exitCode");
+            }
+
+            if (outcome.TruncatedStderr is { Length: > 0 } stderr)
+            {
+                writer.WriteString("truncatedStderr", stderr);
+            }
+            else
+            {
+                writer.WriteNull("truncatedStderr");
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static string Truncate(string value, int maxLength) =>

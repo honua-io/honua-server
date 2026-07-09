@@ -133,7 +133,11 @@ internal static partial class MigrationBatchEndpoints
                 return;
             }
 
-            var urlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(layer.ServiceUrl, cancellationToken).ConfigureAwait(false);
+            var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
+            var urlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(
+                layer.ServiceUrl,
+                allowedHostSuffixes,
+                cancellationToken).ConfigureAwait(false);
             if (!urlValidation.IsValid)
             {
                 await AdminResponseWriter.WriteErrorAsync(context, urlValidation.ErrorMessage!, StatusCodes.Status400BadRequest);

@@ -23,7 +23,9 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.FileProviders;
@@ -214,6 +216,45 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("private");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/discover")]
+    public async Task Discover_WithConfiguredAllowlistRejectsUnlistedHostBeforeDiscovery()
+    {
+        var isolatedImportService = new TestGeoservicesImportService(TimeSpan.Zero);
+        var isolatedFixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
+            .ReplaceService<IGeoservicesImportService>(isolatedImportService)
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Migration:AllowedServiceHostSuffixes:0"] = ".allowed.example.com"
+                });
+            }));
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            var response = await isolatedFixture.Client.PostAsJsonAsync(
+                "/api/v1/admin/import/geoservices/discover",
+                new
+                {
+                    ServiceUrl = "https://93.184.216.34/arcgis/rest/services/Test/FeatureServer",
+                    TimeoutSeconds = 5
+                });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("allowlist");
+            isolatedImportService.DiscoveryRequests.Should().BeEmpty();
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     #endregion

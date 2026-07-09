@@ -1,8 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Validation;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.OData.Services;
 
@@ -115,7 +118,13 @@ internal static class ODataRequestValidation
         int? skipTokenValue = null;
         if (!string.IsNullOrWhiteSpace(skiptoken))
         {
-            if (!ODataSkipTokenService.TryDecode(skiptoken, filter, orderby, out var decodedOffset, out var tokenError))
+            if (!ODataSkipTokenService.TryDecode(
+                    skiptoken,
+                    filter,
+                    orderby,
+                    ResolveSkipTokenDiscriminator(context),
+                    out var decodedOffset,
+                    out var tokenError))
             {
                 error = ODataUtilityService.CreateODataError(context, "InvalidQueryOption", tokenError!);
                 return false;
@@ -226,5 +235,34 @@ internal static class ODataRequestValidation
         countValue = paging.Count;
         useSkipToken = paging.UseSkipToken;
         return null;
+    }
+
+    internal static string ResolveSkipTokenDiscriminator(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        var subject = ResolveSubject(context.User);
+        return $"tenant:{tenantId ?? "<none>"}|subject:{subject}";
+    }
+
+    private static string ResolveSubject(ClaimsPrincipal? principal)
+    {
+        if (principal?.Identity?.IsAuthenticated != true)
+        {
+            return "<anonymous>";
+        }
+
+        var apiKeyId = principal.FindFirst("api_key_id")?.Value;
+        if (!string.IsNullOrWhiteSpace(apiKeyId))
+        {
+            return $"api-key:{apiKeyId}";
+        }
+
+        var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? principal.FindFirst("sub")?.Value
+            ?? principal.Identity?.Name;
+
+        return string.IsNullOrWhiteSpace(userId) ? "<authenticated>" : $"user:{userId}";
     }
 }

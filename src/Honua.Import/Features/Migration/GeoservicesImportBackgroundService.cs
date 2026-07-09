@@ -6,6 +6,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Microsoft.Extensions.Options;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
@@ -26,6 +27,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDistributedImportJobManager _jobManager;
     private readonly IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress> _workerJobManager;
+    private readonly IReadOnlyCollection<string>? _allowedHostSuffixes;
     private readonly ILogger<GeoservicesImportBackgroundService> _logger;
     private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _leaderCheckInterval = TimeSpan.FromSeconds(10);
@@ -33,12 +35,14 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
     public GeoservicesImportBackgroundService(
         IServiceScopeFactory scopeFactory,
         IDistributedImportJobManager jobManager,
-        ILogger<GeoservicesImportBackgroundService> logger)
+        ILogger<GeoservicesImportBackgroundService> logger,
+        IOptions<MigrationUrlValidationOptions>? urlValidationOptions = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _jobManager = jobManager ?? throw new ArgumentNullException(nameof(jobManager));
         _workerJobManager = jobManager as IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress>
             ?? new DistributedImportWorkerJobManagerAdapter(jobManager);
+        _allowedHostSuffixes = urlValidationOptions?.Value.ResolveAllowedServiceHostSuffixes();
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -116,7 +120,10 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 request = request with { JobId = jobId };
             }
 
-            var serviceUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(request.ServiceUrl, stoppingToken).ConfigureAwait(false);
+            var serviceUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(
+                request.ServiceUrl,
+                _allowedHostSuffixes,
+                stoppingToken).ConfigureAwait(false);
             if (!serviceUrlValidation.IsValid)
             {
                 var failedProgress = new GeoservicesImportProgress

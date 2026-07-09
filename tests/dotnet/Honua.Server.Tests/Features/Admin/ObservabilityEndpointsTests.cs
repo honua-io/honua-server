@@ -76,6 +76,38 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/migrations")]
+    public async Task GetMigrationStatus_WithBackupHookOutcome_ReturnsLastOutcome()
+    {
+        _fixture.Services.GetRequiredService<IMigrationBackupHookOutcomeStore>().Record(
+            new MigrationBackupHookOutcome
+            {
+                MigrationRunId = "run-1",
+                PendingSetFingerprint = "sha256:abc",
+                PendingScripts = ["002_contract.sql"],
+                Succeeded = false,
+                DurationMs = 42,
+                StartedAt = DateTimeOffset.UnixEpoch,
+                CompletedAt = DateTimeOffset.UnixEpoch.AddMilliseconds(42),
+                ExitCode = 1,
+                TruncatedStderr = "backup failed"
+            });
+
+        var response = await _client.GetAsync("/api/v1/admin/observability/migrations");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var outcome = document.RootElement.GetProperty("lastBackupHookOutcome");
+        outcome.GetProperty("migrationRunId").GetString().Should().Be("run-1");
+        outcome.GetProperty("pendingSetFingerprint").GetString().Should().Be("sha256:abc");
+        outcome.GetProperty("pendingScripts")[0].GetString().Should().Be("002_contract.sql");
+        outcome.GetProperty("succeeded").GetBoolean().Should().BeFalse();
+        outcome.GetProperty("durationMs").GetInt64().Should().Be(42);
+        outcome.GetProperty("exitCode").GetInt32().Should().Be(1);
+        outcome.GetProperty("truncatedStderr").GetString().Should().Be("backup failed");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/migrations")]
     public async Task GetMigrationStatus_WhenPlanFails_ReturnsPlanErrorWithoutThrowing()
     {
         _migrationRunner.Plan = DatabaseMigrationPlan.Failed(new InvalidOperationException("Unable to inspect migrations."));

@@ -141,7 +141,7 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException(queryError);
         }
 
-        query = MergeFilters(query, textSearchFilter);
+        query = ODataSqlFragmentMergeHelper.Merge(query, textSearchFilter);
 
         // Storage handle is still int-keyed at the IFeatureReader boundary.
         var result = await _featureReader.QueryAsync(resolvedLayer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
@@ -452,41 +452,6 @@ internal sealed partial class ODataSearchService
             .Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("%", "\\%", StringComparison.Ordinal)
             .Replace("_", "\\_", StringComparison.Ordinal);
-    }
-
-    private static FeatureQuery MergeFilters(FeatureQuery query, SqlFragment sqlFragment)
-    {
-        if (query.SqlFilter == null)
-        {
-            return query with { SqlFilter = sqlFragment, Where = null };
-        }
-
-        var offset = query.SqlFilter.Parameters.Count;
-        var reindexedSql = ReindexSqlParameters(sqlFragment.Sql, offset);
-        var combinedSql = $"({query.SqlFilter.Sql}) AND ({reindexedSql})";
-        var combinedParameters = query.SqlFilter.Parameters.Concat(sqlFragment.Parameters).ToArray();
-        return query with
-        {
-            SqlFilter = new SqlFragment(combinedSql, combinedParameters),
-            Where = null
-        };
-    }
-
-    private static string ReindexSqlParameters(string sql, int offset)
-    {
-        if (offset == 0)
-        {
-            return sql;
-        }
-
-        return Regex.Replace(
-            sql,
-            @"@p(\d+)",
-            match =>
-            {
-                var index = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
-                return $"@p{index + offset}";
-            });
     }
 
     private static bool TryConvertObjectId(object? value, out long objectId)
