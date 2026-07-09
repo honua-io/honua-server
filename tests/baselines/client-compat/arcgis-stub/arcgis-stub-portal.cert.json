@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260709T000000Z",
+  "run_date": "2026-07-09T00:00:00.000000+00:00",
+  "server_version": "local",
+  "client_lane": "arcgis-stub",
+  "client_version": "stub-1.0",
+  "protocol": "portal",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-PRTL-INFO-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "authInfo.isTokenBasedSecurity + tokenServicesUrl",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-SELF-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-SRCH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "total/start/num/nextStart/results paging shape",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-ITEM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "content/items/{id}.url points at /rest/services",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-RBAC-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "anonymous search projects only public-tier items",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-TOKN-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending first verified nightly capture; promote via scripts/client-compat/refresh-baselines.sh once the token lane runs green.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-AUTH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending first verified nightly capture; named-user org-tier discovery. Promote via refresh-baselines.sh.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-OAUTH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending first verified nightly capture; oauth2/token error-envelope shape. Promote via refresh-baselines.sh.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 3,
+    "not_applicable": 0
+  },
+  "cite_results": null,
+  "extensions": []
+}

@@ -82,6 +82,12 @@ services:
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      # Portal/Sharing facade token issuance (epic #1240). The client-compat docker
+      # network is HTTP-only, so relax the HTTPS-only guard on generateToken /
+      # oauth2 so the arcgis-stub Portal lane can mint and exercise a named-user
+      # token. Production keeps the RequireHttps=true default. The read surface
+      # (info/portals-self/search/content-items) is anonymous and needs no token.
+      Authentication__PortalToken__RequireHttps: "false"
       ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__Redis: redis:6379
@@ -193,6 +199,11 @@ services:
       HONUA_BASE_URL: http://honua:5000
       ARCGIS_STUB_SERVICE_NAME: browser_compat
       ARCGIS_STUB_LAYER_ID: "2000"
+      # Portal/Sharing facade lane (epic #1240 / #1372). The stub discovers the
+      # tiered portal-compat fixture through /sharing/rest and mints a named-user
+      # token with these admin credentials (mirrors the honua service env above).
+      ARCGIS_STUB_ADMIN_USERNAME: admin
+      ARCGIS_STUB_ADMIN_PASSWORD: ClientCompatAdmin123!
     depends_on:
       honua:
         condition: service_healthy
