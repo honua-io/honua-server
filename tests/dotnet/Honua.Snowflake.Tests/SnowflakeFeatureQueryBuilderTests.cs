@@ -354,4 +354,44 @@ public class SnowflakeFeatureQueryBuilderTests
 
         Assert.Throws<ArgumentException>(() => SnowflakeLayerMapping.FromStorage(TestLayerId, storage));
     }
+
+    [Fact]
+    public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
+    {
+        // Temporal analytics went GA (#2429); providers that cannot translate a temporal
+        // predicate must fail loud rather than silently return rows outside the requested
+        // window. The Snowflake provider has no temporal translation in this slice.
+        var query = new FeatureQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "OBSERVED_AT",
+                PropertyType = TemporalPropertyType.DateTime
+            }
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => SnowflakeFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns));
+        Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CountObjectIdsAndExtentQueries_TemporalFilter_ThrowNotSupported()
+    {
+        // The guard must fire on every build path, not just SELECT, so a temporal window
+        // can never be silently dropped by count/id/extent envelopes either.
+        var query = new FeatureQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "OBSERVED_AT",
+                PropertyType = TemporalPropertyType.DateTime
+            }
+        };
+        var mapping = BuildMapping();
+
+        Assert.Throws<NotSupportedException>(() => SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => SnowflakeFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => SnowflakeFeatureQueryBuilder.BuildExtentQuery(mapping, query));
+    }
 }

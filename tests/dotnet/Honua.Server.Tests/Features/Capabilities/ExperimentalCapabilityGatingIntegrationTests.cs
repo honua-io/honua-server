@@ -18,11 +18,11 @@ namespace Honua.Server.Tests.Features.Capabilities;
 /// <summary>
 /// Track-B integration coverage for honua-server#2347 (T11): the built-experimental
 /// capabilities the T10 flip (#2346) gated OFF the first-release surface
-/// (<c>temporal.*</c>, <c>sync.offline</c>, <c>realtime.feature-streams</c>,
-/// <c>security.mtls</c>; <c>alerts.geofence</c> was promoted to GA in #2427 and is no
-/// longer experimental) must be genuinely <b>absent</b> from
-/// every served surface end-to-end when experimental is disabled (the production
-/// default), and become present/served the moment a customer opts one in via
+/// (<c>sync.offline</c>, <c>realtime.feature-streams</c>, <c>security.mtls</c>,
+/// <c>versioning.branch</c>; <c>alerts.geofence</c> was promoted to GA in #2427 and
+/// <c>temporal.*</c> in #2429, so neither is experimental any longer) must be genuinely
+/// <b>absent</b> from every served surface end-to-end when experimental is disabled (the
+/// production default), and become present/served the moment a customer opts one in via
 /// <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and B3 (#2335)
 /// opened at the registry/composition layer by asserting the posture at the wire:
 /// <list type="bullet">
@@ -32,10 +32,11 @@ namespace Honua.Server.Tests.Features.Capabilities;
 ///     opted-in one;
 ///   </description></item>
 ///   <item><description>
-///     the gated HTTP route groups (<c>/api/v1/temporal/*</c>,
-///     <c>/api/v1/admin/operations/streaming</c>) short-circuit with
+///     the gated HTTP route groups (<c>/api/v1/admin/operations/streaming</c>,
+///     <c>/rest/services/{id}/VersionManagementServer</c>) short-circuit with
 ///     <c>404 honua:capability-experimental-disabled</c> while disabled, and open
-///     per-capability when opted in.
+///     per-capability when opted in. The now-GA <c>/api/v1/temporal/*</c> group is
+///     asserted to NOT short-circuit even with experimental off.
 ///   </description></item>
 /// </list>
 /// The Test environment turns experimental ON globally (appsettings.Test.json), which is
@@ -53,10 +54,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     /// <summary>The built-experimental manifest capability ids the T10 flip (#2346) gates off.</summary>
     private static readonly string[] ExperimentalCapabilityIds =
     [
-        "temporal.filtering",
-        "temporal.extent-discovery",
-        "temporal.histogram",
-        "temporal.time-series-tiles",
+        // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
         "sync.offline",
         "realtime.feature-streams",
         // alerts.geofence promoted to GA (Implemented) in #2427 — no longer experimental-gated.
@@ -113,7 +111,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // proving the gate is a real, per-capability lever, not an always-off constant.
         var fixture = CreateFixture(
             experimentalGlobalEnabled: false,
-            perCapabilityEnabled: "temporal.filtering");
+            perCapabilityEnabled: "sync.offline");
         await fixture.InitializeAsync();
 
         try
@@ -126,11 +124,11 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var document = await ReadDocumentAsync(response);
             var root = document.RootElement;
 
-            HasCapability(root, "temporal.filtering").Should().BeTrue(
+            HasCapability(root, "sync.offline").Should().BeTrue(
                 "the opted-in experimental capability is served");
 
             foreach (var stillDisabled in ExperimentalCapabilityIds.Where(
-                id => !string.Equals(id, "temporal.filtering", StringComparison.Ordinal)))
+                id => !string.Equals(id, "sync.offline", StringComparison.Ordinal)))
             {
                 HasCapability(root, stillDisabled).Should().BeFalse(
                     "{0} was not opted in and stays absent", stillDisabled);
@@ -144,11 +142,13 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities")]
-    public async Task TemporalEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
+    public async Task TemporalEndpoint_AfterGaPromotion_IsNotExperimentalGated()
     {
-        // The gated route group short-circuits BEFORE the handler, so this holds without
-        // any temporal graph/layer setup: an authenticated admin reaches the gate and the
-        // disabled-experimental capability is indistinguishable from an unmapped route.
+        // #2429 promoted temporal.* Experimental -> Implemented (GA). The temporal route
+        // group must no longer short-circuit as experimental-disabled even with the global
+        // experimental switch OFF — the request reaches the handler (which then returns a
+        // normal not-found for the deliberately unseeded service/layer, a DIFFERENT 404
+        // than the experimental-disabled gate produced before the promotion).
         var fixture = CreateFixture(experimentalGlobalEnabled: false);
         await fixture.InitializeAsync();
 
@@ -158,7 +158,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var response = await client.GetAsync(
                 "/api/v1/temporal/services/svc-experimental/layers/1/capabilities");
 
-            await AssertExperimentalDisabledAsync(response);
+            await AssertNotExperimentalDisabledAsync(response);
         }
         finally
         {
@@ -216,31 +216,31 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities")]
+    [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
     public async Task GatedEndpoints_WhenExperimentalEnabledPerCapability_OpenOnlyThatCapability()
     {
-        // Opt temporal.filtering in but leave realtime.feature-streams off. The temporal
-        // group's gate must OPEN (no longer the experimental-disabled 404 — the request
-        // reaches the handler), while the still-disabled streaming group keeps returning
+        // Opt realtime.feature-streams in but leave versioning.branch off. The streaming
+        // operations group's gate must OPEN (no longer the experimental-disabled 404 — the
+        // request reaches the handler), while the still-disabled VMS group keeps returning
         // the experimental-disabled 404. One fixture proves the per-capability gate both
-        // ways. (Alerts is no longer a valid still-disabled control after its #2427 GA
-        // promotion, so this uses the streaming operations group instead.)
+        // ways. (temporal.* is no longer a valid experimental control after its #2429 GA
+        // promotion, so this uses two capabilities that remain built-experimental.)
         var fixture = CreateFixture(
             experimentalGlobalEnabled: false,
-            perCapabilityEnabled: "temporal.filtering");
+            perCapabilityEnabled: "realtime.feature-streams");
         await fixture.InitializeAsync();
 
         try
         {
             using var client = fixture.CreateAdminClient();
 
-            using var temporalResponse = await client.GetAsync(
-                "/api/v1/temporal/services/svc-experimental/layers/1/capabilities");
-            await AssertNotExperimentalDisabledAsync(temporalResponse);
-
             using var streamingResponse = await client.GetAsync(
                 "/api/v1/admin/operations/streaming/subscribers");
-            await AssertExperimentalDisabledAsync(streamingResponse);
+            await AssertNotExperimentalDisabledAsync(streamingResponse);
+
+            using var vmsResponse = await client.GetAsync(
+                "/rest/services/svc-vms-gate-test/VersionManagementServer?f=json");
+            await AssertExperimentalDisabledAsync(vmsResponse);
         }
         finally
         {
