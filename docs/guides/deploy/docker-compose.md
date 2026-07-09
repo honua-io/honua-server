@@ -1,6 +1,6 @@
 # Deploy with Docker Compose
 
-You'll run a production-shaped Honua stack on a single host: pinned image, secrets in an env file, persistent PostGIS volume, optional Redis, and TLS terminated by a reverse proxy. For the build-from-source dev stack, use the [quickstart](../../get-started/quickstart.md) instead.
+You'll run a production-shaped Honua stack on a single host: pinned image, secrets in an env file, persistent PostGIS and Redis volumes, optional Console, and TLS terminated by a reverse proxy. For the build-from-source dev stack with the profiled Console service, use the [quickstart](../../get-started/quickstart.md) instead.
 
 **Prerequisites:** Docker with Compose v2, a DNS name pointing at the host (for TLS), and outbound access to Docker Hub or GHCR.
 
@@ -37,9 +37,12 @@ services:
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY}
       Cors__AllowedOrigins__0: ${HONUA_CORS_ORIGIN}
       HONUA_OBSERVABILITY: "true"
-      ConnectionStrings__Redis: ""
+      ConnectionStrings__Redis: "redis:6379"
+      Database__MigrationSafety__ContractApplyPolicy: Gate
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz/live"]
@@ -74,11 +77,15 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
-    profiles: [redis]
-    command: redis-server --appendonly yes
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
 volumes:
@@ -94,11 +101,36 @@ HONUA_HOST=honua.example.com
 printf '%s {\n  reverse_proxy 127.0.0.1:8080\n}\n' "$HONUA_HOST" | sudo tee /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
 
-4. Start the stack. Add `--profile redis` and set `ConnectionStrings__Redis: "redis:6379"` in the compose file when you need durable jobs, queued imports, or workflows — Redis is required for those, optional otherwise.
+4. Start the stack. Redis is part of the production-shaped baseline because durable jobs, queued imports, workflows, operation proposals, and Console approval flows need it.
 
 ```bash
 docker compose up -d
 ```
+
+For headless deployments, keep Redis unless every durable control-plane feature is intentionally disabled. To add Console in production, use a published Console image tag that is compatible with the server ops-health contract and add this service:
+
+```yaml
+  console:
+    image: ghcr.io/honua-io/honua-console:replace-with-compatible-tag
+    ports:
+      - "127.0.0.1:5174:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://+:8080"
+      HONUA_SERVER_BASE_URL: "http://honua:8080"
+      HONUA_ADMIN_API_KEY: ${HONUA_ADMIN_PASSWORD}
+    depends_on:
+      honua:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/operate"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+```
+
+Then start it with `docker compose up -d console`, or disable it with `docker compose up -d --scale console=0`.
 
 ## Verify
 
@@ -112,12 +144,27 @@ Expected output: `Ready`. Then confirm admin auth works:
 source .env && curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://127.0.0.1:8080/api/v1/admin/config | head -c 200
 ```
 
+If Console is enabled, confirm the ops dashboard responds:
+
+```bash
+curl -fsS http://127.0.0.1:5174/operate >/dev/null
+curl -fsS http://127.0.0.1:5174/operate/health >/dev/null
+curl -fsS http://127.0.0.1:5174/operate/copilot >/dev/null
+```
+
+CI can run the same root-compose smoke through `scripts/ci/smoke-quickstart-console.sh`.
+Set the repository variable `HONUA_CONSOLE_IMAGE` or pass the `console_image`
+workflow-dispatch input once a compatible Console image tag is published. The
+smoke starts Redis, Honua, and Console, creates a Redis-backed operation proposal
+through the platform-release converge API, and verifies the Operate routes.
+
 ## Troubleshoot
 
 - **Admin calls return 401** — `HONUA_ADMIN_PASSWORD` was not passed into the container; check your production compose file and secret source.
 - **Startup fails with "Master key must be at least 32 characters"** — lengthen `Security__ConnectionEncryption__MasterKey`.
 - **Browser requests blocked by CORS** — the permissive dev CORS policy is force-disabled inside containers; set `Cors__AllowedOrigins__0` to your app's exact origin.
-- **`503` on OGC Processes or import job routes** — those need Redis; enable the `redis` profile and set `ConnectionStrings__Redis`.
+- **`503` on OGC Processes, import job routes, or proposal flows** — those need Redis; check the `redis` container health and `ConnectionStrings__Redis`.
+- **Console shows a missing server binding** — set `HONUA_SERVER_BASE_URL` to the server origin reachable from the Console container and pass `HONUA_ADMIN_API_KEY`.
 - **Container restarts in a loop** — check `docker compose logs honua` for migration failures; the server applies database migrations at startup.
 
 ## Upgrade & Rollback
@@ -157,7 +204,7 @@ docker compose logs --tail=50 honua
 
 ### Gating contract-phase migrations (optional)
 
-By default the server applies reviewed contract-phase migrations automatically at startup. To turn a schema-narrowing upgrade into a deliberate, approved step on this existing database, set the journal-scoped gate — it applies only to an already-migrated database, so a first install still provisions fully with no extra config:
+The root quickstart uses the journal-scoped Gate policy by default. For production compose, keep `Database__MigrationSafety__ContractApplyPolicy: Gate` when you want a schema-narrowing upgrade to be a deliberate, approved step on an existing database. It applies only to an already-migrated database, so a first install still provisions fully with no extra config:
 
 ```yaml
     environment:

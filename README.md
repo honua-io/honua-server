@@ -52,8 +52,13 @@ docker compose up -d
 curl http://localhost:8080/healthz/ready
 ```
 
-PostGIS starts automatically. Migrations run on first boot. HTTP/1 REST and gRPC-Web are at
-`http://localhost:8080`; native h2c gRPC for SDK/mobile clients is at `http://localhost:8081`.
+PostGIS, Redis, and Honua Server start automatically. Migrations run on first
+boot with the contract-migration gate enabled for existing databases. HTTP/1 REST
+and gRPC-Web are at `http://localhost:8080`; native h2c gRPC for SDK/mobile
+clients is at `http://localhost:8081`. The compose file also includes a Console
+service under the `console` profile; set `HONUA_CONSOLE_IMAGE` to a compatible
+published Console image and run `docker compose --profile console up -d` to serve
+Operate at `http://localhost:5174/operate`.
 For self-hosted pilots, run the [pilot onboarding runbook](docs/guides/deploy/pilot-onboarding-runbook.md)
 before exercising durable jobs/workflows or handing the deployment to another team.
 

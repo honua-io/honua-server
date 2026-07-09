@@ -50,6 +50,10 @@ on:
         required: false
         type: boolean
         default: false
+      console_image:
+        description: 'Optional honua-console image tag for the quickstart Console compose smoke. Defaults to repository variable HONUA_CONSOLE_IMAGE when set.'
+        required: false
+        default: ''
 
 concurrency:
   # PR runs key on the PR number (re-push cancels the prior run). merge_group
@@ -2006,6 +2010,38 @@ jobs:
           docker stop honua-test || true
           docker rm honua-test || true
 
+  quickstart-console-smoke:
+    name: Quickstart Console Compose Smoke
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve Console image
+        id: console_image
+        env:
+          INPUT_CONSOLE_IMAGE: ${{ github.event.inputs.console_image || '' }}
+          VAR_CONSOLE_IMAGE: ${{ vars.HONUA_CONSOLE_IMAGE || '' }}
+        run: |
+          set -euo pipefail
+          image="${INPUT_CONSOLE_IMAGE:-${VAR_CONSOLE_IMAGE:-}}"
+          if [ -z "${image}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::HONUA_CONSOLE_IMAGE is not configured; skipping quickstart Console compose smoke until a compatible image is published."
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
+      - name: Run quickstart Console compose smoke
+        if: steps.console_image.outputs.enabled == 'true'
+        env:
+          HONUA_CONSOLE_IMAGE: ${{ steps.console_image.outputs.image }}
+        run: bash scripts/ci/smoke-quickstart-console.sh
+
   # ===========================================================================
   # LEAN MERGE-QUEUE GATE
   # ===========================================================================
@@ -2108,7 +2144,7 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Check required job results
