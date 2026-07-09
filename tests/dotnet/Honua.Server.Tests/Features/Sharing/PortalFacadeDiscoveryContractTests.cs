@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
