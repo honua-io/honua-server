@@ -515,11 +515,13 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
         )
 
     # CERT-PRTL-AUTH-01 — a named-user token widens discovery to org-tier items
-    # the anonymous caller could not see (authenticated RBAC projection).
+    # the anonymous caller could not see (authenticated RBAC projection). Only the
+    # no-credentials / no-token case skips; once a token is in hand a broken
+    # authenticated projection is a genuine `fail` the gate must catch.
     if token is None:
         results["CERT-PRTL-AUTH-01"] = _new_result(
             "CERT-PRTL-AUTH-01", "skip",
-            notes="no named-user token available (admin credentials unset or issuance failed).",
+            notes="no named-user token available (admin credentials unset or issuance failed; see CERT-PRTL-TOKN-01).",
         )
     else:
         auth_ok = False
@@ -533,13 +535,16 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
         except (httpx.HTTPError, ValueError):
             auth_ok = False
         results["CERT-PRTL-AUTH-01"] = _new_result(
-            "CERT-PRTL-AUTH-01", "pass" if auth_ok else "skip",
+            "CERT-PRTL-AUTH-01", "pass" if auth_ok else "fail",
             notes="named-user token surfaces org-tier items",
         )
 
     # CERT-PRTL-OAUTH-01 — the OAuth2 token endpoint returns an RFC 6749-shaped
     # error envelope for an invalid grant (validates the oauth2 bridge contract
     # without a full IdP round-trip).
+    # Skip only for the explicit 404-disabled deployment (or an unreachable
+    # endpoint); an enabled bridge that answers with the wrong status or a
+    # non-RFC-6749 body for an invalid grant is a `fail` the gate must catch.
     oauth_status = "skip"
     try:
         r = client.post(
@@ -555,6 +560,8 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
                 body = {}
             if r.status_code in (400, 401) and isinstance(body, dict) and "error" in body:
                 oauth_status = "pass"
+            else:
+                oauth_status = "fail"
     except httpx.HTTPError:
         oauth_status = "skip"
     results["CERT-PRTL-OAUTH-01"] = _new_result(

@@ -59,7 +59,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "pending first verified nightly capture; promote via scripts/client-compat/refresh-baselines.sh once the token lane runs green.",
+      "notes": "Behavior verified by PortalFacadeDiscoveryContractTests; committed skip pending first containerized-lane capture. A genuine failure emits `fail` and is caught via the diff new-fail path. Promote via scripts/client-compat/refresh-baselines.sh.",
       "evidence_ref": ""
     },
     {
@@ -68,7 +68,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "pending first verified nightly capture; named-user org-tier discovery. Promote via refresh-baselines.sh.",
+      "notes": "Named-user org-tier discovery; behavior verified by PortalFacadeDiscoveryContractTests. Committed skip pending first containerized-lane capture; a broken projection emits `fail` (caught via new-fail). Promote via refresh-baselines.sh.",
       "evidence_ref": ""
     },
     {
@@ -77,7 +77,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "pending first verified nightly capture; oauth2/token error-envelope shape. Promote via refresh-baselines.sh.",
+      "notes": "oauth2/token error-envelope shape; skips only when the bridge is 404-disabled, otherwise emits pass/fail (a wrong status or non-RFC body is caught via new-fail). Committed skip pending first containerized-lane capture. Promote via refresh-baselines.sh.",
       "evidence_ref": ""
     }
   ],
