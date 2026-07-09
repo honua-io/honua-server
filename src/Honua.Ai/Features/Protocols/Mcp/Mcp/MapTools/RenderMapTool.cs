@@ -54,9 +54,7 @@ internal sealed class RenderMapTool : IMcpTool
             + "Each layer renders with its primary/default style, which the caption reports; change a layer's style first with honua_apply_style_preset (discover presets with honua_get_style) and re-render to reflect it. "
             + "To render analysis results as a styled map: run the analysis, then honua_publish_result to promote the result to a serviceId/layerId, then optionally honua_apply_style_preset, then render that layer here.",
         InputSchema = MapToolSchemas.RenderMapArgumentSchema,
-        // Read-only render. No OutputSchema: this tool returns an image or
-        // resource_link content block, not a structuredContent payload, so there
-        // is no structured result shape to describe.
+        OutputSchema = McpToolOutputSchemas.RenderMapOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Render map")
     };
 
@@ -171,9 +169,23 @@ internal sealed class RenderMapTool : IMcpTool
                 inlineCaption = inlineCaption + " " + styleNote;
             }
 
+            var inlineOutput = BuildOutput(
+                result,
+                bbox,
+                bboxSrid,
+                storageLayerIds.Length,
+                effectiveStyleIds,
+                delivery: "inline",
+                uri: null,
+                expiresInSeconds: null);
+            var (inlineStructured, _) = McpToolHelpers.SerializeStructured(
+                inlineOutput,
+                MapToolJsonContext.Default.McpRenderMapOutput);
+
             return new McpToolsCallResult
             {
                 IsError = false,
+                StructuredContent = inlineStructured,
                 Content =
                 [
                     new McpContentBlock { Type = "text", Text = inlineCaption },
@@ -212,9 +224,23 @@ internal sealed class RenderMapTool : IMcpTool
             caption = caption + " " + styleNote;
         }
 
+        var output = BuildOutput(
+            result,
+            bbox,
+            bboxSrid,
+            storageLayerIds.Length,
+            effectiveStyleIds,
+            delivery: "resource_link",
+            uri: href,
+            expiresInSeconds: 3600);
+        var (structured, _) = McpToolHelpers.SerializeStructured(
+            output,
+            MapToolJsonContext.Default.McpRenderMapOutput);
+
         return new McpToolsCallResult
         {
             IsError = false,
+            StructuredContent = structured,
             Content =
             [
                 new McpContentBlock { Type = "text", Text = caption },
@@ -228,6 +254,29 @@ internal sealed class RenderMapTool : IMcpTool
             ]
         };
     }
+
+    private static McpRenderMapOutput BuildOutput(
+        RasterResult result,
+        IReadOnlyList<double> bbox,
+        int bboxSrid,
+        int layerCount,
+        IReadOnlyList<string?> effectiveStyleIds,
+        string delivery,
+        string? uri,
+        int? expiresInSeconds) => new()
+        {
+            LayerCount = layerCount,
+            Width = result.Width,
+            Height = result.Height,
+            Bbox = bbox,
+            BboxSrid = bboxSrid,
+            ContentType = result.ContentType,
+            ByteLength = result.Data.Length,
+            Delivery = delivery,
+            Uri = uri,
+            ExpiresInSeconds = expiresInSeconds,
+            Styles = effectiveStyleIds.ToArray()
+        };
 
     private static double[] ResolveBbox(IReadOnlyList<double>? bbox)
     {

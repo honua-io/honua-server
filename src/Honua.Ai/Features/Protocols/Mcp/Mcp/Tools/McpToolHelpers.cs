@@ -266,17 +266,19 @@ internal static class McpToolHelpers
     public static McpToolsCallResult ErrorResult(Exception exception)
     {
         var jsonRpcError = McpErrorMapper.Map(exception);
+        var geoprocessingError = ToGeoprocessingError(exception, jsonRpcError);
         var output = new McpToolErrorOutput
         {
             Status = "error",
             Code = jsonRpcError.Data?.Code ?? McpErrorMapper.Codes.Internal,
             Message = jsonRpcError.Message,
+            Error = geoprocessingError,
             RequiresReauthentication = jsonRpcError.Data?.RequiresReauthentication,
             ApprovalRequired = jsonRpcError.Data?.ApprovalRequired,
             PolicyRef = jsonRpcError.Data?.PolicyRef,
             ConflictingJobId = jsonRpcError.Data?.ConflictingJobId,
             Retryable = jsonRpcError.Data?.Retryable,
-            Violations = jsonRpcError.Data?.Violations
+            Violations = geoprocessingError.Violations ?? jsonRpcError.Data?.Violations
         };
 
         var (element, text) = SerializeStructured(output, McpJsonContext.Default.McpToolErrorOutput);
@@ -289,6 +291,69 @@ internal static class McpToolHelpers
                 new McpContentBlock { Type = "text", Text = text }
             ]
         };
+    }
+
+    private static McpGeoprocessingError ToGeoprocessingError(Exception exception, McpJsonRpcError jsonRpcError)
+    {
+        var code = jsonRpcError.Data?.Code ?? McpErrorMapper.Codes.Internal;
+        return exception switch
+        {
+            GeoprocessingValidationException => new McpGeoprocessingError
+            {
+                Kind = "ValidationFailed",
+                Message = jsonRpcError.Message,
+                Violations = BuildValidationViolations(jsonRpcError, code)
+            },
+            GeoprocessingAuthorizationException => new McpGeoprocessingError
+            {
+                Kind = "AuthorizationDenied",
+                Message = jsonRpcError.Message
+            },
+            GeoprocessingApprovalRequiredException => new McpGeoprocessingError
+            {
+                Kind = "AuthorizationDenied",
+                Message = jsonRpcError.Message
+            },
+            GeoprocessingNotFoundException => new McpGeoprocessingError
+            {
+                Kind = "UnknownDataset",
+                Message = jsonRpcError.Message
+            },
+            GeoprocessingStoreUnavailableException => new McpGeoprocessingError
+            {
+                Kind = "ExecutionFailed",
+                Message = jsonRpcError.Message
+            },
+            GeoprocessingIdempotencyConflictException => new McpGeoprocessingError
+            {
+                Kind = "ExecutionFailed",
+                Message = jsonRpcError.Message
+            },
+            _ => new McpGeoprocessingError
+            {
+                Kind = "ExecutionFailed",
+                Message = jsonRpcError.Message
+            }
+        };
+    }
+
+    private static IReadOnlyList<McpValidationViolation> BuildValidationViolations(
+        McpJsonRpcError jsonRpcError,
+        string code)
+    {
+        if (jsonRpcError.Data?.Violations is { Count: > 0 } violations)
+        {
+            return violations;
+        }
+
+        return
+        [
+            new McpValidationViolation
+            {
+                Code = code,
+                Message = jsonRpcError.Message
+            }
+        ];
     }
 
     /// <summary>

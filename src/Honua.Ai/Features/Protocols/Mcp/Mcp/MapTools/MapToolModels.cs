@@ -125,6 +125,14 @@ internal sealed class McpQueryFeaturesArgument
     public int? ResultOffset { get; set; }
 
     /// <summary>
+    /// Opaque pagination cursor returned by <see cref="McpQueryFeaturesOutput.NextCursor"/>.
+    /// This is an alias over <see cref="ResultOffset"/> for MCP clients that use
+    /// cursor-style pagination contracts.
+    /// </summary>
+    [JsonPropertyName("cursor")]
+    public string? Cursor { get; set; }
+
+    /// <summary>
     /// When <see langword="false"/>, features are returned without geometry
     /// (attribute-only rows). Defaults to <see langword="true"/>.
     /// </summary>
@@ -189,6 +197,14 @@ internal sealed class McpQueryFeaturesOutput
     public int? NextOffset { get; set; }
 
     /// <summary>
+    /// Opaque cursor for the next page. Mirrors <see cref="NextOffset"/> as a
+    /// string so generic MCP pagination checks can echo it without understanding
+    /// Honua's offset contract.
+    /// </summary>
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; set; }
+
+    /// <summary>
     /// Matching feature count. Populated only when <c>returnCountOnly=true</c>
     /// (features are omitted in that mode); otherwise null.
     /// </summary>
@@ -198,6 +214,28 @@ internal sealed class McpQueryFeaturesOutput
     /// <summary>RFC 7946 GeoJSON <c>FeatureCollection</c> for the returned features. Omitted when <c>returnCountOnly=true</c>.</summary>
     [JsonPropertyName("geojson")]
     public McpGeoJsonFeatureCollection? GeoJson { get; set; }
+
+    /// <summary>
+    /// MCP-friendly feature row aliases for clients that inspect
+    /// <c>structuredContent.features[].attributes</c>. The authoritative spatial
+    /// payload remains <see cref="GeoJson"/>.
+    /// </summary>
+    [JsonPropertyName("features")]
+    public IReadOnlyList<McpQueryFeatureRow>? Features { get; set; }
+}
+
+/// <summary>
+/// Feature row alias for <c>honua_query_features</c> pagination and mutation
+/// contract checks. Keeps properties under <c>attributes</c> while preserving
+/// the GeoJSON feature id.
+/// </summary>
+internal sealed class McpQueryFeatureRow
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("attributes")]
+    public System.Text.Json.Nodes.JsonObject Attributes { get; set; } = new();
 }
 
 /// <summary>
@@ -256,6 +294,48 @@ internal sealed class McpRenderMapArgument
     /// </summary>
     [JsonPropertyName("maxInlineBytes")]
     public int? MaxInlineBytes { get; set; }
+}
+
+/// <summary>
+/// Structured result for <c>honua_render_map</c>. The actual image remains in
+/// the MCP content blocks; this compact envelope lets strict clients validate
+/// the result and discover the artifact URI or inline delivery mode without
+/// parsing prose.
+/// </summary>
+internal sealed class McpRenderMapOutput
+{
+    [JsonPropertyName("layerCount")]
+    public int LayerCount { get; set; }
+
+    [JsonPropertyName("width")]
+    public int Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public int Height { get; set; }
+
+    [JsonPropertyName("bbox")]
+    public IReadOnlyList<double> Bbox { get; set; } = [];
+
+    [JsonPropertyName("bboxSrid")]
+    public int BboxSrid { get; set; }
+
+    [JsonPropertyName("contentType")]
+    public string ContentType { get; set; } = string.Empty;
+
+    [JsonPropertyName("byteLength")]
+    public int ByteLength { get; set; }
+
+    [JsonPropertyName("delivery")]
+    public string Delivery { get; set; } = string.Empty;
+
+    [JsonPropertyName("uri")]
+    public string? Uri { get; set; }
+
+    [JsonPropertyName("expiresInSeconds")]
+    public int? ExpiresInSeconds { get; set; }
+
+    [JsonPropertyName("styles")]
+    public IReadOnlyList<string?> Styles { get; set; } = [];
 }
 
 /// <summary>
