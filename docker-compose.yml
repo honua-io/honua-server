@@ -26,6 +26,31 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Redis for the durable local control plane. The quickstart keeps the memory
+  # budget small and uses noeviction so approval/workflow keys are never dropped.
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "${HONUA_REDIS_MAXMEMORY:-64mb}",
+        "--maxmemory-policy",
+        "noeviction"
+      ]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   # Honua Server application
   honua:
     build:
@@ -43,7 +68,11 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
-      ConnectionStrings__Redis: "${HONUA_REDIS_URL:-}"
+      ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
+      Database__MigrationSafety__ContractApplyPolicy: "${HONUA_CONTRACT_APPLY_POLICY:-Gate}"
+      Licensing__DevGrantEdition: "${HONUA_DEV_GRANT_EDITION:-}"
+      HONUA_ENABLE_OBSERVABILITY_TEST_SEED: "${HONUA_ENABLE_OBSERVABILITY_TEST_SEED:-false}"
+      OperateObservabilityFixture__SeedOnStartup: "${HONUA_OPERATE_FIXTURE_SEED_ON_STARTUP:-false}"
       # Development-only defaults for the repo quickstart. Override these before
       # reusing this compose file outside a local developer workstation.
       HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
@@ -57,13 +86,15 @@ services:
       Security__ConnectionEncryption__MasterKey: "${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-honua-compose-dev-master-key-0123456789}"
       Security__ConnectionEncryption__Salt: "${HONUA_CONNECTION_ENCRYPTION_SALT:-aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2}"
       Cors__AllowedOrigins__0: "${HONUA_DEV_CORS_ORIGIN:-http://localhost:3000}"
-      Cors__AllowedOrigins__1: "${HONUA_DEV_ADMIN_CORS_ORIGIN:-http://localhost:5173}"
+      Cors__AllowedOrigins__1: "${HONUA_DEV_ADMIN_CORS_ORIGIN:-http://localhost:5174}"
       Kestrel__Endpoints__Http__Url: "http://+:8080"
       Kestrel__Endpoints__Http__Protocols: "Http1"
       Kestrel__Endpoints__Grpc__Url: "http://+:8081"
       Kestrel__Endpoints__Grpc__Protocols: "Http2"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz/live"]
@@ -85,22 +116,41 @@ services:
       - honua_cache:/tmp/honua-cache
       - dotnet_diagnostics:/tmp/dotnet-diagnostics
 
-  # Redis (optional)
-  redis:
-    image: redis:7-alpine
+  # Honua Console ops dashboard. Enable with:
+  #   HONUA_CONSOLE_IMAGE=<compatible-image> docker compose --profile console up -d
+  # until the public Console image is available for the default quickstart.
+  console:
+    image: "${HONUA_CONSOLE_IMAGE:-ghcr.io/honua-io/honua-console:pending}"
     profiles:
-      - redis
+      - console
     ports:
-      - "${REDIS_PORT:-6379}:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CONSOLE_PORT:-5174}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: "http://+:8080"
+      HONUA_SERVER_BASE_URL: "http://honua:8080"
+      HONUA_ADMIN_API_KEY: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      Honua__Server__BaseUrl: "http://honua:8080"
+      Honua__Server__AdminApiKey: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+    depends_on:
+      honua:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/operate"]
+      interval: 30s
+      timeout: 10s
       retries: 5
+      start_period: 30s
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    deploy:
+      replicas: ${HONUA_CONSOLE_REPLICAS:-1}
 
   # MinIO (optional S3-compatible storage)
   minio:

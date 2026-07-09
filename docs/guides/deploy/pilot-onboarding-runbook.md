@@ -8,7 +8,7 @@ Use this runbook before handing a self-hosted pilot to an operator or customer t
 
 ### Local or disposable pilot
 
-The repository Docker Compose stack supplies PostGIS and runs migrations. A local pilot still needs explicit runtime secrets and Redis when it exercises asynchronous work:
+The repository Docker Compose stack supplies PostGIS, Redis, and migrations. A local pilot still needs explicit runtime secrets:
 
 ```bash
 HONUA_ADMIN_PASSWORD=replace-with-admin-password
@@ -16,10 +16,10 @@ Security__ConnectionEncryption__MasterKey=replace-with-32-plus-character-secret
 HONUA_REDIS_URL=redis:6379
 ```
 
-Start Redis with the Compose profile when durable jobs, queued imports, OGC Processes, GPServer async jobs, tile-operation jobs, or workflow runs are in scope:
+Start the stack normally; Redis is part of the root Compose baseline because durable jobs, queued imports, OGC Processes, GPServer async jobs, tile-operation jobs, workflow runs, and proposal flows use it:
 
 ```bash
-HONUA_REDIS_URL=redis:6379 docker compose --profile redis up -d
+docker compose up -d
 ```
 
 The stock Compose file maps host `HONUA_REDIS_URL` into the container's `ConnectionStrings__Redis`. If you use a `docker-compose.override.yml`, setting `ConnectionStrings__Redis: redis:6379` on the `honua` service is equivalent.
@@ -28,7 +28,7 @@ For a disposable fresh-stack smoke test only, clear volumes first:
 
 ```bash
 docker compose down -v
-HONUA_REDIS_URL=redis:6379 docker compose --profile redis up -d
+docker compose up -d
 curl -fsS http://localhost:8080/healthz/ready
 ```
 
