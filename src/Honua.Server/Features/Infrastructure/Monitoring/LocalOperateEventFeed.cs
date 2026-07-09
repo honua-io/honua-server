@@ -829,6 +829,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             Summary = $"{record.EventType} by {record.Actor}",
             Actor = record.Actor,
             CorrelationId = record.CorrelationId,
+            DetailsJson = string.IsNullOrWhiteSpace(record.Details) ? null : record.Details,
             ResourceRef = ref_
         };
     }

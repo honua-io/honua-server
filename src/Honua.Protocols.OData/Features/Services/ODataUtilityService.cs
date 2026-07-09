@@ -184,7 +184,11 @@ internal static class ODataUtilityService
 
         if (useSkipToken)
         {
-            var opaqueToken = ODataSkipTokenService.Encode(nextSkip, filter, orderby);
+            var opaqueToken = ODataSkipTokenService.Encode(
+                nextSkip,
+                filter,
+                orderby,
+                ODataRequestValidation.ResolveSkipTokenDiscriminator(request.HttpContext));
             queryParams.Add($"$skiptoken={Uri.EscapeDataString(opaqueToken)}");
         }
         else
@@ -275,7 +279,11 @@ internal static class ODataUtilityService
 
         if (useSkipToken)
         {
-            queryParams.Add($"$skiptoken={Uri.EscapeDataString(ODataSkipTokenService.Encode(nextSkip, filter, orderby))}");
+            queryParams.Add($"$skiptoken={Uri.EscapeDataString(ODataSkipTokenService.Encode(
+                nextSkip,
+                filter,
+                orderby,
+                ODataRequestValidation.ResolveSkipTokenDiscriminator(request.HttpContext)))}");
         }
         else
         {

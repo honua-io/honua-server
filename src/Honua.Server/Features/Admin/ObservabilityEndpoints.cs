@@ -148,6 +148,7 @@ internal static class ObservabilityEndpoints
         [FromServices] IDatabaseMigrationRunner migrationRunner,
         [FromServices] MigrationState migrationState,
         HttpContext context,
+        [FromServices] IMigrationBackupHookOutcomeStore? backupHookOutcomeStore = null,
         [FromServices] IConnectionSecretResolver? secretResolver = null)
     {
         var response = new MigrationObservabilityResponse
@@ -156,6 +157,7 @@ internal static class ObservabilityEndpoints
             IsReady = migrationState.IsReady,
             IsFailed = migrationState.IsFailed,
             Message = GetMigrationStatusMessage(migrationState),
+            LastBackupHookOutcome = backupHookOutcomeStore?.LastOutcome,
             GeneratedAt = DateTimeOffset.UtcNow
         };
 
