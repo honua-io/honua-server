@@ -793,4 +793,7 @@ internal sealed class McpToolErrorOutput
 
     [JsonPropertyName("violations")]
     public IReadOnlyList<McpValidationViolation>? Violations { get; set; }
+
+    [JsonPropertyName("error")]
+    public McpGeoprocessingError? Error { get; set; }
 }
