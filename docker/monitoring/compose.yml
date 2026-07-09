@@ -1,4 +1,4 @@
-# Curated Grafana + Prometheus observability bundle for Honua Server ("Splunk out of the box").
+# Optional Grafana + Prometheus observability depth for Honua Server.
 #
 # One-command deploy (server already running, e.g. via the root `docker compose up -d`):
 #
