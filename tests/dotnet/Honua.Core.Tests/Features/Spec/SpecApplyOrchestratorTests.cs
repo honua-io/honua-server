@@ -350,41 +350,34 @@ public class SpecApplyOrchestratorTests
 
         await started.Task;
 
-        // Drive the enumerator until it blocks: drain any frames already in
-        // the channel, then race MoveNextAsync against a small delay. The node
-        // is parked in its hook, so once the initial frames (ApplyStarted,
-        // Queued, Running) drain, the iterator awaits WaitToReadAsync. If the
-        // enumerator token is not honoured, MoveNextAsync hangs past the delay
-        // and the assertion below fails; with the fix in place, cancelling
-        // trips WaitToReadAsync and MoveNextAsync throws OCE promptly.
+        // The node is parked in its hook after Running is written, so the
+        // startup stream is deterministic: ApplyStarted, Queued, Running.
+        // Drain those known frames with a generous hang guard, then start one
+        // more MoveNextAsync while no further event can be produced. Cancelling
+        // the enumerator token must trip WaitToReadAsync rather than waiting for
+        // the hook release or terminal frame.
         var enumerator = handle.Events.GetAsyncEnumerator(enumeratorCts.Token);
         var observed = new List<SpecApplyEvent>();
         try
         {
-            while (true)
+            for (var i = 0; i < 3; i++)
             {
-                var moveTask = enumerator.MoveNextAsync().AsTask();
-                var drainTimeout = Task.Delay(200);
-                var winner = await Task.WhenAny(moveTask, drainTimeout);
-                if (winner == drainTimeout)
-                {
-                    // Iterator is parked on WaitToReadAsync. Cancel and verify
-                    // detachment is prompt rather than waiting for the next
-                    // event. A 2s budget is generous for a local WaitToReadAsync
-                    // trip; without the fix the task would hang indefinitely.
-                    enumeratorCts.Cancel();
-                    await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                        async () => await moveTask.WaitAsync(TimeSpan.FromSeconds(2)));
-                    break;
-                }
-
-                if (!await moveTask)
-                {
-                    Assert.Fail("Stream terminated before enumerator could be quiesced.");
-                }
+                var moved = await enumerator.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+                Assert.True(moved, "Stream terminated before enumerator could be quiesced.");
 
                 observed.Add(enumerator.Current);
             }
+
+            Assert.Equal(
+                new[] { SpecApplyEventKind.ApplyStarted, SpecApplyEventKind.Queued, SpecApplyEventKind.Running },
+                observed.Select(e => e.Kind).ToArray());
+
+            var quietMove = enumerator.MoveNextAsync().AsTask();
+            Assert.False(quietMove.IsCompleted, "the hook is still parked, so no terminal event should be available");
+
+            await enumeratorCts.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                async () => await quietMove.WaitAsync(TimeSpan.FromSeconds(10)));
         }
         finally
         {
@@ -399,11 +392,7 @@ public class SpecApplyOrchestratorTests
         // the token; neither depends on the enumerator being alive.
         release.TrySetResult();
 
-        using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        while (fixture.Tokens.Contains(handle.ApplyToken))
-        {
-            await Task.Delay(20, drainCts.Token);
-        }
+        await WaitUntilAsync(() => !fixture.Tokens.Contains(handle.ApplyToken), TimeSpan.FromSeconds(30));
 
         Assert.Equal(1, fixture.Executor.InvocationCount);
     }
@@ -771,6 +760,20 @@ public class SpecApplyOrchestratorTests
         return list;
     }
 
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = TimeProvider.System.GetTimestamp() + ToTimestampTicks(timeout);
+        while (!condition())
+        {
+            if (TimeProvider.System.GetTimestamp() >= deadline)
+            {
+                Assert.Fail($"Condition was not met within {timeout}.");
+            }
+
+            await Task.Delay(25);
+        }
+    }
+
     private static CanonicalSpecDocument Document(params CanonicalSpecNode[] nodes) => new()
     {
         GrammarVersion = "grammar/1.0",
@@ -853,6 +856,9 @@ public class SpecApplyOrchestratorTests
 
         return false;
     }
+
+    private static long ToTimestampTicks(TimeSpan duration)
+        => (long)(duration.TotalSeconds * TimeProvider.System.TimestampFrequency);
 
     private readonly record struct MeasurementSample(double Value, KeyValuePair<string, object?>[] Tags);
 

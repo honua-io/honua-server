@@ -128,7 +128,7 @@ internal static class FeatureRegistrationExtensions
         services.AddStac();
         // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
         // Set Experimental__Features__SensorThings=true to opt in.
-        if (configuration.GetValue<bool>("Experimental:Features:SensorThings", false))
+        if (configuration.GetValue<bool>(SensorThingsOptions.ExperimentalFeatureFlagPath, false))
         {
             services.AddSensorThings();
         }
@@ -301,7 +301,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapStacEndpoints();
         // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
         var staConfig = endpoints.ServiceProvider.GetRequiredService<IConfiguration>();
-        if (staConfig.GetValue<bool>("Experimental:Features:SensorThings", false))
+        if (staConfig.GetValue<bool>(SensorThingsOptions.ExperimentalFeatureFlagPath, false))
         {
             endpoints.MapSensorThingsEndpoints();
         }

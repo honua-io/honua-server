@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
@@ -20,6 +19,8 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
 
     private readonly object _sync = new();
     private readonly Queue<QueuedWaiter> _waiters = new();
+    private readonly TimeProvider _timeProvider;
+    private readonly long _timestampFrequency;
     private readonly TimeSpan _acquisitionTimeout;
     private readonly bool _adaptiveEnabled;
     private readonly int _minLimit;
@@ -35,9 +36,11 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
     private int _lastAdjustmentDirection;
     private bool _disposed;
 
-    public QueryConcurrencyGate(ConnectionLimits limits)
+    public QueryConcurrencyGate(ConnectionLimits limits, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(limits);
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _timestampFrequency = Math.Max(1, _timeProvider.TimestampFrequency);
 
         var configuredPoolCeiling = limits.MaxConnectionPoolSize > 0
             ? limits.MaxConnectionPoolSize
@@ -55,8 +58,8 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
             ? Clamp(limits.AdaptiveConcurrencyInitialQueries, _minLimit, _maxLimit)
             : _maxLimit;
         _targetDurationMs = Math.Max(1, limits.AdaptiveConcurrencyTargetDurationMs);
-        _updateIntervalTicks = MillisecondsToStopwatchTicks(limits.AdaptiveConcurrencyUpdateIntervalMs);
-        _lastAdjustmentTimestamp = Stopwatch.GetTimestamp();
+        _updateIntervalTicks = MillisecondsToTimestampTicks(limits.AdaptiveConcurrencyUpdateIntervalMs, _timestampFrequency);
+        _lastAdjustmentTimestamp = _timeProvider.GetTimestamp();
         _acquisitionTimeout = TimeSpan.FromSeconds(limits.ConnectionAcquisitionTimeoutSeconds);
     }
 
@@ -85,7 +88,7 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
 
             waiter = new QueuedWaiter(
                 new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
-                Stopwatch.GetTimestamp());
+                _timeProvider.GetTimestamp());
             _waiters.Enqueue(waiter);
         }
 
@@ -280,7 +283,7 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
             ? durationMs
             : (_durationEwmaMs * 0.8) + (durationMs * 0.2);
 
-        var now = Stopwatch.GetTimestamp();
+        var now = _timeProvider.GetTimestamp();
         if (_updateIntervalTicks > 0 && now - _lastAdjustmentTimestamp < _updateIntervalTicks)
         {
             return;
@@ -354,8 +357,8 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
 
     private void RecordQueueWaitLocked(long enqueuedAtTimestamp)
     {
-        var elapsedTicks = Math.Max(0, Stopwatch.GetTimestamp() - enqueuedAtTimestamp);
-        var waitMs = elapsedTicks * 1000d / Stopwatch.Frequency;
+        var elapsedTicks = Math.Max(0, _timeProvider.GetTimestamp() - enqueuedAtTimestamp);
+        var waitMs = elapsedTicks * 1000d / _timestampFrequency;
         _queueWaitEwmaMs = _queueWaitEwmaMs <= 0
             ? waitMs
             : (_queueWaitEwmaMs * 0.8) + (waitMs * 0.2);
@@ -372,14 +375,14 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
             _ => "none"
         };
 
-    private static long MillisecondsToStopwatchTicks(int milliseconds)
+    private static long MillisecondsToTimestampTicks(int milliseconds, long timestampFrequency)
     {
         if (milliseconds <= 0)
         {
             return 0;
         }
 
-        return (long)(Stopwatch.Frequency * (milliseconds / 1000d));
+        return (long)(timestampFrequency * (milliseconds / 1000d));
     }
 }
 

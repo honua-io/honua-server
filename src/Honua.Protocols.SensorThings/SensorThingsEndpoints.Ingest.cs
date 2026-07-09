@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.SensorThings.Models;
@@ -29,7 +30,11 @@ internal static partial class SensorThingsIngestEndpoints
     /// <summary>Maps the SensorThings Phase 2 ingest endpoints.</summary>
     public static IEndpointRouteBuilder MapSensorThingsIngestEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/sta/v1.1/Observations", HandleCreateObservations)
+        var allowAnonymousWrites = endpoints.ServiceProvider
+            .GetRequiredService<IConfiguration>()
+            .GetValue<bool>(SensorThingsOptions.AllowAnonymousWritesDangerouslyPath, false);
+
+        ConfigureWriteAuthorization(endpoints.MapPost("/sta/v1.1/Observations", HandleCreateObservations)
             .WithDisplayName("STA Create Observations")
             .WithName("StaCreateObservations")
             .WithSummary("Ingest one or more Observations (sensor.ingest)")
@@ -38,9 +43,9 @@ internal static partial class SensorThingsIngestEndpoints
             .Produces<StaObservation>(201, "application/json")
             .Produces<StaObservationBulkResult>(201, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404), allowAnonymousWrites);
 
-        endpoints.MapPost("/sta/v1.1/Datastreams({id:long})/Observations", HandleCreateDatastreamObservation)
+        ConfigureWriteAuthorization(endpoints.MapPost("/sta/v1.1/Datastreams({id:long})/Observations", HandleCreateDatastreamObservation)
             .WithDisplayName("STA Create Datastream Observation")
             .WithName("StaCreateDatastreamObservation")
             .WithSummary("Ingest an Observation into a Datastream (sensor.ingest)")
@@ -48,18 +53,27 @@ internal static partial class SensorThingsIngestEndpoints
             .Accepts<StaObservationCreate>("application/json")
             .Produces<StaObservation>(201, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404), allowAnonymousWrites);
 
-        endpoints.MapPost("/sta/v1.1/Datastreams", HandleCreateDatastream)
+        ConfigureWriteAuthorization(endpoints.MapPost("/sta/v1.1/Datastreams", HandleCreateDatastream)
             .WithDisplayName("STA Create Datastream")
             .WithName("StaCreateDatastream")
             .WithSummary("Create a Datastream (datastream.create)")
             .WithTags("SensorThings")
             .Accepts<StaDatastreamCreate>("application/json")
             .Produces<StaDatastream>(201, "application/json")
-            .Produces(400);
+            .Produces(400), allowAnonymousWrites);
 
         return endpoints;
+    }
+
+    private static RouteHandlerBuilder ConfigureWriteAuthorization(
+        RouteHandlerBuilder builder,
+        bool allowAnonymousWrites)
+    {
+        return allowAnonymousWrites
+            ? builder.AllowAnonymous()
+            : builder.RequireAdminAuthorization();
     }
 
     private const string IngestOperation = "sensor.ingest";

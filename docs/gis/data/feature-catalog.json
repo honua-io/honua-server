@@ -15991,6 +15991,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Bidirectional_ConcurrentOtherClientEdit_IsDelivered",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ConcurrentServerEdit_RecordsConflictAndAppliesLastWriteWins",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Download_DeliversPostReplicaChangesAndAdvancesServerGen",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_FlatFormFailingEdit_ReturnsErrorEnvelope",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_FlatFormUpload_AppliesEdits",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_GeometryOnlyConflict_ClassifiesAsGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_MultiLayerUpload_AppliesPerLayerEdits",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_NoConcurrentServerEdit_AppliesWithoutConflict",
@@ -17643,10 +17645,13 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsAnonymousWriteOptInTests.PostObservation_WhenAnonymousWritesDangerouslyEnabled_AllowsAnonymousWrite",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsFeatureGateTests.StaObservationsPost_WhenFeatureDisabled_Returns404",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_MissingDatastream_Returns404",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_SingleIntoSeededDatastream_PersistsAndIsReadable",
-        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservations_BulkEnvelope_PersistsAllRows"
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservations_BulkEnvelope_PersistsAllRows",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_AnonymousWhenAnonymousWritesDisabled_ReturnsUnauthorizedBeforeBodyValidation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_WithAdminApiKeyWhenAnonymousWritesDisabled_CreatesObservation"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "implemented"
