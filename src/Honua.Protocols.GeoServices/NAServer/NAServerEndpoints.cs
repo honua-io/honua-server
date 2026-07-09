@@ -162,6 +162,10 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer route parameters."),
                 "Invalid NAServer route parameters");
         }
+        catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
+        {
+            return CreateInvalidSpatialReferenceResult(context, "route");
+        }
     }
 
     private static async Task<IResult> HandleServiceArea(
@@ -228,6 +232,10 @@ internal static class NAServerEndpoints
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer service-area parameters."),
                 "Invalid NAServer service-area parameters");
+        }
+        catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
+        {
+            return CreateInvalidSpatialReferenceResult(context, "service-area");
         }
     }
 
@@ -370,6 +378,10 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer closest-facility parameters.", [ex.Message]),
                 "Invalid NAServer closest-facility parameters");
         }
+        catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
+        {
+            return CreateInvalidSpatialReferenceResult(context, "closest-facility");
+        }
     }
 
     private static async Task<IResult> HandleOdCostMatrix(
@@ -422,6 +434,10 @@ internal static class NAServerEndpoints
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer OD cost matrix parameters.", [ex.Message]),
                 "Invalid NAServer OD cost matrix parameters");
+        }
+        catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
+        {
+            return CreateInvalidSpatialReferenceResult(context, "OD cost matrix");
         }
     }
 
@@ -486,6 +502,10 @@ internal static class NAServerEndpoints
                 StandardErrorHelpers.CreateBadRequest(context, "Invalid NAServer location-allocation parameters.", [ex.Message]),
                 "Invalid NAServer location-allocation parameters");
         }
+        catch (Exception ex) when (IsRoutingInvalidSpatialReferenceException(ex))
+        {
+            return CreateInvalidSpatialReferenceResult(context, "location-allocation");
+        }
     }
 
     private static bool ReadBool(IReadOnlyDictionary<string, string> parameters, string key, bool defaultValue)
@@ -530,6 +550,39 @@ internal static class NAServerEndpoints
                 [$"Format '{format}' is not supported. Use f=json."]),
             "Unsupported NAServer output format");
     }
+
+    private static IResult CreateInvalidSpatialReferenceResult(HttpContext context, string operation)
+        => SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Invalid NAServer {operation} spatial reference.",
+                ["The requested input or output spatial reference is not supported by the configured routing provider."]),
+            $"Invalid NAServer {operation} spatial reference");
+
+    private static bool IsRoutingInvalidSpatialReferenceException(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            var message = current.Message;
+            if (ContainsSpatialReferenceSignal(message) && ContainsInvalidSpatialReferenceSignal(message))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ContainsSpatialReferenceSignal(string message)
+        => message.Contains("SRID", StringComparison.OrdinalIgnoreCase)
+           || message.Contains("spatial reference", StringComparison.OrdinalIgnoreCase)
+           || message.Contains("spatial_ref_sys", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ContainsInvalidSpatialReferenceSignal(string message)
+        => message.Contains("invalid", StringComparison.OrdinalIgnoreCase)
+           || message.Contains("unknown", StringComparison.OrdinalIgnoreCase)
+           || message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+           || message.Contains("does not exist", StringComparison.OrdinalIgnoreCase);
 
     private static IResult SetSpanErrorAndReturn(IResult result, string? message = null)
     {
