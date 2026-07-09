@@ -481,7 +481,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.DisableProfile_ExistingProfile_ReturnsDisabledProfile"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "delete-api-v1-admin-security-client-certificates-profiles-profileid-mappings-mappingid",
@@ -494,7 +494,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.DisableMapping_ExistingMapping_ReturnsDisabledMapping"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "delete-api-v1-admin-security-client-certificates-profiles-profileid-revocations-revocationid",
@@ -507,7 +507,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.RemoveRevocation_ExistingRevocation_ReturnsOk"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "delete-api-v1-admin-share-exports-exportid",
@@ -3290,10 +3290,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithAdminAuth_ReturnsConfiguredProfiles"
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithAdminAuth_ReturnsConfiguredProfiles",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificatesEndpoint_AfterGaPromotion_IsNotExperimentalGated"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-security-client-certificates-profiles-profileid",
@@ -3306,7 +3307,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.GetProfile_ExistingProfile_ReturnsProfile"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-security-client-certificates-profiles-profileid-mappings",
@@ -3319,7 +3320,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListMappings_ExistingProfile_ReturnsMappings"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-security-client-certificates-profiles-profileid-revocations",
@@ -3332,7 +3333,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListRevocations_ExistingProfile_ReturnsRevocations"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-services",
@@ -13501,13 +13502,14 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_RevocationStatusUnknownIsFatal_RoundTrips",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_ValidRequest_ReturnsCreated",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_WithAcceptedIssuerSubjectsButNoChainTrust_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_WithExplicitNullArrays_ReturnsBadRequestWithoutNullReferenceException",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_WithMalformedCustomTrustAnchor_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "post-api-v1-admin-security-client-certificates-profiles-profileid-mappings",
@@ -13523,7 +13525,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateMapping_WithInvertedValidityWindow_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "post-api-v1-admin-security-client-certificates-profiles-profileid-revocations",
@@ -13536,7 +13538,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AddRevocation_ValidRequest_ReturnsCreated"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "post-api-v1-admin-security-client-certificates-validate",
@@ -13550,7 +13552,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ValidateCertificate_WithMappedCertificate_ReturnsValidResult"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "post-api-v1-admin-services-serviceid-replicas-replicaid-conflicts-conflictid-resolve",
@@ -18342,7 +18344,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.UpdateProfile_ExistingProfile_ReturnsUpdatedRevision"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "put-api-v1-admin-security-client-certificates-profiles-profileid-mappings-mappingid",
@@ -18355,7 +18357,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.UpdateMapping_ExistingMapping_ReturnsUpdatedMapping"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "put-api-v1-admin-services-servicename-access-policy",

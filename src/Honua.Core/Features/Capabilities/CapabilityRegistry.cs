@@ -257,8 +257,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("transport.mcp", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
             ("transport.qgis", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
 
-            // Native mTLS (client-certificate) authentication — built-experimental (T10 flip).
-            ("security.mtls", "security", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            // Native mTLS (client-certificate) authentication — promoted to GA (Implemented) in
+            // #2431. Second Experimental->Implemented promotion (after alerts.geofence, #2427):
+            // hardened chain/CRL-OCSP revocation validation, then flipped off the experimental
+            // gate. Enterprise entitlement (FeatureCatalog.MtlsClientCertificateKey) so the
+            // manifest/registry advertise it as Enterprise-gated.
+            ("security.mtls", "security", FeatureCatalog.MtlsClientCertificateKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("preview.file-import", "preview", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("query.features", "query", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             // analysis.spatial is gated by a composite of four analytics keys; the

@@ -63,6 +63,34 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles")]
+    public async Task CreateProfile_RevocationStatusUnknownIsFatal_RoundTrips()
+    {
+        var profileId = $"profile-{Guid.NewGuid():N}";
+        var request = new UpsertClientCertificateTrustProfileRequest
+        {
+            ProfileId = profileId,
+            EnvironmentId = "prod",
+            DisplayName = "Best-effort revocation profile",
+            AcceptedIssuerSubjects = ["CN=Honua Native Prod"],
+            AllowedSanTypes = ["sanUri"],
+            RequireClientAuthenticationEku = true,
+            RequireChainTrust = true,
+            ChainRevocationMode = "Online",
+            RevocationStatusUnknownIsFatal = false,
+        };
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/security/client-certificates/profiles",
+            request,
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var data = await ReadDataAsync(response);
+        Assert.False(data.GetProperty("revocationStatusUnknownIsFatal").GetBoolean());
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/security/client-certificates/profiles/{profileId}")]
     public async Task GetProfile_ExistingProfile_ReturnsProfile()
     {

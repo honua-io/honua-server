@@ -25,9 +25,10 @@ internal static class ClientCertificateAdminEndpoints
     public static void MapClientCertificateAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/security/client-certificates")
-            // T10 (#2346): native mTLS / client-certificate authentication is
-            // built-experimental and gated OFF the first-release surface (404 when
-            // security.mtls is experimental-disabled).
+            // #2431: native mTLS / client-certificate authentication was promoted from
+            // experimental to GA (security.mtls Experimental -> Implemented). The gate is
+            // retained but now resolves enabled for the GA capability, so these routes ship on
+            // the default first-release surface (Enterprise entitlement enforced separately).
             .WithCapabilityGate("security.mtls")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
@@ -204,6 +205,7 @@ internal static class ClientCertificateAdminEndpoints
             RequireClientAuthenticationEku = request.RequireClientAuthenticationEku,
             RequireChainTrust = request.RequireChainTrust,
             ChainRevocationMode = revocationMode,
+            RevocationStatusUnknownIsFatal = request.RevocationStatusUnknownIsFatal,
             ExpirationWarningThresholdDays = request.ExpirationWarningThresholdDays,
             RotationGracePeriodDays = request.RotationGracePeriodDays,
         });
@@ -537,6 +539,7 @@ internal static class ClientCertificateAdminEndpoints
         RequireClientAuthenticationEku = profile.RequireClientAuthenticationEku,
         RequireChainTrust = profile.RequireChainTrust,
         ChainRevocationMode = profile.ChainRevocationMode.ToString(),
+        RevocationStatusUnknownIsFatal = profile.RevocationStatusUnknownIsFatal,
         ExpirationWarningThresholdDays = profile.ExpirationWarningThresholdDays,
         RotationGracePeriodDays = profile.RotationGracePeriodDays,
         Revision = profile.Revision,
