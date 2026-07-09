@@ -58,7 +58,8 @@ public sealed class SensorThingsStreamEndpointsTests : IAsyncLifetime
         handshake.Should().Contain("connected");
 
         // Ingest an observation on datastream 1; the stream must push it.
-        var ingest = await _fixture.Client.PostAsync(
+        using var adminClient = _fixture.CreateAdminClient();
+        var ingest = await adminClient.PostAsync(
             "/sta/v1.1/Datastreams(1)/Observations",
             JsonContent.Create(new { result = 99.0 }),
             cts.Token);

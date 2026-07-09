@@ -10,6 +10,15 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 2. The default recovery is rolling back the application image; the previous version keeps working against the expanded schema.
 3. Database restore is the last resort, only when a destructive migration or data corruption makes the previous version unusable.
 
+### SensorThings API
+
+The OGC SensorThings API remains experimental and is not registered unless
+`Experimental__Features__SensorThings=true` is set. SensorThings write routes now
+require API-key/admin authentication by default. Deployments that intentionally
+accepted unauthenticated STA ingestion must explicitly set
+`SensorThings__AllowAnonymousWritesDangerously=true`; use that only behind a
+trusted ingress or disposable test boundary.
+
 ## Steps
 
 1. Preflight against the running instance. The deploy API reports database compatibility, migration state, and coordinated-deploy readiness.

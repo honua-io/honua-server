@@ -13,9 +13,9 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
 /// <summary>
 /// Verifies the experimental feature gate for OGC SensorThings API (PA-096/PA-103/PA-116/PA-145).
-/// When <c>Experimental:Features:SensorThings</c> is <c>false</c> (the default), no STA routes
-/// are registered and all <c>/sta/v1.1/...</c> paths return 404. When the flag is <c>true</c>,
-/// the routes are active and return expected responses.
+/// When <c>Experimental:Features:SensorThings</c> is absent or <c>false</c>, no STA routes are
+/// registered and all <c>/sta/v1.1/...</c> paths return 404. When the flag is <c>true</c>, the
+/// routes are active and return expected responses.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
@@ -26,8 +26,8 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
 
     public SensorThingsFeatureGateTests()
     {
-        // Override the test-environment flag (appsettings.Test.json sets it to true)
-        // to simulate the production default of false.
+        // appsettings.Test.json enables SensorThings for the protocol test shard. Override it here
+        // to verify that the adapter is not registered unless the experimental flag is explicitly true.
         _fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
@@ -54,7 +54,7 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync("/sta/v1.1/Things");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "SensorThings routes must not be registered when Experimental:Features:SensorThings is false");
+            "SensorThings routes must not be registered unless Experimental:Features:SensorThings is explicitly true");
     }
 
     [IntegrationTest]

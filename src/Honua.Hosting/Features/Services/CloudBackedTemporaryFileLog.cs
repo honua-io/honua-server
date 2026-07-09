@@ -46,6 +46,24 @@ internal static partial class CloudBackedTemporaryFileLog
 
     [LoggerMessage(
         Level = LogLevel.Warning,
+        Message = "Temporary file storage capacity check failed in shared {Provider} storage for prefix {Prefix}; continuing upload without quota enforcement for this attempt.")]
+    public static partial void SharedStorageCapacityCheckFailed(
+        ILogger logger,
+        CloudStorageProvider provider,
+        string prefix,
+        Exception exception);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Temporary file cleanup failed in shared {Provider} storage for prefix {Prefix}; continuing upload without cleanup for this attempt.")]
+    public static partial void SharedStorageCleanupFailed(
+        ILogger logger,
+        CloudStorageProvider provider,
+        string prefix,
+        Exception exception);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
         Message = "Rejecting shared temporary file write because Redis coordination is required for cloud-backed storage quotas.")]
     public static partial void SharedWriteRejectedRedisRequired(ILogger logger);
 
