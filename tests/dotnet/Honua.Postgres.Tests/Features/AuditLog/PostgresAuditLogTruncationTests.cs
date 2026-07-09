@@ -9,11 +9,11 @@ namespace Honua.Postgres.Tests.Features.AuditLog;
 /// Docker-free coverage of <see cref="PostgresAuditLog.Truncate"/>. Guards the
 /// truncation-marker encoding contract: an over-long value must be truncated to
 /// the column width and end with a real horizontal ellipsis (U+2026), not the
-/// mojibake "â€¦" that results when the UTF-8 bytes are read back as Latin-1.
+/// three-code-point mojibake sequence produced by a bad UTF-8/Latin-1 round trip.
 /// </summary>
 public sealed class PostgresAuditLogTruncationTests
 {
-    private const string Ellipsis = "…";
+    private const string Ellipsis = "\u2026";
 
     [Fact]
     public void Truncate_OverlongAsciiValue_TruncatesToMaxAndEndsWithEllipsis()
@@ -32,9 +32,9 @@ public sealed class PostgresAuditLogTruncationTests
         var result = PostgresAuditLog.Truncate(new string('A', 300), 256);
 
         // The final char must be the real ellipsis code point, and must not be
-        // the 3-char Latin-1 mis-decoding "â€¦".
-        result[^1].Should().Be('…');
-        result.Should().NotContain("â€¦");
+        // the 3-char Latin-1 mis-decoding.
+        result[^1].Should().Be('\u2026');
+        result.Should().NotContain("\u00E2\u20AC\u00A6");
     }
 
     [Fact]
@@ -42,14 +42,14 @@ public sealed class PostgresAuditLogTruncationTests
     {
         // Multi-byte content (each char is 3 UTF-8 bytes) exercises the char-vs-byte
         // truncation seam: char-based truncation must never corrupt a code point.
-        var value = string.Concat(Enumerable.Repeat("中", 512)); // CJK "中"
+        var value = string.Concat(Enumerable.Repeat("\u4E2D", 512)); // CJK U+4E2D
 
         var result = PostgresAuditLog.Truncate(value, 256);
 
         result.Length.Should().Be(256);
         result.Should().EndWith(Ellipsis);
-        // Everything before the marker must be intact CJK chars (255 of them) — no split code point.
-        result[..^1].Should().Be(new string('中', 255));
+        // Everything before the marker must be intact CJK chars (255 of them), no split code point.
+        result[..^1].Should().Be(new string('\u4E2D', 255));
     }
 
     [Fact]

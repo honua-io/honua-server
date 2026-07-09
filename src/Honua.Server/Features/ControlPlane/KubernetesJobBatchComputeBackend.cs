@@ -487,17 +487,8 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         IReadOnlyDictionary<string, string> parameters)
     {
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var pair in parameters)
-        {
-            if (pair.Key.StartsWith(KubernetesJobParameterKeys.EnvironmentPrefix, StringComparison.Ordinal))
-            {
-                var name = pair.Key[KubernetesJobParameterKeys.EnvironmentPrefix.Length..];
-                if (!string.IsNullOrEmpty(name))
-                {
-                    env[name] = pair.Value;
-                }
-            }
-        }
+        ApplyEnvironmentVariables(env, parameters, KubernetesJobParameterKeys.GenericEnvironmentPrefix);
+        ApplyEnvironmentVariables(env, parameters, KubernetesJobParameterKeys.EnvironmentPrefix);
 
         // Serving↔worker job-contract version (ADR-0060 #3b): the worker harness re-checks this and
         // fails closed if it exceeds the version it can run. Stamped AFTER the env.* passthrough so a
@@ -505,6 +496,26 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         env["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture);
 
         return env;
+    }
+
+    private static void ApplyEnvironmentVariables(
+        Dictionary<string, string> environmentVariables,
+        IReadOnlyDictionary<string, string> parameters,
+        string prefix)
+    {
+        foreach (var (key, value) in parameters)
+        {
+            if (!key.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var name = key[prefix.Length..];
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                environmentVariables[name] = value;
+            }
+        }
     }
 
     private static int? ResolveActiveDeadlineSeconds(
@@ -859,4 +870,5 @@ internal static class KubernetesJobParameterKeys
     public const string ActiveDeadlineSeconds = "k8s.active_deadline_seconds";
     public const string TtlSecondsAfterFinished = "k8s.ttl_seconds_after_finished";
     public const string EnvironmentPrefix = "k8s.env.";
+    public const string GenericEnvironmentPrefix = "env.";
 }
