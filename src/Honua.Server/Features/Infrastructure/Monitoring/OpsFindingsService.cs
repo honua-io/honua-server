@@ -138,12 +138,21 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         var request = new OperationGatewayRequest
         {
             Kind = action.Kind,
+            ActionDiscriminator = action.ActionDiscriminator,
             RequestedByAgent = RequestedByAgent,
             Reason = action.Reason,
             ExecutionPayload = action.ExecutionPayload,
             // Idempotency-keyed on the deterministic finding id so re-proposing the same live
             // condition folds onto the same gateway operation rather than spawning duplicates.
             IdempotencyKey = findingId,
+            AutonomyContext = new OperationGatewayAutonomyContext
+            {
+                FindingId = finding.Id,
+                Rule = finding.Rule,
+                ActionMarkedAutoSafe = action.AutoSafe,
+                BlastRadius = Math.Max(1, action.BlastRadius),
+                EvidenceRefs = finding.EvidenceRefs,
+            },
         };
 
         var result = await _gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
@@ -194,9 +203,12 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             action = new OpsFindingRecommendedAction
             {
                 Kind = OperationClass.AdminConfigChange,
+                ActionDiscriminator = OpsActionNames.RedriveDeadLetters,
                 Summary = $"Redrive {backlog.DeadLetteredCount} dead-lettered alert dispatch row(s) for redelivery.",
                 ExecutionPayload = OpsActionExecutionPayloads.RedriveDeadLetters(),
                 Reason = $"The alert dispatcher has {backlog.DeadLetteredCount} dead-lettered notification(s) that exhausted retries.",
+                AutoSafe = true,
+                BlastRadius = backlog.DeadLetteredCount > int.MaxValue ? int.MaxValue : (int)Math.Max(1, backlog.DeadLetteredCount),
             };
             explanation = $"The alert dispatcher has {backlog.DeadLetteredCount} dead-lettered notification(s) that exhausted retries and require operator triage (pending backlog {backlog.PendingCount}). Redriving re-enqueues them for redelivery; if the underlying channel is unhealthy the same rows will dead-letter again, and repeated storms should be triaged by pausing the affected channel directly (no per-channel breakdown is available from this signal to safely automate that step yet).";
         }
@@ -275,6 +287,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
                 action = new OpsFindingRecommendedAction
                 {
                     Kind = OperationClass.AdminConfigChange,
+                    ActionDiscriminator = OpsActionNames.TuneBoundedAdmission,
                     Summary = $"Tune the bounded database admission target down to {tuned} (from {_admissionGate.CurrentLimit}).",
                     ExecutionPayload = OpsActionExecutionPayloads.TuneBoundedAdmission(tuned),
                     Reason = $"Database connection-pool pressure is elevated (utilization {utilizationText}, acquisition timeouts {snapshot.ConnectionAcquisitionTimeouts}); temporarily lower the bounded admission target to relieve pressure.",
