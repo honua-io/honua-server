@@ -2,9 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using Amazon;
-using Amazon.ElasticLoadBalancingV2;
-using Amazon.ElasticLoadBalancingV2.Model;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -65,15 +62,6 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
     private static readonly TimeSpan RollbackSettleBudget = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
 
-    // Partial canary share the cutover shifts to before promotion. Between 1 and 99 (the backend's
-    // valid canary-weight range) so the observe path lands on PromotionRecommended, not Succeeded.
-    private const int CanaryShare = 25;
-
-    // The KNOWN baseline the standing substrate is provisioned at and must always be restored to:
-    // stable serves 100%, canary serves 0%.
-    private const int BaselineStableWeight = 100;
-    private const int BaselineCanaryWeight = 0;
-
     private readonly RealAwsCertificationFixture _cert;
     private readonly ITestOutputHelper _output;
 
@@ -108,20 +96,23 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         // substrate hands us a LISTENER ARN; the backend operates on a RULE ARN, so derive it live —
         // selecting the rule whose forward action targets BOTH configured target groups, never just
         // the first non-default rule (which could be an unrelated redirect/fixed-response rule).
-        var listenerRuleArn = await ResolveWeightedRuleArnAsync(
+        var listenerRuleArn = await AwsEcsAlbCertificationSupport.ResolveWeightedRuleArnAsync(
             _cert.AlbListenerArn!, canaryTargetGroup, stableTargetGroup, region);
 
         // Assert the substrate is at the KNOWN BASELINE (stable=100/canary=0) before we mutate it, and
         // FAIL LOUDLY if it has drifted. A prior run that died between promote and restore would leave
         // canary=100 standing; surfacing that here stops a poisoned run from silently snapshotting and
         // perpetuating the bad weight (the finally always restores the known baseline, never a snapshot).
-        var startingShares = ReadShares(await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region));
+        var startingShares = AwsEcsAlbCertificationSupport.ReadShares(
+            await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region),
+            canaryTargetGroup,
+            stableTargetGroup);
         startingShares.Stable.Should().Be(
-            BaselineStableWeight,
+            AwsEcsAlbCertificationSupport.BaselineStableWeight,
             "the ECS/ALB substrate must start each run at the known baseline (stable=100); a drifted "
             + "stable weight means a prior run left the substrate poisoned and must be investigated");
         startingShares.Canary.Should().Be(
-            BaselineCanaryWeight,
+            AwsEcsAlbCertificationSupport.BaselineCanaryWeight,
             "the ECS/ALB substrate must start each run at the known baseline (canary=0); a drifted "
             + "canary weight means a prior run left the substrate poisoned and must be investigated");
 
@@ -133,7 +124,7 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
             "the certification ECS service must resolve to a concrete task definition to deploy");
 
         var backend = new AwsEcsAlbDeployBackend(albClient, ecsClient, NullLogger<AwsEcsAlbDeployBackend>.Instance);
-        var operation = BuildOperation(
+        var operation = AwsEcsAlbCertificationSupport.BuildOperation(
             cluster,
             service,
             listenerRuleArn,
@@ -150,11 +141,16 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
                 WorkflowOperationStatus.Submitted,
                 $"the production ECS/ALB backend must accept the weighted cutover (message: {submission.Message})");
 
-            var afterShift = ReadShares(await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region));
+            var afterShift = AwsEcsAlbCertificationSupport.ReadShares(
+                await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region),
+                canaryTargetGroup,
+                stableTargetGroup);
             afterShift.Canary.Should().Be(
-                CanaryShare, "StartAsync must actually shift the live ALB canary weight");
+                AwsEcsAlbCertificationSupport.CanaryShare,
+                "StartAsync must actually shift the live ALB canary weight");
             afterShift.Stable.Should().Be(
-                100 - CanaryShare, "StartAsync must actually shift the live ALB stable weight");
+                100 - AwsEcsAlbCertificationSupport.CanaryShare,
+                "StartAsync must actually shift the live ALB stable weight");
 
             // 2) Observe until the rollout is holding the partial share and is promotable. On a
             //    same-revision deploy ECS is already at steady state, so this settles quickly.
@@ -169,7 +165,10 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
             promotion.ObservedRevision.Should().Be(
                 currentTaskDefinition, "promotion must report the promoted task definition");
 
-            var afterPromote = ReadShares(await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region));
+            var afterPromote = AwsEcsAlbCertificationSupport.ReadShares(
+                await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region),
+                canaryTargetGroup,
+                stableTargetGroup);
             afterPromote.Canary.Should().Be(100, "promotion must move the canary weight to 100");
             afterPromote.Stable.Should().Be(0, "promotion must move the stable weight to 0");
 
@@ -179,7 +178,10 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
                 WorkflowOperationStatus.RollbackRequested,
                 "rollback shifts traffic back to stable and then settles on subsequent observes");
 
-            var afterRollback = ReadShares(await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region));
+            var afterRollback = AwsEcsAlbCertificationSupport.ReadShares(
+                await albClient.GetListenerRuleWeightsAsync(listenerRuleArn, region),
+                canaryTargetGroup,
+                stableTargetGroup);
             afterRollback.Canary.Should().Be(0, "rollback must move the canary weight to 0");
             afterRollback.Stable.Should().Be(100, "rollback must restore the stable weight to 100");
 
@@ -203,24 +205,13 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
                 albClient,
                 ecsClient,
                 listenerRuleArn,
-                BuildBaselineWeights(stableTargetGroup, canaryTargetGroup),
+                AwsEcsAlbCertificationSupport.BuildBaselineWeights(stableTargetGroup, canaryTargetGroup),
                 cluster,
                 service,
                 currentTaskDefinition!,
                 region);
         }
     }
-
-    // The known-baseline weighted forward action the substrate is provisioned at and is always
-    // restored to: stable serves 100%, canary serves 0%.
-    private static IReadOnlyList<AwsAlbTargetGroupWeight> BuildBaselineWeights(
-        string stableTargetGroup,
-        string canaryTargetGroup)
-        =>
-        [
-            new AwsAlbTargetGroupWeight { TargetGroupArn = stableTargetGroup, Weight = BaselineStableWeight },
-            new AwsAlbTargetGroupWeight { TargetGroupArn = canaryTargetGroup, Weight = BaselineCanaryWeight },
-        ];
 
     private static async Task<bool> PollForPromotionAsync(
         AwsEcsAlbDeployBackend backend,
@@ -310,129 +301,4 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         }
     }
 
-    private static async Task<string> ResolveWeightedRuleArnAsync(
-        string listenerArn,
-        string canaryTargetGroup,
-        string stableTargetGroup,
-        string region)
-    {
-        using var elb = string.IsNullOrWhiteSpace(region)
-            ? new AmazonElasticLoadBalancingV2Client()
-            : new AmazonElasticLoadBalancingV2Client(RegionEndpoint.GetBySystemName(region));
-
-        // AWS forbids ModifyRule on a listener's DEFAULT rule (OperationNotPermitted), so the
-        // substrate parks the weighted forward action on a dedicated non-default rule — exactly
-        // how a production canary deployment is wired. Certify against the non-default rule whose
-        // forward action targets BOTH the configured stable and canary target groups; picking the
-        // first non-default rule blindly could select an unrelated redirect/fixed-response/other
-        // rule and then mutate the wrong resource.
-        var response = await elb.DescribeRulesAsync(new DescribeRulesRequest { ListenerArn = listenerArn });
-        var candidates = response.Rules?.Where(rule => rule.IsDefault != true).ToList() ?? [];
-
-        var weightedRule = candidates.FirstOrDefault(
-            rule => RuleForwardsToBothTargetGroups(rule, canaryTargetGroup, stableTargetGroup))
-            ?? throw new InvalidOperationException(
-                $"Listener '{listenerArn}' has no non-default rule whose forward action targets both the "
-                + $"configured stable ('{stableTargetGroup}') and canary ('{canaryTargetGroup}') target "
-                + "groups to certify weighted cutover against.");
-
-        if (string.IsNullOrWhiteSpace(weightedRule.RuleArn))
-        {
-            throw new InvalidOperationException(
-                $"Listener '{listenerArn}' weighted rule did not resolve to a rule ARN.");
-        }
-
-        return weightedRule.RuleArn;
-    }
-
-    // True when the rule has a forward action whose target-group set contains BOTH configured groups.
-    private static bool RuleForwardsToBothTargetGroups(
-        Rule rule,
-        string canaryTargetGroup,
-        string stableTargetGroup)
-    {
-        var forward = rule.Actions?.FirstOrDefault(action => action.Type == ActionTypeEnum.Forward);
-        var targetGroups = forward?.ForwardConfig?.TargetGroups;
-        if (targetGroups is null)
-        {
-            return false;
-        }
-
-        var arns = targetGroups
-            .Where(tuple => !string.IsNullOrWhiteSpace(tuple.TargetGroupArn))
-            .Select(tuple => tuple.TargetGroupArn)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        return arns.Contains(canaryTargetGroup) && arns.Contains(stableTargetGroup);
-    }
-
-    private (int Canary, int Stable) ReadShares(AwsAlbListenerRuleState state)
-    {
-        var canary = 0;
-        var stable = 0;
-        foreach (var weight in state.TargetGroupWeights)
-        {
-            if (string.Equals(weight.TargetGroupArn, _cert.CanaryTargetGroupArn, StringComparison.OrdinalIgnoreCase))
-            {
-                canary = weight.Weight;
-            }
-            else if (string.Equals(weight.TargetGroupArn, _cert.StableTargetGroupArn, StringComparison.OrdinalIgnoreCase))
-            {
-                stable = weight.Weight;
-            }
-        }
-
-        return (canary, stable);
-    }
-
-    private static WorkflowOperationRecord BuildOperation(
-        string cluster,
-        string service,
-        string listenerRuleArn,
-        string canaryTargetGroup,
-        string stableTargetGroup,
-        string region,
-        string desiredTaskDefinition)
-    {
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["aws.region"] = region,
-            ["aws.ecs.cluster"] = cluster,
-            ["aws.ecs.canary_service"] = service,
-            ["aws.alb.listener_rule_arn"] = listenerRuleArn,
-            ["aws.alb.canary_target_group_arn"] = canaryTargetGroup,
-            ["aws.alb.stable_target_group_arn"] = stableTargetGroup,
-            // Partial canary weight — the backend shifts this share to the canary target group on
-            // StartAsync and treats the converged partial as PromotionRecommended.
-            ["aws.ecs.canary_weight_percentage"] = CanaryShare.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        };
-
-        var now = DateTimeOffset.UtcNow;
-        return new WorkflowOperationRecord
-        {
-            OperationId = $"cert-ecs-alb-{Guid.NewGuid():N}",
-            Kind = WorkflowOperationKind.Deploy,
-            Status = WorkflowOperationStatus.Submitted,
-            CreatedAt = now.AddMinutes(-1),
-            UpdatedAt = now,
-            CurrentPhase = "Certification",
-            Audit = new OperationAuditInfo(),
-            Concurrency = new OperationConcurrencyPolicy
-            {
-                PartitionKey = $"cert-ecs-alb:{service}",
-                RequiresExclusiveLease = true,
-            },
-            Deploy = new DeployOperationSpec
-            {
-                TargetId = "cert-ecs-alb",
-                TargetKind = DeployTargetKind.AwsEcs,
-                Backend = AwsEcsAlbDeployBackend.AdapterBackendName,
-                Environment = "cert",
-                TargetName = service,
-                CurrentRevision = desiredTaskDefinition,
-                DesiredRevision = desiredTaskDefinition,
-                Parameters = parameters,
-            },
-        };
-    }
 }
