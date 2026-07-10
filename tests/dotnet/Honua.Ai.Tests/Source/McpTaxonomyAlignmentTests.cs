@@ -390,11 +390,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     [UnitTest]
     public void StructuredTools_AdvertiseWellFormedOutputSchemas()
     {
-        // honua_render_map returns an image content block, not structuredContent,
-        // so it legitimately carries no output schema; every other tool must.
-        var tools = BuildTools().Where(t => t.Name != "honua_render_map");
-
-        foreach (var tool in tools)
+        foreach (var tool in BuildTools())
         {
             var descriptor = tool.Describe();
             descriptor.OutputSchema.Should().NotBeNull(
@@ -414,14 +410,15 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     [UnitTest]
-    public void RenderMap_HasNoOutputSchema_BecauseItReturnsAnImageBlock()
+    public void RenderMap_AdvertisesOutputSchema_AndRemainsReadOnly()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         var descriptor = new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance)
             .Describe();
 
-        descriptor.OutputSchema.Should().BeNull();
+        descriptor.OutputSchema.Should().NotBeNull();
+        descriptor.OutputSchema!.Value.GetProperty("properties").TryGetProperty("image", out _).Should().BeTrue();
         descriptor.Annotations!.ReadOnlyHint.Should().BeTrue();
     }
 

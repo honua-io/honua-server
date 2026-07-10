@@ -20,6 +20,8 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Schema;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -90,6 +92,7 @@ public sealed class McpLocationToolTests
         candidate.GetProperty("x").GetDouble().Should().BeApproximately(-122.084, 0.000001);
         candidate.GetProperty("y").GetDouble().Should().BeApproximately(37.422, 0.000001);
         candidate.GetProperty("score").GetDouble().Should().Be(99.1);
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.GeocodeOutputSchema);
 
         await _jobService.Received(1).EnsureCallerAuthorizedAsync(
             Arg.Any<ClaimsPrincipal>(),
@@ -200,6 +203,11 @@ public sealed class McpLocationToolTests
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("code").GetString().Should().Be("failed_precondition");
         structured.GetProperty("message").GetString().Should().Contain(entitlementKey);
+        if (toolName == GeocodeTool.ToolName)
+        {
+            structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("PreconditionFailed");
+            StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.GeocodeOutputSchema);
+        }
     }
 
     private static ServiceProvider BuildServices(
@@ -277,5 +285,15 @@ public sealed class McpLocationToolTests
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static void StructuredContentShouldMatchOutputSchema(JsonElement result, JsonElement outputSchema)
+    {
+        var schema = JSchema.Parse(outputSchema.GetRawText());
+        var payload = JToken.Parse(result.GetProperty("structuredContent").GetRawText());
+
+        payload.IsValid(schema, out IList<string> errors).Should().BeTrue(
+            "structuredContent must match the advertised outputSchema. Errors: {0}",
+            string.Join("; ", errors));
     }
 }

@@ -27,8 +27,8 @@ MCP-specific test data lives in `tests/seed/mcp.yaml`. It follows the project's 
 
 | Requirement | Data |
 |-------------|------|
-| Multi-service listing | `test_service_mcp` service with layer 10 (layer 10 is also bound to `test_service` at order 1) |
-| Polygon layer | Layer 10 (`Polygon` geometry type), 5 polygon features (objectids 1001–1005) |
+| Multi-service listing | `test_service_mcp` service with service-local layer `0`, backed by storage layer `10` (storage layer `10` is also bound to `test_service` at order 1) |
+| Polygon layer | Storage layer 10 (`Polygon` geometry type), 5 polygon features (objectids 1001–1005) |
 | Point features for stats | 15 point features in layer 0 (objectids 10–24) with `count` (Integer) and `ratio` (Double) |
 | Statistics fields | `count`: sum=725, min=10, max=100; `ratio`: sum=76.5, min=1.1, max=10.5 |
 | Known spatial extent | All features within lon -122.50…-122.35, lat 37.70…37.84 (WGS84) |
@@ -41,7 +41,11 @@ MCP-specific test data lives in `tests/seed/mcp.yaml`. It follows the project's 
 
 ## CI jobs
 
-> **Current status:** the `honua-server` CI jobs and seed data are landed, but the certification scripts (`test:certification`, `test:certification:artifact`, `test:llm-smoke`) are not yet present in `honua-sdk-js` `trunk`. Until those scripts are landed, the jobs skip with a CI warning annotation and produce no certification artifacts. See [Known gaps](#known-gaps).
+The `honua-server` CI jobs checkout `honua-sdk-js` at the pinned `MCP_SDK_REF`
+from `.github/workflows/ci.yml` unless a manual `workflow_dispatch` run
+overrides it. The setup action still guards script availability in the selected
+SDK ref, so manual replays against older SDK commits skip cleanly with warning
+annotations instead of failing before the server starts.
 
 ### mcp-certification
 
@@ -51,13 +55,15 @@ MCP-specific test data lives in `tests/seed/mcp.yaml`. It follows the project's 
 - **Artifact:** `mcp-certification-{transport}`, 30-day retention.
 - **Ref strategy:** the SDK ref is controlled by the `MCP_SDK_REF` env var at the top of `ci.yml`. When set to a branch name, certification runs are useful for development but the artifacts are **not reproducible release evidence** because the same server commit may exercise different SDK test code over time. For release-grade certification, pin `MCP_SDK_REF` to a specific tag or commit SHA (the current value is a pinned commit). The CI job emits a warning annotation when the ref appears to be a branch name rather than a pinned ref. The `workflow_dispatch` `sdk_ref` input overrides the env var for one-off manual replays.
 - **Script guard:** the `setup-honua-mcp` action inspects the SDK `package.json` for `test:certification`, `test:certification:artifact`, and `test:llm-smoke` **before** any heavy setup. If neither `test:certification` nor `test:llm-smoke` is found (e.g. SDK-side work not yet landed), the action skips the server build, database seed, and `npm ci` entirely; the job emits a warning annotation and completes without failure. Artifact generation and upload are also gated on the action's `cert-available` and `cert-artifact-available` outputs, so no artifacts are produced when certification was skipped or the artifact script is absent. If `test:certification` is present but `test:certification:artifact` is missing (partial SDK landing), the job emits a warning annotation noting that no evidence artifacts were produced — this ensures the release-evidence gap is visible even though the certification tests themselves passed.
+- **Layer ids:** `HONUA_MCP_LAYER_ID` is the service-local layer index returned by `honua_list_layers` for `test_service_mcp` (`0`), not the backing storage layer id (`10`).
 - **Output:** exposes a `cert_ran` output (`true`/`false`) consumed by downstream jobs.
 
 ### mcp-llm-smoke
 
 - **Depends on:** `mcp-certification` (only runs when `cert_ran == 'true'` — skipped entirely when certification scripts are absent).
 - **`continue-on-error: true`** — failures annotate but do not gate.
-- **Test runner skips scenarios** when `OPENAI_API_KEY` secret is empty or unset.
+- **Live model driver:** when `BEDROCK_AWS_ACCESS_KEY_ID` and `BEDROCK_AWS_SECRET_ACCESS_KEY` are configured, CI enables the SDK Bedrock driver with `HONUA_EVAL_BEDROCK=1`. The default model is `us.anthropic.claude-sonnet-4-5-20250929-v1:0` in `us-west-2`; override with repository variables `HONUA_MCP_SMOKE_BEDROCK_MODEL` and `HONUA_MCP_SMOKE_AWS_REGION`.
+- **Fallback:** when Bedrock secrets are absent, the smoke lane runs without the live Bedrock driver and emits a notice. The job remains best-effort.
 - **Artifact:** `mcp-llm-smoke-transcripts`, 30-day retention.
 
 ## How the seed is applied in CI
@@ -99,7 +105,9 @@ bash tests/seed/apply-yaml-seed.sh tests/seed/mcp.yaml
 | statistics-workflow | `honua_statistics` | LLM calls statistics, answer contains numeric result |
 | error-recovery | `honua_query_features` (bad layer) → recovery call | LLM handles error, successfully makes follow-up call |
 
-Provider: OpenAI `gpt-4o`, temperature 0, 30-second per-scenario timeout.
+Provider: deterministic control plus Claude via Amazon Bedrock when
+`HONUA_EVAL_BEDROCK=1`; the Bedrock model and region are controlled by the CI
+environment variables above.
 
 ## Environment variables
 
@@ -110,14 +118,16 @@ Provider: OpenAI `gpt-4o`, temperature 0, 30-second per-scenario timeout.
 | `HONUA_SERVICE_ID` | cert + smoke | Yes (default: `test_service`) |
 | `HONUA_MCP_SERVICE_ID` | cert | Yes (default: `test_service_mcp`) |
 | `HONUA_LAYER_ID` | cert + smoke | Yes (default: `0`) |
-| `HONUA_MCP_LAYER_ID` | cert | Yes (default: `10`) |
+| `HONUA_MCP_LAYER_ID` | cert | Yes (default: `0`, service-local layer id for `test_service_mcp`) |
 | `HONUA_DEV_AUTH` | cert + smoke | No (default: `true` in CI) |
-| `OPENAI_API_KEY` | smoke only | No (skip if unset) |
+| `BEDROCK_AWS_ACCESS_KEY_ID` / `BEDROCK_AWS_SECRET_ACCESS_KEY` | smoke only | No (enables live Bedrock driver when both are set) |
+| `HONUA_MCP_SMOKE_BEDROCK_MODEL` | smoke only | No repository variable override for the Bedrock model |
+| `HONUA_MCP_SMOKE_AWS_REGION` | smoke only | No repository variable override for the Bedrock region |
 
 ## Known gaps
 
 - **Auth certification:** skipped when `HONUA_DEV_AUTH=true`. Full auth testing requires a separate CI lane with auth enforcement.
-- **SDK scripts prerequisite:** CI jobs skip cleanly when `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts are not present in the checked-out SDK ref. Land those scripts in `honua-sdk-js` before expecting certification results.
+- **SDK scripts prerequisite for manual replays:** CI jobs skip cleanly when `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts are not present in the checked-out SDK ref. Keep `MCP_SDK_REF` pinned to an SDK commit that contains the certification scripts for release-evidence runs.
 - **Cache-invalidation testing:** deferred until anonymous writes are available.
 - **C# SDK interop lane:** deferred to follow-up issue.
 - **Schema source consolidation:** `tests/seed/base-schema.sql` and `tests/python/shared/postgis.py` define CI and local-bootstrap catalog schemas independently. They already diverge on some columns. A future pass should have one consume the other to prevent further drift.
