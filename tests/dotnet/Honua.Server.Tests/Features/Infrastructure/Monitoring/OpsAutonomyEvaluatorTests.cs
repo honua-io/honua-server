@@ -80,6 +80,69 @@ public sealed class OpsAutonomyEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateRoute_FreshStore_UsesSameConfigBackedEffectivePolicyAsOperatorProjection()
+    {
+        var options = new OpsAutonomyOptions
+        {
+            DefaultMaxAutoActionsPerWindow = 8,
+            DefaultWindowSeconds = 1200,
+            DefaultMaxBlastRadius = 9,
+            Rules = new Dictionary<string, OpsAutonomyRuleOptions>(StringComparer.Ordinal)
+            {
+                [Rule] = new()
+                {
+                    Mode = nameof(OpsAutonomyMode.AutoApply),
+                    MaxAutoActionsPerWindow = 3,
+                    WindowSeconds = 900,
+                    MaxBlastRadius = 2,
+                },
+            },
+        };
+        var store = new InMemoryOpsAutonomyPolicyStore();
+        var sut = new OpsAutonomyEvaluator(
+            new StaticOptionsMonitor<OpsAutonomyOptions>(options),
+            store,
+            new TestActionSafetyCatalog(new HashSet<string>(StringComparer.Ordinal) { RedriveAction }));
+
+        var decision = await sut.EvaluateRouteAsync(Request(), RequiresApproval(), RedriveAction);
+        var projected = OpsAutonomyPolicyDefaults.Resolve(Rule, options, persisted: null);
+
+        decision.ShouldAutoApply.Should().BeTrue();
+        decision.Policy.Should().Be(projected);
+        projected.Mode.Should().Be(OpsAutonomyMode.AutoApply);
+        projected.MaxAutoActionsPerWindow.Should().Be(3);
+        projected.Window.Should().Be(TimeSpan.FromSeconds(900));
+        projected.MaxBlastRadius.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task EvaluateRoute_ConfigChangesBeforePersistence_UsesLatestEffectivePolicy()
+    {
+        var options = new StaticOptionsMonitor<OpsAutonomyOptions>(new OpsAutonomyOptions());
+        var store = new InMemoryOpsAutonomyPolicyStore();
+        var sut = new OpsAutonomyEvaluator(
+            options,
+            store,
+            new TestActionSafetyCatalog(new HashSet<string>(StringComparer.Ordinal) { RedriveAction }));
+
+        var before = await sut.EvaluateRouteAsync(Request(), RequiresApproval(), RedriveAction);
+        options.Set(new OpsAutonomyOptions
+        {
+            Rules = new Dictionary<string, OpsAutonomyRuleOptions>(StringComparer.Ordinal)
+            {
+                [Rule] = new() { Mode = nameof(OpsAutonomyMode.AutoApply) },
+            },
+        });
+        var after = await sut.EvaluateRouteAsync(Request(), RequiresApproval(), RedriveAction);
+
+        before.ShouldAutoApply.Should().BeFalse();
+        before.Policy!.Mode.Should().Be(OpsAutonomyMode.ProposeOnly);
+        after.ShouldAutoApply.Should().BeTrue();
+        after.Policy!.Mode.Should().Be(OpsAutonomyMode.AutoApply);
+        (await store.GetPolicyAsync(Rule)).Should().BeNull("configuration-backed policy remains non-persisted");
+    }
+
+    [Fact]
     public async Task EvaluateRoute_RateCapExceeded_ReturnsProposeOnly()
     {
         var store = new InMemoryOpsAutonomyPolicyStore();
@@ -152,6 +215,34 @@ public sealed class OpsAutonomyEvaluatorTests
         listed.Single().TrackRecord.ProposalsRaised.Should().Be(1);
     }
 
+    [Fact]
+    public async Task RecordProposalResolution_MalformedLegacyMetadata_IsIgnored()
+    {
+        var store = new InMemoryOpsAutonomyPolicyStore();
+        var sut = CreateEvaluator(store);
+        var now = DateTimeOffset.UtcNow;
+        var proposal = new OperationProposal
+        {
+            ProposalId = "proposal-legacy",
+            Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.Rejected,
+            AutonomyMetadata = new OperationProposalAutonomyMetadata
+            {
+                FindingId = "finding-legacy",
+                Rule = " ",
+                ActionMarkedAutoSafe = true,
+            },
+            ResolvedBy = "human-reviewer",
+            ResolvedAt = now,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+
+        await sut.RecordProposalResolutionAsync(proposal, OpsAutonomyProposalResolution.Rejected);
+
+        (await store.ListPoliciesAsync()).Should().BeEmpty();
+    }
+
     private static OpsAutonomyEvaluator CreateEvaluator(
         InMemoryOpsAutonomyPolicyStore store,
         IReadOnlySet<string>? safeActions = null)
@@ -187,6 +278,7 @@ public sealed class OpsAutonomyEvaluatorTests
             {
                 FindingId = findingId,
                 Rule = Rule,
+                ActionDiscriminator = RedriveAction,
                 ActionMarkedAutoSafe = actionMarkedAutoSafe,
                 BlastRadius = blastRadius,
                 EvidenceRefs = ["test"],
@@ -210,7 +302,9 @@ public sealed class OpsAutonomyEvaluatorTests
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
-        public T CurrentValue { get; } = value;
+        public T CurrentValue { get; private set; } = value;
+
+        public void Set(T next) => CurrentValue = next;
 
         public T Get(string? name) => CurrentValue;
 

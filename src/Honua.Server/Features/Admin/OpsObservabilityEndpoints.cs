@@ -181,7 +181,10 @@ internal static class OpsObservabilityEndpoints
         return Results.Json(response, OpsObservabilityJsonContext.Default.OpsFindingProposeResponse);
     }
 
-    private static async Task<IResult> HandleListAutonomyPolicies(HttpContext context)
+    private static async Task<IResult> HandleListAutonomyPolicies(
+        [FromServices] IOptionsMonitor<OpsAutonomyOptions> options,
+        [FromServices] IOpsFindingsService findingsService,
+        HttpContext context)
     {
         var store = ResolveAutonomyStore(context);
         if (store is null)
@@ -190,16 +193,39 @@ internal static class OpsObservabilityEndpoints
         }
 
         var snapshots = await store.ListPoliciesAsync(context.RequestAborted).ConfigureAwait(false);
+        var rules = await DiscoverAutonomyRulesAsync(
+                snapshots,
+                options.CurrentValue,
+                findingsService,
+                context.RequestAborted)
+            .ConfigureAwait(false);
+        var snapshotsByRule = snapshots.ToDictionary(item => item.Policy.Rule, StringComparer.Ordinal);
         var response = new OpsAutonomyPolicyListResponse
         {
             GeneratedAt = DateTimeOffset.UtcNow,
-            Policies = snapshots.Select(MapPolicySnapshot).ToArray(),
+            Policies = rules.Select(rule =>
+            {
+                snapshotsByRule.TryGetValue(rule, out var storedSnapshot);
+                var persisted = storedSnapshot is { IsPersisted: true }
+                    ? storedSnapshot.Policy
+                    : null;
+                return MapPolicySnapshot(new OpsAutonomyPolicySnapshot
+                {
+                    Policy = OpsAutonomyPolicyDefaults.Resolve(rule, options.CurrentValue, persisted),
+                    IsPersisted = persisted is not null,
+                    TrackRecord = storedSnapshot?.TrackRecord ?? EmptyTrack(rule),
+                });
+            }).ToArray(),
         };
 
         return Results.Json(response, OpsObservabilityJsonContext.Default.OpsAutonomyPolicyListResponse);
     }
 
-    private static async Task<IResult> HandleGetAutonomyPolicy(string rule, HttpContext context)
+    private static async Task<IResult> HandleGetAutonomyPolicy(
+        string rule,
+        [FromServices] IOptionsMonitor<OpsAutonomyOptions> options,
+        [FromServices] IOpsFindingsService findingsService,
+        HttpContext context)
     {
         if (!TryValidateRule(rule, out var error))
         {
@@ -213,7 +239,15 @@ internal static class OpsObservabilityEndpoints
         }
 
         var policy = await store.GetPolicyAsync(rule, context.RequestAborted).ConfigureAwait(false);
-        if (policy is null)
+        var snapshots = await store.ListPoliciesAsync(context.RequestAborted).ConfigureAwait(false);
+        var storedSnapshot = snapshots.FirstOrDefault(item => string.Equals(item.Policy.Rule, rule, StringComparison.Ordinal));
+        var knownRules = await DiscoverAutonomyRulesAsync(
+                snapshots,
+                options.CurrentValue,
+                findingsService,
+                context.RequestAborted)
+            .ConfigureAwait(false);
+        if (policy is null && !knownRules.Contains(rule, StringComparer.Ordinal))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status404NotFound,
@@ -221,13 +255,12 @@ internal static class OpsObservabilityEndpoints
                 $"Autonomy policy for rule '{rule}' was not found.");
         }
 
-        var snapshots = await store.ListPoliciesAsync(context.RequestAborted).ConfigureAwait(false);
-        var snapshot = snapshots.FirstOrDefault(item => string.Equals(item.Policy.Rule, rule, StringComparison.Ordinal))
-            ?? new OpsAutonomyPolicySnapshot
-            {
-                Policy = policy,
-                TrackRecord = EmptyTrack(rule),
-            };
+        var snapshot = new OpsAutonomyPolicySnapshot
+        {
+            Policy = OpsAutonomyPolicyDefaults.Resolve(rule, options.CurrentValue, policy),
+            IsPersisted = policy is not null,
+            TrackRecord = storedSnapshot?.TrackRecord ?? EmptyTrack(rule),
+        };
 
         return Results.Json(MapPolicySnapshot(snapshot), OpsObservabilityJsonContext.Default.OpsAutonomyPolicyResponse);
     }
@@ -274,8 +307,10 @@ internal static class OpsObservabilityEndpoints
             return AutonomyStoreUnavailable();
         }
 
-        var existing = await store.GetPolicyAsync(rule, context.RequestAborted).ConfigureAwait(false)
-            ?? BuildDefaultPolicy(rule, options.CurrentValue);
+        var existing = OpsAutonomyPolicyDefaults.Resolve(
+            rule,
+            options.CurrentValue,
+            await store.GetPolicyAsync(rule, context.RequestAborted).ConfigureAwait(false));
         var updated = existing with
         {
             Rule = rule,
@@ -394,39 +429,48 @@ internal static class OpsObservabilityEndpoints
         return false;
     }
 
-    private static OpsAutonomyPolicy BuildDefaultPolicy(string rule, OpsAutonomyOptions options)
+    private static async Task<IReadOnlyList<string>> DiscoverAutonomyRulesAsync(
+        IReadOnlyList<OpsAutonomyPolicySnapshot> snapshots,
+        OpsAutonomyOptions options,
+        IOpsFindingsService findingsService,
+        CancellationToken cancellationToken)
     {
-        var mode = OpsAutonomyMode.ProposeOnly;
-        var maxActions = options.DefaultMaxAutoActionsPerWindow;
-        var windowSeconds = options.DefaultWindowSeconds;
-        var maxBlastRadius = options.DefaultMaxBlastRadius;
-
-        if (options.Rules.TryGetValue(rule, out var ruleOptions))
+        var rules = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var snapshot in snapshots)
         {
-            if (Enum.TryParse<OpsAutonomyMode>(ruleOptions.Mode, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
+            if (OpsAutonomyPolicyDefaults.IsValidRule(snapshot.Policy.Rule))
             {
-                mode = parsed;
+                rules.Add(snapshot.Policy.Rule);
             }
-
-            maxActions = ruleOptions.MaxAutoActionsPerWindow ?? maxActions;
-            windowSeconds = ruleOptions.WindowSeconds ?? windowSeconds;
-            maxBlastRadius = ruleOptions.MaxBlastRadius ?? maxBlastRadius;
         }
 
-        return new OpsAutonomyPolicy
+        foreach (var configuredRule in options.Rules.Keys)
         {
-            Rule = rule,
-            Mode = mode,
-            MaxAutoActionsPerWindow = Math.Max(1, maxActions),
-            Window = TimeSpan.FromSeconds(Math.Max(1, windowSeconds)),
-            MaxBlastRadius = Math.Max(1, maxBlastRadius),
-        };
+            if (OpsAutonomyPolicyDefaults.IsValidRule(configuredRule))
+            {
+                rules.Add(configuredRule);
+            }
+        }
+
+        rules.UnionWith(OpsAutonomyPolicyDefaults.BuiltInAutoSafeRules);
+        var activeFindings = await findingsService.EvaluateAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var finding in activeFindings)
+        {
+            if (finding.RecommendedAction is { AutoSafe: true } &&
+                OpsAutonomyPolicyDefaults.IsValidRule(finding.Rule))
+            {
+                rules.Add(finding.Rule);
+            }
+        }
+
+        return rules.OrderBy(static rule => rule, StringComparer.Ordinal).ToArray();
     }
 
     private static OpsAutonomyPolicyResponse MapPolicySnapshot(OpsAutonomyPolicySnapshot snapshot)
         => new()
         {
             Rule = snapshot.Policy.Rule,
+            IsPersisted = snapshot.IsPersisted,
             Mode = snapshot.Policy.Mode.ToString(),
             MaxAutoActionsPerWindow = snapshot.Policy.MaxAutoActionsPerWindow,
             WindowSeconds = (int)Math.Ceiling(snapshot.Policy.Window.TotalSeconds),

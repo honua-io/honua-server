@@ -110,6 +110,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         if (proposal.Status != OperationProposalStatus.AwaitingApproval)
         {
+            await ReconcileAutonomyProposalResolutionAsync(proposal, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException(
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
         }
@@ -170,6 +171,11 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
 
         await PersistResolutionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await RecordAutonomyProposalResolutionAsync(
+                resolved,
+                OpsAutonomyProposalResolution.Approved,
+                cancellationToken)
+            .ConfigureAwait(false);
         await WriteAuditAsync(resolved, "operation.applied", approvedBy, AuditOutcome.Success, cancellationToken)
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
@@ -195,6 +201,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         if (proposal.Status != OperationProposalStatus.AwaitingApproval)
         {
+            await ReconcileAutonomyProposalResolutionAsync(proposal, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException(
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be rejected.");
         }
@@ -209,6 +216,11 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
 
         await PersistResolutionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await RecordAutonomyProposalResolutionAsync(
+                resolved,
+                OpsAutonomyProposalResolution.Rejected,
+                cancellationToken)
+            .ConfigureAwait(false);
         await WriteAuditAsync(resolved, "operation.rejected", rejectedBy, AuditOutcome.Denied, cancellationToken)
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
@@ -291,6 +303,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             RequestedByAgent = request.RequestedByAgent,
             Plan = plan,
             GuardrailDecision = decision,
+            AutonomyMetadata = NormalizeAutonomyContext(request.AutonomyContext, actionDiscriminator: request.ActionDiscriminator),
             Audit = new OperationAuditInfo
             {
                 RequestedBy = request.RequestedBy,
@@ -502,6 +515,18 @@ internal sealed partial class OperationGateway : IOperationGateway
         IdempotencyKey = proposal.Audit.IdempotencyKey,
         Plan = proposal.Plan,
         ExecutionPayload = proposal.Plan.ExecutionPayload,
+        ActionDiscriminator = proposal.AutonomyMetadata?.ActionDiscriminator,
+        AutonomyContext = proposal.AutonomyMetadata is null
+            ? null
+            : new OperationGatewayAutonomyContext
+            {
+                FindingId = proposal.AutonomyMetadata.FindingId,
+                Rule = proposal.AutonomyMetadata.Rule,
+                ActionDiscriminator = proposal.AutonomyMetadata.ActionDiscriminator,
+                ActionMarkedAutoSafe = proposal.AutonomyMetadata.ActionMarkedAutoSafe,
+                BlastRadius = proposal.AutonomyMetadata.BlastRadius,
+                EvidenceRefs = proposal.AutonomyMetadata.EvidenceRefs,
+            },
     };
 
     private async Task<OpsAutonomyRouteDecision> EvaluateAutonomyAsync(
@@ -889,6 +914,39 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
     }
 
+    private async Task RecordAutonomyProposalResolutionAsync(
+        OperationProposal proposal,
+        OpsAutonomyProposalResolution resolution,
+        CancellationToken cancellationToken)
+    {
+        if (proposal.AutonomyMetadata is null)
+        {
+            return;
+        }
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var evaluator = scope.ServiceProvider.GetService<IOpsAutonomyEvaluator>();
+        if (evaluator is not null)
+        {
+            await evaluator.RecordProposalResolutionAsync(proposal, resolution, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private Task ReconcileAutonomyProposalResolutionAsync(
+        OperationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        if (proposal.ResolvedAt is null || string.IsNullOrWhiteSpace(proposal.ResolvedBy))
+        {
+            return Task.CompletedTask;
+        }
+
+        var resolution = proposal.Status == OperationProposalStatus.Rejected
+            ? OpsAutonomyProposalResolution.Rejected
+            : OpsAutonomyProposalResolution.Approved;
+        return RecordAutonomyProposalResolutionAsync(proposal, resolution, cancellationToken);
+    }
+
     // The gateway is a singleton but IAuditLog is scoped (PostgresAuditLog needs a
     // per-operation DB connection), so resolve it from a fresh scope per audit write
     // rather than capturing it as a constructor dependency. Capturing the scoped
@@ -915,7 +973,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 Action = action,
                 Outcome = outcome,
                 CorrelationId = proposal.Audit.CorrelationId ?? proposal.ProposalId,
-                Details = $"{{\"kind\":\"{proposal.Kind}\",\"status\":\"{proposal.Status}\"}}",
+                Details = BuildProposalAuditDetails(proposal),
             },
             cancellationToken).ConfigureAwait(false);
     }
@@ -951,18 +1009,63 @@ internal sealed partial class OperationGateway : IOperationGateway
                     ?? operationId
                     ?? request.AutonomyContext?.FindingId
                     ?? Guid.NewGuid().ToString("N"),
-                Details = BuildAutonomyAuditDetails(request, message),
+                Details = BuildAutonomyAuditDetails(request, message, operationId),
             },
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static string BuildAutonomyAuditDetails(OperationGatewayRequest request, string? message)
+    private static string BuildAutonomyAuditDetails(
+        OperationGatewayRequest request,
+        string? message,
+        string? operationId)
         => "{\"kind\":\"" + JsonEscape(request.Kind.ToString())
             + "\",\"rule\":\"" + JsonEscape(request.AutonomyContext?.Rule)
             + "\",\"findingId\":\"" + JsonEscape(request.AutonomyContext?.FindingId)
+            + "\",\"actionDiscriminator\":\"" + JsonEscape(request.ActionDiscriminator ?? request.AutonomyContext?.ActionDiscriminator)
+            + "\",\"operationId\":\"" + JsonEscape(operationId)
             + "\",\"evidenceRefs\":" + BuildJsonArray(request.AutonomyContext?.EvidenceRefs)
             + ",\"message\":\"" + JsonEscape(message)
             + "\"}";
+
+    private static string BuildProposalAuditDetails(OperationProposal proposal)
+        => "{\"kind\":\"" + JsonEscape(proposal.Kind.ToString())
+            + "\",\"status\":\"" + JsonEscape(proposal.Status.ToString())
+            + "\",\"rule\":\"" + JsonEscape(proposal.AutonomyMetadata?.Rule)
+            + "\",\"findingId\":\"" + JsonEscape(proposal.AutonomyMetadata?.FindingId)
+            + "\",\"actionDiscriminator\":\"" + JsonEscape(proposal.AutonomyMetadata?.ActionDiscriminator)
+            + "\"}";
+
+    private static OperationProposalAutonomyMetadata? NormalizeAutonomyContext(
+        OperationGatewayAutonomyContext? context,
+        string? actionDiscriminator)
+    {
+        if (context is null ||
+            !IsBoundedIdentifier(context.FindingId, 256) ||
+            !IsBoundedIdentifier(context.Rule, 128))
+        {
+            return null;
+        }
+
+        return new OperationProposalAutonomyMetadata
+        {
+            FindingId = context.FindingId,
+            Rule = context.Rule,
+            ActionDiscriminator = IsBoundedIdentifier(actionDiscriminator ?? context.ActionDiscriminator, 128)
+                ? actionDiscriminator ?? context.ActionDiscriminator
+                : null,
+            ActionMarkedAutoSafe = context.ActionMarkedAutoSafe,
+            BlastRadius = Math.Max(1, context.BlastRadius),
+            EvidenceRefs = context.EvidenceRefs
+                .Where(static value => IsBoundedIdentifier(value, 256))
+                .Take(16)
+                .ToArray(),
+        };
+    }
+
+    private static bool IsBoundedIdentifier(string? value, int maxLength)
+        => !string.IsNullOrWhiteSpace(value)
+            && value.Length <= maxLength
+            && value.All(static ch => ch is >= ' ' and <= '~');
 
     private async Task NotifyAutonomyAsync(
         OperationGatewayRequest request,

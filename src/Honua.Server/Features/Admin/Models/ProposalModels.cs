@@ -25,6 +25,15 @@ public sealed record ProposalSummaryResponse
     /// <summary>Requesting agent identifier when applicable.</summary>
     public string? RequestedByAgent { get; init; }
 
+    /// <summary>Finding identifier when the proposal originated from deterministic ops findings.</summary>
+    public string? FindingId { get; init; }
+
+    /// <summary>Finding rule when the proposal originated from deterministic ops findings.</summary>
+    public string? AutonomyRule { get; init; }
+
+    /// <summary>Registered action discriminator without its hidden execution payload.</summary>
+    public string? ActionDiscriminator { get; init; }
+
     /// <summary>Single-line summary of the proposed change.</summary>
     public required string Summary { get; init; }
 
@@ -57,6 +66,15 @@ public sealed record ProposalDetailResponse
 
     /// <summary>Requesting agent identifier when applicable.</summary>
     public string? RequestedByAgent { get; init; }
+
+    /// <summary>Finding identifier when the proposal originated from deterministic ops findings.</summary>
+    public string? FindingId { get; init; }
+
+    /// <summary>Finding rule when the proposal originated from deterministic ops findings.</summary>
+    public string? AutonomyRule { get; init; }
+
+    /// <summary>Registered action discriminator without its hidden execution payload.</summary>
+    public string? ActionDiscriminator { get; init; }
 
     /// <summary>Single-line summary of the proposed change.</summary>
     public required string Summary { get; init; }

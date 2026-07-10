@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Globalization;
-using System.Text.Json;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -282,7 +281,8 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             foreach (var item in page.Items)
             {
                 var value = MapAuditRecord(item);
-                if (MatchesFilter(filter, value))
+                if (MatchesFilter(filter, value, matchResourceRef: false) &&
+                    MatchesAuditResourceFilter(resourceFilter, value.ResourceRef))
                 {
                     results.Add(value);
                     if (results.Count == pageSize)
@@ -302,6 +302,27 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         }
 
         return results;
+    }
+
+    private static bool MatchesAuditResourceFilter(
+        AuditResourceFilter? filter,
+        string? resourceRef)
+    {
+        if (filter is null)
+        {
+            return true;
+        }
+
+        if (filter.ResourceId is not null)
+        {
+            return string.Equals(
+                resourceRef,
+                $"{filter.ResourceType}/{filter.ResourceId}",
+                StringComparison.Ordinal);
+        }
+
+        return string.Equals(resourceRef, filter.ResourceType, StringComparison.Ordinal) ||
+            (resourceRef?.StartsWith(filter.ResourceType + "/", StringComparison.Ordinal) ?? false);
     }
 
     private async Task<IReadOnlyList<OperateEvent>> LoadJobsAsync(
@@ -831,27 +852,8 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             Actor = record.Actor,
             CorrelationId = record.CorrelationId,
             ResourceRef = ref_,
-            DetailsJson = TryGetJsonDetails(record.Details)
+            DetailsJson = AuditDetailsProjection.Project(record),
         };
-    }
-
-    private static string? TryGetJsonDetails(string details)
-    {
-        if (string.IsNullOrWhiteSpace(details))
-        {
-            return null;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(details);
-            _ = document.RootElement.ValueKind;
-            return details;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 
     private static OperateEvent MapProgress(IOperationProgress progress)

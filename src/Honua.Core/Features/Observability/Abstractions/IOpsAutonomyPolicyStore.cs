@@ -92,4 +92,17 @@ public interface IOpsAutonomyPolicyStore
     /// <param name="rule">Rule identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task IncrementProposalRaisedAsync(string rule, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records an idempotent human proposal resolution and increments the matching rule counter.
+    /// </summary>
+    /// <param name="rule">Stable finding rule identifier captured on the proposal.</param>
+    /// <param name="proposalId">Stable proposal identifier used as the exactly-once key.</param>
+    /// <param name="resolution">Human approval or rejection outcome.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task RecordProposalResolutionAsync(
+        string rule,
+        string proposalId,
+        OpsAutonomyProposalResolution resolution,
+        CancellationToken cancellationToken = default);
 }

@@ -46,6 +46,18 @@ public enum OpsAutonomyActionOutcome
 }
 
 /// <summary>
+/// Human resolution recorded for a finding-originated operation proposal.
+/// </summary>
+public enum OpsAutonomyProposalResolution
+{
+    /// <summary>The proposal was approved by an operator.</summary>
+    Approved = 0,
+
+    /// <summary>The proposal was rejected by an operator.</summary>
+    Rejected = 1,
+}
+
+/// <summary>
 /// Durable autonomy policy for a single deterministic ops-finding rule.
 /// </summary>
 public sealed record OpsAutonomyPolicy
@@ -130,6 +142,12 @@ public sealed record OpsAutonomyPolicySnapshot
 {
     /// <summary>Gets the effective or durable policy.</summary>
     public required OpsAutonomyPolicy Policy { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="Policy"/> is an explicit durable override.
+    /// False means the policy is an effective configuration/default projection.
+    /// </summary>
+    public bool IsPersisted { get; init; }
 
     /// <summary>Gets the aggregate outcome track record for the rule.</summary>
     public required OpsAutonomyTrackRecord TrackRecord { get; init; }
