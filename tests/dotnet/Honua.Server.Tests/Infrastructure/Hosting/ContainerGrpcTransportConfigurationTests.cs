@@ -24,12 +24,13 @@ public sealed class ContainerGrpcTransportConfigurationTests
     public void ComposeFile_MapsNativeGrpcPortToHttp2Endpoint()
     {
         var compose = ReadRepoFile("docker-compose.yml");
+        var honuaService = GetComposeServiceBlock(compose, "honua", "console");
 
-        Assert.Contains("${HONUA_HTTP_PORT:-8080}:8080\"", compose, StringComparison.Ordinal);
-        Assert.Contains("${HONUA_GRPC_PORT:-8081}:8081\"", compose, StringComparison.Ordinal);
-        Assert.Contains("Kestrel__Endpoints__Http__Protocols: \"Http1\"", compose, StringComparison.Ordinal);
-        Assert.Contains("Kestrel__Endpoints__Grpc__Protocols: \"Http2\"", compose, StringComparison.Ordinal);
-        Assert.DoesNotContain("ASPNETCORE_URLS", compose, StringComparison.Ordinal);
+        Assert.Contains("${HONUA_HTTP_PORT:-8080}:8080\"", honuaService, StringComparison.Ordinal);
+        Assert.Contains("${HONUA_GRPC_PORT:-8081}:8081\"", honuaService, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Http__Protocols: \"Http1\"", honuaService, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Grpc__Protocols: \"Http2\"", honuaService, StringComparison.Ordinal);
+        Assert.DoesNotContain("ASPNETCORE_URLS", honuaService, StringComparison.Ordinal);
     }
 
     [Fact]
