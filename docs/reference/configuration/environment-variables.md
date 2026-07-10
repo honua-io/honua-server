@@ -93,7 +93,7 @@ OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generi
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `FileStorage__Provider` | `Local` | File storage backend: `Local` or S3-compatible (`AwsS3`). |
-| `FileStorage__LocalStorage__BasePath` | `/var/lib/honua/storage` | Root directory for durable local file storage. Development overrides this to `/tmp/honua-storage`; container deployments must mount the production path on persistent storage. |
+| `FileStorage__LocalStorage__BasePath` | `/tmp/honua-storage` | Root directory for local file storage. The repo Compose path overrides this to `/var/lib/honua/storage` and mounts a persistent named volume; production deployments using Local must likewise choose a durable mount. |
 | `FileStorage__MaxFileSizeBytes` | `1073741824` | Maximum stored file size (1 GiB shipped default). |
 | `FileStorage__AwsS3__BucketName` | — | S3 bucket name. |
 | `FileStorage__AwsS3__Region` | `us-east-1` | S3 region. |
