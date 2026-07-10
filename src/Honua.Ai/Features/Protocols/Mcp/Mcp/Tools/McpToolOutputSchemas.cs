@@ -35,6 +35,40 @@ internal static class McpToolOutputSchemas
         }
         """;
 
+    private const string ToolErrorBranch = """
+        {
+          "required": ["status", "code", "message", "error"]
+        }
+        """;
+
+    private static string ToolErrorProperties => $$"""
+            "status": { "type": "string", "const": "error" },
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "requiresReauthentication": { "type": ["boolean", "null"] },
+            "approvalRequired": { "type": ["boolean", "null"] },
+            "policyRef": { "type": ["string", "null"] },
+            "conflictingJobId": { "type": ["string", "null"] },
+            "retryable": { "type": ["boolean", "null"] },
+            "violations": {
+              "type": ["array", "null"],
+              "items": {{ValidationViolationDef}}
+            },
+            "error": {
+              "type": "object",
+              "required": ["kind", "message"],
+              "properties": {
+                "kind": { "type": "string" },
+                "message": { "type": "string" },
+                "stepId": { "type": ["string", "null"] },
+                "violations": {
+                  "type": ["array", "null"],
+                  "items": {{ValidationViolationDef}}
+                }
+              }
+            }
+        """;
+
     /// <summary>Schema for <see cref="Models.McpValidatePlanOutput"/>.</summary>
     public static readonly JsonElement ValidatePlanOutputSchema = Parse(
         $$"""
@@ -309,10 +343,13 @@ internal static class McpToolOutputSchemas
 
     /// <summary>Schema for <c>McpGeocodeOutput</c>.</summary>
     public static readonly JsonElement GeocodeOutputSchema = Parse(
-        """
+        $$"""
         {
           "type": "object",
-          "required": ["provider", "candidates"],
+          "oneOf": [
+            { "required": ["provider", "candidates"] },
+            {{ToolErrorBranch}}
+          ],
           "properties": {
             "provider": { "type": "string" },
             "candidates": {
@@ -329,7 +366,8 @@ internal static class McpToolOutputSchemas
                   "addressType": { "type": ["string", "null"] }
                 }
               }
-            }
+            },
+            {{ToolErrorProperties}}
           }
         }
         """);
@@ -477,10 +515,13 @@ internal static class McpToolOutputSchemas
 
     /// <summary>Schema for <c>McpQueryFeaturesOutput</c>.</summary>
     public static readonly JsonElement QueryFeaturesOutputSchema = Parse(
-        """
+        $$"""
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "returnedCount", "limit", "resultOffset", "exceededTransferLimit"],
+          "oneOf": [
+            { "required": ["serviceId", "layerId", "returnedCount", "limit", "resultOffset", "exceededTransferLimit", "features"] },
+            {{ToolErrorBranch}}
+          ],
           "properties": {
             "serviceId": { "type": "string" },
             "layerId": { "type": "integer" },
@@ -492,15 +533,32 @@ internal static class McpToolOutputSchemas
             },
             "exceededTransferLimit": {
               "type": "boolean",
-              "description": "True when more matching features exist beyond this page. When true, re-issue the same query with resultOffset=nextOffset to fetch the next page."
+              "description": "True when more matching features exist beyond this page. When true, re-issue the same query with cursor=nextCursor or resultOffset=nextOffset to fetch the next page."
             },
             "nextOffset": {
               "type": "integer",
               "description": "Present only when exceededTransferLimit is true: the resultOffset to send on the next request (resultOffset + returnedCount) to page mechanically. Absent on the last page."
             },
+            "nextCursor": {
+              "type": "string",
+              "description": "Present only when exceededTransferLimit is true: the cursor to send on the next request. Mirrors nextOffset as a string for SDK clients."
+            },
             "count": {
               "type": "integer",
-              "description": "Matching feature count. Present only when returnCountOnly=true; features are omitted in that mode."
+              "description": "Matching feature count when known. Normal queries use the canonical query result total; returnCountOnly=true uses CountAsync."
+            },
+            "features": {
+              "type": "array",
+              "description": "MCP-friendly feature projection with attributes under features[].attributes. GeoJSON callers should use geojson.features[].properties.",
+              "items": {
+                "type": "object",
+                "required": ["attributes"],
+                "properties": {
+                  "id": { "type": ["integer", "string", "null"] },
+                  "attributes": { "type": "object" },
+                  "geometry": { "type": ["object", "null"] }
+                }
+              }
             },
             "geojson": {
               "type": "object",
@@ -509,7 +567,59 @@ internal static class McpToolOutputSchemas
                 "type": { "type": "string", "const": "FeatureCollection" },
                 "features": { "type": "array", "items": { "type": "object" } }
               }
-            }
+            },
+            {{ToolErrorProperties}}
+          }
+        }
+        """);
+
+    /// <summary>Schema for <c>McpRenderMapOutput</c>.</summary>
+    public static readonly JsonElement RenderMapOutputSchema = Parse(
+        $$"""
+        {
+          "type": "object",
+          "oneOf": [
+            { "required": ["format", "width", "height", "byteLength", "bbox", "bboxSrid", "layers", "image"] },
+            {{ToolErrorBranch}}
+          ],
+          "properties": {
+            "format": { "type": "string" },
+            "width": { "type": "integer" },
+            "height": { "type": "integer" },
+            "byteLength": { "type": "integer" },
+            "bbox": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": { "type": "number" }
+            },
+            "bboxSrid": { "type": "integer" },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["serviceId", "layerId"],
+                "properties": {
+                  "serviceId": { "type": "string" },
+                  "layerId": { "type": "integer" },
+                  "styleId": { "type": ["string", "null"] }
+                }
+              }
+            },
+            "image": {
+              "type": "object",
+              "required": ["format", "width", "height", "byteLength", "inlined"],
+              "properties": {
+                "format": { "type": "string" },
+                "width": { "type": "integer" },
+                "height": { "type": "integer" },
+                "byteLength": { "type": "integer" },
+                "uri": { "type": ["string", "null"] },
+                "base64": { "type": ["string", "null"] },
+                "inlined": { "type": "boolean" }
+              }
+            },
+            {{ToolErrorProperties}}
           }
         }
         """);

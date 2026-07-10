@@ -1517,7 +1517,9 @@ jobs:
           HONUA_SERVICE_ID: test_service
           HONUA_MCP_SERVICE_ID: test_service_mcp
           HONUA_LAYER_ID: '0'
-          HONUA_MCP_LAYER_ID: '10'
+          # MCP map tools accept the service-local layer index advertised by
+          # honua_list_layers, not the backing storage layer id from the seed.
+          HONUA_MCP_LAYER_ID: '0'
           HONUA_DEV_AUTH: "true"
           HONUA_API_KEY: "ci-admin-password"
 
@@ -1592,6 +1594,29 @@ jobs:
           echo "The \`test:llm-smoke\` script was not found in \`honua-sdk-js/mcp\` (ref: \`${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}\`)." >> "$GITHUB_STEP_SUMMARY"
           echo "Land the smoke test scripts in \`honua-sdk-js\` to activate this lane." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Detect Bedrock smoke credentials
+        id: bedrock
+        if: steps.setup.outputs.smoke-available == 'true'
+        shell: bash
+        env:
+          BEDROCK_AWS_ACCESS_KEY_ID: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
+          BEDROCK_AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [[ -n "$BEDROCK_AWS_ACCESS_KEY_ID" && -n "$BEDROCK_AWS_SECRET_ACCESS_KEY" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::BEDROCK_AWS_* secrets are not configured; MCP LLM smoke will run without the live Bedrock driver."
+          fi
+
+      - name: Configure AWS credentials for Bedrock smoke
+        if: steps.bedrock.outputs.available == 'true'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
+
       - name: Run MCP LLM Smoke Tests
         if: steps.setup.outputs.smoke-available == 'true'
         run: npm run test:llm-smoke
@@ -1603,7 +1628,9 @@ jobs:
           HONUA_LAYER_ID: '0'
           HONUA_DEV_AUTH: "true"
           HONUA_API_KEY: "ci-admin-password"
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          HONUA_EVAL_BEDROCK: ${{ steps.bedrock.outputs.available == 'true' && '1' || '' }}
+          HONUA_EVAL_BEDROCK_MODEL: ${{ vars.HONUA_MCP_SMOKE_BEDROCK_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
+          AWS_REGION: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
 
       - name: Upload LLM smoke transcripts
         if: always() && steps.setup.outputs.smoke-available == 'true'
