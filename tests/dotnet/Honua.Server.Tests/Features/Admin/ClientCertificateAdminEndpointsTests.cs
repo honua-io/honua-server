@@ -6,14 +6,19 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -52,6 +57,21 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    public async Task ListProfiles_WithProEdition_ReturnsPaymentRequired()
+    {
+        using var factory = CreateFactory(edition: HonuaEdition.Pro);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+
+        var response = await client.GetAsync("/api/v1/admin/security/client-certificates/profiles");
+
+        Assert.Equal(HttpStatusCode.PaymentRequired, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains(FeatureCatalog.MtlsClientCertificateKey, body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/security/client-certificates/profiles")]
     public async Task CreateProfile_ValidRequest_ReturnsCreated()
     {
@@ -60,6 +80,34 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var data = await ReadDataAsync(response);
         Assert.Equal("prod", data.GetProperty("environmentId").GetString());
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles")]
+    public async Task CreateProfile_RevocationStatusUnknownIsFatal_RoundTrips()
+    {
+        var profileId = $"profile-{Guid.NewGuid():N}";
+        var request = new UpsertClientCertificateTrustProfileRequest
+        {
+            ProfileId = profileId,
+            EnvironmentId = "prod",
+            DisplayName = "Best-effort revocation profile",
+            AcceptedIssuerSubjects = ["CN=Honua Native Prod"],
+            AllowedSanTypes = ["sanUri"],
+            RequireClientAuthenticationEku = true,
+            RequireChainTrust = true,
+            ChainRevocationMode = "Online",
+            RevocationStatusUnknownIsFatal = false,
+        };
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/security/client-certificates/profiles",
+            request,
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var data = await ReadDataAsync(response);
+        Assert.False(data.GetProperty("revocationStatusUnknownIsFatal").GetBoolean());
     }
 
     [IntegrationTest]
@@ -440,7 +488,9 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
         Assert.Equal("https://honua.io/problems/security/client-certificate-missing", json.RootElement.GetProperty("type").GetString());
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(Dictionary<string, string?>? extra = null)
+    private static WebApplicationFactory<Program> CreateFactory(
+        Dictionary<string, string?>? extra = null,
+        HonuaEdition edition = HonuaEdition.Enterprise)
         => new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -464,6 +514,14 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
                 }
 
                 configBuilder.AddInMemoryCollection(values);
+            });
+            builder.ConfigureServices(services =>
+            {
+                var license = new TestLicenseEntitlementService(edition);
+                services.RemoveAll<ILicenseEntitlementService>();
+                services.RemoveAll<ILicenseStatusProvider>();
+                services.AddSingleton<ILicenseEntitlementService>(license);
+                services.AddSingleton<ILicenseStatusProvider>(license);
             });
         });
 

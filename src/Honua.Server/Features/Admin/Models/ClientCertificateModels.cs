@@ -41,6 +41,12 @@ public sealed class ClientCertificateTrustProfileResponse
     /// <summary>Chain revocation mode used when chain trust is enabled.</summary>
     public required string ChainRevocationMode { get; init; }
 
+    /// <summary>
+    /// Whether an indeterminate CRL/OCSP revocation status fails closed (rejects the
+    /// certificate). Defaults to <c>true</c>; set <c>false</c> for best-effort revocation.
+    /// </summary>
+    public bool RevocationStatusUnknownIsFatal { get; init; } = true;
+
     /// <summary>Days before expiry when warning audit events are emitted.</summary>
     public int ExpirationWarningThresholdDays { get; init; }
 
@@ -94,6 +100,13 @@ public sealed class UpsertClientCertificateTrustProfileRequest
 
     /// <summary>Chain revocation mode used when chain trust is enabled.</summary>
     public string ChainRevocationMode { get; init; } = "NoCheck";
+
+    /// <summary>
+    /// Whether an indeterminate CRL/OCSP revocation status fails closed (rejects the
+    /// certificate). Defaults to <c>true</c>; set <c>false</c> for best-effort revocation
+    /// so an unreachable responder does not lock out otherwise-valid certificates.
+    /// </summary>
+    public bool RevocationStatusUnknownIsFatal { get; init; } = true;
 
     /// <summary>Days before expiry when warning audit events are emitted.</summary>
     public int ExpirationWarningThresholdDays { get; init; } = 30;
