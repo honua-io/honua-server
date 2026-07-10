@@ -16,11 +16,12 @@ POSTGRES_PASSWORD=replace-with-strong-db-password
 HONUA_ADMIN_PASSWORD=replace-with-strong-admin-password
 HONUA_MASTER_KEY=replace-with-random-string-of-32-plus-characters
 HONUA_CORS_ORIGIN=https://app.example.com
+HONUA_STORAGE_VOLUME_NAME=honua_storage
 EOF
 chmod 600 .env
 ```
 
-2. Create the compose file. Honua is stateless — only PostGIS (and Redis, if enabled) need volumes; the server binds to localhost only, so the proxy is the sole public entrypoint.
+2. Create the compose file. The server process is replaceable, while PostGIS, Redis durable-control-plane state, and local file storage live on persistent volumes. The server binds to localhost only, so the proxy is the sole public entrypoint.
 
 ```bash
 cat > docker-compose.yml <<'EOF'
@@ -39,6 +40,8 @@ services:
       HONUA_OBSERVABILITY: "true"
       ConnectionStrings__Redis: "redis:6379"
       Database__MigrationSafety__ContractApplyPolicy: Gate
+      FileStorage__Provider: Local
+      FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,6 +58,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - honua_storage:/var/lib/honua/storage
     deploy:
       resources:
         limits:
@@ -91,6 +96,8 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  honua_storage:
+    name: ${HONUA_STORAGE_VOLUME_NAME}
 EOF
 ```
 

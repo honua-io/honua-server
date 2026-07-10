@@ -101,6 +101,7 @@ internal sealed class RenderMapTool : IMcpTool
 
         var storageLayerIds = new int[argument.Layers.Count];
         var effectiveStyleIds = new string?[argument.Layers.Count];
+        var renderedLayers = new McpRenderedLayer[argument.Layers.Count];
         for (var i = 0; i < argument.Layers.Count; i++)
         {
             var layerRef = argument.Layers[i];
@@ -108,6 +109,12 @@ internal sealed class RenderMapTool : IMcpTool
             storageLayerIds[i] = resolved.StorageLayerId;
             effectiveStyleIds[i] = await ResolveEffectiveStyleIdAsync(styleCatalog, resolved.StorageLayerId, cancellationToken)
                 .ConfigureAwait(false);
+            renderedLayers[i] = new McpRenderedLayer
+            {
+                ServiceId = resolved.Service.Metadata.Id,
+                LayerId = layerRef.LayerId!.Value,
+                StyleId = effectiveStyleIds[i]
+            };
         }
 
         var request = new MapRenderRequest
@@ -155,6 +162,24 @@ internal sealed class RenderMapTool : IMcpTool
         var maxInlineBytes = argument.MaxInlineBytes ?? 0;
         if (maxInlineBytes > 0 && result.Data.Length <= maxInlineBytes)
         {
+            var base64 = Convert.ToBase64String(result.Data);
+            var output = BuildRenderOutput(
+                result,
+                bbox,
+                bboxSrid,
+                renderedLayers,
+                new McpRenderedImage
+                {
+                    Format = result.ContentType,
+                    Width = result.Width,
+                    Height = result.Height,
+                    ByteLength = result.Data.Length,
+                    Base64 = base64,
+                    Inlined = true
+                });
+            var (structuredContent, _) = McpToolHelpers.SerializeStructured(
+                output,
+                MapToolJsonContext.Default.McpRenderMapOutput);
             var inlineCaption = string.Format(
                 CultureInfo.InvariantCulture,
                 "Rendered {0} at {1}x{2} px {3} ({4}, {5:N0} bytes, inlined).",
@@ -169,30 +194,17 @@ internal sealed class RenderMapTool : IMcpTool
                 inlineCaption = inlineCaption + " " + styleNote;
             }
 
-            var inlineOutput = BuildOutput(
-                result,
-                bbox,
-                bboxSrid,
-                storageLayerIds.Length,
-                effectiveStyleIds,
-                delivery: "inline",
-                uri: null,
-                expiresInSeconds: null);
-            var (inlineStructured, _) = McpToolHelpers.SerializeStructured(
-                inlineOutput,
-                MapToolJsonContext.Default.McpRenderMapOutput);
-
             return new McpToolsCallResult
             {
                 IsError = false,
-                StructuredContent = inlineStructured,
+                StructuredContent = structuredContent,
                 Content =
                 [
                     new McpContentBlock { Type = "text", Text = inlineCaption },
                     new McpContentBlock
                     {
                         Type = "image",
-                        Data = Convert.ToBase64String(result.Data),
+                        Data = base64,
                         MimeType = result.ContentType
                     }
                 ]
@@ -209,6 +221,24 @@ internal sealed class RenderMapTool : IMcpTool
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
+        var linkedOutput = BuildRenderOutput(
+            result,
+            bbox,
+            bboxSrid,
+            renderedLayers,
+            new McpRenderedImage
+            {
+                Format = result.ContentType,
+                Width = result.Width,
+                Height = result.Height,
+                ByteLength = result.Data.Length,
+                Uri = href,
+                Inlined = false
+            });
+        var (linkedStructuredContent, _) = McpToolHelpers.SerializeStructured(
+            linkedOutput,
+            MapToolJsonContext.Default.McpRenderMapOutput);
+
         var caption = string.Format(
             CultureInfo.InvariantCulture,
             "Rendered {0} at {1}x{2} px {3} ({4}, {5:N0} bytes). Fetch the image at {6} (expires in 1h); returned as an artifact reference to conserve context. Pass maxInlineBytes >= {5} to inline it instead.",
@@ -224,23 +254,10 @@ internal sealed class RenderMapTool : IMcpTool
             caption = caption + " " + styleNote;
         }
 
-        var output = BuildOutput(
-            result,
-            bbox,
-            bboxSrid,
-            storageLayerIds.Length,
-            effectiveStyleIds,
-            delivery: "resource_link",
-            uri: href,
-            expiresInSeconds: 3600);
-        var (structured, _) = McpToolHelpers.SerializeStructured(
-            output,
-            MapToolJsonContext.Default.McpRenderMapOutput);
-
         return new McpToolsCallResult
         {
             IsError = false,
-            StructuredContent = structured,
+            StructuredContent = linkedStructuredContent,
             Content =
             [
                 new McpContentBlock { Type = "text", Text = caption },
@@ -255,27 +272,21 @@ internal sealed class RenderMapTool : IMcpTool
         };
     }
 
-    private static McpRenderMapOutput BuildOutput(
+    private static McpRenderMapOutput BuildRenderOutput(
         RasterResult result,
         IReadOnlyList<double> bbox,
         int bboxSrid,
-        int layerCount,
-        IReadOnlyList<string?> effectiveStyleIds,
-        string delivery,
-        string? uri,
-        int? expiresInSeconds) => new()
+        IReadOnlyList<McpRenderedLayer> layers,
+        McpRenderedImage image) => new()
         {
-            LayerCount = layerCount,
+            Format = result.ContentType,
             Width = result.Width,
             Height = result.Height,
+            ByteLength = result.Data.Length,
             Bbox = bbox,
             BboxSrid = bboxSrid,
-            ContentType = result.ContentType,
-            ByteLength = result.Data.Length,
-            Delivery = delivery,
-            Uri = uri,
-            ExpiresInSeconds = expiresInSeconds,
-            Styles = effectiveStyleIds.ToArray()
+            Layers = layers,
+            Image = image
         };
 
     private static double[] ResolveBbox(IReadOnlyList<double>? bbox)

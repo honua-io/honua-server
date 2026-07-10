@@ -35,31 +35,16 @@ internal static class McpToolOutputSchemas
         }
         """;
 
-    private static readonly string GeoprocessingErrorDef = $$"""
+    private const string ToolErrorBranch = """
         {
-          "type": "object",
-          "required": ["kind", "message"],
-          "properties": {
-            "kind": { "type": "string" },
-            "message": { "type": "string" },
-            "stepId": { "type": ["string", "null"] },
-            "violations": {
-              "type": ["array", "null"],
-              "items": {{ValidationViolationDef}}
-            }
-          }
+          "required": ["status", "code", "message", "error"]
         }
         """;
 
-    private static readonly string ToolErrorOutputSchema = $$"""
-        {
-          "type": "object",
-          "required": ["status", "code", "message", "error"],
-          "properties": {
+    private static string ToolErrorProperties => $$"""
             "status": { "type": "string", "const": "error" },
             "code": { "type": "string" },
             "message": { "type": "string" },
-            "error": {{GeoprocessingErrorDef}},
             "requiresReauthentication": { "type": ["boolean", "null"] },
             "approvalRequired": { "type": ["boolean", "null"] },
             "policyRef": { "type": ["string", "null"] },
@@ -68,9 +53,20 @@ internal static class McpToolOutputSchemas
             "violations": {
               "type": ["array", "null"],
               "items": {{ValidationViolationDef}}
+            },
+            "error": {
+              "type": "object",
+              "required": ["kind", "message"],
+              "properties": {
+                "kind": { "type": "string" },
+                "message": { "type": "string" },
+                "stepId": { "type": ["string", "null"] },
+                "violations": {
+                  "type": ["array", "null"],
+                  "items": {{ValidationViolationDef}}
+                }
+              }
             }
-          }
-        }
         """;
 
     /// <summary>Schema for <see cref="Models.McpValidatePlanOutput"/>.</summary>
@@ -350,6 +346,10 @@ internal static class McpToolOutputSchemas
         $$"""
         {
           "type": "object",
+          "oneOf": [
+            { "required": ["provider", "candidates"] },
+            {{ToolErrorBranch}}
+          ],
           "properties": {
             "provider": { "type": "string" },
             "candidates": {
@@ -367,24 +367,8 @@ internal static class McpToolOutputSchemas
                 }
               }
             },
-            "status": { "type": "string" },
-            "code": { "type": "string" },
-            "message": { "type": "string" },
-            "error": {{GeoprocessingErrorDef}},
-            "requiresReauthentication": { "type": ["boolean", "null"] },
-            "approvalRequired": { "type": ["boolean", "null"] },
-            "policyRef": { "type": ["string", "null"] },
-            "conflictingJobId": { "type": ["string", "null"] },
-            "retryable": { "type": ["boolean", "null"] },
-            "violations": {
-              "type": ["array", "null"],
-              "items": {{ValidationViolationDef}}
-            }
-          },
-          "anyOf": [
-            { "required": ["provider", "candidates"] },
-            {{ToolErrorOutputSchema}}
-          ]
+            {{ToolErrorProperties}}
+          }
         }
         """);
 
@@ -534,6 +518,10 @@ internal static class McpToolOutputSchemas
         $$"""
         {
           "type": "object",
+          "oneOf": [
+            { "required": ["serviceId", "layerId", "returnedCount", "limit", "resultOffset", "exceededTransferLimit", "features"] },
+            {{ToolErrorBranch}}
+          ],
           "properties": {
             "serviceId": { "type": "string" },
             "layerId": { "type": "integer" },
@@ -545,7 +533,7 @@ internal static class McpToolOutputSchemas
             },
             "exceededTransferLimit": {
               "type": "boolean",
-              "description": "True when more matching features exist beyond this page. When true, re-issue the same query with resultOffset=nextOffset to fetch the next page."
+              "description": "True when more matching features exist beyond this page. When true, re-issue the same query with cursor=nextCursor or resultOffset=nextOffset to fetch the next page."
             },
             "nextOffset": {
               "type": "integer",
@@ -553,11 +541,24 @@ internal static class McpToolOutputSchemas
             },
             "nextCursor": {
               "type": "string",
-              "description": "Present only when exceededTransferLimit is true: opaque cursor alias for nextOffset. Echo it as the cursor argument to fetch the next page."
+              "description": "Present only when exceededTransferLimit is true: the cursor to send on the next request. Mirrors nextOffset as a string for SDK clients."
             },
             "count": {
               "type": "integer",
-              "description": "Matching feature count. Present only when returnCountOnly=true; features are omitted in that mode."
+              "description": "Matching feature count when known. Normal queries use the canonical query result total; returnCountOnly=true uses CountAsync."
+            },
+            "features": {
+              "type": "array",
+              "description": "MCP-friendly feature projection with attributes under features[].attributes. GeoJSON callers should use geojson.features[].properties.",
+              "items": {
+                "type": "object",
+                "required": ["attributes"],
+                "properties": {
+                  "id": { "type": ["integer", "string", "null"] },
+                  "attributes": { "type": "object" },
+                  "geometry": { "type": ["object", "null"] }
+                }
+              }
             },
             "geojson": {
               "type": "object",
@@ -567,37 +568,8 @@ internal static class McpToolOutputSchemas
                 "features": { "type": "array", "items": { "type": "object" } }
               }
             },
-            "features": {
-              "type": "array",
-              "description": "Feature row aliases for MCP clients that inspect features[].attributes; the authoritative spatial payload remains geojson.",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "id": { "type": "integer" },
-                  "attributes": { "type": "object" }
-                }
-              }
-            },
-            "status": { "type": "string" },
-            "code": { "type": "string" },
-            "message": { "type": "string" },
-            "error": {{GeoprocessingErrorDef}},
-            "requiresReauthentication": { "type": ["boolean", "null"] },
-            "approvalRequired": { "type": ["boolean", "null"] },
-            "policyRef": { "type": ["string", "null"] },
-            "conflictingJobId": { "type": ["string", "null"] },
-            "retryable": { "type": ["boolean", "null"] },
-            "violations": {
-              "type": ["array", "null"],
-              "items": {{ValidationViolationDef}}
-            }
-          },
-          "anyOf": [
-            {
-              "required": ["serviceId", "layerId", "returnedCount", "limit", "resultOffset", "exceededTransferLimit"]
-            },
-            {{ToolErrorOutputSchema}}
-          ]
+            {{ToolErrorProperties}}
+          }
         }
         """);
 
@@ -606,10 +578,15 @@ internal static class McpToolOutputSchemas
         $$"""
         {
           "type": "object",
+          "oneOf": [
+            { "required": ["format", "width", "height", "byteLength", "bbox", "bboxSrid", "layers", "image"] },
+            {{ToolErrorBranch}}
+          ],
           "properties": {
-            "layerCount": { "type": "integer" },
+            "format": { "type": "string" },
             "width": { "type": "integer" },
             "height": { "type": "integer" },
+            "byteLength": { "type": "integer" },
             "bbox": {
               "type": "array",
               "minItems": 4,
@@ -617,38 +594,33 @@ internal static class McpToolOutputSchemas
               "items": { "type": "number" }
             },
             "bboxSrid": { "type": "integer" },
-            "contentType": { "type": "string" },
-            "byteLength": { "type": "integer" },
-            "delivery": {
-              "type": "string",
-              "enum": ["inline", "resource_link"]
-            },
-            "uri": { "type": ["string", "null"] },
-            "expiresInSeconds": { "type": ["integer", "null"] },
-            "styles": {
+            "layers": {
               "type": "array",
-              "items": { "type": ["string", "null"] }
+              "items": {
+                "type": "object",
+                "required": ["serviceId", "layerId"],
+                "properties": {
+                  "serviceId": { "type": "string" },
+                  "layerId": { "type": "integer" },
+                  "styleId": { "type": ["string", "null"] }
+                }
+              }
             },
-            "status": { "type": "string" },
-            "code": { "type": "string" },
-            "message": { "type": "string" },
-            "error": {{GeoprocessingErrorDef}},
-            "requiresReauthentication": { "type": ["boolean", "null"] },
-            "approvalRequired": { "type": ["boolean", "null"] },
-            "policyRef": { "type": ["string", "null"] },
-            "conflictingJobId": { "type": ["string", "null"] },
-            "retryable": { "type": ["boolean", "null"] },
-            "violations": {
-              "type": ["array", "null"],
-              "items": {{ValidationViolationDef}}
-            }
-          },
-          "anyOf": [
-            {
-              "required": ["layerCount", "width", "height", "bbox", "bboxSrid", "contentType", "byteLength", "delivery"]
+            "image": {
+              "type": "object",
+              "required": ["format", "width", "height", "byteLength", "inlined"],
+              "properties": {
+                "format": { "type": "string" },
+                "width": { "type": "integer" },
+                "height": { "type": "integer" },
+                "byteLength": { "type": "integer" },
+                "uri": { "type": ["string", "null"] },
+                "base64": { "type": ["string", "null"] },
+                "inlined": { "type": "boolean" }
+              }
             },
-            {{ToolErrorOutputSchema}}
-          ]
+            {{ToolErrorProperties}}
+          }
         }
         """);
 

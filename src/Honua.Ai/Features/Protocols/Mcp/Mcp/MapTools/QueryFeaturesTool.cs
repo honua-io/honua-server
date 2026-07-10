@@ -49,10 +49,10 @@ internal sealed class QueryFeaturesTool : IMcpTool
         Name = ToolName,
         Title = "Query features",
         Description = "Query features from a published layer (by serviceId/layerId) with an optional attribute WHERE clause, bbox, outFields, and result limit. Returns a GeoJSON FeatureCollection. "
-            + "Paging: results are capped at 'limit' (default 100, max 1000). When the response reports exceededTransferLimit=true there are more matching features; page through them mechanically by re-issuing the SAME query with resultOffset set to the returned nextOffset, repeating until exceededTransferLimit=false. "
+            + "Paging: results are capped at 'limit' (default 100, max 1000). When the response reports exceededTransferLimit=true there are more matching features; page through them mechanically by re-issuing the SAME query with cursor set to nextCursor (or resultOffset set to nextOffset), repeating until exceededTransferLimit=false. "
             + "Set returnCountOnly=true to get just the matching {count} (no features) for a cheap cardinality check, and returnGeometry=false to return attribute-only rows (geometry omitted) when scanning attributes. "
             + "Geometry coordinates are rounded to geometryPrecision decimal places (default 6, ~0.1 m) to keep responses compact; pass a higher value for finer precision or a negative value for full precision. "
-            + "The full FeatureCollection is always in structuredContent; for large pages the text block is a one-line summary (counts, ids, paging hint), not a duplicate of the data.",
+            + "The full FeatureCollection is always in structuredContent.geojson and the MCP-friendly feature projection is in structuredContent.features; for large pages the text block is a one-line summary (counts, ids, paging hint), not a duplicate of the data.",
         InputSchema = MapToolSchemas.QueryFeaturesArgumentSchema,
         OutputSchema = McpToolOutputSchemas.QueryFeaturesOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Query features")
@@ -127,20 +127,21 @@ internal sealed class QueryFeaturesTool : IMcpTool
 
         var result = await reader.QueryAsync(layer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
 
-        var features = new List<JsonNode>(result.Items.Length);
-        var featureRows = new List<McpQueryFeatureRow>(result.Items.Length);
+        var geoJsonFeatures = new List<JsonNode>(result.Items.Length);
+        var mcpFeatures = new List<JsonNode>(result.Items.Length);
         foreach (var feature in result.Items)
         {
-            features.Add(ToGeoJsonFeature(feature, geometryService, returnGeometry, geometryPrecision));
-            featureRows.Add(ToFeatureRow(feature));
+            var geoJsonFeature = ToGeoJsonFeature(feature, geometryService, returnGeometry, geometryPrecision);
+            geoJsonFeatures.Add(geoJsonFeature);
+            mcpFeatures.Add(ToMcpFeature(feature, geoJsonFeature));
         }
 
-        var nextOffset = result.HasMoreResults ? offset + features.Count : (int?)null;
+        var nextOffset = result.HasMoreResults ? offset + geoJsonFeatures.Count : (int?)null;
         var output = new McpQueryFeaturesOutput
         {
             ServiceId = layer.Service.Metadata.Id,
             LayerId = argument.LayerId!.Value,
-            ReturnedCount = features.Count,
+            ReturnedCount = geoJsonFeatures.Count,
             Limit = limit,
             ResultOffset = offset,
             ExceededTransferLimit = result.HasMoreResults,
@@ -148,8 +149,9 @@ internal sealed class QueryFeaturesTool : IMcpTool
             // mechanically: the next page starts after everything returned so far.
             NextOffset = nextOffset,
             NextCursor = nextOffset?.ToString(CultureInfo.InvariantCulture),
-            GeoJson = new McpGeoJsonFeatureCollection { Features = features },
-            Features = featureRows
+            Count = result.TotalCount,
+            Features = mcpFeatures,
+            GeoJson = new McpGeoJsonFeatureCollection { Features = geoJsonFeatures }
         };
 
         return McpToolHelpers.SuccessResult(
@@ -184,12 +186,12 @@ internal sealed class QueryFeaturesTool : IMcpTool
                 : "geometry included";
 
         var pagingNote = output.ExceededTransferLimit && output.NextOffset is { } next
-            ? string.Format(CultureInfo.InvariantCulture, "more available: re-query with resultOffset={0}", next)
+            ? string.Format(CultureInfo.InvariantCulture, "more available: re-query with cursor=\"{0}\" or resultOffset={0}", next)
             : "last page";
 
         return string.Format(
             CultureInfo.InvariantCulture,
-            "Returned {0} feature(s) from {1}/{2} at offset {3} ({4}, {5}). GeoJSON FeatureCollection in structuredContent.geojson.",
+            "Returned {0} feature(s) from {1}/{2} at offset {3} ({4}, {5}). Feature attributes are in structuredContent.features; GeoJSON FeatureCollection is in structuredContent.geojson.",
             output.ReturnedCount,
             output.ServiceId,
             output.LayerId,
@@ -211,27 +213,28 @@ internal sealed class QueryFeaturesTool : IMcpTool
 
     private static int ResolveOffset(int? requested, string? cursor)
     {
-        if (requested is { } explicitOffset)
+        int? cursorOffset = null;
+        if (!string.IsNullOrWhiteSpace(cursor))
         {
-            return ValidateOffset(explicitOffset);
+            if (!int.TryParse(cursor, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
+            {
+                throw new GeoprocessingValidationException("'cursor' must be a non-negative integer string.");
+            }
+
+            cursorOffset = parsed;
         }
 
-        if (string.IsNullOrWhiteSpace(cursor))
+        if (requested.HasValue && requested.Value < 0)
         {
-            return 0;
+            throw new GeoprocessingValidationException("'resultOffset' must be zero or a positive integer.");
         }
 
-        if (int.TryParse(cursor.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+        if (requested.HasValue && cursorOffset.HasValue && requested.Value != cursorOffset.Value)
         {
-            return ValidateOffset(parsed);
+            throw new GeoprocessingValidationException("'cursor' and 'resultOffset' refer to different pages; provide only one pagination value or make them match.");
         }
 
-        throw new GeoprocessingValidationException(
-            "'cursor' must be the nextCursor value returned by a previous honua_query_features page.");
-    }
-
-    private static int ValidateOffset(int offset)
-    {
+        var offset = cursorOffset ?? requested ?? 0;
         if (offset < 0)
         {
             throw new GeoprocessingValidationException("'resultOffset' must be zero or a positive integer.");
@@ -366,7 +369,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
         };
     }
 
-    private static McpQueryFeatureRow ToFeatureRow(Feature feature)
+    private static JsonObject ToMcpFeature(Feature feature, JsonObject geoJsonFeature)
     {
         var attributes = new JsonObject();
         foreach (var pair in feature.Attributes)
@@ -374,10 +377,11 @@ internal sealed class QueryFeaturesTool : IMcpTool
             attributes[pair.Key] = ToJsonValue(pair.Value);
         }
 
-        return new McpQueryFeatureRow
+        return new JsonObject
         {
-            Id = feature.Id,
-            Attributes = attributes
+            ["id"] = feature.Id,
+            ["attributes"] = attributes,
+            ["geometry"] = geoJsonFeature["geometry"]?.DeepClone()
         };
     }
 

@@ -125,9 +125,9 @@ internal sealed class McpQueryFeaturesArgument
     public int? ResultOffset { get; set; }
 
     /// <summary>
-    /// Opaque pagination cursor returned by <see cref="McpQueryFeaturesOutput.NextCursor"/>.
-    /// This is an alias over <see cref="ResultOffset"/> for MCP clients that use
-    /// cursor-style pagination contracts.
+    /// SDK-facing pagination cursor. Encodes the same offset as
+    /// <see cref="ResultOffset"/> so clients can page through the MCP
+    /// certification contract without losing the GeoServices-style offset path.
     /// </summary>
     [JsonPropertyName("cursor")]
     public string? Cursor { get; set; }
@@ -197,45 +197,31 @@ internal sealed class McpQueryFeaturesOutput
     public int? NextOffset { get; set; }
 
     /// <summary>
-    /// Opaque cursor for the next page. Mirrors <see cref="NextOffset"/> as a
-    /// string so generic MCP pagination checks can echo it without understanding
-    /// Honua's offset contract.
+    /// SDK-facing pagination cursor for the next page. Mirrors
+    /// <see cref="NextOffset"/> as a string.
     /// </summary>
     [JsonPropertyName("nextCursor")]
     public string? NextCursor { get; set; }
 
     /// <summary>
-    /// Matching feature count. Populated only when <c>returnCountOnly=true</c>
-    /// (features are omitted in that mode); otherwise null.
+    /// Matching feature count when known. Populated from the canonical query
+    /// result's total count on normal reads and from <c>CountAsync</c> when
+    /// <c>returnCountOnly=true</c>.
     /// </summary>
     [JsonPropertyName("count")]
     public long? Count { get; set; }
 
+    /// <summary>
+    /// MCP certification-friendly feature projection. Carries attributes under
+    /// <c>attributes</c> while <see cref="GeoJson"/> preserves the RFC 7946
+    /// <c>properties</c> shape for existing callers.
+    /// </summary>
+    [JsonPropertyName("features")]
+    public IReadOnlyList<System.Text.Json.Nodes.JsonNode> Features { get; set; } = [];
+
     /// <summary>RFC 7946 GeoJSON <c>FeatureCollection</c> for the returned features. Omitted when <c>returnCountOnly=true</c>.</summary>
     [JsonPropertyName("geojson")]
     public McpGeoJsonFeatureCollection? GeoJson { get; set; }
-
-    /// <summary>
-    /// MCP-friendly feature row aliases for clients that inspect
-    /// <c>structuredContent.features[].attributes</c>. The authoritative spatial
-    /// payload remains <see cref="GeoJson"/>.
-    /// </summary>
-    [JsonPropertyName("features")]
-    public IReadOnlyList<McpQueryFeatureRow>? Features { get; set; }
-}
-
-/// <summary>
-/// Feature row alias for <c>honua_query_features</c> pagination and mutation
-/// contract checks. Keeps properties under <c>attributes</c> while preserving
-/// the GeoJSON feature id.
-/// </summary>
-internal sealed class McpQueryFeatureRow
-{
-    [JsonPropertyName("id")]
-    public long Id { get; set; }
-
-    [JsonPropertyName("attributes")]
-    public System.Text.Json.Nodes.JsonObject Attributes { get; set; } = new();
 }
 
 /// <summary>
@@ -297,48 +283,6 @@ internal sealed class McpRenderMapArgument
 }
 
 /// <summary>
-/// Structured result for <c>honua_render_map</c>. The actual image remains in
-/// the MCP content blocks; this compact envelope lets strict clients validate
-/// the result and discover the artifact URI or inline delivery mode without
-/// parsing prose.
-/// </summary>
-internal sealed class McpRenderMapOutput
-{
-    [JsonPropertyName("layerCount")]
-    public int LayerCount { get; set; }
-
-    [JsonPropertyName("width")]
-    public int Width { get; set; }
-
-    [JsonPropertyName("height")]
-    public int Height { get; set; }
-
-    [JsonPropertyName("bbox")]
-    public IReadOnlyList<double> Bbox { get; set; } = [];
-
-    [JsonPropertyName("bboxSrid")]
-    public int BboxSrid { get; set; }
-
-    [JsonPropertyName("contentType")]
-    public string ContentType { get; set; } = string.Empty;
-
-    [JsonPropertyName("byteLength")]
-    public int ByteLength { get; set; }
-
-    [JsonPropertyName("delivery")]
-    public string Delivery { get; set; } = string.Empty;
-
-    [JsonPropertyName("uri")]
-    public string? Uri { get; set; }
-
-    [JsonPropertyName("expiresInSeconds")]
-    public int? ExpiresInSeconds { get; set; }
-
-    [JsonPropertyName("styles")]
-    public IReadOnlyList<string?> Styles { get; set; } = [];
-}
-
-/// <summary>
 /// A single layer reference inside a <c>honua_render_map</c> request.
 /// </summary>
 internal sealed class McpRenderLayerRef
@@ -348,6 +292,82 @@ internal sealed class McpRenderLayerRef
 
     [JsonPropertyName("layerId")]
     public int? LayerId { get; set; }
+}
+
+/// <summary>
+/// Structured output for <c>honua_render_map</c>. The MCP content blocks still
+/// carry the image or resource link; this envelope makes the render result
+/// schema-verifiable and gives agents deterministic metadata to inspect.
+/// </summary>
+internal sealed class McpRenderMapOutput
+{
+    [JsonPropertyName("format")]
+    public string Format { get; set; } = "image/png";
+
+    [JsonPropertyName("width")]
+    public int Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public int Height { get; set; }
+
+    [JsonPropertyName("byteLength")]
+    public int ByteLength { get; set; }
+
+    [JsonPropertyName("bbox")]
+    public IReadOnlyList<double> Bbox { get; set; } = [];
+
+    [JsonPropertyName("bboxSrid")]
+    public int BboxSrid { get; set; }
+
+    [JsonPropertyName("layers")]
+    public IReadOnlyList<McpRenderedLayer> Layers { get; set; } = [];
+
+    [JsonPropertyName("image")]
+    public McpRenderedImage Image { get; set; } = new();
+}
+
+/// <summary>
+/// Rendered layer metadata, including the effective primary style when one is
+/// available from the style catalog.
+/// </summary>
+internal sealed class McpRenderedLayer
+{
+    [JsonPropertyName("serviceId")]
+    public string ServiceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("layerId")]
+    public int LayerId { get; set; }
+
+    [JsonPropertyName("styleId")]
+    public string? StyleId { get; set; }
+}
+
+/// <summary>
+/// Image metadata for a rendered map result. Exactly one of <see cref="Uri"/>
+/// or <see cref="Base64"/> is populated.
+/// </summary>
+internal sealed class McpRenderedImage
+{
+    [JsonPropertyName("format")]
+    public string Format { get; set; } = "image/png";
+
+    [JsonPropertyName("width")]
+    public int Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public int Height { get; set; }
+
+    [JsonPropertyName("byteLength")]
+    public int ByteLength { get; set; }
+
+    [JsonPropertyName("uri")]
+    public string? Uri { get; set; }
+
+    [JsonPropertyName("base64")]
+    public string? Base64 { get; set; }
+
+    [JsonPropertyName("inlined")]
+    public bool Inlined { get; set; }
 }
 
 // -----------------------------------------------------------------------

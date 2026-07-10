@@ -77,6 +77,7 @@ services:
       # reusing this compose file outside a local developer workstation.
       HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
       FileStorage__Provider: "${HONUA_STORAGE_PROVIDER:-Local}"
+      FileStorage__LocalStorage__BasePath: "/var/lib/honua/storage"
       FileStorage__AwsS3__BucketName: "${HONUA_S3_BUCKET:-}"
       FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
       FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"
@@ -112,6 +113,7 @@ services:
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
     volumes:
+      - honua_storage:/var/lib/honua/storage
       - honua_logs:/tmp/honua-logs
       - honua_cache:/tmp/honua-cache
       - dotnet_diagnostics:/tmp/dotnet-diagnostics
@@ -175,6 +177,8 @@ services:
 
 volumes:
   postgres_data:
+  honua_storage:
+    name: "${HONUA_STORAGE_VOLUME_NAME:-honua_storage}"
   honua_logs:
   honua_cache:
   dotnet_diagnostics:

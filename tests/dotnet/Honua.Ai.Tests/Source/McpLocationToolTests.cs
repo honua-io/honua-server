@@ -86,19 +86,13 @@ public sealed class McpLocationToolTests
         var result = response.Result!.Value;
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
         var structured = result.GetProperty("structuredContent");
-        AssertStructuredContentMatchesOutputSchema(
-            new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)
-                .Describe()
-                .OutputSchema!.Value,
-            structured,
-            "geocode_address success structuredContent must validate against its advertised outputSchema");
-
         structured.GetProperty("provider").GetString().Should().Be("mock");
         var candidate = structured.GetProperty("candidates")[0];
         candidate.GetProperty("address").GetString().Should().Contain("Mountain View");
         candidate.GetProperty("x").GetDouble().Should().BeApproximately(-122.084, 0.000001);
         candidate.GetProperty("y").GetDouble().Should().BeApproximately(37.422, 0.000001);
         candidate.GetProperty("score").GetDouble().Should().Be(99.1);
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.GeocodeOutputSchema);
 
         await _jobService.Received(1).EnsureCallerAuthorizedAsync(
             Arg.Any<ClaimsPrincipal>(),
@@ -209,16 +203,10 @@ public sealed class McpLocationToolTests
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("code").GetString().Should().Be("failed_precondition");
         structured.GetProperty("message").GetString().Should().Contain(entitlementKey);
-        structured.GetProperty("error").GetProperty("kind").GetString().Should().NotBeNullOrWhiteSpace();
-
         if (toolName == GeocodeTool.ToolName)
         {
-            AssertStructuredContentMatchesOutputSchema(
-                new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)
-                    .Describe()
-                    .OutputSchema!.Value,
-                structured,
-                "geocode_address error structuredContent must validate against its advertised outputSchema");
+            structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("PreconditionFailed");
+            StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.GeocodeOutputSchema);
         }
     }
 
@@ -299,14 +287,13 @@ public sealed class McpLocationToolTests
         return document.RootElement.Clone();
     }
 
-    private static void AssertStructuredContentMatchesOutputSchema(
-        JsonElement outputSchema,
-        JsonElement structuredContent,
-        string because)
+    private static void StructuredContentShouldMatchOutputSchema(JsonElement result, JsonElement outputSchema)
     {
         var schema = JSchema.Parse(outputSchema.GetRawText());
-        var payload = JToken.Parse(structuredContent.GetRawText());
+        var payload = JToken.Parse(result.GetProperty("structuredContent").GetRawText());
+
         payload.IsValid(schema, out IList<string> errors).Should().BeTrue(
-            because + ": " + string.Join("; ", errors));
+            "structuredContent must match the advertised outputSchema. Errors: {0}",
+            string.Join("; ", errors));
     }
 }

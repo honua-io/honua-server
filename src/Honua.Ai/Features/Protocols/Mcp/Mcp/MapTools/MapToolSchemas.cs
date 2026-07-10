@@ -104,7 +104,8 @@ internal static class MapToolSchemas
             },
             "cursor": {
               "type": "string",
-              "description": "Opaque cursor alias returned as nextCursor by a previous page. Echo this instead of resultOffset when using generic MCP cursor pagination."
+              "pattern": "^[0-9]+$",
+              "description": "SDK-facing pagination cursor. Encodes the same zero-based result offset as resultOffset. When a response reports exceededTransferLimit=true, re-issue the same query with cursor set to nextCursor until exceededTransferLimit is false."
             },
             "returnGeometry": {
               "type": "boolean",

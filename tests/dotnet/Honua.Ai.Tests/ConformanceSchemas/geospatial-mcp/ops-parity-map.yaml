@@ -9,10 +9,10 @@
 #     # or:
 #     human-only: "Required justification for an operator-only action."
 #
-# Each route in the architecture-test enforced operate/admin-observability/deploy/proposals
+# Each route in the architecture-test enforced operate/admin-observability/autonomy/deploy/proposals
 # partition must appear exactly once with exactly one of `tool`, `resource`, or `human-only`.
-# `human-only` is reserved for actions that must remain human controls, such as approval,
-# rejection, staged submit, and promotion.
+# `human-only` is reserved for surfaces that must remain human trust controls, such as autonomy
+# graduation/kill-switch state, approval, rejection, staged submit, and promotion.
 routes:
   "GET /api/v1/operate/status":
     tool: honua_ops_health
@@ -20,6 +20,16 @@ routes:
     tool: honua_ops_health
   "GET /api/v1/admin/observability/ops-health/history":
     resource: honua://ops/health
+  "GET /api/v1/admin/observability/autonomy/policies":
+    human-only: "Autonomy policy and graduation evidence are human trust controls; agents observe findings and outcomes but do not inspect or change graduation controls."
+  "GET /api/v1/admin/observability/autonomy/policies/{rule}":
+    human-only: "Autonomy policy and graduation evidence are human trust controls; agents observe findings and outcomes but do not inspect or change graduation controls."
+  "PUT /api/v1/admin/observability/autonomy/policies/{rule}":
+    human-only: "Changing a rule to auto-apply can authorize automatic actuation and must remain a human operator trust decision."
+  "GET /api/v1/admin/observability/autonomy/settings":
+    human-only: "The global autonomy kill-switch state is an operator safety control; agents are governed by it but do not receive the control setting surface."
+  "PUT /api/v1/admin/observability/autonomy/settings":
+    human-only: "Changing the global autonomy kill switch must remain a human operator safety decision."
   "GET /api/v1/admin/observability/findings":
     tool: honua_ops_findings
   "POST /api/v1/admin/observability/findings/{findingId}/propose":

@@ -776,9 +776,6 @@ internal sealed class McpToolErrorOutput
     [JsonPropertyName("message")]
     public string Message { get; set; } = string.Empty;
 
-    [JsonPropertyName("error")]
-    public McpGeoprocessingError? Error { get; set; }
-
     [JsonPropertyName("requiresReauthentication")]
     public bool? RequiresReauthentication { get; set; }
 
@@ -796,4 +793,7 @@ internal sealed class McpToolErrorOutput
 
     [JsonPropertyName("violations")]
     public IReadOnlyList<McpValidationViolation>? Violations { get; set; }
+
+    [JsonPropertyName("error")]
+    public McpGeoprocessingError? Error { get; set; }
 }

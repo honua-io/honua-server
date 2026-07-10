@@ -410,7 +410,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     [UnitTest]
-    public void RenderMap_AdvertisesOutputSchemaForStructuredImageMetadata()
+    public void RenderMap_AdvertisesOutputSchema_AndRemainsReadOnly()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         var descriptor = new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
@@ -418,7 +418,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             .Describe();
 
         descriptor.OutputSchema.Should().NotBeNull();
-        descriptor.OutputSchema!.Value.GetProperty("properties").TryGetProperty("delivery", out _).Should().BeTrue();
+        descriptor.OutputSchema!.Value.GetProperty("properties").TryGetProperty("image", out _).Should().BeTrue();
         descriptor.Annotations!.ReadOnlyHint.Should().BeTrue();
     }
 
