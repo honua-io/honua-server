@@ -28,4 +28,11 @@ internal interface IAlertDispatchHealth
 
     /// <summary>True when the most recent dispatch pass failed to reach the backlog store.</summary>
     bool IsStoragePollFailing { get; }
+
+    /// <summary>
+    /// Refreshes and returns the live backlog snapshot. Normal readiness reads remain cached;
+    /// autonomous post-action verification uses this explicit refresh so it cannot declare
+    /// convergence from a stale pre-action sample.
+    /// </summary>
+    Task<AlertDispatchBacklog> RefreshBacklogAsync(CancellationToken cancellationToken = default);
 }

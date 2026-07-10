@@ -540,6 +540,10 @@ builder.Services.TryAddSingleton<Honua.Core.Features.Guardrails.Abstractions.IOp
 // Per-action auto-safe metadata for graduated autonomy policy checks.
 builder.Services.TryAddSingleton<Honua.Core.Features.Guardrails.Abstractions.IOpsActionSafetyCatalog,
     Honua.ControlPlane.Executors.OpsActionSafetyCatalog>();
+// Autonomous success is evidence-gated: the only auto-safe action must re-observe the live
+// dispatch state across an observation window before the gateway records Succeeded (#2568).
+builder.Services.AddScoped<Honua.ControlPlane.IAutonomousOperationConvergence,
+    Honua.ControlPlane.Executors.AlertDispatchAutonomousOperationConvergence>();
 
 // Configure tile options
 InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Configuration);

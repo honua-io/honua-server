@@ -59,6 +59,14 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     /// <inheritdoc />
     public bool IsStoragePollFailing => _storagePollFailing;
 
+    /// <inheritdoc />
+    public async Task<AlertDispatchBacklog> RefreshBacklogAsync(CancellationToken cancellationToken = default)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var dispatchStore = scope.ServiceProvider.GetRequiredService<IAlertDispatchStore>();
+        return await CaptureBacklogAsync(dispatchStore, cancellationToken).ConfigureAwait(false);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.Enabled)
@@ -96,7 +104,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     // instead of on every idle poll.
                     if (batch.Count > 0 || now - lastBacklogRefresh >= _options.Dispatch.BacklogRefreshInterval)
                     {
-                        await RefreshBacklogAsync(dispatchStore, stoppingToken).ConfigureAwait(false);
+                        await CaptureBacklogAsync(dispatchStore, stoppingToken).ConfigureAwait(false);
                         lastBacklogRefresh = now;
                     }
                     else
@@ -137,12 +145,15 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         }
     }
 
-    private async Task RefreshBacklogAsync(IAlertDispatchStore dispatchStore, CancellationToken cancellationToken)
+    private async Task<AlertDispatchBacklog> CaptureBacklogAsync(
+        IAlertDispatchStore dispatchStore,
+        CancellationToken cancellationToken)
     {
         var backlog = await dispatchStore.GetBacklogAsync(cancellationToken).ConfigureAwait(false);
         Volatile.Write(ref _lastBacklog, backlog);
         _storagePollFailing = false;
         AlertPipelineMetrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount);
+        return backlog;
     }
 
     private async Task PurgeDeliveredAsync(

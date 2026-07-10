@@ -172,6 +172,10 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         OperationGatewayOutcome.Executed => OpsFindingProposalStatus.Executed,
         OperationGatewayOutcome.ProposalCreated => OpsFindingProposalStatus.ProposalCreated,
         OperationGatewayOutcome.Blocked => OpsFindingProposalStatus.Blocked,
+        OperationGatewayOutcome.Failed => OpsFindingProposalStatus.Failed,
+        OperationGatewayOutcome.RolledBack => OpsFindingProposalStatus.RolledBack,
+        OperationGatewayOutcome.Indeterminate => OpsFindingProposalStatus.Indeterminate,
+        OperationGatewayOutcome.Canceled => OpsFindingProposalStatus.Canceled,
         _ => OpsFindingProposalStatus.NotSupported,
     };
 
