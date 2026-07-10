@@ -40,7 +40,7 @@ ARCHIVE="honua-files-$(date +%Y%m%d).tar.gz"
 docker volume inspect "$STORAGE_VOLUME" >/dev/null
 SOURCE_FILE_COUNT=$(docker run --rm -v "$STORAGE_VOLUME":/data:ro alpine \
   sh -c 'find /data -type f | wc -l')
-docker run --rm -v "$STORAGE_VOLUME":/data -v "$PWD":/backup alpine \
+docker run --rm -v "$STORAGE_VOLUME":/data:ro -v "$PWD":/backup alpine \
   tar czf "/backup/$ARCHIVE" -C /data .
 
 # Prove the archive is readable and contains the same number of files.
@@ -72,7 +72,8 @@ STORAGE_VOLUME="${HONUA_STORAGE_VOLUME_NAME:-honua_storage}"
 ARCHIVE=honua-files-20260609.tar.gz
 docker volume inspect "$STORAGE_VOLUME" >/dev/null
 docker run --rm -v "$STORAGE_VOLUME":/data -v "$PWD":/backup:ro alpine \
-  sh -c 'find /data -mindepth 1 -delete && tar xzf "/backup/'"$ARCHIVE"'" -C /data && chown -R 1001:1001 /data'
+  sh -c 'find /data -mindepth 1 -delete && tar xzf "/backup/$1" -C /data && chown -R 1001:1001 /data' \
+  restore "$ARCHIVE"
 ```
 
 4. Start Honua. Migrations run automatically at startup and roll the restored schema forward to match the running version; set `HONUA_SKIP_MIGRATIONS=true` only if you intend to run them out-of-band, and check state via `GET /api/v1/admin/observability/migrations`.
