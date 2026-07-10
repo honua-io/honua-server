@@ -2941,7 +2941,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetStreamingOperationsSubscribers_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_AfterSubscribe_ReturnsSubscriberInfo",
-        "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_WhenNone_ReturnsEmptyList"
+        "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_WhenNone_ReturnsEmptyList",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.GatedEndpoints_WhenExperimentalEnabledPerCapability_OpenOnlyThatCapability"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental"
@@ -4814,7 +4815,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.AsOf_WithTimestampCursor_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-temporal-services-serviceid-layers-layerid-capabilities",
@@ -4824,14 +4825,13 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.GatedEndpoints_WhenExperimentalEnabledPerCapability_OpenOnlyThatCapability",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.TemporalEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.TemporalEndpoint_AfterGaPromotion_IsNotExperimentalGated",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForNonTemporalLayer_ReportsHistoryUnsupported",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForTemporalLayer_ReportsHistorySupported",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForUnknownLayer_ReturnsNotFound"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-temporal-services-serviceid-layers-layerid-diff",
@@ -4846,7 +4846,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistorySliceEndpointsTests.Diff_MissingFrom_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-temporal-services-serviceid-layers-layerid-features-featureid-timeline",
@@ -4859,7 +4859,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistorySliceEndpointsTests.Timeline_ForFeature_ReturnsOrderedRevisions"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-tiles-pmtiles-artifactid",
@@ -14510,7 +14510,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistorySliceEndpointsTests.Rollback_WithoutApproval_ReturnsConflict"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "post-api-v1-temporal-services-serviceid-layers-layerid-rollback-plan",
@@ -14523,7 +14523,7 @@
         "Honua.Server.Tests.Features.Temporal.TemporalHistorySliceEndpointsTests.RollbackPlan_ForTemporalLayer_ReportsState"
       ],
       "proof_ledger_surface": "temporal-data-history",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "post-csp-violation-report",
