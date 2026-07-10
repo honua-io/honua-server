@@ -31,6 +31,8 @@ internal sealed record ClientCertificateTrustProfile
 
     public X509RevocationMode ChainRevocationMode { get; init; } = X509RevocationMode.NoCheck;
 
+    public bool RevocationStatusUnknownIsFatal { get; init; } = true;
+
     public int ExpirationWarningThresholdDays { get; init; } = 30;
 
     public int RotationGracePeriodDays { get; init; }
@@ -66,6 +68,7 @@ internal sealed record ClientCertificateTrustProfile
             RequireClientAuthenticationEku = options.RequireClientAuthenticationEku,
             RequireChainTrust = options.RequireChainTrust,
             ChainRevocationMode = options.ChainRevocationMode,
+            RevocationStatusUnknownIsFatal = options.RevocationStatusUnknownIsFatal,
             ExpirationWarningThresholdDays = options.ExpirationWarningThresholdDays,
             RotationGracePeriodDays = options.RotationGracePeriodDays,
             Revision = Math.Max(1, options.Revision),
