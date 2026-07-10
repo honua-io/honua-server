@@ -113,6 +113,13 @@ internal static class AuditDetailsProjection
                     wrote = true;
                 }
 
+                if (IsKnownDatabaseMigrationAudit(record))
+                {
+                    wrote |= WriteString(document.RootElement, writer, "outcome", 32);
+                    wrote |= WriteInt64(document.RootElement, writer, "durationMilliseconds", 0, 86_400_000);
+                    wrote |= WriteString(document.RootElement, writer, "stderr", 512);
+                }
+
                 writer.WriteEndObject();
                 writer.Flush();
                 if (!wrote || buffer.WrittenCount > MaxOutputBytes)
@@ -197,9 +204,33 @@ internal static class AuditDetailsProjection
         return true;
     }
 
+    private static bool WriteInt64(
+        JsonElement root,
+        Utf8JsonWriter writer,
+        string propertyName,
+        long minimum,
+        long maximum)
+    {
+        if (!root.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.Number ||
+            !property.TryGetInt64(out var value) ||
+            value < minimum ||
+            value > maximum)
+        {
+            return false;
+        }
+
+        writer.WriteNumber(propertyName, value);
+        return true;
+    }
+
     private static bool IsKnownOperationAudit(AuditEventRecord record)
         => record.ResourceType is "operation_autonomy" or "operation_proposal"
             && record.Action.StartsWith("operation.", StringComparison.Ordinal);
+
+    private static bool IsKnownDatabaseMigrationAudit(AuditEventRecord record)
+        => string.Equals(record.ResourceType, "database_migration", StringComparison.Ordinal)
+            && record.Action.StartsWith("migration.", StringComparison.Ordinal);
 
     private static bool IsSafeText(string? value, int maxLength)
     {
