@@ -266,6 +266,7 @@ internal static class McpToolHelpers
     public static McpToolsCallResult ErrorResult(Exception exception)
     {
         var jsonRpcError = McpErrorMapper.Map(exception);
+        var violations = BuildViolations(exception, jsonRpcError);
         var output = new McpToolErrorOutput
         {
             Status = "error",
@@ -276,7 +277,13 @@ internal static class McpToolHelpers
             PolicyRef = jsonRpcError.Data?.PolicyRef,
             ConflictingJobId = jsonRpcError.Data?.ConflictingJobId,
             Retryable = jsonRpcError.Data?.Retryable,
-            Violations = jsonRpcError.Data?.Violations
+            Violations = violations,
+            Error = new McpGeoprocessingError
+            {
+                Kind = ToErrorKind(exception, jsonRpcError),
+                Message = jsonRpcError.Message,
+                Violations = violations
+            }
         };
 
         var (element, text) = SerializeStructured(output, McpJsonContext.Default.McpToolErrorOutput);
@@ -290,6 +297,39 @@ internal static class McpToolHelpers
             ]
         };
     }
+
+    private static IReadOnlyList<McpValidationViolation>? BuildViolations(Exception exception, McpJsonRpcError jsonRpcError)
+    {
+        if (jsonRpcError.Data?.Violations is { Count: > 0 } violations)
+        {
+            return violations;
+        }
+
+        return exception is GeoprocessingValidationException
+            ?
+            [
+                new McpValidationViolation
+                {
+                    Code = "INVALID_ARGUMENT",
+                    Message = jsonRpcError.Message
+                }
+            ]
+            : null;
+    }
+
+    private static string ToErrorKind(Exception exception, McpJsonRpcError jsonRpcError) => exception switch
+    {
+        GeoprocessingValidationException => "ValidationFailed",
+        GeoprocessingAuthorizationException => "AuthorizationDenied",
+        GeoprocessingApprovalRequiredException => "ApprovalRequired",
+        GeoprocessingNotFoundException => "UnknownDataset",
+        GeoprocessingPreconditionFailedException => "PreconditionFailed",
+        GeoprocessingStoreUnavailableException => "ExecutionFailed",
+        GeoprocessingIdempotencyConflictException => "Conflict",
+        _ when jsonRpcError.Data?.Code == McpErrorMapper.Codes.NotFound => "UnknownDataset",
+        _ when jsonRpcError.Data?.Code == McpErrorMapper.Codes.InvalidArgument => "ValidationFailed",
+        _ => "ExecutionFailed"
+    };
 
     /// <summary>
     /// Parses the raw <c>arguments</c> payload into a typed model using the
