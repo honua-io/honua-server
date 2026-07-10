@@ -35,3 +35,19 @@ public interface IDatabaseMigrationRunner
         Assembly migrationsAssembly,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Receives optional backup-hook outcomes emitted by database migration runners.
+/// </summary>
+public interface IDatabaseMigrationBackupHookRecorder
+{
+    /// <summary>
+    /// Records the outcome of one backup-hook invocation.
+    /// </summary>
+    /// <param name="result">Backup-hook outcome.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the outcome has been recorded.</returns>
+    Task RecordAsync(
+        DatabaseMigrationBackupHookResult result,
+        CancellationToken cancellationToken = default);
+}

@@ -7,14 +7,16 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Core.Configuration;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -34,6 +36,11 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
                 services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
+                services.RemoveAll<IOptions<MigrationSafetyOptions>>();
+                services.AddSingleton(Options.Create(new MigrationSafetyOptions
+                {
+                    BackupCommand = "pg_dump --format=custom"
+                }));
             });
     }
 
@@ -72,6 +79,57 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
         root.GetProperty("upgradeRequired").GetBoolean().Should().BeTrue();
         root.GetProperty("pendingScripts").GetArrayLength().Should().Be(2);
         root.GetProperty("message").GetString().Should().Be("Applying 2 pending migration script(s).");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/migrations")]
+    public async Task GetMigrationStatus_WhenBackupHookMatchesPendingSet_ReturnsOutcome()
+    {
+        const string ContractScript = "002_drop_legacy_annotated.sql";
+        _migrationRunner.Plan = DatabaseMigrationPlan.Succeeded(
+            pendingScripts: [ContractScript],
+            pendingScriptClassifications:
+            [
+                new MigrationScriptClassification
+                {
+                    ScriptName = ContractScript,
+                    Classification = MigrationSafetyClassification.ContractAnnotated,
+                    BreakingRules = ["drop-column"]
+                }
+            ],
+            journalIsNonEmpty: true);
+
+        _fixture.Services.GetRequiredService<MigrationBackupHookState>()
+            .Record(new DatabaseMigrationBackupHookResult
+            {
+                Outcome = "failed",
+                Succeeded = false,
+                StartedAt = new DateTimeOffset(2026, 7, 9, 10, 15, 0, TimeSpan.Zero),
+                CompletedAt = new DateTimeOffset(2026, 7, 9, 10, 15, 3, TimeSpan.Zero),
+                DurationMilliseconds = 3_000,
+                ExitCode = 2,
+                Stderr = "pg_dump: permission denied",
+                PendingContractScripts = [ContractScript],
+                MigrationRunId = "schema-migration-test",
+                CorrelationId = "schema-migration-test"
+            });
+
+        var response = await _client.GetAsync("/api/v1/admin/observability/migrations");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var backupHook = document.RootElement.GetProperty("backupHook");
+        backupHook.GetProperty("configured").GetBoolean().Should().BeTrue();
+        backupHook.GetProperty("requiredForPendingSet").GetBoolean().Should().BeTrue();
+        backupHook.GetProperty("ranForPendingSet").GetBoolean().Should().BeTrue();
+        backupHook.GetProperty("succeeded").GetBoolean().Should().BeFalse();
+        backupHook.GetProperty("outcome").GetString().Should().Be("failed");
+        backupHook.GetProperty("durationMilliseconds").GetInt64().Should().Be(3_000);
+        backupHook.GetProperty("exitCode").GetInt32().Should().Be(2);
+        backupHook.GetProperty("stderr").GetString().Should().Be("pg_dump: permission denied");
+        backupHook.GetProperty("pendingContractScripts")[0].GetString().Should().Be(ContractScript);
+        backupHook.GetProperty("migrationRunId").GetString().Should().Be("schema-migration-test");
     }
 
     [IntegrationTest]

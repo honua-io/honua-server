@@ -4,6 +4,7 @@
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.ServiceDefaults;
@@ -147,8 +148,9 @@ internal static class ObservabilityEndpoints
         [FromServices] IConfiguration configuration,
         [FromServices] IDatabaseMigrationRunner migrationRunner,
         [FromServices] MigrationState migrationState,
-        HttpContext context,
-        [FromServices] IConnectionSecretResolver? secretResolver = null)
+        [FromServices] IOptions<MigrationSafetyOptions> migrationSafetyOptions,
+        [FromServices] MigrationBackupHookState backupHookState,
+        HttpContext context)
     {
         var response = new MigrationObservabilityResponse
         {
@@ -159,6 +161,7 @@ internal static class ObservabilityEndpoints
             GeneratedAt = DateTimeOffset.UtcNow
         };
 
+        var secretResolver = context.RequestServices.GetService<IConnectionSecretResolver>();
         var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
             configuration,
             secretResolver,
@@ -187,7 +190,13 @@ internal static class ObservabilityEndpoints
                 UpgradeRequired = plan.UpgradeRequired,
                 PendingScripts = plan.PendingScripts,
                 ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
-                PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage
+                PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage,
+                BackupHook = plan.Successful
+                    ? MigrationBackupHookStatusMapper.Build(
+                        plan,
+                        migrationSafetyOptions.Value,
+                        backupHookState.Latest)
+                    : null
             },
             MetricsJsonContext.Default.MigrationObservabilityResponse);
     }
