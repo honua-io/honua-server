@@ -371,7 +371,13 @@ jobs:
           # every batch. The targeted-tests script self-escalates to run_all on
           # infra/shared/unmapped changes, and the nightly `schedule` still runs
           # the full lane, so coverage is preserved. `-f full_ci=true` forces full.
-          SELECTIVE_BATCH="${{ github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/train/batch/') && inputs.full_ci != true }}"
+          SELECTIVE_BATCH=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
+             [[ "${GITHUB_REF_NAME}" == train/batch/* ]] &&
+             [ "${{ inputs.full_ci }}" != "true" ]; then
+            SELECTIVE_BATCH=true
+          fi
+          echo "Selective batch decision: ref_name=${GITHUB_REF_NAME} full_ci=${{ inputs.full_ci }} selective=${SELECTIVE_BATCH}"
           if [ "${{ github.event_name }}" != "pull_request" ] && [ "${SELECTIVE_BATCH}" != "true" ]; then
             echo "build_changes=true" >> "$GITHUB_OUTPUT"
             echo "non_test_changes=true" >> $GITHUB_OUTPUT
