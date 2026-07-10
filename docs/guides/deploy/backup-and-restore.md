@@ -33,10 +33,26 @@ psql -h db.example.com -U honua -d honua -c "SHOW archive_mode;"
 3. If you use local file storage, snapshot the volume alongside the database dump so attachments and uploads stay consistent with metadata.
 
 ```bash
-STORAGE_VOLUME=honua_storage
+STORAGE_VOLUME="${HONUA_STORAGE_VOLUME_NAME:-honua_storage}"
+ARCHIVE="honua-files-$(date +%Y%m%d).tar.gz"
+
+# Fail rather than letting `docker run -v` silently create a new empty volume.
+docker volume inspect "$STORAGE_VOLUME" >/dev/null
+SOURCE_FILE_COUNT=$(docker run --rm -v "$STORAGE_VOLUME":/data:ro alpine \
+  sh -c 'find /data -type f | wc -l')
 docker run --rm -v "$STORAGE_VOLUME":/data -v "$PWD":/backup alpine \
-  tar czf /backup/honua-files-$(date +%Y%m%d).tar.gz -C /data .
+  tar czf "/backup/$ARCHIVE" -C /data .
+
+# Prove the archive is readable and contains the same number of files.
+tar tzf "$ARCHIVE"
+ARCHIVE_FILE_COUNT=$(tar tzf "$ARCHIVE" | grep -vc '/$' || true)
+test "$SOURCE_FILE_COUNT" -eq "$ARCHIVE_FILE_COUNT"
 ```
+
+The repo Compose file mounts this named volume at `/var/lib/honua/storage` and
+sets its engine-level name from `HONUA_STORAGE_VOLUME_NAME`. A zero file count is
+valid only when the deployment intentionally has no uploads or attachments; record
+that fact with the backup evidence rather than assuming an empty archive is correct.
 
 ## Restore sequence
 
@@ -48,7 +64,17 @@ PGPASSWORD=replace-with-db-password pg_restore \
   -h db.example.com -U honua -d honua --clean --if-exists honua-20260609.dump
 ```
 
-3. Restore the file-storage volume or bucket from the matching snapshot.
+3. Restore the file-storage volume or bucket from the matching snapshot. For the
+   repo Compose path, keep Honua stopped and restore into the existing declared volume:
+
+```bash
+STORAGE_VOLUME="${HONUA_STORAGE_VOLUME_NAME:-honua_storage}"
+ARCHIVE=honua-files-20260609.tar.gz
+docker volume inspect "$STORAGE_VOLUME" >/dev/null
+docker run --rm -v "$STORAGE_VOLUME":/data -v "$PWD":/backup:ro alpine \
+  sh -c 'find /data -mindepth 1 -delete && tar xzf "/backup/'"$ARCHIVE"'" -C /data && chown -R 1001:1001 /data'
+```
+
 4. Start Honua. Migrations run automatically at startup and roll the restored schema forward to match the running version; set `HONUA_SKIP_MIGRATIONS=true` only if you intend to run them out-of-band, and check state via `GET /api/v1/admin/observability/migrations`.
 
 ## Verify
@@ -59,6 +85,33 @@ curl -s http://localhost:8080/healthz/ready
 ```
 
 Expected: a PostGIS version row, then `Ready`. Finish with a known feature query against a restored layer to confirm data integrity.
+
+### Upgrading an older Compose quickstart
+
+Compose versions before #2624 stored local files under the container's
+`/tmp/honua-storage` and did not mount that directory. Before replacing the old
+container, stop writes and copy any surviving files out of it:
+
+```bash
+docker compose stop honua
+OLD_HONUA_CONTAINER=$(docker compose ps -a -q honua)
+mkdir -p honua-storage-migration
+docker cp "$OLD_HONUA_CONTAINER:/tmp/honua-storage/." honua-storage-migration/
+```
+
+After updating the Compose file, create the new named volume and copy the files
+into it before starting Honua:
+
+```bash
+STORAGE_VOLUME="${HONUA_STORAGE_VOLUME_NAME:-honua_storage}"
+docker volume create "$STORAGE_VOLUME" >/dev/null
+docker run --rm -v "$STORAGE_VOLUME":/data -v "$PWD/honua-storage-migration":/source:ro alpine \
+  sh -c 'cp -a /source/. /data/ && chown -R 1001:1001 /data'
+docker compose up -d
+```
+
+If the old container has already been deleted, its tmpfs contents cannot be
+recovered; restore the matching file-storage backup instead.
 
 ## Troubleshoot
 
