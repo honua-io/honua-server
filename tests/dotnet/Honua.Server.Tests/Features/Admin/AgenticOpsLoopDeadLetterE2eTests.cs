@@ -136,11 +136,17 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         firstProposal.GetProperty("status").GetString().Should().Be("ProposalCreated");
         var proposalId = firstProposal.GetProperty("proposalId").GetString();
         proposalId.Should().NotBeNullOrWhiteSpace();
+        var proposalAuditCount = await CountAuditRowsAsync(fixture, "operation.proposed", proposalId!);
+        proposalAuditCount.Should().BeGreaterThan(0,
+            "the first proposal must emit durable audit evidence");
 
         var repeatedProposal = await ProposeFindingAsync(client, findingId!);
         repeatedProposal.GetProperty("proposalId").GetString().Should().Be(
             proposalId,
             "re-proposing the same live finding must fold onto the same idempotent gateway proposal");
+        (await CountAuditRowsAsync(fixture, "operation.proposed", proposalId!)).Should().Be(
+            proposalAuditCount,
+            "an idempotent proposal replay must not append another proposal audit event");
 
         var approved = await ApproveProposalAsync(client, proposalId!);
         approved.GetProperty("status").GetString().Should().Be("Submitted");
@@ -160,7 +166,6 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         await ReadFindingThroughRestAsync(client, expectPresent: false);
         (await ReadFindingsThroughMcpAsync(fixture)).Should().BeEmpty();
 
-        await AssertAuditRowAsync(fixture, "operation.proposed", proposalId!);
         await AssertAuditRowAsync(fixture, "operation.applied", proposalId!);
         await AssertAuditRowAsync(fixture, RedriveAction, changeId!);
 
@@ -424,6 +429,15 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
 
     private static async Task AssertAuditRowAsync(WebAppFixture fixture, string action, string correlationId)
     {
+        var count = await CountAuditRowsAsync(fixture, action, correlationId);
+        count.Should().Be(1L);
+    }
+
+    private static async Task<long> CountAuditRowsAsync(
+        WebAppFixture fixture,
+        string action,
+        string correlationId)
+    {
         var dataSource = fixture.GetService<NpgsqlDataSource>();
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand(
@@ -432,8 +446,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         command.Parameters.AddWithValue("action", action);
         command.Parameters.AddWithValue("correlation_id", correlationId);
 
-        var count = await command.ExecuteScalarAsync();
-        count.Should().Be(1L);
+        return (long)(await command.ExecuteScalarAsync())!;
     }
 
     private static async Task<string> ReadLatestAuditCorrelationAsync(WebAppFixture fixture, string action)
