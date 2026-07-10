@@ -183,20 +183,40 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
             await dispatchStore.EnqueueAsync(eventId.Value, ImmutableArray.Create(AlertChannelType.WebSocket));
         }
 
-        var claimed = await dispatchStore.ClaimPendingAsync(count, DateTimeOffset.UtcNow.AddMinutes(1));
-        claimed.Select(item => item.EventId).Should().BeEquivalentTo(
-            eventIds,
-            "the rows enqueued for the seeded fault must be the rows marked dead-lettered");
+        await MarkSeededDispatchesDeadLetterAsync(fixture, eventIds);
+    }
 
-        foreach (var item in claimed)
+    private static async Task MarkSeededDispatchesDeadLetterAsync(WebAppFixture fixture, HashSet<long> eventIds)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var updated = 0;
+
+        await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            await dispatchStore.MarkFailedAsync(
-                item.DispatchId,
-                DateTimeOffset.UtcNow,
-                DateTimeOffset.UtcNow,
-                deadLetter: true,
-                errorMessage: "seeded dead-letter storm for #2568");
-        }
+            await using var connection = await fixture.Postgres.GetConnectionAsync();
+            await using var command = new NpgsqlCommand(
+                """
+                UPDATE honua.alert_dispatch
+                SET status = @status,
+                    attempts = attempts + 1,
+                    next_attempt_at = @now,
+                    last_attempt_at = @now,
+                    last_error = @last_error,
+                    updated_at = now()
+                WHERE event_id = ANY(@event_ids)
+                """,
+                connection);
+            command.Parameters.AddWithValue("status", (short)AlertDispatchStatus.DeadLetter);
+            command.Parameters.AddWithValue("now", now);
+            command.Parameters.AddWithValue("last_error", "seeded dead-letter storm for #2568");
+            command.Parameters.AddWithValue("event_ids", eventIds.ToArray());
+
+            updated = await command.ExecuteNonQueryAsync();
+        });
+
+        updated.Should().Be(
+            eventIds.Count,
+            "only the dispatch rows enqueued for the seeded fault should be marked dead-lettered");
     }
 
     private async Task RefreshCachedBacklogAsync(IAlertDispatchStore store)
