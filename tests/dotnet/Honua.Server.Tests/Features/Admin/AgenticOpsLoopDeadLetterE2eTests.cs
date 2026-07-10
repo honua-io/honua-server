@@ -56,7 +56,9 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 builder.UseSetting("Alerts:Ops:Enabled", "true");
-                builder.UseSetting("Alerts:Ops:Channels:0", "websocket");
+                // Webhook is the Pro-edition channel. WebSocket is Enterprise-only and would
+                // correctly be filtered before the ops event reaches the durable outbox.
+                builder.UseSetting("Alerts:Ops:Channels:0", "webhook");
             })
             .ConfigureServices(services =>
             {
@@ -469,7 +471,10 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
             "SELECT payload::text FROM honua.alert_events "
             + "WHERE source = 'ops' AND service_id = 'ops-autonomy' ORDER BY event_id DESC LIMIT 1",
             connection);
-        return (string)(await command.ExecuteScalarAsync())!;
+        var payload = await command.ExecuteScalarAsync();
+        payload.Should().NotBeNull(
+            "a successful autonomous action must emit durable operator evidence through the alert outbox");
+        return (string)payload!;
     }
 
     private static ClaimsPrincipal CreateAdminPrincipal()
