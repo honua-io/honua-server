@@ -680,11 +680,14 @@ public sealed class DeployWorkflowServiceTests
         var operation = CreateOperationRecord(status: WorkflowOperationStatus.Submitted);
         await store.TryCreateAsync(operation);
 
-        var reconciler = CreateReconciler(store, backend);
+        var reconciler = CreateReconciler(
+            store,
+            backend,
+            leaseRenewInterval: TimeSpan.FromMilliseconds(25));
         var reconcileTask = reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
 
         await backend.ObserveEntered.WaitAsync(TimeSpan.FromSeconds(5));
-        await store.RenewLeaseObserved.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        await store.RenewLeaseObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         store.RenewLeaseCount.Should().BeGreaterThan(0);
 
@@ -706,13 +709,19 @@ public sealed class DeployWorkflowServiceTests
     private static DeployWorkflowReconciler CreateReconciler(
         TestWorkflowOperationStore store,
         IDeployBackend backend,
-        IDeployTelemetrySignalEvaluator? telemetryEvaluator = null)
-        => new(
+        IDeployTelemetrySignalEvaluator? telemetryEvaluator = null,
+        TimeSpan? leaseRenewInterval = null)
+    {
+        return new DeployWorkflowReconciler(
             store,
             new TestDeployTargetRegistry(),
             [backend],
             telemetryEvaluator ?? new StubDeployTelemetrySignalEvaluator(null),
-            NullLogger<DeployWorkflowReconciler>.Instance);
+            NullLogger<DeployWorkflowReconciler>.Instance)
+        {
+            LeaseRenewInterval = leaseRenewInterval ?? TimeSpan.FromSeconds(10),
+        };
+    }
 
     private static WorkflowOperationRecord CreateOperationRecord(
         WorkflowOperationStatus status,

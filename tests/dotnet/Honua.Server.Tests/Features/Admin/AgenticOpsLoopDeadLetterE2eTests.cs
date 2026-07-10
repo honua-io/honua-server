@@ -22,6 +22,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using StackExchange.Redis;
 
@@ -55,13 +56,22 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
                 // durable control-plane services are wired before ConfigureAppConfiguration runs.
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
-                builder.UseSetting("Alerts:Ops:Enabled", "true");
-                // Webhook is the Pro-edition channel. WebSocket is Enterprise-only and would
-                // correctly be filtered before the ops event reaches the durable outbox.
-                builder.UseSetting("Alerts:Ops:Channels:0", "webhook");
             })
             .ConfigureServices(services =>
             {
+                // The isolated WebAppFixture disables alerts after custom app-configuration
+                // callbacks run. Override the bound options at the service boundary so this
+                // test proves the enabled ops path rather than silently exercising the no-op.
+                services.RemoveAll<IOptions<AlertOptions>>();
+                services.AddSingleton<IOptions<AlertOptions>>(Options.Create(new AlertOptions
+                {
+                    Edition = AlertEdition.Pro,
+                    Ops = new AlertOpsOptions
+                    {
+                        Enabled = true,
+                        Channels = ["webhook"],
+                    },
+                }));
                 services.RemoveAll<IAlertDispatchHealth>();
                 services.AddSingleton(_dispatchHealth);
                 services.AddSingleton<IAlertDispatchHealth>(
@@ -173,6 +183,9 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         var client = _client!;
         var dispatchStore = fixture.GetService<IAlertDispatchStore>();
         var autonomyStore = fixture.GetService<IOpsAutonomyPolicyStore>();
+        var alertOptions = fixture.GetService<IOptions<AlertOptions>>().Value;
+        alertOptions.Ops.Enabled.Should().BeTrue();
+        alertOptions.Ops.Channels.Should().ContainSingle().Which.Should().Be("webhook");
         var initialRedriveAuditCount = await CountAuditRowsAsync(fixture, RedriveAction);
         await autonomyStore.SetSettingsAsync(
             new OpsAutonomySettings { KillSwitchEnabled = false },
