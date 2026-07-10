@@ -96,6 +96,39 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public int SessionCount => Volatile.Read(ref _activeSessionCount);
 
     /// <summary>
+    /// Configured concurrent-session cap. Exposed for the health check's saturation signal.
+    /// </summary>
+    public int MaxConcurrentSessions => _options.Value.MaxConcurrentSessions;
+
+    /// <summary>
+    /// Point-in-time snapshot of the cross-node broadcast backlog for the health check:
+    /// whether cluster broadcast is configured (Redis present), whether it is currently
+    /// enabled (subscribed), the number of payloads buffered awaiting a publish retry, and
+    /// the cumulative dropped count since startup.
+    /// </summary>
+    public ClusterBroadcastBacklogSnapshot GetClusterBroadcastBacklogSnapshot()
+    {
+        lock (_clusterBroadcastLock)
+        {
+            return new ClusterBroadcastBacklogSnapshot(
+                Configured: _redis is not null,
+                Enabled: _clusterBroadcastEnabled,
+                BacklogDepth: _clusterBroadcastBacklogCount,
+                Dropped: _clusterBroadcastBacklogDropped);
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the OTel observable-gauge snapshot (active sessions, cluster backlog depth).
+    /// Called on session add/remove and cluster-broadcast backlog changes; cheap and lock-free
+    /// for the session count, best-effort for the backlog depth.
+    /// </summary>
+    private void UpdateGaugeSnapshot()
+        => FeatureStreamMetrics.RecordGaugeSnapshot(
+            Volatile.Read(ref _activeSessionCount),
+            Volatile.Read(ref _clusterBroadcastBacklogCount));
+
+    /// <summary>
     /// Creates a new session and returns its channel reader for the transport loop.
     /// Live broadcasts are queued into the bounded channel immediately. When a session
     /// is replaying, the transport writes replay events directly while the channel
@@ -122,6 +155,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         var opts = _options.Value;
         if (!TryReserveSessionSlot(opts.MaxConcurrentSessions))
         {
+            FeatureStreamMetrics.RecordSessionRejected();
             return null;
         }
 
@@ -142,6 +176,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         FeatureStreamLog.SessionCreated(_logger, id, transport);
+        FeatureStreamMetrics.RecordSessionOpened(transport);
+        UpdateGaugeSnapshot();
         return new FeatureStreamSession(id, channel.Reader, this, cts.Token);
     }
 
@@ -206,6 +242,13 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             ReleaseSessionSlot();
             FeatureStreamLog.SessionRemoved(_logger, sessionId, reason);
+            FeatureStreamMetrics.RecordSessionClosed(entry.Transport, reason);
+            if (reason == FeatureStreamDisconnectReason.SlowConsumer)
+            {
+                FeatureStreamMetrics.RecordSlowConsumerDrop(entry.Transport);
+            }
+
+            UpdateGaugeSnapshot();
             entry.Cts.Cancel();
             entry.Cts.Dispose();
         }
@@ -297,12 +340,14 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     {
         _clusterBroadcastBacklog.Enqueue(payload);
         _clusterBroadcastBacklogCount++;
+        UpdateGaugeSnapshot();
 
         while (_clusterBroadcastBacklogCount > MaxClusterBroadcastBacklog &&
                _clusterBroadcastBacklog.TryDequeue(out _))
         {
             _clusterBroadcastBacklogCount--;
             _clusterBroadcastBacklogDropped++;
+            FeatureStreamMetrics.RecordClusterBroadcastDropped();
             if (!_clusterBroadcastBacklogDropLogged)
             {
                 _clusterBroadcastBacklogDropLogged = true;
@@ -515,6 +560,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
         // Backlog fully drained: re-arm the overflow log for the next episode.
         _clusterBroadcastBacklogDropLogged = false;
+        UpdateGaugeSnapshot();
     }
 
     /// <summary>
@@ -523,6 +569,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public void BroadcastHeartbeat()
     {
         var heartbeat = FeatureStreamMessage.Heartbeat();
+        long sent = 0;
         foreach (var (id, entry) in _sessions)
         {
             if (entry.Cts.IsCancellationRequested)
@@ -547,8 +594,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             else
             {
                 Interlocked.Increment(ref _heartbeatsSent);
+                sent++;
             }
         }
+
+        FeatureStreamMetrics.RecordHeartbeatsSent(sent);
     }
 
     /// <summary>
