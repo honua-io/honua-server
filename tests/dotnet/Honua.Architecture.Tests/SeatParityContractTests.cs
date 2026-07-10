@@ -48,7 +48,7 @@ public sealed class SeatParityContractTests
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     [ArchitectureTest]
-    public void OpsParityMap_CoversOperateObservabilityDeployAndProposalRoutes()
+    public void OpsParityMap_CoversOperateObservabilityAutonomyDeployAndProposalRoutes()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var parityMap = LoadParityMap(repoRoot);
@@ -61,7 +61,7 @@ public sealed class SeatParityContractTests
         parityMap.Keys.OrderBy(route => route, StringComparer.Ordinal)
             .Should().BeEquivalentTo(
                 expectedRoutes,
-                "every operate/admin-observability/deploy/proposal EndpointRegistry route must be mapped for MCP parity");
+                "every operate/admin-observability/autonomy/deploy/proposal EndpointRegistry route must be mapped for MCP parity");
 
         var implementedMcpTools = LoadImplementedMcpTools(repoRoot);
         foreach (var (route, entry) in parityMap)
@@ -189,6 +189,7 @@ public sealed class SeatParityContractTests
         => endpoint.Path.StartsWith("/api/v1/operate/", StringComparison.Ordinal)
             || endpoint.Path.StartsWith("/api/v1/admin/observability/ops-health", StringComparison.Ordinal)
             || endpoint.Path.StartsWith("/api/v1/admin/observability/findings", StringComparison.Ordinal)
+            || endpoint.Path.StartsWith("/api/v1/admin/observability/autonomy/", StringComparison.Ordinal)
             || endpoint.Path.StartsWith("/api/v1/admin/deploy/", StringComparison.Ordinal)
             || endpoint.Path.StartsWith("/api/v1/admin/proposals", StringComparison.Ordinal)
             || string.Equals(endpoint.Path, "/api/v1/admin/platform-release/converge", StringComparison.Ordinal);
