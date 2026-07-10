@@ -128,6 +128,22 @@ ADR gives the registry, and the manifest lever the Console release gate
 > pipeline still self-gates on `Alerts:Enabled` (default `false`), so GA does not
 > mean on-by-default; it means no longer hidden/unadvertised.
 
+> **Update (#2429).** **Temporal analytics** (`temporal.filtering`,
+> `temporal.extent-discovery`, `temporal.histogram`, `temporal.time-series-tiles`;
+> `/api/v1/temporal/*` plus the FeatureServer `temporalExtent`/`queryDateBins`/
+> time-series-tile surfaces) was promoted from `experimental` to `Implemented`
+> (GA). It is therefore no longer part of the registry-flag experimental roster
+> (a): its routes ship on the default first-release surface like any other GA
+> capability. **Edition split is unchanged**: time filtering + extent discovery
+> are Community; histogram (date-bins), time-series tiles, and the animation-API
+> contract are Pro — those entitlement gates still apply, GA does not bypass
+> licensing. Provider coverage is Postgres (all four surfaces) and DuckDB
+> (filtering/extent/histogram); providers without temporal SQL translation
+> (MySQL, SQL Server, Oracle, Snowflake, Redshift, Databricks) now uniformly
+> reject a temporal filter with `NotSupportedException` — the fail-loud contract
+> hardened in #2429 so no provider silently returns rows outside the requested
+> window.
+
 **(b) Edition/entitlement + Console-UI gating** covers the remainder of the
 experimental + disabled set — the capabilities that are **not** held back by a
 route-level registry flag: SSO/OIDC/SAML/SCIM, **forms** authoring + **field

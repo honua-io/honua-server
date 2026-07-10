@@ -235,11 +235,11 @@ internal static class FeatureCatalogGenerator
     /// </summary>
     internal static string? ResolveDescriptorIdForRoute(string route)
     {
-        // Temporal / data-history — /api/v1/temporal/*
-        if (route.StartsWith("/api/v1/temporal/", StringComparison.OrdinalIgnoreCase))
-        {
-            return "temporal.filtering";
-        }
+        // Temporal analytics — /api/v1/temporal/* was promoted to GA (Implemented) in
+        // #2429 (temporal.filtering/extent-discovery/histogram/time-series-tiles), so it is
+        // no longer a flipped experimental group: its routes fall through to the in-release
+        // surface (implemented) like any other GA capability. Edition entitlements
+        // (Community vs Pro) still apply, but those are not an experimental-maturity concern.
 
         // Geofence alerting — /api/v1/admin/alerts/* was promoted to GA (Implemented)
         // in #2427, so it is no longer a flipped experimental group: its routes fall
