@@ -29,9 +29,9 @@ namespace Honua.CloudIntegration.Tests;
 /// kill between that flip and the restore would then lose the routing permanently. It never changes
 /// which version serves traffic nor the traffic split, so it certifies the alias-flip control-plane
 /// mechanics without a deploy artifact and without risk to a production-relevant function. The
-/// weighted-cutover and rollback-decision mechanics themselves stay covered by the backend's
-/// extensive unit tests; a full live cutover certification is deferred (see the ECS/ALB deferral in
-/// <see cref="DeferredRealCertificationPlaceholders"/> and #2161).
+/// weighted-cutover and rollback-decision mechanics themselves stay covered by the ECS/ALB live
+/// certification cells, including the rollback-failure path in
+/// <see cref="AwsEcsAlbRollbackFailureRealCertificationTests"/>.
 ///
 /// Alias updates are in-place mutations of a standing resource, not created resources, so there is
 /// nothing to tag or reap; correctness is the guaranteed restore. OFF unless

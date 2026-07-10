@@ -93,6 +93,34 @@ public sealed record OperationGatewayRequest
     /// the operation. Persisted with the proposal so approval can replay it.
     /// </summary>
     public string? ExecutionPayload { get; init; }
+
+    /// <summary>
+    /// Optional deterministic ops-finding autonomy context. When present, the gateway may ask the
+    /// autonomy evaluator whether an approval-tier finding remediation is allowed to execute
+    /// directly under the rule's policy and guardrails.
+    /// </summary>
+    public OperationGatewayAutonomyContext? AutonomyContext { get; init; }
+}
+
+/// <summary>
+/// Finding-originated autonomy metadata carried to the operation gateway.
+/// </summary>
+public sealed record OperationGatewayAutonomyContext
+{
+    /// <summary>Gets the deterministic finding identifier used as the idempotency key.</summary>
+    public required string FindingId { get; init; }
+
+    /// <summary>Gets the kebab-case ops-finding rule identifier.</summary>
+    public required string Rule { get; init; }
+
+    /// <summary>Gets a value indicating whether the finding action was marked auto-safe by its rule.</summary>
+    public required bool ActionMarkedAutoSafe { get; init; }
+
+    /// <summary>Gets the action blast-radius estimate used by the autonomy policy.</summary>
+    public int BlastRadius { get; init; } = 1;
+
+    /// <summary>Gets the supporting evidence references for audit/diagnostic context.</summary>
+    public IReadOnlyList<string> EvidenceRefs { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
