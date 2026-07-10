@@ -156,6 +156,20 @@ ADR gives the registry, and the manifest lever the Console release gate
 > client-certificate enforcement still self-gates on
 > `Authentication:ClientCertificates:Mode` (default `Disabled`).
 
+> **Update (#2428).** **Realtime feature streams** (`realtime.feature-streams`,
+> `/api/v1/streaming/features` + `/api/v1/admin/(operations/)streaming/*`) — the
+> WebSocket/SSE feature-change streams with subscription filters and durable
+> replay cursors — were promoted from `experimental` to `Implemented` (GA).
+> Those three route groups drop
+> their `WithCapabilityGate("realtime.feature-streams")` and ship on the default
+> first-release surface; the capability is no longer part of the registry-flag
+> experimental roster (a). Streaming remains **Pro-edition** gated
+> (`streaming.feature-subscriptions` entitlement, enforced per request), so GA
+> means no longer hidden/unadvertised, not free-tier. GA-hardening added OTel
+> telemetry (session/backpressure/heartbeat/replay/cluster-broadcast instruments
+> on the shared `Honua` meter) and a `FeatureStreamHealthCheck` surfacing
+> slow-consumer drops, session saturation, and cross-node broadcast backlog loss.
+
 **(b) Edition/entitlement + Console-UI gating** covers the remainder of the
 experimental + disabled set — the capabilities that are **not** held back by a
 route-level registry flag: SSO/OIDC/SAML/SCIM, **forms** authoring + **field

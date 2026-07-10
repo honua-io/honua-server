@@ -121,7 +121,10 @@ train_select_failure_is_flake_only() {
 
 # train_select_ci_gate_state <pr-json> [gate-json]: classify the CI Gate check
 # for one PR. Emits one of: SUCCESS | FLAKE | FAIL | PENDING | MISSING.
-# Reads the statusCheckRollup entry named "CI Gate" (the single required check).
+# Reads the statusCheckRollup entry named/contextualized "CI Gate" (the single
+# required check). Recovery writes an exact-head legacy StatusContext because a
+# user token cannot create CheckRuns; prefer that newer recovery evidence over
+# an older failed CheckRun on the same commit.
 # A failing CI Gate is downgraded to FLAKE only when the failing run's leaf jobs
 # are flake-only (aggregator-only roll-ups and/or flake-regex log matches), so
 # the train can process its flaky backlog. Real-gate-job failures stay FAIL.
@@ -129,10 +132,25 @@ train_select_failure_is_flake_only() {
 train_select_ci_gate_state() {
   local rollup_json="$1"
   local gate
-  gate="$(jq -c '[.[] | select(.name == "CI Gate")] | first // empty' <<<"${rollup_json}")"
+  gate="$(jq -c '
+    ([.[] | select(.context == "CI Gate")] | sort_by(.startedAt // "") | last) //
+    ([.[] | select(.name == "CI Gate")] | first) //
+    empty
+  ' <<<"${rollup_json}")"
   if [[ -z "${gate}" || "${gate}" == "null" ]]; then
     echo "MISSING"; return 0
   fi
+
+  if [[ "$(jq -r '.__typename // ""' <<<"${gate}")" == "StatusContext" ||
+        "$(jq -r '.context // ""' <<<"${gate}")" == "CI Gate" ]]; then
+    case "$(jq -r '.state // ""' <<<"${gate}" | tr '[:lower:]' '[:upper:]')" in
+      SUCCESS) echo "SUCCESS" ;;
+      PENDING|EXPECTED) echo "PENDING" ;;
+      *) echo "FAIL" ;;
+    esac
+    return 0
+  fi
+
   local status conclusion
   status="$(jq -r '.status // ""' <<<"${gate}")"
   conclusion="$(jq -r '.conclusion // ""' <<<"${gate}")"

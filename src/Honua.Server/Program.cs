@@ -540,6 +540,10 @@ builder.Services.TryAddSingleton<Honua.Core.Features.Guardrails.Abstractions.IOp
 // Per-action auto-safe metadata for graduated autonomy policy checks.
 builder.Services.TryAddSingleton<Honua.Core.Features.Guardrails.Abstractions.IOpsActionSafetyCatalog,
     Honua.ControlPlane.Executors.OpsActionSafetyCatalog>();
+// Autonomous success is evidence-gated: the only auto-safe action must re-observe the live
+// dispatch state across an observation window before the gateway records Succeeded (#2568).
+builder.Services.AddScoped<Honua.ControlPlane.IAutonomousOperationConvergence,
+    Honua.ControlPlane.Executors.AlertDispatchAutonomousOperationConvergence>();
 
 // Configure tile options
 InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Configuration);
@@ -566,7 +570,12 @@ if (builder.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery",
 StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
 
 // Register health check services
+builder.Services.AddOptions<MigrationSafetyOptions>()
+    .Bind(builder.Configuration.GetSection(MigrationSafetyOptions.SectionName));
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.MigrationState>();
+builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.MigrationBackupHookState>();
+builder.Services.TryAddSingleton<IDatabaseMigrationBackupHookRecorder,
+    Honua.Infrastructure.Monitoring.AuditingMigrationBackupHookRecorder>();
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DatabaseCompatibilityState>();
 
 // Degraded-start resilience (#1632): when enabled, transient DB-unavailability at startup does

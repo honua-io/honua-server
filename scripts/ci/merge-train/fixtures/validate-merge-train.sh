@@ -325,6 +325,14 @@ assert_eq "select: COMPLETED+SUCCESS => SUCCESS" "$(train_select_ci_gate_state '
 assert_eq "select: COMPLETED+FAILURE => FAIL" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"COMPLETED","conclusion":"FAILURE"}]')" "FAIL"
 assert_eq "select: QUEUED => PENDING" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"QUEUED","conclusion":""}]')" "PENDING"
 assert_eq "select: absent => MISSING" "$(train_select_ci_gate_state '[]')" "MISSING"
+assert_eq "select: recovered StatusContext SUCCESS => SUCCESS" \
+  "$(train_select_ci_gate_state '[{"__typename":"StatusContext","context":"CI Gate","state":"SUCCESS","startedAt":"2026-01-02T00:00:00Z"}]')" "SUCCESS"
+assert_eq "select: StatusContext PENDING => PENDING" \
+  "$(train_select_ci_gate_state '[{"__typename":"StatusContext","context":"CI Gate","state":"PENDING"}]')" "PENDING"
+assert_eq "select: StatusContext FAILURE => FAIL" \
+  "$(train_select_ci_gate_state '[{"__typename":"StatusContext","context":"CI Gate","state":"FAILURE"}]')" "FAIL"
+assert_eq "select: recovery status supersedes failed CheckRun" \
+  "$(train_select_ci_gate_state '[{"__typename":"CheckRun","name":"CI Gate","status":"COMPLETED","conclusion":"FAILURE"},{"__typename":"StatusContext","context":"CI Gate","state":"SUCCESS","startedAt":"2026-01-02T00:00:00Z"}]')" "SUCCESS"
 
 echo
 echo "== select: merge-through-flakes (FAILURE => FLAKE only when flake-only) =="

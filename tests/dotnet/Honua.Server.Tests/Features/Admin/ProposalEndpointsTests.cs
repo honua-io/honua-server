@@ -63,7 +63,9 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
     private async Task<OperationProposal> SeedProposalAsync(
         OperationProposalStatus status = OperationProposalStatus.AwaitingApproval,
-        string? requestedBy = "agent:test")
+        string? requestedBy = "agent:test",
+        OperationProposalAutonomyMetadata? autonomyMetadata = null,
+        string? executionPayload = null)
     {
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
@@ -72,7 +74,13 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             Kind = OperationClass.AdminConfigChange,
             Status = status,
             RequestedBy = requestedBy,
-            Plan = new OperationProposalPlan { Summary = "Change setting X", RiskLevel = ProposalRiskLevel.Medium },
+            AutonomyMetadata = autonomyMetadata,
+            Plan = new OperationProposalPlan
+            {
+                Summary = "Change setting X",
+                RiskLevel = ProposalRiskLevel.Medium,
+                ExecutionPayload = executionPayload,
+            },
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -106,6 +114,32 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         document.RootElement.GetProperty("proposalId").GetString().Should().Be(proposal.ProposalId);
         document.RootElement.GetProperty("summary").GetString().Should().Be("Change setting X");
         document.RootElement.GetProperty("riskLevel").GetString().Should().Be("Medium");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/proposals/{id}")]
+    public async Task GetProposal_FindingMetadata_ReturnsStableLinkWithoutExecutionPayload()
+    {
+        var proposal = await SeedProposalAsync(
+            autonomyMetadata: new OperationProposalAutonomyMetadata
+            {
+                FindingId = "finding-1",
+                Rule = "alert-dispatch-backlog",
+                ActionDiscriminator = "alerts.redrive_dead_letters",
+                ActionMarkedAutoSafe = true,
+            },
+            executionPayload: "{\"password\":\"must-not-leak\"}");
+
+        var response = await _client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("findingId").GetString().Should().Be("finding-1");
+        document.RootElement.GetProperty("autonomyRule").GetString().Should().Be("alert-dispatch-backlog");
+        document.RootElement.GetProperty("actionDiscriminator").GetString().Should().Be("alerts.redrive_dead_letters");
+        json.Contains("executionPayload", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+        json.Contains("must-not-leak", StringComparison.Ordinal).Should().BeFalse();
     }
 
     [IntegrationTest]

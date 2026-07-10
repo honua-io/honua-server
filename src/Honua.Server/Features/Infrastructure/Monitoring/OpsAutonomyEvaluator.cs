@@ -202,6 +202,40 @@ internal sealed class OpsAutonomyEvaluator(
             : store.IncrementProposalRaisedAsync(rule, cancellationToken);
     }
 
+    public Task RecordProposalResolutionAsync(
+        OperationProposal proposal,
+        OpsAutonomyProposalResolution resolution,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+
+        var context = proposal.AutonomyMetadata;
+        var statusMatches = resolution == OpsAutonomyProposalResolution.Rejected
+            ? proposal.Status == OperationProposalStatus.Rejected
+            : proposal.Status is OperationProposalStatus.Submitted
+                or OperationProposalStatus.Reconciling
+                or OperationProposalStatus.Succeeded
+                or OperationProposalStatus.Failed
+                or OperationProposalStatus.RolledBack;
+        if (store is null ||
+            context is null ||
+            proposal.ResolvedAt is null ||
+            string.IsNullOrWhiteSpace(proposal.ResolvedBy) ||
+            !statusMatches ||
+            !OpsAutonomyPolicyDefaults.IsValidStableId(proposal.ProposalId) ||
+            !OpsAutonomyPolicyDefaults.IsValidStableId(context.FindingId) ||
+            !OpsAutonomyPolicyDefaults.IsValidRule(context.Rule))
+        {
+            return Task.CompletedTask;
+        }
+
+        return store.RecordProposalResolutionAsync(
+            context.Rule,
+            proposal.ProposalId,
+            resolution,
+            cancellationToken);
+    }
+
     private async Task<string?> CheckCommonGuardsAsync(
         string rule,
         OperationClass operationClass,
@@ -266,47 +300,12 @@ internal sealed class OpsAutonomyEvaluator(
             var stored = await store.GetPolicyAsync(rule, cancellationToken).ConfigureAwait(false);
             if (stored is not null)
             {
-                return Normalize(stored);
+                return OpsAutonomyPolicyDefaults.Resolve(rule, options.CurrentValue, stored);
             }
         }
 
-        var current = options.CurrentValue;
-        var mode = OpsAutonomyMode.ProposeOnly;
-        int maxActions = current.DefaultMaxAutoActionsPerWindow;
-        int windowSeconds = current.DefaultWindowSeconds;
-        int maxBlastRadius = current.DefaultMaxBlastRadius;
-
-        if (!string.IsNullOrWhiteSpace(rule) &&
-            current.Rules.TryGetValue(rule, out var ruleOptions))
-        {
-            mode = ParseMode(ruleOptions.Mode) ?? mode;
-            maxActions = ruleOptions.MaxAutoActionsPerWindow ?? maxActions;
-            windowSeconds = ruleOptions.WindowSeconds ?? windowSeconds;
-            maxBlastRadius = ruleOptions.MaxBlastRadius ?? maxBlastRadius;
-        }
-
-        return Normalize(new OpsAutonomyPolicy
-        {
-            Rule = rule,
-            Mode = mode,
-            MaxAutoActionsPerWindow = maxActions,
-            Window = TimeSpan.FromSeconds(windowSeconds),
-            MaxBlastRadius = maxBlastRadius,
-        });
+        return OpsAutonomyPolicyDefaults.Resolve(rule, options.CurrentValue, persisted: null);
     }
-
-    private static OpsAutonomyPolicy Normalize(OpsAutonomyPolicy policy)
-        => policy with
-        {
-            MaxAutoActionsPerWindow = Math.Max(1, policy.MaxAutoActionsPerWindow),
-            Window = policy.Window <= TimeSpan.Zero ? TimeSpan.FromHours(1) : policy.Window,
-            MaxBlastRadius = Math.Max(1, policy.MaxBlastRadius),
-        };
-
-    private static OpsAutonomyMode? ParseMode(string? raw)
-        => Enum.TryParse<OpsAutonomyMode>(raw, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed)
-            ? parsed
-            : null;
 
     private static OpsAutonomyFindingDecision FindingDenied(string reason, OpsAutonomyPolicy? policy = null)
         => new() { CanAutoApply = false, Policy = policy, Reason = reason };

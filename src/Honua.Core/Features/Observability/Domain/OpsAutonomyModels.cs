@@ -31,6 +31,30 @@ public enum OpsAutonomyActionOutcome
 
     /// <summary>The action was rolled back or reverted after a regression.</summary>
     RolledBack = 2,
+
+    /// <summary>
+    /// Execution may have changed state, but verification or compensation could not
+    /// establish a safe terminal result. Manual intervention is required.
+    /// </summary>
+    Indeterminate = 3,
+
+    /// <summary>
+    /// The caller canceled after actuator invocation began. This remains distinct from
+    /// actuator failure and from a completed verification with indeterminate evidence.
+    /// </summary>
+    Canceled = 4,
+}
+
+/// <summary>
+/// Human resolution recorded for a finding-originated operation proposal.
+/// </summary>
+public enum OpsAutonomyProposalResolution
+{
+    /// <summary>The proposal was approved by an operator.</summary>
+    Approved = 0,
+
+    /// <summary>The proposal was rejected by an operator.</summary>
+    Rejected = 1,
 }
 
 /// <summary>
@@ -98,7 +122,10 @@ public sealed record OpsAutonomyTrackRecord
     /// <summary>Gets the number of autonomous actions rolled back or reverted for the rule.</summary>
     public long RolledBack { get; init; }
 
-    /// <summary>Gets the number of autonomous actions that failed for the rule.</summary>
+    /// <summary>
+    /// Gets the number of autonomous actions that failed, were indeterminate, or were
+    /// canceled after invocation for the rule.
+    /// </summary>
     public long Failed { get; init; }
 
     /// <summary>Gets the first known activity timestamp for the rule.</summary>
@@ -115,6 +142,12 @@ public sealed record OpsAutonomyPolicySnapshot
 {
     /// <summary>Gets the effective or durable policy.</summary>
     public required OpsAutonomyPolicy Policy { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="Policy"/> is an explicit durable override.
+    /// False means the policy is an effective configuration/default projection.
+    /// </summary>
+    public bool IsPersisted { get; init; }
 
     /// <summary>Gets the aggregate outcome track record for the rule.</summary>
     public required OpsAutonomyTrackRecord TrackRecord { get; init; }

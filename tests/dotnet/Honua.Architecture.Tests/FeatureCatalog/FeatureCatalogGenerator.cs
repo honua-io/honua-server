@@ -257,14 +257,11 @@ internal static class FeatureCatalogGenerator
             return "sync.offline";
         }
 
-        // Realtime feature streaming — /api/v1/streaming/features*, the admin
-        // session-visibility and streaming-operations surfaces.
-        if (route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase) ||
-            route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase) ||
-            route.StartsWith("/api/v1/admin/operations/streaming", StringComparison.OrdinalIgnoreCase))
-        {
-            return "realtime.feature-streams";
-        }
+        // Realtime feature streaming (/api/v1/streaming/features*, the admin
+        // session-visibility and streaming-operations surfaces) was promoted to GA
+        // (Implemented) in #2428, so it is no longer a flipped experimental group: its
+        // routes fall through to the in-release surface (implemented) like any other GA
+        // capability.
 
         // Branch versioning (VMS REST surface) — /rest/services/{serviceId}/VersionManagementServer/*
         // Gated Preview in the BH6-001/BH6-002 fix batch (ADR-0058).

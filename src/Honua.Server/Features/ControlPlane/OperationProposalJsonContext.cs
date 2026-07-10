@@ -14,6 +14,7 @@ namespace Honua.ControlPlane;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(OperationProposal))]
 [JsonSerializable(typeof(OperationProposalPlan))]
+[JsonSerializable(typeof(OperationProposalAutonomyMetadata))]
 internal sealed partial class OperationProposalJsonContext : JsonSerializerContext
 {
 }

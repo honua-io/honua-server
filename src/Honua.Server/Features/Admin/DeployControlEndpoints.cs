@@ -130,7 +130,8 @@ internal static class DeployControlEndpoints
                     UpgradeRequired = snapshot.Migration.UpgradeRequired,
                     PendingScripts = snapshot.Migration.PendingScripts,
                     ExecutedButNotDiscoveredScripts = snapshot.Migration.ExecutedButNotDiscoveredScripts,
-                    PlanError = snapshot.Migration.PlanError
+                    PlanError = snapshot.Migration.PlanError,
+                    BackupHook = snapshot.Migration.BackupHook
                 }
                 : null,
             DatabaseCompatibility = includeDiagnostics && snapshot.DatabaseCompatibility != null
