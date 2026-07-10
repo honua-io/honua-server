@@ -35,6 +35,44 @@ internal static class McpToolOutputSchemas
         }
         """;
 
+    private static readonly string GeoprocessingErrorDef = $$"""
+        {
+          "type": "object",
+          "required": ["kind", "message"],
+          "properties": {
+            "kind": { "type": "string" },
+            "message": { "type": "string" },
+            "stepId": { "type": ["string", "null"] },
+            "violations": {
+              "type": ["array", "null"],
+              "items": {{ValidationViolationDef}}
+            }
+          }
+        }
+        """;
+
+    private static readonly string ToolErrorOutputSchema = $$"""
+        {
+          "type": "object",
+          "required": ["status", "code", "message", "error"],
+          "properties": {
+            "status": { "type": "string", "const": "error" },
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "error": {{GeoprocessingErrorDef}},
+            "requiresReauthentication": { "type": ["boolean", "null"] },
+            "approvalRequired": { "type": ["boolean", "null"] },
+            "policyRef": { "type": ["string", "null"] },
+            "conflictingJobId": { "type": ["string", "null"] },
+            "retryable": { "type": ["boolean", "null"] },
+            "violations": {
+              "type": ["array", "null"],
+              "items": {{ValidationViolationDef}}
+            }
+          }
+        }
+        """;
+
     /// <summary>Schema for <see cref="Models.McpValidatePlanOutput"/>.</summary>
     public static readonly JsonElement ValidatePlanOutputSchema = Parse(
         $$"""
@@ -309,10 +347,9 @@ internal static class McpToolOutputSchemas
 
     /// <summary>Schema for <c>McpGeocodeOutput</c>.</summary>
     public static readonly JsonElement GeocodeOutputSchema = Parse(
-        """
+        $$"""
         {
           "type": "object",
-          "required": ["provider", "candidates"],
           "properties": {
             "provider": { "type": "string" },
             "candidates": {
@@ -329,8 +366,25 @@ internal static class McpToolOutputSchemas
                   "addressType": { "type": ["string", "null"] }
                 }
               }
+            },
+            "status": { "type": "string" },
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "error": {{GeoprocessingErrorDef}},
+            "requiresReauthentication": { "type": ["boolean", "null"] },
+            "approvalRequired": { "type": ["boolean", "null"] },
+            "policyRef": { "type": ["string", "null"] },
+            "conflictingJobId": { "type": ["string", "null"] },
+            "retryable": { "type": ["boolean", "null"] },
+            "violations": {
+              "type": ["array", "null"],
+              "items": {{ValidationViolationDef}}
             }
-          }
+          },
+          "anyOf": [
+            { "required": ["provider", "candidates"] },
+            {{ToolErrorOutputSchema}}
+          ]
         }
         """);
 
@@ -477,10 +531,9 @@ internal static class McpToolOutputSchemas
 
     /// <summary>Schema for <c>McpQueryFeaturesOutput</c>.</summary>
     public static readonly JsonElement QueryFeaturesOutputSchema = Parse(
-        """
+        $$"""
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "returnedCount", "limit", "resultOffset", "exceededTransferLimit"],
           "properties": {
             "serviceId": { "type": "string" },
             "layerId": { "type": "integer" },
@@ -498,6 +551,10 @@ internal static class McpToolOutputSchemas
               "type": "integer",
               "description": "Present only when exceededTransferLimit is true: the resultOffset to send on the next request (resultOffset + returnedCount) to page mechanically. Absent on the last page."
             },
+            "nextCursor": {
+              "type": "string",
+              "description": "Present only when exceededTransferLimit is true: opaque cursor alias for nextOffset. Echo it as the cursor argument to fetch the next page."
+            },
             "count": {
               "type": "integer",
               "description": "Matching feature count. Present only when returnCountOnly=true; features are omitted in that mode."
@@ -509,8 +566,89 @@ internal static class McpToolOutputSchemas
                 "type": { "type": "string", "const": "FeatureCollection" },
                 "features": { "type": "array", "items": { "type": "object" } }
               }
+            },
+            "features": {
+              "type": "array",
+              "description": "Feature row aliases for MCP clients that inspect features[].attributes; the authoritative spatial payload remains geojson.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "integer" },
+                  "attributes": { "type": "object" }
+                }
+              }
+            },
+            "status": { "type": "string" },
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "error": {{GeoprocessingErrorDef}},
+            "requiresReauthentication": { "type": ["boolean", "null"] },
+            "approvalRequired": { "type": ["boolean", "null"] },
+            "policyRef": { "type": ["string", "null"] },
+            "conflictingJobId": { "type": ["string", "null"] },
+            "retryable": { "type": ["boolean", "null"] },
+            "violations": {
+              "type": ["array", "null"],
+              "items": {{ValidationViolationDef}}
             }
-          }
+          },
+          "anyOf": [
+            {
+              "required": ["serviceId", "layerId", "returnedCount", "limit", "resultOffset", "exceededTransferLimit"]
+            },
+            {{ToolErrorOutputSchema}}
+          ]
+        }
+        """);
+
+    /// <summary>Schema for <c>McpRenderMapOutput</c>.</summary>
+    public static readonly JsonElement RenderMapOutputSchema = Parse(
+        $$"""
+        {
+          "type": "object",
+          "properties": {
+            "layerCount": { "type": "integer" },
+            "width": { "type": "integer" },
+            "height": { "type": "integer" },
+            "bbox": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": { "type": "number" }
+            },
+            "bboxSrid": { "type": "integer" },
+            "contentType": { "type": "string" },
+            "byteLength": { "type": "integer" },
+            "delivery": {
+              "type": "string",
+              "enum": ["inline", "resource_link"]
+            },
+            "uri": { "type": ["string", "null"] },
+            "expiresInSeconds": { "type": ["integer", "null"] },
+            "styles": {
+              "type": "array",
+              "items": { "type": ["string", "null"] }
+            },
+            "status": { "type": "string" },
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "error": {{GeoprocessingErrorDef}},
+            "requiresReauthentication": { "type": ["boolean", "null"] },
+            "approvalRequired": { "type": ["boolean", "null"] },
+            "policyRef": { "type": ["string", "null"] },
+            "conflictingJobId": { "type": ["string", "null"] },
+            "retryable": { "type": ["boolean", "null"] },
+            "violations": {
+              "type": ["array", "null"],
+              "items": {{ValidationViolationDef}}
+            }
+          },
+          "anyOf": [
+            {
+              "required": ["layerCount", "width", "height", "bbox", "bboxSrid", "contentType", "byteLength", "delivery"]
+            },
+            {{ToolErrorOutputSchema}}
+          ]
         }
         """);
 

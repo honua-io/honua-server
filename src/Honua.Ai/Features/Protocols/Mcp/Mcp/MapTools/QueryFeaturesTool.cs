@@ -78,7 +78,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
         var layer = MapToolLayerResolver.Resolve(snapshot, argument.ServiceId, argument.LayerId);
 
         var limit = ResolveLimit(argument.Limit);
-        var offset = ResolveOffset(argument.ResultOffset);
+        var offset = ResolveOffset(argument.ResultOffset, argument.Cursor);
         var returnGeometry = argument.ReturnGeometry ?? true;
         var returnCountOnly = argument.ReturnCountOnly ?? false;
         var geometryPrecision = argument.GeometryPrecision ?? MapToolSchemas.DefaultGeometryPrecision;
@@ -128,11 +128,14 @@ internal sealed class QueryFeaturesTool : IMcpTool
         var result = await reader.QueryAsync(layer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
 
         var features = new List<JsonNode>(result.Items.Length);
+        var featureRows = new List<McpQueryFeatureRow>(result.Items.Length);
         foreach (var feature in result.Items)
         {
             features.Add(ToGeoJsonFeature(feature, geometryService, returnGeometry, geometryPrecision));
+            featureRows.Add(ToFeatureRow(feature));
         }
 
+        var nextOffset = result.HasMoreResults ? offset + features.Count : (int?)null;
         var output = new McpQueryFeaturesOutput
         {
             ServiceId = layer.Service.Metadata.Id,
@@ -143,8 +146,10 @@ internal sealed class QueryFeaturesTool : IMcpTool
             ExceededTransferLimit = result.HasMoreResults,
             // When more results remain, hand the agent the exact offset to page
             // mechanically: the next page starts after everything returned so far.
-            NextOffset = result.HasMoreResults ? offset + features.Count : null,
-            GeoJson = new McpGeoJsonFeatureCollection { Features = features }
+            NextOffset = nextOffset,
+            NextCursor = nextOffset?.ToString(CultureInfo.InvariantCulture),
+            GeoJson = new McpGeoJsonFeatureCollection { Features = features },
+            Features = featureRows
         };
 
         return McpToolHelpers.SuccessResult(
@@ -204,9 +209,29 @@ internal sealed class QueryFeaturesTool : IMcpTool
         return Math.Min(limit, MapToolSchemas.MaxFeatureLimit);
     }
 
-    private static int ResolveOffset(int? requested)
+    private static int ResolveOffset(int? requested, string? cursor)
     {
-        var offset = requested ?? 0;
+        if (requested is { } explicitOffset)
+        {
+            return ValidateOffset(explicitOffset);
+        }
+
+        if (string.IsNullOrWhiteSpace(cursor))
+        {
+            return 0;
+        }
+
+        if (int.TryParse(cursor.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return ValidateOffset(parsed);
+        }
+
+        throw new GeoprocessingValidationException(
+            "'cursor' must be the nextCursor value returned by a previous honua_query_features page.");
+    }
+
+    private static int ValidateOffset(int offset)
+    {
         if (offset < 0)
         {
             throw new GeoprocessingValidationException("'resultOffset' must be zero or a positive integer.");
@@ -338,6 +363,21 @@ internal sealed class QueryFeaturesTool : IMcpTool
             ["id"] = feature.Id,
             ["geometry"] = geometryNode,
             ["properties"] = properties
+        };
+    }
+
+    private static McpQueryFeatureRow ToFeatureRow(Feature feature)
+    {
+        var attributes = new JsonObject();
+        foreach (var pair in feature.Attributes)
+        {
+            attributes[pair.Key] = ToJsonValue(pair.Value);
+        }
+
+        return new McpQueryFeatureRow
+        {
+            Id = feature.Id,
+            Attributes = attributes
         };
     }
 

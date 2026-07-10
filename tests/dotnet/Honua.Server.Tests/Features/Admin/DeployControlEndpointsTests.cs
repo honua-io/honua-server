@@ -10,10 +10,14 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -33,6 +37,11 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     public DeployControlEndpointsTests()
     {
         _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+                configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Database:MigrationSafety:BackupCommand"] = "pg_dump --format=custom"
+                })))
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -136,6 +145,56 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         var platformRelease = root.GetProperty("platformRelease");
         platformRelease.GetProperty("releaseDeclared").GetBoolean().Should().BeFalse();
         platformRelease.GetProperty("isCoVersioned").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/preflight")]
+    public async Task GetDeployPreflight_WithDiagnostics_ReturnsBackupHookOutcomeForPendingSet()
+    {
+        const string ContractScript = "002_drop_legacy_annotated.sql";
+        _migrationRunner.Plan = DatabaseMigrationPlan.Succeeded(
+            pendingScripts: [ContractScript],
+            pendingScriptClassifications:
+            [
+                new MigrationScriptClassification
+                {
+                    ScriptName = ContractScript,
+                    Classification = MigrationSafetyClassification.ContractAnnotated,
+                    BreakingRules = ["drop-column"]
+                }
+            ],
+            journalIsNonEmpty: true);
+
+        _fixture.Services.GetRequiredService<MigrationBackupHookState>()
+            .Record(new DatabaseMigrationBackupHookResult
+            {
+                Outcome = "succeeded",
+                Succeeded = true,
+                StartedAt = new DateTimeOffset(2026, 7, 9, 10, 15, 0, TimeSpan.Zero),
+                CompletedAt = new DateTimeOffset(2026, 7, 9, 10, 15, 1, TimeSpan.Zero),
+                DurationMilliseconds = 1_200,
+                ExitCode = 0,
+                PendingContractScripts = [ContractScript],
+                MigrationRunId = "schema-migration-test",
+                CorrelationId = "schema-migration-test"
+            });
+
+        var response = await _client.GetAsync("/api/v1/admin/deploy/preflight?includeDiagnostics=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var backupHook = document.RootElement
+            .GetProperty("migration")
+            .GetProperty("backupHook");
+
+        backupHook.GetProperty("configured").GetBoolean().Should().BeTrue();
+        backupHook.GetProperty("requiredForPendingSet").GetBoolean().Should().BeTrue();
+        backupHook.GetProperty("ranForPendingSet").GetBoolean().Should().BeTrue();
+        backupHook.GetProperty("succeeded").GetBoolean().Should().BeTrue();
+        backupHook.GetProperty("outcome").GetString().Should().Be("succeeded");
+        backupHook.GetProperty("durationMilliseconds").GetInt64().Should().Be(1_200);
+        backupHook.GetProperty("pendingContractScripts")[0].GetString().Should().Be(ContractScript);
     }
 
     [IntegrationTest]

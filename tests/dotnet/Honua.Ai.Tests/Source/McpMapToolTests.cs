@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -24,6 +25,8 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Schema;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -136,12 +139,22 @@ public sealed class McpMapToolTests
         var result = response.Result!.Value;
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
         var structured = result.GetProperty("structuredContent");
+        AssertStructuredContentMatchesOutputSchema(
+            new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance)
+                .Describe()
+                .OutputSchema!.Value,
+            structured,
+            "query_features success structuredContent must validate against its advertised outputSchema");
+
         structured.GetProperty("returnedCount").GetInt32().Should().Be(1);
         var feature = structured.GetProperty("geojson").GetProperty("features")[0];
         feature.GetProperty("type").GetString().Should().Be("Feature");
         feature.GetProperty("id").GetInt64().Should().Be(7);
         feature.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
         feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("Lot 7");
+        var featureAlias = structured.GetProperty("features")[0];
+        featureAlias.GetProperty("id").GetInt64().Should().Be(7);
+        featureAlias.GetProperty("attributes").GetProperty("name").GetString().Should().Be("Lot 7");
 
         await reader.Received(1).QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
@@ -158,6 +171,8 @@ public sealed class McpMapToolTests
         inputProps.TryGetProperty("resultOffset", out var resultOffset).Should().BeTrue();
         resultOffset.GetProperty("type").GetString().Should().Be("integer");
         resultOffset.GetProperty("minimum").GetInt32().Should().Be(0);
+        inputProps.TryGetProperty("cursor", out var cursor).Should().BeTrue();
+        cursor.GetProperty("type").GetString().Should().Be("string");
         inputProps.TryGetProperty("returnGeometry", out var returnGeometry).Should().BeTrue();
         returnGeometry.GetProperty("type").GetString().Should().Be("boolean");
         inputProps.TryGetProperty("returnCountOnly", out var returnCountOnly).Should().BeTrue();
@@ -166,6 +181,8 @@ public sealed class McpMapToolTests
         descriptor.OutputSchema.Should().NotBeNull();
         var outputProps = descriptor.OutputSchema!.Value.GetProperty("properties");
         outputProps.TryGetProperty("nextOffset", out _).Should().BeTrue();
+        outputProps.TryGetProperty("nextCursor", out _).Should().BeTrue();
+        outputProps.TryGetProperty("features", out _).Should().BeTrue();
         outputProps.TryGetProperty("count", out _).Should().BeTrue();
         outputProps.TryGetProperty("resultOffset", out _).Should().BeTrue();
 
@@ -217,17 +234,17 @@ public sealed class McpMapToolTests
         var services = BuildServices(reader: reader, geometryService: geometryService);
 
         var seenIds = new List<long>();
-        int? offsetArg = null;
+        string? cursorArg = null;
         var calls = 0;
 
         while (true)
         {
             calls++;
-            var offsetJson = offsetArg is { } o ? $",\"resultOffset\":{o}" : string.Empty;
+            var cursorJson = cursorArg is { } cursor ? $",\"cursor\":\"{cursor}\"" : string.Empty;
             var response = await surface.DispatchAsync(
                 AuthenticatedContext(services),
                 ToolCall($"page-{calls}", QueryFeaturesTool.ToolName, $$"""
-                    {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"limit":{{pageSize}}{{offsetJson}}}
+                    {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"limit":{{pageSize}}{{cursorJson}}}
                     """),
                 CancellationToken.None);
 
@@ -243,12 +260,17 @@ public sealed class McpMapToolTests
             {
                 structured.TryGetProperty("nextOffset", out var nextOffset).Should().BeTrue(
                     "a non-final page must advertise nextOffset so the agent can page mechanically");
-                offsetArg = nextOffset.GetInt32();
+                structured.TryGetProperty("nextCursor", out var nextCursor).Should().BeTrue(
+                    "a non-final page must also advertise nextCursor for MCP cursor-style pagination");
+                nextCursor.GetString().Should().Be(nextOffset.GetInt32().ToString(CultureInfo.InvariantCulture));
+                cursorArg = nextCursor.GetString();
             }
             else
             {
                 structured.TryGetProperty("nextOffset", out _).Should().BeFalse(
                     "the final page must not advertise nextOffset");
+                structured.TryGetProperty("nextCursor", out _).Should().BeFalse(
+                    "the final page must not advertise nextCursor");
                 break;
             }
 
@@ -281,6 +303,13 @@ public sealed class McpMapToolTests
 
         response!.Error.Should().BeNull();
         var structured = response.Result!.Value.GetProperty("structuredContent");
+        AssertStructuredContentMatchesOutputSchema(
+            new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance)
+                .Describe()
+                .OutputSchema!.Value,
+            structured,
+            "query_features count-only structuredContent must validate against its advertised outputSchema");
+
         structured.GetProperty("count").GetInt64().Should().Be(250);
         structured.GetProperty("returnedCount").GetInt32().Should().Be(0);
         structured.TryGetProperty("geojson", out _).Should().BeFalse(
@@ -288,6 +317,38 @@ public sealed class McpMapToolTests
 
         await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         await reader.DidNotReceive().QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_InvalidArguments_ReturnsStructuredValidationErrorMatchingOutputSchema()
+    {
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices()),
+            ToolCall("query-invalid-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}"}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        AssertStructuredContentMatchesOutputSchema(
+            new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance)
+                .Describe()
+                .OutputSchema!.Value,
+            structured,
+            "query_features error structuredContent must validate against its advertised outputSchema");
+
+        structured.GetProperty("status").GetString().Should().Be("error");
+        structured.GetProperty("code").GetString().Should().Be("invalid_argument");
+        var error = structured.GetProperty("error");
+        error.GetProperty("kind").GetString().Should().Be("ValidationFailed");
+        error.GetProperty("violations").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [UnitTest]
@@ -434,6 +495,15 @@ public sealed class McpMapToolTests
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
 
         var content = result.GetProperty("content").EnumerateArray().ToArray();
+        var structured = result.GetProperty("structuredContent");
+        AssertStructuredContentMatchesOutputSchema(
+            new RenderMapTool(_jobService, NullLogger<RenderMapTool>.Instance)
+                .Describe()
+                .OutputSchema!.Value,
+            structured,
+            "render_map artifact-reference structuredContent must validate against its advertised outputSchema");
+        structured.GetProperty("delivery").GetString().Should().Be("resource_link");
+        structured.GetProperty("uri").GetString().Should().Be(href);
 
         // No base64 image block is inlined by default — the context stays clean.
         content.Should().NotContain(block => block.GetProperty("type").GetString() == "image",
@@ -496,6 +566,15 @@ public sealed class McpMapToolTests
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
 
         var content = result.GetProperty("content").EnumerateArray().ToArray();
+        var structured = result.GetProperty("structuredContent");
+        AssertStructuredContentMatchesOutputSchema(
+            new RenderMapTool(_jobService, NullLogger<RenderMapTool>.Instance)
+                .Describe()
+                .OutputSchema!.Value,
+            structured,
+            "render_map inline structuredContent must validate against its advertised outputSchema");
+        structured.GetProperty("delivery").GetString().Should().Be("inline");
+        structured.TryGetProperty("uri", out _).Should().BeFalse();
         content.Should().Contain(block => block.GetProperty("type").GetString() == "text");
 
         var imageBlock = content.Single(block => block.GetProperty("type").GetString() == "image");
@@ -606,5 +685,16 @@ public sealed class McpMapToolTests
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static void AssertStructuredContentMatchesOutputSchema(
+        JsonElement outputSchema,
+        JsonElement structuredContent,
+        string because)
+    {
+        var schema = JSchema.Parse(outputSchema.GetRawText());
+        var payload = JToken.Parse(structuredContent.GetRawText());
+        payload.IsValid(schema, out IList<string> errors).Should().BeTrue(
+            because + ": " + string.Join("; ", errors));
     }
 }
