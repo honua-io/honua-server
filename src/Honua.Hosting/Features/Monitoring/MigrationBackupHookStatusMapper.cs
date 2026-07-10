@@ -23,7 +23,8 @@ internal static class MigrationBackupHookStatusMapper
 
         var pendingContractScripts = plan.ContractScriptNames;
         var configured = !string.IsNullOrWhiteSpace(options.BackupCommand);
-        var required = configured && !plan.HasUnannotatedBreakingScripts;
+        var required = configured &&
+            (!plan.HasUnannotatedBreakingScripts || !options.Enforce);
         var matched = required &&
             latest is not null &&
             SamePendingSet(pendingContractScripts, latest.PendingContractScripts);

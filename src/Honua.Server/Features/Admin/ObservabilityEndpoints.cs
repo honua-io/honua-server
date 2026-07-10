@@ -150,8 +150,7 @@ internal static class ObservabilityEndpoints
         [FromServices] MigrationState migrationState,
         [FromServices] IOptions<MigrationSafetyOptions> migrationSafetyOptions,
         [FromServices] MigrationBackupHookState backupHookState,
-        HttpContext context,
-        [FromServices] IConnectionSecretResolver? secretResolver = null)
+        HttpContext context)
     {
         var response = new MigrationObservabilityResponse
         {
@@ -162,6 +161,7 @@ internal static class ObservabilityEndpoints
             GeneratedAt = DateTimeOffset.UtcNow
         };
 
+        var secretResolver = context.RequestServices.GetService<IConnectionSecretResolver>();
         var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
             configuration,
             secretResolver,
