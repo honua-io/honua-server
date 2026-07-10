@@ -47,7 +47,7 @@ internal sealed class AzureManagementFunctionsSlotClient(IHttpClientFactory http
     private const string ApiVersion = "2024-11-01";
     private static readonly Uri ManagementScope = new("https://management.azure.com/.default");
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
-    private readonly TokenCredential _credential = new DefaultAzureCredential();
+    private readonly TokenCredential _credential = AzureControlPlaneCredential.SharedDefault;
 
     public async Task<AzureFunctionsSiteConfigState> GetSiteConfigAsync(
         string subscriptionId,
