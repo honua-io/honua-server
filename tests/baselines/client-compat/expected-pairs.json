@@ -17,6 +17,7 @@
     { "client_lane": "cli", "protocol": "ogc-features" },
     { "client_lane": "cli", "protocol": "wfs" },
     { "client_lane": "arcgis-stub", "protocol": "featureserver" },
-    { "client_lane": "arcgis-stub", "protocol": "mapserver" }
+    { "client_lane": "arcgis-stub", "protocol": "mapserver" },
+    { "client_lane": "arcgis-stub", "protocol": "portal" }
   ]
 }

@@ -1,0 +1,186 @@
+version: 1
+# Portal/Sharing facade compatibility fixture (epic #1240, child #1372/#1373).
+#
+# Seeds three FeatureServer services whose RBAC access policy spans the full
+# public/org/private ladder the ArcGIS Portal facade projects onto the Esri
+# `access` string (public / org / private). The client-compat arcgis-stub lane
+# and the licensed ArcGIS Pro / Field Maps evidence runs discover these through
+# /sharing/rest/search + /sharing/rest/content/items/{id}, and the projected
+# `access` must reflect the exported RBAC decision — an anonymous caller sees
+# only the public tier, a named user (generateToken / OAuth2) additionally sees
+# the org tier, and the role-gated private tier stays hidden unless the caller
+# holds the `portal-admin` role.
+#
+# Layer IDs 3000-3002 avoid collision with base-schema (0), js_test_server
+# (1000), and browser_compat (2000-2002). This fixture is the server-owned
+# "seed/bootstrap contract" that SDK CI (honua-sdk-js @honua/sdk-esri-compat)
+# and the licensed evidence lanes target; see
+# docs/gis/PORTAL_FACADE_SEED_CONTRACT.md.
+sql:
+  # --- Public tier service: anonymous read allowed -> access "public" ---
+  - |
+      INSERT INTO honua.services (
+          service_name, description, srid, max_record_count,
+          supported_formats, capabilities, service_extent, metadata
+      )
+      VALUES (
+          'portal_public', 'Portal Facade — Public Basemap', 4326, 1000,
+          ARRAY['JSON', 'GeoJSON'],
+          ARRAY['Query', 'Extract'],
+          ST_MakeEnvelope(-122.45, 37.74, -122.38, 37.80, 4326),
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+      )
+      ON CONFLICT (service_name) DO UPDATE SET
+          description = EXCLUDED.description,
+          metadata = EXCLUDED.metadata,
+          service_extent = EXCLUDED.service_extent,
+          updated_at = NOW();
+
+  # --- Org tier service: authenticated (no role) allowed -> access "org" ---
+  - |
+      INSERT INTO honua.services (
+          service_name, description, srid, max_record_count,
+          supported_formats, capabilities, service_extent, metadata
+      )
+      VALUES (
+          'portal_org', 'Portal Facade — Org Operational Layers', 4326, 1000,
+          ARRAY['JSON', 'GeoJSON'],
+          ARRAY['Query', 'Extract'],
+          ST_MakeEnvelope(-122.45, 37.74, -122.38, 37.80, 4326),
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', false))
+      )
+      ON CONFLICT (service_name) DO UPDATE SET
+          description = EXCLUDED.description,
+          metadata = EXCLUDED.metadata,
+          service_extent = EXCLUDED.service_extent,
+          updated_at = NOW();
+
+  # --- Private tier service: role-gated -> access "private" ---
+  - |
+      INSERT INTO honua.services (
+          service_name, description, srid, max_record_count,
+          supported_formats, capabilities, service_extent, metadata
+      )
+      VALUES (
+          'portal_private', 'Portal Facade — Restricted Parcels', 4326, 1000,
+          ARRAY['JSON', 'GeoJSON'],
+          ARRAY['Query', 'Extract'],
+          ST_MakeEnvelope(-122.45, 37.74, -122.38, 37.80, 4326),
+          jsonb_build_object('accessPolicy', jsonb_build_object(
+              'allowAnonymous', false,
+              'allowedRoles', jsonb_build_array('portal-admin')))
+      )
+      ON CONFLICT (service_name) DO UPDATE SET
+          description = EXCLUDED.description,
+          metadata = EXCLUDED.metadata,
+          service_extent = EXCLUDED.service_extent,
+          updated_at = NOW();
+
+  # --- Layers (one Point layer per tier; access policy mirrors its service) ---
+  - |
+      INSERT INTO honua.layers (
+          layer_id, layer_name, description, table_name,
+          geometry_type, srid, extent, default_visibility, metadata
+      )
+      VALUES (
+          3000, 'Portal Public Points', 'Public tier layer for Portal facade tests',
+          'features', 'Point', 4326,
+          ST_MakeEnvelope(-122.44, 37.76, -122.40, 37.79, 4326), true,
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+      )
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_name = EXCLUDED.table_name,
+          geometry_type = EXCLUDED.geometry_type,
+          extent = EXCLUDED.extent,
+          metadata = EXCLUDED.metadata;
+
+  - |
+      INSERT INTO honua.layers (
+          layer_id, layer_name, description, table_name,
+          geometry_type, srid, extent, default_visibility, metadata
+      )
+      VALUES (
+          3001, 'Portal Org Points', 'Org tier layer for Portal facade tests',
+          'features', 'Point', 4326,
+          ST_MakeEnvelope(-122.44, 37.76, -122.40, 37.79, 4326), true,
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', false))
+      )
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_name = EXCLUDED.table_name,
+          geometry_type = EXCLUDED.geometry_type,
+          extent = EXCLUDED.extent,
+          metadata = EXCLUDED.metadata;
+
+  - |
+      INSERT INTO honua.layers (
+          layer_id, layer_name, description, table_name,
+          geometry_type, srid, extent, default_visibility, metadata
+      )
+      VALUES (
+          3002, 'Portal Private Points', 'Private tier layer for Portal facade tests',
+          'features', 'Point', 4326,
+          ST_MakeEnvelope(-122.44, 37.76, -122.40, 37.79, 4326), true,
+          jsonb_build_object('accessPolicy', jsonb_build_object(
+              'allowAnonymous', false,
+              'allowedRoles', jsonb_build_array('portal-admin')))
+      )
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_name = EXCLUDED.table_name,
+          geometry_type = EXCLUDED.geometry_type,
+          extent = EXCLUDED.extent,
+          metadata = EXCLUDED.metadata;
+
+  # --- Bind each layer to its service ---
+  - |
+      INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+      VALUES
+          ('portal_public', 3000, 0),
+          ('portal_org', 3001, 0),
+          ('portal_private', 3002, 0)
+      ON CONFLICT (service_name, layer_id) DO NOTHING;
+
+  # --- Minimal field schema so the FeatureServer layer metadata is well-formed ---
+  - |
+      INSERT INTO honua.layer_fields (layer_id, field_name, field_type, field_order, nullable, description)
+      VALUES
+          (3000, 'objectid', 'Integer', 0, false, 'Object ID'),
+          (3000, 'name',     'String',  1, true,  'Feature name'),
+          (3000, 'shape',    'Geometry', 2, true,  'Geometry'),
+          (3001, 'objectid', 'Integer', 0, false, 'Object ID'),
+          (3001, 'name',     'String',  1, true,  'Feature name'),
+          (3001, 'shape',    'Geometry', 2, true,  'Geometry'),
+          (3002, 'objectid', 'Integer', 0, false, 'Object ID'),
+          (3002, 'name',     'String',  1, true,  'Feature name'),
+          (3002, 'shape',    'Geometry', 2, true,  'Geometry')
+      ON CONFLICT (layer_id, field_name) DO NOTHING;
+
+  # --- One feature per layer so queries return a non-empty set ---
+  - |
+      INSERT INTO features (layer_id, geometry, attributes)
+      SELECT 3000, ST_SetSRID(ST_GeomFromText('POINT(-122.4194 37.7749)'), 4326),
+             jsonb_build_object('name', 'public-alpha')
+      WHERE NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 3000);
+
+  - |
+      INSERT INTO features (layer_id, geometry, attributes)
+      SELECT 3001, ST_SetSRID(ST_GeomFromText('POINT(-122.4180 37.7760)'), 4326),
+             jsonb_build_object('name', 'org-alpha')
+      WHERE NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 3001);
+
+  - |
+      INSERT INTO features (layer_id, geometry, attributes)
+      SELECT 3002, ST_SetSRID(ST_GeomFromText('POINT(-122.4210 37.7735)'), 4326),
+             jsonb_build_object('name', 'private-alpha')
+      WHERE NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 3002);
+
+  # Refresh Metadata v2 so the Portal item projector (IMetadataV2GraphProvider)
+  # sees the tiered services. Mirrors browser-compat.yaml: the base SQL seed
+  # applied before this file owns honua.seed_metadata_v2_compat_snapshot().
+  - |
+      SELECT honua.seed_metadata_v2_compat_snapshot();

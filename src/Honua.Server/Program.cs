@@ -496,6 +496,11 @@ if (connectedRedis != null)
         // loop and publish per-(status, backend) queue depth for the honua.execution.queue.depth
         // gauge. Runs in both trigger modes since it only reads state to emit telemetry.
         builder.Services.AddHostedService<Honua.ControlPlane.ExecutionQueueDepthCollectorBackgroundService>();
+
+        // Graduated ops-findings autonomy (#2557): a leased singleton evaluator that can
+        // route auto-safe remediation findings back through the operation gateway. It is
+        // only hosted when Redis/job-store coordination is active; no-Redis hosts stay inert.
+        builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
     }
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +
@@ -532,6 +537,9 @@ builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.I
 // Per-action guardrail tiers for the ops-action discriminator (unknown actions Blocked).
 builder.Services.TryAddSingleton<Honua.Core.Features.Guardrails.Abstractions.IOpsActionGuardrailCatalog,
     Honua.ControlPlane.Executors.OpsActionGuardrailCatalog>();
+// Per-action auto-safe metadata for graduated autonomy policy checks.
+builder.Services.TryAddSingleton<Honua.Core.Features.Guardrails.Abstractions.IOpsActionSafetyCatalog,
+    Honua.ControlPlane.Executors.OpsActionSafetyCatalog>();
 
 // Configure tile options
 InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Configuration);

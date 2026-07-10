@@ -39,6 +39,8 @@ internal static class OpsFindingResponseMapper
                     Kind = finding.RecommendedAction.Kind.ToString(),
                     Summary = finding.RecommendedAction.Summary,
                     Reason = finding.RecommendedAction.Reason,
+                    AutoSafe = finding.RecommendedAction.AutoSafe,
+                    BlastRadius = Math.Max(1, finding.RecommendedAction.BlastRadius),
                 },
         };
     }

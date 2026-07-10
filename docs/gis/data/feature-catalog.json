@@ -2659,6 +2659,45 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-observability-autonomy-policies",
+      "route": "/api/v1/admin/observability/autonomy/policies",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-observability-autonomy-policies-rule",
+      "route": "/api/v1/admin/observability/autonomy/policies/{rule}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-observability-autonomy-settings",
+      "route": "/api/v1/admin/observability/autonomy/settings",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-observability-errors",
       "route": "/api/v1/admin/observability/errors",
       "method": "GET",
@@ -10278,6 +10317,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.CommunitySelf_WithNamedUserToken_ReturnsUserDocument",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.CommunitySelf_Anonymous_Returns401"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
@@ -10291,6 +10331,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.ContentItem_OrgTier_AnonymousGets404_ButNamedUserRoundTrips",
+        "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.ContentItem_RoleGatedPrivate_NamedUserWithoutRoleStillGets404",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.ContentItem_PublicItem_RoundTrips",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.ContentItem_RoleRestrictedItem_AnonymousGets404",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.ContentItem_UnknownId_Returns404"
@@ -10377,6 +10419,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.PortalsSelf_WithNamedUserToken_PopulatesUserBlock",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.PortalsSelf_Anonymous_OmitsUser"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
@@ -10390,6 +10433,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.Search_Anonymous_ProjectsOnlyPublicTier",
+        "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.Search_WithNamedUserToken_ProjectsPublicAndOrgTiers_NotRoleGatedPrivate",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.ReadSurface_WhenEntitlementDisabled_Returns404",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.Search_Anonymous_ReturnsOnlyPublicItemsWithPagingShape",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.Search_WithPaging_HonorsStartAndNum",
@@ -17537,6 +17582,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.GenerateToken_EmitsExpiryAsUnixMilliseconds",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_HttpsOnlyEnforced_Returns403WhenInsecure",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_RefererBindingWithoutReferer_Returns400",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_RespectsMaxExpirationClamp",
@@ -18251,6 +18297,33 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "put-api-v1-admin-observability-autonomy-policies-rule",
+      "route": "/api/v1/admin/observability/autonomy/policies/{rule}",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip",
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrud_InvalidMode_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "put-api-v1-admin-observability-autonomy-settings",
+      "route": "/api/v1/admin/observability/autonomy/settings",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OpsAutonomyPolicyEndpointsTests.PolicyCrudAndSettings_RoundTrip"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
