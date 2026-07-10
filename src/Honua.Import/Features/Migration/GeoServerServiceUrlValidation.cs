@@ -95,6 +95,14 @@ internal static class GeoServerServiceUrlValidation
             return GeoServerServiceUrlValidationResult.Failure(EmbeddedCredentialsMessage);
         }
 
+        // An explicitly configured allowlist remains authoritative even when the
+        // test-only unsafe-local switch relaxes scheme and address validation.
+        if (allowedHostSuffixes is not null &&
+            !GeoservicesServiceUrlValidation.IsHostAllowed(uri.Host, allowedHostSuffixes))
+        {
+            return GeoServerServiceUrlValidationResult.Failure(DisallowedHostMessage);
+        }
+
         if (allowUnsafeLocalUrls)
         {
             return GeoServerServiceUrlValidationResult.Success();
@@ -103,12 +111,6 @@ internal static class GeoServerServiceUrlValidation
         if (await NetworkAddressValidator.IsDisallowedAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
         {
             return GeoServerServiceUrlValidationResult.Failure(DisallowedAddressMessage);
-        }
-
-        // PA-153: optional per-deployment host allowlist (see GeoservicesServiceUrlValidation for details).
-        if (allowedHostSuffixes is not null && !GeoservicesServiceUrlValidation.IsHostAllowed(uri.Host, allowedHostSuffixes))
-        {
-            return GeoServerServiceUrlValidationResult.Failure(DisallowedHostMessage);
         }
 
         return GeoServerServiceUrlValidationResult.Success();

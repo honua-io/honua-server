@@ -204,6 +204,51 @@ public sealed class GeoservicesServiceUrlValidationTests
         result.ErrorMessage.Should().Be(GeoservicesServiceUrlValidation.DisallowedHostMessage);
     }
 
+    [UnitTest]
+    public void ResolveAllowedServiceHostSuffixes_UnsetConfiguration_RemainsPermissive()
+    {
+        var options = new MigrationUrlValidationOptions();
+
+        options.ResolveAllowedServiceHostSuffixes().Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ResolveAllowedServiceHostSuffixes_ExplicitEmptyCanonicalAllowlist_RejectsAllHosts()
+    {
+        var options = new MigrationUrlValidationOptions
+        {
+            AllowedServiceHostSuffixes = []
+        };
+
+        options.ResolveAllowedServiceHostSuffixes().Should().NotBeNull().And.BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task GeoServerValidateAsync_UnsafeLocalUrlsWithConfiguredAllowlist_StillRejectsUnlistedHost()
+    {
+        var result = await GeoServerServiceUrlValidation.ValidateAsync(
+            "http://localhost:8080/geoserver/rest",
+            allowUnsafeLocalUrls: true,
+            allowedHostSuffixes: ["approved.example.com"],
+            static (_, _) => throw new InvalidOperationException("Unsafe-local validation should not resolve DNS."));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Be(GeoServerServiceUrlValidation.DisallowedHostMessage);
+    }
+
+    [UnitTest]
+    public async Task OgcValidateAsync_UnsafeLocalUrlsWithConfiguredAllowlist_StillRejectsUnlistedHost()
+    {
+        var result = await OgcServiceUrlValidation.ValidateAsync(
+            "http://localhost:8080/ogc/features",
+            allowUnsafeLocalUrls: true,
+            allowedHostSuffixes: ["approved.example.com"],
+            static (_, _) => throw new InvalidOperationException("Unsafe-local validation should not resolve DNS."));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Be(OgcServiceUrlValidation.DisallowedHostMessage);
+    }
+
     // PA-154: ValidateAndResolveAsync pinned-address helper
 
     [UnitTest]

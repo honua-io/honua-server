@@ -89,6 +89,14 @@ internal static class OgcServiceUrlValidation
             return OgcServiceUrlValidationResult.Failure(EmbeddedCredentialsMessage);
         }
 
+        // An explicitly configured allowlist remains authoritative even when the
+        // test-only unsafe-local switch relaxes scheme and address validation.
+        if (allowedHostSuffixes is not null &&
+            !GeoservicesServiceUrlValidation.IsHostAllowed(uri.Host, allowedHostSuffixes))
+        {
+            return OgcServiceUrlValidationResult.Failure(DisallowedHostMessage);
+        }
+
         if (allowUnsafeLocalUrls)
         {
             return OgcServiceUrlValidationResult.Success();
@@ -97,12 +105,6 @@ internal static class OgcServiceUrlValidation
         if (await NetworkAddressValidator.IsDisallowedAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
         {
             return OgcServiceUrlValidationResult.Failure(DisallowedAddressMessage);
-        }
-
-        // PA-153: optional per-deployment host allowlist (see GeoservicesServiceUrlValidation for details).
-        if (allowedHostSuffixes is not null && !GeoservicesServiceUrlValidation.IsHostAllowed(uri.Host, allowedHostSuffixes))
-        {
-            return OgcServiceUrlValidationResult.Failure(DisallowedHostMessage);
         }
 
         return OgcServiceUrlValidationResult.Success();

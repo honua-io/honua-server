@@ -18,22 +18,24 @@ public sealed class MigrationUrlValidationOptions
 
     /// <summary>
     /// Host suffixes that migration source URLs must match when configured.
+    /// <see langword="null"/> leaves the allowlist unset; an empty array rejects every host.
     /// </summary>
-    public string[] AllowedServiceHostSuffixes { get; set; } = [];
+    public string[]? AllowedServiceHostSuffixes { get; set; }
 
     /// <summary>
     /// Backward-compatible alias for <see cref="AllowedServiceHostSuffixes"/>.
+    /// <see langword="null"/> leaves the alias unset; an empty array rejects every host.
     /// </summary>
-    public string[] AllowedHostSuffixes { get; set; } = [];
+    public string[]? AllowedHostSuffixes { get; set; }
 
     internal IReadOnlyCollection<string>? ResolveAllowedServiceHostSuffixes()
     {
-        if (AllowedServiceHostSuffixes.Length > 0)
+        if (AllowedServiceHostSuffixes is not null)
         {
             return AllowedServiceHostSuffixes;
         }
 
-        return AllowedHostSuffixes.Length > 0 ? AllowedHostSuffixes : null;
+        return AllowedHostSuffixes;
     }
 }
 

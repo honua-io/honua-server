@@ -111,6 +111,7 @@ OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generi
 | `Limits__Imports__MaxImportSize` | `524288000` (500 MiB) | Max file size for any import. |
 | `Limits__Imports__MaxPreviewFeatures` | `100` | Max features returned by a preview. |
 | `Limits__Imports__BatchSize` | `1000` | Insert batch size for import writes. |
+| `Migration__AllowedServiceHostSuffixes__N` | — (unset) | Optional remote GIS migration/import source allowlist. Each entry matches the exact host or its subdomains. Unset permits any otherwise-safe public host; an explicitly empty array rejects all hosts. |
 | `Limits__MaxUploadSizeBytes` | `104857600` (100 MiB) | General upload ceiling. |
 | `Limits__Query__MaxRecordCount` | `10000` | Max features per query response. |
 | `Limits__Query__DefaultRecordCount` | `1000` | Default page size when the client does not specify one. |
