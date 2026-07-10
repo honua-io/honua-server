@@ -14,5 +14,10 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/observability/ops-health/history"),
         new("GET", "/api/v1/admin/observability/findings"),
         new("POST", "/api/v1/admin/observability/findings/{findingId}/propose"),
+        new("GET", "/api/v1/admin/observability/autonomy/policies"),
+        new("GET", "/api/v1/admin/observability/autonomy/policies/{rule}"),
+        new("PUT", "/api/v1/admin/observability/autonomy/policies/{rule}"),
+        new("GET", "/api/v1/admin/observability/autonomy/settings"),
+        new("PUT", "/api/v1/admin/observability/autonomy/settings"),
     ];
 }

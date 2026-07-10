@@ -82,6 +82,7 @@ The evidence envelope's `measured_delta` field records the observed deviation in
 | WMS | WMS 1.3 | `wms` |
 | WMTS | WMTS 1.0 | `wmts` |
 | Admin API | Control-plane admin endpoints | `admin-api` |
+| Portal | ArcGIS Portal/Sharing facade (`/sharing/rest`) | `portal` |
 | All | All supported protocols | (all of the above) |
 
 ## Client Lane Coverage
@@ -94,7 +95,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps imagery subset | JS-CES-IMG-01, JS-CES-TILE-01 |
-| **Desktop — ArcGIS Pro** | Stub (REST) + manual/scheduled licensed runner scaffold | REST common-core via `arcgis-stub`; licensed `desktop-arcgis` workflow emits FeatureServer + MapServer envelopes when an explicitly enabled self-hosted Windows ArcGIS Pro runner is available | DSK-EXT-01, DSK-EXT-02 |
+| **Desktop — ArcGIS Pro** | Stub (REST) + manual/scheduled licensed runner scaffold | REST common-core via `arcgis-stub`; Portal/Sharing facade discovery via the `arcgis-stub` `portal` protocol (CERT-PRTL-\*); licensed `desktop-arcgis` workflow emits FeatureServer + MapServer envelopes when an explicitly enabled self-hosted Windows ArcGIS Pro runner is available | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | All CERT-\* (OGC Features + WFS via PyQGIS; visual RNDR headless) | DSK-EXT-01, DSK-EXT-02 |
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
@@ -166,6 +167,23 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | BI-EXT-01 | Power Query M expression executes | OData | pass/fail |
 | BI-EXT-02 | OData `$apply` aggregation returns results | OData | pass/fail+count |
 
+#### ArcGIS Portal Facade Lane (`arcgis-stub` `portal` protocol)
+
+The Portal/Sharing facade (epic #1240) lets packaged Esri clients (ArcGIS Pro "Add Portal", Field Maps) bind through Portal items + ArcGIS tokens instead of raw `/rest/services` URLs. The `arcgis-stub` lane emits a third `portal`-protocol envelope exercising the request sequence those clients issue, keyed on the following append-only IDs. The seeded fixture is `tests/seed/portal-compat.yaml` (public/org/private tiers); the licensed ArcGIS Pro / Field Maps runs substantiate the same IDs against the real clients.
+
+| Extension ID | Description | Protocol(s) | Evidence |
+|---|---|---|---|
+| CERT-PRTL-INFO-01 | `/sharing/rest/info` advertises token-based security + `tokenServicesUrl` | Portal | pass/fail |
+| CERT-PRTL-SELF-01 | `/sharing/rest/portals/self` returns portal identity (`isPortal`/`name`) | Portal | pass/fail |
+| CERT-PRTL-SRCH-01 | `/sharing/rest/search` returns the Esri paging shape (`total`/`start`/`num`/`nextStart`/`results`) | Portal | pass/fail+count |
+| CERT-PRTL-ITEM-01 | `/sharing/rest/content/items/{id}` resolves to a `/rest/services` URL with an access tier | Portal | pass/fail |
+| CERT-PRTL-RBAC-01 | Anonymous search projects only public-tier items (RBAC access projection) | Portal | pass/fail |
+| CERT-PRTL-TOKN-01 | `/sharing/rest/generateToken` issues a token whose `expires` is Unix milliseconds | Portal | pass/fail/skip † |
+| CERT-PRTL-AUTH-01 | A named-user token widens discovery to org-tier items (authenticated projection) | Portal | pass/fail/skip † |
+| CERT-PRTL-OAUTH-01 | `/sharing/rest/oauth2/token` returns an RFC 6749 error envelope for an invalid grant | Portal | pass/fail/skip † |
+
+† **Token / OAuth2 slice substantiation.** CERT-PRTL-TOKN-01, -AUTH-01, and -OAUTH-01 require the token surface to be reachable (admin credentials configured on the lane and `Authentication:PortalToken:RequireHttps=false` for the HTTP-only docker network, both set in `docker/client-compat/compose.yml`). The stub emits `skip` **only** for the genuinely-unconfigured cases (no admin credentials / no token issued / the OAuth2 bridge returning 404-disabled); once the surface is reachable a broken projection, wrong token shape, or non-RFC-6749 error body emits `fail`, which the strict diff catches via the `new-fail` path even against the committed `skip` baseline. They are committed `skip` pending the first containerized-lane capture (the endpoint behaviors are independently verified by `PortalFacadeDiscoveryContractTests`); run `scripts/client-compat/refresh-baselines.sh` to promote them to `pass` once the lane runs green. The anonymous read-surface IDs (INFO/SELF/SRCH/ITEM/RBAC) are baselined `pass`.
+
 ## ID Stability Policy
 
 - CERT-\* IDs are **append-only**. New test cases receive the next available sequence number within their category.
@@ -199,3 +217,4 @@ All certification results must follow the standardized evidence specification in
 | 1.1.3 | 2026-04-25 | Add OGC API Maps JS/OpenLayers evidence protocol and MapLibre image-source smoke coverage |
 | 1.2.0 | 2026-04-26 | Add JS — Cesium (Playwright) lane and JS-CES-IMG-01 / JS-CES-TILE-01 extensions; add `ogc-tiles` protocol abbreviation; document ArcGIS Pro stub lane via `docker/client-compat/arcgis-stub` (#806) |
 | 1.2.1 | 2026-05-18 | Add the licensed `desktop-arcgis` runner scaffold and clarify that ordinary PR gates validate the fixture/envelope contract without requiring ArcGIS Pro (#1019) |
+| 1.3.0 | 2026-07-09 | Register the ArcGIS Portal/Sharing facade lane: add the `portal` protocol abbreviation and the CERT-PRTL-\* extension slice exercised by the `arcgis-stub` `portal` envelope against the `portal-compat` fixture (epic #1240 / #1372) |
