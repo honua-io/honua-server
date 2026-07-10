@@ -30,6 +30,7 @@ internal static partial class FeatureStreamEndpoints
         long subscriptionGeneration = 0)
     {
         var cursor = fromCursor;
+        var delivered = 0L;
         while (!cancellationToken.IsCancellationRequested)
         {
             var events = await eventStore.QueryAsync(cursor, null, null, batchSize, cancellationToken).ConfigureAwait(false);
@@ -79,6 +80,7 @@ internal static partial class FeatureStreamEndpoints
 
                 var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
                 await SendWebSocketJsonAsync(webSocket, writeLock, payload, cancellationToken).ConfigureAwait(false);
+                delivered++;
             }
 
             if (events.Count < batchSize)
@@ -87,6 +89,7 @@ internal static partial class FeatureStreamEndpoints
             }
         }
 
+        FeatureStreamMetrics.RecordReplayEventsDelivered(WebSocketTransport, delivered);
         return cursor;
     }
 
@@ -102,6 +105,7 @@ internal static partial class FeatureStreamEndpoints
         string? subscriptionId = null)
     {
         var cursor = fromCursor;
+        var delivered = 0L;
         while (!cancellationToken.IsCancellationRequested)
         {
             var events = await eventStore.QueryAsync(cursor, null, null, batchSize, cancellationToken).ConfigureAwait(false);
@@ -132,6 +136,7 @@ internal static partial class FeatureStreamEndpoints
                     envelope.Cursor,
                     cancellationToken).ConfigureAwait(false);
                 await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+                delivered++;
             }
 
             if (events.Count < batchSize)
@@ -140,6 +145,7 @@ internal static partial class FeatureStreamEndpoints
             }
         }
 
+        FeatureStreamMetrics.RecordReplayEventsDelivered(SseTransport, delivered);
         return cursor;
     }
 }
