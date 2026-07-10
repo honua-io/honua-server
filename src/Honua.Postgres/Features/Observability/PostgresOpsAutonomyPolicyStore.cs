@@ -406,7 +406,14 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
     {
         var autoApplied = outcome == OpsAutonomyActionOutcome.Succeeded ? 1 : 0;
         var rolledBack = outcome == OpsAutonomyActionOutcome.RolledBack ? 1 : 0;
-        var failed = outcome == OpsAutonomyActionOutcome.Failed ? 1 : 0;
+        // Indeterminate and post-invocation cancellation are intentionally counted in the
+        // failed track-record bucket: neither may inflate the autonomous-success rate used
+        // to justify policy graduation.
+        var failed = outcome is OpsAutonomyActionOutcome.Failed
+            or OpsAutonomyActionOutcome.Indeterminate
+            or OpsAutonomyActionOutcome.Canceled
+            ? 1
+            : 0;
         var sql = $"""
             INSERT INTO {_trackTable}
                 (rule, auto_applied, rolled_back, failed, first_activity_at, last_activity_at)

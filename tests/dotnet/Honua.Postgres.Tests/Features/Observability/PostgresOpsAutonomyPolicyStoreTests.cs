@@ -83,6 +83,41 @@ public sealed class PostgresOpsAutonomyPolicyStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task RecordAutoActionOutcome_Indeterminate_PersistsAndCountsAsFailed()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresOpsAutonomyPolicyStoreTests));
+        try
+        {
+            await EnsureSchemaAsync(schema);
+            var store = new PostgresOpsAutonomyPolicyStore(
+                new TestConnectionProvider(fixture.DataSource, schema),
+                schemaName: schema);
+            await store.SetPolicyAsync(
+                new OpsAutonomyPolicy { Rule = Rule },
+                changedBy: "integration-test");
+            var reserved = await store.TryReserveAutoActionAsync(Reservation("finding-indeterminate"));
+            reserved.Reserved.Should().BeTrue();
+
+            await store.RecordAutoActionOutcomeAsync(
+                reserved.ReservationId!,
+                OpsAutonomyActionOutcome.Indeterminate,
+                operationId: "op-indeterminate",
+                message: "verification and compensation did not establish convergence");
+
+            var listed = await store.ListPoliciesAsync();
+            listed.Should().ContainSingle();
+            listed[0].TrackRecord.AutoApplied.Should().Be(0);
+            listed[0].TrackRecord.RolledBack.Should().Be(0);
+            listed[0].TrackRecord.Failed.Should().Be(1,
+                "indeterminate outcomes must not improve the autonomous success record");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private static OpsAutonomyReservationRequest Reservation(string findingId)
         => new()
         {
@@ -159,7 +194,7 @@ public sealed class PostgresOpsAutonomyPolicyStoreTests(PostgresFixture fixture)
                 CONSTRAINT ops_autonomy_action_valid_rule CHECK (length(rule) > 0),
                 CONSTRAINT ops_autonomy_action_valid_operation CHECK (length(operation_class) > 0),
                 CONSTRAINT ops_autonomy_action_valid_blast CHECK (blast_radius > 0),
-                CONSTRAINT ops_autonomy_action_valid_outcome CHECK (outcome IS NULL OR outcome IN (0, 1, 2)),
+                CONSTRAINT ops_autonomy_action_valid_outcome CHECK (outcome IS NULL OR outcome IN (0, 1, 2, 3, 4)),
                 CONSTRAINT ops_autonomy_action_unique_finding UNIQUE (finding_id)
             );
 

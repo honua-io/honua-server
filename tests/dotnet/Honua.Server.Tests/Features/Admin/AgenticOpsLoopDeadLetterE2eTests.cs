@@ -11,6 +11,10 @@ using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Alerts;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Observability.Abstractions;
+using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -51,6 +55,8 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
                 // durable control-plane services are wired before ConfigureAppConfiguration runs.
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+                builder.UseSetting("Alerts:Ops:Enabled", "true");
+                builder.UseSetting("Alerts:Ops:Channels:0", "websocket");
             })
             .ConfigureServices(services =>
             {
@@ -61,6 +67,9 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
             });
 
         await _fixture.InitializeAsync();
+        _dispatchHealth.Refresh = cancellationToken => _fixture
+            .GetService<IAlertDispatchStore>()
+            .GetBacklogAsync(cancellationToken);
         _client = _fixture.CreateAdminClient();
     }
 
@@ -154,6 +163,109 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         redriveEvent.GetProperty("resourceRef").GetString().Should().Be("alert-dispatch/dead-letters");
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/findings")]
+    public async Task DeadLetterStorm_AutoApply_VerifiesConvergenceAndKillSwitchStopsNextRun()
+    {
+        var fixture = _fixture!;
+        var client = _client!;
+        var dispatchStore = fixture.GetService<IAlertDispatchStore>();
+        var autonomyStore = fixture.GetService<IOpsAutonomyPolicyStore>();
+        var initialRedriveAuditCount = await CountAuditRowsAsync(fixture, RedriveAction);
+        await autonomyStore.SetSettingsAsync(
+            new OpsAutonomySettings { KillSwitchEnabled = false },
+            "integration-test",
+            "enable autonomous convergence proof");
+        await autonomyStore.SetPolicyAsync(
+            new OpsAutonomyPolicy
+            {
+                Rule = FindingRule,
+                Mode = OpsAutonomyMode.AutoApply,
+                MaxAutoActionsPerWindow = 2,
+                Window = TimeSpan.FromHours(1),
+                MaxBlastRadius = SeededDeadLetters,
+            },
+            "integration-test",
+            "prove the bounded auto-safe action");
+
+        await SeedDeadLetterStormAsync(fixture, SeededDeadLetters);
+        await RefreshCachedBacklogAsync(dispatchStore);
+        var finding = await ReadFindingThroughRestAsync(client);
+        finding.GetProperty("rule").GetString().Should().Be(FindingRule);
+
+        await using var autonomyScope = fixture.Services.CreateAsyncScope();
+        var findingsService = autonomyScope.ServiceProvider.GetRequiredService<IOpsFindingsService>();
+        var autoResult = await findingsService.ProposeAsync(finding.GetProperty("id").GetString()!);
+        autoResult.Status.Should().Be(OpsFindingProposalStatus.Executed);
+
+        var convergedBacklog = await dispatchStore.GetBacklogAsync();
+        convergedBacklog.DeadLetteredCount.Should().Be(0);
+        _dispatchHealth.LastBacklog!.DeadLetteredCount.Should().Be(0,
+            "the verifier must refresh the finding signal instead of trusting the stale pre-action snapshot");
+        await ReadFindingThroughRestAsync(client, expectPresent: false);
+
+        var policy = (await autonomyStore.ListPoliciesAsync())
+            .Should()
+            .ContainSingle(snapshot => snapshot.Policy.Rule == FindingRule)
+            .Subject;
+        policy.TrackRecord.AutoApplied.Should().Be(1);
+        policy.TrackRecord.Failed.Should().Be(0);
+        policy.TrackRecord.RolledBack.Should().Be(0);
+
+        var proposalStore = fixture.GetService<IOperationProposalStore>();
+        (await proposalStore.ListActiveAsync(OperationClass.AdminConfigChange)).Should().BeEmpty(
+            "auto-apply must not manufacture a hidden human-approval step");
+
+        var operationId = await ReadLatestAuditCorrelationAsync(fixture, RedriveAction);
+        operationId.Should().StartWith("opsaction-");
+        var auditActions = await ReadAuditActionsAsync(fixture, operationId);
+        auditActions.Should().ContainInOrder(
+            RedriveAction,
+            "operation.auto_executed",
+            "operation.auto_verified",
+            "operation.auto_applied");
+        var opsAlertPayload = await ReadLatestOpsAutonomyAlertAsync(fixture);
+        using (var opsAlert = JsonDocument.Parse(opsAlertPayload))
+        {
+            opsAlert.RootElement.GetProperty("attributes").GetProperty("outcome").GetString().Should().Be("Succeeded");
+            opsAlert.RootElement.GetProperty("body").GetString().Should().Contain("convergence verified");
+        }
+
+        // A second evaluation with no live finding is idempotent: it must not create another
+        // operation or inflate the success record.
+        var replay = await findingsService.ProposeAsync(finding.GetProperty("id").GetString()!);
+        replay.Status.Should().Be(OpsFindingProposalStatus.FindingNotFound);
+        (await CountAuditRowsAsync(fixture, RedriveAction)).Should().Be(initialRedriveAuditCount + 1);
+
+        // Clear pending rows from the first redrive/ops notification so the next seeded row is
+        // unambiguous, then prove the durable kill switch leaves the new fault untouched.
+        await DrainPendingDispatchesAsync(dispatchStore);
+        await autonomyStore.SetSettingsAsync(
+            new OpsAutonomySettings { KillSwitchEnabled = true },
+            "integration-test",
+            "stop autonomous remediation");
+        await SeedDeadLetterStormAsync(fixture, count: 1);
+        await RefreshCachedBacklogAsync(dispatchStore);
+        var killedFinding = (await findingsService.EvaluateAsync())
+            .Should()
+            .ContainSingle(item => item.Rule == FindingRule)
+            .Subject;
+        var routeDecision = await autonomyScope.ServiceProvider
+            .GetRequiredService<IOpsAutonomyEvaluator>()
+            .EvaluateFindingAsync(killedFinding);
+        routeDecision.CanAutoApply.Should().BeFalse();
+        routeDecision.Reason.Should().Be("store-kill-switch");
+        var killedResult = await findingsService.ProposeAsync(killedFinding.Id);
+        killedResult.Status.Should().Be(OpsFindingProposalStatus.ProposalCreated,
+            "the kill switch must degrade the action to the normal human-approval path");
+
+        var killedBacklog = await dispatchStore.GetBacklogAsync();
+        killedBacklog.DeadLetteredCount.Should().Be(1,
+            "the kill switch must prevent a second autonomous actuator invocation");
+        (await CountAuditRowsAsync(fixture, RedriveAction)).Should().Be(initialRedriveAuditCount + 1);
+        (await proposalStore.ListActiveAsync(OperationClass.AdminConfigChange)).Should().ContainSingle();
+    }
+
     private async Task SeedDeadLetterStormAsync(WebAppFixture fixture, int count)
     {
         var eventStore = fixture.GetService<IAlertEventStore>();
@@ -201,6 +313,15 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
 
     private async Task RefreshCachedBacklogAsync(IAlertDispatchStore store)
         => _dispatchHealth.SetBacklog(await store.GetBacklogAsync());
+
+    private static async Task DrainPendingDispatchesAsync(IAlertDispatchStore store)
+    {
+        var pending = await store.ClaimPendingAsync(1_000, DateTimeOffset.UtcNow.AddMinutes(1));
+        foreach (var item in pending)
+        {
+            await store.MarkDeliveredAsync(item.DispatchId, DateTimeOffset.UtcNow);
+        }
+    }
 
     private static async Task<JsonElement> ReadFindingThroughMcpAsync(WebAppFixture fixture)
         => (await ReadFindingsThroughMcpAsync(fixture)).Should().ContainSingle().Subject;
@@ -280,6 +401,57 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         count.Should().Be(1L);
     }
 
+    private static async Task<string> ReadLatestAuditCorrelationAsync(WebAppFixture fixture, string action)
+    {
+        var dataSource = fixture.GetService<NpgsqlDataSource>();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT correlation_id FROM honua.audit_log WHERE action = @action ORDER BY audit_id DESC LIMIT 1",
+            connection);
+        command.Parameters.AddWithValue("action", action);
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<string[]> ReadAuditActionsAsync(WebAppFixture fixture, string correlationId)
+    {
+        var dataSource = fixture.GetService<NpgsqlDataSource>();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT action FROM honua.audit_log WHERE correlation_id = @correlation_id ORDER BY audit_id",
+            connection);
+        command.Parameters.AddWithValue("correlation_id", correlationId);
+        await using var reader = await command.ExecuteReaderAsync();
+        var actions = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            actions.Add(reader.GetString(0));
+        }
+
+        return actions.ToArray();
+    }
+
+    private static async Task<long> CountAuditRowsAsync(WebAppFixture fixture, string action)
+    {
+        var dataSource = fixture.GetService<NpgsqlDataSource>();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT COUNT(*) FROM honua.audit_log WHERE action = @action",
+            connection);
+        command.Parameters.AddWithValue("action", action);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<string> ReadLatestOpsAutonomyAlertAsync(WebAppFixture fixture)
+    {
+        var dataSource = fixture.GetService<NpgsqlDataSource>();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT payload::text FROM honua.alert_events "
+            + "WHERE source = 'ops' AND service_id = 'ops-autonomy' ORDER BY event_id DESC LIMIT 1",
+            connection);
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
+
     private static ClaimsPrincipal CreateAdminPrincipal()
         => new(new ClaimsIdentity(
             [
@@ -323,6 +495,17 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         public AlertDispatchBacklog? LastBacklog { get; private set; }
 
         public bool IsStoragePollFailing => false;
+
+        public Func<CancellationToken, Task<AlertDispatchBacklog>>? Refresh { get; set; }
+
+        public async Task<AlertDispatchBacklog> RefreshBacklogAsync(CancellationToken cancellationToken = default)
+        {
+            var backlog = Refresh is null
+                ? LastBacklog ?? new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 }
+                : await Refresh(cancellationToken);
+            SetBacklog(backlog);
+            return backlog;
+        }
 
         public void SetBacklog(AlertDispatchBacklog backlog)
         {

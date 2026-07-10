@@ -34,6 +34,30 @@ public enum OperationGatewayOutcome
     /// means the runtime has no handler for the kind regardless of edition.
     /// </summary>
     NotSupported = 3,
+
+    /// <summary>
+    /// The actuator returned, but post-action verification proved that the requested
+    /// state did not converge.
+    /// </summary>
+    Failed = 4,
+
+    /// <summary>
+    /// Post-action verification failed and a supported compensation operation restored
+    /// the pre-action state.
+    /// </summary>
+    RolledBack = 5,
+
+    /// <summary>
+    /// The actuator may have changed state, but verification or compensation could not
+    /// determine a safe terminal outcome. Manual intervention is required.
+    /// </summary>
+    Indeterminate = 6,
+
+    /// <summary>
+    /// The caller canceled after actuator invocation began. The cancellation is terminal
+    /// for orchestration but does not prove whether the underlying state changed.
+    /// </summary>
+    Canceled = 7,
 }
 
 /// <summary>

@@ -1324,6 +1324,8 @@ sql:
           CONSTRAINT ops_autonomy_track_nonnegative_failed CHECK (failed >= 0)
       );
   - |
+      -- Migration 080 expands the terminal autonomy outcome set with
+      -- indeterminate (3) and canceled-after-invocation (4).
       CREATE TABLE IF NOT EXISTS honua.ops_autonomy_action_log (
           action_id              TEXT        PRIMARY KEY,
           finding_id             TEXT        NOT NULL,
@@ -1341,7 +1343,7 @@ sql:
           CONSTRAINT ops_autonomy_action_valid_rule CHECK (length(rule) > 0),
           CONSTRAINT ops_autonomy_action_valid_operation CHECK (length(operation_class) > 0),
           CONSTRAINT ops_autonomy_action_valid_blast CHECK (blast_radius > 0),
-          CONSTRAINT ops_autonomy_action_valid_outcome CHECK (outcome IS NULL OR outcome IN (0, 1, 2)),
+          CONSTRAINT ops_autonomy_action_valid_outcome CHECK (outcome IS NULL OR outcome IN (0, 1, 2, 3, 4)),
           CONSTRAINT ops_autonomy_action_unique_finding UNIQUE (finding_id)
       );
   - "CREATE INDEX IF NOT EXISTS idx_ops_autonomy_action_rule_window ON honua.ops_autonomy_action_log(rule, reserved_at DESC);"

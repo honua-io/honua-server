@@ -181,6 +181,21 @@ public enum OpsFindingProposalStatus
     /// gateway, which is only wired when the durable control-plane graph is registered.
     /// </summary>
     GatewayUnavailable = 6,
+
+    /// <summary>The actuator returned, but post-action verification proved the finding persisted.</summary>
+    Failed = 7,
+
+    /// <summary>Post-action verification failed and supported compensation restored the prior state.</summary>
+    RolledBack = 8,
+
+    /// <summary>
+    /// Verification or compensation could not establish a safe terminal state; manual
+    /// intervention is required.
+    /// </summary>
+    Indeterminate = 9,
+
+    /// <summary>The request was canceled after autonomous actuator invocation began.</summary>
+    Canceled = 10,
 }
 
 /// <summary>
@@ -197,7 +212,13 @@ public sealed record OpsFindingProposalResult
     /// <summary>Gets the created proposal identifier when <see cref="Status"/> is <see cref="OpsFindingProposalStatus.ProposalCreated"/>.</summary>
     public string? ProposalId { get; init; }
 
-    /// <summary>Gets the executed operation identifier when <see cref="Status"/> is <see cref="OpsFindingProposalStatus.Executed"/>.</summary>
+    /// <summary>
+    /// Gets the actuator operation identifier when <see cref="Status"/> is
+    /// <see cref="OpsFindingProposalStatus.Executed"/>, <see cref="OpsFindingProposalStatus.Failed"/>,
+    /// <see cref="OpsFindingProposalStatus.RolledBack"/>, or
+    /// <see cref="OpsFindingProposalStatus.Indeterminate"/>, or
+    /// <see cref="OpsFindingProposalStatus.Canceled"/>.
+    /// </summary>
     public string? ExecutionOperationId { get; init; }
 
     /// <summary>Gets an operator-facing message describing the outcome, when available.</summary>
