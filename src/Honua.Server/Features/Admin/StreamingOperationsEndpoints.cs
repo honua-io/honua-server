@@ -20,10 +20,8 @@ internal static class StreamingOperationsEndpoints
     public static void MapStreamingOperationsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/operations/streaming")
-            // T10 (#2346): realtime streaming operations are built-experimental and
-            // gated OFF the first-release surface (404 when realtime.feature-streams
-            // is experimental-disabled).
-            .WithCapabilityGate("realtime.feature-streams")
+            // Promoted to GA in #2428 — no capability gate; admin authorization still
+            // required below.
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Operations")
