@@ -423,6 +423,26 @@ assert_descriptor \
 # targeted AND must include the shard that runs its OWN feature's tests.
 # ---------------------------------------------------------------------------
 
+# Capability registry changes are covered by the always-on Core foundation tests,
+# the server capability projection tests, and the admin feature-overview projection.
+# They must not trigger the 50+ shard unmapped-source fallback.
+assert_descriptor \
+  "core-capability-registry-targeted" \
+  "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Data and Sharing"
+assert_descriptor \
+  "core-capability-registry-includes-admin-governance" \
+  "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Platform and Governance"
+assert_excludes_shard \
+  "core-capability-registry-excludes-unrelated-admin-operations" \
+  "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
+  "Server Features Admin Operations"
+
 # #1939 raster: src/Honua.Core/Features/Raster/ is the shared raster pipeline
 # adapted by ImageServer + OGC API Coverages + Wcs(WFS). A raster change targets
 # those raster-rendering shards (incl. GeoServices ImageServer which runs the
