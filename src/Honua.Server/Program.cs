@@ -570,7 +570,12 @@ if (builder.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery",
 StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
 
 // Register health check services
+builder.Services.AddOptions<MigrationSafetyOptions>()
+    .Bind(builder.Configuration.GetSection(MigrationSafetyOptions.SectionName));
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.MigrationState>();
+builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.MigrationBackupHookState>();
+builder.Services.TryAddSingleton<IDatabaseMigrationBackupHookRecorder,
+    Honua.Infrastructure.Monitoring.AuditingMigrationBackupHookRecorder>();
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DatabaseCompatibilityState>();
 
 // Degraded-start resilience (#1632): when enabled, transient DB-unavailability at startup does

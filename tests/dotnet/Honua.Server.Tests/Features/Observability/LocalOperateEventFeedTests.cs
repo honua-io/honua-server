@@ -408,6 +408,44 @@ public sealed class LocalOperateEventFeedTests
     }
 
     [UnitTest]
+    public async Task ListAsync_AuditSource_ProjectsStructuredDetailsJson()
+    {
+        var auditReader = new FakeAuditReader
+        {
+            Items =
+            {
+                new AuditEventRecord
+                {
+                    AuditId = 9,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    EventType = AuditEventType.AdminAction,
+                    Actor = "database-migration-runner",
+                    ActorType = AuditActorType.System,
+                    ResourceType = "database_migration",
+                    ResourceId = "schema-migration-test",
+                    Action = "migration.backup_hook",
+                    Outcome = AuditOutcome.Failure,
+                    CorrelationId = "schema-migration-test",
+                    Details = """
+                        {"outcome":"failed","durationMilliseconds":42,"stderr":"pg_dump: permission denied"}
+                        """
+                }
+            }
+        };
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, auditReader: auditReader);
+        var page = await feed.ListAsync(new OperateEventFilter { ResourceRef = "database_migration/schema-migration-test" });
+
+        var item = page.Items.Should().ContainSingle().Subject;
+        item.Kind.Should().Be(OperateEventKind.Audit);
+        item.Title.Should().Be("migration.backup_hook");
+        item.Severity.Should().Be(OperateEventSeverity.Error);
+        item.DetailsJson.Should().NotBeNull();
+        item.DetailsJson!.Should().Contain("\"durationMilliseconds\":42");
+        item.DetailsJson.Should().Contain("pg_dump: permission denied");
+    }
+
+    [UnitTest]
     public async Task ListAsync_AuditSource_AppliesResourceRefBeforeSourcePagination()
     {
         var now = DateTimeOffset.UtcNow;

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -234,6 +235,12 @@ public sealed class DeployPreflightMigration
     /// </summary>
     [JsonPropertyName("planError")]
     public string? PlanError { get; init; }
+
+    /// <summary>
+    /// Last backup-hook outcome for the current pending contract-migration set, when applicable.
+    /// </summary>
+    [JsonPropertyName("backupHook")]
+    public MigrationBackupHookStatus? BackupHook { get; init; }
 }
 
 /// <summary>

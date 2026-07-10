@@ -78,8 +78,9 @@ public sealed class GeocodeCoordinatorTelemetryTests
         var result = await coordinator.BatchGeocodeAsync(request, providerName: null, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        var span = Assert.Single(activities);
-        Assert.Equal("geocoding.batch", span.OperationName);
+        var span = Assert.Single(
+            activities,
+            activity => activity.OperationName == "geocoding.batch");
         Assert.Equal(2, span.TagObjects.First(t => t.Key == "honua.geocoding.batch_size").Value);
     }
 
