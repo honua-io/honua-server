@@ -34,6 +34,36 @@ public sealed class ContainerGrpcTransportConfigurationTests
     }
 
     [Fact]
+    public void ComposeFile_PersistsLocalFileStorageOutsideTmpfs()
+    {
+        var compose = ReadRepoFile("docker-compose.yml");
+        var honuaService = GetComposeServiceBlock(compose, "honua", "console");
+
+        Assert.Contains(
+            "FileStorage__LocalStorage__BasePath: \"/var/lib/honua/storage\"",
+            honuaService,
+            StringComparison.Ordinal);
+        Assert.Contains("- honua_storage:/var/lib/honua/storage", honuaService, StringComparison.Ordinal);
+        Assert.DoesNotContain("honua_storage:/tmp", honuaService, StringComparison.Ordinal);
+        Assert.Contains("  honua_storage:", compose, StringComparison.Ordinal);
+        Assert.Contains(
+            "name: \"${HONUA_STORAGE_VOLUME_NAME:-honua_storage}\"",
+            compose,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BackupGuide_UsesTheMountedComposeStorageVolume()
+    {
+        var guide = ReadRepoFile("docs/guides/deploy/backup-and-restore.md");
+
+        Assert.Contains("HONUA_STORAGE_VOLUME_NAME", guide, StringComparison.Ordinal);
+        Assert.Contains("/var/lib/honua/storage", guide, StringComparison.Ordinal);
+        Assert.Contains("tar tzf", guide, StringComparison.Ordinal);
+        Assert.DoesNotContain("STORAGE_VOLUME=honua_storage", guide, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ClientCompatComposeFile_OverridesContainerHttpPortForLaneBaseUrls()
     {
         var compose = ReadRepoFile("docker/client-compat/compose.yml");
