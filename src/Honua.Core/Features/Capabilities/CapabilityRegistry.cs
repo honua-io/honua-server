@@ -238,8 +238,13 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
 
             // Disconnected-sync conflict review — built-experimental (T10 flip).
             ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
-            // Realtime feature streaming — built-experimental (T10 flip).
-            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            // Realtime feature streaming — promoted to GA (Implemented) in #2428.
+            // Second Experimental->Implemented promotion (after alerts.geofence, #2427):
+            // WebSocket/SSE feature-change streams with subscription filters and durable
+            // replay cursors ship on the default first-release surface. Still Pro-edition
+            // gated (streaming.feature-subscriptions entitlement) — GA means no longer
+            // hidden/unadvertised, not free-tier.
+            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             // Geofence enter/exit alerting — promoted to GA (Implemented) in #2427.
             // First Experimental->Implemented promotion; engine ships as shared,
             // un-gated GA infrastructure. Workers still self-gate on
