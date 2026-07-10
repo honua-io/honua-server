@@ -91,13 +91,15 @@ Expected: a PostGIS version row, then `Ready`. Finish with a known feature query
 
 Compose versions before #2624 stored local files under the container's
 `/tmp/honua-storage` and did not mount that directory. Before replacing the old
-container, stop writes and copy any surviving files out of it:
+container, quiesce writes at the edge or through a maintenance window, then copy
+any surviving files from the still-running container before stopping it:
 
 ```bash
-docker compose stop honua
-OLD_HONUA_CONTAINER=$(docker compose ps -a -q honua)
+OLD_HONUA_CONTAINER=$(docker compose ps -q honua)
+test -n "$OLD_HONUA_CONTAINER"
 mkdir -p honua-storage-migration
 docker cp "$OLD_HONUA_CONTAINER:/tmp/honua-storage/." honua-storage-migration/
+docker compose stop honua
 ```
 
 After updating the Compose file, create the new named volume and copy the files
