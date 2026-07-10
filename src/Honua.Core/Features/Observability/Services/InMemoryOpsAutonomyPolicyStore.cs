@@ -158,9 +158,13 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
                 case OpsAutonomyActionOutcome.RolledBack:
                     track.RolledBack++;
                     break;
-                default:
+                case OpsAutonomyActionOutcome.Failed:
+                case OpsAutonomyActionOutcome.Indeterminate:
+                case OpsAutonomyActionOutcome.Canceled:
                     track.Failed++;
                     break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Unknown autonomy action outcome.");
             }
         }
 

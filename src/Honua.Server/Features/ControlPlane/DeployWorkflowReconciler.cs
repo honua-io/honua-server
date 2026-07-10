@@ -18,13 +18,17 @@ internal sealed partial class DeployWorkflowReconciler(
     IDeployTelemetrySignalEvaluator telemetrySignalEvaluator,
     ILogger<DeployWorkflowReconciler> logger) : IWorkflowOperationReconciler
 {
-    private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultLeaseRenewInterval = TimeSpan.FromSeconds(10);
     private readonly Dictionary<(string Backend, DeployTargetKind TargetKind), IDeployBackend> _backends = backends.ToDictionary(
         backend => (backend.BackendName, backend.TargetKind),
         backend => backend,
         EqualityComparer<(string Backend, DeployTargetKind TargetKind)>.Default);
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
+
+    internal TimeSpan LeaseDuration { get; init; } = DefaultLeaseDuration;
+
+    internal TimeSpan LeaseRenewInterval { get; init; } = DefaultLeaseRenewInterval;
 
     public async Task ReconcileWorkflowOperationAsync(
         string operationId,

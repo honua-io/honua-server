@@ -89,7 +89,7 @@ public sealed class OpsNotificationServiceTests
     }
 
     [UnitTest]
-    public async Task NotifyAsync_WhenChannelCircuitOpen_SkipsThatChannel()
+    public async Task NotifyAsync_WhenChannelCircuitOpen_PersistsEvidenceWithoutDispatch()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
         outbox.AppendAndEnqueueAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>())
@@ -101,9 +101,12 @@ public sealed class OpsNotificationServiceTests
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
-        // The only configured channel is tripped open, so no dispatch is enqueued (bounded dead-letter volume).
-        await outbox.DidNotReceive().AppendAndEnqueueAsync(
-            Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>());
+        // The tripped channel gets no dispatch row (bounded dead-letter volume), but the ops event
+        // remains durable so operators can still reconstruct what the autonomous system did.
+        await outbox.Received(1).AppendAndEnqueueAsync(
+            Arg.Is<AlertEventEnvelope>(alertEvent => alertEvent.Source == AlertEventSources.Ops),
+            Arg.Is<ImmutableArray<AlertChannelType>>(channels => channels.IsEmpty),
+            Arg.Any<CancellationToken>());
     }
 
     private static OpsNotification Notification(AlertSeverity severity)

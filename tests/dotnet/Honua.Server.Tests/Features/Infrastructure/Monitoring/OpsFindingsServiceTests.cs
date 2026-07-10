@@ -971,6 +971,9 @@ public sealed class OpsFindingsServiceTests
         public AlertDispatchBacklog? LastBacklog { get; set; }
 
         public bool IsStoragePollFailing { get; set; }
+
+        public Task<AlertDispatchBacklog> RefreshBacklogAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(LastBacklog ?? new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 });
     }
 
     private sealed class FakeDeployPreflightProbe : IDeployPreflightProbe

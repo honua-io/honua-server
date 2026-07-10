@@ -532,73 +532,324 @@ internal sealed partial class OperationGateway : IOperationGateway
         OpsAutonomyRouteDecision autonomy,
         CancellationToken cancellationToken)
     {
+        var directDecision = autonomy.Decision
+            ?? throw new InvalidOperationException("Autonomy route decision did not include a direct-execute guardrail decision.");
+
+        await using var convergenceScope = _scopeFactory.CreateAsyncScope();
+        var convergence = convergenceScope.ServiceProvider
+            .GetServices<IAutonomousOperationConvergence>()
+            .FirstOrDefault(candidate => candidate.CanHandle(request));
+        if (convergence is null)
+        {
+            var message = $"No post-action convergence verifier is registered for autonomous action "
+                + $"'{request.ActionDiscriminator ?? request.Kind.ToString()}'; the action was not executed; manual intervention required.";
+            return await CompleteAutonomyAsync(
+                    request,
+                    autonomy,
+                    directDecision,
+                    OperationGatewayOutcome.Failed,
+                    OpsAutonomyActionOutcome.Failed,
+                    operationId: null,
+                    message,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        OperationGatewayResult execution;
         try
         {
-            var directDecision = autonomy.Decision
-                ?? throw new InvalidOperationException("Autonomy route decision did not include a direct-execute guardrail decision.");
-            var result = await ExecuteDirectAsync(
+            execution = await ExecuteDirectAsync(
                     request,
                     directDecision,
                     cancellationToken)
                 .ConfigureAwait(false);
-
-            var outcome = result.Outcome == OperationGatewayOutcome.Executed
-                ? OpsAutonomyActionOutcome.Succeeded
-                : OpsAutonomyActionOutcome.Failed;
-            await RecordAutonomyOutcomeAsync(
-                    autonomy,
-                    outcome,
-                    result.ExecutionOperationId,
-                    result.Message,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            await WriteAutonomyAuditAsync(
-                    request,
-                    result.Outcome == OperationGatewayOutcome.Executed ? AuditOutcome.Success : AuditOutcome.Failure,
-                    result.Message,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            await NotifyAutonomyAsync(
-                    request,
-                    outcome,
-                    result.ExecutionOperationId,
-                    result.Message,
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            return result with
-            {
-                Decision = directDecision,
-                Message = result.Outcome == OperationGatewayOutcome.Executed
-                    ? $"Auto-applied by autonomy policy for rule '{request.AutonomyContext?.Rule}'."
-                    : result.Message,
-            };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
         {
-            await RecordAutonomyOutcomeAsync(
+            await RecordPostInvocationCancellationAsync(
+                    request,
                     autonomy,
+                    operationId: null,
+                    "Autonomous execution was canceled after actuator invocation; the underlying state is indeterminate; manual intervention required.")
+                .ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var message = $"Autonomous execution failed ({ex.GetType().Name}).";
+            await CompleteAutonomyAsync(
+                    request,
+                    autonomy,
+                    directDecision,
+                    OperationGatewayOutcome.Failed,
                     OpsAutonomyActionOutcome.Failed,
                     operationId: null,
-                    message: ex.GetType().Name,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            await WriteAutonomyAuditAsync(
-                    request,
-                    AuditOutcome.Failure,
-                    ex.GetType().Name,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            await NotifyAutonomyAsync(
-                    request,
-                    OpsAutonomyActionOutcome.Failed,
-                    operationId: null,
-                    message: ex.GetType().Name,
+                    message,
                     cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
+
+        if (execution.Outcome != OperationGatewayOutcome.Executed)
+        {
+            return await CompleteAutonomyAsync(
+                    request,
+                    autonomy,
+                    directDecision,
+                    execution.Outcome,
+                    OpsAutonomyActionOutcome.Failed,
+                    execution.ExecutionOperationId,
+                    execution.Message ?? "The autonomous actuator did not execute.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await WriteAutonomyAuditAsync(
+                request,
+                "operation.auto_executed",
+                AuditOutcome.Success,
+                execution.Message,
+                execution.ExecutionOperationId,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        AutonomousVerificationResult verification;
+        try
+        {
+            verification = await convergence
+                .VerifyAsync(request, execution.ExecutionOperationId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            await RecordPostInvocationCancellationAsync(
+                    request,
+                    autonomy,
+                    execution.ExecutionOperationId,
+                    "Post-action verification was canceled after execution; the underlying state is indeterminate; manual intervention required.")
+                .ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            verification = new AutonomousVerificationResult(
+                AutonomousVerificationState.Indeterminate,
+                $"Post-action verification could not complete ({ex.GetType().Name}).");
+        }
+
+        await WriteAutonomyAuditAsync(
+                request,
+                "operation.auto_verified",
+                verification.State == AutonomousVerificationState.Converged
+                    ? AuditOutcome.Success
+                    : AuditOutcome.Failure,
+                verification.Message,
+                execution.ExecutionOperationId,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (verification.State == AutonomousVerificationState.Converged)
+        {
+            var message = $"Auto-applied by autonomy policy for rule '{request.AutonomyContext?.Rule}'; "
+                + $"convergence verified: {verification.Message}";
+            return await CompleteAutonomyAsync(
+                    request,
+                    autonomy,
+                    directDecision,
+                    OperationGatewayOutcome.Executed,
+                    OpsAutonomyActionOutcome.Succeeded,
+                    execution.ExecutionOperationId,
+                    message,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!convergence.SupportsCompensation(request))
+        {
+            var gatewayOutcome = verification.State == AutonomousVerificationState.Indeterminate
+                ? OperationGatewayOutcome.Indeterminate
+                : OperationGatewayOutcome.Failed;
+            var autonomyOutcome = verification.State == AutonomousVerificationState.Indeterminate
+                ? OpsAutonomyActionOutcome.Indeterminate
+                : OpsAutonomyActionOutcome.Failed;
+            var message = $"Post-action verification {DescribeVerification(verification.State)}: {verification.Message}; "
+                + $"compensation is not supported for action '{request.ActionDiscriminator ?? request.Kind.ToString()}'; "
+                + "manual intervention required.";
+            return await CompleteAutonomyAsync(
+                    request,
+                    autonomy,
+                    directDecision,
+                    gatewayOutcome,
+                    autonomyOutcome,
+                    execution.ExecutionOperationId,
+                    message,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        AutonomousCompensationResult compensation;
+        try
+        {
+            compensation = await convergence
+                .CompensateAsync(request, execution.ExecutionOperationId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            var message = $"Post-action verification {DescribeVerification(verification.State)}: {verification.Message}; "
+                + "compensation was canceled and the underlying state is indeterminate; manual intervention required.";
+            await RecordPostInvocationCancellationAsync(
+                    request,
+                    autonomy,
+                    execution.ExecutionOperationId,
+                    message)
+                .ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            compensation = new AutonomousCompensationResult(
+                AutonomousCompensationState.Indeterminate,
+                $"Compensation could not complete ({ex.GetType().Name}).");
+        }
+
+        await WriteAutonomyAuditAsync(
+                request,
+                "operation.auto_compensated",
+                compensation.State == AutonomousCompensationState.RolledBack
+                    ? AuditOutcome.Success
+                    : AuditOutcome.Failure,
+                compensation.Message,
+                execution.ExecutionOperationId,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (compensation.State == AutonomousCompensationState.RolledBack)
+        {
+            var message = $"Post-action verification {DescribeVerification(verification.State)}: {verification.Message}; "
+                + $"compensation succeeded: {compensation.Message}";
+            return await CompleteAutonomyAsync(
+                    request,
+                    autonomy,
+                    directDecision,
+                    OperationGatewayOutcome.RolledBack,
+                    OpsAutonomyActionOutcome.RolledBack,
+                    execution.ExecutionOperationId,
+                    message,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var indeterminateMessage = $"Post-action verification {DescribeVerification(verification.State)}: {verification.Message}; "
+            + $"compensation {DescribeCompensation(compensation.State)}: {compensation.Message}; "
+            + "the final state is indeterminate; manual intervention required.";
+        return await CompleteAutonomyAsync(
+                request,
+                autonomy,
+                directDecision,
+                OperationGatewayOutcome.Indeterminate,
+                OpsAutonomyActionOutcome.Indeterminate,
+                execution.ExecutionOperationId,
+                indeterminateMessage,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
+
+    private async Task<OperationGatewayResult> CompleteAutonomyAsync(
+        OperationGatewayRequest request,
+        OpsAutonomyRouteDecision autonomy,
+        GuardrailDecision decision,
+        OperationGatewayOutcome gatewayOutcome,
+        OpsAutonomyActionOutcome autonomyOutcome,
+        string? operationId,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        await RecordAutonomyOutcomeAsync(
+                autonomy,
+                autonomyOutcome,
+                operationId,
+                message,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await WriteAutonomyAuditAsync(
+                request,
+                GetTerminalAutonomyAuditAction(autonomyOutcome),
+                autonomyOutcome == OpsAutonomyActionOutcome.Succeeded
+                    ? AuditOutcome.Success
+                    : AuditOutcome.Failure,
+                message,
+                operationId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await NotifyAutonomyAsync(
+                request,
+                autonomyOutcome,
+                operationId,
+                message,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return new OperationGatewayResult
+        {
+            Outcome = gatewayOutcome,
+            Decision = decision,
+            ExecutionOperationId = operationId,
+            Message = message,
+        };
+    }
+
+    private async Task RecordPostInvocationCancellationAsync(
+        OperationGatewayRequest request,
+        OpsAutonomyRouteDecision autonomy,
+        string? operationId,
+        string message)
+    {
+        // The caller token is already canceled. Use a short independent budget so the durable
+        // reservation, audit row, and manual-intervention alert are not silently lost, while
+        // still bounding shutdown latency.
+        using var evidenceTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            await CompleteAutonomyAsync(
+                    request,
+                    autonomy,
+                    autonomy.Decision
+                        ?? throw new InvalidOperationException("Autonomy route decision did not include a direct-execute guardrail decision."),
+                    OperationGatewayOutcome.Canceled,
+                    OpsAutonomyActionOutcome.Canceled,
+                    operationId,
+                    message,
+                    evidenceTimeout.Token)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Never replace the caller's OperationCanceledException with a secondary evidence
+            // persistence failure. The source-generated log is the last-resort breadcrumb.
+            Log.AutonomyCancellationEvidenceFailed(
+                _logger,
+                request.AutonomyContext?.FindingId ?? request.Kind.ToString(),
+                ex);
+        }
+    }
+
+    private static string DescribeVerification(AutonomousVerificationState state)
+        => state == AutonomousVerificationState.Failed ? "failed" : "was indeterminate";
+
+    private static string DescribeCompensation(AutonomousCompensationState state)
+        => state == AutonomousCompensationState.Failed ? "failed" : "was indeterminate";
+
+    private static string GetTerminalAutonomyAuditAction(OpsAutonomyActionOutcome outcome)
+        => outcome switch
+        {
+            OpsAutonomyActionOutcome.Succeeded => "operation.auto_applied",
+            OpsAutonomyActionOutcome.Failed => "operation.auto_failed",
+            OpsAutonomyActionOutcome.RolledBack => "operation.auto_rolled_back",
+            OpsAutonomyActionOutcome.Indeterminate => "operation.auto_indeterminate",
+            OpsAutonomyActionOutcome.Canceled => "operation.auto_canceled",
+            _ => "operation.auto_indeterminate",
+        };
 
     private async Task RecordAutonomyOutcomeAsync(
         OpsAutonomyRouteDecision autonomy,
@@ -671,8 +922,10 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     private async Task WriteAutonomyAuditAsync(
         OperationGatewayRequest request,
+        string action,
         AuditOutcome outcome,
         string? message,
+        string? operationId,
         CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
@@ -692,9 +945,12 @@ internal sealed partial class OperationGateway : IOperationGateway
                 ActorType = actorType,
                 ResourceType = "operation_autonomy",
                 ResourceId = request.AutonomyContext?.FindingId ?? request.IdempotencyKey ?? request.Kind.ToString(),
-                Action = "operation.auto_applied",
+                Action = action,
                 Outcome = outcome,
-                CorrelationId = request.CorrelationId ?? request.AutonomyContext?.FindingId ?? Guid.NewGuid().ToString("N"),
+                CorrelationId = request.CorrelationId
+                    ?? operationId
+                    ?? request.AutonomyContext?.FindingId
+                    ?? Guid.NewGuid().ToString("N"),
                 Details = BuildAutonomyAuditDetails(request, message),
             },
             cancellationToken).ConfigureAwait(false);
@@ -705,7 +961,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             + "\",\"rule\":\"" + JsonEscape(request.AutonomyContext?.Rule)
             + "\",\"findingId\":\"" + JsonEscape(request.AutonomyContext?.FindingId)
             + "\",\"evidenceRefs\":" + BuildJsonArray(request.AutonomyContext?.EvidenceRefs)
-            + "\",\"message\":\"" + JsonEscape(message)
+            + ",\"message\":\"" + JsonEscape(message)
             + "\"}";
 
     private async Task NotifyAutonomyAsync(
@@ -740,16 +996,21 @@ internal sealed partial class OperationGateway : IOperationGateway
                 attributes["evidenceRefs"] = string.Join(",", evidenceRefs);
             }
 
+            var (severity, title) = outcome switch
+            {
+                OpsAutonomyActionOutcome.Succeeded => (AlertSeverity.Info, "Autonomous remediation converged"),
+                OpsAutonomyActionOutcome.RolledBack => (AlertSeverity.Warning, "Autonomous remediation rolled back"),
+                OpsAutonomyActionOutcome.Indeterminate => (AlertSeverity.Warning, "Autonomous remediation requires manual intervention"),
+                OpsAutonomyActionOutcome.Canceled => (AlertSeverity.Warning, "Autonomous remediation canceled after invocation"),
+                _ => (AlertSeverity.Warning, "Autonomous remediation failed"),
+            };
+
             await notifier.NotifyAsync(
                     new OpsNotification
                     {
                         Source = "ops-autonomy",
-                        Severity = outcome == OpsAutonomyActionOutcome.Succeeded
-                            ? AlertSeverity.Info
-                            : AlertSeverity.Warning,
-                        Title = outcome == OpsAutonomyActionOutcome.Succeeded
-                            ? "Autonomous remediation applied"
-                            : "Autonomous remediation failed",
+                        Severity = severity,
+                        Title = title,
                         Body = message ?? $"Autonomous remediation outcome: {outcome}.",
                         DedupeIdentifier = $"{findingId}:{outcome}",
                         Attributes = attributes,
@@ -800,5 +1061,8 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         [LoggerMessage(9204, LogLevel.Warning, "Failed to enqueue ops-autonomy notification for finding {FindingId}")]
         public static partial void AutonomyNotificationFailed(ILogger logger, string findingId, Exception exception);
+
+        [LoggerMessage(9205, LogLevel.Error, "Failed to persist canceled ops-autonomy evidence for finding {FindingId}")]
+        public static partial void AutonomyCancellationEvidenceFailed(ILogger logger, string findingId, Exception exception);
     }
 }

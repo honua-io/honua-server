@@ -31,6 +31,18 @@ public enum OpsAutonomyActionOutcome
 
     /// <summary>The action was rolled back or reverted after a regression.</summary>
     RolledBack = 2,
+
+    /// <summary>
+    /// Execution may have changed state, but verification or compensation could not
+    /// establish a safe terminal result. Manual intervention is required.
+    /// </summary>
+    Indeterminate = 3,
+
+    /// <summary>
+    /// The caller canceled after actuator invocation began. This remains distinct from
+    /// actuator failure and from a completed verification with indeterminate evidence.
+    /// </summary>
+    Canceled = 4,
 }
 
 /// <summary>
@@ -98,7 +110,10 @@ public sealed record OpsAutonomyTrackRecord
     /// <summary>Gets the number of autonomous actions rolled back or reverted for the rule.</summary>
     public long RolledBack { get; init; }
 
-    /// <summary>Gets the number of autonomous actions that failed for the rule.</summary>
+    /// <summary>
+    /// Gets the number of autonomous actions that failed, were indeterminate, or were
+    /// canceled after invocation for the rule.
+    /// </summary>
     public long Failed { get; init; }
 
     /// <summary>Gets the first known activity timestamp for the rule.</summary>
