@@ -266,7 +266,11 @@ internal sealed class InMemoryFeatureChangeEventStore(
         {
             try
             {
-                var members = await _redisDb.SortedSetRangeByRankAsync(IndexKey, -1, -1, Order.Descending).ConfigureAwait(false);
+                // Highest cursor = the head of the stream. With Order.Descending the set is
+                // walked high→low, so rank 0 is the max score; (-1,-1) would instead return
+                // the *lowest* cursor, which made a fresh Redis-backed stream connection
+                // replay the entire retained history rather than resume from "now" (#2428).
+                var members = await _redisDb.SortedSetRangeByRankAsync(IndexKey, 0, 0, Order.Descending).ConfigureAwait(false);
                 if (members.Length == 0)
                 {
                     return 0;
