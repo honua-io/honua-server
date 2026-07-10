@@ -8,14 +8,15 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
+using Honua.Core.Configuration;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -31,15 +32,15 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
     public ObservabilityEndpointsTests()
     {
         _fixture = new WebAppFixture()
-            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configurationBuilder) =>
-                configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["Database:MigrationSafety:BackupCommand"] = "pg_dump --format=custom"
-                })))
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
                 services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
+                services.RemoveAll<IOptions<MigrationSafetyOptions>>();
+                services.AddSingleton(Options.Create(new MigrationSafetyOptions
+                {
+                    BackupCommand = "pg_dump --format=custom"
+                }));
             });
     }
 
