@@ -42,9 +42,10 @@ internal sealed partial class OpsNotificationService
 
     /// <summary>
     /// Composes and enqueues one ops notification. No-ops when ops notifications are
-    /// disabled, the severity is below the configured minimum, or no configured
-    /// channel survives edition gating. Idempotent per terminal event via the outbox
-    /// dedupe key.
+    /// disabled or the severity is below the configured minimum. When no configured
+    /// channel is currently deliverable, the event is still persisted without a
+    /// dispatch row so operator evidence survives channel circuit breaking and
+    /// edition gating. Idempotent per terminal event via the outbox dedupe key.
     /// </summary>
     public async Task NotifyAsync(OpsNotification notification, CancellationToken cancellationToken)
     {
@@ -65,19 +66,21 @@ internal sealed partial class OpsNotificationService
         }
 
         var channels = ResolveChannels(ops.Channels, notification.Source, DateTimeOffset.UtcNow);
-        if (channels.IsDefaultOrEmpty)
-        {
-            AlertPipelineMetrics.RecordOpsNotification(notification.Source, notification.Severity, "no_channel");
-            return;
-        }
-
         var envelope = BuildEnvelope(notification);
         await _dispatchWriter
             .PersistAsync([new PendingAlertDispatch(envelope, channels)], cancellationToken)
             .ConfigureAwait(false);
 
-        AlertPipelineMetrics.RecordOpsNotification(notification.Source, notification.Severity, "enqueued");
-        LogEnqueued(_logger, notification.Source, notification.Severity, channels.Length, notification.DedupeIdentifier);
+        if (channels.IsDefaultOrEmpty)
+        {
+            AlertPipelineMetrics.RecordOpsNotification(notification.Source, notification.Severity, "persisted_no_channel");
+            LogPersistedWithoutChannel(_logger, notification.Source, notification.Severity, notification.DedupeIdentifier);
+        }
+        else
+        {
+            AlertPipelineMetrics.RecordOpsNotification(notification.Source, notification.Severity, "enqueued");
+            LogEnqueued(_logger, notification.Source, notification.Severity, channels.Length, notification.DedupeIdentifier);
+        }
     }
 
     private ImmutableArray<AlertChannelType> ResolveChannels(IReadOnlyList<string> configured, string source, DateTimeOffset now)
@@ -157,4 +160,7 @@ internal sealed partial class OpsNotificationService
 
     [LoggerMessage(EventId = 9452, Level = LogLevel.Information, Message = "Ops notification from {Source} ({Severity}) enqueued to {ChannelCount} channel(s) (dedupe {DedupeIdentifier}).")]
     private static partial void LogEnqueued(ILogger logger, string source, AlertSeverity severity, int channelCount, string dedupeIdentifier);
+
+    [LoggerMessage(EventId = 9454, Level = LogLevel.Warning, Message = "Ops notification from {Source} ({Severity}) persisted without a deliverable channel (dedupe {DedupeIdentifier}).")]
+    private static partial void LogPersistedWithoutChannel(ILogger logger, string source, AlertSeverity severity, string dedupeIdentifier);
 }

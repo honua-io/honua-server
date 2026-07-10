@@ -6,6 +6,8 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.HealthCheck;
 using Honua.Infrastructure.Helpers;
+using Honua.Core.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -21,7 +23,9 @@ internal sealed class DeployPreflightProbe(
     MigrationState migrationState,
     DatabaseCompatibilityState databaseCompatibilityState,
     ILogger<DeployPreflightProbe> logger,
-    IConnectionSecretResolver? secretResolver = null) : IDeployPreflightProbe
+    IConnectionSecretResolver? secretResolver = null,
+    IOptions<MigrationSafetyOptions>? migrationSafetyOptions = null,
+    MigrationBackupHookState? backupHookState = null) : IDeployPreflightProbe
 {
     private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
 
@@ -81,6 +85,12 @@ internal sealed class DeployPreflightProbe(
                 connectionString,
                 typeof(Program).Assembly,
                 cancellationToken).ConfigureAwait(false);
+            var backupHook = plan.Successful
+                ? MigrationBackupHookStatusMapper.Build(
+                    plan,
+                    migrationSafetyOptions?.Value ?? new MigrationSafetyOptions(),
+                    backupHookState?.Latest)
+                : null;
 
             return new DeployPreflightMigrationSnapshot
             {
@@ -93,7 +103,8 @@ internal sealed class DeployPreflightProbe(
                 PendingScripts = plan.PendingScripts,
                 PendingContractScripts = plan.ContractScriptNames,
                 ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
-                PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage
+                PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage,
+                BackupHook = backupHook
             };
         }
         catch (Exception ex)
@@ -263,6 +274,8 @@ internal sealed class DeployPreflightMigrationSnapshot
     public IReadOnlyList<string> ExecutedButNotDiscoveredScripts { get; init; } = Array.Empty<string>();
 
     public string? PlanError { get; init; }
+
+    public MigrationBackupHookStatus? BackupHook { get; init; }
 }
 
 internal sealed class DeployPreflightDatabaseCompatibilitySnapshot

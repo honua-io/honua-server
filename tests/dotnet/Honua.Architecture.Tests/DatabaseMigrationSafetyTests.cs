@@ -81,6 +81,26 @@ public sealed class DatabaseMigrationSafetyTests
             "DbUp executes these migrations transactionally, so CREATE INDEX CONCURRENTLY will fail during startup and integration tests.");
     }
 
+    [ArchitectureTest]
+    public void ServerSeed_ShouldMirror_OpsAutonomyTerminalOutcomeConstraint()
+    {
+        const string expectedConstraint =
+            "CHECK (outcome IS NULL OR outcome IN (0, 1, 2, 3, 4))";
+        var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
+        var migration = File.ReadAllText(Path.Combine(
+            projectRoot,
+            "src",
+            "Honua.Server",
+            "Migrations",
+            "080_AddOpsAutonomyTerminalOutcomes.sql"));
+        var seed = File.ReadAllText(Path.Combine(projectRoot, "tests", "seed", "server.yaml"));
+
+        migration.Should().Contain(expectedConstraint,
+            "migration 080 must retain every terminal autonomy outcome");
+        seed.Should().Contain(expectedConstraint,
+            "integration hosts skip migrations, so their canonical seed must mirror migration 080");
+    }
+
     // Delegates to the shared runtime classifier so the architecture gate and the runtime
     // migration-safety enforcement (MigrationSafetyClassifier) share one source of truth.
     private static IReadOnlyList<string> AnalyzePotentiallyBreakingChanges(string sql)

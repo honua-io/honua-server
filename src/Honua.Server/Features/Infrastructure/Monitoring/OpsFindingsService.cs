@@ -149,6 +149,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             {
                 FindingId = finding.Id,
                 Rule = finding.Rule,
+                ActionDiscriminator = action.ActionDiscriminator,
                 ActionMarkedAutoSafe = action.AutoSafe,
                 BlastRadius = Math.Max(1, action.BlastRadius),
                 EvidenceRefs = finding.EvidenceRefs,
@@ -172,6 +173,10 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         OperationGatewayOutcome.Executed => OpsFindingProposalStatus.Executed,
         OperationGatewayOutcome.ProposalCreated => OpsFindingProposalStatus.ProposalCreated,
         OperationGatewayOutcome.Blocked => OpsFindingProposalStatus.Blocked,
+        OperationGatewayOutcome.Failed => OpsFindingProposalStatus.Failed,
+        OperationGatewayOutcome.RolledBack => OpsFindingProposalStatus.RolledBack,
+        OperationGatewayOutcome.Indeterminate => OpsFindingProposalStatus.Indeterminate,
+        OperationGatewayOutcome.Canceled => OpsFindingProposalStatus.Canceled,
         _ => OpsFindingProposalStatus.NotSupported,
     };
 

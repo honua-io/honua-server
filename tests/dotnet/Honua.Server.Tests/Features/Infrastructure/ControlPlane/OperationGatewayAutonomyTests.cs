@@ -45,10 +45,12 @@ public sealed class OperationGatewayAutonomyTests
                 ReservationId = "auto-1",
                 Reason = "auto-apply-reserved",
             });
+        var convergence = RecordingConvergence.Converged();
         var sut = BuildGateway(
             store,
             evaluator,
             executor,
+            convergence,
             auditLog,
             CreateOpsNotifier(outbox));
 
@@ -59,10 +61,15 @@ public sealed class OperationGatewayAutonomyTests
         result.Message.Should().Contain("Auto-applied");
         store.Count.Should().Be(0, "auto-apply must not also create an approval proposal");
         executor.ExecuteCount.Should().Be(1);
+        convergence.VerifyCount.Should().Be(1);
+        convergence.CompensateCount.Should().Be(0);
         evaluator.OutcomeCount.Should().Be(1);
         evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Succeeded);
         evaluator.ProposalRaisedCount.Should().Be(0);
-        auditLog.Events.Should().ContainSingle(item => item.Action == "operation.auto_applied");
+        auditLog.Events.Select(item => item.Action).Should().ContainInOrder(
+            "operation.auto_executed",
+            "operation.auto_verified",
+            "operation.auto_applied");
         outbox.Events.Should().ContainSingle();
         outbox.Events[0].Source.Should().Be(AlertEventSources.Ops);
         outbox.Events[0].ServiceId.Should().Be("ops-autonomy");
@@ -79,7 +86,7 @@ public sealed class OperationGatewayAutonomyTests
                 ShouldAutoApply = false,
                 Reason = "policy-propose-only",
             });
-        var sut = BuildGateway(store, evaluator, new RecordingExecutor());
+        var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
 
         var result = await sut.RouteAsync(Request());
 
@@ -88,6 +95,70 @@ public sealed class OperationGatewayAutonomyTests
         store.Count.Should().Be(1);
         evaluator.OutcomeCount.Should().Be(0);
         evaluator.ProposalRaisedCount.Should().Be(1);
+
+        var proposal = await store.GetAsync(result.ProposalId!);
+        proposal.Should().NotBeNull();
+        proposal!.AutonomyMetadata.Should().NotBeNull();
+        proposal.AutonomyMetadata!.FindingId.Should().Be(FindingId);
+        proposal.AutonomyMetadata.Rule.Should().Be(Rule);
+        proposal.AutonomyMetadata.ActionDiscriminator.Should().Be(RedriveAction);
+        proposal.AutonomyMetadata.EvidenceRefs.Should().Equal("test");
+        proposal.Plan.ExecutionPayload.Should().NotBeNull();
+
+        var approved = await sut.ApplyApprovedProposalAsync(result.ProposalId!, "human-approver");
+        approved.Should().NotBeNull();
+        evaluator.ProposalApprovedCount.Should().Be(1);
+        evaluator.ProposalRejectedCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RejectProposal_FindingProposal_RecordsStableRuleResolutionMetadata()
+    {
+        var store = new MultiProposalStore();
+        var evaluator = new RecordingAutonomyEvaluator(
+            new OpsAutonomyRouteDecision
+            {
+                ShouldAutoApply = false,
+                Reason = "policy-propose-only",
+            });
+        var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
+        var routed = await sut.RouteAsync(Request());
+
+        var rejected = await sut.RejectProposalAsync(routed.ProposalId!, "human-reviewer", "not during incident");
+
+        rejected.Should().NotBeNull();
+        rejected!.AutonomyMetadata!.FindingId.Should().Be(FindingId);
+        rejected.AutonomyMetadata.Rule.Should().Be(Rule);
+        evaluator.ProposalApprovedCount.Should().Be(0);
+        evaluator.ProposalRejectedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_CounterWriteFailsAfterResolution_RetryReconcilesIdempotently()
+    {
+        var store = new MultiProposalStore();
+        var evaluator = new RecordingAutonomyEvaluator(
+            new OpsAutonomyRouteDecision
+            {
+                ShouldAutoApply = false,
+                Reason = "policy-propose-only",
+            })
+        {
+            FailNextProposalResolution = true,
+        };
+        var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
+        var routed = await sut.RouteAsync(Request());
+
+        var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        await first.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("simulated proposal counter outage");
+        (await store.GetAsync(routed.ProposalId!))!.Status.Should().Be(OperationProposalStatus.Submitted);
+
+        var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        await retry.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*cannot be approved*");
+        evaluator.ProposalApprovedCount.Should().Be(2,
+            "the durable store deduplicates the replay by proposal id, while the gateway repairs a post-resolution write gap");
     }
 
     [Fact]
@@ -101,7 +172,7 @@ public sealed class OperationGatewayAutonomyTests
                 Decision = DirectExecuteDecision(),
                 ReservationId = "auto-1",
             });
-        var sut = BuildGateway(store, evaluator, new ThrowingExecutor());
+        var sut = BuildGateway(store, evaluator, new ThrowingExecutor(), RecordingConvergence.Converged());
 
         var act = () => sut.RouteAsync(Request());
 
@@ -111,10 +182,183 @@ public sealed class OperationGatewayAutonomyTests
         evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Failed);
     }
 
+    [Fact]
+    public async Task RouteAsync_AutonomousExecutorIsNotRegistered_PreservesNotSupportedOutcome()
+    {
+        var evaluator = AutoApplyingEvaluator();
+        var auditLog = new RecordingAuditLog();
+        var sut = BuildGateway(
+            new MultiProposalStore(),
+            evaluator,
+            new WrongKindExecutor(),
+            RecordingConvergence.Converged(),
+            auditLog);
+
+        var result = await sut.RouteAsync(Request());
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.NotSupported);
+        evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Failed);
+        auditLog.Events.Should().ContainSingle(item => item.Action == "operation.auto_failed");
+    }
+
+    [Fact]
+    public async Task RouteAsync_AutoSafeActionHasNoConvergenceVerifier_FailsBeforeActuation()
+    {
+        var evaluator = AutoApplyingEvaluator();
+        var executor = new RecordingExecutor();
+        var sut = BuildGateway(
+            new MultiProposalStore(),
+            evaluator,
+            executor,
+            RecordingConvergence.Unavailable());
+
+        var result = await sut.RouteAsync(Request());
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
+        result.Message.Should().Contain("No post-action convergence verifier");
+        executor.ExecuteCount.Should().Be(0, "autonomy must fail closed before invoking an unverifiable action");
+        evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Failed);
+    }
+
+    [Fact]
+    public async Task RouteAsync_VerificationFailsWithoutCompensation_RequiresManualIntervention()
+    {
+        var evaluator = AutoApplyingEvaluator();
+        var auditLog = new RecordingAuditLog();
+        var outbox = new RecordingAlertOutbox();
+        var convergence = RecordingConvergence.VerificationFailed(
+            "dead-letter backlog still exceeds the threshold",
+            supportsCompensation: false);
+        var sut = BuildGateway(
+            new MultiProposalStore(),
+            evaluator,
+            new RecordingExecutor(),
+            convergence,
+            auditLog,
+            CreateOpsNotifier(outbox));
+
+        var result = await sut.RouteAsync(Request());
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
+        result.ExecutionOperationId.Should().Be(RecordingExecutor.OperationId);
+        result.Message.Should().Contain("dead-letter backlog still exceeds the threshold");
+        result.Message.Should().Contain("compensation is not supported");
+        result.Message.Should().Contain("manual intervention required");
+        convergence.VerifyCount.Should().Be(1);
+        convergence.CompensateCount.Should().Be(0);
+        evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Failed);
+        evaluator.LastMessage.Should().Be(result.Message);
+        auditLog.Events.Select(item => item.Action).Should().ContainInOrder(
+            "operation.auto_executed",
+            "operation.auto_verified",
+            "operation.auto_failed");
+        auditLog.Events.Last().Outcome.Should().Be(AuditOutcome.Failure);
+        outbox.Events.Should().ContainSingle();
+        outbox.Events[0].PayloadJson.Should().Contain("manual intervention required");
+    }
+
+    [Fact]
+    public async Task RouteAsync_VerificationFailsAndCompensationSucceeds_RecordsRolledBack()
+    {
+        var evaluator = AutoApplyingEvaluator();
+        var auditLog = new RecordingAuditLog();
+        var convergence = RecordingConvergence.VerificationFailed(
+            "post-action observation regressed",
+            supportsCompensation: true,
+            new AutonomousCompensationResult(
+                AutonomousCompensationState.RolledBack,
+                "restored the pre-action state"));
+        var sut = BuildGateway(
+            new MultiProposalStore(),
+            evaluator,
+            new RecordingExecutor(),
+            convergence,
+            auditLog);
+
+        var result = await sut.RouteAsync(Request());
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.RolledBack);
+        result.Message.Should().Contain("post-action observation regressed");
+        result.Message.Should().Contain("restored the pre-action state");
+        convergence.CompensateCount.Should().Be(1);
+        evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.RolledBack);
+        auditLog.Events.Select(item => item.Action).Should().ContainInOrder(
+            "operation.auto_executed",
+            "operation.auto_verified",
+            "operation.auto_compensated",
+            "operation.auto_rolled_back");
+    }
+
+    [Fact]
+    public async Task RouteAsync_CompensationFails_PreservesFailureOfFailureAsIndeterminate()
+    {
+        var evaluator = AutoApplyingEvaluator();
+        var auditLog = new RecordingAuditLog();
+        var outbox = new RecordingAlertOutbox();
+        var convergence = RecordingConvergence.VerificationFailed(
+            "verification evidence: finding persisted",
+            supportsCompensation: true,
+            new AutonomousCompensationResult(
+                AutonomousCompensationState.Failed,
+                "compensation evidence: rollback actuator timed out"));
+        var sut = BuildGateway(
+            new MultiProposalStore(),
+            evaluator,
+            new RecordingExecutor(),
+            convergence,
+            auditLog,
+            CreateOpsNotifier(outbox));
+
+        var result = await sut.RouteAsync(Request());
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.Indeterminate);
+        result.Message.Should().Contain("verification evidence: finding persisted");
+        result.Message.Should().Contain("compensation evidence: rollback actuator timed out");
+        result.Message.Should().Contain("manual intervention required");
+        evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Indeterminate);
+        evaluator.LastMessage.Should().Be(result.Message);
+        auditLog.Events.Select(item => item.Action).Should().ContainInOrder(
+            "operation.auto_executed",
+            "operation.auto_verified",
+            "operation.auto_compensated",
+            "operation.auto_indeterminate");
+        outbox.Events.Should().ContainSingle();
+        outbox.Events[0].PayloadJson.Should().Contain("rollback actuator timed out");
+    }
+
+    [Fact]
+    public async Task RouteAsync_VerificationIsCancelledAfterExecution_RecordsCanceledNotFailedOrIndeterminate()
+    {
+        var evaluator = AutoApplyingEvaluator();
+        var convergence = RecordingConvergence.Cancelled();
+        var auditLog = new RecordingAuditLog();
+        var outbox = new RecordingAlertOutbox();
+        var sut = BuildGateway(
+            new MultiProposalStore(),
+            evaluator,
+            new RecordingExecutor(),
+            convergence,
+            auditLog,
+            CreateOpsNotifier(outbox));
+
+        var act = () => sut.RouteAsync(Request());
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Canceled);
+        evaluator.LastMessage.Should().Contain("verification was canceled after execution");
+        convergence.CompensateCount.Should().Be(0);
+        auditLog.Events.Select(item => item.Action).Should().ContainInOrder(
+            "operation.auto_executed",
+            "operation.auto_canceled");
+        outbox.Events.Should().ContainSingle();
+        outbox.Events[0].PayloadJson.Should().Contain("\"outcome\":\"Canceled\"");
+    }
+
     private static OperationGateway BuildGateway(
         MultiProposalStore store,
         IOpsAutonomyEvaluator evaluator,
         IOperationExecutor executor,
+        IAutonomousOperationConvergence convergence,
         IAuditLog? auditLog = null,
         OpsNotificationService? opsNotificationService = null)
     {
@@ -124,6 +368,7 @@ public sealed class OperationGatewayAutonomyTests
         var services = new ServiceCollection();
         services.AddScoped<IAuditLog>(_ => auditLog ?? NullAuditLog.Instance);
         services.AddScoped(_ => evaluator);
+        services.AddScoped(_ => convergence);
         if (opsNotificationService is not null)
         {
             services.AddScoped(_ => opsNotificationService);
@@ -139,6 +384,16 @@ public sealed class OperationGatewayAutonomyTests
             Substitute.For<IProposalNotifier>(),
             NullLogger<OperationGateway>.Instance);
     }
+
+    private static RecordingAutonomyEvaluator AutoApplyingEvaluator()
+        => new(
+            new OpsAutonomyRouteDecision
+            {
+                ShouldAutoApply = true,
+                Decision = DirectExecuteDecision(),
+                ReservationId = "auto-1",
+                Reason = "auto-apply-reserved",
+            });
 
     private static OpsNotificationService CreateOpsNotifier(RecordingAlertOutbox outbox)
     {
@@ -177,6 +432,7 @@ public sealed class OperationGatewayAutonomyTests
             {
                 FindingId = FindingId,
                 Rule = Rule,
+                ActionDiscriminator = RedriveAction,
                 ActionMarkedAutoSafe = true,
                 BlastRadius = 1,
                 EvidenceRefs = ["test"],
@@ -203,7 +459,17 @@ public sealed class OperationGatewayAutonomyTests
 
         public int ProposalRaisedCount { get; private set; }
 
+        public int ProposalApprovedCount { get; private set; }
+
+        public int ProposalRejectedCount { get; private set; }
+
+        public bool FailNextProposalResolution { get; init; }
+
+        private bool _proposalResolutionFailed;
+
         public OpsAutonomyActionOutcome? LastOutcome { get; private set; }
+
+        public string? LastMessage { get; private set; }
 
         public Task<OpsAutonomyFindingDecision> EvaluateFindingAsync(
             OpsFinding finding,
@@ -226,6 +492,7 @@ public sealed class OperationGatewayAutonomyTests
         {
             OutcomeCount++;
             LastOutcome = outcome;
+            LastMessage = message;
             return Task.CompletedTask;
         }
 
@@ -236,6 +503,104 @@ public sealed class OperationGatewayAutonomyTests
             ProposalRaisedCount++;
             return Task.CompletedTask;
         }
+
+        public Task RecordProposalResolutionAsync(
+            OperationProposal proposal,
+            OpsAutonomyProposalResolution resolution,
+            CancellationToken cancellationToken = default)
+        {
+            if (resolution == OpsAutonomyProposalResolution.Approved)
+            {
+                ProposalApprovedCount++;
+            }
+            else
+            {
+                ProposalRejectedCount++;
+            }
+
+            if (FailNextProposalResolution && !_proposalResolutionFailed)
+            {
+                _proposalResolutionFailed = true;
+                throw new InvalidOperationException("simulated proposal counter outage");
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingConvergence(
+        AutonomousVerificationResult verification,
+        bool supportsCompensation,
+        AutonomousCompensationResult compensation,
+        bool cancelVerification = false,
+        bool canHandle = true) : IAutonomousOperationConvergence
+    {
+        public int VerifyCount { get; private set; }
+
+        public int CompensateCount { get; private set; }
+
+        public bool CanHandle(OperationGatewayRequest request) => canHandle;
+
+        public bool SupportsCompensation(OperationGatewayRequest request) => supportsCompensation;
+
+        public Task<AutonomousVerificationResult> VerifyAsync(
+            OperationGatewayRequest request,
+            string? executionOperationId,
+            CancellationToken cancellationToken = default)
+        {
+            VerifyCount++;
+            return cancelVerification
+                ? Task.FromCanceled<AutonomousVerificationResult>(new CancellationToken(canceled: true))
+                : Task.FromResult(verification);
+        }
+
+        public Task<AutonomousCompensationResult> CompensateAsync(
+            OperationGatewayRequest request,
+            string? executionOperationId,
+            CancellationToken cancellationToken = default)
+        {
+            CompensateCount++;
+            return Task.FromResult(compensation);
+        }
+
+        public static RecordingConvergence Converged()
+            => new(
+                new AutonomousVerificationResult(
+                    AutonomousVerificationState.Converged,
+                    "the finding remained clear"),
+                supportsCompensation: false,
+                new AutonomousCompensationResult(
+                    AutonomousCompensationState.NotSupported,
+                    "compensation is not supported"));
+
+        public static RecordingConvergence VerificationFailed(
+            string message,
+            bool supportsCompensation,
+            AutonomousCompensationResult? compensation = null)
+            => new(
+                new AutonomousVerificationResult(AutonomousVerificationState.Failed, message),
+                supportsCompensation,
+                compensation ?? new AutonomousCompensationResult(
+                    AutonomousCompensationState.NotSupported,
+                    "compensation is not supported"));
+
+        public static RecordingConvergence Cancelled()
+            => new(
+                new AutonomousVerificationResult(AutonomousVerificationState.Indeterminate, "not reached"),
+                supportsCompensation: false,
+                new AutonomousCompensationResult(
+                    AutonomousCompensationState.NotSupported,
+                    "compensation is not supported"),
+                cancelVerification: true);
+
+        public static RecordingConvergence Unavailable()
+            => new(
+                new AutonomousVerificationResult(AutonomousVerificationState.Indeterminate, "not reached"),
+                supportsCompensation: false,
+                new AutonomousCompensationResult(
+                    AutonomousCompensationState.NotSupported,
+                    "compensation is not supported"),
+                canHandle: false);
     }
 
     private sealed class RecordingAuditLog : IAuditLog
@@ -317,6 +682,22 @@ public sealed class OperationGatewayAutonomyTests
             string? executionPayload,
             CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("simulated failure");
+    }
+
+    private sealed class WrongKindExecutor : IOperationExecutor
+    {
+        public OperationClass OperationClass => OperationClass.Deploy;
+
+        public Task<OperationProposalPlan?> PlanAsync(
+            OperationGatewayRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<OperationProposalPlan?>(null);
+
+        public Task<string?> ExecuteAsync(
+            OperationGatewayRequest request,
+            string? executionPayload,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("The wrong-kind executor must never be invoked.");
     }
 
     private sealed class MultiProposalStore : IOperationProposalStore

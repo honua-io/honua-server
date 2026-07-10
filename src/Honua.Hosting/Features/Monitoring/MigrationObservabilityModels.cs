@@ -54,7 +54,83 @@ internal sealed record MigrationObservabilityResponse
     public string? PlanError { get; init; }
 
     /// <summary>
+    /// Last backup-hook outcome for the current pending contract-migration set, when applicable.
+    /// </summary>
+    public MigrationBackupHookStatus? BackupHook { get; init; }
+
+    /// <summary>
     /// Timestamp when the response was generated.
     /// </summary>
     public required DateTimeOffset GeneratedAt { get; init; }
+}
+
+/// <summary>
+/// Backup-hook status surfaced on migration/preflight admin payloads.
+/// </summary>
+public sealed class MigrationBackupHookStatus
+{
+    /// <summary>
+    /// Whether <c>Database:MigrationSafety:BackupCommand</c> is configured for this instance.
+    /// </summary>
+    public bool Configured { get; init; }
+
+    /// <summary>
+    /// Whether the backup hook is relevant to the current pending contract-migration set.
+    /// </summary>
+    public bool RequiredForPendingSet { get; init; }
+
+    /// <summary>
+    /// Whether the last recorded hook outcome matches the current pending contract-migration set.
+    /// </summary>
+    public bool RanForPendingSet { get; init; }
+
+    /// <summary>
+    /// Whether the matching hook run succeeded. Null when no matching run has been recorded.
+    /// </summary>
+    public bool? Succeeded { get; init; }
+
+    /// <summary>
+    /// Stable lower-case outcome label, for example <c>succeeded</c> or <c>failed</c>.
+    /// </summary>
+    public string? Outcome { get; init; }
+
+    /// <summary>
+    /// Hook process start time for the matching outcome.
+    /// </summary>
+    public DateTimeOffset? StartedAt { get; init; }
+
+    /// <summary>
+    /// Hook completion time for the matching outcome.
+    /// </summary>
+    public DateTimeOffset? CompletedAt { get; init; }
+
+    /// <summary>
+    /// Hook wall-clock duration in milliseconds.
+    /// </summary>
+    public long? DurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Process exit code for the matching outcome, when available.
+    /// </summary>
+    public int? ExitCode { get; init; }
+
+    /// <summary>
+    /// Truncated stderr for a failed matching outcome.
+    /// </summary>
+    public string? Stderr { get; init; }
+
+    /// <summary>
+    /// Contract-phase scripts in the current pending set.
+    /// </summary>
+    public IReadOnlyList<string> PendingContractScripts { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Best-effort migration run identifier associated with the matching outcome.
+    /// </summary>
+    public string? MigrationRunId { get; init; }
+
+    /// <summary>
+    /// Correlation id associated with the matching outcome.
+    /// </summary>
+    public string? CorrelationId { get; init; }
 }

@@ -25,6 +25,7 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
     private readonly string _settingsTable;
     private readonly string _trackTable;
     private readonly string _actionTable;
+    private readonly string _proposalResolutionTable;
 
     public PostgresOpsAutonomyPolicyStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -37,6 +38,7 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         _settingsTable = SchemaSearchPath.QualifyTable("ops_autonomy_settings", schemaName);
         _trackTable = SchemaSearchPath.QualifyTable("ops_autonomy_rule_track_records", schemaName);
         _actionTable = SchemaSearchPath.QualifyTable("ops_autonomy_action_log", schemaName);
+        _proposalResolutionTable = SchemaSearchPath.QualifyTable("ops_autonomy_proposal_resolutions", schemaName);
     }
 
     public async Task<OpsAutonomyPolicy?> GetPolicyAsync(string rule, CancellationToken cancellationToken = default)
@@ -62,13 +64,15 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
     public async Task<IReadOnlyList<OpsAutonomyPolicySnapshot>> ListPoliciesAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
-            SELECT p.rule, p.mode, p.max_auto_actions_per_window, p.window_seconds, p.max_blast_radius, p.updated_at, p.updated_by,
+            SELECT COALESCE(p.rule, t.rule), p.rule IS NOT NULL,
+                   COALESCE(p.mode, 0), COALESCE(p.max_auto_actions_per_window, 1),
+                   COALESCE(p.window_seconds, 3600), COALESCE(p.max_blast_radius, 1), p.updated_at, p.updated_by,
                    COALESCE(t.proposals_raised, 0), COALESCE(t.proposals_approved, 0), COALESCE(t.proposals_rejected, 0),
                    COALESCE(t.auto_applied, 0), COALESCE(t.rolled_back, 0), COALESCE(t.failed, 0),
                    t.first_activity_at, t.last_activity_at
             FROM {_policyTable} p
-            LEFT JOIN {_trackTable} t ON t.rule = p.rule
-            ORDER BY p.rule
+            FULL OUTER JOIN {_trackTable} t ON t.rule = p.rule
+            ORDER BY COALESCE(p.rule, t.rule)
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -80,8 +84,9 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         {
             results.Add(new OpsAutonomyPolicySnapshot
             {
-                Policy = ReadPolicy(reader),
-                TrackRecord = ReadTrack(reader, offset: 7),
+                Policy = ReadPolicy(reader, ruleOffset: 0, valueOffset: 2),
+                IsPersisted = reader.GetBoolean(1),
+                TrackRecord = ReadTrack(reader, offset: 8),
             });
         }
 
@@ -347,6 +352,60 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task RecordProposalResolutionAsync(
+        string rule,
+        string proposalId,
+        OpsAutonomyProposalResolution resolution,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rule);
+        ArgumentException.ThrowIfNullOrWhiteSpace(proposalId);
+
+        var now = DateTimeOffset.UtcNow;
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        var insertSql = $"""
+            INSERT INTO {_proposalResolutionTable} (proposal_id, rule, resolution, resolved_at)
+            VALUES (@proposal_id, @rule, @resolution, @resolved_at)
+            ON CONFLICT (proposal_id) DO NOTHING
+            RETURNING proposal_id
+            """;
+        object? inserted;
+        await using (var insertCommand = new NpgsqlCommand(insertSql, connection, transaction))
+        {
+            insertCommand.Parameters.AddWithValue("proposal_id", NpgsqlDbType.Text, proposalId);
+            insertCommand.Parameters.AddWithValue("rule", NpgsqlDbType.Text, rule);
+            insertCommand.Parameters.AddWithValue("resolution", NpgsqlDbType.Smallint, (short)resolution);
+            insertCommand.Parameters.AddWithValue("resolved_at", NpgsqlDbType.TimestampTz, now);
+            inserted = await insertCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (inserted is not null)
+        {
+            var approved = resolution == OpsAutonomyProposalResolution.Approved ? 1L : 0L;
+            var rejected = resolution == OpsAutonomyProposalResolution.Rejected ? 1L : 0L;
+            var incrementSql = $"""
+                INSERT INTO {_trackTable}
+                    (rule, proposals_approved, proposals_rejected, first_activity_at, last_activity_at)
+                VALUES (@rule, @approved, @rejected, @now, @now)
+                ON CONFLICT (rule) DO UPDATE SET
+                    proposals_approved = {_trackTable}.proposals_approved + EXCLUDED.proposals_approved,
+                    proposals_rejected = {_trackTable}.proposals_rejected + EXCLUDED.proposals_rejected,
+                    first_activity_at = COALESCE({_trackTable}.first_activity_at, EXCLUDED.first_activity_at),
+                    last_activity_at = EXCLUDED.last_activity_at
+                """;
+            await using var incrementCommand = new NpgsqlCommand(incrementSql, connection, transaction);
+            incrementCommand.Parameters.AddWithValue("rule", NpgsqlDbType.Text, rule);
+            incrementCommand.Parameters.AddWithValue("approved", NpgsqlDbType.Bigint, approved);
+            incrementCommand.Parameters.AddWithValue("rejected", NpgsqlDbType.Bigint, rejected);
+            incrementCommand.Parameters.AddWithValue("now", NpgsqlDbType.TimestampTz, now);
+            await incrementCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<OpsAutonomyPolicySnapshot> ReadSnapshotAsync(string rule, CancellationToken cancellationToken)
     {
         var sql = $"""
@@ -371,6 +430,7 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         return new OpsAutonomyPolicySnapshot
         {
             Policy = ReadPolicy(reader),
+            IsPersisted = true,
             TrackRecord = ReadTrack(reader, offset: 7),
         };
     }
@@ -406,7 +466,14 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
     {
         var autoApplied = outcome == OpsAutonomyActionOutcome.Succeeded ? 1 : 0;
         var rolledBack = outcome == OpsAutonomyActionOutcome.RolledBack ? 1 : 0;
-        var failed = outcome == OpsAutonomyActionOutcome.Failed ? 1 : 0;
+        // Indeterminate and post-invocation cancellation are intentionally counted in the
+        // failed track-record bucket: neither may inflate the autonomous-success rate used
+        // to justify policy graduation.
+        var failed = outcome is OpsAutonomyActionOutcome.Failed
+            or OpsAutonomyActionOutcome.Indeterminate
+            or OpsAutonomyActionOutcome.Canceled
+            ? 1
+            : 0;
         var sql = $"""
             INSERT INTO {_trackTable}
                 (rule, auto_applied, rolled_back, failed, first_activity_at, last_activity_at)
@@ -463,18 +530,21 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
             cancellationToken);
     }
 
-    private static OpsAutonomyPolicy ReadPolicy(NpgsqlDataReader reader)
+    private static OpsAutonomyPolicy ReadPolicy(
+        NpgsqlDataReader reader,
+        int ruleOffset = 0,
+        int valueOffset = 1)
         => Normalize(new OpsAutonomyPolicy
         {
-            Rule = reader.GetString(0),
-            Mode = Enum.IsDefined((OpsAutonomyMode)reader.GetInt16(1))
-                ? (OpsAutonomyMode)reader.GetInt16(1)
+            Rule = reader.GetString(ruleOffset),
+            Mode = Enum.IsDefined((OpsAutonomyMode)reader.GetInt16(valueOffset))
+                ? (OpsAutonomyMode)reader.GetInt16(valueOffset)
                 : OpsAutonomyMode.ProposeOnly,
-            MaxAutoActionsPerWindow = reader.GetInt32(2),
-            Window = TimeSpan.FromSeconds(reader.GetInt32(3)),
-            MaxBlastRadius = reader.GetInt32(4),
-            UpdatedAt = reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5),
-            UpdatedBy = reader.IsDBNull(6) ? null : reader.GetString(6),
+            MaxAutoActionsPerWindow = reader.GetInt32(valueOffset + 1),
+            Window = TimeSpan.FromSeconds(reader.GetInt32(valueOffset + 2)),
+            MaxBlastRadius = reader.GetInt32(valueOffset + 3),
+            UpdatedAt = reader.IsDBNull(valueOffset + 4) ? null : reader.GetFieldValue<DateTimeOffset>(valueOffset + 4),
+            UpdatedBy = reader.IsDBNull(valueOffset + 5) ? null : reader.GetString(valueOffset + 5),
         });
 
     private static OpsAutonomyTrackRecord ReadTrack(NpgsqlDataReader reader, int offset)

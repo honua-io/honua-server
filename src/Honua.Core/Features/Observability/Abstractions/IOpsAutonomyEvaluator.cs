@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Observability.Domain;
 
@@ -61,5 +62,17 @@ public interface IOpsAutonomyEvaluator
     /// <param name="cancellationToken">Cancellation token.</param>
     Task RecordProposalRaisedAsync(
         OperationGatewayRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records the human resolution of a finding-originated proposal using its stable metadata.
+    /// Legacy or malformed proposals without valid autonomy metadata are ignored.
+    /// </summary>
+    /// <param name="proposal">Resolved proposal.</param>
+    /// <param name="resolution">Human approval or rejection outcome.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task RecordProposalResolutionAsync(
+        OperationProposal proposal,
+        OpsAutonomyProposalResolution resolution,
         CancellationToken cancellationToken = default);
 }

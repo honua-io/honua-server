@@ -106,5 +106,8 @@ public sealed class AlertDispatchHealthCheckTests
         public DateTimeOffset? LastPollAt { get; init; }
         public AlertDispatchBacklog? LastBacklog { get; init; }
         public bool IsStoragePollFailing { get; init; }
+
+        public Task<AlertDispatchBacklog> RefreshBacklogAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(LastBacklog ?? new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 });
     }
 }

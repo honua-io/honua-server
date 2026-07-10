@@ -19,18 +19,24 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 {
     private const long MigrationLockKey = 8_044_282_257_919_950_151;
     private const string SafeMigrationFailureMessage = "Database migration failed.";
+    private const string BackupHookSucceededOutcome = "succeeded";
+    private const string BackupHookFailedOutcome = "failed";
+    private const int BackupHookStderrMaxLength = 500;
     private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan _backupCommandTimeout = TimeSpan.FromHours(1);
 
     private readonly MigrationSafetyOptions _safetyOptions;
+    private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
     private readonly bool _contractMigrationsApproved;
 
     public PostgresDatabaseMigrationRunner(
         IOptions<MigrationSafetyOptions>? safetyOptions = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null)
     {
         _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
+        _backupHookRecorder = backupHookRecorder;
 
         // The contract-apply approval is an explicit top-level operator signal
         // (HONUA_APPROVE_CONTRACT_MIGRATIONS=true), read via the IConfiguration indexer (Abstractions
@@ -55,10 +61,15 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             var scripts = upgrader.GetScriptsToExecute();
             var pendingScripts = scripts.Select(script => script.Name).ToArray();
             var classifications = ClassifyScripts(scripts);
+            var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var executedButNotDiscoveredScripts = upgrader.GetExecutedButNotDiscoveredScripts().ToArray();
 
             return Task.FromResult(
-                DatabaseMigrationPlan.Succeeded(pendingScripts, executedButNotDiscoveredScripts, classifications));
+                DatabaseMigrationPlan.Succeeded(
+                    pendingScripts,
+                    executedButNotDiscoveredScripts,
+                    classifications,
+                    journalIsNonEmpty));
         }
         catch (Exception ex)
         {
@@ -162,6 +173,9 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     private static bool JournalIsNonEmpty(UpgradeEngine upgrader)
         => upgrader.GetExecutedScripts().Count > 0;
 
+    private static string CreateMigrationRunId()
+        => "schema-migration-" + Guid.NewGuid().ToString("N");
+
     public async Task<DatabaseMigrationResult> RunMigrationsAsync(
         string connectionString,
         Assembly migrationsAssembly,
@@ -189,6 +203,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         {
             var classifications = ClassifyScripts(upgrader.GetScriptsToExecute());
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
+            var migrationRunId = CreateMigrationRunId();
 
             // 1. ADR-0060 fail-closed: reject unannotated contract scripts (default Enforce=true).
             if (TryBuildSafetyRejection(classifications) is { } rejection)
@@ -206,7 +221,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             // 3. Optional pre-migration backup hook: runs only when contract-class scripts are pending
             //    on an existing database, immediately before they are applied. A hook failure fails the
             //    run closed (nothing is applied).
-            if (await TryRunBackupHookAsync(classifications, journalIsNonEmpty, cancellationToken)
+            if (await TryRunBackupHookAsync(classifications, journalIsNonEmpty, migrationRunId, cancellationToken)
                     .ConfigureAwait(false) is { } backupFailure)
             {
                 return DatabaseMigrationResult.Failed(backupFailure, backupFailure.Message);
@@ -310,6 +325,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     private async Task<Exception?> TryRunBackupHookAsync(
         IReadOnlyList<MigrationScriptClassification> classifications,
         bool journalIsNonEmpty,
+        string migrationRunId,
         CancellationToken cancellationToken)
     {
         var command = _safetyOptions.BackupCommand;
@@ -348,11 +364,27 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             startInfo.ArgumentList.Add(command);
         }
 
+        var startedAt = DateTimeOffset.UtcNow;
+        var stopwatch = Stopwatch.StartNew();
+        var pendingContractScripts = GetPendingContractScripts(classifications);
+
         try
         {
             using var process = new Process { StartInfo = startInfo };
             if (!process.Start())
             {
+                await RecordBackupHookOutcomeAsync(
+                    BuildBackupHookResult(
+                        BackupHookFailedOutcome,
+                        succeeded: false,
+                        startedAt,
+                        stopwatch,
+                        pendingContractScripts,
+                        migrationRunId,
+                        exitCode: null,
+                        stderr: null),
+                    cancellationToken).ConfigureAwait(false);
+
                 return new InvalidOperationException(
                     "The pre-migration backup command (Database:MigrationSafety:BackupCommand) failed to " +
                     "start; the migration run was aborted before applying any contract-phase script.");
@@ -371,6 +403,18 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 TryKill(process);
+                await RecordBackupHookOutcomeAsync(
+                    BuildBackupHookResult(
+                        BackupHookFailedOutcome,
+                        succeeded: false,
+                        startedAt,
+                        stopwatch,
+                        pendingContractScripts,
+                        migrationRunId,
+                        exitCode: null,
+                        stderr: null),
+                    CancellationToken.None).ConfigureAwait(false);
+
                 return new TimeoutException(
                     $"The pre-migration backup command (Database:MigrationSafety:BackupCommand) exceeded " +
                     $"{_backupCommandTimeout.TotalMinutes:F0} minute(s) and was terminated; the migration run " +
@@ -384,17 +428,55 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             {
                 var detail = string.IsNullOrWhiteSpace(stderr)
                     ? string.Empty
-                    : $" Details: {Truncate(stderr.Trim(), 500)}";
+                    : $" Details: {Truncate(stderr.Trim(), BackupHookStderrMaxLength)}";
+                await RecordBackupHookOutcomeAsync(
+                    BuildBackupHookResult(
+                        BackupHookFailedOutcome,
+                        succeeded: false,
+                        startedAt,
+                        stopwatch,
+                        pendingContractScripts,
+                        migrationRunId,
+                        process.ExitCode,
+                        string.IsNullOrWhiteSpace(stderr)
+                            ? null
+                            : Truncate(stderr.Trim(), BackupHookStderrMaxLength)),
+                    cancellationToken).ConfigureAwait(false);
+
                 return new InvalidOperationException(
                     "The pre-migration backup command (Database:MigrationSafety:BackupCommand) exited with " +
                     $"code {process.ExitCode}; the migration run was aborted (fail closed) before applying any " +
                     $"contract-phase script.{detail}");
             }
 
+            await RecordBackupHookOutcomeAsync(
+                BuildBackupHookResult(
+                    BackupHookSucceededOutcome,
+                    succeeded: true,
+                    startedAt,
+                    stopwatch,
+                    pendingContractScripts,
+                    migrationRunId,
+                    process.ExitCode,
+                    stderr: null),
+                cancellationToken).ConfigureAwait(false);
+
             return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            await RecordBackupHookOutcomeAsync(
+                BuildBackupHookResult(
+                    BackupHookFailedOutcome,
+                    succeeded: false,
+                    startedAt,
+                    stopwatch,
+                    pendingContractScripts,
+                    migrationRunId,
+                    exitCode: null,
+                    stderr: null),
+                cancellationToken).ConfigureAwait(false);
+
             return new InvalidOperationException(
                 "The pre-migration backup command (Database:MigrationSafety:BackupCommand) could not be run; " +
                 "the migration run was aborted (fail closed) before applying any contract-phase script.",
@@ -419,4 +501,55 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength] + "…";
+
+    private static string[] GetPendingContractScripts(IReadOnlyList<MigrationScriptClassification> classifications)
+        => classifications
+            .Where(classification => classification.IsBreaking)
+            .Select(classification => classification.ScriptName)
+            .ToArray();
+
+    private static DatabaseMigrationBackupHookResult BuildBackupHookResult(
+        string outcome,
+        bool succeeded,
+        DateTimeOffset startedAt,
+        Stopwatch stopwatch,
+        IReadOnlyList<string> pendingContractScripts,
+        string migrationRunId,
+        int? exitCode,
+        string? stderr)
+    {
+        stopwatch.Stop();
+        return new DatabaseMigrationBackupHookResult
+        {
+            Outcome = outcome,
+            Succeeded = succeeded,
+            StartedAt = startedAt,
+            CompletedAt = DateTimeOffset.UtcNow,
+            DurationMilliseconds = Math.Max(0, stopwatch.ElapsedMilliseconds),
+            ExitCode = exitCode,
+            Stderr = stderr,
+            PendingContractScripts = pendingContractScripts,
+            MigrationRunId = migrationRunId,
+            CorrelationId = migrationRunId
+        };
+    }
+
+    private async Task RecordBackupHookOutcomeAsync(
+        DatabaseMigrationBackupHookResult result,
+        CancellationToken cancellationToken)
+    {
+        if (_backupHookRecorder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _backupHookRecorder.RecordAsync(result, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Backup-hook observability must not change migration apply/fail-closed semantics.
+        }
+    }
 }
