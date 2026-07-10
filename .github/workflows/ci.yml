@@ -342,7 +342,9 @@ jobs:
           PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
-          POSTGRES_BASELINE='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":true}]'
+          # PRs and selective batches run the complete compatibility suite without
+          # coverage instrumentation; scheduled/manual full CI remains authoritative.
+          POSTGRES_BASELINE='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":false}]'
           POSTGRES_FULL='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":true},{"pg_image":"postgis/postgis:17-3.5","pg_suffix":"17","collect_coverage":false},{"pg_image":"postgis/postgis:18-3.6","pg_suffix":"18","collect_coverage":false}]'
 
           # Fail safe: if the diff range cannot be computed (e.g. no merge-base after a
