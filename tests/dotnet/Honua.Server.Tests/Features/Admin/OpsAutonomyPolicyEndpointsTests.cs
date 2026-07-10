@@ -42,6 +42,18 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting(
+                    $"Observability:OpsFindings:Autonomy:Rules:{Rule}:Mode",
+                    "AutoApply");
+                builder.UseSetting(
+                    $"Observability:OpsFindings:Autonomy:Rules:{Rule}:MaxAutoActionsPerWindow",
+                    "3");
+                builder.UseSetting(
+                    $"Observability:OpsFindings:Autonomy:Rules:{Rule}:WindowSeconds",
+                    "900");
+                builder.UseSetting(
+                    $"Observability:OpsFindings:Autonomy:Rules:{Rule}:MaxBlastRadius",
+                    "2");
             });
     }
 
@@ -52,6 +64,33 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/autonomy/policies/{rule}")]
+    [Endpoint("GET /api/v1/admin/observability/autonomy/policies")]
+    public async Task PolicyRead_FreshStore_ReturnsRouteEffectiveConfiguredDefaultAsNotPersisted()
+    {
+        var getResponse = await _client.GetAsync($"/api/v1/admin/observability/autonomy/policies/{Rule}");
+
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        using var getDocument = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        var policy = getDocument.RootElement;
+        Assert.Equal(Rule, policy.GetProperty("rule").GetString());
+        Assert.Equal("AutoApply", policy.GetProperty("mode").GetString());
+        Assert.Equal(3, policy.GetProperty("maxAutoActionsPerWindow").GetInt32());
+        Assert.Equal(900, policy.GetProperty("windowSeconds").GetInt32());
+        Assert.Equal(2, policy.GetProperty("maxBlastRadius").GetInt32());
+        Assert.False(policy.GetProperty("isPersisted").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, policy.GetProperty("updatedAt").ValueKind);
+        Assert.Equal(JsonValueKind.Null, policy.GetProperty("updatedBy").ValueKind);
+
+        var listResponse = await _client.GetAsync("/api/v1/admin/observability/autonomy/policies");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        var listed = Assert.Single(listDocument.RootElement.GetProperty("policies").EnumerateArray());
+        Assert.Equal(Rule, listed.GetProperty("rule").GetString());
+        Assert.False(listed.GetProperty("isPersisted").GetBoolean());
+    }
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/observability/autonomy/policies/{rule}")]
@@ -80,6 +119,7 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
         Assert.Equal(2, policy.GetProperty("maxAutoActionsPerWindow").GetInt32());
         Assert.Equal(600, policy.GetProperty("windowSeconds").GetInt32());
         Assert.Equal(4, policy.GetProperty("maxBlastRadius").GetInt32());
+        Assert.True(policy.GetProperty("isPersisted").GetBoolean());
         Assert.True(policy.TryGetProperty("trackRecord", out _));
 
         var getResponse = await _client.GetAsync($"/api/v1/admin/observability/autonomy/policies/{Rule}");

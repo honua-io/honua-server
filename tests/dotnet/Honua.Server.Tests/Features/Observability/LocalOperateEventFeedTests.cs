@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
@@ -76,6 +77,157 @@ public sealed class LocalOperateEventFeedTests
         page.Items[0].Kind.Should().Be(OperateEventKind.Audit);
         page.Items[1].Kind.Should().Be(OperateEventKind.Alert);
         page.PartialResult.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_AuditDetails_ProjectsOnlyBoundedCausalMetadata()
+    {
+        var auditReader = new FakeAuditReader
+        {
+            Items =
+            {
+                new AuditEventRecord
+                {
+                    AuditId = 7,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    EventType = AuditEventType.AdminAction,
+                    Actor = "ops-findings",
+                    ActorType = AuditActorType.System,
+                    ResourceType = "operation_autonomy",
+                    ResourceId = "finding-7",
+                    Action = "operation.auto_verified",
+                    Outcome = AuditOutcome.Success,
+                    CorrelationId = "operation-7",
+                    Details = """
+                        {
+                          "findingId":"finding-7",
+                          "rule":"alert-dispatch-backlog",
+                          "kind":"AdminConfigChange",
+                          "actionDiscriminator":"alerts.redrive_dead_letters",
+                          "mode":"AutoApply",
+                          "status":"Converged",
+                          "operationId":"operation-7",
+                          "killSwitchEnabled":false,
+                          "evidenceRefs":[
+                            "metric:honua.alert.dispatch.dead_letters",
+                            "audit:2",
+                            "audit:3",
+                            "audit:4",
+                            "audit:5",
+                            "audit:6",
+                            "audit:7",
+                            "secret=do-not-project"
+                          ],
+                          "executionPayload":{"action":"hidden"},
+                          "password":"do-not-project",
+                          "sql":"select secret from credentials",
+                          "stackTrace":"provider internals",
+                          "message":"raw provider error"
+                        }
+                        """,
+                },
+            },
+        };
+
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            auditReader: auditReader);
+
+        var page = await feed.ListAsync(new OperateEventFilter { Kinds = [OperateEventKind.Audit] });
+
+        var detailsJson = page.Items.Should().ContainSingle().Subject.DetailsJson;
+        detailsJson.Should().NotBeNullOrWhiteSpace();
+        detailsJson!.Length.Should().BeLessThanOrEqualTo(2048);
+        using var details = JsonDocument.Parse(detailsJson);
+        var root = details.RootElement;
+        root.GetProperty("findingId").GetString().Should().Be("finding-7");
+        root.GetProperty("rule").GetString().Should().Be("alert-dispatch-backlog");
+        root.GetProperty("actionDiscriminator").GetString().Should().Be("alerts.redrive_dead_letters");
+        root.GetProperty("status").GetString().Should().Be("Converged");
+        root.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
+            .Should().Equal(
+                "metric:honua.alert.dispatch.dead_letters",
+                "audit:2",
+                "audit:3",
+                "audit:4",
+                "audit:5",
+                "audit:6");
+        root.TryGetProperty("executionPayload", out _).Should().BeFalse();
+        root.TryGetProperty("password", out _).Should().BeFalse();
+        root.TryGetProperty("sql", out _).Should().BeFalse();
+        root.TryGetProperty("stackTrace", out _).Should().BeFalse();
+        root.TryGetProperty("message", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_AutonomyAuditDetails_ProjectsBoundedSanitizedMessageAndDerivedState()
+    {
+        var auditReader = new FakeAuditReader
+        {
+            Items =
+            {
+                new AuditEventRecord
+                {
+                    AuditId = 9,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    EventType = AuditEventType.AdminAction,
+                    Actor = "ops-findings",
+                    ActorType = AuditActorType.System,
+                    ResourceType = "operation_autonomy",
+                    ResourceId = "finding-9",
+                    Action = "operation.auto_verified",
+                    Outcome = AuditOutcome.Success,
+                    CorrelationId = "operation-9",
+                    Details = """
+                        {"rule":"alert-dispatch-backlog","findingId":"finding-9","message":"backlog converged across two observations"}
+                        """,
+                },
+            },
+        };
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            auditReader: auditReader);
+
+        var page = await feed.ListAsync(new OperateEventFilter { Kinds = [OperateEventKind.Audit] });
+
+        using var details = JsonDocument.Parse(page.Items.Should().ContainSingle().Subject.DetailsJson!);
+        details.RootElement.GetProperty("mode").GetString().Should().Be("AutoApply");
+        details.RootElement.GetProperty("status").GetString().Should().Be("Converged");
+        details.RootElement.GetProperty("message").GetString().Should().Be("backlog converged across two observations");
+    }
+
+    [Theory]
+    [InlineData("not-json")]
+    [InlineData("[]")]
+    public async Task ListAsync_AuditDetails_MalformedOrNonObject_IsNotProjected(string details)
+    {
+        var auditReader = new FakeAuditReader
+        {
+            Items =
+            {
+                new AuditEventRecord
+                {
+                    AuditId = 8,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    EventType = AuditEventType.AdminAction,
+                    Actor = "ops-findings",
+                    ActorType = AuditActorType.System,
+                    ResourceType = "operation_autonomy",
+                    ResourceId = "finding-8",
+                    Action = "operation.auto_failed",
+                    Outcome = AuditOutcome.Failure,
+                    CorrelationId = "operation-8",
+                    Details = details,
+                },
+            },
+        };
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            auditReader: auditReader);
+
+        var page = await feed.ListAsync(new OperateEventFilter { Kinds = [OperateEventKind.Audit] });
+
+        page.Items.Should().ContainSingle().Which.DetailsJson.Should().BeNull();
     }
 
     [UnitTest]
@@ -293,6 +445,58 @@ public sealed class LocalOperateEventFeedTests
         page.Items[0].EventId.Should().Be("audit:2");
         auditReader.SeenFilters.Should().Contain(filter =>
             filter.ResourceType == "alert_event" && filter.ResourceId == "42");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_AuditSource_TypeOnlyResourceRef_MatchesEveryResourceIdOfType()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var auditReader = new FakeAuditReader
+        {
+            Items =
+            {
+                new AuditEventRecord
+                {
+                    AuditId = 20, Timestamp = now,
+                    EventType = AuditEventType.AdminAction, Actor = "ops-findings",
+                    ActorType = AuditActorType.System, ResourceType = "operation_autonomy",
+                    ResourceId = "finding-a", Action = "operation.auto_applied",
+                    Outcome = AuditOutcome.Success, CorrelationId = "corr-a",
+                },
+                new AuditEventRecord
+                {
+                    AuditId = 21, Timestamp = now.AddMinutes(-1),
+                    EventType = AuditEventType.AdminAction, Actor = "ops-findings",
+                    ActorType = AuditActorType.System, ResourceType = "operation_autonomy",
+                    ResourceId = "finding-b", Action = "operation.auto_failed",
+                    Outcome = AuditOutcome.Failure, CorrelationId = "corr-b",
+                },
+                new AuditEventRecord
+                {
+                    AuditId = 22, Timestamp = now.AddMinutes(-2),
+                    EventType = AuditEventType.ConfigChange, Actor = "human-admin",
+                    ActorType = AuditActorType.UserId, ResourceType = "ops_autonomy_policy",
+                    ResourceId = "alert-dispatch-backlog", Action = "ops_autonomy.policy.update",
+                    Outcome = AuditOutcome.Success, CorrelationId = "corr-policy",
+                },
+            },
+        };
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            auditReader: auditReader);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            ResourceRef = "operation_autonomy",
+            Kinds = [OperateEventKind.Audit],
+            PageSize = 10,
+        });
+
+        page.Items.Select(item => item.ResourceRef).Should().Equal(
+            "operation_autonomy/finding-a",
+            "operation_autonomy/finding-b");
+        auditReader.SeenFilters.Should().ContainSingle(filter =>
+            filter.ResourceType == "operation_autonomy" && filter.ResourceId == null);
     }
 
     [UnitTest]

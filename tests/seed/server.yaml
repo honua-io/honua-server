@@ -1348,6 +1348,19 @@ sql:
       );
   - "CREATE INDEX IF NOT EXISTS idx_ops_autonomy_action_rule_window ON honua.ops_autonomy_action_log(rule, reserved_at DESC);"
   - "CREATE INDEX IF NOT EXISTS idx_ops_autonomy_action_finding ON honua.ops_autonomy_action_log(finding_id);"
+  # Exactly-once proposal-resolution accounting (#2631). Mirrors migration
+  # 081_CreateOpsAutonomyProposalResolutions.sql and intentionally stores no payloads.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.ops_autonomy_proposal_resolutions (
+          proposal_id TEXT        PRIMARY KEY,
+          rule        TEXT        NOT NULL,
+          resolution  SMALLINT    NOT NULL,
+          resolved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT ops_autonomy_resolution_valid_proposal CHECK (length(proposal_id) > 0),
+          CONSTRAINT ops_autonomy_resolution_valid_rule CHECK (length(rule) > 0),
+          CONSTRAINT ops_autonomy_resolution_valid_value CHECK (resolution IN (0, 1))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_ops_autonomy_proposal_resolution_rule_time ON honua.ops_autonomy_proposal_resolutions(rule, resolved_at DESC);"
   - |
       CREATE TABLE IF NOT EXISTS honua.operate_fixture_execution_jobs (
           operation_id     TEXT        PRIMARY KEY,

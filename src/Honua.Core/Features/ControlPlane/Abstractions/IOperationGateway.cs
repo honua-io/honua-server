@@ -137,6 +137,11 @@ public sealed record OperationGatewayAutonomyContext
     /// <summary>Gets the kebab-case ops-finding rule identifier.</summary>
     public required string Rule { get; init; }
 
+    /// <summary>
+    /// Gets the stable registered action discriminator without carrying its execution payload.
+    /// </summary>
+    public string? ActionDiscriminator { get; init; }
+
     /// <summary>Gets a value indicating whether the finding action was marked auto-safe by its rule.</summary>
     public required bool ActionMarkedAutoSafe { get; init; }
 

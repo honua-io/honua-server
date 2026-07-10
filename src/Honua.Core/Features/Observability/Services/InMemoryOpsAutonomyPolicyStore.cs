@@ -15,6 +15,7 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
     private readonly ConcurrentDictionary<string, OpsAutonomyPolicy> _policies = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, TrackState> _tracks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ActionState> _actions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ProposalResolutionState> _proposalResolutions = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
     private OpsAutonomySettings _settings = new();
 
@@ -29,12 +30,19 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
     /// <inheritdoc />
     public Task<IReadOnlyList<OpsAutonomyPolicySnapshot>> ListPoliciesAsync(CancellationToken cancellationToken = default)
     {
-        var snapshots = _policies.Values
-            .OrderBy(static policy => policy.Rule, StringComparer.Ordinal)
-            .Select(policy => new OpsAutonomyPolicySnapshot
+        var snapshots = _policies.Keys
+            .Concat(_tracks.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static rule => rule, StringComparer.Ordinal)
+            .Select(rule =>
             {
-                Policy = policy,
-                TrackRecord = GetTrack(policy.Rule).ToRecord(policy.Rule),
+                var persisted = _policies.TryGetValue(rule, out var policy);
+                return new OpsAutonomyPolicySnapshot
+                {
+                    Policy = policy ?? new OpsAutonomyPolicy { Rule = rule },
+                    IsPersisted = persisted,
+                    TrackRecord = GetTrack(rule).ToRecord(rule),
+                };
             })
             .ToList();
         return Task.FromResult<IReadOnlyList<OpsAutonomyPolicySnapshot>>(snapshots);
@@ -61,6 +69,7 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         return Task.FromResult(new OpsAutonomyPolicySnapshot
         {
             Policy = stored,
+            IsPersisted = true,
             TrackRecord = track.ToRecord(stored.Rule),
         });
     }
@@ -183,6 +192,37 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
+    public Task RecordProposalResolutionAsync(
+        string rule,
+        string proposalId,
+        OpsAutonomyProposalResolution resolution,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rule);
+        ArgumentException.ThrowIfNullOrWhiteSpace(proposalId);
+
+        lock (_lock)
+        {
+            if (!_proposalResolutions.TryAdd(proposalId, new ProposalResolutionState(rule, resolution)))
+            {
+                return Task.CompletedTask;
+            }
+
+            var track = Touch(rule, DateTimeOffset.UtcNow);
+            if (resolution == OpsAutonomyProposalResolution.Approved)
+            {
+                track.ProposalsApproved++;
+            }
+            else
+            {
+                track.ProposalsRejected++;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     private static OpsAutonomyPolicy Normalize(OpsAutonomyPolicy policy)
         => policy with
         {
@@ -209,6 +249,10 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
     {
         public long ProposalsRaised { get; set; }
 
+        public long ProposalsApproved { get; set; }
+
+        public long ProposalsRejected { get; set; }
+
         public long AutoApplied { get; set; }
 
         public long RolledBack { get; set; }
@@ -223,6 +267,8 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         {
             Rule = rule,
             ProposalsRaised = ProposalsRaised,
+            ProposalsApproved = ProposalsApproved,
+            ProposalsRejected = ProposalsRejected,
             AutoApplied = AutoApplied,
             RolledBack = RolledBack,
             Failed = Failed,
@@ -240,4 +286,8 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
 
         public DateTimeOffset? CompletedAt { get; init; }
     }
+
+    private sealed record ProposalResolutionState(
+        string Rule,
+        OpsAutonomyProposalResolution Resolution);
 }

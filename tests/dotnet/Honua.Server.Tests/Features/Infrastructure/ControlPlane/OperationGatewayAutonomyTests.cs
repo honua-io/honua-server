@@ -95,6 +95,70 @@ public sealed class OperationGatewayAutonomyTests
         store.Count.Should().Be(1);
         evaluator.OutcomeCount.Should().Be(0);
         evaluator.ProposalRaisedCount.Should().Be(1);
+
+        var proposal = await store.GetAsync(result.ProposalId!);
+        proposal.Should().NotBeNull();
+        proposal!.AutonomyMetadata.Should().NotBeNull();
+        proposal.AutonomyMetadata!.FindingId.Should().Be(FindingId);
+        proposal.AutonomyMetadata.Rule.Should().Be(Rule);
+        proposal.AutonomyMetadata.ActionDiscriminator.Should().Be(RedriveAction);
+        proposal.AutonomyMetadata.EvidenceRefs.Should().Equal("test");
+        proposal.Plan.ExecutionPayload.Should().NotBeNull();
+
+        var approved = await sut.ApplyApprovedProposalAsync(result.ProposalId!, "human-approver");
+        approved.Should().NotBeNull();
+        evaluator.ProposalApprovedCount.Should().Be(1);
+        evaluator.ProposalRejectedCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RejectProposal_FindingProposal_RecordsStableRuleResolutionMetadata()
+    {
+        var store = new MultiProposalStore();
+        var evaluator = new RecordingAutonomyEvaluator(
+            new OpsAutonomyRouteDecision
+            {
+                ShouldAutoApply = false,
+                Reason = "policy-propose-only",
+            });
+        var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
+        var routed = await sut.RouteAsync(Request());
+
+        var rejected = await sut.RejectProposalAsync(routed.ProposalId!, "human-reviewer", "not during incident");
+
+        rejected.Should().NotBeNull();
+        rejected!.AutonomyMetadata!.FindingId.Should().Be(FindingId);
+        rejected.AutonomyMetadata.Rule.Should().Be(Rule);
+        evaluator.ProposalApprovedCount.Should().Be(0);
+        evaluator.ProposalRejectedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_CounterWriteFailsAfterResolution_RetryReconcilesIdempotently()
+    {
+        var store = new MultiProposalStore();
+        var evaluator = new RecordingAutonomyEvaluator(
+            new OpsAutonomyRouteDecision
+            {
+                ShouldAutoApply = false,
+                Reason = "policy-propose-only",
+            })
+        {
+            FailNextProposalResolution = true,
+        };
+        var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
+        var routed = await sut.RouteAsync(Request());
+
+        var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        await first.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("simulated proposal counter outage");
+        (await store.GetAsync(routed.ProposalId!))!.Status.Should().Be(OperationProposalStatus.Submitted);
+
+        var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        await retry.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*cannot be approved*");
+        evaluator.ProposalApprovedCount.Should().Be(2,
+            "the durable store deduplicates the replay by proposal id, while the gateway repairs a post-resolution write gap");
     }
 
     [Fact]
@@ -368,6 +432,7 @@ public sealed class OperationGatewayAutonomyTests
             {
                 FindingId = FindingId,
                 Rule = Rule,
+                ActionDiscriminator = RedriveAction,
                 ActionMarkedAutoSafe = true,
                 BlastRadius = 1,
                 EvidenceRefs = ["test"],
@@ -393,6 +458,14 @@ public sealed class OperationGatewayAutonomyTests
         public int OutcomeCount { get; private set; }
 
         public int ProposalRaisedCount { get; private set; }
+
+        public int ProposalApprovedCount { get; private set; }
+
+        public int ProposalRejectedCount { get; private set; }
+
+        public bool FailNextProposalResolution { get; init; }
+
+        private bool _proposalResolutionFailed;
 
         public OpsAutonomyActionOutcome? LastOutcome { get; private set; }
 
@@ -428,6 +501,29 @@ public sealed class OperationGatewayAutonomyTests
             CancellationToken cancellationToken = default)
         {
             ProposalRaisedCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task RecordProposalResolutionAsync(
+            OperationProposal proposal,
+            OpsAutonomyProposalResolution resolution,
+            CancellationToken cancellationToken = default)
+        {
+            if (resolution == OpsAutonomyProposalResolution.Approved)
+            {
+                ProposalApprovedCount++;
+            }
+            else
+            {
+                ProposalRejectedCount++;
+            }
+
+            if (FailNextProposalResolution && !_proposalResolutionFailed)
+            {
+                _proposalResolutionFailed = true;
+                throw new InvalidOperationException("simulated proposal counter outage");
+            }
+
             return Task.CompletedTask;
         }
     }

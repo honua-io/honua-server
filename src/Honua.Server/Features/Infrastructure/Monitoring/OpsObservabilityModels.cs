@@ -575,6 +575,13 @@ public sealed class OpsAutonomyPolicyResponse
     [JsonPropertyName("rule")]
     public required string Rule { get; init; }
 
+    /// <summary>
+    /// Gets a value indicating whether this effective policy comes from an explicit durable override.
+    /// False means the values are projected from current configuration/defaults.
+    /// </summary>
+    [JsonPropertyName("isPersisted")]
+    public required bool IsPersisted { get; init; }
+
     /// <summary>Gets the effective autonomy mode (<c>ProposeOnly</c> or <c>AutoApply</c>).</summary>
     [JsonPropertyName("mode")]
     public required string Mode { get; init; }

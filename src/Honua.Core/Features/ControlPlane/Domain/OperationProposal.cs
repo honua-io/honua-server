@@ -131,6 +131,31 @@ public sealed record OperationProposalPlan
 }
 
 /// <summary>
+/// Bounded finding/rule metadata persisted with a deterministic ops proposal.
+/// Execution payloads and reviewer-provided narrative are intentionally excluded.
+/// </summary>
+public sealed record OperationProposalAutonomyMetadata
+{
+    /// <summary>Gets the stable deterministic finding identifier.</summary>
+    public required string FindingId { get; init; }
+
+    /// <summary>Gets the stable finding rule identifier.</summary>
+    public required string Rule { get; init; }
+
+    /// <summary>Gets the registered action discriminator, when applicable.</summary>
+    public string? ActionDiscriminator { get; init; }
+
+    /// <summary>Gets whether the finding rule marked this action auto-safe.</summary>
+    public bool ActionMarkedAutoSafe { get; init; }
+
+    /// <summary>Gets the bounded blast-radius estimate used by policy.</summary>
+    public int BlastRadius { get; init; } = 1;
+
+    /// <summary>Gets bounded supporting evidence references.</summary>
+    public IReadOnlyList<string> EvidenceRefs { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>
 /// Durable, protocol-neutral record of an agent- or operator-proposed mutating
 /// operation that a human can later review and approve or reject. Generalizes the
 /// bespoke Deploy <c>AwaitingApproval</c> flow across all in-scope operation
@@ -182,6 +207,12 @@ public sealed record OperationProposal
     /// Request metadata captured when the proposal was created.
     /// </summary>
     public OperationAuditInfo Audit { get; init; } = new();
+
+    /// <summary>
+    /// Stable finding/rule metadata when this proposal originated from deterministic ops autonomy.
+    /// This excludes the opaque execution payload, which remains confined to <see cref="Plan"/>.
+    /// </summary>
+    public OperationProposalAutonomyMetadata? AutonomyMetadata { get; init; }
 
     /// <summary>
     /// Stable identifier of the underlying execution operation created when the
