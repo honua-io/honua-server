@@ -3,10 +3,12 @@
 
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Capabilities;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -33,7 +35,22 @@ internal static class ClientCertificateAdminEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Security", "Client Certificates")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .AddEndpointFilter((invocationContext, next) =>
+            {
+                var context = invocationContext.HttpContext;
+                var logger = context.RequestServices
+                    .GetRequiredService<ILogger<ClientCertificateAdminEndpointsLog>>();
+                var gate = LicenseGate.RequireEntitlement(
+                    context,
+                    FeatureCatalog.MtlsClientCertificateKey,
+                    "mTLS client-certificate authentication",
+                    logger);
+
+                return gate is null
+                    ? next(invocationContext)
+                    : ValueTask.FromResult<object?>(gate);
+            });
 
         group.MapGet("/profiles", HandleListProfiles)
             .WithDisplayName("List Client Certificate Trust Profiles")
