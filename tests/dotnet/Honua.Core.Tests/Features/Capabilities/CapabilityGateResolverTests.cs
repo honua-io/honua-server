@@ -19,12 +19,15 @@ namespace Honua.Core.Tests.Features.Capabilities;
 /// </summary>
 public sealed class CapabilityGateResolverTests
 {
-    private const string ExperimentalId = "temporal.filtering";
+    // A still-experimental capability id for the synthetic resolver descriptors below.
+    // (temporal.* was promoted to GA in #2429, so it is no longer a valid experimental
+    // example; sync.offline remains built-experimental and gated off by default.)
+    private const string ExperimentalId = "sync.offline";
 
     private static CapabilityDescriptor Experimental(HonuaEdition? minimumEdition = null) => new()
     {
         Id = ExperimentalId,
-        Category = "temporal",
+        Category = "sync",
         Kind = CapabilityKind.Feature,
         Maturity = CapabilityMaturity.Experimental,
         MinimumEdition = minimumEdition,

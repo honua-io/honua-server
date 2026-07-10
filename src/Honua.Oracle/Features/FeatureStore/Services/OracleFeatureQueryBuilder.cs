@@ -32,6 +32,7 @@ internal static partial class OracleFeatureQueryBuilder
     {
         ArgumentNullException.ThrowIfNull(mapping);
         ArgumentNullException.ThrowIfNull(attributeColumns);
+        GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -60,6 +61,7 @@ internal static partial class OracleFeatureQueryBuilder
     public static ParameterizedQuery BuildCountQuery(OracleLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
+        GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -81,6 +83,7 @@ internal static partial class OracleFeatureQueryBuilder
     public static ParameterizedQuery BuildObjectIdsQuery(OracleLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
+        GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -127,6 +130,7 @@ internal static partial class OracleFeatureQueryBuilder
         sb.Append(" WHERE ").Append(geometryColumn).Append(" IS NOT NULL");
 
         var effective = query ?? new FeatureQuery();
+        GuardUnsupportedTemporalFilter(effective);
         AppendWhereClause(sb, effective, parameters);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
         AppendSpatialFilter(sb, mapping, effective, parameters);
@@ -134,6 +138,25 @@ internal static partial class OracleFeatureQueryBuilder
         sb.Append(") t");
 
         return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    /// <summary>
+    /// Rejects a <see cref="FeatureQuery.TemporalFilter"/> the Oracle provider cannot translate.
+    /// Temporal filters arrive on <see cref="FeatureQuery"/> from OGC API Features (<c>datetime</c>),
+    /// STAC search, and OData time-window queries. The provider does not yet emit Oracle temporal
+    /// predicates, so the filter is surfaced as an eager <see cref="NotSupportedException"/> —
+    /// never silently dropped, which would return rows outside the requested window (a
+    /// correctness/data-leak bug). Mirrors the fail-loud contract of the MySQL/Redshift/Databricks
+    /// providers (temporal GA hardening, #2429).
+    /// </summary>
+    private static void GuardUnsupportedTemporalFilter(FeatureQuery query)
+    {
+        if (query.TemporalFilter.HasValue)
+        {
+            throw new NotSupportedException(
+                "Temporal filters are not supported by the Oracle provider in this slice. " +
+                "Apply temporal filtering in the calling layer or use a PostGIS-backed layer.");
+        }
     }
 
     private static string BuildGeometryWkbExpression(OracleLayerMapping mapping)

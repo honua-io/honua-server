@@ -127,6 +127,21 @@ deployment. It lights up when the customer opts in.
 > two-mechanism roster below are superseded for the alerting half by this note;
 > realtime feature-streaming stays experimental.
 
+> **Update (#2429).** **Temporal analytics** (`temporal.filtering`,
+> `temporal.extent-discovery`, `temporal.histogram`, `temporal.time-series-tiles`)
+> has been promoted out of this experimental + disabled set to **GA
+> (`Implemented`)**. Time filtering, extent discovery, date-bin histograms,
+> time-series tiles, and the animation-API contract now ship on the default
+> surface: the `/api/v1/temporal/*` routes carry `maturity: implemented` and the
+> capabilities are advertised in the manifest. The **Community/Pro edition split
+> is unchanged** (filtering + extent discovery are Community; histogram,
+> time-series tiles, and animation are Pro), enforced by the existing entitlement
+> gates — GA does not bypass licensing. Providers that cannot translate a temporal
+> predicate now fail loud (`NotSupportedException`) rather than silently returning
+> unfiltered rows (hardened in #2429). The "Temporal / data-versioning" bullet
+> above and the temporal entry in the two-mechanism roster below are superseded by
+> this note.
+
 **Two mechanisms hold this set OFF — not one uniform registry flag.** The
 route-bearing experimental capabilities — **temporal** analytics/versioning
 (`/api/v1/temporal/*`), **disconnected-sync / replicas**, **realtime
