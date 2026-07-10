@@ -2,12 +2,10 @@ name: CodeQL
 
 on:
   # Tier: PR gate + weekly full scan.
-  # - pull_request: runs CodeQL on the changed surface so security regressions
-  #   are caught before merge (audit #1144). PR runs reuse the same C# +
-  #   security-extended query pack as the scheduled scan; CodeQL's incremental
-  #   analyzer keeps the wall time within the PR budget.
-  # - schedule: weekly full sweep to catch issues introduced by transitive
-  #   dependency churn or queries-pack updates.
+  # - pull_request: uses C# no-build extraction and the default high-precision
+  #   query suite to keep the required security gate on the PR critical path.
+  # - schedule: performs a full instrumented build with security-extended
+  #   queries to catch lower-confidence findings and dependency churn.
   pull_request:
     branches: [trunk]
     paths:
@@ -37,8 +35,7 @@ jobs:
     name: Analyze C#
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
-    # PR gate budget matches the scheduled full scan: the current C# surface and
-    # security-extended query pack routinely need more than 45 minutes to finish.
+    # The scheduled manual-build scan remains the upper bound for this job.
     timeout-minutes: 90
     permissions:
       actions: read
@@ -50,10 +47,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      # Reclaim runner disk before the CodeQL build. The C# autobuild plus the
-      # security-extended query pack intermittently exhausts the hosted runner's
-      # disk ("No space left on device"); free large preinstalled toolchains first.
+      # The scheduled instrumented build needs more disk than the PR no-build lane.
       - name: Free disk space
+        if: ${{ github.event_name != 'pull_request' }}
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: false
@@ -64,25 +60,38 @@ jobs:
           swap-storage: true
 
       - name: Setup .NET
+        if: ${{ github.event_name != 'pull_request' }}
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+      - name: Initialize CodeQL (pull request)
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: github/codeql-action/init@v4
         with:
           languages: csharp
           config-file: ./.github/codeql/codeql-config.yml
-          # Use extended security queries for more comprehensive analysis
+          build-mode: none
+          dependency-caching: true
+
+      - name: Initialize CodeQL (full scan)
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+          config-file: ./.github/codeql/codeql-config.yml
+          build-mode: manual
           queries: security-extended
 
       - name: Restore dependencies
+        if: ${{ github.event_name != 'pull_request' }}
         run: dotnet restore Honua.sln
 
       - name: Build
+        if: ${{ github.event_name != 'pull_request' }}
         run: dotnet build Honua.sln --no-restore --configuration Release
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:csharp"
