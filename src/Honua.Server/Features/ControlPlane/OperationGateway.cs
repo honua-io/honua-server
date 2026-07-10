@@ -2,10 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Alerts.Ops;
+using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Observability.Abstractions;
+using Honua.Core.Features.Observability.Domain;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane;
@@ -64,6 +68,20 @@ internal sealed partial class OperationGateway : IOperationGateway
             ? _ladder.Resolve(request.Kind)
             : _ladder.Resolve(request.Kind, actionDiscriminator);
         Log.OperationRouted(_logger, request.Kind.ToString(), decision.Tier.ToString(), decision.Source);
+
+        if (decision.Tier == GuardrailTier.RequiresApproval)
+        {
+            var autonomy = await EvaluateAutonomyAsync(
+                    request,
+                    decision,
+                    actionDiscriminator,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (autonomy.ShouldAutoApply)
+            {
+                return await ExecuteAutonomousAsync(request, autonomy, cancellationToken).ConfigureAwait(false);
+            }
+        }
 
         return decision.Tier switch
         {
@@ -310,6 +328,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 cancellationToken)
             .ConfigureAwait(false);
         await _notifier.NotifyPendingAsync(proposal, cancellationToken).ConfigureAwait(false);
+        await RecordAutonomyProposalRaisedAsync(request, cancellationToken).ConfigureAwait(false);
 
         return new OperationGatewayResult
         {
@@ -485,6 +504,140 @@ internal sealed partial class OperationGateway : IOperationGateway
         ExecutionPayload = proposal.Plan.ExecutionPayload,
     };
 
+    private async Task<OpsAutonomyRouteDecision> EvaluateAutonomyAsync(
+        OperationGatewayRequest request,
+        GuardrailDecision decision,
+        string? actionDiscriminator,
+        CancellationToken cancellationToken)
+    {
+        if (request.AutonomyContext is null)
+        {
+            return new OpsAutonomyRouteDecision { ShouldAutoApply = false, Reason = "no-autonomy-context" };
+        }
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var evaluator = scope.ServiceProvider.GetService<IOpsAutonomyEvaluator>();
+        if (evaluator is null)
+        {
+            return new OpsAutonomyRouteDecision { ShouldAutoApply = false, Reason = "autonomy-evaluator-unavailable" };
+        }
+
+        return await evaluator
+            .EvaluateRouteAsync(request, decision, actionDiscriminator, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<OperationGatewayResult> ExecuteAutonomousAsync(
+        OperationGatewayRequest request,
+        OpsAutonomyRouteDecision autonomy,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var directDecision = autonomy.Decision
+                ?? throw new InvalidOperationException("Autonomy route decision did not include a direct-execute guardrail decision.");
+            var result = await ExecuteDirectAsync(
+                    request,
+                    directDecision,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var outcome = result.Outcome == OperationGatewayOutcome.Executed
+                ? OpsAutonomyActionOutcome.Succeeded
+                : OpsAutonomyActionOutcome.Failed;
+            await RecordAutonomyOutcomeAsync(
+                    autonomy,
+                    outcome,
+                    result.ExecutionOperationId,
+                    result.Message,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await WriteAutonomyAuditAsync(
+                    request,
+                    result.Outcome == OperationGatewayOutcome.Executed ? AuditOutcome.Success : AuditOutcome.Failure,
+                    result.Message,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await NotifyAutonomyAsync(
+                    request,
+                    outcome,
+                    result.ExecutionOperationId,
+                    result.Message,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return result with
+            {
+                Decision = directDecision,
+                Message = result.Outcome == OperationGatewayOutcome.Executed
+                    ? $"Auto-applied by autonomy policy for rule '{request.AutonomyContext?.Rule}'."
+                    : result.Message,
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await RecordAutonomyOutcomeAsync(
+                    autonomy,
+                    OpsAutonomyActionOutcome.Failed,
+                    operationId: null,
+                    message: ex.GetType().Name,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await WriteAutonomyAuditAsync(
+                    request,
+                    AuditOutcome.Failure,
+                    ex.GetType().Name,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await NotifyAutonomyAsync(
+                    request,
+                    OpsAutonomyActionOutcome.Failed,
+                    operationId: null,
+                    message: ex.GetType().Name,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private async Task RecordAutonomyOutcomeAsync(
+        OpsAutonomyRouteDecision autonomy,
+        OpsAutonomyActionOutcome outcome,
+        string? operationId,
+        string? message,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var evaluator = scope.ServiceProvider.GetService<IOpsAutonomyEvaluator>();
+        if (evaluator is not null)
+        {
+            await evaluator.RecordAutoActionOutcomeAsync(
+                    autonomy,
+                    outcome,
+                    operationId,
+                    message,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task RecordAutonomyProposalRaisedAsync(
+        OperationGatewayRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.AutonomyContext is null)
+        {
+            return;
+        }
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var evaluator = scope.ServiceProvider.GetService<IOpsAutonomyEvaluator>();
+        if (evaluator is not null)
+        {
+            await evaluator.RecordProposalRaisedAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     // The gateway is a singleton but IAuditLog is scoped (PostgresAuditLog needs a
     // per-operation DB connection), so resolve it from a fresh scope per audit write
     // rather than capturing it as a constructor dependency. Capturing the scoped
@@ -516,6 +669,121 @@ internal sealed partial class OperationGateway : IOperationGateway
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task WriteAutonomyAuditAsync(
+        OperationGatewayRequest request,
+        AuditOutcome outcome,
+        string? message,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+        var actor = request.RequestedBy ?? request.RequestedByAgent ?? AuditEvent.AnonymousActor;
+        var actorType = request.RequestedBy is null && request.RequestedByAgent is not null
+            ? AuditActorType.System
+            : request.RequestedBy is null
+                ? AuditActorType.Anonymous
+            : AuditActorType.UserId;
+        await auditLog.RecordAsync(
+            new AuditEvent
+            {
+                Timestamp = DateTimeOffset.UtcNow,
+                EventType = AuditEventType.AdminAction,
+                Actor = string.IsNullOrWhiteSpace(actor) ? AuditEvent.AnonymousActor : actor,
+                ActorType = actorType,
+                ResourceType = "operation_autonomy",
+                ResourceId = request.AutonomyContext?.FindingId ?? request.IdempotencyKey ?? request.Kind.ToString(),
+                Action = "operation.auto_applied",
+                Outcome = outcome,
+                CorrelationId = request.CorrelationId ?? request.AutonomyContext?.FindingId ?? Guid.NewGuid().ToString("N"),
+                Details = BuildAutonomyAuditDetails(request, message),
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string BuildAutonomyAuditDetails(OperationGatewayRequest request, string? message)
+        => "{\"kind\":\"" + JsonEscape(request.Kind.ToString())
+            + "\",\"rule\":\"" + JsonEscape(request.AutonomyContext?.Rule)
+            + "\",\"findingId\":\"" + JsonEscape(request.AutonomyContext?.FindingId)
+            + "\",\"evidenceRefs\":" + BuildJsonArray(request.AutonomyContext?.EvidenceRefs)
+            + "\",\"message\":\"" + JsonEscape(message)
+            + "\"}";
+
+    private async Task NotifyAutonomyAsync(
+        OperationGatewayRequest request,
+        OpsAutonomyActionOutcome outcome,
+        string? operationId,
+        string? message,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var notifier = scope.ServiceProvider.GetService<OpsNotificationService>();
+            if (notifier is null)
+            {
+                return;
+            }
+
+            var context = request.AutonomyContext;
+            var findingId = context?.FindingId ?? request.IdempotencyKey ?? request.Kind.ToString();
+            var attributes = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["kind"] = request.Kind.ToString(),
+                ["outcome"] = outcome.ToString(),
+            };
+            AddAttribute(attributes, "rule", context?.Rule);
+            AddAttribute(attributes, "findingId", context?.FindingId);
+            AddAttribute(attributes, "operationId", operationId);
+            AddAttribute(attributes, "message", message);
+            if (context?.EvidenceRefs is { Count: > 0 } evidenceRefs)
+            {
+                attributes["evidenceRefs"] = string.Join(",", evidenceRefs);
+            }
+
+            await notifier.NotifyAsync(
+                    new OpsNotification
+                    {
+                        Source = "ops-autonomy",
+                        Severity = outcome == OpsAutonomyActionOutcome.Succeeded
+                            ? AlertSeverity.Info
+                            : AlertSeverity.Warning,
+                        Title = outcome == OpsAutonomyActionOutcome.Succeeded
+                            ? "Autonomous remediation applied"
+                            : "Autonomous remediation failed",
+                        Body = message ?? $"Autonomous remediation outcome: {outcome}.",
+                        DedupeIdentifier = $"{findingId}:{outcome}",
+                        Attributes = attributes,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.AutonomyNotificationFailed(_logger, request.AutonomyContext?.FindingId ?? request.Kind.ToString(), ex);
+        }
+    }
+
+    private static void AddAttribute(Dictionary<string, string> attributes, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            attributes[key] = value;
+        }
+    }
+
+    private static string BuildJsonArray(IReadOnlyList<string>? values)
+    {
+        if (values is null || values.Count == 0)
+        {
+            return "[]";
+        }
+
+        return "[\"" + string.Join("\",\"", values.Select(JsonEscape)) + "\"]";
+    }
+
+    private static string JsonEscape(string? value)
+        => (value ?? string.Empty).Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+
     private static partial class Log
     {
         [LoggerMessage(9200, LogLevel.Information, "Routed {Kind} operation to tier {Tier} ({Source})")]
@@ -529,5 +797,8 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         [LoggerMessage(9203, LogLevel.Warning, "No executor registered for approval of proposal {ProposalId} with kind {Kind}; failing proposal to terminal Failed")]
         public static partial void NoExecutorRegisteredForApproval(ILogger logger, string proposalId, string kind);
+
+        [LoggerMessage(9204, LogLevel.Warning, "Failed to enqueue ops-autonomy notification for finding {FindingId}")]
+        public static partial void AutonomyNotificationFailed(ILogger logger, string findingId, Exception exception);
     }
 }

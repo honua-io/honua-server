@@ -57,6 +57,10 @@ internal static class ObservabilityServiceCollectionExtensions
             .Bind(configuration.GetSection(OpsFindingsOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.AddOptions<OpsAutonomyOptions>()
+            .Bind(configuration.GetSection(OpsAutonomyOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
         services.AddScoped(sp => new OpsFindingsExtendedSignals
         {
@@ -65,6 +69,7 @@ internal static class ObservabilityServiceCollectionExtensions
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
         });
         services.AddScoped<IOpsFindingsService, OpsFindingsService>();
+        services.AddScoped<IOpsAutonomyEvaluator, OpsAutonomyEvaluator>();
         services.AddScoped<IMcpOpsObservabilityReader, McpOpsObservabilityReader>();
         services.AddScoped<IMcpPlatformOpsReader, McpPlatformOpsReader>();
 
