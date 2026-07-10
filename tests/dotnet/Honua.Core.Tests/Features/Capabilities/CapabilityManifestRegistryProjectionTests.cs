@@ -84,8 +84,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
         // temporal.* promoted to Implemented (GA) in #2429 — no longer omitted.
         "sync.offline",
         "realtime.feature-streams",
-        // alerts.geofence promoted to Implemented (GA) in #2427 — no longer omitted.
-        "security.mtls",
+        // alerts.geofence promoted to Implemented (GA) in #2427, and security.mtls in #2431 —
+        // neither is omitted from the manifest any longer.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
     ];
