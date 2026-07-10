@@ -1423,6 +1423,7 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetDeployPreflight_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployPreflight_WhenInstanceIsAligned_ReturnsReady",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployPreflight_WhenPendingMigrationsExist_ReturnsBlocked",
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployPreflight_WithDiagnostics_ReturnsBackupHookOutcomeForPendingSet",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployPreflight_WithIncludeDiagnosticsTrue_ReturnsDiagnostics"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -2770,6 +2771,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetMigrationStatus_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_ReturnsInstanceScopedLifecycleAndPlan",
+        "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_WhenBackupHookMatchesPendingSet_ReturnsOutcome",
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_WhenPlanFails_ReturnsPlanErrorWithoutThrowing",
         "Honua.Server.Tests.Features.Admin.ObservabilityEndpointsTests.GetMigrationStatus_WhenPlanThrows_ReturnsProblemDetails"
       ],

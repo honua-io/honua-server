@@ -49,6 +49,7 @@ namespace Honua.Infrastructure.Monitoring;
 [JsonSerializable(typeof(ObservabilityRealtimeStatus))]
 [JsonSerializable(typeof(ObservabilityStatusResponse))]
 [JsonSerializable(typeof(MigrationObservabilityResponse))]
+[JsonSerializable(typeof(MigrationBackupHookStatus))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(StreamingMetrics))]
 [JsonSerializable(typeof(ProductionHealthResponse))]

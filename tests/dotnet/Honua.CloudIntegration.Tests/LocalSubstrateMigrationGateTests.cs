@@ -3,6 +3,8 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Configuration;
@@ -238,12 +240,14 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
 
         // Auto policy so the gate is not what blocks; a failing backup hook (exit 1) must fail the run
         // closed before the pending contract script is applied.
+        var stderr = new string('x', 700);
+        var recorder = new CapturingBackupHookRecorder();
         var runner = CreateRunner(new MigrationSafetyOptions
         {
             Enforce = true,
             ContractApplyPolicy = ContractApplyPolicy.Auto,
-            BackupCommand = "exit 1",
-        });
+            BackupCommand = FailingCommand(stderr),
+        }, backupHookRecorder: recorder);
         var upgrade = SyntheticMigrationsCompiler.Compile(
             assemblyName,
             ("001_expand.sql", ExpandScript),
@@ -256,6 +260,16 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         result.ErrorMessage!.Should().Contain("BackupCommand", "the failure names the backup hook");
         (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name"))
             .Should().BeTrue("no contract script may apply after the backup hook failed (fail closed, ordering)");
+
+        var outcome = recorder.Outcomes.Should().ContainSingle().Subject;
+        outcome.Succeeded.Should().BeFalse();
+        outcome.Outcome.Should().Be("failed");
+        outcome.DurationMilliseconds.Should().BeGreaterThanOrEqualTo(0);
+        outcome.Stderr.Should().StartWith(new string('x', 500));
+        outcome.Stderr!.Length.Should().BeLessThan(stderr.Length);
+        outcome.PendingContractScripts.Should().ContainSingle(name =>
+            name.EndsWith("002_drop_legacy_annotated.sql", StringComparison.Ordinal));
+        outcome.MigrationRunId.Should().StartWith("schema-migration-");
     }
 
     [SkippableFact]
@@ -268,12 +282,13 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         await ApplyExpandBaselineAsync(connectionString, assemblyName);
 
         var sentinel = ReserveSentinelPath();
+        var recorder = new CapturingBackupHookRecorder();
         var runner = CreateRunner(new MigrationSafetyOptions
         {
             Enforce = true,
             ContractApplyPolicy = ContractApplyPolicy.Auto,
             BackupCommand = SentinelCommand(sentinel),
-        });
+        }, backupHookRecorder: recorder);
         var upgrade = SyntheticMigrationsCompiler.Compile(
             assemblyName,
             ("001_expand.sql", ExpandScript),
@@ -284,6 +299,15 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         result.Successful.Should().BeTrue($"the backup hook succeeded so the contract migration applies. Error: {result.ErrorMessage}");
         File.Exists(sentinel).Should().BeTrue("the backup hook ran before the contract script applied");
         (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name")).Should().BeFalse();
+
+        var outcome = recorder.Outcomes.Should().ContainSingle().Subject;
+        outcome.Succeeded.Should().BeTrue();
+        outcome.Outcome.Should().Be("succeeded");
+        outcome.ExitCode.Should().Be(0);
+        outcome.DurationMilliseconds.Should().BeGreaterThanOrEqualTo(0);
+        outcome.Stderr.Should().BeNull();
+        outcome.PendingContractScripts.Should().ContainSingle(name =>
+            name.EndsWith("002_drop_legacy_annotated.sql", StringComparison.Ordinal));
     }
 
     [SkippableFact]
@@ -332,7 +356,8 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
 
     private static PostgresDatabaseMigrationRunner CreateRunner(
         MigrationSafetyOptions options,
-        bool approveContract = false)
+        bool approveContract = false,
+        IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null)
     {
         IConfiguration? configuration = null;
         if (approveContract)
@@ -345,7 +370,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
                 .Build();
         }
 
-        return new PostgresDatabaseMigrationRunner(Options.Create(options), configuration);
+        return new PostgresDatabaseMigrationRunner(Options.Create(options), configuration, backupHookRecorder);
     }
 
     private static string ReserveSentinelPath()
@@ -353,6 +378,11 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
 
     private static string SentinelCommand(string path)
         => OperatingSystem.IsWindows() ? $"type nul > \"{path}\"" : $": > '{path}'";
+
+    private static string FailingCommand(string stderr)
+        => OperatingSystem.IsWindows()
+            ? $"echo {stderr} 1>&2 & exit /b 1"
+            : $"printf '%s' '{stderr}' >&2; exit 1";
 
     private static async Task<bool> TableExistsAsync(string connectionString, string table)
     {
@@ -379,5 +409,18 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         command.Parameters.AddWithValue("table", table);
         command.Parameters.AddWithValue("column", column);
         return (bool)(await command.ExecuteScalarAsync())!;
+    }
+
+    private sealed class CapturingBackupHookRecorder : IDatabaseMigrationBackupHookRecorder
+    {
+        public List<DatabaseMigrationBackupHookResult> Outcomes { get; } = new();
+
+        public Task RecordAsync(
+            DatabaseMigrationBackupHookResult result,
+            CancellationToken cancellationToken = default)
+        {
+            Outcomes.Add(result);
+            return Task.CompletedTask;
+        }
     }
 }

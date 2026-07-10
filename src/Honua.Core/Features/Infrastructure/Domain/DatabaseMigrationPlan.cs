@@ -31,6 +31,12 @@ public sealed record DatabaseMigrationPlan
     public IReadOnlyList<string> ExecutedButNotDiscoveredScripts { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Whether the migration journal already contains applied scripts. A non-empty journal means this
+    /// plan targets an existing database rather than a fresh install.
+    /// </summary>
+    public bool JournalIsNonEmpty { get; init; }
+
+    /// <summary>
     /// Expand/contract safety classification for each pending script, in the order the scripts
     /// would be applied. Populated by runners that can read script contents; empty otherwise.
     /// </summary>
@@ -83,7 +89,8 @@ public sealed record DatabaseMigrationPlan
     public static DatabaseMigrationPlan Succeeded(
         IReadOnlyList<string>? pendingScripts = null,
         IReadOnlyList<string>? executedButNotDiscoveredScripts = null,
-        IReadOnlyList<MigrationScriptClassification>? pendingScriptClassifications = null)
+        IReadOnlyList<MigrationScriptClassification>? pendingScriptClassifications = null,
+        bool journalIsNonEmpty = false)
     {
         var pending = pendingScripts ?? Array.Empty<string>();
 
@@ -93,6 +100,7 @@ public sealed record DatabaseMigrationPlan
             UpgradeRequired = pending.Count > 0,
             PendingScripts = pending,
             ExecutedButNotDiscoveredScripts = executedButNotDiscoveredScripts ?? Array.Empty<string>(),
+            JournalIsNonEmpty = journalIsNonEmpty,
             PendingScriptClassifications =
                 pendingScriptClassifications ?? Array.Empty<MigrationScriptClassification>()
         };
