@@ -265,6 +265,20 @@ internal sealed record StreamTemporalFilter(
     DateTimeOffset? End);
 
 /// <summary>
+/// Point-in-time view of the cross-node broadcast backlog, consumed by
+/// <c>FeatureStreamHealthCheck</c>. <paramref name="Configured"/> is true when Redis is
+/// wired (multi-node topology); <paramref name="Enabled"/> is true when the broadcast
+/// subscription is currently active. <paramref name="BacklogDepth"/> is the number of
+/// payloads buffered awaiting a publish retry; <paramref name="Dropped"/> is the
+/// cumulative count of payloads shed on backlog overflow since startup.
+/// </summary>
+internal readonly record struct ClusterBroadcastBacklogSnapshot(
+    bool Configured,
+    bool Enabled,
+    int BacklogDepth,
+    long Dropped);
+
+/// <summary>
 /// Metadata about an active feature-stream session for admin visibility.
 /// </summary>
 internal sealed record FeatureStreamSessionInfo(
