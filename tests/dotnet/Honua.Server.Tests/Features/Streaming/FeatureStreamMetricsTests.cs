@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -93,6 +96,52 @@ public sealed class FeatureStreamMetricsTests
             FeatureStreamMetrics.RecordClusterBroadcastDropped);
 
         measurements.Should().Contain(m => m.Value == 1);
+    }
+
+    [UnitTest]
+    public void DisconnectSession_RecordsAdminCloseAndRefreshesActiveGauge()
+    {
+        var closed = new ConcurrentBag<(long Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)>();
+        var active = new ConcurrentBag<long>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name != "Honua")
+            {
+                return;
+            }
+
+            if (instrument.Name is "honua.streaming.sessions_closed_total" or "honua.streaming.active_sessions")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            if (instrument.Name == "honua.streaming.sessions_closed_total")
+            {
+                closed.Add((value, tags.ToArray()));
+            }
+            else if (instrument.Name == "honua.streaming.active_sessions")
+            {
+                active.Add(value);
+            }
+        });
+        listener.Start();
+
+        using var manager = new FeatureStreamSessionManager(
+            Options.Create(new FeatureStreamOptions()),
+            NullLogger<FeatureStreamSessionManager>.Instance);
+        using var session = manager.CreateSession("WebSocket", null);
+
+        manager.DisconnectSession(session.SessionId).Should().BeTrue();
+        listener.RecordObservableInstruments();
+
+        closed.Should().Contain(m =>
+            m.Value == 1 &&
+            m.Tags.Any(t => t.Key == "transport" && (string?)t.Value == "WebSocket") &&
+            m.Tags.Any(t => t.Key == "reason" && (string?)t.Value == "AdminDisconnect"));
+        active.Should().Contain(0);
     }
 
     private static List<(long Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)> CaptureLongMeasurements(

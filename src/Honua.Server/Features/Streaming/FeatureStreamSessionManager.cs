@@ -237,21 +237,27 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// Removes a session. Called by the transport loop on disconnect.
     /// </summary>
     public void RemoveSession(Guid sessionId, FeatureStreamDisconnectReason reason)
-    {
-        if (_sessions.TryRemove(sessionId, out var entry))
-        {
-            ReleaseSessionSlot();
-            FeatureStreamLog.SessionRemoved(_logger, sessionId, reason);
-            FeatureStreamMetrics.RecordSessionClosed(entry.Transport, reason);
-            if (reason == FeatureStreamDisconnectReason.SlowConsumer)
-            {
-                FeatureStreamMetrics.RecordSlowConsumerDrop(entry.Transport);
-            }
+        => TryRemoveSession(sessionId, reason);
 
-            UpdateGaugeSnapshot();
-            entry.Cts.Cancel();
-            entry.Cts.Dispose();
+    private bool TryRemoveSession(Guid sessionId, FeatureStreamDisconnectReason reason)
+    {
+        if (!_sessions.TryRemove(sessionId, out var entry))
+        {
+            return false;
         }
+
+        ReleaseSessionSlot();
+        FeatureStreamLog.SessionRemoved(_logger, sessionId, reason);
+        FeatureStreamMetrics.RecordSessionClosed(entry.Transport, reason);
+        if (reason == FeatureStreamDisconnectReason.SlowConsumer)
+        {
+            FeatureStreamMetrics.RecordSlowConsumerDrop(entry.Transport);
+        }
+
+        UpdateGaugeSnapshot();
+        entry.Cts.Cancel();
+        entry.Cts.Dispose();
+        return true;
     }
 
     /// <summary>
@@ -757,18 +763,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// Force-disconnect a session (admin action).
     /// </summary>
     public bool DisconnectSession(Guid sessionId)
-    {
-        if (!_sessions.TryRemove(sessionId, out var entry))
-        {
-            return false;
-        }
-
-        ReleaseSessionSlot();
-        entry.Cts.Cancel();
-        entry.Cts.Dispose();
-        FeatureStreamLog.SessionRemoved(_logger, sessionId, FeatureStreamDisconnectReason.AdminDisconnect);
-        return true;
-    }
+        => TryRemoveSession(sessionId, FeatureStreamDisconnectReason.AdminDisconnect);
 
     /// <summary>
     /// Returns a snapshot of all active sessions for admin/health visibility.
