@@ -600,10 +600,12 @@ public sealed class OpsAutonomyPolicyResponse
 
     /// <summary>Gets the UTC time the durable policy was last updated.</summary>
     [JsonPropertyName("updatedAt")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public DateTimeOffset? UpdatedAt { get; init; }
 
     /// <summary>Gets the actor that last updated the durable policy.</summary>
     [JsonPropertyName("updatedBy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? UpdatedBy { get; init; }
 
     /// <summary>Gets the aggregate outcome counters for the rule.</summary>
@@ -620,10 +622,12 @@ public sealed class OpsAutonomySettingsResponse
 
     /// <summary>Gets the UTC time the settings were last updated.</summary>
     [JsonPropertyName("updatedAt")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public DateTimeOffset? UpdatedAt { get; init; }
 
     /// <summary>Gets the actor that last updated the settings.</summary>
     [JsonPropertyName("updatedBy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? UpdatedBy { get; init; }
 }
 
