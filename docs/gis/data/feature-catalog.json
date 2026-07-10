@@ -400,7 +400,7 @@
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.DisconnectSubscriber_UnknownId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "delete-api-v1-admin-performance-enhanced-cache-invalidate",
@@ -534,7 +534,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.DisconnectSession_UnknownId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "delete-api-v1-admin-tenants-tenantid",
@@ -2967,7 +2967,7 @@
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.StreamAlerts_WithoutWebSocketUpgrade_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-operations-streaming-subscribers",
@@ -2980,10 +2980,10 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetStreamingOperationsSubscribers_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_AfterSubscribe_ReturnsSubscriberInfo",
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_WhenNone_ReturnsEmptyList",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.GatedEndpoints_WhenExperimentalEnabledPerCapability_OpenOnlyThatCapability"
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.StreamingEndpoint_AfterGaPromotion_IsNotExperimentalGated"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-operations-type-operationtype",
@@ -3330,7 +3330,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithAdminAuth_ReturnsConfiguredProfiles"
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithAdminAuth_ReturnsConfiguredProfiles",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.GatedEndpoints_WhenExperimentalEnabledPerCapability_OpenOnlyThatCapability"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental"
@@ -3626,7 +3627,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ListSessions_WithFilter_ReturnsSessionFilterInfo"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-admin-tenants",
@@ -4767,7 +4768,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_WhenSessionLimitReached_ReturnsServiceUnavailable"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-streaming-features-capabilities",
@@ -4783,7 +4784,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ProEdition_AdvertisesTransportsFiltersAndLayers"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "experimental"
+      "maturity": "implemented"
     },
     {
       "id": "get-api-v1-studio-content-items-itemid-versions",

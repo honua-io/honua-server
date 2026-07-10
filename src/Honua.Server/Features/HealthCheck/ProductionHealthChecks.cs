@@ -27,6 +27,7 @@ internal static class ProductionHealthChecks
     private static readonly string[] MetricsTags = ["metrics", "monitoring"];
     private static readonly string[] OutboxTags = ["outbox", "events"];
     private static readonly string[] AlertsTags = ["alerts", "notifications"];
+    private static readonly string[] StreamingTags = ["streaming", "realtime"];
     private static readonly string[] PluginTags = ["plugins", "extensibility"];
 
     /// <summary>
@@ -89,6 +90,16 @@ internal static class ProductionHealthChecks
             "alert-dispatch",
             HealthStatus.Degraded,
             AlertsTags);
+
+        // Real-time feature streams (#2428, GA promotion): surfaces backpressure
+        // (slow-consumer disconnects, session saturation) and cross-node broadcast backlog
+        // loss through the HealthCheckService roll-up so streaming degradation is visible
+        // before clients silently miss events. Never Unhealthy — best-effort delivery with
+        // durable replay must not fail readiness.
+        healthChecksBuilder.AddCheck<Honua.Server.Features.Streaming.FeatureStreamHealthCheck>(
+            "feature-streams",
+            HealthStatus.Degraded,
+            StreamingTags);
 
         // Plugin/extension SDK (#347): reports loaded plugins and whether the Enterprise
         // entitlement is active. Always healthy — plugins are optional.
