@@ -78,16 +78,15 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            // Validate tile coordinates (Web Mercator supports zoom levels 0-28)
-            const int maxZoomLevel = 28;
-            if (level < 0 || level > maxZoomLevel)
+            try
             {
-                return StandardErrorHelpers.CreateBadRequest(context, "Invalid tile coordinates");
+                WebMercatorTileCoordinates.Validate(level, row, col);
             }
-
-            var matrixWidth = 1 << level;
-            if (row < 0 || col < 0 || row >= matrixWidth || col >= matrixWidth)
+            catch (ArgumentOutOfRangeException)
             {
+                // lgtm[cs/user-controlled-bypass]
+                // This branch validates public tile coordinates only. ImageServerEndpoints enforces
+                // resource access before invoking the handler; coordinate values cannot bypass it.
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid tile coordinates");
             }
 
@@ -432,6 +431,30 @@ internal sealed class ImageServerTileHandler
         var maxY = worldExtent - (row * tileSpan);
         var minY = maxY - tileSpan;
         return ImageServerMosaicHelpers.CreateEnvelopeGeometry(minX, minY, maxX, maxY);
+    }
+
+    private static class WebMercatorTileCoordinates
+    {
+        private const int MaxZoomLevel = 28;
+
+        internal static void Validate(int level, int row, int col)
+        {
+            if (level < 0 || level > MaxZoomLevel)
+            {
+                throw new ArgumentOutOfRangeException(nameof(level));
+            }
+
+            var matrixWidth = 1 << level;
+            if (row < 0 || row >= matrixWidth)
+            {
+                throw new ArgumentOutOfRangeException(nameof(row));
+            }
+
+            if (col < 0 || col >= matrixWidth)
+            {
+                throw new ArgumentOutOfRangeException(nameof(col));
+            }
+        }
     }
 
     // ImageServer tiles are only served in the "default" style; kept as a named constant so the

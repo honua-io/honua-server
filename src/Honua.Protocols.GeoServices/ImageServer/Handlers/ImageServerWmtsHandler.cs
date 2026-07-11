@@ -14,6 +14,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.Ogc.Common;
 using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -884,16 +885,13 @@ internal sealed class ImageServerWmtsHandler(
 
     // Emits a <TileMatrixSet> definition for an operator-enabled gridset from its one canonical
     // GridGeometry, so ImageServer advertises the same matrices the shared registry defines. The
-    // TopLeftCorner axis order follows the CRS (latitude/longitude for geographic gridsets such as
-    // CRS84, easting/northing for projected), matching the classic WMTS adapter.
+    // TopLeftCorner axis order follows the declared CRS identifier through the shared WMTS
+    // formatter (CRS84 is longitude/latitude; geographic EPSG identifiers are latitude/longitude).
     private static void AppendGridTileMatrixSet(StringBuilder sb, TileMatrixSetEntry entry, GridGeometry geometry)
     {
         sb.AppendLine("    <TileMatrixSet>");
         sb.Append("      <ows:Identifier>").Append(EscapeXml(entry.Id)).AppendLine("</ows:Identifier>");
         sb.Append("      <ows:SupportedCRS>").Append(EscapeXml(entry.Crs)).AppendLine("</ows:SupportedCRS>");
-
-        var firstAxis = geometry.IsGeographic ? geometry.TopLeftY : geometry.TopLeftX;
-        var secondAxis = geometry.IsGeographic ? geometry.TopLeftX : geometry.TopLeftY;
 
         foreach (var level in geometry.Levels)
         {
@@ -901,9 +899,11 @@ internal sealed class ImageServerWmtsHandler(
             sb.Append("        <ows:Identifier>").Append(level.Level.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
             sb.Append("        <ScaleDenominator>").Append(FormatScaleDenominator(level.ScaleDenominator)).AppendLine("</ScaleDenominator>");
             sb.Append("        <TopLeftCorner>")
-                .Append(firstAxis.ToString(CultureInfo.InvariantCulture))
-                .Append(' ')
-                .Append(secondAxis.ToString(CultureInfo.InvariantCulture))
+                .Append(WmtsTileMatrixFormatting.FormatTopLeftCorner(
+                    entry.Crs,
+                    geometry.IsGeographic,
+                    geometry.TopLeftX,
+                    geometry.TopLeftY))
                 .AppendLine("</TopLeftCorner>");
             sb.Append("        <TileWidth>").Append(geometry.TileWidth.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileWidth>");
             sb.Append("        <TileHeight>").Append(geometry.TileHeight.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileHeight>");

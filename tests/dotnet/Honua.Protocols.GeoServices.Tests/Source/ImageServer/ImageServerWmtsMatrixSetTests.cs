@@ -122,6 +122,7 @@ public class ImageServerWmtsMatrixSetTests
             content.Should().Contain($"<TileMatrixSet>{WorldCrs84Quad}</TileMatrixSet>");
             content.Should().Contain($"<ows:Identifier>{WorldCrs84Quad}</ows:Identifier>");
             content.Should().Contain("<ows:SupportedCRS>http://www.opengis.net/def/crs/OGC/1.3/CRS84</ows:SupportedCRS>");
+            content.Should().Contain("<TopLeftCorner>-180 90</TopLeftCorner>");
         }
         finally
         {
