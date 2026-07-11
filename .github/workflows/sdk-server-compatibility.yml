@@ -165,11 +165,12 @@ jobs:
           ref: ${{ github.sha }}
           path: compatibility-source
 
-      - name: Preserve current compatibility runner
+      - name: Preserve current compatibility assets
         shell: bash
         run: |
           set -euo pipefail
           cp compatibility-source/scripts/ci/run-sdk-server-compatibility.sh "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
+          cp compatibility-source/tests/seed/portal-compat.yaml "$RUNNER_TEMP/portal-compat.yaml"
           chmod +x "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
 
       - name: Checkout honua-server target
@@ -202,7 +203,7 @@ jobs:
           # PortalCompat is additive and exists only in the current SDK/server
           # pair. Preserve the historical compatibility cells by applying the
           # Portal fixture only to the current x current proof (#2614).
-          post-seed-yaml: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && 'compatibility-source/tests/seed/portal-compat.yaml' || '' }}
+          post-seed-yaml: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && format('{0}/portal-compat.yaml', runner.temp) || '' }}
           log-path: logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
         env:
           # Compatibility checks exercise server/SDK runtime behavior; security audit gates run separately.
