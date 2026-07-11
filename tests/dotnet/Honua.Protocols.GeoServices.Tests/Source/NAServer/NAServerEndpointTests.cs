@@ -62,6 +62,38 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     }
 
     [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_GetWithQueryParameters_ReturnsEsriRouteFeatureSet()
+    {
+        var stops = Uri.EscapeDataString("-157.858333,21.306944;-157.862,21.31");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/Routing/NAServer/Route/solve?f=json&stops={stops}" +
+            "&returnRoutes=true&returnDirections=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+
+        root.GetProperty("routes").GetProperty("features").GetArrayLength().Should().Be(1);
+        root.GetProperty("directions").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_GetWithInsufficientStops_ReturnsGeoServicesError()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/rest/services/Routing/NAServer/Route/solve?f=json&stops=-157.858333%2C21.306944");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+        document.RootElement.TryGetProperty("routes", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ServiceArea)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
     public async Task ServiceArea_DefaultBreaks_ReturnsSaPolygonsWithFromToBreak()

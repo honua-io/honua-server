@@ -10,6 +10,7 @@ public static partial class EndpointRegistry
     private static IReadOnlyList<EndpointDefinition> NetworkAnalystEndpoints =>
     [
         // NAServer minimal mobile routing compatibility (#366)
+        new("GET", "/rest/services/{serviceId}/NAServer/Route/solve"),
         new("POST", "/rest/services/{serviceId}/NAServer/Route/solve"),
         new("POST", "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"),
         new("POST", "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility"),
