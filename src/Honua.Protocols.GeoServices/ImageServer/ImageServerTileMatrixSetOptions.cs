@@ -18,8 +18,9 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 /// </para>
 /// <para>
 /// Only identifiers that resolve in the canonical tile-matrix-set registry take effect; unknown or
-/// misconfigured identifiers are ignored so a rolling deployment can add a gridset to configuration
-/// before every replica understands it without any replica advertising a grid it cannot serve. The
+/// misconfigured identifiers are ignored. During a rolling deployment, keep this list empty until
+/// every replica runs a version that understands the configured gridset. Enabling it earlier can let
+/// a new replica advertise a matrix set whose subsequent tile request reaches an older replica. The
 /// reserved WebMercatorQuad default is always served and does not need to be listed.
 /// </para>
 /// </remarks>

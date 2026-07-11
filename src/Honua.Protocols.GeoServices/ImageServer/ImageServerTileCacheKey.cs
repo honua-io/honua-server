@@ -35,7 +35,8 @@ internal static class ImageServerTileCacheKey
         RasterFormat rasterFormat,
         int level,
         int row,
-        int col)
+        int col,
+        RasterTileWindow? window = null)
     {
         var rasterKey = string.Join(
             ',',
@@ -55,7 +56,8 @@ internal static class ImageServerTileCacheKey
             mergeStrategy.ToString(),
             timestamp?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             mosaicRule,
-            rasterFormat.ToString()));
+            rasterFormat.ToString(),
+            BuildWindowKey(window)));
 
         // The matrix set and style are also explicit path segments (not only hashed) so cache
         // objects stay human-navigable and structurally isolated per gridset/style.
@@ -82,4 +84,22 @@ internal static class ImageServerTileCacheKey
             RasterFormat.TIFF or RasterFormat.COG => "tif",
             _ => "png"
         };
+
+    private static string BuildWindowKey(RasterTileWindow? window)
+    {
+        if (window is not { } value)
+        {
+            return string.Empty;
+        }
+
+        return string.Join(
+            ',',
+            value.MinX.ToString("R", CultureInfo.InvariantCulture),
+            value.MinY.ToString("R", CultureInfo.InvariantCulture),
+            value.MaxX.ToString("R", CultureInfo.InvariantCulture),
+            value.MaxY.ToString("R", CultureInfo.InvariantCulture),
+            value.Srid.ToString(CultureInfo.InvariantCulture),
+            value.TileWidth.ToString(CultureInfo.InvariantCulture),
+            value.TileHeight.ToString(CultureInfo.InvariantCulture));
+    }
 }

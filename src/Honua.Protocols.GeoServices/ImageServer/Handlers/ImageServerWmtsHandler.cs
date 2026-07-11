@@ -45,8 +45,9 @@ internal sealed class ImageServerWmtsHandler(
 
     // Resolves the operator-enabled tile matrix sets beyond WebMercatorQuad. Each entry is paired
     // with its canonical GridGeometry from the shared registry so capabilities, validation, and
-    // rendering all read from one gridset definition. Unknown or duplicate ids are skipped so a
-    // rolling deployment can reference a gridset before every replica understands it.
+    // rendering all read from one gridset definition. Unknown or duplicate ids are skipped. Operators
+    // enable additional sets only after every replica has upgraded, keeping load-balanced capabilities
+    // and tile requests coherent during a rolling deployment.
     private List<(TileMatrixSetEntry Entry, GridGeometry Geometry)> ResolveEnabledGrids()
     {
         var result = new List<(TileMatrixSetEntry, GridGeometry)>();

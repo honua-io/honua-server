@@ -2,11 +2,17 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer;
+using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -47,7 +53,8 @@ public class ImageServerTileCacheKeyTests
         IReadOnlyList<RasterInfo>? rasters = null,
         int level = 3,
         int row = 2,
-        int col = 1)
+        int col = 1,
+        RasterTileWindow? window = null)
         => ImageServerTileCacheKey.Build(
             storageOptions: null,
             metadataEtag: "etag-1",
@@ -62,7 +69,8 @@ public class ImageServerTileCacheKeyTests
             rasterFormat: format,
             level: level,
             row: row,
-            col: col);
+            col: col,
+            window: window);
 
     [UnitTest]
     public void Build_IsDeterministic_ForIdenticalInputs()
@@ -118,5 +126,55 @@ public class ImageServerTileCacheKeyTests
         Build(level: 3, row: 2, col: 1).Should().NotBe(Build(level: 4, row: 2, col: 1));
         Build(level: 3, row: 2, col: 1).Should().NotBe(Build(level: 3, row: 3, col: 1));
         Build(level: 3, row: 2, col: 1).Should().NotBe(Build(level: 3, row: 2, col: 2));
+    }
+
+    [UnitTest]
+    public void Build_VariesByGridDefinition()
+    {
+        var original = new RasterTileWindow
+        {
+            MinX = -180,
+            MinY = -90,
+            MaxX = 0,
+            MaxY = 90,
+            Srid = 4326,
+            TileWidth = 256,
+            TileHeight = 256
+        };
+        var reconfigured = original with { MinX = -200 };
+
+        Build(tileMatrixSetId: "custom", window: original)
+            .Should().NotBe(Build(tileMatrixSetId: "custom", window: reconfigured));
+    }
+
+    [UnitTest]
+    public void ResolveTenantAuthKey_VariesByAnonymousTenant()
+    {
+        ResolveTenantAuthKey("tenant-a").Should().NotBe(ResolveTenantAuthKey("tenant-b"));
+    }
+
+    [UnitTest]
+    public void ResolveTenantAuthKey_VariesByAuthenticatedPrincipal()
+    {
+        ResolveTenantAuthKey("tenant-a", "user-1")
+            .Should().NotBe(ResolveTenantAuthKey("tenant-a", "user-2"));
+    }
+
+    private static string ResolveTenantAuthKey(string tenantId, string? principalId = null)
+    {
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns(tenantId);
+        var services = new ServiceCollection()
+            .AddSingleton(tenantContext)
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        if (principalId is not null)
+        {
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, principalId)],
+                authenticationType: "test"));
+        }
+
+        return ImageServerTileHandler.ResolveTenantAuthKey(context);
     }
 }

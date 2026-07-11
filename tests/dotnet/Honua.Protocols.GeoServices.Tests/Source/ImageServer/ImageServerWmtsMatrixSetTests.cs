@@ -227,7 +227,7 @@ public class ImageServerWmtsMatrixSetTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET={WorldCrs84Quad}&TILEMATRIX=0&TILEROW=0&TILECOL=0");
 
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("InvalidParameterValue");
             content.Should().Contain("Only TILEMATRIXSET=WebMercatorQuad is supported.");
@@ -249,7 +249,7 @@ public class ImageServerWmtsMatrixSetTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=NotARealGrid&TILEMATRIX=0&TILEROW=0&TILECOL=0");
 
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("InvalidParameterValue");
         }
@@ -271,7 +271,7 @@ public class ImageServerWmtsMatrixSetTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET={WorldCrs84Quad}&TILEMATRIX=0&TILEROW=0&TILECOL=2");
 
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("InvalidParameterValue");
             content.Should().Contain("TILECOL");
@@ -294,7 +294,7 @@ public class ImageServerWmtsMatrixSetTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET={WorldCrs84Quad}&TILEMATRIX=0&TILEROW=1&TILECOL=0");
 
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("InvalidParameterValue");
             content.Should().Contain("TILEROW");

@@ -3,9 +3,11 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Security.Claims;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
@@ -78,8 +80,13 @@ internal sealed class ImageServerTileHandler
 
             // Validate tile coordinates (Web Mercator supports zoom levels 0-28)
             const int maxZoomLevel = 28;
-            if (level < 0 || level > maxZoomLevel || row < 0 || col < 0 ||
-                row >= (1 << level) || col >= (1 << level))
+            if (level < 0 || level > maxZoomLevel)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid tile coordinates");
+            }
+
+            var matrixWidth = 1 << level;
+            if (row < 0 || col < 0 || row >= matrixWidth || col >= matrixWidth)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid tile coordinates");
             }
@@ -325,6 +332,16 @@ internal sealed class ImageServerTileHandler
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
             var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
             var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
+            var window = new RasterTileWindow
+            {
+                MinX = bounds.XMin,
+                MinY = bounds.YMin,
+                MaxX = bounds.XMax,
+                MaxY = bounds.YMax,
+                Srid = grid.Srid,
+                TileWidth = grid.TileWidth,
+                TileHeight = grid.TileHeight
+            };
             var tileCacheKey = ImageServerTileCacheKey.Build(
                 storageOptions,
                 snapshot.Etag,
@@ -339,7 +356,8 @@ internal sealed class ImageServerTileHandler
                 rasterFormat,
                 level,
                 row,
-                col);
+                col,
+                window);
 
             if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
             {
@@ -347,17 +365,6 @@ internal sealed class ImageServerTileHandler
                 scope.SetSuccess(1);
                 return Results.File(cachedTile.Data, cachedTile.ContentType);
             }
-
-            var window = new RasterTileWindow
-            {
-                MinX = bounds.XMin,
-                MinY = bounds.YMin,
-                MaxX = bounds.XMax,
-                MaxY = bounds.YMax,
-                Srid = grid.Srid,
-                TileWidth = grid.TileWidth,
-                TileHeight = grid.TileHeight
-            };
 
             var tileResult = selectedRasters.Length == 1
                 ? await _rasterStore.GetImageTileAsync(
@@ -431,11 +438,27 @@ internal sealed class ImageServerTileHandler
     // cache key partitions by style even though a non-default style cannot currently be requested.
     private const string DefaultStyleId = "default";
 
-    // Derives the tenant/auth discriminator folded into the tile cache key so tiles rendered under
-    // one authenticated identity are never served to another. ImageServer is anonymous by default,
-    // in which case this resolves to the empty string.
-    private static string ResolveTenantAuthKey(HttpContext context)
-        => context.User?.Identity?.IsAuthenticated == true
-            ? context.User.Identity!.Name ?? string.Empty
+    // Derives the tenant/auth discriminator folded into the tile cache key. Tenant context must
+    // vary the key even for anonymous requests because a configured default tenant can still scope
+    // catalog and raster access. The value is hashed by ImageServerTileCacheKey and is never exposed
+    // in the object path.
+    internal static string ResolveTenantAuthKey(HttpContext context)
+    {
+        var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId ?? string.Empty;
+        var principal = context.User;
+        var identity = principal.Identity;
+        var principalId = identity?.IsAuthenticated == true
+            ? principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? principal.FindFirstValue("sub")
+                ?? identity.Name
+                ?? string.Empty
             : string.Empty;
+        var authenticationType = identity?.IsAuthenticated == true
+            ? identity.AuthenticationType ?? string.Empty
+            : string.Empty;
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"tenant:{tenantId.Length}:{tenantId}|auth:{authenticationType.Length}:{authenticationType}|principal:{principalId.Length}:{principalId}");
+    }
 }
