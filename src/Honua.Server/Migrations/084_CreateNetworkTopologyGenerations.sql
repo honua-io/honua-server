@@ -94,6 +94,67 @@ WHERE NOT EXISTS (
       AND existing.state = 'active')
 ON CONFLICT (dataset_id, generation) DO NOTHING;
 
+-- The database owns the registration invariant during rolling upgrades. An old
+-- replica can continue using its pre-084 INSERT statement, but this trigger runs in
+-- that same statement transaction and creates the initial active generation before
+-- the registry row can commit. The new store validates the result before its own
+-- transaction commits instead of assuming every replica runs new application code.
+CREATE OR REPLACE FUNCTION honua.seed_initial_network_topology_generation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    next_generation BIGINT;
+BEGIN
+    SELECT GREATEST(
+        NEW.topology_version::bigint,
+        COALESCE(MAX(existing.generation) + 1, 1))
+    INTO next_generation
+    FROM honua.network_topology_generations AS existing
+    WHERE existing.dataset_id = NEW.id;
+
+    INSERT INTO honua.network_topology_generations (
+        dataset_id,
+        generation,
+        source_revision,
+        state,
+        row_version,
+        edge_table,
+        vertex_table,
+        srid,
+        created_at,
+        updated_at,
+        activated_at)
+    SELECT
+        NEW.id,
+        next_generation,
+        0,
+        'active',
+        1,
+        NEW.edge_table,
+        NEW.vertex_table,
+        NEW.srid,
+        NEW.created_at,
+        NEW.updated_at,
+        now()
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM honua.network_topology_generations AS active
+        WHERE active.dataset_id = NEW.id
+          AND active.state = 'active')
+    ON CONFLICT (dataset_id, generation) DO NOTHING;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS network_datasets_seed_initial_generation
+    ON honua.network_datasets;
+CREATE TRIGGER network_datasets_seed_initial_generation
+    AFTER INSERT ON honua.network_datasets
+    FOR EACH ROW
+    EXECUTE FUNCTION honua.seed_initial_network_topology_generation();
+
 COMMENT ON TABLE honua.network_topology_generations IS
     'Immutable routing topology generation metadata. Non-active generations are never solve targets.';
 COMMENT ON COLUMN honua.network_topology_generations.row_version IS

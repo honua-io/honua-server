@@ -230,6 +230,8 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         await using (var sameNumberNonActive = connection.CreateCommand())
         {
             sameNumberNonActive.CommandText = """
+                ALTER TABLE honua.network_datasets
+                    DISABLE TRIGGER network_datasets_seed_initial_generation;
                 INSERT INTO honua.network_datasets
                     (id, edge_table, vertex_table, srid, topology_version, created_at, updated_at)
                 VALUES
@@ -242,6 +244,8 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
                     ('ridge', 4, 1, 'dirty', 1,
                      'routing.ridge_edges', 'routing.ridge_vertices', 4326,
                      '2026-03-01T00:00:00Z', '2026-03-02T00:00:00Z');
+                ALTER TABLE honua.network_datasets
+                    ENABLE TRIGGER network_datasets_seed_initial_generation;
                 """;
             await sameNumberNonActive.ExecuteNonQueryAsync();
         }
@@ -289,6 +293,35 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             reader.GetInt64(0).Should().Be(5,
                 "backfill must allocate past a colliding non-active generation");
             reader.GetString(1).Should().Be("active");
+        }
+
+        await using (var oldReplicaInsert = connection.CreateCommand())
+        {
+            oldReplicaInsert.CommandText = """
+                INSERT INTO honua.network_datasets
+                    (id, edge_table, vertex_table, srid, topology_version, created_at, updated_at)
+                VALUES
+                    ('old-replica', 'routing.old_edges', 'routing.old_vertices', 4326, 7,
+                     '2026-04-01T00:00:00Z', '2026-04-02T00:00:00Z');
+                """;
+            await oldReplicaInsert.ExecuteNonQueryAsync();
+        }
+
+        await using (var mixedVersionGeneration = connection.CreateCommand())
+        {
+            mixedVersionGeneration.CommandText = """
+                SELECT generation, state, edge_table, vertex_table, COUNT(*) OVER ()
+                FROM honua.network_topology_generations
+                WHERE dataset_id = 'old-replica'
+                """;
+            await using var reader = await mixedVersionGeneration.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(0).Should().Be(7);
+            reader.GetString(1).Should().Be("active");
+            reader.GetString(2).Should().Be("routing.old_edges");
+            reader.GetString(3).Should().Be("routing.old_vertices");
+            reader.GetInt64(4).Should().Be(1,
+                "a pre-084 registry insert must atomically seed exactly one generation");
         }
 
         await using var duplicateActive = connection.CreateCommand();

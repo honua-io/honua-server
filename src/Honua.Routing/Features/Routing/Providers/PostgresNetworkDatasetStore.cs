@@ -92,17 +92,6 @@ internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
             ON CONFLICT (id) DO NOTHING;
             """;
 
-        const string generationSql = """
-            INSERT INTO honua.network_topology_generations
-                (dataset_id, generation, source_revision, state, row_version,
-                 edge_table, vertex_table, srid, created_at, updated_at, activated_at)
-            SELECT
-                id, GREATEST(topology_version::bigint, 1), 0, 'active', 1,
-                edge_table, vertex_table, srid, created_at, updated_at, now()
-            FROM honua.network_datasets
-            WHERE id = @id;
-            """;
-
         await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await session.BeginTransactionAsync(
                 IsolationLevel.ReadCommitted,
@@ -130,14 +119,18 @@ internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
             throw new NetworkDatasetAlreadyExistsException(dataset.Id);
         }
 
-        var generationAffected = await transaction.ExecuteAsync(
-                generationSql,
+        var activeGenerationCount = await transaction.QuerySingleOrDefaultAsync<long>(
+                """
+                SELECT COUNT(*)::bigint
+                FROM honua.network_topology_generations
+                WHERE dataset_id = @id AND state = 'active';
+                """,
                 new Dictionary<string, object?> { ["id"] = dataset.Id },
                 cancellationToken)
             .ConfigureAwait(false);
-        if (generationAffected != 1)
+        if (activeGenerationCount != 1)
         {
-            throw new InvalidOperationException("Network dataset registration did not create an active topology generation.");
+            throw new InvalidOperationException("Network dataset registration does not have exactly one active topology generation.");
         }
 
         var saved = await transaction.QuerySingleOrDefaultAsync(
