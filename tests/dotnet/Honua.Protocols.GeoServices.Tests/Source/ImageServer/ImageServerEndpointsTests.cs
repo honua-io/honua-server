@@ -667,6 +667,74 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}")]
+    [Operation(Operations.Query)]
+    public async Task GetRasterCatalogItem_ExistingRaster_ReturnsFeature()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+            var feature = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
+            feature.GetProperty("attributes").GetProperty("Name").GetString().Should().Be("test-raster");
+            feature.GetProperty("geometry").GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}")]
+    [Operation(Operations.Query)]
+    public async Task GetRasterCatalogItem_ByServiceName_ReturnsFeature()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/100?f=pjson");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var feature = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}")]
+    [Operation(Operations.Query)]
+    public async Task GetRasterCatalogItem_UnknownRaster_ReturnsNotFoundError()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/999?f=json");
+
+            // GeoServices errors use HTTP 200 and carry the status in the Esri error body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/query")]
     [Operation(Operations.Query)]
     public async Task QueryCatalog_Post_FormBody_ReturnsFeatureCollection()

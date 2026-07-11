@@ -29,11 +29,18 @@ public sealed class PostgresAlertDispatchStoreTests(PostgresFixture fixture)
         await ClearAlertTablesAsync();
 
         var eventId = await InsertRuleAndEventAsync();
-        await InsertDispatchAsync(eventId, status: 0, deliveredAt: null);              // pending
+        var oldest = DateTimeOffset.UtcNow.AddMinutes(-10);
+        await InsertDispatchAsync(eventId, status: 0, deliveredAt: null, createdAt: oldest); // pending
         await InsertDispatchAsync(eventId, status: 1, deliveredAt: null);              // processing
         await InsertDispatchAsync(eventId, status: 3, deliveredAt: null);              // failed (retriable)
         await InsertDispatchAsync(eventId, status: 4, deliveredAt: null);              // dead-letter
+        await InsertDispatchAsync(eventId, status: 4, deliveredAt: null, channelType: 3); // email dead-letter
         await InsertDispatchAsync(eventId, status: 2, deliveredAt: DateTimeOffset.UtcNow); // delivered
+        await fixture.ApplyGlobalSeedSqlAsync("""
+            INSERT INTO honua.alert_channel_state (channel_type, is_paused)
+            VALUES (1, true)
+            ON CONFLICT (channel_type) DO UPDATE SET is_paused = EXCLUDED.is_paused;
+            """);
 
         var store = new PostgresAlertDispatchStore(
             new TestConnectionProvider(fixture.DataSource),
@@ -42,7 +49,21 @@ public sealed class PostgresAlertDispatchStoreTests(PostgresFixture fixture)
         var backlog = await store.GetBacklogAsync();
 
         backlog.PendingCount.Should().Be(3, "pending, processing, and retriable-failed rows are backlog");
-        backlog.DeadLetteredCount.Should().Be(1);
+        backlog.RetryingCount.Should().Be(1);
+        backlog.DeadLetteredCount.Should().Be(2);
+        backlog.OldestItemAt.Should().BeCloseTo(oldest, TimeSpan.FromSeconds(1));
+        backlog.Channels.Should().HaveCount(2);
+        backlog.Channels[0].ChannelType.Should().Be(Honua.Core.Features.Alerts.Domain.AlertChannelType.Webhook);
+        backlog.Channels[0].IsPaused.Should().BeTrue();
+        backlog.Channels[0].PendingCount.Should().Be(2);
+        backlog.Channels[0].RetryingCount.Should().Be(1);
+        backlog.Channels[0].DeadLetteredCount.Should().Be(1);
+        backlog.Channels[0].OldestItemAt.Should().BeCloseTo(oldest, TimeSpan.FromSeconds(1));
+        backlog.Channels[1].ChannelType.Should().Be(Honua.Core.Features.Alerts.Domain.AlertChannelType.Email);
+        backlog.Channels[1].DeadLetteredCount.Should().Be(1);
+        backlog.PendingCount.Should().Be(backlog.Channels.Sum(channel => channel.PendingCount + channel.RetryingCount));
+        backlog.RetryingCount.Should().Be(backlog.Channels.Sum(channel => channel.RetryingCount));
+        backlog.DeadLetteredCount.Should().Be(backlog.Channels.Sum(channel => channel.DeadLetteredCount));
     }
 
     [IntegrationTest]
@@ -123,20 +144,27 @@ public sealed class PostgresAlertDispatchStoreTests(PostgresFixture fixture)
         return eventId;
     }
 
-    private async Task InsertDispatchAsync(long eventId, short status, DateTimeOffset? deliveredAt)
+    private async Task InsertDispatchAsync(
+        long eventId,
+        short status,
+        DateTimeOffset? deliveredAt,
+        DateTimeOffset? createdAt = null,
+        short channelType = 1)
     {
         await fixture.ApplyGlobalSeedSqlAsync(
             """
             INSERT INTO honua.alert_dispatch (
-                event_id, channel_type, status, attempts, max_attempts, next_attempt_at, delivered_at)
+                event_id, channel_type, status, attempts, max_attempts, next_attempt_at, delivered_at, created_at)
             VALUES (
-                @event_id, 1, @status, 0, 5, now(), @delivered_at);
+                @event_id, @channel_type, @status, 0, 5, now(), @delivered_at, @created_at);
             """,
             command =>
             {
                 command.Parameters.AddWithValue("event_id", eventId);
                 command.Parameters.AddWithValue("status", status);
+                command.Parameters.AddWithValue("channel_type", channelType);
                 command.Parameters.AddWithValue("delivered_at", (object?)deliveredAt ?? DBNull.Value);
+                command.Parameters.AddWithValue("created_at", (object?)createdAt ?? DateTimeOffset.UtcNow);
             });
     }
 
@@ -213,6 +241,12 @@ public sealed class PostgresAlertDispatchStoreTests(PostgresFixture fixture)
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
+
+            CREATE TABLE IF NOT EXISTS honua.alert_channel_state (
+                channel_type SMALLINT PRIMARY KEY,
+                is_paused BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
             """);
     }
 
@@ -221,6 +255,7 @@ public sealed class PostgresAlertDispatchStoreTests(PostgresFixture fixture)
         await fixture.ApplyGlobalSeedSqlAsync("""
             TRUNCATE TABLE
                 honua.alert_dispatch,
+                honua.alert_channel_state,
                 honua.alert_events,
                 honua.alert_rules
             RESTART IDENTITY CASCADE;

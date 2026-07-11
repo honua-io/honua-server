@@ -229,32 +229,49 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
 
     public async Task<AlertDispatchBacklog> GetBacklogAsync(CancellationToken cancellationToken = default)
     {
-        // Pending backlog = rows awaiting delivery: pending (0), in-flight/claimed (1),
-        // and retriable-failed (3). Dead-lettered (4) rows are counted separately.
-        // The `status <> 2` predicate lets the planner serve the count from the
-        // partial ix_alert_dispatch_active index and skip delivered rows entirely,
-        // so this stays cheap even before retention has purged old delivered rows.
+        // One grouped scan supplies both the per-channel projection and the aggregate
+        // totals folded below. The `status <> 2` predicate lets the planner use the
+        // partial active index and skip delivered rows entirely.
         const string sql = """
             SELECT
-                COUNT(*) FILTER (WHERE status IN (0, 1, 3)) AS pending,
-                COUNT(*) FILTER (WHERE status = 4) AS dead_lettered
-            FROM honua.alert_dispatch
-            WHERE status <> 2
+                d.channel_type,
+                COALESCE(s.is_paused, false) AS is_paused,
+                COUNT(*) FILTER (WHERE d.status IN (0, 1)) AS pending,
+                COUNT(*) FILTER (WHERE d.status = 3) AS retrying,
+                COUNT(*) FILTER (WHERE d.status = 4) AS dead_lettered,
+                MIN(d.created_at) AS oldest_item_at
+            FROM honua.alert_dispatch d
+            LEFT JOIN honua.alert_channel_state s ON s.channel_type = d.channel_type
+            WHERE d.status <> 2
+            GROUP BY d.channel_type, s.is_paused
+            ORDER BY d.channel_type
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        var channels = new List<AlertDispatchChannelBacklog>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            return new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 };
+            channels.Add(new AlertDispatchChannelBacklog
+            {
+                ChannelType = AlertStoreConversions.ToChannelType(reader.GetInt16(0)),
+                IsPaused = reader.GetBoolean(1),
+                PendingCount = reader.GetInt64(2),
+                RetryingCount = reader.GetInt64(3),
+                DeadLetteredCount = reader.GetInt64(4),
+                OldestItemAt = reader.GetFieldValue<DateTimeOffset>(5),
+            });
         }
 
         return new AlertDispatchBacklog
         {
-            PendingCount = reader.IsDBNull(0) ? 0 : reader.GetInt64(0),
-            DeadLetteredCount = reader.IsDBNull(1) ? 0 : reader.GetInt64(1)
+            PendingCount = channels.Sum(static channel => channel.PendingCount + channel.RetryingCount),
+            RetryingCount = channels.Sum(static channel => channel.RetryingCount),
+            DeadLetteredCount = channels.Sum(static channel => channel.DeadLetteredCount),
+            OldestItemAt = channels.Count == 0 ? null : channels.Min(static channel => channel.OldestItemAt),
+            Channels = channels,
         };
     }
 

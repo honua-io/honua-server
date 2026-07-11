@@ -3,6 +3,7 @@
 
 using Honua.Alerts;
 using Honua.ControlPlane;
+using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
@@ -38,6 +39,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     private readonly IOptions<OpsHealthRollupOptions> _rollupOptions;
     private readonly IExecutionJobStore? _jobStore;
     private readonly IOpsHealthRollupStore? _rollupStore;
+    private readonly TimeProvider _timeProvider;
 
     public OpsHealthSnapshotService(
         HealthCheckService healthCheckService,
@@ -46,6 +48,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         IAlertDispatchHealth alertHealth,
         ProductionMetricsCollector metricsCollector,
         IOptions<OpsHealthRollupOptions> rollupOptions,
+        TimeProvider timeProvider,
         IExecutionJobStore? jobStore = null,
         IOpsHealthRollupStore? rollupStore = null)
     {
@@ -55,6 +58,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         _alertHealth = alertHealth;
         _metricsCollector = metricsCollector;
         _rollupOptions = rollupOptions;
+        _timeProvider = timeProvider;
         _jobStore = jobStore;
         _rollupStore = rollupStore;
     }
@@ -235,6 +239,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     private OpsAlertDispatchView BuildAlertDispatchView()
     {
         var backlog = _alertHealth.LastBacklog;
+        var now = _timeProvider.GetUtcNow();
         return new OpsAlertDispatchView
         {
             DispatcherRunning = _alertHealth.IsDispatcherRunning,
@@ -243,6 +248,22 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             LastPollAt = _alertHealth.LastPollAt,
             PendingCount = backlog?.PendingCount,
             DeadLetteredCount = backlog?.DeadLetteredCount,
+            RetryingCount = backlog?.RetryingCount,
+            OldestItemAgeSeconds = backlog?.OldestItemAt is { } oldestItemAt
+                ? Math.Max(0, (long)(now - oldestItemAt).TotalSeconds)
+                : null,
+            Channels = backlog?.Channels
+                .OrderBy(static channel => channel.ChannelType)
+                .Select(channel => new OpsAlertDispatchChannelView
+                {
+                    Channel = channel.ChannelType.ToExternalName(),
+                    Paused = channel.IsPaused,
+                    PendingCount = channel.PendingCount,
+                    RetryingCount = channel.RetryingCount,
+                    DeadLetteredCount = channel.DeadLetteredCount,
+                    OldestItemAgeSeconds = Math.Max(0, (long)(now - channel.OldestItemAt).TotalSeconds),
+                })
+                .ToList() ?? [],
         };
     }
 
