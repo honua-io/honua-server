@@ -187,6 +187,17 @@ are now delivered:
   modes return a GeoServices 400 — Honua does not fabricate a mode-specific solve
   it cannot honour.
 
+**Update (post-MVP, #1861 / #1864 / #1874 / #1882 / #2652).** The remaining
+operation-level deferrals are now delivered: ClosestFacility uses the canonical
+provider contract and real pgRouting impedance, OD cost matrix returns bounded
+cost-only cells, LocationAllocation supports minimize-impedance and
+maximize-coverage, and the addressable network-dataset registry has
+admin-authorized mapping/metadata CRUD. Route solve accepts both GET query
+parameters and POST form parameters through the same handler. The remaining
+subfeature deferrals are OD line geometry, additional allocation objectives,
+non-driving cost weights, and edge/vertex/turn-restriction editing with topology
+rebuild; these are tracked by #2653-#2656.
+
 **Input bounds (DoS guard).** The NAServer adapter caps input counts to bound
 serial DB fan-out (each stop is a Dijkstra leg; each facility×break is a
 driving-distance query). The caps are configurable via the `Routing` section
