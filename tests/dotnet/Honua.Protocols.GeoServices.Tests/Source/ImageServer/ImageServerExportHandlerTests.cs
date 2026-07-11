@@ -9,6 +9,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -30,6 +31,7 @@ public class ImageServerExportHandlerTests
 {
     private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
+    private readonly IZarrRasterSliceReader _zarrRasterSliceReader = Substitute.For<IZarrRasterSliceReader>();
     private readonly ITemporaryFileService _temporaryFileService = Substitute.For<ITemporaryFileService>();
     private readonly ImageServerExportHandler _handler;
 
@@ -37,7 +39,7 @@ public class ImageServerExportHandlerTests
     {
         _handler = new ImageServerExportHandler(
             _graphProvider,
-            _rasterStore,
+            new ImageServerExportBackend(_rasterStore, _zarrRasterSliceReader),
             _temporaryFileService,
             NullLogger<ImageServerExportHandler>.Instance);
     }
@@ -651,6 +653,58 @@ public class ImageServerExportHandlerTests
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<ClaimsPrincipal?>(),
                 Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithMultidimensionalDefinition_UsesCanonicalSliceReader()
+    {
+        var expected = CreateTestRasterResult() with
+        {
+            Width = 4,
+            Height = 3,
+            Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+        };
+        _zarrRasterSliceReader.ReadAsync(
+                1,
+                Arg.Any<ZarrRasterSliceReadRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ZarrRasterSliceReadResult(
+                ZarrRasterSliceReadStatus.Success,
+                expected,
+                "temperature",
+                1,
+                null));
+        var context = CreateImageServerContext();
+        var request = new ExportImageRequest
+        {
+            Bbox = "-180,-90,180,90",
+            BboxSr = "4326",
+            ImageSr = "4326",
+            Size = "4,3",
+            Format = "png",
+            MultidimensionalDefinition =
+                "[{\"variableName\":\"temperature\",\"dimensionName\":\"elevation\",\"values\":[333.3333]}]",
+            F = "image",
+        };
+
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.ContentType.Should().Be("image/png");
+        context.Response.Body.Position = 0;
+        using var reader = new BinaryReader(context.Response.Body);
+        reader.ReadBytes((int)context.Response.Body.Length).Should().Equal(expected.Data);
+        await _zarrRasterSliceReader.Received(1).ReadAsync(
+            1,
+            Arg.Is<ZarrRasterSliceReadRequest>(slice =>
+                slice.OutputWidth == 4 &&
+                slice.OutputHeight == 3 &&
+                slice.InputSrid == 4326 &&
+                slice.Selections.Count == 1),
+            Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceiveWithAnyArgs().QueryRastersAsync(default, default, default);
     }
 
     [UnitTest]

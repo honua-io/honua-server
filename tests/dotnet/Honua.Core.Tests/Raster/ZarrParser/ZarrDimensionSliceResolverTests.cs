@@ -93,6 +93,32 @@ public class ZarrDimensionSliceResolverTests
     }
 
     [Fact]
+    public void TimeCoordinateOutsideDateTimeRange_IsRejectedWithoutThrowing()
+    {
+        var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var metadata = new ZarrStoreMetadata(
+            ZarrFormatVersion.V2,
+            4326,
+            new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+            [Array3D("time")],
+            "temperature",
+            "x",
+            "y",
+            "time",
+            new TemporalExtent(start, start.AddDays(1), 2));
+
+        var ok = ZarrDimensionSliceResolver.TryResolveSliceIndex(
+            metadata,
+            "time",
+            double.MaxValue,
+            out _,
+            out var error);
+
+        ok.Should().BeFalse();
+        error.Should().Contain("supported instant range");
+    }
+
+    [Fact]
     public void TryFindArrayDimension_LocatesNamedDimension()
     {
         ZarrDimensionSliceResolver.TryFindArrayDimension(Array3D("elevation"), "elevation", out var dim).Should().BeTrue();
