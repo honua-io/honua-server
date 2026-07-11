@@ -70,6 +70,9 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
         var requestedOutputSrid = request.Crs;
         var bboxSrid = request.BoundingBoxCrs ?? requestedOutputSrid;
+        var effectiveOutputSrid = layerIds.Length > 1
+            ? requestedOutputSrid ?? bboxSrid
+            : requestedOutputSrid;
 
         // Build raster expression with optional bbox clip
         var rasterExpr = "raster";
@@ -100,10 +103,10 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             extraParams.Add(("@bboxMaxY", request.BoundingBox[3]));
         }
 
-        if (requestedOutputSrid.HasValue && requestedOutputSrid.Value > 0)
+        if (effectiveOutputSrid.HasValue && effectiveOutputSrid.Value > 0)
         {
             rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
-            extraParams.Add(("@outputSrid", requestedOutputSrid.Value));
+            extraParams.Add(("@outputSrid", effectiveOutputSrid.Value));
         }
 
         var timeCte = string.Empty;
@@ -180,6 +183,33 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             ? $"ARRAY[{string.Join(", ", gdalOptions.Select((_, i) => $"@gdalOpt{i}"))}]"
             : "NULL";
 
+        // Dataset maps may combine coverages with different native SRIDs, pixel sizes,
+        // origins, or skews. PostGIS ST_Union requires every input raster to share one
+        // alignment and otherwise raises rt_raster_from_two_rasters (honua-server#2487).
+        // Reproject above, then borrow the first raster's grid for every remaining input
+        // before the union. Collection renders avoid this extra resampling step.
+        var alignmentCte = layerIds.Length > 1
+            ? """
+              reference_raster AS (
+                  SELECT rast
+                  FROM windowed
+                  WHERE rast IS NOT NULL
+                  ORDER BY effective_acquisition ASC, created_at ASC, id ASC
+                  LIMIT 1
+              ),
+              aligned AS (
+                  SELECT ST_Resample(windowed.rast, reference_raster.rast, 'Bilinear') AS rast,
+                         windowed.effective_acquisition,
+                         windowed.created_at,
+                         windowed.id
+                  FROM windowed
+                  CROSS JOIN reference_raster
+                  WHERE windowed.rast IS NOT NULL
+              ),
+              """
+            : string.Empty;
+        var unionSource = layerIds.Length > 1 ? "aligned" : sourceTimeFilter;
+
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH source AS (
@@ -191,9 +221,10 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                 WHERE layer_id IN ({string.Join(", ", layerParams)})
             ),
             {timeCte},
+            {alignmentCte}
             merged AS (
                 SELECT ST_Union(rast, 'LAST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC) AS rast
-                FROM {sourceTimeFilter}
+                FROM {unionSource}
                 WHERE rast IS NOT NULL
             ),
             resized AS (
@@ -228,14 +259,14 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                return CreateEmptyResult(request, contentType, requestedOutputSrid);
+                return CreateEmptyResult(request, contentType, effectiveOutputSrid);
             }
 
             var dataOrd = reader.GetOrdinal("data");
             var sridOrd = reader.GetOrdinal("srid");
             var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
             var srid = reader.IsDBNull(sridOrd)
-                ? requestedOutputSrid
+                ? effectiveOutputSrid
                 : reader.GetInt32(sridOrd);
 
             return new RasterResult
@@ -250,7 +281,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         catch (PostgresException ex) when (IsRasterStorageUnavailable(ex))
         {
             PostgresRasterLog.RasterStorageUnavailable(_logger, ex, _rasterDataTable);
-            return CreateEmptyResult(request, contentType, requestedOutputSrid);
+            return CreateEmptyResult(request, contentType, effectiveOutputSrid);
         }
     }
 
