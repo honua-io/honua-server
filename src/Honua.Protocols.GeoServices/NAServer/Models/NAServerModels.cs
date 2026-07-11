@@ -97,9 +97,9 @@ internal sealed class NAServerCfRouteAttributes
 }
 
 /// <summary>
-/// NAServer OD cost matrix solve response. Carries the origin→destination lines
-/// (attribute-only cost cells) mirroring the ArcGIS <c>solveODCostMatrix</c>
-/// envelope's <c>odLines</c>.
+/// NAServer OD cost matrix solve response. Carries origin→destination cost cells
+/// with optional straight-line geometry, mirroring the ArcGIS
+/// <c>solveODCostMatrix</c> envelope's <c>odLines</c>.
 /// </summary>
 internal sealed class NAServerOdCostMatrixResponse
 {
@@ -111,14 +111,17 @@ internal sealed class NAServerOdCostMatrixResponse
 }
 
 /// <summary>
-/// Feature set carrying OD cost matrix lines (attribute-only; no geometry in the
-/// cost-only output).
+/// Feature set carrying OD cost matrix lines. Geometry metadata is omitted for the
+/// cost-only output and populated for straight-line output.
 /// </summary>
 internal sealed class NAServerOdLinesFeatureSet
 {
     /// <summary>Esri geometry type (none for cost-only output).</summary>
     [JsonPropertyName("geometryType")]
     public string? GeometryType { get; init; }
+
+    /// <summary>Output spatial reference when line geometry is materialized.</summary>
+    public NAServerSpatialReference? SpatialReference { get; init; }
 
     /// <summary>OD line features.</summary>
     public NAServerOdLineFeature[] Features { get; init; } = [];
@@ -129,6 +132,9 @@ internal sealed class NAServerOdLinesFeatureSet
 /// </summary>
 internal sealed class NAServerOdLineFeature
 {
+    /// <summary>Straight-line geometry when requested; omitted for cost-only output.</summary>
+    public NAServerPolylineGeometry? Geometry { get; init; }
+
     /// <summary>OD line attributes.</summary>
     public NAServerOdLineAttributes Attributes { get; init; } = new();
 }

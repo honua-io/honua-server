@@ -32,6 +32,13 @@ public sealed record RoutingProviderCapabilities(
     bool SupportsLocationAllocation = false)
 {
     /// <summary>
+    /// Whether OD cost-matrix solves can materialize straight-line geometry in the
+    /// requested output SRID. Providers that only compute impedance cells leave
+    /// this false so adapters reject geometry requests instead of fabricating them.
+    /// </summary>
+    public bool SupportsOdStraightLines { get; init; }
+
+    /// <summary>
     /// Service-area travel directions the provider honors. An empty set means the
     /// provider does not differentiate travel direction.
     /// </summary>
