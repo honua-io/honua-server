@@ -42,11 +42,17 @@ public sealed class RasterItemInfoResponse
     [JsonPropertyName("pixelType")]
     public required string PixelType { get; init; }
 
-    /// <summary>First available pyramid level; one means the source has no overview below its native pixels.</summary>
+    /// <summary>
+    /// First available pyramid level. Honua currently advertises only native-resolution
+    /// item pixels, represented by level zero.
+    /// </summary>
     [JsonPropertyName("firstPyramidLevel")]
-    public int FirstPyramidLevel { get; init; } = 1;
+    public int FirstPyramidLevel { get; init; }
 
-    /// <summary>Maximum available pyramid level; zero means no stored pyramids are advertised.</summary>
-    [JsonPropertyName("maximumPyramidLevel")]
-    public int MaximumPyramidLevel { get; init; }
+    /// <summary>
+    /// Maximum available pyramid level. A zero maximum paired with a zero first level
+    /// means no additional overview pyramid levels are advertised.
+    /// </summary>
+    [JsonPropertyName("maxPyramidLevel")]
+    public int MaxPyramidLevel { get; init; }
 }

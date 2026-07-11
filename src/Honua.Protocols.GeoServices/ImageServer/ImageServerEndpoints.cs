@@ -183,6 +183,7 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Get Raster Item Image")
             .WithName("GetImageServerRasterItemImage")
             .WithSummary("Render one raster catalog item")
+            .Produces<ExportImageResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(200, contentType: "image/png")
             .Produces(400)
             .Produces(404);
@@ -710,6 +711,7 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Get Raster Item Image by Service")
             .WithName("GetImageServerRasterItemImageByService")
             .WithSummary("Render one raster catalog item")
+            .Produces<ExportImageResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(200, contentType: "image/png")
             .Produces(400)
             .Produces(404);
@@ -3109,7 +3111,7 @@ internal static class ImageServerEndpoints
             BandIds = request.BandIds,
             MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
             RenderingRule = request.RenderingRule,
-            F = InlineImageFormat,
+            F = request.F,
         };
     }
 

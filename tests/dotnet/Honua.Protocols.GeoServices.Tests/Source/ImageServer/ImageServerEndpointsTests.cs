@@ -184,6 +184,7 @@ public class ImageServerEndpointsTests
         // Returned in deliberately unsorted order so orderByFields has work to do.
         var rasters = new[] { Build(200, "b"), Build(100, "a"), Build(300, "c") };
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(rasters);
+        store.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(rasters);
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>());
         return store;
@@ -740,12 +741,12 @@ public class ImageServerEndpointsTests
     [Operation(Operations.Export)]
     public async Task GetRasterItemImage_ExistingRaster_ReturnsSelectedRasterPixels()
     {
-        var store = CreateRasterStoreSubstitute();
-        long? selectedRasterId = null;
+        var store = CreateMultiRasterStoreSubstitute();
+        var selectedRasterIds = new List<long>();
         store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                selectedRasterId = call.ArgAt<long>(1);
+                selectedRasterIds.Add(call.ArgAt<long>(1));
                 return new RasterResult
                 {
                     Data = [0x89, 0x50, 0x4E, 0x47],
@@ -760,11 +761,26 @@ public class ImageServerEndpointsTests
         try
         {
             var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/100/image?format=png");
+                $"/rest/services/{TestLayerId}/ImageServer/200/image?format=png&f=image");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-            selectedRasterId.Should().Be(100);
+
+            foreach (var responseFormat in new string?[] { null, "json", "pjson" })
+            {
+                var formatQuery = responseFormat is null ? string.Empty : $"&f={responseFormat}";
+                var jsonResponse = await fixture.Client.GetAsync(
+                    $"/rest/services/{TestLayerId}/ImageServer/200/image?format=png{formatQuery}");
+
+                jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+                jsonResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+                var envelope = JsonDocument.Parse(await jsonResponse.Content.ReadAsStringAsync()).RootElement;
+                envelope.GetProperty("href").GetString().Should().NotBeNullOrWhiteSpace();
+                envelope.GetProperty("width").GetInt32().Should().Be(256);
+                envelope.GetProperty("height").GetInt32().Should().Be(256);
+            }
+
+            selectedRasterIds.Should().Equal(200, 200, 200, 200);
         }
         finally
         {
@@ -786,10 +802,25 @@ public class ImageServerEndpointsTests
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            info.EnumerateObject().Select(static property => property.Name).Should().BeEquivalentTo([
+                "origin",
+                "blockWidth",
+                "blockHeight",
+                "pixelSizeX",
+                "pixelSizeY",
+                "extent",
+                "bandCount",
+                "pixelType",
+                "firstPyramidLevel",
+                "maxPyramidLevel",
+            ]);
             info.GetProperty("blockWidth").GetInt32().Should().Be(256);
             info.GetProperty("bandCount").GetInt32().Should().Be(1);
             info.GetProperty("pixelType").GetString().Should().Be("U8");
             info.GetProperty("extent").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+            info.GetProperty("firstPyramidLevel").GetInt32().Should().Be(0);
+            info.GetProperty("maxPyramidLevel").GetInt32().Should().Be(0);
+            info.TryGetProperty("maximumPyramidLevel", out _).Should().BeFalse();
         }
         finally
         {
