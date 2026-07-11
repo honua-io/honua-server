@@ -72,6 +72,17 @@ attribution and advisory semantics. The deterministic contract fixture is:
 scripts/ci/validate-server-test-shard-cache.sh
 ```
 
+Hosted proof [run 29167891150](https://github.com/honua-io/honua-server/actions/runs/29167891150)
+used three independent jobs over the 46.4 MiB geoprocessing CLI project cache.
+Attempt 1 built all three shards in parallel; the sole writer completed in
+145.3 seconds versus 144.9 seconds for its non-writer sibling (0.27% delta).
+Two consumers then failed deliberately. Failed-only attempt 2 left the writer's
+original timestamps unchanged: the exact-hit consumer verified/unpacked the
+cache, skipped build, and completed in 51.1 seconds (64.7% faster than its cold
+attempt; 1.8 second transfer, 1.0 second integrity check, 0.8 second unpack).
+The forced-miss consumer rebuilt successfully in 148.0 seconds and saved its
+new exact key. The run completed successfully on attempt 2.
+
 ## Baseline evidence
 
 Measured on commit `b9ef5d78858e4cc0a42c7f835dac4f663b6b3209` with .NET SDK
