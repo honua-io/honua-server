@@ -202,5 +202,4 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
             """;
         await command.ExecuteNonQueryAsync();
     }
-
 }
