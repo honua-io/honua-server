@@ -3080,12 +3080,13 @@ internal static class ImageServerEndpoints
             PixelType = GetString(values, "pixelType"),
             NoData = GetString(values, "noData"),
             NoDataInterpretation = GetString(values, "noDataInterpretation") ?? "esriNoDataMatchAny",
-            Interpolation = GetString(values, "interpolation") ?? "RSP_BilinearInterpolation",
+            Interpolation = GetString(values, "interpolation"),
             Compression = GetString(values, "compression"),
             CompressionQuality = TryGetInt(values, "compressionQuality"),
             BandIds = GetString(values, "bandIds"),
             MosaicRule = GetString(values, "mosaicRule"),
             RenderingRule = GetString(values, "renderingRule"),
+            MultidimensionalDefinition = GetString(values, "multidimensionalDefinition"),
             Time = GetString(values, "time"),
             F = GetString(values, "f") ?? "json"
         };
