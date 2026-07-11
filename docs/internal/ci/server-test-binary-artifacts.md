@@ -46,6 +46,32 @@ The fast fixture used by CI router validation is:
 scripts/ci/validate-server-test-binary-artifacts.sh
 ```
 
+## Shard-local failed-rerun cache
+
+Production `Server Tests (<shard>)` jobs keep their independent attempt-1
+restore/build path. For each selected project, the lexicographically first
+selected shard is the only attempt-1 cache writer; siblings still build and test
+independently but do not package duplicate project payloads. The writer packages
+and saves its exact project payload after build and before tests, so a test
+failure cannot prevent reuse.
+
+On workflow attempts after the first, a failed shard requests exactly one cache
+key containing the full commit SHA, resolved .NET SDK, archive contract version,
+project identity, runner OS, and artifact-registry digest. There are no prefix
+fallback keys. A valid hit is verified and unpacked before the unchanged
+`--no-build --no-restore` shard test command. A miss or rejected/expired payload
+cleans partial test-project output and safely executes the normal restore/build
+path. A rebuilding rerun may save the exact key for a subsequent attempt.
+
+Every job reports the hit/miss/rejection reason plus transfer, integrity,
+unpack, package, and save timings in its step summary. Cache save contention or
+service failure is non-gating; test/build failures keep their existing
+attribution and advisory semantics. The deterministic contract fixture is:
+
+```bash
+scripts/ci/validate-server-test-shard-cache.sh
+```
+
 ## Baseline evidence
 
 Measured on commit `b9ef5d78858e4cc0a42c7f835dac4f663b6b3209` with .NET SDK
