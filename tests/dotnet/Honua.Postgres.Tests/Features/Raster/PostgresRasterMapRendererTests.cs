@@ -159,6 +159,57 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task RenderDatasetMapAsync_WithMisalignedRasterLayers_ReturnsRenderedMap()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterMapRendererTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            await InsertRasterAsync(
+                schemaName,
+                "aligned-layer",
+                DateTimeOffset.Parse("2024-03-01T00:00:00Z", CultureInfo.InvariantCulture),
+                11,
+                layerId: LayerId,
+                upperLeftX: 0,
+                upperLeftY: 1);
+            await InsertRasterAsync(
+                schemaName,
+                "offset-layer",
+                DateTimeOffset.Parse("2024-03-01T00:00:00Z", CultureInfo.InvariantCulture),
+                22,
+                layerId: LayerId + 1,
+                upperLeftX: 0.25,
+                upperLeftY: 1);
+
+            var renderer = new PostgresRasterMapRenderer(
+                new FixtureConnectionProvider(fixture.DataSource),
+                NullLogger<PostgresRasterMapRenderer>.Instance,
+                schemaName);
+
+            var result = await renderer.RenderDatasetMapAsync(
+                [LayerId, LayerId + 1],
+                new MapRenderRequest
+                {
+                    BoundingBox = [0d, 0d, 1.25d, 1d],
+                    BoundingBoxCrs = 4326,
+                    Crs = 4326,
+                    Width = 64,
+                    Height = 64,
+                    Format = RasterFormat.PNG
+                });
+
+            result.Data.Should().NotBeEmpty(
+                "dataset maps must normalize heterogeneous source grids before mosaicking (#2487)");
+            result.ContentType.Should().Be("image/png");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private async Task CreateRasterTableAsync(string schemaName)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
@@ -181,6 +232,7 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
         string name,
         DateTimeOffset acquisitionDate,
         int value,
+        int layerId = LayerId,
         double upperLeftX = 0,
         double upperLeftY = 1)
     {
@@ -199,7 +251,7 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
                    @acquisitionDate,
                    @createdAt;
             """;
-        command.Parameters.AddWithValue("layerId", LayerId);
+        command.Parameters.AddWithValue("layerId", layerId);
         command.Parameters.AddWithValue("name", name);
         command.Parameters.AddWithValue("value", value);
         command.Parameters.AddWithValue("upperLeftX", upperLeftX);
