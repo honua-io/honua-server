@@ -58,7 +58,10 @@ The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches
    - `honua://jobs/{jobId}/report` — a structured analysis report for the same job
    - `honua://workspaces/{workspaceId}` — workspace lifecycle for job outputs
 
-   Additional published-service/deployment/package resources exist but are opt-in surfaces that hosts enable explicitly; they are not advertised by a default deployment.
+   Postgres-backed deployments also advertise the durable promotion catalog:
+   `honua://published-services`, `honua://deployments`, `honua://map-packages`, and
+   `honua://app-packages` (plus their item resources). Storeless or non-Postgres
+   hosts omit these resources unless they register canonical durable stores.
 
 6. For operational observability, use the read-only ops tools:
 
