@@ -2131,7 +2131,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var dynCommand = connection.CreateCommand();
         dynCommand.CommandText = $"""
-            {BuildTileWindowCte(window)}
+            WITH {BuildTileWindowCte(window)}
             SELECT ST_AsGDALRaster(
                 {resampleExpr},
                 '{effectiveTileFormat}'{tileCreationOptions}
