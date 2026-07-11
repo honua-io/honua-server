@@ -13,6 +13,9 @@
 # partition must appear exactly once with exactly one of `tool`, `resource`, or `human-only`.
 # `human-only` is reserved for surfaces that must remain human trust controls, such as autonomy
 # graduation/kill-switch state, approval, rejection, staged submit, and promotion.
+# `honua_supported_operation_kinds` is an MCP-native read companion for every
+# `honua_propose_operation` mapping below; it projects the live executor catalog
+# and has no distinct REST mutation route to replace.
 routes:
   "GET /api/v1/operate/status":
     tool: honua_ops_health

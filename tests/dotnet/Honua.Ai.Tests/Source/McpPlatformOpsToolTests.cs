@@ -62,6 +62,25 @@ public sealed class McpPlatformOpsToolTests
     }
 
     [UnitTest]
+    public async Task SupportedOperationKindsTool_Invoke_ReturnsLiveReaderPayload()
+    {
+        var reader = new FakePlatformOpsReader();
+        var context = BuildContext(reader);
+        var tool = new SupportedOperationKindsTool(NullLogger<SupportedOperationKindsTool>.Instance);
+
+        var result = await tool.InvokeAsync(context, Json("{}"), CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("supportedKinds")
+            .EnumerateArray()
+            .Select(element => element.GetString())
+            .Should()
+            .Equal("AdminConfigChange", "Deploy");
+        reader.SupportedOperationKindsCalls.Should().Be(1);
+        reader.LastPrincipal.Should().BeSameAs(context.User);
+    }
+
+    [UnitTest]
     public async Task ProposeRollbackTool_Invoke_PassesArgumentsAndReturnsProposal()
     {
         var reader = new FakePlatformOpsReader();
@@ -113,6 +132,8 @@ public sealed class McpPlatformOpsToolTests
     {
         public int PlatformReleaseStatusCalls { get; private set; }
 
+        public int SupportedOperationKindsCalls { get; private set; }
+
         public ClaimsPrincipal? LastPrincipal { get; private set; }
 
         public McpDeployOperationsArgument? DeployOperationsArgument { get; private set; }
@@ -136,6 +157,18 @@ public sealed class McpPlatformOpsToolTests
             LastPrincipal = principal;
             DeployOperationsArgument = argument;
             return Task.FromResult(Json("""{"items":[],"page":1,"pageSize":50,"totalCount":0,"hasMore":false}"""));
+        }
+
+        public Task<McpSupportedOperationKindsOutput> GetSupportedOperationKindsAsync(
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken)
+        {
+            LastPrincipal = principal;
+            SupportedOperationKindsCalls++;
+            return Task.FromResult(new McpSupportedOperationKindsOutput
+            {
+                SupportedKinds = ["AdminConfigChange", "Deploy"]
+            });
         }
 
         public Task<McpProposeOperationOutput> ProposeRollbackAsync(

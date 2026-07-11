@@ -161,6 +161,7 @@ public sealed class McpServiceCollectionExtensionsTests
             {
                 typeof(PlatformReleaseStatusTool),
                 typeof(DeployOperationsTool),
+                typeof(SupportedOperationKindsTool),
                 typeof(ProposeRollbackTool)
             }, "platform-ops tools must only be advertised when the server reader is wired");
     }
@@ -178,6 +179,7 @@ public sealed class McpServiceCollectionExtensionsTests
             {
                 typeof(PlatformReleaseStatusTool),
                 typeof(DeployOperationsTool),
+                typeof(SupportedOperationKindsTool),
                 typeof(ProposeRollbackTool)
             }, "the full server composition registers the MCP platform-ops reader before the operator surface");
     }
