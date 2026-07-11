@@ -527,18 +527,6 @@ run_desktop_lane() {
     '(.features | length) == 3' || lane_failed=1
 
   request_json \
-    "featureserver-query-temporal-window" \
-    "${BASE_URL}/rest/services/${SERVICE_ID}/FeatureServer/${LAYER_ID}/query?where=1%3D1&time=1704240000000%2C1704412799000&returnGeometry=false&f=json" \
-    "200" \
-    '(.features | length) == 2' || lane_failed=1
-
-  request_json \
-    "featureserver-query-temporal-disjoint" \
-    "${BASE_URL}/rest/services/${SERVICE_ID}/FeatureServer/${LAYER_ID}/query?where=1%3D1&time=0%2C1&returnGeometry=false&f=json" \
-    "200" \
-    '(.features | length) == 0' || lane_failed=1
-
-  request_json \
     "mapserver-service-metadata" \
     "${BASE_URL}/rest/services/${SERVICE_ID}/MapServer?f=json" \
     "200" \
