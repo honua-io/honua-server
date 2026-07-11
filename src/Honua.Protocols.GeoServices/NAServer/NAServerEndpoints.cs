@@ -134,7 +134,8 @@ internal static class NAServerEndpoints
         // Capability gate: read from the SAME provider instance we solve with so the
         // guard reflects the engine that would run. If route solves are not advertised,
         // emit the standard Esri 400 error rather than attempting the solve.
-        if (!routing.Capabilities.SupportsRoute)
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        if (!capabilities.SupportsRoute)
         {
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(
@@ -151,7 +152,7 @@ internal static class NAServerEndpoints
             var includeDirections = ReadBool(parameters, "returnDirections", defaultValue: false);
 
             var capabilityError = ValidateProviderCapabilities(
-                context, routing, request.Barriers, request.TravelMode);
+                context, capabilities, request.Barriers, request.TravelMode);
             if (capabilityError is not null)
             {
                 return capabilityError;
@@ -196,7 +197,8 @@ internal static class NAServerEndpoints
 
         // Capability gate: read from the SAME provider instance we solve with. If
         // service-area solves are not advertised, emit the standard Esri 400 error.
-        if (!routing.Capabilities.SupportsServiceArea)
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        if (!capabilities.SupportsServiceArea)
         {
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(
@@ -213,7 +215,7 @@ internal static class NAServerEndpoints
             // Validate the requested travel direction against the provider's advertised
             // directions. The direction was parsed by BuildServiceAreaSolveRequest above,
             // so this gates the same value the provider would solve with.
-            if (!routing.Capabilities.SupportedTravelDirections.Contains(request.TravelDirection))
+            if (!capabilities.SupportedTravelDirections.Contains(request.TravelDirection))
             {
                 return SetSpanErrorAndReturn(
                     StandardErrorHelpers.CreateBadRequest(
@@ -223,7 +225,7 @@ internal static class NAServerEndpoints
             }
 
             var capabilityError = ValidateProviderCapabilities(
-                context, routing, request.Barriers, request.TravelMode);
+                context, capabilities, request.Barriers, request.TravelMode);
             if (capabilityError is not null)
             {
                 return capabilityError;
@@ -260,12 +262,10 @@ internal static class NAServerEndpoints
     /// </summary>
     private static IResult? ValidateProviderCapabilities(
         HttpContext context,
-        IRoutingProvider routing,
+        RoutingProviderCapabilities capabilities,
         IReadOnlyList<RouteBarrier> barriers,
         string? travelMode)
     {
-        var capabilities = routing.Capabilities;
-
         // Barriers: every requested barrier kind must be advertised. If any kind is
         // unsupported (or barriers are supplied to a provider that supports none),
         // reject rather than dropping the barrier and returning an unsafe solve.
@@ -352,7 +352,8 @@ internal static class NAServerEndpoints
             return formatError;
         }
 
-        if (!routing.Capabilities.SupportsClosestFacility)
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        if (!capabilities.SupportsClosestFacility)
         {
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(
@@ -368,7 +369,7 @@ internal static class NAServerEndpoints
             var includeDirections = ReadBool(parameters, "returnDirections", defaultValue: false);
 
             var capabilityError = ValidateProviderCapabilities(
-                context, routing, request.Barriers, request.TravelMode);
+                context, capabilities, request.Barriers, request.TravelMode);
             if (capabilityError is not null)
             {
                 return capabilityError;
@@ -410,7 +411,8 @@ internal static class NAServerEndpoints
             return formatError;
         }
 
-        if (!routing.Capabilities.SupportsOdCostMatrix)
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        if (!capabilities.SupportsOdCostMatrix)
         {
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(
@@ -426,7 +428,7 @@ internal static class NAServerEndpoints
             Activity.Current?.SetTag("honua.routing.od_output_type", request.OutputType.ToString());
 
             if (request.OutputType == OdLineOutputType.StraightLines &&
-                !routing.Capabilities.SupportsOdStraightLines)
+                !capabilities.SupportsOdStraightLines)
             {
                 return SetSpanErrorAndReturn(
                     StandardErrorHelpers.CreateBadRequest(
@@ -437,7 +439,7 @@ internal static class NAServerEndpoints
             }
 
             var capabilityError = ValidateProviderCapabilities(
-                context, routing, request.Barriers, request.TravelMode);
+                context, capabilities, request.Barriers, request.TravelMode);
             if (capabilityError is not null)
             {
                 return capabilityError;
@@ -479,7 +481,8 @@ internal static class NAServerEndpoints
             return formatError;
         }
 
-        if (!routing.Capabilities.SupportsLocationAllocation)
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        if (!capabilities.SupportsLocationAllocation)
         {
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(
@@ -494,7 +497,7 @@ internal static class NAServerEndpoints
             var request = NAServerParameterTranslation.BuildLocationAllocationSolveRequest(parameters, caps);
 
             // Gate the requested problem type against the provider's advertised set.
-            if (!routing.Capabilities.SupportedLocationAllocationProblemTypes.Contains(request.ProblemType))
+            if (!capabilities.SupportedLocationAllocationProblemTypes.Contains(request.ProblemType))
             {
                 return SetSpanErrorAndReturn(
                     StandardErrorHelpers.CreateBadRequest(
@@ -504,7 +507,7 @@ internal static class NAServerEndpoints
             }
 
             var capabilityError = ValidateProviderCapabilities(
-                context, routing, request.Barriers, request.TravelMode);
+                context, capabilities, request.Barriers, request.TravelMode);
             if (capabilityError is not null)
             {
                 return capabilityError;

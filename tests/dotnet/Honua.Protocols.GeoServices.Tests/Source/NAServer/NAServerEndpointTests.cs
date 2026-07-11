@@ -406,6 +406,33 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     }
 
     [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_ProfileBackedTravelModes_ReturnDistinctCosts()
+    {
+        async Task<double> SolveAsync(string mode)
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("stops", "-157.86,21.30;-157.80,21.40"),
+                new KeyValuePair<string, string>("travelMode", mode),
+            ]);
+            var response = await _fixture.Client.PostAsync(
+                "/rest/services/Routing/NAServer/Route/solve", payload);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return document.RootElement.GetProperty("routes").GetProperty("features")[0]
+                .GetProperty("attributes").GetProperty("Total_TravelTime").GetDouble();
+        }
+
+        var driving = await SolveAsync("driving");
+        var walking = await SolveAsync("walking");
+
+        walking.Should().BeApproximately(driving * 2, 1e-9);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ServiceArea)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
     public async Task ServiceArea_WithUnsupportedTravelMode_Returns400()

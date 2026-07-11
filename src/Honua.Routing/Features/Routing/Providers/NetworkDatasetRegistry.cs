@@ -5,6 +5,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
@@ -70,7 +71,7 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
         // Guarded by to_regclass so a missing registry table degrades to the default
         // path instead of throwing. Reads only the active dataset row.
         const string sql = """
-            SELECT id, name, edge_table, vertex_table, srid
+            SELECT id, name, edge_table, vertex_table, srid, travel_profiles::text
             FROM honua.network_datasets
             WHERE id = @id AND status = 'active'
             LIMIT 1;
@@ -100,7 +101,10 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
                         row.GetFieldValue<string>(1),
                         row.GetFieldValue<string>(2),
                         row.GetFieldValue<string>(3),
-                        row.GetFieldValue<int>(4)),
+                        row.GetFieldValue<int>(4))
+                    {
+                        TravelProfiles = ParseTravelProfiles(row.GetFieldValue<string>(5)),
+                    },
                     new Dictionary<string, object?> { ["id"] = datasetId },
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -114,7 +118,9 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
             // rather than interpolating them into the edges-SQL string.
             ValidateIdentifier(dataset.EdgeTable, nameof(NetworkDataset.EdgeTable));
             ValidateIdentifier(dataset.VertexTable, nameof(NetworkDataset.VertexTable));
-            return dataset;
+            var backedProfiles = await FilterBackedProfilesAsync(session, dataset, cancellationToken)
+                .ConfigureAwait(false);
+            return dataset with { TravelProfiles = backedProfiles };
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not InvalidOperationException)
         {
@@ -132,6 +138,75 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
             return null;
         }
     }
+
+    private static List<RoutingTravelProfile> ParseTravelProfiles(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var profiles = new List<RoutingTravelProfile>();
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            var profile = new RoutingTravelProfile(
+                element.GetProperty("name").GetString() ?? string.Empty,
+                element.GetProperty("forwardCostColumn").GetString() ?? string.Empty,
+                element.GetProperty("reverseCostColumn").GetString() ?? string.Empty);
+            if (!NetworkDatasetValidation.IsValidTravelProfileName(profile.Name) ||
+                !NetworkDatasetValidation.IsValidColumnIdentifier(profile.ForwardCostColumn) ||
+                !NetworkDatasetValidation.IsValidColumnIdentifier(profile.ReverseCostColumn))
+            {
+                throw new InvalidOperationException(
+                    $"Network dataset travel profile '{profile.Name}' contains an unsafe identifier.");
+            }
+
+            if (profiles.Any(existing => string.Equals(existing.Name, profile.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException($"Network dataset travel profile '{profile.Name}' is duplicated.");
+            }
+
+            profiles.Add(profile);
+        }
+
+        return profiles;
+    }
+
+    private static async Task<IReadOnlyList<RoutingTravelProfile>> FilterBackedProfilesAsync(
+        IDatabaseSession session,
+        NetworkDataset dataset,
+        CancellationToken cancellationToken)
+    {
+        var tableParts = dataset.EdgeTable.Split('.', 2);
+        var schema = tableParts.Length == 2 ? tableParts[0] : "public";
+        var table = tableParts.Length == 2 ? tableParts[1] : tableParts[0];
+        var requestedColumns = dataset.TravelProfiles
+            .SelectMany(profile => new[] { profile.ForwardCostColumn, profile.ReverseCostColumn })
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var existingColumns = new HashSet<string>(StringComparer.Ordinal);
+        await foreach (var column in session.QueryAsync(
+                           "SELECT column_name FROM information_schema.columns " +
+                           "WHERE table_schema = @schema AND table_name = @table AND column_name = ANY(@columns);",
+                           static row => row.GetFieldValue<string>(0),
+                           new Dictionary<string, object?>
+                           {
+                               ["schema"] = schema,
+                               ["table"] = table,
+                               ["columns"] = requestedColumns,
+                           },
+                           cancellationToken).ConfigureAwait(false))
+        {
+            existingColumns.Add(column);
+        }
+
+        return FilterProfilesByColumns(dataset.TravelProfiles, existingColumns);
+    }
+
+    internal static IReadOnlyList<RoutingTravelProfile> FilterProfilesByColumns(
+        IReadOnlyList<RoutingTravelProfile> profiles,
+        IReadOnlySet<string> existingColumns)
+        => profiles
+            .Where(profile => existingColumns.Contains(profile.ForwardCostColumn) &&
+                              existingColumns.Contains(profile.ReverseCostColumn))
+            .ToArray();
 
     /// <summary>
     /// Validates that a registered table name is a safe schema-qualified identifier

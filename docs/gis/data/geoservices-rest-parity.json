@@ -2863,13 +2863,13 @@
         "ODCostMatrix solveODCostMatrix (cost-only + straight lines)",
         "LocationAllocation solveLocationAllocation (minimize-impedance + maximize-coverage)",
         "Point/line/polygon barriers (pgRouting edge exclusion)",
-        "travelMode parsing and capability validation (driving routable)",
+        "Dataset-backed travel profiles with verified forward/reverse impedance columns",
         "Addressable network-dataset registry (Phase 0 of editing)"
       ],
       "knownGaps": [
         "OD cost matrix true-shape network geometry (straight lines are implemented)",
         "Location-allocation problem types beyond minimize-impedance/maximize-coverage",
-        "non-driving travel modes (single stored cost weight)",
+        "Built-in topology ships driving weights only; operators must provide and register real non-driving cost columns",
         "network-dataset editing (Phase 2: edge/vertex CRUD + topology rebuild)"
       ],
       "evidence": {
@@ -2952,7 +2952,7 @@
               "POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix",
               "POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation"
             ],
-            "notes": "travelMode (bare token or Esri travel-mode object name) is parsed and validated against the provider's advertised modes; unsupported modes return a GeoServices 400. The pgRouting topology stores a single cost weight pair, so only the driving mode is genuinely routable today; the request surface and capability advertisement are wired for multi-mode providers."
+            "notes": "travelMode (bare token or Esri travel-mode object name) is validated against the selected dataset's verified travel_profiles metadata; unsupported modes return a GeoServices 400. Profile and column identifiers are validated and both impedance columns must exist. The selected forward/reverse columns drive Route, ServiceArea, ClosestFacility, OD matrix, and LocationAllocation. Existing datasets remain driving-only by default."
           },
           {
             "name": "ODCostMatrix solveODCostMatrix",
@@ -2998,7 +2998,7 @@
         "OD cost-matrix output is cost-only; line geometry remains deferred.",
         "Location-allocation implements minimize-impedance and maximize-coverage; other problem types are rejected.",
         "Network-dataset registry CRUD does not edit edges, vertices, turn restrictions, or rebuild topology.",
-        "Only the driving travel mode is genuinely routable (single stored cost weight); other modes are validated and rejected.",
+        "The built-in dataset remains driving-only; non-driving profiles are available only when operators add real cost columns and register them in dataset metadata.",
         "Unsupported provider capabilities (barrier kinds, travel modes, travel directions) return GeoServices 400 error envelopes."
       ]
     }

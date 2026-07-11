@@ -5,6 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Routing.Features.Routing.Abstractions;
+using Honua.Routing.Features.Routing.Domain;
 using Honua.Routing.Features.Routing.Providers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -12,6 +13,7 @@ using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Honua.Server.Tests.Routing;
@@ -65,7 +67,9 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
                         new FixtureDatabaseConnectionProvider(
                             routingFixture.DataSource,
                             routingFixture.ConnectionString)),
-                    NullLogger<PgRoutingProvider>.Instance));
+                    NullLogger<PgRoutingProvider>.Instance,
+                    new ProfiledNetworkDatasetResolver(),
+                    Options.Create(new RoutingConfiguration())));
             });
     }
 
@@ -108,6 +112,33 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         var attributes = feature.GetProperty("attributes");
         attributes.GetProperty("Total_Length").GetDouble().Should().BeGreaterThan(0);
         attributes.GetProperty("Total_TravelTime").GetDouble().Should().BeGreaterThan(0);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task RouteSolve_ProfileBackedTravelModes_ReturnDistinctCosts()
+    {
+        async Task<double> SolveAsync(string travelMode)
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("stops", "0.0,0.0;0.02,0.02"),
+                new KeyValuePair<string, string>("travelMode", travelMode),
+            ]);
+            var response = await _fixture.Client.PostAsync(
+                $"/rest/services/{ServiceId}/NAServer/Route/solve", payload, CancellationToken.None);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(CancellationToken.None));
+            return document.RootElement.GetProperty("routes").GetProperty("features")[0]
+                .GetProperty("attributes").GetProperty("Total_TravelTime").GetDouble();
+        }
+
+        var driving = await SolveAsync("driving");
+        var walking = await SolveAsync("walking");
+
+        driving.Should().BeApproximately(4, 0.001);
+        walking.Should().BeApproximately(8, 0.001);
     }
 
     [RoutingTest(RoutingTestEnv)]
