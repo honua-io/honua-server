@@ -45,6 +45,17 @@ internal static class NAServerEndpoints
         // service to RBAC-gate. This mirrors the GeometryService buffer/simplify/project
         // compute endpoints, which are AllowAnonymous for the same reason. Marked
         // AllowAnonymous so the audit guard records the intentional decision.
+        endpoints.MapGet($"{RouteBase}/Route/solve",
+                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleRouteSolve(context, routing, options.Value, ct))
+            .WithDisplayName("NAServer Route Solve (GET)")
+            .WithName("NAServerRouteSolveGet")
+            .WithSummary("Solve a NAServer route from query parameters")
+            .WithDescription("Solves a multi-stop route from query-string parameters through the shared routing pipeline and returns an Esri route feature set.")
+            .WithTags("NAServer")
+            .Produces<NAServerRouteSolveResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
+
         endpoints.MapPost($"{RouteBase}/Route/solve",
                 static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleRouteSolve(context, routing, options.Value, ct))
