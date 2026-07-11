@@ -106,5 +106,8 @@ grep -Fq '9: "NeedsReview"' "$RUNNER" \
   || fail "the ArcGIS import harness must treat operator review as a terminal non-success status"
 grep -Fq '11: "Cancelled"' "$RUNNER" \
   || fail "the ArcGIS import harness must recognize the current cancelled status"
+sed -n '/^write_migration_automation_summary()/,/^write_migration_automation_not_applicable_summary()/p' "$RUNNER" \
+  | grep -Fq 'required: true' \
+  || fail "strict current capability evidence must record migration automation as required"
 
 echo "SDK compatibility matrix and runner tests passed."

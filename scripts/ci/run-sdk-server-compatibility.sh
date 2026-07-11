@@ -220,7 +220,7 @@ write_migration_automation_summary() {
       --slurpfile dotnet "$dotnet_surfaces" \
       '{
         migration_automation: {
-          required: false,
+          required: true,
           status: "supported",
           passed: true,
           reason: "Implemented SDK-backed migration smoke surfaces passed; remaining unsupported entries are explicit per-SDK API gaps."
