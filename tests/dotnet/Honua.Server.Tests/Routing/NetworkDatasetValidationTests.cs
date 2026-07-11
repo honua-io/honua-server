@@ -4,6 +4,7 @@
 using Honua.Routing.Features.Routing;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
+using Honua.Routing.Features.Routing.Providers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -57,6 +58,139 @@ public sealed class NetworkDatasetValidationTests
     {
         Assert.False(NetworkDatasetValidation.TryValidateTableIdentifier(identifier, "edgeTable", out _));
         Assert.False(NetworkDatasetValidation.IsValidTableIdentifier(identifier));
+    }
+
+    [Theory]
+    [InlineData("cost", true)]
+    [InlineData("walking_reverse_cost", true)]
+    [InlineData("public.cost", false)]
+    [InlineData("cost; DROP TABLE ways", false)]
+    [InlineData("", false)]
+    public void IsValidColumnIdentifier_RejectsInterpolationPayloads(string identifier, bool expected)
+    {
+        Assert.Equal(expected, NetworkDatasetValidation.IsValidColumnIdentifier(identifier));
+    }
+
+    [Theory]
+    [InlineData("driving", true)]
+    [InlineData("cargo-bike", true)]
+    [InlineData("Walking", false)]
+    [InlineData("walking;--", false)]
+    public void IsValidTravelProfileName_AcceptsStableLowercaseNames(string name, bool expected)
+    {
+        Assert.Equal(expected, NetworkDatasetValidation.IsValidTravelProfileName(name));
+    }
+
+    [Fact]
+    public void FilterProfilesByColumns_AdvertisesOnlyFullyBackedMappings()
+    {
+        var profiles = new[]
+        {
+            RoutingTravelProfile.Driving,
+            new RoutingTravelProfile("walking", "walking_cost", "walking_reverse_cost"),
+            new RoutingTravelProfile("cycling", "cycling_cost", "cycling_reverse_cost"),
+        };
+        IReadOnlySet<string> columns = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "cost",
+            "reverse_cost",
+            "walking_cost",
+            "walking_reverse_cost",
+            "cycling_cost",
+        };
+
+        var result = NetworkDatasetRegistry.FilterProfilesByColumns(profiles, columns);
+
+        Assert.Equal(new[] { "driving", "walking" }, result.Select(profile => profile.Name));
+    }
+
+    [Theory]
+    [InlineData("smallint", null, true)]
+    [InlineData("integer", null, true)]
+    [InlineData("bigint", null, true)]
+    [InlineData("numeric", null, true)]
+    [InlineData("real", null, true)]
+    [InlineData("double precision", null, true)]
+    [InlineData("text", null, false)]
+    [InlineData("boolean", null, false)]
+    [InlineData("integer", "positive_integer", false)]
+    public void IsPgRoutingNumericDataType_AcceptsOnlyPrimitiveNumericTypes(
+        string dataType,
+        string? domainName,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            NetworkDatasetRegistry.IsPgRoutingNumericDataType(dataType, domainName));
+    }
+
+    [Fact]
+    public void ParseTravelProfiles_EmptyList_FailsClosedWithoutDriving()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => NetworkDatasetRegistry.ParseTravelProfiles("[]"));
+
+        Assert.Contains("metadata is invalid", exception.Message, StringComparison.Ordinal);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Contains("driving", exception.InnerException!.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseTravelProfiles_MissingDriving_FailsClosed()
+    {
+        const string json =
+            """[{"name":"walking","forwardCostColumn":"walking_cost","reverseCostColumn":"walking_reverse_cost"}]""";
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => NetworkDatasetRegistry.ParseTravelProfiles(json));
+
+        Assert.Contains("metadata is invalid", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("driving", exception.InnerException!.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseTravelProfiles_MalformedJson_NormalizesToConfigurationFailure()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => NetworkDatasetRegistry.ParseTravelProfiles("{not-json"));
+
+        Assert.Contains("metadata is invalid", exception.Message, StringComparison.Ordinal);
+        Assert.IsAssignableFrom<System.Text.Json.JsonException>(exception.InnerException);
+        Assert.DoesNotContain("{not-json", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseTravelProfiles_MissingProperty_NormalizesToConfigurationFailure()
+    {
+        const string json = """[{"name":"driving","forwardCostColumn":"cost"}]""";
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => NetworkDatasetRegistry.ParseTravelProfiles(json));
+
+        Assert.Contains("metadata is invalid", exception.Message, StringComparison.Ordinal);
+        Assert.IsType<KeyNotFoundException>(exception.InnerException);
+        Assert.DoesNotContain(json, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FilterProfilesByColumns_UnbackedDriving_FailsClosed()
+    {
+        var profiles = new[]
+        {
+            RoutingTravelProfile.Driving,
+            new RoutingTravelProfile("walking", "walking_cost", "walking_reverse_cost"),
+        };
+        IReadOnlySet<string> numericColumns = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "cost",
+            "walking_cost",
+            "walking_reverse_cost",
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => NetworkDatasetRegistry.FilterProfilesByColumns(profiles, numericColumns));
+
+        Assert.Contains("fully backed 'driving'", exception.Message, StringComparison.Ordinal);
     }
 
     [Theory]
