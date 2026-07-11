@@ -162,6 +162,7 @@ start_migration_honua_server() {
     HONUA_REGISTER_TEST_INFRASTRUCTURE="true" \
     HONUA_TEST_ALLOW_UNSAFE_GEOSERVER_URLS="true" \
     HONUA_ADMIN_PASSWORD="$ADMIN_API_KEY" \
+    Licensing__DevGrantEdition="Enterprise" \
     Security__ConnectionEncryption__MasterKey="test-master-key-that-is-at-least-32-characters-long-for-security" \
     Security__ConnectionEncryption__Salt="dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=" \
     dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile \

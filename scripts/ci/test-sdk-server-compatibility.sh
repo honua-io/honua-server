@@ -67,5 +67,7 @@ grep -Fq 'compatibility-source/tests/dotnet/Honua.Postgres.Tests/Features/Import
   || fail "workflow must source the GeoServer fixture from the compatibility checkout"
 grep -Fq 'HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE: ${{ runner.temp }}/geoserver-catalog-apply-slice.json' "$WORKFLOW" \
   || fail "workflow must pass the preserved fixture to historical server checkouts"
+grep -Fq 'Licensing__DevGrantEdition="Enterprise"' "$RUNNER" \
+  || fail "the strict migration harness must grant the Enterprise entitlement it exercises"
 
 echo "SDK compatibility matrix and runner tests passed."
