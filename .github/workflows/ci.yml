@@ -555,7 +555,9 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Validate workflow and shard routing metadata
-        run: scripts/ci/validate-ci-router.sh
+        run: |
+          scripts/ci/validate-ci-router.sh
+          scripts/ci/merge-train/fixtures/validate-mode.sh
 
       - name: Validate Kubernetes operator guide contract
         run: scripts/ci/check-kubernetes-guide.sh
