@@ -62,15 +62,18 @@ The useful split is:
 |---|---|---|
 | Read current posture | Status, health, findings, alerts, timeline | `honua_ops_health`, `honua_ops_findings`, `honua_alert_events`, `honua_operate_events` |
 | Investigate evidence | Drill into the endpoint named by `source` or `evidenceRefs` | Read the same resources and include evidence in the proposal rationale |
-| Propose a fix | `findings/{id}/propose` and approval inbox actions | `honua_propose_operation`; use `supportedKinds` from the response |
+| Discover routable fixes | Operator action catalogs | `honua_supported_operation_kinds` (read-only, live executor catalog) |
+| Propose a fix | `findings/{id}/propose` and approval inbox actions | `honua_propose_operation`; verify the kind with `honua_supported_operation_kinds` first |
 | Approve or reject | Human approval inbox | Not allowed |
 | Mutate source GIS data | Human protocol/API workflows only | Not exposed; ADR-0028 forbids AI-driven source-data editing |
 
 Current MCP status: observability read tools are present. The generic
-`honua_propose_operation` tool reports the actually routable operation classes
-in `supportedKinds`; do not assume unsupported kinds. Richer platform-ops MCP
+`honua_supported_operation_kinds` reports the actually routable operation classes
+without requiring write authority; do not assume unsupported kinds. The
+`supportedKinds` field on rejected `honua_propose_operation` responses remains a
+compatibility aid but is deprecated as a discovery mechanism. Platform-ops MCP
 tools for release status, deploy operation listing, and rollback proposal are
-tracked by #2566 and are not part of this guide's current-trunk baseline.
+also part of the current-trunk baseline.
 
 ## The autonomy ladder
 
@@ -219,8 +222,6 @@ These are intentionally not described as shipped behavior:
 
 - #2557: graduated autonomy policy, AutoApply storage/evaluator, and kill
   switch.
-- #2566: platform-ops MCP tools for release status, deploy operations, and
-  rollback proposal.
 - #2567: seat-parity contract tests proving REST and MCP action parity.
 - #2568: end-to-end dead-letter self-heal through approval and autonomy.
 - #2558: quickstart compose packaging that includes the Console ops dashboard.

@@ -51,6 +51,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_operate_events",
         "honua_platform_release_status",
         "honua_deploy_operations",
+        "honua_supported_operation_kinds",
         "honua_propose_rollback",
         "honua_list_layers",
         "honua_query_features",
@@ -238,6 +239,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_operate_events",
         "honua_platform_release_status",
         "honua_deploy_operations",
+        "honua_supported_operation_kinds",
         "honua_list_layers",
         "honua_query_features",
         "honua_render_map",
@@ -606,6 +608,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             new OperateEventsTool(NullLogger<OperateEventsTool>.Instance),
             new PlatformReleaseStatusTool(NullLogger<PlatformReleaseStatusTool>.Instance),
             new DeployOperationsTool(NullLogger<DeployOperationsTool>.Instance),
+            new SupportedOperationKindsTool(NullLogger<SupportedOperationKindsTool>.Instance),
             new ProposeRollbackTool(NullLogger<ProposeRollbackTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),

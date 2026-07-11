@@ -520,7 +520,8 @@ if (connectedRedis != null)
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.MetadataReleaseOperationExecutor>();
     // Executor-discovery capability surface (#2563): reflects the exact executors registered above so
-    // discovery consumers (honua_propose_operation's supportedKinds) can never drift from routing reality.
+    // discovery consumers (honua_supported_operation_kinds and the proposal compatibility field)
+    // can never drift from routing reality.
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutorCatalog,
         Honua.ControlPlane.OperationExecutorCatalog>();
 }

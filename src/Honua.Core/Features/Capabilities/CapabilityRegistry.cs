@@ -112,6 +112,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_operate_events", "operate_events", "results"),
             ("honua_platform_release_status", "platform_release_status", "results"),
             ("honua_deploy_operations", "deploy_operations", "results"),
+            ("honua_supported_operation_kinds", "supported_operation_kinds", "results"),
             ("honua_propose_rollback", "propose_rollback", "lifecycle"),
             ("honua_list_layers", "list_layers", "results"),
             ("honua_query_features", "query_features", "results"),
@@ -262,8 +263,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("transport.mcp", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
             ("transport.qgis", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
 
-            // Native mTLS (client-certificate) authentication — built-experimental (T10 flip).
-            ("security.mtls", "security", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            // Native mTLS (client-certificate) authentication — promoted to GA (Implemented) in
+            // #2431. Second Experimental->Implemented promotion (after alerts.geofence, #2427):
+            // hardened chain/CRL-OCSP revocation validation, then flipped off the experimental
+            // gate. Enterprise entitlement (FeatureCatalog.MtlsClientCertificateKey) so the
+            // manifest/registry advertise it as Enterprise-gated.
+            ("security.mtls", "security", FeatureCatalog.MtlsClientCertificateKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("preview.file-import", "preview", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("query.features", "query", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             // analysis.spatial is gated by a composite of four analytics keys; the

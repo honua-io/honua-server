@@ -277,6 +277,14 @@
       "notes": "Read-only platform_release / server_upgrade operation surface (list/get via optional operationId; list filters status, kind, page, pageSize). Paged response envelope {items, page, pageSize, totalCount, hasMore} copied VERBATIM from the wire contract pinned in honua-server#2562 / PR #2577 (tools/deploy_operations.result.schema.json). Distinct from the hosted-content Deployment resource. Reference surface lands via honua-server#2577 under epic #2552; vendored copy synced per honua-server#2496."
     },
     {
+      "standardName": "supported_operation_kinds",
+      "referenceToolName": "honua_supported_operation_kinds",
+      "family": "Platform operations (reference shape)",
+      "schema": "tools/supported_operation_kinds.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Read-only live executor-catalog discovery for least-privilege observe-diagnose-propose loops. Returns only stable OperationClass identifiers backed by registered executors; unsupported kinds remain fail-closed. Response in tools/supported_operation_kinds.result.schema.json. Reference surface lands via honua-server#2628."
+    },
+    {
       "standardName": "propose_rollback",
       "referenceToolName": "honua_propose_rollback",
       "family": "Control-plane proposal (reference shape)",
