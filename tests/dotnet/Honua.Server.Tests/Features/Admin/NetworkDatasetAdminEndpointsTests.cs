@@ -87,6 +87,26 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
         Assert.Equal(1, dto.TopologyVersion);
         Assert.False(dto.NeedsRebuild);
         Assert.Equal("admin", dto.CreatedBy);
+
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var generation = connection.CreateCommand();
+        generation.CommandText = """
+            SELECT generation, source_revision, state, row_version,
+                   edge_table, vertex_table, srid, COUNT(*) OVER ()
+            FROM honua.network_topology_generations
+            WHERE dataset_id = @id
+            """;
+        generation.Parameters.AddWithValue("id", id);
+        await using var reader = await generation.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1, reader.GetInt64(0));
+        Assert.Equal(0, reader.GetInt64(1));
+        Assert.Equal("active", reader.GetString(2));
+        Assert.Equal(1, reader.GetInt64(3));
+        Assert.Equal("public.ways", reader.GetString(4));
+        Assert.Equal("public.ways_vertices_pgr", reader.GetString(5));
+        Assert.Equal(4326, reader.GetInt32(6));
+        Assert.Equal(1, reader.GetInt64(7));
     }
 
     [IntegrationTest]

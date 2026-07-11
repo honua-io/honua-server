@@ -2888,8 +2888,9 @@ sql:
       END;
       $$;
   - "SELECT honua.seed_metadata_v2_compat_snapshot();"
-  # Network-dataset registry (#1882). Mirrors migrations 062 + 066 so the editing
-  # surface (admin CRUD) has its table when HONUA_SKIP_MIGRATIONS bypasses the runner.
+  # Network-dataset registry (#1882). Mirrors migrations 062 + 066 + 084 so the
+  # editing surface and its initial-generation invariant exist when
+  # HONUA_SKIP_MIGRATIONS bypasses the runner.
   - |
       CREATE TABLE IF NOT EXISTS honua.network_datasets (
           id               TEXT        NOT NULL PRIMARY KEY,
@@ -2912,9 +2913,48 @@ sql:
   - "ALTER TABLE IF EXISTS honua.network_datasets ADD COLUMN IF NOT EXISTS created_by TEXT;"
   - "ALTER TABLE IF EXISTS honua.network_datasets ADD COLUMN IF NOT EXISTS updated_by TEXT;"
   - |
+      CREATE TABLE IF NOT EXISTS honua.network_topology_generations (
+          dataset_id       TEXT        NOT NULL,
+          generation       BIGINT      NOT NULL,
+          source_revision  BIGINT      NOT NULL DEFAULT 0,
+          state            TEXT        NOT NULL,
+          row_version      BIGINT      NOT NULL DEFAULT 1,
+          edge_table       TEXT        NOT NULL,
+          vertex_table     TEXT        NOT NULL,
+          srid             INTEGER     NOT NULL,
+          failure_code     TEXT,
+          created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          activated_at     TIMESTAMPTZ,
+          PRIMARY KEY (dataset_id, generation),
+          FOREIGN KEY (dataset_id) REFERENCES honua.network_datasets (id) ON DELETE CASCADE,
+          CHECK (generation > 0),
+          CHECK (source_revision >= 0),
+          CHECK (row_version > 0),
+          CHECK (state IN ('draft', 'dirty', 'building', 'ready', 'active', 'failed', 'retired')),
+          CHECK (failure_code IS NULL OR failure_code ~ '^[a-z][a-z0-9_.-]{0,63}$'),
+          CHECK ((state = 'failed') = (failure_code IS NOT NULL)),
+          CHECK (state <> 'active' OR activated_at IS NOT NULL)
+      );
+  - |
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_network_topology_generations_active_dataset
+          ON honua.network_topology_generations (dataset_id)
+          WHERE state = 'active';
+  - |
       INSERT INTO honua.network_datasets (id, name, edge_table, vertex_table, srid, status)
       VALUES ('default', 'Default network dataset', 'public.ways', 'public.ways_vertices_pgr', 4326, 'active')
       ON CONFLICT (id) DO NOTHING;
+  - |
+      INSERT INTO honua.network_topology_generations
+          (dataset_id, generation, source_revision, state, row_version,
+           edge_table, vertex_table, srid, created_at, updated_at, activated_at)
+      SELECT id, GREATEST(topology_version::bigint, 1), 0, 'active', 1,
+             edge_table, vertex_table, srid, created_at, updated_at, now()
+      FROM honua.network_datasets AS dataset
+      WHERE NOT EXISTS (
+          SELECT 1 FROM honua.network_topology_generations AS existing
+          WHERE existing.dataset_id = dataset.id AND existing.state = 'active')
+      ON CONFLICT (dataset_id, generation) DO NOTHING;
   # Tile-cache catalog (#1016 slice 4) + package-import serving columns (#1269).
   # Mirrors migrations 033_CreateTileCacheCatalog + 067_AddTileCachePackageImport so
   # the WMTS exporter sink and the .tpk/.tpkx/.vtpk import + serving binding have their

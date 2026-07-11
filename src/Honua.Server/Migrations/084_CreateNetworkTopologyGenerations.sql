@@ -71,7 +71,7 @@ INSERT INTO honua.network_topology_generations (
     activated_at)
 SELECT
     dataset.id,
-    GREATEST(dataset.topology_version::bigint, 1),
+    GREATEST(dataset.topology_version::bigint, allocated.next_generation),
     0,
     'active',
     1,
@@ -82,6 +82,11 @@ SELECT
     dataset.updated_at,
     now()
 FROM honua.network_datasets AS dataset
+JOIN LATERAL (
+    SELECT COALESCE(MAX(existing.generation) + 1, 1) AS next_generation
+    FROM honua.network_topology_generations AS existing
+    WHERE existing.dataset_id = dataset.id
+) AS allocated ON true
 WHERE NOT EXISTS (
     SELECT 1
     FROM honua.network_topology_generations AS existing

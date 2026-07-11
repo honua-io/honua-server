@@ -225,7 +225,31 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         {
             apply.CommandText = migrationSql;
             await apply.ExecuteNonQueryAsync();
-            await apply.ExecuteNonQueryAsync();
+        }
+
+        await using (var sameNumberNonActive = connection.CreateCommand())
+        {
+            sameNumberNonActive.CommandText = """
+                INSERT INTO honua.network_datasets
+                    (id, edge_table, vertex_table, srid, topology_version, created_at, updated_at)
+                VALUES
+                    ('ridge', 'routing.ridge_edges', 'routing.ridge_vertices', 4326, 4,
+                     '2026-03-01T00:00:00Z', '2026-03-02T00:00:00Z');
+                INSERT INTO honua.network_topology_generations
+                    (dataset_id, generation, source_revision, state, row_version,
+                     edge_table, vertex_table, srid, created_at, updated_at)
+                VALUES
+                    ('ridge', 4, 1, 'dirty', 1,
+                     'routing.ridge_edges', 'routing.ridge_vertices', 4326,
+                     '2026-03-01T00:00:00Z', '2026-03-02T00:00:00Z');
+                """;
+            await sameNumberNonActive.ExecuteNonQueryAsync();
+        }
+
+        await using (var reapply = connection.CreateCommand())
+        {
+            reapply.CommandText = migrationSql;
+            await reapply.ExecuteNonQueryAsync();
         }
 
         await using (var backfill = connection.CreateCommand())
@@ -246,6 +270,25 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             reader.GetString(5).Should().Be("routing.island_vertices");
             reader.GetInt32(6).Should().Be(3857);
             reader.GetInt64(7).Should().Be(1, "re-applying the migration must not allocate another generation");
+        }
+
+        await using (var collisionRecovery = connection.CreateCommand())
+        {
+            collisionRecovery.CommandText = """
+                SELECT generation, state, COUNT(*) OVER ()
+                FROM honua.network_topology_generations
+                WHERE dataset_id = 'ridge'
+                ORDER BY generation
+                """;
+            await using var reader = await collisionRecovery.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(0).Should().Be(4);
+            reader.GetString(1).Should().Be("dirty");
+            reader.GetInt64(2).Should().Be(2);
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(0).Should().Be(5,
+                "backfill must allocate past a colliding non-active generation");
+            reader.GetString(1).Should().Be("active");
         }
 
         await using var duplicateActive = connection.CreateCommand();

@@ -180,10 +180,12 @@ provider details.
 Migration 084 backfills exactly one active generation per existing dataset while
 leaving `honua.network_datasets` as the resolver source of truth. That makes the
 foundation additive and safe for rolling upgrades: old and new binaries continue to
-solve against the same edge/vertex mapping. Delivery remains deliberately ordered
-under #2656: transactional content edits (#2716), isolated durable rebuild (#2718),
-atomic promotion/rollback (#2719), then multi-node fencing and recovery (#2720).
-Travel-profile metadata and cost semantics remain independently owned by #2655.
+solve against the same edge/vertex mapping. New registry entries create their initial
+active generation in the same database transaction, so a registration cannot commit
+with zero generations. Delivery remains deliberately ordered under #2656:
+transactional content edits (#2716), isolated durable rebuild (#2718), atomic
+promotion/rollback (#2719), then multi-node fencing and recovery (#2720). Travel-profile
+metadata and cost semantics remain independently owned by #2655.
 
 **Update (post-MVP, #1862 / #1863).** Two deferrals from the original first slice
 are now delivered:

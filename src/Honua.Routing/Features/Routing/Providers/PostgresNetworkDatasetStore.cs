@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
@@ -10,7 +11,8 @@ namespace Honua.Routing.Features.Routing.Providers;
 /// <summary>
 /// Postgres-backed editing store for the <c>honua.network_datasets</c> registry
 /// (#1882 editing surface). Implements list / get / register / update / delete over the
-/// registry table provisioned by migration 062 and extended by migration 066. All
+/// registry table provisioned by migration 062 and extended by migrations 066 and
+/// 084. Registration atomically creates the initial active topology generation. All
 /// inputs are validated by <see cref="NetworkDatasetValidation"/> before they reach the
 /// database; values are bound as parameters (never interpolated), and the edge/vertex
 /// table identifiers are additionally constrained to safe schema-qualified identifiers
@@ -90,8 +92,23 @@ internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
             ON CONFLICT (id) DO NOTHING;
             """;
 
+        const string generationSql = """
+            INSERT INTO honua.network_topology_generations
+                (dataset_id, generation, source_revision, state, row_version,
+                 edge_table, vertex_table, srid, created_at, updated_at, activated_at)
+            SELECT
+                id, GREATEST(topology_version::bigint, 1), 0, 'active', 1,
+                edge_table, vertex_table, srid, created_at, updated_at, now()
+            FROM honua.network_datasets
+            WHERE id = @id;
+            """;
+
         await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var affected = await session.ExecuteAsync(
+        await using var transaction = await session.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var affected = await transaction.ExecuteAsync(
                 sql,
                 new Dictionary<string, object?>
                 {
@@ -113,9 +130,26 @@ internal sealed class PostgresNetworkDatasetStore : INetworkDatasetStore
             throw new NetworkDatasetAlreadyExistsException(dataset.Id);
         }
 
-        var saved = await GetAsync(dataset.Id, cancellationToken).ConfigureAwait(false);
-        return saved ?? throw new InvalidOperationException(
-            $"Network dataset '{dataset.Id}' was registered but could not be read back.");
+        var generationAffected = await transaction.ExecuteAsync(
+                generationSql,
+                new Dictionary<string, object?> { ["id"] = dataset.Id },
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (generationAffected != 1)
+        {
+            throw new InvalidOperationException("Network dataset registration did not create an active topology generation.");
+        }
+
+        var saved = await transaction.QuerySingleOrDefaultAsync(
+                $"SELECT {SelectColumns} FROM honua.network_datasets WHERE id = @id LIMIT 1;",
+                MapRecord,
+                new Dictionary<string, object?> { ["id"] = dataset.Id },
+                cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Network dataset registration could not be read back.");
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        return saved;
     }
 
     /// <inheritdoc />
