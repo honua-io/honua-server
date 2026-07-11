@@ -107,6 +107,12 @@ internal sealed class ImageServerCatalogQueryHandler
                 : ImmutableArray<string>.Empty;
 
             ImageServerLog.CatalogQueryCompleted(_logger, layerId, page.Items.Count, page.TotalCount);
+
+            // Emit read-bounding + provider-duration telemetry (no SQL is ever attached), so the
+            // catalog pushdown's rows-scanned vs rows-returned ratio is observable per request.
+            scope.WithTag(HonuaTelemetry.Tags.RowsScanned, page.RowsScanned);
+            scope.WithTag(HonuaTelemetry.Tags.RowsReturned, page.RowsReturned);
+            scope.WithTag(HonuaTelemetry.Tags.ProviderDurationMs, page.ProviderDuration.TotalMilliseconds);
             scope.SetSuccess(page.Items.Count);
 
             return BuildResponse(page, query, maskedFields);

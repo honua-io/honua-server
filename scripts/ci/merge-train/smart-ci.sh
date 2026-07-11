@@ -85,3 +85,93 @@ train_failing_jobs() {
   gh run view "${run_id}" --json jobs \
     --jq '.jobs[] | select(.conclusion=="failure") | .name'
 }
+
+# train_ci_jobs <run-id>: emit every job as "<conclusion>\t<name>". Tests may
+# override the reader so cancellation/incomplete-run safety is exercised
+# offline without GitHub access.
+train_ci_jobs() {
+  local run_id="$1"
+  if [[ -n "${TRAIN_CI_JOBS_READER:-}" ]]; then
+    "${TRAIN_CI_JOBS_READER}" "${run_id}"
+    return
+  fi
+  gh run view "${run_id}" --json jobs \
+    --jq '.jobs[] | [.conclusion, .name] | @tsv'
+}
+
+# train_ci_jobs_are_terminal <run-id>: success/failure/skipped are the only
+# conclusions safe to classify. Any cancellation or incomplete conclusion
+# makes the entire run unusable as merge evidence.
+train_ci_jobs_are_terminal() {
+  local run_id="$1" rows conclusion name saw_gate=0
+  rows="$(train_ci_jobs "${run_id}")" || return 1
+  [[ -n "${rows//[$'\n'$'\t' ]/}" ]] || return 1
+
+  while IFS=$'\t' read -r conclusion name; do
+    [[ -n "${name}" ]] || return 1
+    conclusion="$(tr '[:upper:]' '[:lower:]' <<<"${conclusion}")"
+    case "${conclusion}" in
+      success|failure|skipped) ;;
+      *) return 1 ;;
+    esac
+    [[ "${name}" == "CI Gate" ]] && saw_gate=1
+  done <<<"${rows}"
+
+  [[ "${saw_gate}" == "1" ]]
+}
+
+# train_expected_shards_are_classifiable <run-id> <shard-descriptor>
+# Every shard selected by the router must exist exactly once and conclude
+# SUCCESS or FAILURE. A missing or skipped selected shard is not evidence.
+train_expected_shards_are_classifiable() {
+  local run_id="$1" descriptor="$2" rows shard expected matches conclusion
+  jq -e '.shards | type == "array" and length > 0' <<<"${descriptor}" >/dev/null 2>&1 || return 1
+  rows="$(train_ci_jobs "${run_id}")" || return 1
+
+  while IFS= read -r shard; do
+    [[ -n "${shard}" ]] || return 1
+    expected="Server Tests (${shard})"
+    matches="$(awk -F '\t' -v expected="${expected}" '$2 == expected { print $1 }' <<<"${rows}")"
+    [[ "$(sed '/^$/d' <<<"${matches}" | wc -l | tr -d ' ')" == "1" ]] || return 1
+    conclusion="$(tr '[:upper:]' '[:lower:]' <<<"${matches}")"
+    [[ "${conclusion}" == "success" || "${conclusion}" == "failure" ]] || return 1
+  done < <(jq -r '.shards[]' <<<"${descriptor}")
+}
+
+# train_nonblocking_failures_are_safe <run-id> <shard-descriptor>
+#
+# The optimistic non-blocking bypass is valid only when GitHub reports the
+# failed CI Gate, every non-blocking exception is an ordinary FAILURE, and at
+# least one blocking job explicitly succeeded. CANCELLED, missing, pending,
+# timed-out, neutral, or otherwise incomplete jobs always fail closed.
+train_nonblocking_failures_are_safe() {
+  local run_id="$1" descriptor="$2" rows conclusion name
+  train_ci_jobs_are_terminal "${run_id}" || return 1
+  train_expected_shards_are_classifiable "${run_id}" "${descriptor}" || return 1
+  rows="$(train_ci_jobs "${run_id}")" || return 1
+  [[ -n "${rows//[$'\n'$'\t' ]/}" ]] || return 1
+
+  local saw_failed_gate=0 saw_blocking_success=0
+  while IFS=$'\t' read -r conclusion name; do
+    [[ -n "${name}" ]] || return 1
+    conclusion="$(tr '[:upper:]' '[:lower:]' <<<"${conclusion}")"
+    case "${conclusion}" in
+      success)
+        if ! grep -Fxiq -- "${name}" <<<"${TRAIN_NONBLOCKING_JOBS}"; then
+          saw_blocking_success=1
+        fi
+        ;;
+      skipped)
+        ;;
+      failure)
+        grep -Fxiq -- "${name}" <<<"${TRAIN_NONBLOCKING_JOBS}" || return 1
+        [[ "${name}" == "CI Gate" ]] && saw_failed_gate=1
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done <<<"${rows}"
+
+  [[ "${saw_failed_gate}" == "1" && "${saw_blocking_success}" == "1" ]]
+}
