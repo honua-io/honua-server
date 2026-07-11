@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <manifest.json> <results-dir> <output-dir>" >&2
+if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
+    echo "Usage: $0 <manifest.json> <results-dir> <output-dir> [selected-matrix.json]" >&2
     exit 2
 fi
 
@@ -32,6 +32,18 @@ else
     printf '[]\n' > "$results_json"
 fi
 
+selection_json="$tmp_dir/selection.json"
+if [ "$#" -eq 4 ]; then
+    jq -e '(.include | type == "array")' "$4" >/dev/null
+    jq '.' "$4" > "$selection_json"
+else
+    jq '{include: [
+      .serverRefs[].label as $server
+      | .sdkSetVersions[].label as $sdk
+      | {server_label: $server, sdk_label: $sdk}
+    ]}' "$manifest" > "$selection_json"
+fi
+
 jq -e '
   . as $manifest
   | ($manifest.schemaVersion == 1)
@@ -43,18 +55,22 @@ jq -e '
 jq -n \
   --slurpfile manifest "$manifest" \
   --slurpfile results "$results_json" \
+  --slurpfile selection "$selection_json" \
   'def listed($m; $group; $server; $sdk):
       any($m.matrix[$group][]?; .server == $server and .sdk == $sdk);
-  def status($m; $server; $sdk):
-      if listed($m; "supported"; $server; $sdk) then "supported"
+  def selected($selection; $server; $sdk):
+      any($selection.include[]?; .server_label == $server and .sdk_label == $sdk);
+  def status($m; $selection; $server; $sdk):
+      if (selected($selection; $server; $sdk) | not) then "not-run"
+      elif listed($m; "supported"; $server; $sdk) then "supported"
       elif listed($m; "evaluation"; $server; $sdk) then "evaluation"
       elif listed($m; "unsupported"; $server; $sdk) then "unsupported"
       else "not-tested"
       end;
   def resultFor($results; $server; $sdk):
       [$results[]? | select(.server_label == $server and .sdk_label == $sdk)] | last;
-  def cell($m; $results; $server; $sdk):
-      (status($m; $server; $sdk)) as $status
+  def cell($m; $selection; $results; $server; $sdk):
+      (status($m; $selection; $server; $sdk)) as $status
       | (resultFor($results; $server; $sdk)) as $result
       | {
           server_label: $server,
@@ -66,12 +82,13 @@ jq -n \
         };
   ($manifest[0]) as $m
   | ($results[0]) as $results
+  | ($selection[0]) as $selection
   | [$m.serverRefs[].label] as $servers
   | [$m.sdkSetVersions[].label] as $sdks
   | [
       $servers[] as $server
       | $sdks[] as $sdk
-      | cell($m; $results; $server; $sdk)
+      | cell($m; $selection; $results; $server; $sdk)
     ] as $cells
   | ($cells | map(select(.status == "supported"))) as $supported
   | ($cells | map(select(.status == "evaluation"))) as $evaluation
@@ -100,7 +117,8 @@ cell_text() {
       --arg sdk "$sdk" \
       '.cells[]
         | select(.server_label == $server and .sdk_label == $sdk)
-        | if .status == "not-tested" then "NOT TESTED"
+        | if .status == "not-run" then "NOT RUN"
+          elif .status == "not-tested" then "NOT TESTED"
           elif .status == "unsupported" then "UNSUPPORTED"
           elif .status == "evaluation" and .passed == true then "EVAL PASS"
           elif .status == "evaluation" then "EVAL FAIL"
@@ -134,5 +152,5 @@ cell_text() {
         echo
     done
     echo
-    echo "Legend: PASS = supported cell passed; FAIL = supported cell failed; EVAL PASS/EVAL FAIL = non-blocking evaluation cell; NOT TESTED = absent from the runnable matrix; UNSUPPORTED = intentionally excluded."
+    echo "Legend: PASS = supported cell passed; FAIL = supported cell failed; EVAL PASS/EVAL FAIL = non-blocking evaluation cell; NOT RUN = intentionally excluded from this focused dispatch; NOT TESTED = absent from the runnable matrix; UNSUPPORTED = intentionally excluded."
 } > "$table_path"
