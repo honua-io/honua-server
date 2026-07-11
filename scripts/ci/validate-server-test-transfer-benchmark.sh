@@ -29,6 +29,8 @@ done < <(jq -r '.shards[] | [.project, .artifact_suffix] | @tsv' "${CONFIG}")
 grep -q 'branches:' "${WORKFLOW}"
 grep -q 'ci/2722-hosted-transfer-benchmark' "${WORKFLOW}"
 grep -q 'fail-on-cache-miss: true' "${WORKFLOW}"
+grep -q 'packages: read' "${WORKFLOW}"
+grep -q 'dotnet nuget update source github-honua' "${WORKFLOW}"
 grep -q 'github.run_attempt == 1' "${WORKFLOW}"
 grep -q 'Artifact benchmark shard /' "${WORKFLOW}"
 grep -q 'Cache benchmark shard /' "${WORKFLOW}"
