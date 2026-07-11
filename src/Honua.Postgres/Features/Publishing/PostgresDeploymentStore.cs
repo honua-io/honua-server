@@ -4,8 +4,6 @@
 using System.Text.Json;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Deployment.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -19,15 +17,15 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
     private const string Columns =
         "deployment_id, source_kind, source_id, target_id, status, document, created_at, updated_at";
 
-    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly NpgsqlDataSource _dataSource;
     private readonly string _table;
 
     public PostgresDeploymentStore(
-        IAdoNetDatabaseConnectionProvider connectionProvider,
+        NpgsqlDataSource dataSource,
         string? schemaName = null)
     {
-        ArgumentNullException.ThrowIfNull(connectionProvider);
-        _connectionProvider = connectionProvider;
+        ArgumentNullException.ThrowIfNull(dataSource);
+        _dataSource = dataSource;
         _table = SchemaSearchPath.QualifyTable("promotion_deployments", schemaName);
     }
 
@@ -43,7 +41,7 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
             ON CONFLICT (deployment_id) DO NOTHING
             """;
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         AddParameters(command, deployment);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
@@ -54,7 +52,7 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
         CancellationToken cancellationToken = default)
     {
         var sql = $"SELECT document FROM {_table} WHERE deployment_id = @deployment_id";
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@deployment_id", NpgsqlDbType.Text, deploymentId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -82,7 +80,7 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
                 updated_at = EXCLUDED.updated_at
             """;
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         AddParameters(command, deployment);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -126,7 +124,7 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
         CancellationToken cancellationToken)
     {
         var sql = $"SELECT document FROM {_table} WHERE {predicate} ORDER BY updated_at DESC, deployment_id";
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         addParameters(command);
         var deployments = new List<Deployment>();
