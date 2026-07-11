@@ -63,7 +63,9 @@ public sealed record RoutingProviderCapabilities(
     public bool SupportsBarriers => SupportedBarrierKinds.Count > 0;
 
     /// <summary>
-    /// Named travel modes the provider can route, compared case-insensitively. An
+    /// Named travel modes the provider can route, compared case-insensitively. For
+    /// dataset-backed providers, callers use <c>GetCapabilitiesAsync</c> to obtain
+    /// the selected dataset's verified profile set. An
     /// empty set means the provider does not differentiate modes; the adapter then
     /// accepts only an absent/empty <c>travelMode</c> and routes on the topology's
     /// stored cost weights. When non-empty, the adapter rejects any

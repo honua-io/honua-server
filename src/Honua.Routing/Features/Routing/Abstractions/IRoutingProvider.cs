@@ -25,6 +25,16 @@ public interface IRoutingProvider
     RoutingProviderCapabilities Capabilities { get; }
 
     /// <summary>
+    /// Resolves the capability snapshot for the selected backing dataset. Providers
+    /// with static capabilities inherit the default implementation; dataset-backed
+    /// providers override it so adapters advertise only real profiles.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The capabilities applicable to the next solve.</returns>
+    Task<RoutingProviderCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(Capabilities);
+
+    /// <summary>
     /// Solve a multi-stop route through the requested stops in order.
     /// </summary>
     /// <param name="request">The route solve request.</param>
