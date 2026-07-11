@@ -104,6 +104,13 @@
         "Admin & Infrastructure",
         "OData Core"
       ]
+    },
+    {
+      "prefix": "tests/dotnet/Honua.TestKit/PgRoutingFixture.cs",
+      "reason": "routing_specific_test_fixture",
+      "shards": [
+        "Core"
+      ]
     }
   ],
   "shards": [
@@ -170,6 +177,7 @@
         "src/Honua.Postgres/Features/Publishing/",
         "src/Honua.Routing/Features/Routing/",
         "src/Honua.Server/Migrations/082_CreatePromotionStores.sql",
+        "src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql",
         "tests/dotnet/Honua.Server.Tests/Seed/",
         "tests/dotnet/Honua.Server.Tests/Startup/PostgresPromotionSurfaceRegistrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Routing/",
