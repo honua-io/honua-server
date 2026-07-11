@@ -137,8 +137,8 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
                         registration,
                         rangeReader,
                         requests[i],
-                        cancellationToken,
-                        activity)
+                        activity,
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -193,8 +193,8 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
         ZarrRegistration registration,
         ICloudRangeReader rangeReader,
         ZarrPointSliceReadRequest request,
-        CancellationToken cancellationToken,
-        Activity? activity)
+        Activity? activity,
+        CancellationToken cancellationToken)
     {
         var metadata = registration.Metadata!;
 
@@ -323,7 +323,7 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
         }
     }
 
-    private static IReadOnlyList<ZarrPointSliceReadResult> CompleteBatch(
+    private static ZarrPointSliceReadResult[] CompleteBatch(
         ZarrPointSliceReadResult?[] results,
         Activity? activity)
     {
