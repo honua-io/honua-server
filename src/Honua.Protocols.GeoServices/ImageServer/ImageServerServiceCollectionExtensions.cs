@@ -35,6 +35,13 @@ internal static class ImageServerServiceCollectionExtensions
         services.Configure<ImageServerTileMetadataOptions>(
             configuration.GetSection(ImageServerTileMetadataOptions.SectionName));
 
+        // Additive, off-by-default opt-in for non-WebMercatorQuad WMTS matrix sets (#2665). With an
+        // empty list ImageServer advertises and serves only WebMercatorQuad, preserving the WMTS
+        // CITE baseline; operators enable WorldCRS84Quad (or a registered custom gridset) via
+        // GeoServices:ImageServer:TileMatrixSets:Enabled.
+        services.Configure<ImageServerTileMatrixSetOptions>(
+            configuration.GetSection(ImageServerTileMatrixSetOptions.SectionName));
+
         // Register handlers
         services.AddScoped<ImageServerMetadataHandler>();
         services.AddScoped<ImageServerMultidimensionalInfoHandler>();
