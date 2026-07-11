@@ -58,7 +58,7 @@ public sealed class ClientCompatSeedSequenceTests
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ClientCompatSeed_LayerStorageBinding_DeclaresPhysicalFeaturesTableColumns()
+    public async Task ClientCompatSeed_MetadataV2Snapshot_DeclaresBindingAndSyncCapabilities()
     {
         // Regression for the PyQGIS nightly: the certification layer binds to the shared
         // `features` table, whose physical layout stores attributes in the `attributes`
@@ -120,6 +120,22 @@ public sealed class ClientCompatSeedSequenceTests
             resource.GetProperty("temporal").GetProperty("startTimeField").GetString().Should().Be(
                 "created_at",
                 "the canonical client-compat layer must opt into FeatureServer time filtering (#2643)");
+
+            var featureService = document.RootElement
+                .GetProperty("services")
+                .EnumerateArray()
+                .Single(service =>
+                    service.GetProperty("metadata").GetProperty("name").GetString() == "test_service" &&
+                    service.GetProperty("serviceType").GetString() == "esri-feature-service");
+            var capabilities = featureService
+                .GetProperty("options")
+                .GetProperty("capabilities")
+                .EnumerateArray()
+                .Select(capability => capability.GetString())
+                .ToArray();
+
+            capabilities.Should().Contain("Sync",
+                "the client-compat service must advertise the replica/sync surface through Metadata V2");
         }
     }
 
