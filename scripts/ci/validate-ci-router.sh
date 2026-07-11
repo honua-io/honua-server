@@ -470,6 +470,39 @@ assert_exact_shards \
       'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
   '["Core","GeoServices GPServer and NAServer"]'
 
+# #2712: migration 083 and the exact pgRouting TestKit fixture are bounded
+# companions to the canonical Routing/NAServer slice. Keep other migrations
+# and shared TestKit files on their existing fail-safe paths.
+assert_exact_shards \
+  "routing-profile-migration-owner" \
+  "src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql" \
+  '["Core"]'
+assert_exact_shards \
+  "pgrouting-fixture-owner" \
+  "tests/dotnet/Honua.TestKit/PgRoutingFixture.cs" \
+  '["Core"]'
+assert_exact_shards \
+  "routing-profile-cumulative-batch" \
+  "$(printf '%s\n%s\n%s\n%s\n%s' \
+      'src/Honua.Routing/Features/Routing/Providers/NetworkDatasetRegistry.cs' \
+      'src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs' \
+      'src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql' \
+      'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
+      'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
+  '["Core","GeoServices GPServer and NAServer"]'
+assert_descriptor \
+  "unknown-migration-still-run-all" \
+  "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
+assert_descriptor \
+  "unrelated-testkit-still-run-all" \
+  "tests/dotnet/Honua.TestKit/FutureSharedFixture.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+
 # #2709: the four shards carved from the former Server Features Misc shard
 # retained a shared source-path list after their filters diverged. Zarr tests
 # remain executable only in the Misc catch-all, so route the Zarr registrar to
@@ -794,6 +827,14 @@ python3 scripts/ci/check-server-test-shard-coverage.py \
     "GeoServices ImageServer" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core" \
+  --assert-owner \
+    "Honua.Server.Tests.Routing.NetworkDatasetValidationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core" \
+  --assert-owner \
+    "Honua.Server.Tests.Routing.PgRoutingProviderIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Core" \
   --assert-owner \
