@@ -170,6 +170,15 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        group.MapGet("/{rasterId:long}", GetRasterCatalogItem)
+            .WithDisplayName("Get Raster Catalog Item")
+            .WithName("GetImageServerRasterCatalogItem")
+            .WithSummary("Get one raster catalog item")
+            .WithDescription("Returns the selected raster catalog item as an Esri feature with attributes and footprint geometry")
+            .Produces<CatalogQueryFeature>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         group.MapGet("/find", FindGet)
             .WithDisplayName("Find Image Catalog Items (GET)")
             .WithName("ImageServerFindGet")
@@ -657,6 +666,14 @@ internal static class ImageServerEndpoints
             .WithName("QueryImageCatalogPostByService")
             .WithSummary("Query the raster catalog")
             .Produces<CatalogQueryResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/{rasterId:long}", GetRasterCatalogItemByService)
+            .WithDisplayName("Get Raster Catalog Item by Service")
+            .WithName("GetImageServerRasterCatalogItemByService")
+            .WithSummary("Get one raster catalog item")
+            .Produces<CatalogQueryFeature>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
 
@@ -1430,6 +1447,49 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await QueryCatalogPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Get one raster catalog item as an Esri feature resource.
+    /// </summary>
+    private static async Task<IResult> GetRasterCatalogItem(
+        int id,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerCatalogQueryHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        if (!IsSupportedJsonResponseFormat(f))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.GetCatalogItemAsync(context, id, rasterId, cancellationToken);
+    }
+
+    private static async Task<IResult> GetRasterCatalogItemByService(
+        string serviceId,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerCatalogQueryHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetRasterCatalogItem(
+            resolution.LayerId,
+            rasterId,
+            f,
+            context,
+            handler,
+            cancellationToken);
     }
 
     /// <summary>

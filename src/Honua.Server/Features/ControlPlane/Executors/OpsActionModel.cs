@@ -244,6 +244,11 @@ internal static class OpsActionExecutionPayloads
     public static string RedriveDeadLetters(int? maxCount = null)
         => Build(OpsActionNames.RedriveDeadLetters, target: null, maxCount: maxCount, limit: null, channel: null);
 
+    /// <summary>Builds the approval-gated payload for <see cref="OpsActionNames.PauseChannel"/>.</summary>
+    /// <param name="channel">Canonical external channel name.</param>
+    public static string PauseChannel(string channel)
+        => Build(OpsActionNames.PauseChannel, target: channel, maxCount: null, limit: null, channel: channel);
+
     /// <summary>Builds the payload for <see cref="OpsActionNames.TuneBoundedAdmission"/>.</summary>
     /// <param name="limit">The requested admission target.</param>
     public static string TuneBoundedAdmission(int limit)
