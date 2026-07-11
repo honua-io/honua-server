@@ -184,6 +184,21 @@ public sealed class CompatCompileBindingAndAccessPolicyTests
             options.GetProperty("attributesColumn").GetString().Should().Be("attributes");
         }
 
+        // honua-server#2638 — the ImageServer sidecar must retain the source layer's
+        // integer storage handle. Without it, service discovery succeeds but ImageServer
+        // resolution fails with "ImageServer is not enabled".
+        var imageBindings = root.GetProperty("storageBindings")
+            .EnumerateArray()
+            .Where(binding =>
+            {
+                var id = binding.GetProperty("metadata").GetProperty("id").GetString();
+                return id is "storage-image-layer-4100" or "storage-image-layer-4101";
+            })
+            .ToArray();
+        imageBindings.Should().HaveCount(2);
+        imageBindings.Select(binding => binding.GetProperty("storageLayerId").GetInt32())
+            .Should().BeEquivalentTo([ProtectedPointLayerId, ProtectedLineLayerId]);
+
         // The bound base-schema layer 0 also lives on the shared `features` table
         // and must remain anonymous (no policy seeded => default open).
         var baseService = root.GetProperty("services")

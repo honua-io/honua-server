@@ -10,6 +10,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using Microsoft.Extensions.Options;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
@@ -29,6 +30,7 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
     private readonly IHostEnvironment _hostEnvironment;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly GeoServerImportJobManager _jobManager;
+    private readonly IReadOnlyCollection<string>? _allowedHostSuffixes;
     private readonly ILogger<GeoServerImportBackgroundService> _logger;
     private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _leaderCheckInterval = TimeSpan.FromSeconds(10);
@@ -38,12 +40,14 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
         IHostEnvironment hostEnvironment,
         IServiceScopeFactory scopeFactory,
         GeoServerImportJobManager jobManager,
-        ILogger<GeoServerImportBackgroundService> logger)
+        ILogger<GeoServerImportBackgroundService> logger,
+        IOptions<MigrationUrlValidationOptions>? urlValidationOptions = null)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _hostEnvironment = hostEnvironment ?? throw new ArgumentNullException(nameof(hostEnvironment));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _jobManager = jobManager ?? throw new ArgumentNullException(nameof(jobManager));
+        _allowedHostSuffixes = urlValidationOptions?.Value.ResolveAllowedServiceHostSuffixes();
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -124,6 +128,7 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
             var urlValidation = await GeoServerServiceUrlValidation.ValidateAsync(
                 request.GeoServerRestUrl,
                 allowUnsafeLocalUrls,
+                _allowedHostSuffixes,
                 stoppingToken).ConfigureAwait(false);
             if (!urlValidation.IsValid)
             {

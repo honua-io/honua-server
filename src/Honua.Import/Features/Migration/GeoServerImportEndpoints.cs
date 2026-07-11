@@ -101,9 +101,11 @@ internal static partial class GeoServerImportEndpoints
         }
 
         var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
+        var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
         var discoverUrlValidation = await GeoServerServiceUrlValidation.ValidateAsync(
             request.GeoServerRestUrl,
             allowUnsafeLocalUrls,
+            allowedHostSuffixes,
             cancellationToken);
         if (!discoverUrlValidation.IsValid)
         {
@@ -194,9 +196,11 @@ internal static partial class GeoServerImportEndpoints
         }
 
         var allowUnsafeLocalStartUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
+        var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
         var startUrlValidation = await GeoServerServiceUrlValidation.ValidateAsync(
             request.GeoServerRestUrl,
             allowUnsafeLocalStartUrls,
+            allowedHostSuffixes,
             cancellationToken);
         if (!startUrlValidation.IsValid)
         {

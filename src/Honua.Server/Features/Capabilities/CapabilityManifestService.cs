@@ -392,7 +392,7 @@ internal sealed class CapabilityManifestService(
             Capability("transport.native-grpc", "transports", context),
             Capability("transport.mcp", "transports", context),
             Capability("transport.qgis", "transports", context),
-            Capability("security.mtls", "security", context, configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled),
+            Capability("security.mtls", "security", context, entitlementKey: FeatureCatalog.MtlsClientCertificateKey, configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled),
 
             Capability("preview.file-import", "preview", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("query.features", "query", context),
@@ -511,7 +511,7 @@ internal sealed class CapabilityManifestService(
                 RequiresEnvironment = true,
             },
 
-            ["security.mtls"] = new() { Configured = mtlsConfigured },
+            ["security.mtls"] = new() { Configured = mtlsConfigured, EntitlementKey = FeatureCatalog.MtlsClientCertificateKey },
             ["preview.file-import"] = new() { EntitlementKey = "import.file", PolicyCapability = "metadata.write" },
             ["analysis.spatial"] = new()
             {

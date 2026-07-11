@@ -9,11 +9,14 @@ using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions.Execution;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.IdentityModel.Tokens;
@@ -85,6 +88,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     public async Task GetAuthConfig_AfterAdminTrustProfileCreate_ReturnsActiveTrustStoreHints()
     {
         var mtlsFixture = CreateBaseFixture()
+            .ReplaceService<ILicenseEntitlementService>(
+                new TestLicenseEntitlementService(HonuaEdition.Enterprise))
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Authentication:ClientCertificates:Mode", "Optional");
