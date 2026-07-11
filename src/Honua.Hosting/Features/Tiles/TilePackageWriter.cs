@@ -22,11 +22,9 @@ namespace Honua.Infrastructure.Tiles;
 /// digits; rows and columns are eight-digit lowercase hexadecimal. ArcGIS
 /// Pro, the ArcGIS Runtime SDKs, and QGIS all read this layout.
 /// </para>
-/// <para>
-/// The proprietary <em>compact</em> bundle form (<c>.bundle</c>/<c>.bundlx</c>,
-/// the basis of TPKX) is intentionally not produced here; see the GeoServices
-/// parity matrix for the documented deferral.
-/// </para>
+/// Compact Cache V2 / TPKX output is implemented separately by
+/// <see cref="CompactTilePackageWriter"/> so each archive format keeps one
+/// focused writer and compatibility contract.
 /// </remarks>
 internal static class TilePackageWriter
 {
@@ -230,7 +228,7 @@ internal static class TilePackageWriter
             CultureInfo.InvariantCulture,
             $"{x:R} {y:R}");
 
-    private static string SanitizeCacheName(string value)
+    internal static string SanitizeCacheName(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
