@@ -11,6 +11,7 @@ manifest=""
 destination=""
 expected_project=""
 expected_source_sha=""
+timing_file="${HONUA_SERVER_TEST_ARTIFACT_TIMING_FILE:-}"
 
 usage() {
   echo "Usage: $0 --manifest <file> --destination <repo-root> --project <relative.csproj> --source-sha <commit>" >&2
@@ -30,9 +31,10 @@ if [[ -z "${manifest}" || -z "${destination}" || -z "${expected_project}" || -z 
   usage
   exit 2
 fi
-for command in jq sha256sum tar; do
+for command in date jq sha256sum tar; do
   command -v "${command}" >/dev/null || { echo "::error::Required command '${command}' is unavailable." >&2; exit 2; }
 done
+verify_start_ns="$(date +%s%N)"
 [[ -f "${manifest}" ]] || { echo "::error::Artifact manifest is missing." >&2; exit 1; }
 mkdir -p "${destination}"
 destination="$(cd "${destination}" && pwd)"
@@ -103,7 +105,10 @@ while IFS= read -r entry; do
   fi
 done < <(tar -tzf "${archive_path}")
 
+verify_end_ns="$(date +%s%N)"
+unpack_start_ns="${verify_end_ns}"
 tar -xzf "${archive_path}" -C "${destination}"
+unpack_end_ns="$(date +%s%N)"
 project_dir="${destination}/$(dirname "${expected_project}")"
 configuration="${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}"
 [[ -f "${project_dir}/obj/project.assets.json" ]] || { echo "::error::Restored project assets are missing." >&2; exit 1; }
@@ -115,5 +120,13 @@ find "${project_dir}/bin/${configuration}" -type f -name '*.pdb' -print -quit | 
   echo "::error::Restored PDB failure-attribution evidence is missing." >&2
   exit 1
 }
+
+if [[ -n "${timing_file}" ]]; then
+  mkdir -p "$(dirname "${timing_file}")"
+  jq -nS \
+    --argjson integrity_check_ms "$(( (verify_end_ns - verify_start_ns) / 1000000 ))" \
+    --argjson unpack_ms "$(( (unpack_end_ns - unpack_start_ns) / 1000000 ))" \
+    '{integrity_check_ms:$integrity_check_ms,unpack_ms:$unpack_ms}' > "${timing_file}"
+fi
 
 echo "Restored ${expected_project} from ${archive_file} (${actual_bytes} bytes)."

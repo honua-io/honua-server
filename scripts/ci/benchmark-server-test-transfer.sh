@@ -69,6 +69,8 @@ restore_ms=0
 build_ms=0
 package_ms=0
 integrity_unpack_ms=0
+integrity_check_ms=0
+unpack_ms=0
 discovery_ms=0
 test_ms=0
 archive_bytes=0
@@ -93,11 +95,16 @@ if [[ "${mode}" == "producer" ]]; then
 fi
 
 if [[ "${mode}" == consumer-* ]]; then
+  restore_timing="$(dirname "${metrics}")/restore-${identity}.json"
   phase_ns="$(date +%s%N)"
-  "${SCRIPT_DIR}/restore-server-test-binaries.sh" \
+  HONUA_SERVER_TEST_ARTIFACT_TIMING_FILE="${restore_timing}" \
+    "${SCRIPT_DIR}/restore-server-test-binaries.sh" \
     --manifest "${payload_dir}/server-test-binaries-${artifact_suffix}.manifest.json" \
     --destination "${REPO_ROOT}" --project "${project}" --source-sha "${source_sha}"
   integrity_unpack_ms=$(( ($(date +%s%N) - phase_ns) / 1000000 ))
+  integrity_check_ms="$(jq -r '.integrity_check_ms' "${restore_timing}")"
+  unpack_ms="$(jq -r '.unpack_ms' "${restore_timing}")"
+  rm -f "${restore_timing}"
   archive_bytes="$(jq -r '.archive_bytes' "${payload_dir}/server-test-binaries-${artifact_suffix}.manifest.json")"
 fi
 
@@ -121,12 +128,14 @@ jq -nS \
   --arg run_id "${GITHUB_RUN_ID:-local}" --arg run_attempt "${GITHUB_RUN_ATTEMPT:-1}" \
   --argjson restore_ms "${restore_ms}" --argjson build_ms "${build_ms}" \
   --argjson package_ms "${package_ms}" --argjson integrity_unpack_ms "${integrity_unpack_ms}" \
+  --argjson integrity_check_ms "${integrity_check_ms}" --argjson unpack_ms "${unpack_ms}" \
   --argjson discovery_ms "${discovery_ms}" --argjson test_ms "${test_ms}" \
   --argjson total_ms "${total_ms}" --argjson archive_bytes "${archive_bytes}" \
   '{contract:$contract,mode:$mode,identity:$identity,project:$project,artifact_suffix:$artifact_suffix,
     source_sha:$source_sha,dotnet_sdk:$dotnet_sdk,run_id:$run_id,run_attempt:($run_attempt|tonumber),
     restore_ms:$restore_ms,build_ms:$build_ms,package_ms:$package_ms,
-    integrity_unpack_ms:$integrity_unpack_ms,discovery_ms:$discovery_ms,test_ms:$test_ms,
+    integrity_unpack_ms:$integrity_unpack_ms,integrity_check_ms:$integrity_check_ms,unpack_ms:$unpack_ms,
+    discovery_ms:$discovery_ms,test_ms:$test_ms,
     total_ms:$total_ms,archive_bytes:$archive_bytes}' > "${metrics}"
 
 cat "${metrics}"

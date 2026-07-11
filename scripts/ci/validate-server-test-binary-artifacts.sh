@@ -79,12 +79,14 @@ if grep -Eq '/runtimes/(win|osx)' <<<"${listing}"; then
 fi
 
 HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH=1001 \
+HONUA_SERVER_TEST_ARTIFACT_TIMING_FILE="${fixture}/restore-timing.json" \
 HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" "${SCRIPT_DIR}/restore-server-test-binaries.sh" \
   --manifest "${manifest}" --destination "${fixture_restore}" \
   --project "${project}" --source-sha "${source_sha}"
 [[ -f "${fixture_restore}/tests/dotnet/Fixture.Tests/bin/Release/net10.0/Fixture.Tests.dll" ]]
 [[ -f "${fixture_restore}/tests/dotnet/Fixture.Tests/bin/Release/net10.0/runtimes/linux-x64/native/runtime.bin" ]]
 [[ ! -e "${fixture_restore}/tests/dotnet/Fixture.Tests/bin/Release/net10.0/runtimes/win-x64" ]]
+jq -e '.integrity_check_ms >= 0 and .unpack_ms >= 0' "${fixture}/restore-timing.json" >/dev/null
 
 cp "${archive}" "${archive}.valid"
 printf 'tamper\n' >> "${archive}"
