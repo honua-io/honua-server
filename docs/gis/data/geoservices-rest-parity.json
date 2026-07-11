@@ -1189,6 +1189,7 @@
         "tile with cloud-storage cache",
         "WMTS 1.0 GetCapabilities/GetTile/GetFeatureInfo",
         "query (raster catalog features)",
+        "raster catalog item resource ({rasterId})",
         "find",
         "measure (Basic mensuration)",
         "computeStatisticsHistograms",
@@ -1224,10 +1225,9 @@
         "camera/orientation-ranked ImageServer find",
         "image coordinate system (transformation) warps for ImageServer project (datumTransformation is implemented)",
         "spatial WHERE pushdown for query",
-        "renderingRule honoured by computeStatisticsHistograms",
         "inline Colorramp object (algorithmic/multipart ramp) resolution for Colormap",
         "multidimensional cube ingestion",
-        "per-slice pixel subsetting of registered multidimensional cubes (Zarr/HDF5/NetCDF) by multidimensionalDefinition (time/StdZ) in identify/getSamples/exportImage; deferred because those coverages are metadata-only today (no chunk-range pixel subset reader is wired into the read path)",
+        "per-slice pixel subsetting of registered multidimensional cubes in ImageServer identify/exportImage and classic WCS GetCoverage (OGC API Coverages and ImageServer getSamples already read registered Zarr slices)",
         "WCS multidimensional slicing beyond a single phenomenonTime axis (RANGESUBSET band selection, SCALESIZE/SCALEFACTOR/SCALEAXES/SCALEEXTENT output sizing, and phenomenonTime temporal subsetting implemented)",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
         "WMTS non-WebMercator matrix sets",
@@ -1285,6 +1285,18 @@
               "GET /rest/services/{id}/ImageServer"
             ],
             "notes": "Layer-scoped route. Responses are cached with the ImageServerMetadata output-cache policy."
+          },
+          {
+            "name": "Raster Catalog Item",
+            "esriPath": "/rest/services/{id}/ImageServer/{rasterId}",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/{rasterId}",
+              "GET /rest/services/{serviceId}/ImageServer/{rasterId}"
+            ],
+            "notes": "Returns one raster catalog item as an Esri feature with catalog attributes and footprint geometry. Uses the shared catalog reader and applies the same access policy and field masking as ImageServer query."
           },
           {
             "name": "Tile",
@@ -1481,7 +1493,7 @@
               "GET /rest/services/{id}/ImageServer/computeStatisticsHistograms",
               "POST /rest/services/{id}/ImageServer/computeStatisticsHistograms"
             ],
-            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (envelope-scoped) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. renderingRule and pixelSize are accepted but not yet applied."
+            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (envelope-scoped) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand, BandArithmetic, and pixelSize remain deferred."
           },
           {
             "name": "Compute Histograms",
@@ -1650,7 +1662,7 @@
             "GET /rest/services/{id}/ImageServer/computeClass",
             "POST /rest/services/{id}/ImageServer/computeClass"
           ],
-          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage and identify execute the Stretch portion (MinMax/StandardDeviation/PercentClip), a Colormap (explicit stops or named ColorrampName), a Clip (envelope/polygon, including ClippingType=1 keep-outside), and an ExtractBand (0-based BandIds selection) raster function; computeStatisticsHistograms wiring remains a follow-on."
+          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage and identify execute Stretch (MinMax/StandardDeviation/PercentClip), Colormap (explicit stops or named ColorrampName), Clip (envelope/polygon, including ClippingType=1 keep-outside), and ExtractBand (0-based BandIds selection). computeStatisticsHistograms executes Stretch, Colormap, and Clip; ExtractBand and BandArithmetic remain deferred there."
         }
       ],
       "childResources": {
@@ -1900,9 +1912,14 @@
             "notes": "mosaicRule is applied when rasterIds is omitted and multiple rasters participate in the selected mosaic. time accepts a single ISO 8601 instant with the active raster.temporal-mosaic entitlement; Honua selects the newest layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the timestamp before computing statistics/histograms."
           },
           {
-            "name": "geometry, geometryType, renderingRule, pixelSize",
+            "name": "geometry, geometryType, renderingRule",
+            "status": "partial",
+            "notes": "AOI geometry clips analysis to its envelope. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand and BandArithmetic return an explicit not-implemented response."
+          },
+          {
+            "name": "pixelSize",
             "status": "ignored",
-            "notes": "AOI clipping is not yet honoured — analysis always covers the full selected raster or mosaic."
+            "notes": "Pixel-size analysis hints are not yet honoured."
           }
         ],
         "legend": [
@@ -1913,8 +1930,8 @@
           },
           {
             "name": "renderingRule",
-            "status": "ignored",
-            "notes": "Classification overrides through a custom rendering rule are not honoured — swatches are always derived from a fixed 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics."
+            "status": "partial",
+            "notes": "An explicit Colormap renderingRule produces one legend swatch per colour stop. Other renderer overrides remain deferred; without a Colormap the response uses a 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics."
           }
         ],
         "computeClass": [
@@ -1953,8 +1970,8 @@
         "Default exportImage responses return JSON with a temporary file URL; f=image returns rendered bytes inline.",
         "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and reprojects footprint geometry to outSR when a coordinate transform is available.",
-        "computeStatisticsHistograms always analyses the full selected raster or mosaic — geometry clipping and renderingRule are not yet honoured.",
-        "exportImage and identify execute the renderingRule (Stretch MinMax/StandardDeviation/PercentClip with optional per-band Statistics; Colormap by explicit stops or named ColorrampName; Clip envelope/polygon including ClippingType=1 keep-outside; ExtractBand 0-based BandIds selection superseding the bandIds parameter), and the legend honours a Colormap renderingRule; identify with a renderingRule returns the rendered pixel (raw value otherwise); other stretch types, inline Colorramp objects, extract-band-by-name, and computeStatisticsHistograms renderingRule are not yet honoured.",
+        "computeStatisticsHistograms clips analysis to the supplied geometry envelope and executes Stretch, Colormap, and Clip renderingRule chains; ExtractBand, BandArithmetic, and pixelSize remain deferred.",
+        "exportImage and identify execute the renderingRule (Stretch MinMax/StandardDeviation/PercentClip with optional per-band Statistics; Colormap by explicit stops or named ColorrampName; Clip envelope/polygon including ClippingType=1 keep-outside; ExtractBand 0-based BandIds selection superseding the bandIds parameter), and the legend honours a Colormap renderingRule; identify with a renderingRule returns the rendered pixel (raw value otherwise); other stretch types, inline Colorramp objects, and extract-band-by-name are not yet honoured.",
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",
@@ -1962,7 +1979,7 @@
         "WCS GetCapabilities advertises native CRS values for visible coverages, not every transformable output CRS.",
         "WCS single-axis SUBSET fills the omitted axis from the stored raster extent only for native-CRS subsets; callers using a non-native SUBSETTINGCRS/BBOXCRS must supply both axes or use BBOX.",
         "WCS Scaling extension factors (SCALEFACTOR/SCALEAXES) resolve against the subset-trimmed base grid in the coverage native CRS; for a non-native SUBSETTINGCRS/BBOXCRS the full native grid is used as the scaling base since the trimmed pixel span is not derivable in the adapter.",
-        "WCS phenomenonTime subsetting filters the primary raster's single acquisition instant (AcquisitionDate, falling back to CreatedAt); per-slice multidimensional temporal coverages are not modeled.",
+        "WCS phenomenonTime subsetting filters the primary raster's acquisition instant. Additional registered axes are parsed and coordinate-resolved, but classic WCS GetCoverage does not yet read the resolved Zarr-slice pixels; OGC API Coverages is the current multidimensional pixel path.",
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
         "ImageServer find filters by raster catalog footprint and returns catalog metadata; true camera/orientation-ranked image selection is deferred until sensor metadata is modeled.",
         "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
