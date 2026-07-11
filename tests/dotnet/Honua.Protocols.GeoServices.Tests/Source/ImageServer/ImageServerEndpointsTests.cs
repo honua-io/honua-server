@@ -735,6 +735,140 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/image")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/image")]
+    [Operation(Operations.Export)]
+    public async Task GetRasterItemImage_ExistingRaster_ReturnsSelectedRasterPixels()
+    {
+        var store = CreateRasterStoreSubstitute();
+        long? selectedRasterId = null;
+        store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                selectedRasterId = call.ArgAt<long>(1);
+                return new RasterResult
+                {
+                    Data = [0x89, 0x50, 0x4E, 0x47],
+                    ContentType = "image/png",
+                    Width = 256,
+                    Height = 256,
+                    Srid = 4326,
+                };
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/image?format=png");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            selectedRasterId.Should().Be(100);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/info")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/info")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemInfo_ExistingRaster_ReturnsCanonicalMetadata()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/info?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            info.GetProperty("blockWidth").GetInt32().Should().Be(256);
+            info.GetProperty("bandCount").GetInt32().Should().Be(1);
+            info.GetProperty("pixelType").GetString().Should().Be("U8");
+            info.GetProperty("extent").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/info/keyProperties")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/info/keyProperties")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/100/info/keyProperties?f=pjson");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var properties = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            properties.GetProperty("BandCount").GetInt32().Should().Be(1);
+            properties.GetProperty("DataType").GetString().Should().Be("U8");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/info/histograms")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/info/histograms")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/info/histograms?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var histograms = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement
+                .GetProperty("histograms");
+            histograms.GetArrayLength().Should().Be(1);
+            histograms[0].GetProperty("counts").GetArrayLength().Should().Be(4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/info")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemInfo_UnknownRaster_ReturnsNotFoundError()
+    {
+        var store = CreateRasterStoreSubstitute();
+        store.GetRasterInfoAsync(TestLayerId, 999, Arg.Any<CancellationToken>())
+            .Returns((RasterInfo?)null);
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/999/info?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/query")]
     [Operation(Operations.Query)]
     public async Task QueryCatalog_Post_FormBody_ReturnsFeatureCollection()
