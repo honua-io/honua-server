@@ -22,4 +22,12 @@ public interface IZarrPointSliceReader
         int? inputSrid,
         IReadOnlyList<ZarrPointSliceSelection> selections,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads an aligned bounded batch after resolving the layer registration and storage reader once.
+    /// </summary>
+    Task<IReadOnlyList<ZarrPointSliceReadResult>> ReadBatchAsync(
+        int layerId,
+        IReadOnlyList<ZarrPointSliceReadRequest> requests,
+        CancellationToken cancellationToken = default);
 }

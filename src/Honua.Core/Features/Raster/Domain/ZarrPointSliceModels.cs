@@ -12,6 +12,19 @@ namespace Honua.Core.Features.Raster.Domain;
 public sealed record ZarrPointSliceSelection(string? Variable, string Dimension, double Coordinate);
 
 /// <summary>
+/// One point read within a bounded request-scoped Zarr slice batch.
+/// </summary>
+/// <param name="X">Point X coordinate in <paramref name="InputSrid"/>.</param>
+/// <param name="Y">Point Y coordinate in <paramref name="InputSrid"/>.</param>
+/// <param name="InputSrid">Optional point spatial reference identifier.</param>
+/// <param name="Selections">Coordinate selections that pin non-spatial dimensions.</param>
+public sealed record ZarrPointSliceReadRequest(
+    double X,
+    double Y,
+    int? InputSrid,
+    IReadOnlyList<ZarrPointSliceSelection> Selections);
+
+/// <summary>
 /// Stable outcome categories for a canonical Zarr point-slice read.
 /// </summary>
 public enum ZarrPointSliceReadStatus

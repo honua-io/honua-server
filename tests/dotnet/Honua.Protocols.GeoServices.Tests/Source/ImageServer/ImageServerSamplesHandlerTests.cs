@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -97,6 +98,80 @@ public class ImageServerSamplesHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public async Task GetSamplesAsync_WithMultiplePoints_ResolvesRegistrationOnce()
+    {
+        var (store, _) = await BuildVerticalZarrStoreAsync();
+        var handler = CreateHandler(store);
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"points\":[[0,0],[90,45]],\"spatialReference\":{\"wkid\":4326}}",
+            ["multidimensionalDefinition"] =
+                "[{\"variableName\":\"temperature\",\"dimensionName\":\"elevation\",\"values\":[333.3333]}]",
+        };
+        var context = CreateImageServerContext();
+
+        var result = await handler.GetSamplesAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(context.Response.Body);
+        json.RootElement.GetProperty("samples").GetArrayLength().Should().Be(2);
+        await store.Received(1).ListByLayerAsync(1, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ReadAsync_WithDuplicateDimensions_ReturnsInvalidSelection()
+    {
+        var store = Substitute.For<IZarrStore>();
+        var reader = new ZarrPointSliceReader(
+            store,
+            new ZarrSubsetReader(),
+            Array.Empty<ICloudRangeReader>());
+
+        var result = await reader.ReadAsync(
+            1,
+            0,
+            0,
+            4326,
+            [
+                new ZarrPointSliceSelection("temperature", "elevation", 100),
+                new ZarrPointSliceSelection("temperature", "ELEVATION", 200),
+            ]);
+
+        result.Status.Should().Be(ZarrPointSliceReadStatus.InvalidSelection);
+        result.Error.Should().Contain("may be selected only once");
+        await store.DidNotReceiveWithAnyArgs().ListByLayerAsync(default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ReadAsync_FirstUnavailableSecondReadable_UsesReadableRegistration()
+    {
+        var (_, metadata) = await BuildVerticalZarrStoreAsync();
+        var unavailable = CreateRegistration(1, CloudStorageProvider.AzureBlob, metadata);
+        var readable = CreateRegistration(2, CloudStorageProvider.AwsS3, metadata);
+        var store = Substitute.For<IZarrStore>();
+        store.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns([unavailable, readable]);
+        var reader = new ZarrPointSliceReader(
+            store,
+            new ZarrSubsetReader(),
+            [_currentRangeReader]);
+
+        var result = await reader.ReadAsync(
+            1,
+            0,
+            0,
+            4326,
+            [new ZarrPointSliceSelection("temperature", "elevation", 333.3333)]);
+
+        result.Status.Should().Be(ZarrPointSliceReadStatus.Success);
+        result.Value.Should().Be(1022);
+        await store.Received(1).ListByLayerAsync(1, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task GetSamplesAsync_WithUnknownDimension_ReturnsBadRequest()
     {
         var (store, _) = await BuildVerticalZarrStoreAsync();
@@ -137,22 +212,28 @@ public class ImageServerSamplesHandlerTests
 
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(_currentRangeReader, "bucket", "stores/vertical");
 
-        var registration = new ZarrRegistration
-        {
-            Id = 1,
-            LayerId = 1,
-            Name = "vertical",
-            Provider = CloudStorageProvider.AwsS3,
-            Bucket = "bucket",
-            RootPath = "stores/vertical",
-            Metadata = metadata,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
+        var registration = CreateRegistration(1, CloudStorageProvider.AwsS3, metadata);
 
         var store = Substitute.For<IZarrStore>();
         store.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns([registration]);
         return (store, metadata);
     }
+
+    private static ZarrRegistration CreateRegistration(
+        long id,
+        CloudStorageProvider provider,
+        ZarrStoreMetadata metadata)
+        => new()
+        {
+            Id = id,
+            LayerId = 1,
+            Name = $"vertical-{id}",
+            Provider = provider,
+            Bucket = "bucket",
+            RootPath = "stores/vertical",
+            Metadata = metadata,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
 
     private static DefaultHttpContext CreateImageServerContext()
     {

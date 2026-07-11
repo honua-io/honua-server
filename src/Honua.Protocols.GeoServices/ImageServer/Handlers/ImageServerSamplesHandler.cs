@@ -205,7 +205,6 @@ internal sealed class ImageServerSamplesHandler
         var requestSrid = ImageServerGeometryHelpers.TryParseSrid(srRaw);
         var maxSampleCount = DefaultMaxSampleCount;
         var samples = new List<SampleEntry>(Math.Min(samplePoints.Count, maxSampleCount));
-        var processedPoints = 0;
         if (constraints.Any(static constraint => constraint.Values.Length != 1))
         {
             return StandardErrorHelpers.CreateBadRequest(
@@ -218,17 +217,22 @@ internal sealed class ImageServerSamplesHandler
             constraint.DimensionName,
             constraint.Values[0])).ToArray();
 
-        foreach (var point in samplePoints)
-        {
-            if (processedPoints++ >= maxSampleCount)
-            {
-                break;
-            }
+        var pointsToRead = samplePoints.Take(maxSampleCount).ToArray();
+        var reads = await _zarrPointSliceReader
+            .ReadBatchAsync(
+                layerId,
+                pointsToRead.Select(point => new ZarrPointSliceReadRequest(
+                    point.X,
+                    point.Y,
+                    point.Srid ?? requestSrid,
+                    selections)).ToArray(),
+                cancellationToken)
+            .ConfigureAwait(false);
 
-            var srid = point.Srid ?? requestSrid;
-            var read = await _zarrPointSliceReader
-                .ReadAsync(layerId, point.X, point.Y, srid, selections, cancellationToken)
-                .ConfigureAwait(false);
+        for (var i = 0; i < reads.Count; i++)
+        {
+            var point = pointsToRead[i];
+            var read = reads[i];
 
             if (read.Status != ZarrPointSliceReadStatus.Success)
             {
@@ -250,6 +254,7 @@ internal sealed class ImageServerSamplesHandler
             }
 
             var value = read.Value!.Value;
+            var srid = point.Srid ?? requestSrid;
 
             samples.Add(new SampleEntry
             {
