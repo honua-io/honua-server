@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
@@ -301,6 +302,53 @@ public class OgcMapsBasicTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/map")]
+    [Operation(Operations.Render)]
+    public async Task GetDatasetMap_WithMisalignedRasterCollections_ReturnsMap()
+    {
+        const string rasterName = "ogc-maps-misaligned-grid-2487";
+        var dataSource = _fixture.GetService<NpgsqlDataSource>();
+        await using var connection = await dataSource.OpenConnectionAsync();
+
+        try
+        {
+            await using (var insert = connection.CreateCommand())
+            {
+                insert.CommandText = """
+                    INSERT INTO honua.raster_data (layer_id, name, description, raster)
+                    VALUES (
+                        1,
+                        @name,
+                        'Offset raster grid for OGC dataset-map regression coverage',
+                        ST_AddBand(
+                            ST_MakeEmptyRaster(64, 64, -122.49, 37.84, 0.00234375, -0.0021875, 0, 0, 4326),
+                            '8BUI'::text,
+                            64,
+                            0));
+                    """;
+                insert.Parameters.AddWithValue("name", rasterName);
+                await insert.ExecuteNonQueryAsync();
+            }
+
+            var response = await _fixture.Client.GetAsync(
+                "/ogc/maps/map?collections=0,1&bbox=-123,37,-122,38&width=256&height=256&f=png");
+
+            response.StatusCode.Should().Be(
+                HttpStatusCode.OK,
+                "dataset rasters must be normalized to a shared grid before the PostGIS mosaic (#2487)");
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            (await response.Content.ReadAsByteArrayAsync()).Should().NotBeEmpty();
+        }
+        finally
+        {
+            await using var cleanup = connection.CreateCommand();
+            cleanup.CommandText = "DELETE FROM honua.raster_data WHERE name = @name;";
+            cleanup.Parameters.AddWithValue("name", rasterName);
+            await cleanup.ExecuteNonQueryAsync();
+        }
     }
 
     [IntegrationTest]
