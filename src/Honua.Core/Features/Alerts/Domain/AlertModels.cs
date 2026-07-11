@@ -538,6 +538,38 @@ public sealed record AlertDispatchBacklog
     /// Number of dispatch rows currently in the dead-letter state.
     /// </summary>
     public required long DeadLetteredCount { get; init; }
+
+    /// <summary>
+    /// Active dispatch rows grouped by their stable channel type. Delivered rows and
+    /// destination details are intentionally excluded from this operational projection.
+    /// </summary>
+    public IReadOnlyList<AlertDispatchChannelBacklog> Channels { get; init; } = [];
+}
+
+/// <summary>
+/// Privacy-safe active alert-dispatch health for one configured channel. This model
+/// contains only bounded channel identifiers, counts, and timestamps; it never exposes
+/// destinations, payloads, errors, credentials, or secret references.
+/// </summary>
+public sealed record AlertDispatchChannelBacklog
+{
+    /// <summary>Gets the stable alert delivery channel type.</summary>
+    public required AlertChannelType ChannelType { get; init; }
+
+    /// <summary>Gets a value indicating whether delivery claims are paused for this channel.</summary>
+    public required bool IsPaused { get; init; }
+
+    /// <summary>Gets rows that are pending or currently being processed.</summary>
+    public required long PendingCount { get; init; }
+
+    /// <summary>Gets failed rows scheduled for a bounded retry.</summary>
+    public required long RetryingCount { get; init; }
+
+    /// <summary>Gets rows that exhausted their retry budget.</summary>
+    public required long DeadLetteredCount { get; init; }
+
+    /// <summary>Gets the creation time of the oldest non-delivered row for this channel.</summary>
+    public required DateTimeOffset OldestItemAt { get; init; }
 }
 
 /// <summary>

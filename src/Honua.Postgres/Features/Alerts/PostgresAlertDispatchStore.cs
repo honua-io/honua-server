@@ -239,7 +239,20 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                 COUNT(*) FILTER (WHERE status IN (0, 1, 3)) AS pending,
                 COUNT(*) FILTER (WHERE status = 4) AS dead_lettered
             FROM honua.alert_dispatch
-            WHERE status <> 2
+            WHERE status <> 2;
+
+            SELECT
+                d.channel_type,
+                COALESCE(s.is_paused, false) AS is_paused,
+                COUNT(*) FILTER (WHERE d.status IN (0, 1)) AS pending,
+                COUNT(*) FILTER (WHERE d.status = 3) AS retrying,
+                COUNT(*) FILTER (WHERE d.status = 4) AS dead_lettered,
+                MIN(d.created_at) AS oldest_item_at
+            FROM honua.alert_dispatch d
+            LEFT JOIN honua.alert_channel_state s ON s.channel_type = d.channel_type
+            WHERE d.status <> 2
+            GROUP BY d.channel_type, s.is_paused
+            ORDER BY d.channel_type
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -251,10 +264,30 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             return new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 };
         }
 
+        var pendingCount = reader.IsDBNull(0) ? 0 : reader.GetInt64(0);
+        var deadLetteredCount = reader.IsDBNull(1) ? 0 : reader.GetInt64(1);
+        var channels = new List<AlertDispatchChannelBacklog>();
+        if (await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                channels.Add(new AlertDispatchChannelBacklog
+                {
+                    ChannelType = AlertStoreConversions.ToChannelType(reader.GetInt16(0)),
+                    IsPaused = reader.GetBoolean(1),
+                    PendingCount = reader.GetInt64(2),
+                    RetryingCount = reader.GetInt64(3),
+                    DeadLetteredCount = reader.GetInt64(4),
+                    OldestItemAt = reader.GetFieldValue<DateTimeOffset>(5),
+                });
+            }
+        }
+
         return new AlertDispatchBacklog
         {
-            PendingCount = reader.IsDBNull(0) ? 0 : reader.GetInt64(0),
-            DeadLetteredCount = reader.IsDBNull(1) ? 0 : reader.GetInt64(1)
+            PendingCount = pendingCount,
+            DeadLetteredCount = deadLetteredCount,
+            Channels = channels,
         };
     }
 

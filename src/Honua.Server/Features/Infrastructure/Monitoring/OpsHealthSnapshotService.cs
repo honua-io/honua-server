@@ -3,6 +3,7 @@
 
 using Honua.Alerts;
 using Honua.ControlPlane;
+using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
@@ -235,6 +236,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     private OpsAlertDispatchView BuildAlertDispatchView()
     {
         var backlog = _alertHealth.LastBacklog;
+        var now = DateTimeOffset.UtcNow;
         return new OpsAlertDispatchView
         {
             DispatcherRunning = _alertHealth.IsDispatcherRunning,
@@ -243,6 +245,18 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             LastPollAt = _alertHealth.LastPollAt,
             PendingCount = backlog?.PendingCount,
             DeadLetteredCount = backlog?.DeadLetteredCount,
+            Channels = backlog?.Channels
+                .OrderBy(static channel => channel.ChannelType)
+                .Select(channel => new OpsAlertDispatchChannelView
+                {
+                    Channel = channel.ChannelType.ToExternalName(),
+                    Paused = channel.IsPaused,
+                    PendingCount = channel.PendingCount,
+                    RetryingCount = channel.RetryingCount,
+                    DeadLetteredCount = channel.DeadLetteredCount,
+                    OldestItemAgeSeconds = Math.Max(0, (long)(now - channel.OldestItemAt).TotalSeconds),
+                })
+                .ToList() ?? [],
         };
     }
 
