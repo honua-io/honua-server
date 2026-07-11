@@ -1228,7 +1228,7 @@
         "spatial WHERE pushdown for query",
         "inline Colorramp object (algorithmic/multipart ramp) resolution for Colormap",
         "multidimensional cube ingestion",
-        "per-slice pixel subsetting of registered multidimensional cubes in ImageServer identify/exportImage and classic WCS GetCoverage (OGC API Coverages and ImageServer getSamples already read registered Zarr slices)",
+        "per-slice pixel subsetting of registered multidimensional cubes in ImageServer exportImage and classic WCS GetCoverage (OGC API Coverages and ImageServer identify/getSamples already read registered Zarr slices)",
         "WCS multidimensional slicing beyond a single phenomenonTime axis (RANGESUBSET band selection, SCALESIZE/SCALEFACTOR/SCALEAXES/SCALEEXTENT output sizing, and phenomenonTime temporal subsetting implemented)",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
         "WMTS non-WebMercator matrix sets",
