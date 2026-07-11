@@ -17360,7 +17360,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_MinimizeFacilities_CoversDemandWithDeterministicFacilitySet",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_MinimizeImpedance_ChoosesFacilityAndAllocatesDemand",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_ProviderWithoutMinimizeFacilitiesCapability_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_ProviderWithoutSupport_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_UnsupportedProblemType_Returns400"
       ],

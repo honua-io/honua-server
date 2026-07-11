@@ -56,6 +56,7 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         [
             LocationAllocationProblemType.MinimizeImpedance,
             LocationAllocationProblemType.MaximizeCoverage,
+            LocationAllocationProblemType.MinimizeFacilities,
         ],
     };
 
@@ -245,7 +246,7 @@ internal sealed class MockRoutingProvider : IRoutingProvider
             }
         }
 
-        return Task.FromResult(LocationAllocationSolver.Solve(request, matrix));
+        return Task.FromResult(LocationAllocationSolver.Solve(request, matrix, cancellationToken));
     }
 
     private static double HaversineMeters(RoutePoint a, RoutePoint b)

@@ -314,4 +314,35 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         path[1][0].GetDouble().Should().BeApproximately(2226.39, 1);
         path[1][1].GetDouble().Should().BeApproximately(2226.39, 1);
     }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task LocationAllocation_MinimizeFacilities_OverRealPgRouting_CoversBothDemandClusters()
+    {
+        // Each bottom-corner facility reaches its top-corner demand in two hops;
+        // the cross-corner path costs four, so a two-minute cutoff requires both.
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("facilities", "0.0,0.0;0.02,0.0"),
+            new KeyValuePair<string, string>("demandPoints", "0.0,0.02;0.02,0.02"),
+            new KeyValuePair<string, string>("numberFacilitiesToFind", "1"),
+            new KeyValuePair<string, string>("impedanceCutoff", "2"),
+            new KeyValuePair<string, string>("problemType", "esriMFPMinimizeFacilities"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/LocationAllocation/solveLocationAllocation",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        document.RootElement.GetProperty("facilities").GetProperty("features")
+            .GetArrayLength().Should().Be(2);
+        document.RootElement.GetProperty("demandPoints").GetProperty("features")
+            .EnumerateArray()
+            .Should().OnlyContain(feature =>
+                feature.GetProperty("attributes").GetProperty("FacilityID").GetInt32() > 0);
+    }
 }

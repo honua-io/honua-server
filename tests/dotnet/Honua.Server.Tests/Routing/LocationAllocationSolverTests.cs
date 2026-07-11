@@ -11,7 +11,8 @@ namespace Honua.Server.Tests.Routing;
 /// <summary>
 /// Unit tests (no database) for the pure <see cref="LocationAllocationSolver"/> used
 /// by the location-allocation solve (#1874). Exercises the minimize-impedance and
-/// maximize-coverage objectives over a fixed impedance matrix.
+/// maximize-coverage and bounded minimize-facilities objectives over a fixed
+/// impedance matrix.
 /// </summary>
 public sealed class LocationAllocationSolverTests
 {
@@ -78,5 +79,69 @@ public sealed class LocationAllocationSolverTests
         result.Allocations[0].AllocatedFacilityId.Should().Be(0);
         result.Allocations[1].AllocatedFacilityId.Should().Be(-1);
         result.TotalWeightCovered.Should().Be(1);
+    }
+
+    [Fact]
+    public void Solve_MinimizeFacilities_GreedilyCoversAllReachableDemandWithFewestObservedPicks()
+    {
+        // Facility 0 covers demands 0 and 1; facility 1 covers demand 2. Facility 2
+        // covers only demand 0, so the deterministic greedy set-cover picks 0 then 1.
+        var matrix = new[]
+        {
+            new[] { 2.0, 3.0, 100.0 },
+            new[] { 100.0, 100.0, 2.0 },
+            new[] { 1.0, 100.0, 100.0 },
+        };
+        var request = Request(
+            3,
+            [1, 1, 1],
+            LocationAllocationProblemType.MinimizeFacilities,
+            facilitiesToFind: 1,
+            cutoff: 10);
+
+        var result = LocationAllocationSolver.Solve(request, matrix);
+
+        result.ChosenFacilityIds.Should().Equal(0, 1);
+        result.Allocations.Should().OnlyContain(allocation => allocation.AllocatedFacilityId >= 0);
+        result.TotalWeightCovered.Should().Be(3);
+    }
+
+    [Fact]
+    public void Solve_MinimizeFacilities_StopsWhenRemainingDemandIsUnreachable()
+    {
+        var matrix = new[]
+        {
+            new[] { 2.0, double.PositiveInfinity },
+            new[] { 3.0, double.PositiveInfinity },
+        };
+        var request = Request(
+            2,
+            [1, 1],
+            LocationAllocationProblemType.MinimizeFacilities,
+            facilitiesToFind: 1,
+            cutoff: 10);
+
+        var result = LocationAllocationSolver.Solve(request, matrix);
+
+        result.ChosenFacilityIds.Should().ContainSingle().Which.Should().Be(0);
+        result.Allocations[1].AllocatedFacilityId.Should().Be(-1);
+    }
+
+    [Fact]
+    public void Solve_CancelledRequest_ThrowsBeforeOptimization()
+    {
+        var request = Request(
+            1,
+            [1],
+            LocationAllocationProblemType.MinimizeFacilities,
+            facilitiesToFind: 1,
+            cutoff: 10);
+        var matrix = new[] { new[] { 1.0 } };
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        var act = () => LocationAllocationSolver.Solve(request, matrix, cancellation.Token);
+
+        act.Should().Throw<OperationCanceledException>();
     }
 }

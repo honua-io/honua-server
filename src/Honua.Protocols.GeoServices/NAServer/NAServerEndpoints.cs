@@ -108,7 +108,7 @@ internal static class NAServerEndpoints
             .WithDisplayName("NAServer Location Allocation Solve")
             .WithName("NAServerLocationAllocationSolve")
             .WithSummary("Solve a NAServer location-allocation problem")
-            .WithDescription("Chooses facilities to optimize impedance/coverage over weighted demand points via the shared routing pipeline.")
+            .WithDescription("Chooses facilities to minimize impedance, maximize coverage, or greedily minimize facilities within a cutoff over the shared routing pipeline. Objectives requiring capacity, competitor, or impedance-transformation inputs return a precise 400.")
             .WithTags("NAServer")
             .Produces<NAServerLocationAllocationResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();

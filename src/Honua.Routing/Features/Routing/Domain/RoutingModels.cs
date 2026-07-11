@@ -471,9 +471,9 @@ public sealed record OdCostMatrixSolveResult(
 public sealed record DemandPoint(RoutePoint Location, double Weight = 1.0);
 
 /// <summary>
-/// The location-allocation problem type. The MVP implements the two most-requested
-/// types over a precomputed cost matrix; other Esri types are gated with a 400 by
-/// the adapter.
+/// Location-allocation objectives implemented over the canonical precomputed cost
+/// matrix. Objectives whose Esri contract requires capacity, competitor, facility
+/// attractiveness, or impedance-transformation inputs are intentionally absent.
 /// </summary>
 public enum LocationAllocationProblemType
 {
@@ -488,6 +488,13 @@ public enum LocationAllocationProblemType
     /// impedance cutoff (the maximal-coverage problem).
     /// </summary>
     MaximizeCoverage = 1,
+
+    /// <summary>
+    /// Choose the smallest observed candidate set that covers every reachable
+    /// demand point within the impedance cutoff. The bounded solver uses the
+    /// deterministic greedy set-cover approximation.
+    /// </summary>
+    MinimizeFacilities = 2,
 }
 
 /// <summary>
@@ -499,10 +506,15 @@ public enum LocationAllocationProblemType
 /// <param name="Facilities">Candidate facility locations to choose from.</param>
 /// <param name="DemandPoints">Weighted demand points to allocate.</param>
 /// <param name="ProblemType">The optimization objective.</param>
-/// <param name="FacilitiesToFind">Number of facilities to choose. Defaults to 1.</param>
+/// <param name="FacilitiesToFind">
+/// Number of facilities to choose. Defaults to 1 and is ignored by
+/// <see cref="LocationAllocationProblemType.MinimizeFacilities"/>, which derives
+/// the bounded facility count needed to cover reachable demand.
+/// </param>
 /// <param name="ImpedanceCutoff">
 /// Maximum impedance (minutes) a demand point may be from a facility to be served.
-/// Required for <see cref="LocationAllocationProblemType.MaximizeCoverage"/>;
+/// Required for <see cref="LocationAllocationProblemType.MaximizeCoverage"/> and
+/// <see cref="LocationAllocationProblemType.MinimizeFacilities"/>;
 /// optional for minimize-impedance (demand beyond the cutoff is treated as
 /// unallocated). <c>null</c> applies no cutoff.
 /// </param>

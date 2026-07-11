@@ -28,6 +28,16 @@ namespace Honua.Routing.Features.Routing.Providers;
 /// </remarks>
 internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
 {
+    private static readonly string[] PgRoutingNumericDataTypes =
+    [
+        "smallint",
+        "integer",
+        "bigint",
+        "numeric",
+        "real",
+        "double precision",
+    ];
+
     private readonly IDatabaseSessionFactory _sessionFactory;
     private readonly ILogger<NetworkDatasetRegistry> _logger;
 
@@ -139,33 +149,53 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
         }
     }
 
-    private static List<RoutingTravelProfile> ParseTravelProfiles(string json)
+    internal static List<RoutingTravelProfile> ParseTravelProfiles(string json)
     {
-        using var document = JsonDocument.Parse(json);
-        var profiles = new List<RoutingTravelProfile>();
-        foreach (var element in document.RootElement.EnumerateArray())
+        try
         {
-            var profile = new RoutingTravelProfile(
-                element.GetProperty("name").GetString() ?? string.Empty,
-                element.GetProperty("forwardCostColumn").GetString() ?? string.Empty,
-                element.GetProperty("reverseCostColumn").GetString() ?? string.Empty);
-            if (!NetworkDatasetValidation.IsValidTravelProfileName(profile.Name) ||
-                !NetworkDatasetValidation.IsValidColumnIdentifier(profile.ForwardCostColumn) ||
-                !NetworkDatasetValidation.IsValidColumnIdentifier(profile.ReverseCostColumn))
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
             {
-                throw new InvalidOperationException(
-                    $"Network dataset travel profile '{profile.Name}' contains an unsafe identifier.");
+                throw new InvalidOperationException("Travel profile metadata must be a JSON array.");
             }
 
-            if (profiles.Any(existing => string.Equals(existing.Name, profile.Name, StringComparison.OrdinalIgnoreCase)))
+            var profiles = new List<RoutingTravelProfile>();
+            foreach (var element in document.RootElement.EnumerateArray())
             {
-                throw new InvalidOperationException($"Network dataset travel profile '{profile.Name}' is duplicated.");
+                var profile = new RoutingTravelProfile(
+                    element.GetProperty("name").GetString() ?? string.Empty,
+                    element.GetProperty("forwardCostColumn").GetString() ?? string.Empty,
+                    element.GetProperty("reverseCostColumn").GetString() ?? string.Empty);
+                if (!NetworkDatasetValidation.IsValidTravelProfileName(profile.Name) ||
+                    !NetworkDatasetValidation.IsValidColumnIdentifier(profile.ForwardCostColumn) ||
+                    !NetworkDatasetValidation.IsValidColumnIdentifier(profile.ReverseCostColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Network dataset travel profile '{profile.Name}' contains an unsafe identifier.");
+                }
+
+                if (profiles.Any(existing => string.Equals(
+                        existing.Name, profile.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    throw new InvalidOperationException(
+                        $"Network dataset travel profile '{profile.Name}' is duplicated.");
+                }
+
+                profiles.Add(profile);
             }
 
-            profiles.Add(profile);
+            EnsureDrivingProfile(profiles, "declared");
+            return profiles;
         }
-
-        return profiles;
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            // Normalize every malformed JSON/shape/property/configuration failure to
+            // InvalidOperationException. The registry's default-dataset fallback
+            // deliberately excludes this type, so corruption can never silently
+            // select the built-in topology. Do not include the raw JSON in the error.
+            throw new InvalidOperationException(
+                "Network dataset travel profile metadata is invalid.", ex);
+        }
     }
 
     private static async Task<IReadOnlyList<RoutingTravelProfile>> FilterBackedProfilesAsync(
@@ -181,32 +211,54 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        var existingColumns = new HashSet<string>(StringComparer.Ordinal);
+        var numericColumns = new HashSet<string>(StringComparer.Ordinal);
         await foreach (var column in session.QueryAsync(
                            "SELECT column_name FROM information_schema.columns " +
-                           "WHERE table_schema = @schema AND table_name = @table AND column_name = ANY(@columns);",
+                           "WHERE table_schema = @schema AND table_name = @table " +
+                           "AND column_name = ANY(@columns) AND data_type = ANY(@numeric_types) " +
+                           "AND domain_name IS NULL;",
                            static row => row.GetFieldValue<string>(0),
                            new Dictionary<string, object?>
                            {
                                ["schema"] = schema,
                                ["table"] = table,
                                ["columns"] = requestedColumns,
+                               ["numeric_types"] = PgRoutingNumericDataTypes,
                            },
                            cancellationToken).ConfigureAwait(false))
         {
-            existingColumns.Add(column);
+            numericColumns.Add(column);
         }
 
-        return FilterProfilesByColumns(dataset.TravelProfiles, existingColumns);
+        return FilterProfilesByColumns(dataset.TravelProfiles, numericColumns);
     }
 
     internal static IReadOnlyList<RoutingTravelProfile> FilterProfilesByColumns(
         IReadOnlyList<RoutingTravelProfile> profiles,
         IReadOnlySet<string> existingColumns)
-        => profiles
+    {
+        var backedProfiles = profiles
             .Where(profile => existingColumns.Contains(profile.ForwardCostColumn) &&
                               existingColumns.Contains(profile.ReverseCostColumn))
             .ToArray();
+        EnsureDrivingProfile(backedProfiles, "fully backed");
+        return backedProfiles;
+    }
+
+    internal static bool IsPgRoutingNumericDataType(string dataType, string? domainName)
+        => domainName is null && PgRoutingNumericDataTypes.Contains(dataType, StringComparer.Ordinal);
+
+    private static void EnsureDrivingProfile(
+        IReadOnlyList<RoutingTravelProfile> profiles,
+        string state)
+    {
+        if (!profiles.Any(profile => string.Equals(
+                profile.Name, PgRoutingProvider.DrivingTravelMode, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                $"Network dataset requires a {state} '{PgRoutingProvider.DrivingTravelMode}' travel profile.");
+        }
+    }
 
     /// <summary>
     /// Validates that a registered table name is a safe schema-qualified identifier
