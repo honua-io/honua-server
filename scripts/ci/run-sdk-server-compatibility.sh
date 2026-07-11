@@ -338,7 +338,7 @@ if (portalCompatEnabled) {
   }
 
   const opened = await portal.openFeatureLayer(publicFeatureItem);
-  if (opened.type !== "feature-service" || opened.serviceId !== "portal_public" || opened.layerId !== 0) {
+  if (opened.type !== "feature-service" || opened.serviceId !== "portal_public" || opened.layerId !== 3000) {
     throw new Error("PortalCompat did not resolve the Portal item to the seeded FeatureServer layer.");
   }
 
