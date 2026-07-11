@@ -97,7 +97,7 @@ internal static class NAServerEndpoints
             .WithDisplayName("NAServer OD Cost Matrix Solve")
             .WithName("NAServerOdCostMatrixSolve")
             .WithSummary("Solve a NAServer OD cost matrix")
-            .WithDescription("Computes an origins×destinations impedance matrix over the shared routing pipeline and returns Esri odLines.")
+            .WithDescription("Computes an origins×destinations impedance matrix over the shared routing pipeline. Supports cost-only and straight-line odLines; true-shape network lines return a precise 400.")
             .WithTags("NAServer")
             .Produces<NAServerOdCostMatrixResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
@@ -423,6 +423,18 @@ internal static class NAServerEndpoints
         {
             var caps = NAServerInputCaps.FromConfiguration(configuration);
             var request = NAServerParameterTranslation.BuildOdCostMatrixSolveRequest(parameters, caps);
+            Activity.Current?.SetTag("honua.routing.od_output_type", request.OutputType.ToString());
+
+            if (request.OutputType == OdLineOutputType.StraightLines &&
+                !routing.Capabilities.SupportsOdStraightLines)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Straight-line OD geometry is not supported by the configured routing provider. " +
+                        "Use outputType=esriNAODOutputNoLines."),
+                    "NAServer OD straight lines unsupported by provider");
+            }
 
             var capabilityError = ValidateProviderCapabilities(
                 context, routing, request.Barriers, request.TravelMode);
@@ -432,7 +444,7 @@ internal static class NAServerEndpoints
             }
 
             var result = await routing.SolveOdCostMatrixAsync(request, ct);
-            var response = NAServerResultMapping.MapOdCostMatrix(result);
+            var response = NAServerResultMapping.MapOdCostMatrix(result, request.OutputType, request.OutSrid);
 
             return WriteResponse(
                 context,

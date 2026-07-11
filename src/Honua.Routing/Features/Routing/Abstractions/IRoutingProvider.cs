@@ -60,8 +60,11 @@ public interface IRoutingProvider
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Solve an origins×destinations cost matrix (attribute-only impedance, no
-    /// route geometry). Implementations that do not support this advertise
+    /// Solve an origins×destinations cost matrix. The canonical request preserves
+    /// an attribute-only fast path and can request straight-line geometry;
+    /// implementations that cannot materialize it advertise
+    /// <see cref="RoutingProviderCapabilities.SupportsOdStraightLines"/> as
+    /// <c>false</c>. Implementations that cannot solve the matrix at all advertise
     /// <see cref="RoutingProviderCapabilities.SupportsOdCostMatrix"/> as <c>false</c>.
     /// </summary>
     /// <param name="request">The OD cost matrix solve request.</param>

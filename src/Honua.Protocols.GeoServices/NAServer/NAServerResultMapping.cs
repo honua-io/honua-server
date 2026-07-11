@@ -209,10 +209,13 @@ internal static class NAServerResultMapping
     }
 
     /// <summary>
-    /// Maps an OD cost matrix solve result into the NAServer OD cost matrix response
-    /// (attribute-only origin→destination lines).
+    /// Maps an OD cost matrix solve result into the NAServer OD cost matrix response,
+    /// preserving the cost-only fast path or projecting canonical straight lines.
     /// </summary>
-    public static NAServerOdCostMatrixResponse MapOdCostMatrix(OdCostMatrixSolveResult result)
+    public static NAServerOdCostMatrixResponse MapOdCostMatrix(
+        OdCostMatrixSolveResult result,
+        OdLineOutputType outputType,
+        int outSrid)
     {
         ArgumentNullException.ThrowIfNull(result);
 
@@ -220,8 +223,24 @@ internal static class NAServerResultMapping
         for (var i = 0; i < result.Lines.Count; i++)
         {
             var line = result.Lines[i];
+            NAServerPolylineGeometry? geometry = null;
+            if (outputType == OdLineOutputType.StraightLines)
+            {
+                if (string.IsNullOrWhiteSpace(line.GeometryGeoJson))
+                {
+                    throw new InvalidOperationException(
+                        "The routing provider declared OD straight-line support but returned a line without geometry.");
+                }
+
+                geometry = new NAServerPolylineGeometry
+                {
+                    Paths = GeoJsonToEsri.ToPaths(line.GeometryGeoJson),
+                };
+            }
+
             features[i] = new NAServerOdLineFeature
             {
+                Geometry = geometry,
                 Attributes = new NAServerOdLineAttributes
                 {
                     // Esri identifiers are 1-based; canonical ids are 0-based.
@@ -249,7 +268,14 @@ internal static class NAServerResultMapping
 
         return new NAServerOdCostMatrixResponse
         {
-            OdLines = new NAServerOdLinesFeatureSet { Features = features },
+            OdLines = new NAServerOdLinesFeatureSet
+            {
+                GeometryType = outputType == OdLineOutputType.StraightLines ? "esriGeometryPolyline" : null,
+                SpatialReference = outputType == OdLineOutputType.StraightLines
+                    ? new NAServerSpatialReference { Wkid = outSrid }
+                    : null,
+                Features = features,
+            },
             Messages = messages,
         };
     }

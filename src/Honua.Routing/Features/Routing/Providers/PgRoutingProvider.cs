@@ -151,6 +151,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         SupportsOdCostMatrix: true,
         SupportsLocationAllocation: true)
     {
+        SupportsOdStraightLines = true,
+
         // pgRouting honours all three barrier families by excluding the graph
         // edges each barrier geometry interacts with (see BuildBlockedEdgeFilter).
         SupportedBarrierKinds =
@@ -518,6 +520,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         activity?.SetTag("honua.routing.provider", ProviderName);
         activity?.SetTag("honua.routing.origins", request.Origins.Count);
         activity?.SetTag("honua.routing.destinations", request.Destinations.Count);
+        activity?.SetTag("honua.routing.od_output_type", request.OutputType.ToString());
+        activity?.SetTag("honua.routing.out_srid", request.OutSrid);
 
         try
         {
@@ -603,6 +607,16 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 }
             }
 
+            if (request.OutputType == OdLineOutputType.StraightLines && lines.Count > 0)
+            {
+                var geometries = await MaterializeOdStraightLinesAsync(
+                    session, request, lines, cancellationToken).ConfigureAwait(false);
+                for (var index = 0; index < lines.Count; index++)
+                {
+                    lines[index] = lines[index] with { GeometryGeoJson = geometries[index] };
+                }
+            }
+
             activity?.SetTag("honua.routing.solved", lines.Count > 0);
             activity?.SetTag("honua.routing.lines", lines.Count);
             return new OdCostMatrixSolveResult(lines);
@@ -612,6 +626,79 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Materializes all requested OD straight lines in one parameterized query.
+    /// This keeps the cost-only path unchanged and avoids a per-cell reprojection
+    /// query while delegating CRS handling to the same PostGIS substrate used by
+    /// route and service-area geometry.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> MaterializeOdStraightLinesAsync(
+        IDatabaseSession session,
+        OdCostMatrixSolveRequest request,
+        List<OdLine> lines,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                pair.ord,
+                ST_AsGeoJSON(
+                    ST_Transform(
+                        ST_SetSRID(
+                            ST_MakeLine(
+                                ST_MakePoint(pair.origin_x, pair.origin_y),
+                                ST_MakePoint(pair.destination_x, pair.destination_y)),
+                            @in_srid),
+                        @out_srid)) AS geojson
+            FROM unnest(
+                @origin_x::double precision[],
+                @origin_y::double precision[],
+                @destination_x::double precision[],
+                @destination_y::double precision[])
+                WITH ORDINALITY AS pair(origin_x, origin_y, destination_x, destination_y, ord)
+            ORDER BY pair.ord;
+            """;
+
+        var originX = new double[lines.Count];
+        var originY = new double[lines.Count];
+        var destinationX = new double[lines.Count];
+        var destinationY = new double[lines.Count];
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var line = lines[index];
+            var origin = request.Origins[line.OriginId];
+            var destination = request.Destinations[line.DestinationId];
+            originX[index] = origin.Lon;
+            originY[index] = origin.Lat;
+            destinationX[index] = destination.Lon;
+            destinationY[index] = destination.Lat;
+        }
+
+        var geometries = new List<string>(lines.Count);
+        await foreach (var geometry in session.QueryAsync(
+                           sql,
+                           static row => row.IsNull(1) ? string.Empty : row.GetFieldValue<string>(1),
+                           new Dictionary<string, object?>
+                           {
+                               ["origin_x"] = originX,
+                               ["origin_y"] = originY,
+                               ["destination_x"] = destinationX,
+                               ["destination_y"] = destinationY,
+                               ["in_srid"] = request.InSrid,
+                               ["out_srid"] = request.OutSrid,
+                           },
+                           cancellationToken).ConfigureAwait(false))
+        {
+            geometries.Add(geometry);
+        }
+
+        if (geometries.Count != lines.Count || geometries.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new InvalidOperationException("PostGIS did not materialize every requested OD straight line.");
+        }
+
+        return geometries;
     }
 
     /// <inheritdoc />

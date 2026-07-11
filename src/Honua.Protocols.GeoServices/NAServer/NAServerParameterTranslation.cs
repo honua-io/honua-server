@@ -261,8 +261,9 @@ internal static class NAServerParameterTranslation
     /// <summary>
     /// Builds a canonical <see cref="OdCostMatrixSolveRequest"/> from raw NAServer
     /// parameters. Parses <c>origins</c>, <c>destinations</c>, <c>defaultCutoff</c>,
-    /// <c>defaultTargetDestinationCount</c>, <c>outputType</c> (cost-only output
-    /// only; geometry output deferred), plus barriers and travel mode.
+    /// <c>defaultTargetDestinationCount</c>, <c>outputType</c> (cost-only or
+    /// straight-line output), plus barriers and travel mode. True-shape modes are
+    /// rejected until the provider contract exposes bounded path geometry.
     /// </summary>
     public static OdCostMatrixSolveRequest BuildOdCostMatrixSolveRequest(
         IReadOnlyDictionary<string, string> parameters,
@@ -270,7 +271,7 @@ internal static class NAServerParameterTranslation
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        ValidateOdOutputType(GetValue(parameters, "outputType"));
+        var outputType = ParseOdOutputType(GetValue(parameters, "outputType"));
 
         var outSrid = ParseOutSr(parameters);
         var inSrid = ParseInSr(parameters, outSrid);
@@ -314,6 +315,7 @@ internal static class NAServerParameterTranslation
             DestinationCount = destinationCount,
             Barriers = barriers,
             TravelMode = travelMode,
+            OutputType = outputType,
         };
     }
 
@@ -450,27 +452,38 @@ internal static class NAServerParameterTranslation
     }
 
     /// <summary>
-    /// Validates the OD cost matrix <c>outputType</c>. Only the cost-only output
-    /// (<c>esriNAODOutputNoLines</c>) and straight-line output (treated as cost-only
-    /// — geometry deferred) are accepted; any other value throws.
+    /// Parses the OD cost matrix <c>outputType</c> into the canonical materialization
+    /// mode. True-shape network paths remain explicitly unsupported.
     /// </summary>
-    private static void ValidateOdOutputType(string? value)
+    private static OdLineOutputType ParseOdOutputType(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return;
+            return OdLineOutputType.NoLines;
         }
 
         var trimmed = value.Trim();
-        if (string.Equals(trimmed, "esriNAODOutputNoLines", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(trimmed, "esriNAODOutputStraightLines", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(trimmed, "esriNAODOutputNoLines", StringComparison.OrdinalIgnoreCase))
         {
-            return;
+            return OdLineOutputType.NoLines;
+        }
+
+        if (string.Equals(trimmed, "esriNAODOutputStraightLines", StringComparison.OrdinalIgnoreCase))
+        {
+            return OdLineOutputType.StraightLines;
+        }
+
+        if (string.Equals(trimmed, "esriNAODOutputTrueShape", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "esriNAODOutputTrueShapeWithMeasure", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NAServerParameterException(
+                $"'outputType' value '{value}' is not implemented: true-shape OD lines require " +
+                "provider path geometry. Use 'esriNAODOutputNoLines' or 'esriNAODOutputStraightLines'.");
         }
 
         throw new NAServerParameterException(
             $"'outputType' value '{value}' is not supported. Use 'esriNAODOutputNoLines' " +
-            "(true-shape line geometry output is not implemented).");
+            "or 'esriNAODOutputStraightLines'.");
     }
 
     /// <summary>

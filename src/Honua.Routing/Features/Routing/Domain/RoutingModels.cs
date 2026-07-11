@@ -403,6 +403,27 @@ public sealed record OdCostMatrixSolveRequest(
     /// Validated against the provider's advertised modes by the adapter.
     /// </summary>
     public string? TravelMode { get; init; }
+
+    /// <summary>
+    /// Requested line materialization mode. The default preserves the cost-only
+    /// fast path; straight lines connect the original origin/destination points
+    /// and are emitted in <see cref="OutSrid"/>.
+    /// </summary>
+    public OdLineOutputType OutputType { get; init; } = OdLineOutputType.NoLines;
+}
+
+/// <summary>
+/// Geometry materialization modes supported by the canonical OD matrix pipeline.
+/// Network true-shape lines are intentionally absent until providers expose a
+/// bounded path-geometry contract.
+/// </summary>
+public enum OdLineOutputType
+{
+    /// <summary>Return ranked costs without line geometry.</summary>
+    NoLines,
+
+    /// <summary>Return a two-vertex line from each origin to its destination.</summary>
+    StraightLines,
 }
 
 /// <summary>
@@ -416,12 +437,17 @@ public sealed record OdCostMatrixSolveRequest(
 /// Aggregate length (meters) for the pair. 0 when length was not materialized
 /// (cost-only matrices estimate length lazily; the MVP returns 0).
 /// </param>
+/// <param name="GeometryGeoJson">
+/// Optional GeoJSON LineString in the request's output SRID. Present only when
+/// <see cref="OdCostMatrixSolveRequest.OutputType"/> requests materialized lines.
+/// </param>
 public sealed record OdLine(
     int OriginId,
     int DestinationId,
     int DestinationRank,
     double TotalCostMinutes,
-    double TotalLengthMeters);
+    double TotalLengthMeters,
+    string? GeometryGeoJson = null);
 
 /// <summary>
 /// Result of solving an OD cost matrix.
