@@ -49,12 +49,46 @@ internal static class ShapefileExportWriter
             var dbfFieldMap = BuildDbfFieldMap(fields, warnings);
             var dbfFields = BuildDbfFields(fields, dbfFieldMap);
 
-            var options = new ShapefileWriterOptions(MapShapeType(geometryType), dbfFields);
             var writtenCount = 0;
+            await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+
+            // The ESRI shapefile header encodes a single shape type for the whole
+            // file, including whether records carry Z/M ordinates — it cannot be
+            // changed once records start writing. The layer schema does not carry
+            // Z/M presence, so peek the first feature that has a geometry and probe
+            // its ordinates to choose the matching Z/M shape-type variant; otherwise
+            // 3D input is silently flattened to 2D on export (#2744).
+            Feature? firstFeature = null;
+            Geometry? firstGeometry = null;
+            while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+            {
+                var candidate = enumerator.Current;
+                if (candidate.Geometry is null || candidate.Geometry.Length == 0)
+                {
+                    skippedNullGeometry++;
+                    continue;
+                }
+
+                firstFeature = candidate;
+                firstGeometry = WkbReaderCache.Get().Read(candidate.Geometry);
+                break;
+            }
+
+            var (hasZ, hasM) = DetectZM(firstGeometry);
+            var options = new ShapefileWriterOptions(MapShapeType(geometryType, hasZ, hasM), dbfFields);
             using (var shpWriter = Shapefile.OpenWrite(shpPath, options))
             {
-                await foreach (var feature in features.WithCancellation(cancellationToken).ConfigureAwait(false))
+                if (firstFeature.HasValue && firstGeometry is not null)
                 {
+                    shpWriter.Geometry = NormalizeGeometry(firstGeometry, geometryType);
+                    SetDbfValues(shpWriter.Fields, fields, dbfFieldMap, firstFeature.Value.Attributes);
+                    shpWriter.Write();
+                    writtenCount++;
+                }
+
+                while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+                {
+                    var feature = enumerator.Current;
                     if (feature.Geometry is null || feature.Geometry.Length == 0)
                     {
                         skippedNullGeometry++;
@@ -243,16 +277,69 @@ internal static class ShapefileExportWriter
         };
     }
 
-    private static ShapeType MapShapeType(ExportGeometryType geometryType) => geometryType switch
+    // Probes the representative geometry for Z/M ordinates so the shapefile header
+    // can be stamped with the matching Z/M shape-type variant. Z/M presence is not
+    // carried on the layer schema, so it is inferred from the first exported
+    // geometry's coordinate: a plain 2D Coordinate reports NaN for both Z and M.
+    private static (bool HasZ, bool HasM) DetectZM(Geometry? geometry)
     {
-        ExportGeometryType.Point => ShapeType.Point,
-        ExportGeometryType.MultiPoint => ShapeType.MultiPoint,
-        ExportGeometryType.LineString or ExportGeometryType.MultiLineString => ShapeType.PolyLine,
-        ExportGeometryType.Polygon or ExportGeometryType.MultiPolygon => ShapeType.Polygon,
-        ExportGeometryType.None => ShapeType.NullShape,
-        _ => throw new InvalidOperationException(
-            $"Shapefile format does not support geometry type '{geometryType}'.")
-    };
+        var coordinate = geometry?.Coordinate;
+        if (coordinate is null)
+        {
+            return (false, false);
+        }
+
+        return (!double.IsNaN(coordinate.Z), !double.IsNaN(coordinate.M));
+    }
+
+    private static ShapeType MapShapeType(ExportGeometryType geometryType, bool hasZ, bool hasM)
+    {
+        var baseType = geometryType switch
+        {
+            ExportGeometryType.Point => ShapeType.Point,
+            ExportGeometryType.MultiPoint => ShapeType.MultiPoint,
+            ExportGeometryType.LineString or ExportGeometryType.MultiLineString => ShapeType.PolyLine,
+            ExportGeometryType.Polygon or ExportGeometryType.MultiPolygon => ShapeType.Polygon,
+            ExportGeometryType.None => ShapeType.NullShape,
+            _ => throw new InvalidOperationException(
+                $"Shapefile format does not support geometry type '{geometryType}'.")
+        };
+
+        if (baseType == ShapeType.NullShape)
+        {
+            return baseType;
+        }
+
+        // ESRI shapefile Z shapes (PointZM/PolyLineZM/PolygonZM/MultiPointZM) always
+        // carry an optional M array; the M-only shapes (PointM/…) carry M without Z.
+        // Promote the 2D base type to the matching variant so the writer serializes
+        // the source Z (and/or M) ordinates instead of flattening to 2D (#2744).
+        if (hasZ)
+        {
+            return baseType switch
+            {
+                ShapeType.Point => ShapeType.PointZM,
+                ShapeType.MultiPoint => ShapeType.MultiPointZM,
+                ShapeType.PolyLine => ShapeType.PolyLineZM,
+                ShapeType.Polygon => ShapeType.PolygonZM,
+                _ => baseType
+            };
+        }
+
+        if (hasM)
+        {
+            return baseType switch
+            {
+                ShapeType.Point => ShapeType.PointM,
+                ShapeType.MultiPoint => ShapeType.MultiPointM,
+                ShapeType.PolyLine => ShapeType.PolyLineM,
+                ShapeType.Polygon => ShapeType.PolygonM,
+                _ => baseType
+            };
+        }
+
+        return baseType;
+    }
 
     private static object? NormalizeDbfValue(object? value, ExportFieldType fieldType)
     {

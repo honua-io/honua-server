@@ -100,6 +100,12 @@ internal sealed partial class GeometrySimplifyJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed("Invalid simplify inputs: geometry is empty.");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
+        {
+            Log.InvalidInputs(_logger, job.OperationId, sridError);
+            return JobExecutionResult.Failed($"Invalid simplify inputs: {sridError}.");
+        }
+
         geometry.SRID = inputs.Srid;
 
         cancellationToken.ThrowIfCancellationRequested();

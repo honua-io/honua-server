@@ -19,7 +19,7 @@ Single-geometry operations; inputs are base64-encoded WKB plus an SRID. Managed 
 
 | Process ID | Description | Key parameters |
 | --- | --- | --- |
-| `geometry.buffer` | Polygon at a distance around the input geometry. | `wkb`, `srid`, `distance` (m), `geodesic` |
+| `geometry.buffer` | Polygon at a distance around the input geometry (planar; distance in the input CRS's coordinate units). `geodesic=true` is rejected at plan validation. | `wkb`, `srid`, `distance` (CRS units, > 0), `geodesic` |
 | `geometry.simplify` | Douglas-Peucker simplification, topology-preserving by default. | `wkb`, `srid`, `tolerance`, `preserveTopology` |
 | `geometry.project` | Reproject between spatial references. | `wkb`, `fromSrid`, `toSrid` |
 | `geometry.make-valid` | Repair self-intersections, duplicate vertices, ring orientation. | `wkb`, `srid` |
@@ -27,8 +27,8 @@ Single-geometry operations; inputs are base64-encoded WKB plus an SRID. Managed 
 | `geometry.intersect` | Intersection of two geometries. | `targetWkb`, `intersectorWkb`, `srid` |
 | `geometry.clip` | Clip to the bounding envelope of a clip geometry. | `targetWkb`, `clipEnvelopeWkb`, `srid` |
 | `geometry.difference` | Subtract an eraser geometry. | `targetWkb`, `eraserWkb`, `srid` |
-| `geometry.area` | Geodesic area of a polygon (m²). | `wkb`, `srid` |
-| `geometry.length` | Geodesic length of a line (m). | `wkb`, `srid` |
+| `geometry.area` | Planar area of a polygon in squared CRS units (no geodesic conversion). | `wkb`, `srid` |
+| `geometry.length` | Planar length of a line (polygon perimeter) in CRS units (no geodesic conversion). | `wkb`, `srid` |
 | `geometry.centroid` | Centroid point. | `wkb`, `srid` |
 | `geometry.convex-hull` | Convex hull (PostGIS `ST_ConvexHull` semantics). | `wkb`, `srid` |
 | `geometry.dissolve` | Union by optional group key, one feature per group. | `wkbs`, `srid`, `groupKeys` |
@@ -36,7 +36,7 @@ Single-geometry operations; inputs are base64-encoded WKB plus an SRID. Managed 
 
 ## Analytics (9)
 
-The layer-scoped processes (`analytics.cluster`, `analytics.spatial-join`, `analytics.buffer-aggregate`, `analytics.density`) run synchronously against PostGIS-backed layers and are **not job-dispatchable**; each has a job-executable `*-managed` counterpart that runs in managed code (NetTopologySuite) over inline FeatureCollections. The layer-scoped processes accept the shared GeoServices filter parameters (`where`, `objectIds`, `geometry`, `geometryType`, `inSR`, `spatialRel`, `time`, `timeRelation`). Managed-counterpart distances are evaluated in CRS units (no geodesic conversion).
+The layer-scoped processes (`analytics.cluster`, `analytics.spatial-join`, `analytics.buffer-aggregate`, `analytics.density`) run synchronously against PostGIS-backed layers and are **not job-dispatchable**; each has a job-executable `*-managed` counterpart that runs in managed code (NetTopologySuite) over inline FeatureCollections. The layer-scoped processes accept the shared GeoServices filter parameters (`where`, `objectIds`, `geometry`, `geometryType`, `inSR`, `spatialRel`, `time`, `timeRelation`). For geographic layers the meter-based parameters (`eps`, `distance`, `cellSize`) are evaluated after transforming to EPSG:3857 (Web Mercator), where distances overstate ground distance by 1/cos(latitude). Managed-counterpart distances are evaluated in CRS units (no geodesic conversion).
 
 | Process ID | Description | Key parameters |
 | --- | --- | --- |

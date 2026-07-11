@@ -70,6 +70,147 @@ public sealed class ShapefileExportWriterTests
     }
 
     [Fact]
+    public async Task WriteAsync_3DPointInput_WritesPointZShapeTypeAndPreservesZ()
+    {
+        var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
+        var point3d = geometryFactory.CreatePoint(new CoordinateZ(10, 20, 123.5));
+
+        var feature = Feature.Create(
+            1,
+            new WkbWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false).Write(point3d),
+            ImmutableDictionary<string, object?>.Empty.Add("name", "summit"));
+
+        await using var output = new MemoryStream();
+        var result = await ShapefileExportWriter.WriteAsync(
+            output,
+            ToAsyncEnumerable(feature),
+            [new ExportField("name", ExportFieldType.String, true)],
+            ExportGeometryType.Point,
+            prjWkt: null,
+            NullLogger.Instance,
+            CancellationToken.None);
+
+        result.WrittenCount.Should().Be(1);
+        output.Position = 0;
+        var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(extractedDir);
+
+        try
+        {
+            using (var zip = new ZipArchive(output, ZipArchiveMode.Read, leaveOpen: true))
+            {
+                zip.ExtractToDirectory(extractedDir);
+            }
+
+            var shpPath = Directory.GetFiles(extractedDir, "*.shp").Single();
+            using var reader = Shapefile.OpenRead(shpPath);
+
+            reader.ShapeType.Should().Be(ShapeType.PointZM,
+                "3D input must select the Z-capable shape type instead of flattening to 2D (#2744)");
+            reader.Read(out _, out var exportedFeature).Should().BeTrue();
+            exportedFeature!.Geometry.Coordinate.Z.Should().BeApproximately(123.5, 1e-9);
+        }
+        finally
+        {
+            Directory.Delete(extractedDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WriteAsync_2DPointInput_KeepsPlain2DShapeType()
+    {
+        var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
+        var point = geometryFactory.CreatePoint(new Coordinate(10, 20));
+
+        var feature = Feature.Create(
+            1,
+            new WkbWriter().Write(point),
+            ImmutableDictionary<string, object?>.Empty.Add("name", "flat"));
+
+        await using var output = new MemoryStream();
+        var result = await ShapefileExportWriter.WriteAsync(
+            output,
+            ToAsyncEnumerable(feature),
+            [new ExportField("name", ExportFieldType.String, true)],
+            ExportGeometryType.Point,
+            prjWkt: null,
+            NullLogger.Instance,
+            CancellationToken.None);
+
+        result.WrittenCount.Should().Be(1);
+        output.Position = 0;
+        var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(extractedDir);
+
+        try
+        {
+            using (var zip = new ZipArchive(output, ZipArchiveMode.Read, leaveOpen: true))
+            {
+                zip.ExtractToDirectory(extractedDir);
+            }
+
+            var shpPath = Directory.GetFiles(extractedDir, "*.shp").Single();
+            using var reader = Shapefile.OpenRead(shpPath);
+            reader.ShapeType.Should().Be(ShapeType.Point, "2D input keeps the plain 2D shape type");
+        }
+        finally
+        {
+            Directory.Delete(extractedDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WriteAsync_3DLineInput_WritesPolyLineZShapeType()
+    {
+        var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
+        var line3d = geometryFactory.CreateLineString(
+        [
+            new CoordinateZ(0, 0, 1.5),
+            new CoordinateZ(1, 1, 2.5)
+        ]);
+
+        var feature = Feature.Create(
+            1,
+            new WkbWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false).Write(line3d),
+            ImmutableDictionary<string, object?>.Empty.Add("name", "trail"));
+
+        await using var output = new MemoryStream();
+        var result = await ShapefileExportWriter.WriteAsync(
+            output,
+            ToAsyncEnumerable(feature),
+            [new ExportField("name", ExportFieldType.String, true)],
+            ExportGeometryType.LineString,
+            prjWkt: null,
+            NullLogger.Instance,
+            CancellationToken.None);
+
+        result.WrittenCount.Should().Be(1);
+        output.Position = 0;
+        var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(extractedDir);
+
+        try
+        {
+            using (var zip = new ZipArchive(output, ZipArchiveMode.Read, leaveOpen: true))
+            {
+                zip.ExtractToDirectory(extractedDir);
+            }
+
+            var shpPath = Directory.GetFiles(extractedDir, "*.shp").Single();
+            using var reader = Shapefile.OpenRead(shpPath);
+
+            reader.ShapeType.Should().Be(ShapeType.PolyLineZM);
+            reader.Read(out _, out var exportedFeature).Should().BeTrue();
+            exportedFeature!.Geometry.Coordinates[0].Z.Should().BeApproximately(1.5, 1e-9);
+            exportedFeature.Geometry.Coordinates[1].Z.Should().BeApproximately(2.5, 1e-9);
+        }
+        finally
+        {
+            Directory.Delete(extractedDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void BuildDbfFieldMap_MakesTruncatedAndCaseInsensitiveCollisionsUnique()
     {
         var method = typeof(ShapefileExportWriter).GetMethod(

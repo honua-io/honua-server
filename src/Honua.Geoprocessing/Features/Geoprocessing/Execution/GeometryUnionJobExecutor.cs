@@ -121,6 +121,13 @@ internal sealed partial class GeometryUnionJobExecutor : IProcessExecutor
                     $"Invalid union inputs: wkbs[{i}] decoded to an empty geometry.");
             }
 
+            if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
+            {
+                Log.InvalidWkb(_logger, job.OperationId, i, sridError);
+                return JobExecutionResult.Failed(
+                    $"Invalid union inputs: wkbs[{i}] {sridError}.");
+            }
+
             geometry.SRID = inputs.Srid;
             geometries.Add(geometry);
         }
