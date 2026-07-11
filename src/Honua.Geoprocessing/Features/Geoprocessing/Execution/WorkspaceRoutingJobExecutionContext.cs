@@ -71,6 +71,14 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
         var label = ResolveOutputLabel(_job, index);
         var kind = ResolveOutputKind(_job, index);
 
+        // The durable publish is the gate: the real JobExecutionService rechecks
+        // that the job still exists and is still owned, and can no-op/reject the
+        // publish (lost lease, cancellation won). Delegate first so a rejected or
+        // throwing inner publish leaves no workspace ledger entry for output that
+        // was never durably recorded. Only after the inner publish is accepted do
+        // we route the artifact into the requested env:workspace.
+        await _inner.PublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
+
         await _workspaceLifecycle.AddOrReplaceArtifactAsync(
             _workspaceId,
             kind,
@@ -78,8 +86,6 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
             _overwrite,
             uri: artifactReference,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        await _inner.PublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
     }
 
     private static string ResolveOutputLabel(ExecutionJobRecord job, int index)

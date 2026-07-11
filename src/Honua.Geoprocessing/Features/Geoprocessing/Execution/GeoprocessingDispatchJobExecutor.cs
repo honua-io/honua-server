@@ -135,6 +135,12 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 return JobExecutionResult.Failed(ex.Message);
             }
+            catch (ArtifactReplacementFailedException ex)
+            {
+                Log.OutputCollision(_logger, job.OperationId, ex.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                return JobExecutionResult.Failed(ex.Message);
+            }
         }
 
         if (result.Status != ExecutionJobStatus.Succeeded)

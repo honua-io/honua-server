@@ -212,6 +212,44 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_WorkspaceRequested_InnerPublishRejected_DoesNotWriteWorkspaceLedger()
+    {
+        // The durable publish is the gate: if the real JobExecutionService rejects/
+        // throws on PublishArtifactAsync (lost lease, cancellation won, job no longer
+        // owned), the workspace ledger must NOT record an artifact that was never
+        // durably published. Proves the inner publish runs before — and gates — the
+        // workspace write.
+        var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        workspaceLifecycle
+            .GetOrCreateNamedWorkspaceAsync("admin", "ws-1", Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = "ws-1-resolved",
+                Kind = WorkspaceKind.Scratch,
+                Label = "ws-1",
+                OwnerId = "admin",
+                State = WorkspaceLifecycleState.Active,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-inner-rejected");
+        // The durable publish is rejected/throws (e.g. lease lost / job cancelled).
+        context.PublishArtifactAsync("data:fake-artifact", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("job no longer owns its lease"));
+
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+
+        var act = async () => await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        // The ledger write must never have run once the inner publish failed.
+        await workspaceLifecycle.DidNotReceiveWithAnyArgs().AddOrReplaceArtifactAsync(
+            default!, default, default!, default, cancellationToken: default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_WorkspaceCollisionWithoutOverwrite_FailsWithClearMessage()
     {
         var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
@@ -243,8 +281,10 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.ErrorMessage.Should().Contain("artifact1");
         result.ErrorMessage.Should().Contain("overwriteOutput");
-        // The collision is caught before the durable job-record publish happens.
-        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+        // The durable job-record publish is the gate (finding #1): it runs first, and
+        // only then does the workspace-routing collision surface and fail the job —
+        // so the workspace is never mutated for output that wasn't durably published.
+        await context.Received(1).PublishArtifactAsync("data:fake-artifact", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

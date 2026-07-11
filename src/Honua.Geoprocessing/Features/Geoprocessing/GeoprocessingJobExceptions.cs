@@ -143,6 +143,38 @@ internal sealed class ArtifactAlreadyExistsException : Exception
 }
 
 /// <summary>
+/// Raised when an <c>env:overwriteOutput=true</c> replacement cannot complete
+/// because the artifact store failed to delete the colliding artifact
+/// (<c>DeleteAsync</c> returned <c>false</c>). Rather than proceeding to add a
+/// second <c>Available</c> artifact under the same label — leaving the workspace
+/// with a duplicate or half-replaced output — the replacement is aborted and
+/// this is surfaced through the same curated failure channel as
+/// <see cref="ArtifactAlreadyExistsException"/>.
+/// </summary>
+internal sealed class ArtifactReplacementFailedException : Exception
+{
+    /// <summary>
+    /// Identifier of the workspace whose replacement could not complete.
+    /// </summary>
+    public string WorkspaceId { get; }
+
+    /// <summary>
+    /// Stable output label whose existing artifact could not be deleted.
+    /// </summary>
+    public string Label { get; }
+
+    public ArtifactReplacementFailedException(string workspaceId, string label)
+        : base(
+            $"Output '{label}' in workspace '{workspaceId}' could not be replaced: " +
+            "the existing artifact could not be deleted, so the replacement was aborted " +
+            "to avoid leaving a duplicate output. Retry, or remove the existing output before re-running.")
+    {
+        WorkspaceId = workspaceId;
+        Label = label;
+    }
+}
+
+/// <summary>
 /// Raised when a runtime admission control blocks job submission.
 /// Both Throttled and Denied outcomes surface through this exception; the outcome
 /// and dimension are preserved for protocol mapping, telemetry, and eval harness signals.

@@ -332,7 +332,9 @@ internal static class GPServerEndpoints
             }
 
             var plan = planResult.Plan!;
-            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters, envControls);
+            var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
+            var protocolMetadata = BuildProtocolMetadata(
+                serviceId, taskName, definition, parameters, envControls, workingSrid);
             var job = await jobService.SubmitJobAsync(
                 plan,
                 idempotencyKey: null,
@@ -443,7 +445,9 @@ internal static class GPServerEndpoints
                     "FeatureSet requires feature-collection execution");
             }
 
-            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters, envControls);
+            var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
+            var protocolMetadata = BuildProtocolMetadata(
+                serviceId, taskName, definition, parameters, envControls, workingSrid);
             var job = await jobService.SubmitJobAsync(
                 planResult.Plan!,
                 idempotencyKey: null,
@@ -468,7 +472,6 @@ internal static class GPServerEndpoints
                 return BuildExecuteFailureResponse(terminal, "esriJobCancelled");
             }
 
-            var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             return await BuildExecuteSuccessResponseAsync(
                 jobService, terminal, context.User, envControls, workingSrid, ct);
         }
@@ -971,11 +974,24 @@ internal static class GPServerEndpoints
                     $"Output parameter '{paramName}' not found");
             }
 
+            var value = artifact.Uri ?? artifact.Label;
+
+            // Honor env:outSR on the async path: when the job was submitted with
+            // env:outSR, apply the same reprojection the synchronous execute path
+            // applies inline (BuildExecuteSuccessResponseAsync). Without this the
+            // async path accepted env:outSR at submitJob and then silently served an
+            // unprojected geometry from results/{param}.
+            var outSrError = TryApplyAsyncOutSr(context, job, artifact, ref value);
+            if (outSrError is not null)
+            {
+                return outSrError;
+            }
+
             var response = new GPResultResponse
             {
                 ParamName = publishedName,
                 DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = artifact.Uri ?? artifact.Label
+                Value = value
             };
 
             return Results.Json(response, GPServerJsonContext.Default.GPResultResponse,
@@ -1485,12 +1501,67 @@ internal static class GPServerEndpoints
         return derivedSrid ?? 0;
     }
 
+    /// <summary>
+    /// Applies the <c>env:outSR</c> reprojection to a completed job's async result
+    /// value, mirroring the synchronous <c>execute</c> path
+    /// (<see cref="BuildExecuteSuccessResponseAsync"/>). Reads the requested output
+    /// SRID and the submission-time working SRID back from the durable job metadata
+    /// and reprojects a reprojectable geometry output through the shared
+    /// <see cref="GPServerOutputReprojection"/> helper. Returns <c>null</c> on
+    /// success (with <paramref name="value"/> reprojected in place when applicable);
+    /// returns a <c>400</c> result when <c>env:outSR</c> was requested for a geometry
+    /// output that cannot be reprojected (unknown source SRID or unsupported
+    /// transform pair) so the async path rejects rather than accepting and silently
+    /// serving an unprojected geometry. <c>env:outSR</c> only affects reprojectable
+    /// geometry (<see cref="ArtifactKind.FeatureLayer"/>) outputs; other output
+    /// kinds are served unchanged, matching Esri <c>env:outSR</c> semantics.
+    /// </summary>
+    private static IResult? TryApplyAsyncOutSr(
+        HttpContext context,
+        ExecutionJobRecord job,
+        ArtifactRef artifact,
+        ref string value)
+    {
+        var outSrRaw = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerOutSr);
+        if (string.IsNullOrWhiteSpace(outSrRaw) ||
+            !int.TryParse(outSrRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var outSr))
+        {
+            return null;
+        }
+
+        if (artifact.Kind != ArtifactKind.FeatureLayer)
+        {
+            return null;
+        }
+
+        var workingSrid = 0;
+        var workingRaw = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkingSr);
+        if (!string.IsNullOrWhiteSpace(workingRaw))
+        {
+            int.TryParse(workingRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out workingSrid);
+        }
+
+        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(value, workingSrid, outSr);
+        if (outcome.Reprojected)
+        {
+            value = outcome.Value ?? value;
+            return null;
+        }
+
+        return SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateBadRequest(context,
+                outcome.CapabilityMessage ??
+                $"env:outSR={outSr} could not be applied to output '{artifact.Label}'."),
+            "Async env:outSR could not be applied");
+    }
+
     private static Dictionary<string, string> BuildProtocolMetadata(
         string serviceId,
         string taskName,
         ProcessDefinition definition,
         IReadOnlyDictionary<string, string> rawParameters,
-        EnvControls envControls)
+        EnvControls envControls,
+        int workingSrid)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -1498,6 +1569,15 @@ internal static class GPServerEndpoints
             [GeoprocessingProtocolMetadataKeys.GPServerServiceId] = serviceId,
             [GeoprocessingProtocolMetadataKeys.GPServerTaskName] = taskName
         };
+
+        // Persist the working (input-derived) SRID so the asynchronous
+        // results/{param} handler can apply the same env:outSR reprojection the
+        // synchronous execute path applies inline. Only meaningful when derivable.
+        if (workingSrid > 0)
+        {
+            metadata[GeoprocessingProtocolMetadataKeys.GPServerWorkingSr] =
+                workingSrid.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
 
         for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
         {

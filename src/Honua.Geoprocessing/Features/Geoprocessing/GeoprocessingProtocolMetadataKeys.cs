@@ -36,6 +36,16 @@ internal static class GeoprocessingProtocolMetadataKeys
     public const string GPServerProcessSr = "gpserver.env.processSR";
 
     /// <summary>
+    /// Job spec parameter key storing the working (input-derived) SRID resolved at
+    /// submission time (WKID). The synchronous <c>execute</c> path reprojects
+    /// output geometry from this SRID to <c>env:outSR</c> inline; persisting it lets
+    /// the asynchronous <c>results/{param}</c> handler apply the identical
+    /// reprojection when serving a completed job's output, so <c>env:outSR</c> is
+    /// honored on the async path instead of being accepted and silently ignored.
+    /// </summary>
+    public const string GPServerWorkingSr = "gpserver.env.workingSR";
+
+    /// <summary>
     /// Job spec parameter key storing the GP <c>env:workspace</c> workspace
     /// identifier requested by the caller. Maps onto the existing workspace
     /// lifecycle model (<see cref="Honua.Core.Features.Geoprocessing.Abstractions.IWorkspaceLifecycleService"/>);

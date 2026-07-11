@@ -206,6 +206,35 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task AddOrReplaceArtifact_CollisionWithOverwrite_DeleteFails_AbortsWithoutAdding()
+    {
+        SetupWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        var existing = new Artifact
+        {
+            ArtifactId = "art-existing",
+            Kind = ArtifactKind.FeatureLayer,
+            Label = "result",
+            State = ArtifactLifecycleState.Available,
+            CreatedAt = Now.AddMinutes(-5),
+            WorkspaceId = "ws-1"
+        };
+        _artifactStore.ListByWorkspaceAsync("ws-1", Arg.Any<CancellationToken>())
+            .Returns([existing]);
+        // The store cannot delete the colliding artifact.
+        _artifactStore.DeleteAsync("art-existing", Arg.Any<CancellationToken>()).Returns(false);
+
+        var ex = await Assert.ThrowsAsync<ArtifactReplacementFailedException>(
+            () => _service.AddOrReplaceArtifactAsync(
+                "ws-1", ArtifactKind.FeatureLayer, "result", overwrite: true, uri: "data:2"));
+
+        Assert.Contains("result", ex.Message);
+        Assert.Contains("could not be replaced", ex.Message);
+        // The replacement must abort before adding a second Available artifact.
+        await _artifactStore.Received(1).DeleteAsync("art-existing", Arg.Any<CancellationToken>());
+        await _artifactStore.DidNotReceive().CreateAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task AddOrReplaceArtifact_IgnoresNonAvailableCollision()
     {
         SetupWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);

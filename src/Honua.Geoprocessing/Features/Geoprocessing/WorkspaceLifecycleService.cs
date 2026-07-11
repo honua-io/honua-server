@@ -162,7 +162,19 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             }
 
             WorkspaceLifecycleLog.ArtifactOverwritten(_logger, collision.ArtifactId, workspaceId, label);
-            await _artifactStore.DeleteAsync(collision.ArtifactId, cancellationToken).ConfigureAwait(false);
+            var deleted = await _artifactStore.DeleteAsync(collision.ArtifactId, cancellationToken)
+                .ConfigureAwait(false);
+            if (!deleted)
+            {
+                // The store could not remove the colliding artifact (lost/promoted
+                // elsewhere, transient store failure). Abort rather than adding a
+                // second Available artifact under the same label, which would leave
+                // the workspace with a duplicate/half-replaced output. Surface the
+                // same curated collision error the non-overwrite path raises so the
+                // caller sees a clear failure instead of a corrupt replacement.
+                WorkspaceLifecycleLog.ArtifactOverwriteDeleteFailed(_logger, collision.ArtifactId, workspaceId, label);
+                throw new ArtifactReplacementFailedException(workspaceId, label);
+            }
         }
 
         return await AddArtifactAsync(
@@ -541,4 +553,10 @@ internal static partial class WorkspaceLifecycleLog
         Level = LogLevel.Information,
         Message = "Overwrote existing artifact {ArtifactId} in workspace {WorkspaceId}: label '{Label}'")]
     public static partial void ArtifactOverwritten(ILogger logger, string artifactId, string workspaceId, string label);
+
+    [LoggerMessage(
+        EventId = 9915,
+        Level = LogLevel.Error,
+        Message = "Aborted overwrite in workspace {WorkspaceId}: failed to delete colliding artifact {ArtifactId} for label '{Label}'")]
+    public static partial void ArtifactOverwriteDeleteFailed(ILogger logger, string artifactId, string workspaceId, string label);
 }
