@@ -67,7 +67,7 @@ The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches
    - `honua_alert_events` - GIS alert events and ops notifications.
    - `honua_operate_events` - fused Operate timeline events.
 
-   To propose a mutating control-plane operation, use `honua_propose_operation` and inspect the returned `supportedKinds`. Approval still resolves through the Console inbox; MCP does not approve its own proposals. Platform release status, deploy operation listing, and rollback-specific MCP tools are tracked separately and should not be assumed in a default deployment.
+   Before proposing a mutating control-plane operation, call the read-only `honua_supported_operation_kinds` tool and choose only a returned kind. Then use `honua_propose_operation`; approval still resolves through the Console inbox, and MCP does not approve its own proposals. The `supportedKinds` field on rejected proposal responses remains for compatibility but is deprecated for discovery.
 
 ## Verify
 

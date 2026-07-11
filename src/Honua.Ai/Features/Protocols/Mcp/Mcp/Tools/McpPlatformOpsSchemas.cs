@@ -19,6 +19,15 @@ internal static class McpPlatformOpsSchemas
         }
         """);
 
+    public static readonly JsonElement SupportedOperationKindsInputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+        """);
+
     public static readonly JsonElement DeployOperationsInputSchema = Parse(
         """
         {
@@ -132,6 +141,25 @@ internal static class McpPlatformOpsSchemas
             "pageSize": { "type": "integer" },
             "totalCount": { "type": "integer" },
             "hasMore": { "type": "boolean" }
+          }
+        }
+        """);
+
+    public static readonly JsonElement SupportedOperationKindsOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["supportedKinds"],
+          "properties": {
+            "supportedKinds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"]
+              },
+              "uniqueItems": true
+            }
           }
         }
         """);

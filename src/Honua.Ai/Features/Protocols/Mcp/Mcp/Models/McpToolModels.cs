@@ -210,6 +210,19 @@ internal sealed class McpProposeOperationOutput
 }
 
 /// <summary>
+/// Read-only projection of the operation kinds that the live gateway can route.
+/// </summary>
+internal sealed class McpSupportedOperationKindsOutput
+{
+    /// <summary>
+    /// Stable <see cref="Honua.Core.Features.Guardrails.Domain.OperationClass"/> identifiers
+    /// backed by registered operation executors.
+    /// </summary>
+    [JsonPropertyName("supportedKinds")]
+    public IReadOnlyList<string> SupportedKinds { get; set; } = [];
+}
+
+/// <summary>
 /// Arguments for <c>honua_publish_service</c>: publish a source table as a
 /// hosted layer/service through the canonical <c>service.publish</c> operation
 /// (#1951). Field names mirror the <c>service.publish</c> operation parameters

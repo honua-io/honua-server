@@ -5,6 +5,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
+using Honua.MySql;
 using Honua.MySql.Features.Infrastructure;
 
 namespace Honua.MySql.Queries.Filters;
@@ -72,7 +73,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
             BinaryOperator.Multiply => "*",
             BinaryOperator.Divide => "/",
             BinaryOperator.Modulo => "%",
-            _ => throw new NotSupportedException(
+            _ => throw MySqlUnsupportedFeature.Create(
                 $"Binary operator '{binary.Operator}' is not supported by the MySQL/MariaDB provider.")
         };
 
@@ -100,7 +101,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
             UnaryOperator.IsNull => $"{operand} IS NULL",
             UnaryOperator.IsNotNull => $"{operand} IS NOT NULL",
             UnaryOperator.Negate => $"-({operand})",
-            _ => throw new NotSupportedException(
+            _ => throw MySqlUnsupportedFeature.Create(
                 $"Unary operator '{unary.Operator}' is not supported by the MySQL/MariaDB provider.")
         };
     }
@@ -144,7 +145,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
             SpatialOperator.Overlaps => $"ST_Overlaps({left}, {right})",
             SpatialOperator.Disjoint => $"ST_Disjoint({left}, {right})",
             SpatialOperator.Equals => $"ST_Equals({left}, {right})",
-            _ => throw new NotSupportedException(
+            _ => throw MySqlUnsupportedFeature.Create(
                 $"Spatial operator '{spatial.Operator}' is not supported by the MySQL/MariaDB provider.")
         };
     }
@@ -159,7 +160,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
         // misleading results.
         if (context.GeometryType is not GeometryType.Point and not GeometryType.MultiPoint)
         {
-            throw new NotSupportedException(
+            throw MySqlUnsupportedFeature.Create(
                 $"Distance spatial filters are only supported for point layers in the MySQL/MariaDB provider " +
                 $"(layer geometry is {context.GeometryType}). ST_Distance_Sphere expects point geometries.");
         }
@@ -171,7 +172,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
         // with the same descriptive contract as the FeatureQuery.SpatialFilter path.
         if (!MySqlSpatialSql.IsDistanceSphereCompatibleSrid(context.Wkid))
         {
-            throw new NotSupportedException(
+            throw MySqlUnsupportedFeature.Create(
                 $"Distance spatial filters require the layer SRID to be EPSG:4326 or SRID 0 in the MySQL/MariaDB provider " +
                 $"(layer SRID is {context.Wkid}). ST_Distance_Sphere is documented as a WGS84 spherical approximation; " +
                 $"pre-project the layer to EPSG:4326 before issuing distance filters.");
@@ -187,7 +188,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
             // Documented as a known limitation in the operator docs.
             SpatialOperator.DWithin => $"ST_Distance_Sphere({left}, {right}) <= {distance}",
             SpatialOperator.Beyond => $"ST_Distance_Sphere({left}, {right}) > {distance}",
-            _ => throw new NotSupportedException(
+            _ => throw MySqlUnsupportedFeature.Create(
                 $"Spatial distance operator '{spatial.Operator}' is not supported by the MySQL/MariaDB provider.")
         };
     }
@@ -200,7 +201,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
                 {
                     if (geometry.Srid != 0 && geometry.Srid != context.Wkid)
                     {
-                        throw new NotSupportedException(
+                        throw MySqlUnsupportedFeature.Create(
                             $"Cross-SRID geometry literals are not supported by the MySQL/MariaDB provider " +
                             $"(layer SRID is {context.Wkid}, literal SRID is {geometry.Srid}). " +
                             $"Pre-project geometries to the layer SRID before filtering.");
@@ -231,7 +232,7 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
                     return GetGeometryColumnExpression(context);
                 }
             default:
-                throw new NotSupportedException(
+                throw MySqlUnsupportedFeature.Create(
                     $"Geometry expression '{expression.GetType().Name}' is not supported by the MySQL/MariaDB provider.");
         }
     }

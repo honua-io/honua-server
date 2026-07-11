@@ -75,6 +75,9 @@ bash -n scripts/ci/*.sh
 echo "Checking Python helper syntax..."
 python3 -m py_compile scripts/ci/*.py
 
+echo "Checking Docker integration gate timeout budget..."
+python3 scripts/ci/validate-docker-gate-timeouts.py
+
 echo "Checking workflow YAML syntax..."
 python3 - <<'PY'
 from pathlib import Path

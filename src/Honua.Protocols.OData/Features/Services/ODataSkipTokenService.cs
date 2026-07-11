@@ -22,10 +22,12 @@ internal static class ODataSkipTokenService
     /// <param name="offset">The pagination offset.</param>
     /// <param name="filter">The $filter query parameter (may be null).</param>
     /// <param name="orderby">The $orderby query parameter (may be null).</param>
+    /// <param name="requestDiscriminator">The tenant/subject discriminator for the request context.</param>
     /// <returns>A Base64Url-encoded opaque cursor string.</returns>
-    public static string Encode(int offset, string? filter, string? orderby)
+    public static string Encode(int offset, string? filter, string? orderby, string requestDiscriminator)
     {
-        var fingerprint = ComputeFingerprint(filter, orderby);
+        ArgumentNullException.ThrowIfNull(requestDiscriminator);
+        var fingerprint = ComputeFingerprint(filter, orderby, requestDiscriminator);
         var payload = string.Create(
             CultureInfo.InvariantCulture,
             $"{offset}{Separator}{fingerprint}");
@@ -38,6 +40,7 @@ internal static class ODataSkipTokenService
     /// <param name="token">The opaque $skiptoken string.</param>
     /// <param name="filter">The $filter query parameter for fingerprint validation (may be null).</param>
     /// <param name="orderby">The $orderby query parameter for fingerprint validation (may be null).</param>
+    /// <param name="requestDiscriminator">The tenant/subject discriminator for fingerprint validation.</param>
     /// <param name="offset">The decoded pagination offset.</param>
     /// <param name="errorMessage">An error message if decoding fails.</param>
     /// <returns>true if decoding succeeded; false otherwise.</returns>
@@ -45,9 +48,11 @@ internal static class ODataSkipTokenService
         string token,
         string? filter,
         string? orderby,
+        string requestDiscriminator,
         out int offset,
         out string? errorMessage)
     {
+        ArgumentNullException.ThrowIfNull(requestDiscriminator);
         offset = 0;
         errorMessage = null;
 
@@ -114,10 +119,10 @@ internal static class ODataSkipTokenService
             return false;
         }
 
-        var expectedFingerprint = ComputeFingerprint(filter, orderby);
+        var expectedFingerprint = ComputeFingerprint(filter, orderby, requestDiscriminator);
         if (!string.Equals(fingerprintPart, expectedFingerprint, StringComparison.Ordinal))
         {
-            errorMessage = "$skiptoken is not valid for this query. The token may have been generated for a different filter or orderby clause.";
+            errorMessage = "$skiptoken is not valid for this request. The token may have been generated for a different filter, orderby clause, tenant, or principal.";
             return false;
         }
 
@@ -128,9 +133,9 @@ internal static class ODataSkipTokenService
     /// <summary>
     /// Computes a short hash fingerprint from the filter and orderby parameters.
     /// </summary>
-    private static string ComputeFingerprint(string? filter, string? orderby)
+    private static string ComputeFingerprint(string? filter, string? orderby, string requestDiscriminator)
     {
-        var input = $"{filter ?? string.Empty}:{orderby ?? string.Empty}";
+        var input = $"{filter ?? string.Empty}:{orderby ?? string.Empty}:{requestDiscriminator}";
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         return Convert.ToHexString(hashBytes)[..FingerprintLength].ToLowerInvariant();
     }
