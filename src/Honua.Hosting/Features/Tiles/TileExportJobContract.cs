@@ -18,7 +18,6 @@ internal enum TileExportSourceKind
 internal enum TileExportPackageFormat
 {
     Zip,
-    Tpk,
     Tpkx
 }
 
@@ -65,27 +64,32 @@ internal static class TileExportArtifactIdentity
 {
     internal const string IdentityMetadataKey = "honua-tile-export-identity";
 
+    // This is a deterministic consistency/content-addressing key over public job parameters,
+    // not an authentication code. Authorization and job-record integrity remain substrate concerns.
     internal static string Compute(TileExportJobPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        var canonical = string.Join('\n',
-            "1",
-            plan.SourceKind.ToString(),
-            plan.ResourceId,
-            plan.LayerId ?? string.Empty,
-            plan.MinZoom.ToString(CultureInfo.InvariantCulture),
-            plan.MaxZoom.ToString(CultureInfo.InvariantCulture),
-            plan.West.ToString("R", CultureInfo.InvariantCulture),
-            plan.South.ToString("R", CultureInfo.InvariantCulture),
-            plan.East.ToString("R", CultureInfo.InvariantCulture),
-            plan.North.ToString("R", CultureInfo.InvariantCulture),
-            plan.TileImageFormat,
-            plan.PackageFormat.ToString(),
-            plan.MaxArtifactBytes.ToString(CultureInfo.InvariantCulture),
-            plan.RetentionSeconds.ToString(CultureInfo.InvariantCulture),
-            plan.StyleId ?? string.Empty);
+        using var canonical = new MemoryStream(capacity: 512);
+        using (var writer = new BinaryWriter(canonical, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(1);
+            writer.Write((int)plan.SourceKind);
+            WriteString(writer, plan.ResourceId);
+            WriteString(writer, plan.LayerId ?? string.Empty);
+            writer.Write(plan.MinZoom);
+            writer.Write(plan.MaxZoom);
+            writer.Write(BitConverter.DoubleToInt64Bits(plan.West));
+            writer.Write(BitConverter.DoubleToInt64Bits(plan.South));
+            writer.Write(BitConverter.DoubleToInt64Bits(plan.East));
+            writer.Write(BitConverter.DoubleToInt64Bits(plan.North));
+            WriteString(writer, plan.TileImageFormat);
+            writer.Write((int)plan.PackageFormat);
+            writer.Write(plan.MaxArtifactBytes);
+            writer.Write(plan.RetentionSeconds);
+            WriteString(writer, plan.StyleId ?? string.Empty);
+        }
 
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        return Convert.ToHexStringLower(SHA256.HashData(canonical.GetBuffer().AsSpan(0, checked((int)canonical.Length))));
     }
 
     internal static string BuildObjectKey(TileExportJobPlan plan)
@@ -95,10 +99,16 @@ internal static class TileExportArtifactIdentity
         => format switch
         {
             TileExportPackageFormat.Zip => "zip",
-            TileExportPackageFormat.Tpk => "tpk",
             TileExportPackageFormat.Tpkx => "tpkx",
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported tile package format.")
         };
+
+    private static void WriteString(BinaryWriter writer, string value)
+    {
+        var byteCount = Encoding.UTF8.GetByteCount(value);
+        writer.Write(byteCount);
+        writer.Write(Encoding.UTF8.GetBytes(value));
+    }
 }
 
 internal static class TileExportExecutionSpecBuilder
@@ -107,6 +117,24 @@ internal static class TileExportExecutionSpecBuilder
     private const int MaximumZoom = 30;
     private const long MaximumArtifactBytes = 1024L * 1024 * 1024;
     private const int MaximumRetentionSeconds = 7 * 24 * 60 * 60;
+    private static readonly ImmutableHashSet<string> ExpectedParameterKeys = ImmutableHashSet.Create(
+        StringComparer.Ordinal,
+        TileExportJobParameterKeys.ContractVersion,
+        TileExportJobParameterKeys.SourceKind,
+        TileExportJobParameterKeys.ResourceId,
+        TileExportJobParameterKeys.LayerId,
+        TileExportJobParameterKeys.MinZoom,
+        TileExportJobParameterKeys.MaxZoom,
+        TileExportJobParameterKeys.West,
+        TileExportJobParameterKeys.South,
+        TileExportJobParameterKeys.East,
+        TileExportJobParameterKeys.North,
+        TileExportJobParameterKeys.TileImageFormat,
+        TileExportJobParameterKeys.PackageFormat,
+        TileExportJobParameterKeys.MaxArtifactBytes,
+        TileExportJobParameterKeys.RetentionSeconds,
+        TileExportJobParameterKeys.StyleId,
+        TileExportJobParameterKeys.ContentIdentity);
 
     internal static ExecutionJobSpec Build(
         TileExportJobPlan plan,
@@ -155,7 +183,13 @@ internal static class TileExportExecutionSpecBuilder
 
         try
         {
-            if (parameters.Count > 32 || parameters.Values.Any(static value => value is null || value.Length >= 1024))
+            if (!ExpectedParameterKeys.SetEquals(parameters.Keys))
+            {
+                error = "Tile-export parameters do not match the exact versioned contract key set.";
+                return false;
+            }
+
+            if (parameters.Values.Any(static value => value is null || value.Length >= 1024))
             {
                 error = "Tile-export parameters exceed the bounded contract size.";
                 return false;
@@ -236,6 +270,10 @@ internal static class TileExportExecutionSpecBuilder
             throw new ArgumentException("Tile-export resource id must contain 1 to 256 characters.", nameof(plan));
         if (plan.LayerId?.Length > 128 || plan.StyleId?.Length > 256)
             throw new ArgumentException("Tile-export layer and style identifiers exceed their limits.", nameof(plan));
+        if (ContainsControlCharacter(plan.ResourceId) ||
+            ContainsControlCharacter(plan.LayerId) ||
+            ContainsControlCharacter(plan.StyleId))
+            throw new ArgumentException("Tile-export identifiers must not contain control characters.", nameof(plan));
         if (plan.MinZoom < 0 || plan.MaxZoom > MaximumZoom || plan.MinZoom > plan.MaxZoom)
             throw new ArgumentException("Tile-export zoom levels must form an ordered range from 0 to 30.", nameof(plan));
         if (!double.IsFinite(plan.West) || !double.IsFinite(plan.South) ||
@@ -252,6 +290,9 @@ internal static class TileExportExecutionSpecBuilder
     }
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    private static bool ContainsControlCharacter(string? value)
+        => value?.Any(char.IsControl) == true;
 
     private static bool TryGet(IReadOnlyDictionary<string, string> values, string key, out string value)
         => values.TryGetValue(key, out value!) && value is not null;

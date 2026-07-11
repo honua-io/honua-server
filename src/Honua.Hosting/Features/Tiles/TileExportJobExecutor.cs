@@ -46,9 +46,13 @@ internal sealed partial class TileExportJobExecutor(
             return JobExecutionResult.Succeeded();
         }
 
-        var producer = producers.FirstOrDefault(candidate => candidate.CanProduce(parsedPlan));
-        if (producer is null)
+        var matchingProducers = producers.Where(candidate => candidate.CanProduce(parsedPlan)).Take(2).ToArray();
+        if (matchingProducers.Length == 0)
             return JobExecutionResult.Failed("No tile-export package producer can execute this plan.");
+        if (matchingProducers.Length > 1)
+            return JobExecutionResult.Failed("Multiple tile-export package producers matched this plan.");
+
+        var producer = matchingProducers[0];
 
         var temporaryPath = Path.Combine(Path.GetTempPath(), $"honua-tile-export-{Guid.NewGuid():N}.tmp");
         try

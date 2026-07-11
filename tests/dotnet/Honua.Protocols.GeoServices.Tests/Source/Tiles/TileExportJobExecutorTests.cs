@@ -41,7 +41,7 @@ public sealed class TileExportJobExecutorTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public void TryParse_TamperedPlanIdentity_IsRejected()
+    public void TryParse_InconsistentPlanIdentity_IsRejected()
     {
         var parameters = TileExportExecutionSpecBuilder.Build(CreatePlan()).Parameters
             .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal);
@@ -51,6 +51,58 @@ public sealed class TileExportJobExecutorTests
 
         plan.Should().BeNull();
         error.Should().Contain("identity");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void Build_AdjacentStringBoundaries_ProduceDistinctCanonicalIdentities()
+    {
+        var first = CreatePlan() with { ResourceId = "ab", LayerId = "c" };
+        var second = CreatePlan() with { ResourceId = "a", LayerId = "bc" };
+
+        TileExportArtifactIdentity.Compute(first).Should().NotBe(TileExportArtifactIdentity.Compute(second));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void Build_ControlCharacterInAnyIdentifier_IsRejected()
+    {
+        var invalidPlans = new[]
+        {
+            CreatePlan() with { ResourceId = "world\nbasemap" },
+            CreatePlan() with { LayerId = "0\rlayer" },
+            CreatePlan() with { StyleId = "default\tstyle" }
+        };
+
+        foreach (var plan in invalidPlans)
+        {
+            var act = () => TileExportExecutionSpecBuilder.Build(plan);
+
+            act.Should().Throw<ArgumentException>().WithMessage("*control characters*");
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void PackageFormats_AdvertiseOnlyImplementedRuntimeSeams()
+    {
+        Enum.GetValues<TileExportPackageFormat>().Should().Equal(
+            TileExportPackageFormat.Zip,
+            TileExportPackageFormat.Tpkx);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_UnknownContractKey_IsRejected()
+    {
+        var parameters = TileExportExecutionSpecBuilder.Build(CreatePlan()).Parameters
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal);
+        parameters[TileExportJobParameterKeys.Prefix + "future"] = "ignored-state";
+
+        TileExportExecutionSpecBuilder.TryParse(parameters, out var plan, out var error).Should().BeFalse();
+
+        plan.Should().BeNull();
+        error.Should().Contain("exact versioned contract key set");
     }
 
     [UnitTest]
@@ -205,6 +257,29 @@ public sealed class TileExportJobExecutorTests
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.ErrorMessage.Should().Contain("producer");
         context.Artifacts.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExecuteAsync_MultipleMatchingProducers_FailsDeterministically()
+    {
+        var plan = CreatePlan();
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((CloudFile?)null);
+        var first = Substitute.For<ITileExportPackageProducer>();
+        var second = Substitute.For<ITileExportPackageProducer>();
+        first.CanProduce(plan).Returns(true);
+        second.CanProduce(plan).Returns(true);
+        var context = new RecordingContext("export-ambiguous-producer");
+        var executor = CreateExecutor(storage, first, second);
+
+        var result = await executor.ExecuteAsync(JobFor(plan, context.OperationId), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("Multiple");
+        context.Artifacts.Should().BeEmpty();
+        await first.DidNotReceiveWithAnyArgs().ProduceAsync(default!, default!, default);
+        await second.DidNotReceiveWithAnyArgs().ProduceAsync(default!, default!, default);
     }
 
     private static TileExportJobExecutor CreateExecutor(
