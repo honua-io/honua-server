@@ -42,6 +42,31 @@ public interface IRasterStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Queries a layer's raster catalog with the neutral <see cref="RasterCatalogQuery"/> contract,
+    /// pushing the validated envelope-intersects predicate, identity, temporal, and paging inputs
+    /// into storage <b>before materialization</b> so large imagery catalogs are never fully read to
+    /// satisfy a spatial browse.
+    /// </summary>
+    /// <remarks>
+    /// Implementations that can push the predicate into indexed storage (PostGIS) MUST do so and set
+    /// <see cref="RasterCatalogPage.PredicatePushedDown"/> to <see langword="true"/>. Providers that
+    /// cannot push down MUST fall back to a bounded materialization — delegate to
+    /// <see cref="Honua.Core.Features.Raster.Services.RasterCatalogQueryEvaluator.EvaluateAsync"/> over
+    /// <see cref="ListRastersAsync"/> — which preserves identical result count, aggregate extent,
+    /// paging, and envelope-intersects semantics while declaring the fallback via
+    /// <see cref="RasterCatalogPage.PredicatePushedDown"/> = <see langword="false"/>. The envelope
+    /// predicate is intentionally an inclusive bounding-box overlap, not exact geometry.
+    /// </remarks>
+    /// <param name="layerId">Layer identifier to query.</param>
+    /// <param name="query">The validated neutral catalog query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The matched page plus pre-paging count/extent and read-bounding telemetry counters.</returns>
+    Task<RasterCatalogPage> QueryCatalogAsync(
+        int layerId,
+        RasterCatalogQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Exports raster data with optional clipping, reprojection, and resampling.
     /// Equivalent to Esri Image Server exportImage operation.
     /// </summary>
