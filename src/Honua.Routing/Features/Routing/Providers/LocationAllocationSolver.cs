@@ -6,13 +6,14 @@ using Honua.Routing.Features.Routing.Domain;
 namespace Honua.Routing.Features.Routing.Providers;
 
 /// <summary>
-/// Pure, database-free solver for the two location-allocation problem types shipped
-/// in the first increment of #1874 (minimize-impedance and maximize-coverage) over a
-/// precomputed candidate-facility × demand-point impedance matrix. A greedy
-/// (interchange-free) heuristic is used: it is exact for a single facility and a
-/// good, deterministic approximation for the p-median / maximal-coverage problems
-/// without an external LP/heuristic solver. Kept separate from the provider so it can
-/// be unit-tested without a pgRouting topology.
+/// Pure, database-free solver for bounded location-allocation objectives over a
+/// precomputed candidate-facility × demand-point impedance matrix. The
+/// interchange-free greedy heuristic is exact for one-facility requests. For
+/// minimize-facilities it is the standard deterministic greedy set-cover
+/// approximation (at most H(n) times the optimal facility count for n coverable
+/// demand points). Runtime is O(F²D) and memory is O(D), bounded by the routing
+/// facility/demand caps. Kept separate from the provider so it can be unit-tested
+/// without a pgRouting topology or heavyweight optimizer dependency.
 /// </summary>
 internal static class LocationAllocationSolver
 {
@@ -26,17 +27,22 @@ internal static class LocationAllocationSolver
     /// from candidate facility to demand point, or
     /// <see cref="double.PositiveInfinity"/> when unreachable.
     /// </param>
+    /// <param name="cancellationToken">Cancellation checked throughout the bounded search.</param>
     /// <returns>The chosen facilities and per-demand allocations.</returns>
     public static LocationAllocationSolveResult Solve(
         LocationAllocationSolveRequest request,
-        double[][] matrix)
+        double[][] matrix,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(matrix);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var facilityCount = request.Facilities.Count;
         var demandCount = request.DemandPoints.Count;
-        var toFind = Math.Clamp(request.FacilitiesToFind, 1, Math.Max(1, facilityCount));
+        var toFind = request.ProblemType == LocationAllocationProblemType.MinimizeFacilities
+            ? facilityCount
+            : Math.Clamp(request.FacilitiesToFind, 1, Math.Max(1, facilityCount));
         var cutoff = request.ImpedanceCutoff;
 
         // Effective cost for a (facility, demand) pair after applying the cutoff:
@@ -59,13 +65,13 @@ internal static class LocationAllocationSolver
 
         for (var pick = 0; pick < toFind; pick++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var bestFacility = -1;
-            var bestObjectiveDelta = request.ProblemType == LocationAllocationProblemType.MaximizeCoverage
-                ? double.NegativeInfinity // maximize covered weight gained
-                : double.NegativeInfinity; // maximize weighted-impedance reduction
+            var bestObjectiveDelta = double.NegativeInfinity;
 
             for (var f = 0; f < facilityCount; f++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (chosen.Contains(f))
                 {
                     continue;
@@ -84,6 +90,16 @@ internal static class LocationAllocationSolver
                         if (!alreadyCovered && !double.IsInfinity(candidateCost))
                         {
                             delta += weight;
+                        }
+                    }
+                    else if (request.ProblemType == LocationAllocationProblemType.MinimizeFacilities)
+                    {
+                        // Greedy set cover: select the candidate that reaches the
+                        // greatest number of demand points not yet covered. Demand
+                        // weights do not alter the all-demand coverage contract.
+                        if (double.IsInfinity(best[d]) && !double.IsInfinity(candidateCost))
+                        {
+                            delta++;
                         }
                     }
                     else
@@ -117,7 +133,9 @@ internal static class LocationAllocationSolver
                 }
             }
 
-            if (bestFacility < 0)
+            if (bestFacility < 0 ||
+                (request.ProblemType == LocationAllocationProblemType.MinimizeFacilities &&
+                 bestObjectiveDelta <= 0))
             {
                 break;
             }
