@@ -184,6 +184,7 @@ public class ImageServerEndpointsTests
         // Returned in deliberately unsorted order so orderByFields has work to do.
         var rasters = new[] { Build(200, "b"), Build(100, "a"), Build(300, "c") };
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(rasters);
+        store.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(rasters);
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>());
         return store;
@@ -724,6 +725,170 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/999?f=json");
 
             // GeoServices errors use HTTP 200 and carry the status in the Esri error body.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/image")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/image")]
+    [Operation(Operations.Export)]
+    public async Task GetRasterItemImage_ExistingRaster_ReturnsSelectedRasterPixels()
+    {
+        var store = CreateMultiRasterStoreSubstitute();
+        var selectedRasterIds = new List<long>();
+        store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                selectedRasterIds.Add(call.ArgAt<long>(1));
+                return new RasterResult
+                {
+                    Data = [0x89, 0x50, 0x4E, 0x47],
+                    ContentType = "image/png",
+                    Width = 256,
+                    Height = 256,
+                    Srid = 4326,
+                };
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/200/image?format=png&f=image");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+            foreach (var responseFormat in new string?[] { null, "json", "pjson" })
+            {
+                var formatQuery = responseFormat is null ? string.Empty : $"&f={responseFormat}";
+                var jsonResponse = await fixture.Client.GetAsync(
+                    $"/rest/services/{TestLayerId}/ImageServer/200/image?format=png{formatQuery}");
+
+                jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+                jsonResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+                var envelope = JsonDocument.Parse(await jsonResponse.Content.ReadAsStringAsync()).RootElement;
+                envelope.GetProperty("href").GetString().Should().NotBeNullOrWhiteSpace();
+                envelope.GetProperty("width").GetInt32().Should().Be(256);
+                envelope.GetProperty("height").GetInt32().Should().Be(256);
+            }
+
+            selectedRasterIds.Should().Equal(200, 200, 200, 200);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/info")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/info")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemInfo_ExistingRaster_ReturnsCanonicalMetadata()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/info?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            info.EnumerateObject().Select(static property => property.Name).Should().BeEquivalentTo([
+                "origin",
+                "blockWidth",
+                "blockHeight",
+                "pixelSizeX",
+                "pixelSizeY",
+                "extent",
+                "bandCount",
+                "pixelType",
+                "firstPyramidLevel",
+                "maxPyramidLevel",
+            ]);
+            info.GetProperty("blockWidth").GetInt32().Should().Be(256);
+            info.GetProperty("bandCount").GetInt32().Should().Be(1);
+            info.GetProperty("pixelType").GetString().Should().Be("U8");
+            info.GetProperty("extent").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+            info.GetProperty("firstPyramidLevel").GetInt32().Should().Be(0);
+            info.GetProperty("maxPyramidLevel").GetInt32().Should().Be(0);
+            info.TryGetProperty("maximumPyramidLevel", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/info/keyProperties")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/info/keyProperties")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/100/info/keyProperties?f=pjson");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var properties = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            properties.GetProperty("BandCount").GetInt32().Should().Be(1);
+            properties.GetProperty("DataType").GetString().Should().Be("U8");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/info/histograms")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/info/histograms")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/info/histograms?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var histograms = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement
+                .GetProperty("histograms");
+            histograms.GetArrayLength().Should().Be(1);
+            histograms[0].GetProperty("counts").GetArrayLength().Should().Be(4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/info")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemInfo_UnknownRaster_ReturnsNotFoundError()
+    {
+        var store = CreateRasterStoreSubstitute();
+        store.GetRasterInfoAsync(TestLayerId, 999, Arg.Any<CancellationToken>())
+            .Returns((RasterInfo?)null);
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/999/info?f=json");
+
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
             body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);

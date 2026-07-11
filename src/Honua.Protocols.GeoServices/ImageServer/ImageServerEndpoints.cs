@@ -179,6 +179,36 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        group.MapGet("/{rasterId:long}/image", GetRasterItemImage)
+            .WithDisplayName("Get Raster Item Image")
+            .WithName("GetImageServerRasterItemImage")
+            .WithSummary("Render one raster catalog item")
+            .Produces<ExportImageResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(200, contentType: "image/png")
+            .Produces(400)
+            .Produces(404);
+        group.MapGet("/{rasterId:long}/info", GetRasterItemInfo)
+            .WithDisplayName("Get Raster Item Info")
+            .WithName("GetImageServerRasterItemInfo")
+            .WithSummary("Get one raster item's storage metadata")
+            .Produces<RasterItemInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapGet("/{rasterId:long}/info/keyProperties", GetRasterItemKeyProperties)
+            .WithDisplayName("Get Raster Item Key Properties")
+            .WithName("GetImageServerRasterItemKeyProperties")
+            .WithSummary("Get one raster item's key properties")
+            .Produces<KeyPropertiesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapGet("/{rasterId:long}/info/histograms", GetRasterItemHistograms)
+            .WithDisplayName("Get Raster Item Histograms")
+            .WithName("GetImageServerRasterItemHistograms")
+            .WithSummary("Get one raster item's band histograms")
+            .Produces<HistogramsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         group.MapGet("/find", FindGet)
             .WithDisplayName("Find Image Catalog Items (GET)")
             .WithName("ImageServerFindGet")
@@ -674,6 +704,36 @@ internal static class ImageServerEndpoints
             .WithName("GetImageServerRasterCatalogItemByService")
             .WithSummary("Get one raster catalog item")
             .Produces<CatalogQueryFeature>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/{rasterId:long}/image", GetRasterItemImageByService)
+            .WithDisplayName("Get Raster Item Image by Service")
+            .WithName("GetImageServerRasterItemImageByService")
+            .WithSummary("Render one raster catalog item")
+            .Produces<ExportImageResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(200, contentType: "image/png")
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapGet("/{rasterId:long}/info", GetRasterItemInfoByService)
+            .WithDisplayName("Get Raster Item Info by Service")
+            .WithName("GetImageServerRasterItemInfoByService")
+            .WithSummary("Get one raster item's storage metadata")
+            .Produces<RasterItemInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapGet("/{rasterId:long}/info/keyProperties", GetRasterItemKeyPropertiesByService)
+            .WithDisplayName("Get Raster Item Key Properties by Service")
+            .WithName("GetImageServerRasterItemKeyPropertiesByService")
+            .WithSummary("Get one raster item's key properties")
+            .Produces<KeyPropertiesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapGet("/{rasterId:long}/info/histograms", GetRasterItemHistogramsByService)
+            .WithDisplayName("Get Raster Item Histograms by Service")
+            .WithName("GetImageServerRasterItemHistogramsByService")
+            .WithSummary("Get one raster item's band histograms")
+            .Produces<HistogramsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
 
@@ -1490,6 +1550,124 @@ internal static class ImageServerEndpoints
             context,
             handler,
             cancellationToken);
+    }
+
+    private static async Task<IResult> GetRasterItemImage(
+        int id,
+        long rasterId,
+        HttpContext context,
+        ImageServerExportHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        return await handler.ExportImageAsync(context, id, CreateRasterItemImageRequest(values, rasterId), cancellationToken);
+    }
+
+    private static async Task<IResult> GetRasterItemImageByService(
+        string serviceId,
+        long rasterId,
+        HttpContext context,
+        ImageServerExportHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetRasterItemImage(
+            resolution.LayerId, rasterId, context, handler, cancellationToken);
+    }
+
+    private static Task<IResult> GetRasterItemInfo(
+        int id,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataAsync(id, rasterId, f, context, handler.GetInfoAsync, cancellationToken);
+
+    private static Task<IResult> GetRasterItemKeyProperties(
+        int id,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataAsync(id, rasterId, f, context, handler.GetKeyPropertiesAsync, cancellationToken);
+
+    private static Task<IResult> GetRasterItemHistograms(
+        int id,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataAsync(id, rasterId, f, context, handler.GetHistogramsAsync, cancellationToken);
+
+    private static async Task<IResult> ExecuteRasterItemMetadataAsync(
+        int id,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        Func<HttpContext, int, long, CancellationToken, Task<IResult>> execute,
+        CancellationToken cancellationToken)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return IsSupportedJsonResponseFormat(f)
+            ? await execute(context, id, rasterId, cancellationToken)
+            : CreateUnsupportedJsonFormatResult(context);
+    }
+
+    private static Task<IResult> GetRasterItemInfoByService(
+        string serviceId,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataByServiceAsync(
+            serviceId, rasterId, f, context, handler.GetInfoAsync, cancellationToken);
+
+    private static Task<IResult> GetRasterItemKeyPropertiesByService(
+        string serviceId,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataByServiceAsync(
+            serviceId, rasterId, f, context, handler.GetKeyPropertiesAsync, cancellationToken);
+
+    private static Task<IResult> GetRasterItemHistogramsByService(
+        string serviceId,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataByServiceAsync(
+            serviceId, rasterId, f, context, handler.GetHistogramsAsync, cancellationToken);
+
+    private static async Task<IResult> ExecuteRasterItemMetadataByServiceAsync(
+        string serviceId,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        Func<HttpContext, int, long, CancellationToken, Task<IResult>> execute,
+        CancellationToken cancellationToken)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ExecuteRasterItemMetadataAsync(
+            resolution.LayerId, rasterId, f, context, execute, cancellationToken);
     }
 
     /// <summary>
@@ -2911,6 +3089,31 @@ internal static class ImageServerEndpoints
             Time = GetString(values, "time"),
             F = GetString(values, "f") ?? "json"
         };
+
+    private static ExportImageRequest CreateRasterItemImageRequest(
+        IReadOnlyDictionary<string, StringValues> values,
+        long rasterId)
+    {
+        var request = CreateExportImageRequest(values);
+        return new ExportImageRequest
+        {
+            Bbox = request.Bbox,
+            Size = request.Size,
+            ImageSr = request.ImageSr,
+            BboxSr = request.BboxSr,
+            Format = request.Format,
+            PixelType = request.PixelType,
+            NoData = request.NoData,
+            NoDataInterpretation = request.NoDataInterpretation,
+            Interpolation = request.Interpolation,
+            Compression = request.Compression,
+            CompressionQuality = request.CompressionQuality,
+            BandIds = request.BandIds,
+            MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
+            RenderingRule = request.RenderingRule,
+            F = request.F,
+        };
+    }
 
     private static IdentifyRequest CreateIdentifyRequest(IReadOnlyDictionary<string, StringValues> values)
         => new()

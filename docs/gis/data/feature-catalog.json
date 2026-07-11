@@ -7774,6 +7774,59 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-id-imageserver-rasterid-image",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/image",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImage_ExistingRaster_ReturnsSelectedRasterPixels"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-info",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/info",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemInfo_ExistingRaster_ReturnsCanonicalMetadata",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemInfo_UnknownRaster_ReturnsNotFoundError"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-info-histograms",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/info/histograms",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-info-keyproperties",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/info/keyProperties",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-locatorname-geocodeserver",
       "route": "/rest/services/{locatorName}/GeocodeServer",
       "method": "GET",
@@ -9268,6 +9321,58 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterCatalogItem_ByServiceName_ReturnsFeature"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-image",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/image",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImage_ExistingRaster_ReturnsSelectedRasterPixels"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-info",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/info",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemInfo_ExistingRaster_ReturnsCanonicalMetadata"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-info-histograms",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/info/histograms",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-info-keyproperties",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/info/keyProperties",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
