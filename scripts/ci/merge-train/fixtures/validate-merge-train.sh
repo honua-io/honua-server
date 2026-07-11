@@ -14,6 +14,8 @@
 #                           reproduce-twice => real.
 #   7. ff-cas-race       -> concurrent trunk advance => FF push rejected +
 #                           re-assemble signaled (rc=10).
+#   8. fail-closed CI    -> cancelled/incomplete jobs cannot use the
+#                           non-blocking failure bypass.
 #
 # Roll-forward auto-fix loop (offline-mocked; NO real Bedrock/AI calls):
 #   Cap.1 pre-existing filter -> all-pre-existing => rc11 (land); some
@@ -206,6 +208,59 @@ __fake_fmt_noop() { :; }
 export TRAIN_FORMAT_CMD=__fake_fmt_noop; export -f __fake_fmt_noop
 train_forward_fix fwdfix-batch 2 && bad "fwdfix: cap not enforced" || ok "fwdfix: cap (2) enforced"
 unset TRAIN_FORMAT_CMD
+
+echo "== Case 4b: non-blocking bypass fails closed on incomplete CI =="
+export TRAIN_CI_JOBS_READER=__ci_jobs
+__ci_jobs() {
+  case "${CI_JOBS_CASE}" in
+    safe)
+      printf 'success\tBuild & Format Check\nsuccess\tServer Tests (Core)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
+      ;;
+    cancelled)
+      printf 'success\tBuild & Format Check\ncancelled\tServer Tests (Core)\nfailure\tTest Suite Summary\ncancelled\tCI Gate\n'
+      ;;
+    missing-shards)
+      printf 'failure\tTest Suite Summary\nfailure\tCI Gate\n'
+      ;;
+    partial-missing)
+      printf 'success\tBuild & Format Check\nsuccess\tServer Tests (Core)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
+      ;;
+    blocking-skipped)
+      printf 'success\tBuild & Format Check\nsuccess\tServer Tests (Core)\nskipped\tServer Tests (Workflow Packages)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
+      ;;
+    timed-out)
+      printf 'success\tBuild & Format Check\ntimed_out\tServer Tests (Core)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
+      ;;
+  esac
+}
+export -f __ci_jobs
+SAFE_DESCRIPTOR='{"run_all":false,"shards":["Core"]}'
+TWO_SHARD_DESCRIPTOR='{"run_all":false,"shards":["Core","Workflow Packages"]}'
+CI_JOBS_CASE=safe train_nonblocking_failures_are_safe 1 "${SAFE_DESCRIPTOR}" \
+  && ok "ci-safe: optional failures with successful blocking jobs may land" \
+  || bad "ci-safe: valid optional-only failure was rejected"
+CI_JOBS_CASE=safe train_ci_jobs_are_terminal 1 \
+  && ok "ci-safe: success/failure jobs are terminal evidence" \
+  || bad "ci-safe: terminal job set was rejected"
+CI_JOBS_CASE=cancelled train_nonblocking_failures_are_safe 2 "${SAFE_DESCRIPTOR}" \
+  && bad "ci-safe: cancelled gate/shard must fail closed" \
+  || ok "ci-safe: cancelled gate/shard fails closed"
+CI_JOBS_CASE=cancelled train_ci_jobs_are_terminal 2 \
+  && bad "ci-safe: cancelled jobs must make the run unusable" \
+  || ok "ci-safe: cancelled jobs make the run unusable"
+CI_JOBS_CASE=missing-shards train_nonblocking_failures_are_safe 3 "${SAFE_DESCRIPTOR}" \
+  && bad "ci-safe: missing blocking jobs must fail closed" \
+  || ok "ci-safe: missing blocking jobs fail closed"
+CI_JOBS_CASE=timed-out train_nonblocking_failures_are_safe 4 "${SAFE_DESCRIPTOR}" \
+  && bad "ci-safe: timed-out shard must fail closed" \
+  || ok "ci-safe: timed-out shard fails closed"
+CI_JOBS_CASE=partial-missing train_expected_shards_are_classifiable 5 "${TWO_SHARD_DESCRIPTOR}" \
+  && bad "ci-safe: partially missing selected shard must fail closed" \
+  || ok "ci-safe: partially missing selected shard fails closed"
+CI_JOBS_CASE=blocking-skipped train_expected_shards_are_classifiable 6 "${TWO_SHARD_DESCRIPTOR}" \
+  && bad "ci-safe: skipped selected shard must fail closed" \
+  || ok "ci-safe: skipped selected shard fails closed"
+unset TRAIN_CI_JOBS_READER CI_JOBS_CASE SAFE_DESCRIPTOR TWO_SHARD_DESCRIPTOR
 
 echo "== Case 5: real-test-fail (attribute + drop; 0-suspect escalates) =="
 # Build a 2-PR batch where pr401 touches a FeatureServer path and pr402 an OGC
