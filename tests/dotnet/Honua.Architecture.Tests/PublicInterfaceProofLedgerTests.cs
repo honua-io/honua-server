@@ -630,7 +630,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
     private static string FormatOperationKey(string protocol, string operation) =>
         $"{protocol}::{operation}";
 
-    [GeneratedRegex(@"(?<sdk>js|python|dotnet):\s*\[(?<surfaces>.*?)\]", RegexOptions.Singleline)]
+    [GeneratedRegex(@"(?<sdk>js|python|dotnet):\s*(?:\(\s*)?\[(?<surfaces>.*?)\]", RegexOptions.Singleline)]
     private static partial Regex SdkProtocolSurfaceBlockRegex();
 
     [GeneratedRegex(@"sdk-compat-matrix:[\s\S]*?timeout-minutes:\s*(?<minutes>\d+)")]
