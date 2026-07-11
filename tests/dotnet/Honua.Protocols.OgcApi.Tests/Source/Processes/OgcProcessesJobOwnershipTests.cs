@@ -28,10 +28,14 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesJobOwnershipTests : IClassFixture<OgcProcessesJobOwnershipTestsFixture>
 {
+    private readonly OgcProcessesJobOwnershipTestsFixture _fixture;
     private readonly HttpClient _client;
 
     public OgcProcessesJobOwnershipTests(OgcProcessesJobOwnershipTestsFixture fixture)
-        => _client = fixture.Client;
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     [IntegrationTest]
     [Operation(Operations.JobStatus)]
@@ -89,6 +93,24 @@ public sealed class OgcProcessesJobOwnershipTests : IClassFixture<OgcProcessesJo
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
+    public async Task DismissJob_CrossOwnerJob_ReturnsNotFound_AndDoesNotCancel()
+    {
+        // #2753: DismissJob is a destructive write; a non-owner must not be able to cancel
+        // another owner's job. The ownership check must reject BEFORE any mutation.
+        using var response = await _client.DeleteAsync("/ogc/processes/jobs/other-job");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // The job must be untouched — still Running, not Cancelled.
+        var job = await _fixture.JobStore.GetAsync("other-job");
+        job.Should().NotBeNull();
+        job!.Status.Should().Be(ExecutionJobStatus.Running,
+            "a denied dismiss must not cancel the non-owned job (#2753)");
+    }
 }
 
 /// <summary>
@@ -138,6 +160,9 @@ public sealed class OgcProcessesJobOwnershipTestsFixture : IAsyncLifetime
     }
 
     public HttpClient Client { get; private set; } = null!;
+
+    /// <summary>The seeded in-memory job store, so a test can assert a job was not mutated.</summary>
+    public InMemoryExecutionJobStore JobStore => _jobStore;
 
     public async Task InitializeAsync()
     {
