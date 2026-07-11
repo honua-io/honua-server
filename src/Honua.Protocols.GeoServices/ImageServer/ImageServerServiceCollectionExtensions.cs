@@ -56,6 +56,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerFindHandler>();
         services.AddScoped<ImageServerMeasureHandler>();
         services.AddScoped<ImageServerWmtsHandler>();
+        services.AddScoped<ImageServerExportBackend>();
 
         // Register supporting services
         services.TryAddScoped<SpatialReferenceResolver>();

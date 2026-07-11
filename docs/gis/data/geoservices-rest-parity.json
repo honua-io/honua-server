@@ -1228,7 +1228,8 @@
         "spatial WHERE pushdown for query",
         "inline Colorramp object (algorithmic/multipart ramp) resolution for Colormap",
         "multidimensional cube ingestion",
-        "per-slice pixel subsetting of registered multidimensional cubes in ImageServer exportImage and classic WCS GetCoverage (OGC API Coverages and ImageServer identify/getSamples already read registered Zarr slices)",
+        "transformed per-slice exports (JPEG/TIFF, reprojection, advanced interpolation, and renderingRule) for registered Zarr cubes; native-CRS nearest-neighbor grayscale PNG exportImage plus identify/getSamples are implemented",
+        "per-slice pixel subsetting of registered multidimensional cubes in classic WCS GetCoverage (OGC API Coverages and ImageServer native PNG exportImage/identify/getSamples already read registered Zarr slices)",
         "WCS multidimensional slicing beyond a single phenomenonTime axis (RANGESUBSET band selection, SCALESIZE/SCALEFACTOR/SCALEAXES/SCALEEXTENT output sizing, and phenomenonTime temporal subsetting implemented)",
         "full WCS CRS extension advertisement beyond native coverage CRS values",
         "WMTS non-WebMercator matrix sets",
@@ -1817,6 +1818,11 @@
             "name": "mosaicRule, time",
             "status": "partial",
             "notes": "mosaicRule accepts merge-strategy tokens or an Esri-style JSON object and is applied when multiple rasters intersect the request. time accepts a single ISO 8601 instant with the active raster.temporal-mosaic entitlement; Honua selects the newest layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the timestamp, then applies the export bbox/window."
+          },
+          {
+            "name": "multidimensionalDefinition",
+            "status": "partial",
+            "notes": "Registered Zarr coverages support a bounded native-CRS grayscale PNG slice for GET/POST numeric and service-name routes. Requires one coordinate per selected dimension, format=png, and RSP_NearestNeighbor; JPEG/TIFF, reprojection, advanced interpolation, renderingRule, bandIds, noData, time, and mosaicRule combinations are rejected explicitly and tracked by #2717."
           }
         ],
         "identify": [
@@ -1986,6 +1992,7 @@
         "The route shape is layer-scoped: /rest/services/{id}/ImageServer.",
         "Metadata, export, identify, tile, and statistics operate on the selected raster mosaic rather than a single primary raster.",
         "Default exportImage responses return JSON with a temporary file URL; f=image returns rendered bytes inline.",
+        "Coordinate-selected Zarr exportImage currently emits native-CRS grayscale PNG with nearest-neighbor sampling only; transformed outputs are tracked by #2717.",
         "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and reprojects footprint geometry to outSR when a coordinate transform is available.",
         "computeStatisticsHistograms clips analysis to the supplied geometry envelope and executes Stretch, Colormap, and Clip renderingRule chains; ExtractBand, BandArithmetic, and pixelSize remain deferred.",

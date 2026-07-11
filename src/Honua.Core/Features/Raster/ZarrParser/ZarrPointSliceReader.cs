@@ -95,30 +95,12 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
             return CompleteBatch(results, activity);
         }
 
-        var registrations = await _zarrStore.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        ZarrRegistration? registration = null;
-        ICloudRangeReader? rangeReader = null;
-        var hasScannedRegistration = false;
-        foreach (var candidate in registrations)
+        var resolution = await ZarrServableRegistrationResolver
+            .ResolveAsync(_zarrStore, _rangeReaders, layerId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!resolution.IsSuccess)
         {
-            if (candidate.Metadata is null)
-            {
-                continue;
-            }
-
-            hasScannedRegistration = true;
-            var candidateReader = _rangeReaders.FirstOrDefault(reader => reader.Provider == candidate.Provider);
-            if (candidateReader is not null)
-            {
-                registration = candidate;
-                rangeReader = candidateReader;
-                break;
-            }
-        }
-
-        if (registration?.Metadata is null || rangeReader is null)
-        {
-            var unavailable = hasScannedRegistration
+            var unavailable = resolution.HasScannedRegistration
                 ? CreateResult(
                     ZarrPointSliceReadStatus.ReaderUnavailable,
                     error: "No scanned multidimensional coverage has a configured storage reader.")
@@ -134,8 +116,8 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
             if (results[i] is null)
             {
                 results[i] = await ReadResolvedAsync(
-                        registration,
-                        rangeReader,
+                        resolution.Registration!,
+                        resolution.RangeReader!,
                         requests[i],
                         activity,
                         cancellationToken)
