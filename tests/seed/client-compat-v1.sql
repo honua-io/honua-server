@@ -564,6 +564,7 @@ BEGIN
                     'connectionId', NULL,
                     'storageType', 'relational-table',
                     'locator', 'honua.raster_data',
+                    'storageLayerId', layer_id,
                     'capabilities', to_jsonb(ARRAY['query', 'filter', 'render', 'tile', 'download']::text[]),
                     'options', '{}'::jsonb,
                     'status', (SELECT value FROM status_doc),

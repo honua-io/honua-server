@@ -64,6 +64,14 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
             var binding = snapshot.Graph.StorageBindings.Should()
                 .ContainSingle(b => b.Metadata.Id == "storage-layer-700").Which;
             binding.StorageLayerId.Should().Be(700);
+
+            // ImageServer resolves the raster sidecar through its storage binding's integer
+            // storage-layer handle. The compat compiler must preserve the V1 layer id here;
+            // otherwise the service exists in metadata but the resolver reports that
+            // ImageServer is not enabled. (honua-server#2638.)
+            var imageBinding = snapshot.Graph.StorageBindings.Should()
+                .ContainSingle(b => b.Metadata.Id == "storage-image-layer-700").Which;
+            imageBinding.StorageLayerId.Should().Be(700);
         }
         finally
         {

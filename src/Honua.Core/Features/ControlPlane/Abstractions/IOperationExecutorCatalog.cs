@@ -8,7 +8,7 @@ namespace Honua.Core.Features.ControlPlane.Abstractions;
 /// <summary>
 /// Small capability surface over the registered <see cref="IOperationExecutor"/> set, kept
 /// separate from <see cref="IOperationGateway"/> so discovery surfaces (for example the MCP
-/// <c>honua_propose_operation</c> tool's <c>supportedKinds</c> reporting) can ask which
+/// <c>honua_supported_operation_kinds</c> tool and the proposal compatibility field) can ask which
 /// <see cref="OperationClass"/> kinds are genuinely routable without widening the gateway's own
 /// routing contract (#2563). A kind absent from <see cref="SupportedKinds"/> always resolves to
 /// <see cref="OperationGatewayOutcome.NotSupported"/> when routed through
