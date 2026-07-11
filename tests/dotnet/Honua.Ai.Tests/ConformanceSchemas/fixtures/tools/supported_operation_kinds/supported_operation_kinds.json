@@ -1,0 +1,8 @@
+{
+  "id": "supported_operation_kinds.discovery",
+  "schemaRef": "tools/supported_operation_kinds.schema.json",
+  "validates": "inputs",
+  "inputs": {},
+  "expected": "tool_result",
+  "canonicalRefs": ["IOperationExecutorCatalog"]
+}

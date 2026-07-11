@@ -24,6 +24,11 @@ internal interface IMcpPlatformOpsReader
         McpDeployOperationsArgument argument,
         CancellationToken cancellationToken);
 
+    /// <summary>Gets the live operation-executor kind catalog.</summary>
+    Task<McpSupportedOperationKindsOutput> GetSupportedOperationKindsAsync(
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken);
+
     /// <summary>Proposes a forward deploy to a prior revision as a rollback.</summary>
     Task<McpProposeOperationOutput> ProposeRollbackAsync(
         ClaimsPrincipal principal,
