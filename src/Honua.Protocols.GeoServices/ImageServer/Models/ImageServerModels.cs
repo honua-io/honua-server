@@ -776,7 +776,7 @@ public sealed class ExportImageRequest
     public string? NoDataInterpretation { get; init; } = "esriNoDataMatchAny";
 
     [StringLength(50, ErrorMessage = "Interpolation value is too long")]
-    public string? Interpolation { get; init; } = "RSP_BilinearInterpolation";
+    public string? Interpolation { get; init; }
 
     [RegularExpression(@"(?i)^(none|jpeg|lz77)$",
         ErrorMessage = "Compression must be one of: None, JPEG, or LZ77")]
@@ -793,6 +793,12 @@ public sealed class ExportImageRequest
 
     [StringLength(1000, ErrorMessage = "RenderingRule is too long")]
     public string? RenderingRule { get; init; }
+
+    /// <summary>
+    /// Coordinate-valued dimension selections for a registered multidimensional coverage.
+    /// </summary>
+    [StringLength(8192, ErrorMessage = "MultidimensionalDefinition is too long")]
+    public string? MultidimensionalDefinition { get; init; }
 
     [StringLength(100, ErrorMessage = "Time is too long")]
     public string? Time { get; init; }
