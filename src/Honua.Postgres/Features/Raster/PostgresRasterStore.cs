@@ -203,6 +203,249 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     /// <inheritdoc />
+    public async Task<RasterCatalogPage> QueryCatalogAsync(
+        int layerId,
+        RasterCatalogQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        query.Validate();
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var (ctePrefix, parameters) = BuildCatalogFilterCte(layerId, query);
+        var wantsAggregate = query.IncludeTotalCount || query.IncludeAggregateExtent;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = BuildCatalogCommandText(ctePrefix, query, includeAggregate: wantsAggregate);
+        foreach (var (name, value) in parameters)
+        {
+            AddParameter(command, name, value);
+        }
+
+        var rasters = new List<RasterInfo>();
+        long totalCount;
+        RasterExtent? aggregateExtent = null;
+
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                rasters.Add(ReadRasterInfo(reader));
+            }
+
+            totalCount = rasters.Count;
+
+            if (wantsAggregate && await reader.NextResultAsync(cancellationToken).ConfigureAwait(false)
+                && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                totalCount = reader.GetInt64(reader.GetOrdinal("total"));
+
+                if (query.IncludeAggregateExtent)
+                {
+                    var xMinOrd = reader.GetOrdinal("agg_xmin");
+                    var yMinOrd = reader.GetOrdinal("agg_ymin");
+                    var xMaxOrd = reader.GetOrdinal("agg_xmax");
+                    var yMaxOrd = reader.GetOrdinal("agg_ymax");
+                    var sridOrd = reader.GetOrdinal("agg_srid");
+
+                    if (!reader.IsDBNull(xMinOrd))
+                    {
+                        aggregateExtent = new RasterExtent
+                        {
+                            XMin = reader.GetDouble(xMinOrd),
+                            YMin = reader.GetDouble(yMinOrd),
+                            XMax = reader.GetDouble(xMaxOrd),
+                            YMax = reader.GetDouble(yMaxOrd),
+                            Srid = reader.IsDBNull(sridOrd) ? null : reader.GetInt32(sridOrd),
+                        };
+                    }
+                }
+            }
+        }
+
+        stopwatch.Stop();
+
+        var rowsScanned = query.IncludeTotalCount ? totalCount : rasters.Count;
+        PostgresRasterLog.CatalogQueryExecuted(
+            _logger, layerId, rowsScanned, rasters.Count, stopwatch.Elapsed.TotalMilliseconds);
+
+        return new RasterCatalogPage
+        {
+            Rasters = rasters,
+            TotalCount = totalCount,
+            AggregateExtent = aggregateExtent,
+            RowsScanned = rowsScanned,
+            RowsReturned = rasters.Count,
+            ProviderDuration = stopwatch.Elapsed,
+            PredicatePushedDown = true,
+        };
+    }
+
+    /// <summary>
+    /// Builds the shared <c>WITH ... filtered AS (...)</c> CTE that applies the layer, spatial
+    /// (envelope-intersects, index-backed via the GiST <c>ST_Envelope(raster)</c> expression index),
+    /// identity, and temporal predicates for the catalog query. The single-row <c>filter_env</c> CTE
+    /// is MATERIALIZED so its transformed envelope is treated as a constant, keeping the
+    /// <c>ST_Envelope(raster) &amp;&amp; fe.geom</c> comparison index-eligible.
+    /// </summary>
+    private (string CtePrefix, List<(string Name, object Value)> Parameters) BuildCatalogFilterCte(
+        int layerId,
+        RasterCatalogQuery query)
+    {
+        var parameters = new List<(string Name, object Value)> { ("@layerId", layerId) };
+        var cteParts = new List<string>();
+        var whereClauses = new List<string> { "layer_id = @layerId" };
+        var fromClause = _rasterDataTable + " rd";
+
+        // Representative native SRID for the layer; used to project the filter box into the raster
+        // coordinate system so the bbox overlap stays in one CRS (and index-eligible).
+        var layerSridExpr =
+            $"(SELECT srid FROM {_rasterDataTable} WHERE layer_id = @layerId AND srid IS NOT NULL AND srid > 0 LIMIT 1)";
+
+        if (query.SpatialPredicate is { } predicate)
+        {
+            string filterGeom;
+            parameters.Add(("@fxmin", predicate.XMin));
+            parameters.Add(("@fymin", predicate.YMin));
+            parameters.Add(("@fxmax", predicate.XMax));
+            parameters.Add(("@fymax", predicate.YMax));
+
+            if (predicate.Srid is { } filterSrid)
+            {
+                parameters.Add(("@fsrid", filterSrid));
+                filterGeom =
+                    $"ST_Transform(ST_MakeEnvelope(@fxmin, @fymin, @fxmax, @fymax, @fsrid), COALESCE({layerSridExpr}, @fsrid))";
+            }
+            else
+            {
+                // No filter SRID: the box is assumed to already be in the footprint's native CRS.
+                filterGeom = $"ST_MakeEnvelope(@fxmin, @fymin, @fxmax, @fymax, COALESCE({layerSridExpr}, 0))";
+            }
+
+            cteParts.Add($"filter_env AS MATERIALIZED (SELECT {filterGeom} AS geom)");
+            fromClause += " CROSS JOIN filter_env fe";
+            whereClauses.Add("ST_Envelope(rd.raster) && fe.geom");
+        }
+
+        if (query.ObjectIds is { } objectIds)
+        {
+            parameters.Add(("@objectIds", objectIds.ToArray()));
+            whereClauses.Add("id = ANY(@objectIds)");
+        }
+
+        if (query.Timestamp is { } timestamp)
+        {
+            cteParts.Add($"""
+                selected_time AS (
+                    SELECT MAX(COALESCE(acquisition_date, created_at)) AS target_acquisition
+                    FROM {_rasterDataTable}
+                    WHERE layer_id = @layerId
+                      AND COALESCE(acquisition_date, created_at) <= @timestamp
+                )
+                """);
+            whereClauses.Add("COALESCE(acquisition_date, created_at) = (SELECT target_acquisition FROM selected_time)");
+            parameters.Add(("@timestamp", timestamp.UtcDateTime));
+        }
+
+        var filteredCte = $"""
+            filtered AS (
+                SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
+                       ST_BandNoDataValue(raster, 1) AS nodata_value,
+                       ST_UpperLeftX(raster) AS upper_left_x,
+                       ST_ScaleX(raster) AS scale_x,
+                       ST_SkewX(raster) AS skew_x,
+                       ST_UpperLeftY(raster) AS upper_left_y,
+                       ST_SkewY(raster) AS skew_y,
+                       ST_ScaleY(raster) AS scale_y,
+                       ST_XMin(ST_Envelope(raster)) AS xmin,
+                       ST_YMin(ST_Envelope(raster)) AS ymin,
+                       ST_XMax(ST_Envelope(raster)) AS xmax,
+                       ST_YMax(ST_Envelope(raster)) AS ymax,
+                       acquisition_date,
+                       created_at,
+                       updated_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {fromClause}
+                WHERE {string.Join("\n                  AND ", whereClauses)}
+            )
+            """;
+
+        cteParts.Add(filteredCte);
+        var ctePrefix = "WITH " + string.Join(",\n", cteParts);
+        return (ctePrefix, parameters);
+    }
+
+    private static string BuildCatalogCommandText(string ctePrefix, RasterCatalogQuery query, bool includeAggregate)
+    {
+        var pagingClause = query.Limit is { } limit
+            ? $"LIMIT {limit.ToString(CultureInfo.InvariantCulture)} OFFSET {Math.Max(0, query.Offset).ToString(CultureInfo.InvariantCulture)}"
+            : string.Empty;
+
+        var rowsSql = $"""
+            {ctePrefix}
+            SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
+                   nodata_value, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
+                   xmin, ymin, xmax, ymax, acquisition_date, created_at, updated_at
+            FROM filtered
+            ORDER BY effective_acquisition DESC, created_at DESC, id DESC
+            {pagingClause}
+            """;
+
+        if (!includeAggregate)
+        {
+            return rowsSql;
+        }
+
+        var aggregateSql = $"""
+            {ctePrefix}
+            SELECT COUNT(*)::bigint AS total,
+                   MIN(xmin) AS agg_xmin,
+                   MIN(ymin) AS agg_ymin,
+                   MAX(xmax) AS agg_xmax,
+                   MAX(ymax) AS agg_ymax,
+                   MAX(srid) AS agg_srid
+            FROM filtered
+            """;
+
+        return rowsSql + ";\n" + aggregateSql;
+    }
+
+    /// <summary>
+    /// Test-only hook: returns the <c>EXPLAIN (ANALYZE, FORMAT TEXT)</c> plan for the paged catalog
+    /// query so provider integration tests can assert the footprint predicate is served by an index
+    /// scan and that only a bounded number of rows are read. Never surfaced to clients.
+    /// </summary>
+    internal async Task<string> ExplainCatalogQueryAsync(
+        int layerId,
+        RasterCatalogQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        query.Validate();
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var (ctePrefix, parameters) = BuildCatalogFilterCte(layerId, query);
+        var rowsSql = BuildCatalogCommandText(ctePrefix, query, includeAggregate: false);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "EXPLAIN (ANALYZE, FORMAT TEXT) " + rowsSql;
+        foreach (var (name, value) in parameters)
+        {
+            AddParameter(command, name, value);
+        }
+
+        var builder = new StringBuilder();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            builder.AppendLine(reader.GetString(0));
+        }
+
+        return builder.ToString();
+    }
+
+    /// <inheritdoc />
     public async Task<RasterResult> ExportImageAsync(int layerId, long rasterId, RasterQuery query, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);

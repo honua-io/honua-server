@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Honua.ControlPlane;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -11,6 +12,85 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class ControlPlaneOptionsValidatorTests
 {
     private readonly ControlPlaneOptionsValidator _validator = new();
+
+    [UnitTest]
+    public void Validate_WithCustomCodeWorkloadOnAwsBatch_Succeeds()
+    {
+        var options = new ControlPlaneOptions
+        {
+            ExecutionWorkloads =
+            [
+                new ExecutionWorkloadOptions
+                {
+                    WorkloadId = "customcode-python",
+                    RuntimeProfile = "custom-code",
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "honua-aws-batch"
+                }
+            ]
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
+    }
+
+    [Theory]
+    [InlineData(BatchComputeTargetKind.LocalProcess)]
+    [InlineData(BatchComputeTargetKind.KubernetesJob)]
+    [InlineData(BatchComputeTargetKind.AzureBatch)]
+    [Trait("Category", "Unit")]
+    public void Validate_WithCustomCodeWorkloadOnNonAwsBatchBackend_FailsStartup(BatchComputeTargetKind targetKind)
+    {
+        // ADR-0063: custom-code (untrusted operator code) is AWS-Batch-only. Pointing a
+        // custom-code workload at an on-host (LocalProcess / the KubernetesJob-family local
+        // backend) or any non-AWS-Batch substrate must fail startup, not silently land.
+        var options = new ControlPlaneOptions
+        {
+            ExecutionWorkloads =
+            [
+                new ExecutionWorkloadOptions
+                {
+                    WorkloadId = "customcode-onhost",
+                    RuntimeProfile = "custom-code",
+                    TargetKind = targetKind,
+                    Backend = "honua-local-process"
+                }
+            ]
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure =>
+            failure.Contains("custom-code", StringComparison.Ordinal) &&
+            failure.Contains("AWS-Batch-only", StringComparison.Ordinal) &&
+            failure.Contains("ADR-0063", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_WithNonCustomCodeWorkloadOnLocalProcess_Succeeds()
+    {
+        // The Batch-only gate must not touch ordinary (trusted) GP workloads, which may
+        // legitimately run on the on-host LocalProcess pool.
+        var options = new ControlPlaneOptions
+        {
+            ExecutionWorkloads =
+            [
+                new ExecutionWorkloadOptions
+                {
+                    WorkloadId = "gp-local",
+                    RuntimeProfile = "gdal",
+                    TargetKind = BatchComputeTargetKind.LocalProcess,
+                    Backend = "honua-local-process"
+                }
+            ]
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
+    }
 
     [UnitTest]
     public void Validate_WithPublicHttpsTelemetryConnection_ReturnsSuccess()
