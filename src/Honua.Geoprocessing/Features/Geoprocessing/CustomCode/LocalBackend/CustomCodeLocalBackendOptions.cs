@@ -22,16 +22,29 @@ namespace Honua.Geoprocessing.CustomCode.LocalBackend;
 ///   RECOMMENDED and the control the other controls depend on for real strength. Without a distinct
 ///   sandbox OS user, the subprocess runs under the SAME OS user as honua-server, and — regardless
 ///   of the environment allowlist below — a same-UID script can (a) read any file honua-server itself
-///   can read via plain same-UID DAC file permissions (unconditionally — this needs no special kernel
-///   configuration), (b) on hosts where Linux's Yama LSM permits it (<c>kernel.yama.ptrace_scope=0</c>,
-///   i.e. NOT the Ubuntu-style restricted default), read
+///   can read via plain same-UID DAC file permissions, (b) read
 ///   <c>/proc/&lt;honua-server-pid&gt;/environ</c> directly to recover honua-server's ENTIRE process
-///   environment, and (c) send it signals (also subject to <c>ptrace_scope</c>). When
-///   <see cref="SandboxUser"/> is configured the child is switched to that distinct, unprivileged
-///   user via <c>setpriv</c> before its target program runs, closing all of the above regardless of
-///   the host's Yama configuration. This requires the honua-server process to have <c>CAP_SETUID</c>
-///   (root, or an equivalent capability grant); if the drop fails at launch time the job fails closed
-///   — it never runs unconfined. Without <see cref="SandboxUser"/>, the operator must set
+///   environment — this is UNCONDITIONAL on Linux, not gated by the Yama LSM's <c>ptrace_scope</c>:
+///   Yama's ancestor-relationship restriction applies only to <c>PTRACE_MODE_ATTACH</c> (actual
+///   attach/trace), not the <c>PTRACE_MODE_READ_FSCREDS</c> check <c>/proc/PID/environ</c> reads
+///   actually use, which is governed purely by same-UID DAC + target dumpability — so this read
+///   succeeds on a restricted-<c>ptrace_scope</c> host exactly as readily as a permissive one, and (c)
+///   send it signals (that one IS <c>ptrace_scope</c>-gated). When <see cref="SandboxUser"/> is
+///   configured the child is switched to that distinct, unprivileged user via <c>setpriv
+///   --reuid/--regid --clear-groups --no-new-privs --ambient-caps=-all --bounding-set=-all</c> before
+///   its target program runs, closing all of the above. The <c>--ambient-caps=-all
+///   --bounding-set=-all</c> flags matter independently of the UID switch itself: without them, a
+///   honua-server process that holds <c>CAP_SETUID</c> via an <em>ambient</em> capability grant (e.g. a
+///   systemd unit's <c>AmbientCapabilities=CAP_SETUID</c>, one of the few ways to grant a single
+///   capability to a non-root process) would pass that capability THROUGH the <c>execve</c> into the
+///   dropped-privilege child — because ambient capabilities survive <c>execve</c> and are not cleared
+///   by a non-root-to-non-root <c>reuid</c> or by <c>--no-new-privs</c> alone — letting the "sandboxed"
+///   script call <c>setuid(0)</c> and escape back to root. Stripping the ambient set and bounding set
+///   closes this regardless of how the parent acquired <c>CAP_SETUID</c>. This still requires the
+///   honua-server process to have <c>CAP_SETUID</c> in the first place (root, or an equivalent
+///   capability grant — see the blast-radius tradeoff on <see cref="SandboxUser"/> below); if the drop
+///   fails at launch time the job fails closed — it never runs unconfined. Without
+///   <see cref="SandboxUser"/>, the operator must set
 ///   <see cref="AcknowledgeUnconfinedExecutionRisk"/> to <see langword="true"/> — a CODE-ENFORCED
 ///   gate, not just documentation — to even start the backend, and doing so is appropriate only when
 ///   the whole backend already runs inside an isolated container/namespace boundary that closes these
@@ -44,8 +57,8 @@ namespace Honua.Geoprocessing.CustomCode.LocalBackend;
 ///   environment (this MVP does not yet give local custom tools a callback client — see
 ///   <c>LocalProcessCustomCodeBackend.BuildEnvironment</c>). This control blocks inheritance via the
 ///   environment vector; it is a real confidentiality boundary only when combined with
-///   <see cref="SandboxUser"/> (see above) — on a bare host without it, same-UID file/proc access
-///   defeats it.</description></item>
+///   <see cref="SandboxUser"/> (see above) — on a bare host without it, same-UID <c>/proc/environ</c>
+///   access defeats it unconditionally (not merely "on some hosts").</description></item>
 ///   <item><description><b>Wall-clock timeout</b> — every job is hard-killed (whole process tree)
 ///   at <see cref="MaxWallClock"/>, so a spun-forever script cannot occupy a slot indefinitely. A
 ///   detached grandchild that double-forks/re-parents to init can survive the tree-kill; combined
@@ -59,9 +72,11 @@ namespace Honua.Geoprocessing.CustomCode.LocalBackend;
 ///   launch (fails closed) rather than silently proceeding unconfined. <see cref="MaxProcessCount"/>
 ///   (RLIMIT_NPROC) is applied ONLY when <see cref="SandboxUser"/> is set — on Linux RLIMIT_NPROC is
 ///   enforced per REAL UID across the WHOLE host, so applying it without a distinct sandbox UID would
-///   count against honua-server's own already-large thread/process footprint. On non-POSIX hosts none
-///   of these are enforced in-process (documented; run inside a cgroup-constrained container
-///   there).</description></item>
+///   count against honua-server's own already-large thread/process footprint. <b>Consequence a caller
+///   must know:</b> in the "acknowledged unconfined" mode (no <see cref="SandboxUser"/>), a fork bomb
+///   is NOT bounded by this backend at all — <see cref="MaxProcessCount"/> simply does not apply there.
+///   On non-POSIX hosts none of these are enforced in-process (documented; run inside a
+///   cgroup-constrained container there).</description></item>
 ///   <item><description><b>Scoped single-use scratch directory</b> — a fresh directory is created
 ///   per job under <see cref="WorkingRoot"/>, is the subprocess working directory and the only path
 ///   handed to it, and is deleted when the job reaches a terminal state. Path containment
@@ -126,14 +141,38 @@ public sealed class CustomCodeLocalBackendOptions
 
     /// <summary>
     /// POSIX username (must exist on the host and must NOT be <c>root</c>) the subprocess is switched
-    /// to via <c>setpriv --reuid/--regid</c> before its target program is exec'd. STRONGLY
-    /// RECOMMENDED — see the security model on the type. Requires the honua-server process to have
-    /// <c>CAP_SETUID</c> (typically root, or an equivalent capability grant on the honua-server
-    /// binary/service unit); when the drop fails at launch time the job fails closed rather than
-    /// running under the unconfined honua-server UID. Not enforced on non-POSIX hosts. When unset,
+    /// to via <c>setpriv --reuid/--regid --clear-groups --no-new-privs --ambient-caps=-all
+    /// --bounding-set=-all</c> before its target program is exec'd. STRONGLY RECOMMENDED — see the
+    /// security model on the type. Requires the honua-server process to have <c>CAP_SETUID</c>; when
+    /// the drop fails at launch time the job fails closed rather than running under the unconfined
+    /// honua-server UID. Not enforced on non-POSIX hosts. When unset,
     /// <see cref="AcknowledgeUnconfinedExecutionRisk"/> must be <see langword="true"/> for the backend
     /// to start at all.
     /// </summary>
+    /// <remarks>
+    /// <b>Granting <c>CAP_SETUID</c> is a real blast-radius tradeoff, not a free lunch.</b>
+    /// <c>CAP_SETUID</c> is effectively root-equivalent (a process holding it can <c>setuid(0)</c>), so
+    /// giving honua-server this capability means ANY unrelated vulnerability that lets an attacker
+    /// execute code in the honua-server process (a totally separate bug, not this backend) can now be
+    /// escalated to root, where a plain non-root honua-server process could not. There is no way to get
+    /// automatic, code-driven UID-drop-before-exec without the parent holding <c>CAP_SETUID</c> in some
+    /// form; accept this tradeoff deliberately, or use a wrapper binary with a file capability instead
+    /// (see below) and accept that it does not actually run jobs.
+    /// <para>
+    /// How the capability is granted matters: running honua-server as <c>root</c> is safe for THIS
+    /// mechanism specifically (the kernel clears the permitted/effective/ambient capability sets on a
+    /// root→non-root <c>setuid</c>), and a <c>setcap</c> file capability on a small wrapper binary is
+    /// safe-but-non-functional (file capabilities do not survive the wrapper's own <c>execve</c> of
+    /// <c>/bin/sh</c>, so <c>setpriv</c> fails with <c>EPERM</c> and every job fails closed — inert, not
+    /// exploitable). A systemd unit's <c>AmbientCapabilities=CAP_SETUID</c> — one of the few ways to
+    /// hand a single capability to an already-non-root process — is the one path that is simultaneously
+    /// the only one that WORKS for a non-root honua-server AND, without the <c>--ambient-caps=-all
+    /// --bounding-set=-all</c> flags above, escapable (ambient capabilities survive <c>execve</c> and
+    /// are not cleared by a non-root-to-non-root <c>reuid</c>). Those flags close that specific escape;
+    /// the root-equivalence of holding <c>CAP_SETUID</c> at all is still an unavoidable, accepted
+    /// tradeoff of this feature.
+    /// </para>
+    /// </remarks>
     public string? SandboxUser { get; set; }
 
     /// <summary>
@@ -141,12 +180,15 @@ public sealed class CustomCodeLocalBackendOptions
     /// configured. Defaults to <see langword="false"/> (fail closed): the backend refuses to start in
     /// that mode until an operator consciously sets this to <see langword="true"/>, acknowledging that
     /// the sandboxed subprocess then runs under the SAME OS user as honua-server — a same-UID script
-    /// can read any file honua-server itself can read via plain DAC permissions (unconditionally, no
-    /// special kernel configuration required), can (subject to the host's Yama <c>ptrace_scope</c>)
-    /// read honua-server's full process environment via <c>/proc/&lt;pid&gt;/environ</c> regardless of
-    /// the environment allowlist, and can signal honua-server. Only appropriate when the whole backend
-    /// already runs inside an isolated container/namespace boundary that closes these gaps at a lower
-    /// layer — this flag is not a substitute for that boundary.
+    /// can read any file honua-server itself can read via plain DAC permissions, can read
+    /// honua-server's full process environment via <c>/proc/&lt;pid&gt;/environ</c> regardless of the
+    /// environment allowlist (this is UNCONDITIONAL on Linux — governed by same-UID DAC + target
+    /// dumpability, not gated by the Yama LSM's <c>ptrace_scope</c>, which restricts only actual
+    /// <c>ptrace</c> attach, not this read path — do not assume a restricted <c>ptrace_scope</c>
+    /// protects against it), can signal honua-server, and can spawn unbounded processes
+    /// (<see cref="MaxProcessCount"/> does not apply in this mode; see its remarks). Only appropriate
+    /// when the whole backend already runs inside an isolated container/namespace boundary that closes
+    /// these gaps at a lower layer — this flag is not a substitute for that boundary.
     /// </summary>
     public bool AcknowledgeUnconfinedExecutionRisk { get; set; }
 
@@ -160,7 +202,10 @@ public sealed class CustomCodeLocalBackendOptions
     /// <summary>
     /// Process-count ceiling (RLIMIT_NPROC via <c>ulimit -u</c>), bounding a fork-bomb-shaped DoS.
     /// Applied ONLY when <see cref="SandboxUser"/> is configured (see the security model on the type
-    /// for why applying it without a distinct sandbox UID would be unsafe). Defaults to 32. Set to
+    /// for why applying it without a distinct sandbox UID would be unsafe). <b>Consequently, in the
+    /// "acknowledged unconfined" mode (<see cref="SandboxUser"/> unset,
+    /// <see cref="AcknowledgeUnconfinedExecutionRisk"/> set) this limit is NOT applied at all — a fork
+    /// bomb is not bounded by this backend in that mode, full stop.</b> Defaults to 32. Set to
     /// <see langword="null"/> to not apply a process-count limit.
     /// </summary>
     public int? MaxProcessCount { get; set; } = 32;
@@ -326,8 +371,8 @@ internal sealed class CustomCodeLocalBackendOptionsValidator : OptionsValidator<
                     $"distinct unprivileged OS user) or an explicit " +
                     $"{CustomCodeLocalBackendOptions.SectionName}:AcknowledgeUnconfinedExecutionRisk=true " +
                     "acknowledging that, without it, the sandboxed subprocess runs under the SAME OS user as " +
-                    "honua-server and can read any file honua-server can read (and, depending on the host's " +
-                    "ptrace_scope, honua-server's full process environment via /proc) — fail-closed by design.");
+                    "honua-server and can read any file honua-server can read AND honua-server's full process " +
+                    "environment via /proc (unconditionally, not gated by ptrace_scope) — fail-closed by design.");
             }
         }
 

@@ -130,9 +130,17 @@ internal static class SandboxedProcess
                 lines.Add(FormattableString.Invariant($"ulimit -u {maxProcs} || exit 97"));
             }
 
+            // --ambient-caps=-all --bounding-set=-all (adversarial review round 2): --clear-groups /
+            // --no-new-privs / a bare reuid do NOT clear ambient or inheritable capabilities, and ambient
+            // capabilities SURVIVE execve. If honua-server holds CAP_SETUID via an ambient grant (the one
+            // practical way to hand that single capability to an already-non-root process, e.g. a systemd
+            // unit's AmbientCapabilities=CAP_SETUID), that capability would otherwise pass straight through
+            // into the dropped-privilege child, letting the "sandboxed" script setuid(0) back to root.
+            // Explicitly stripping the ambient set and bounding set closes this regardless of how the
+            // parent acquired CAP_SETUID (root, ambient grant, or otherwise).
             lines.Add(sandboxUser is not null
                 ? FormattableString.Invariant(
-                    $"exec {ResolveSetprivExecutable(options)} --reuid={sandboxUser} --regid={sandboxUser} --clear-groups --no-new-privs -- \"$0\" \"$@\"")
+                    $"exec {ResolveSetprivExecutable(options)} --reuid={sandboxUser} --regid={sandboxUser} --clear-groups --no-new-privs --ambient-caps=-all --bounding-set=-all -- \"$0\" \"$@\"")
                 : "exec \"$0\" \"$@\"");
 
             startInfo.FileName = "/bin/sh";

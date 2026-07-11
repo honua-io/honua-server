@@ -145,37 +145,92 @@ trust gate (repo allowlist / per-tenant allowlist / signed-commit posture, full
 40-hex SHA pin, scope-⊆-owner clamp, scoped-token mint) is unchanged and still
 runs regardless of backend.
 
-### Isolation boundaries and their limits (be honest — corrected after adversarial review)
+### Isolation boundaries and their limits (be honest — corrected after two rounds of adversarial review)
 
 This backend executes untrusted user code on the server host. Its isolation is
-**OS-process-level**, not a container/VM boundary. An adversarial review of the
-first revision of this addendum found the environment-allowlist row below
+**OS-process-level**, not a container/VM boundary.
+
+**Round 1** of adversarial review found the environment-allowlist row below
 overstated ("Hard") and two gaps it did not disclose at all: no UID separation
 (a same-UID script can read honua-server's full environment via `/proc`, signal
 it, or read files it can read — regardless of the allowlist) and the raw
 `HONUA_JOB_TOKEN` callback credential being handed to user code in cleartext.
-Both are fixed; the table below reflects the corrected posture.
+Both were fixed.
+
+**Round 2** found the round-1 UID-separation fix incomplete and one of its own
+supporting claims wrong:
+
+- `setpriv --reuid/--regid --clear-groups --no-new-privs` does **not** clear
+  ambient/inheritable capabilities or the bounding set. Walking the actual
+  deployment matrix for granting honua-server `CAP_SETUID`: running as **root**
+  is safe (the kernel clears permitted/effective/ambient capabilities on
+  `reuid`); a `setcap` **file capability** on a wrapper binary is safe-but-inert
+  (capabilities don't survive the wrapper's own `execve` of `/bin/sh`, so
+  `setpriv` fails closed — every job fails, but safely); a systemd unit's
+  **`AmbientCapabilities=CAP_SETUID`** — the one practical way to hand a single
+  capability to an *already non-root* process, and the exact non-root option
+  these docs recommended — is simultaneously the only one that **works** and,
+  without further hardening, the one that is **escapable**: ambient
+  capabilities survive `execve` and are not cleared by a non-root→non-root
+  `reuid` or by `--no-new-privs` alone, so the "sandboxed" script would inherit
+  `CAP_SETUID` and could `setuid(0)` straight back to root. **Fixed**: the
+  `setpriv` invocation now adds `--ambient-caps=-all --bounding-set=-all`,
+  stripping ambient/inheritable capabilities from the child regardless of how
+  the parent acquired `CAP_SETUID`.
+- An earlier version of this table (and the code comments) claimed Linux's
+  Yama LSM in restricted mode (`ptrace_scope=1`, this repo's own hosts'
+  default) blocks a same-UID child from reading its parent's
+  `/proc/<pid>/environ`. **That claim was wrong** and was empirically disproved
+  by round-2 review: Yama's ancestor-relationship restriction gates only
+  `PTRACE_MODE_ATTACH` (actual attach/trace), not the
+  `PTRACE_MODE_READ_FSCREDS` check `/proc/PID/environ` reads actually use,
+  which is governed purely by same-UID DAC + target dumpability. The
+  `/proc/environ` read is therefore **unconditional** in the "acknowledged
+  unconfined" mode — corrected everywhere below and in code.
+
+The table reflects the corrected, round-2 posture:
 
 | Control | Mechanism | Strength |
 |---|---|---|
-| **Process UID separation** (`Local:SandboxUser`) | The child is switched to a distinct, unprivileged OS user via `setpriv --reuid/--regid --clear-groups --no-new-privs` before its target program runs. Requires honua-server to have `CAP_SETUID`; if the drop fails, the launch fails closed. | **Hard on POSIX when configured.** This is the control the others depend on: without it the child is same-UID with honua-server, and a same-UID script can (a) *unconditionally* read any file honua-server itself can read via plain DAC file permissions — no special kernel configuration needed — and (b), on hosts where Linux's Yama LSM permits it (`kernel.yama.ptrace_scope=0`; **not** the Ubuntu-style restricted default of `1`, which this repo's own CI/dev hosts run), read `/proc/<honua-server-pid>/environ` directly to recover the ENTIRE host environment regardless of the allowlist, and signal honua-server. Without `SandboxUser`, the operator must set `Local:AcknowledgeUnconfinedExecutionRisk=true` — a **code-enforced gate re-checked on every job**, not just at startup — or the backend refuses to run anything. |
-| **Environment allowlist** | Child environment is built as an allowlist (cleared, then only `CUSTOMCODE_*` contract vars, job-scoped `HONUA_BASE_URL`, a controlled `PATH`, and operator-named host vars). `HONUA_JOB_TOKEN` is deliberately never placed in the child's environment at all — this MVP does not yet give a local custom tool a Honua API callback client (the cloud path's harness constructs a scoped client and then scrubs the token; this backend just never hands it out). | Blocks inheritance via the environment vector unconditionally. **A real confidentiality boundary only in combination with UID separation above** — without it, `/proc` access defeats it (see above). |
+| **Process UID separation** (`Local:SandboxUser`) | The child is switched to a distinct, unprivileged OS user via `setpriv --reuid/--regid --clear-groups --no-new-privs --ambient-caps=-all --bounding-set=-all` before its target program runs. Requires honua-server to have `CAP_SETUID`; if the drop fails, the launch fails closed. | **Hard on POSIX when configured** (including against the ambient-capability escape above). This is the control the others depend on: without it the child is same-UID with honua-server, and a same-UID script can *unconditionally* (a) read any file honua-server itself can read via plain DAC file permissions, (b) read `/proc/<honua-server-pid>/environ` directly to recover the ENTIRE host environment regardless of the allowlist — **not mitigated by `ptrace_scope`, on any host** (see round 2 above) — and (c) send it signals (that one IS `ptrace_scope`-gated). Without `SandboxUser`, the operator must set `Local:AcknowledgeUnconfinedExecutionRisk=true` — a **code-enforced gate re-checked on every job**, not just at startup — or the backend refuses to run anything. |
+| **Environment allowlist** | Child environment is built as an allowlist (cleared, then only `CUSTOMCODE_*` contract vars, job-scoped `HONUA_BASE_URL`, a controlled `PATH`, and operator-named host vars). `HONUA_JOB_TOKEN` is deliberately never placed in the child's environment at all — this MVP does not yet give a local custom tool a Honua API callback client (the cloud path's harness constructs a scoped client and then scrubs the token; this backend just never hands it out). | Blocks inheritance via the environment vector unconditionally. **A real confidentiality boundary only in combination with UID separation above** — without it, `/proc/environ` access defeats it unconditionally (see above; not merely "on some hosts"). |
 | **Wall-clock timeout** | Monitor hard-kills the whole process tree at `MaxWallClock`. | **Hard** for the tracked tree. A grandchild that double-forks and re-parents to init is a residual the process-tree kill can miss; because the CPU limit below counts CPU-*seconds*, not wall-clock, a mostly-sleeping escapee can persist a long time — even across a honua-server restart — on a bare host. This is a **persistent-implant risk**, not just a leaked pool slot. A container/PID-namespace boundary closes it by tearing down the whole namespace on exit. |
-| **CPU + address-space + output-size limits** | POSIX `ulimit -t` (RLIMIT_CPU) / `ulimit -v` (RLIMIT_AS) / `ulimit -f` (RLIMIT_FSIZE) via a launch wrapper; each call is now guarded by `\|\| exit 97` so a limit the kernel refuses to apply **aborts the launch** instead of silently continuing unconfined (the original wrapper swallowed such failures with `2>/dev/null`). `Local:MaxProcessCount` (RLIMIT_NPROC) is applied **only** alongside `SandboxUser`, because RLIMIT_NPROC is enforced per real UID host-wide on Linux — applying it without a distinct sandbox UID would count against honua-server's own large thread/process footprint. | **Hard on POSIX** (kernel-enforced, fail-closed). **Not enforced on non-POSIX** in-process — run inside a cgroup-constrained container there. |
+| **CPU + address-space + output-size + process-count limits** | POSIX `ulimit -t` (RLIMIT_CPU) / `ulimit -v` (RLIMIT_AS) / `ulimit -f` (RLIMIT_FSIZE) via a launch wrapper; each call is now guarded by `\|\| exit 97` so a limit the kernel refuses to apply **aborts the launch** instead of silently continuing unconfined (the original wrapper swallowed such failures with `2>/dev/null`). `Local:MaxProcessCount` (RLIMIT_NPROC / `ulimit -u`) is applied **only** alongside `SandboxUser`, because RLIMIT_NPROC is enforced per real UID host-wide on Linux — applying it without a distinct sandbox UID would count against honua-server's own large thread/process footprint. **Consequence: in the "acknowledged unconfined" mode (no `SandboxUser`), a fork bomb is NOT bounded by this backend at all** — this is a real, disclosed residual, not merely a theoretical edge case. | **Hard on POSIX** (kernel-enforced, fail-closed) for CPU/AS/FSIZE always, and for NPROC only with `SandboxUser`. **Not enforced on non-POSIX** in-process — run inside a cgroup-constrained container there. |
 | **Single-use scratch + path-traversal safety** | Fresh per-job dir under `WorkingRoot`, is the working dir and checkout root, deleted on terminal; every constructed path is validated to resolve under that root (`Path.GetFullPath`, lexical). | **Hard** for paths the backend constructs/hands over. Lexical containment does **not** resolve symlinks — a pinned repo shipping a symlink could point outside the scratch directory. This is subsumed by UID separation above (without it the process can already read arbitrary DAC-permitted files); fully closing it needs a mount-namespace/container boundary. |
 | **Network denial** | *Not enforced by this backend.* | **Deployment requirement.** OS-process-level network denial is not portably enforceable without a namespace/container boundary this MVP does not own. Run the backend inside an already-network-restricted container/namespace. The one intentional network op — the `git` checkout of the pinned commit — runs in the honua-server process, not the sandbox. |
 
+**The `CAP_SETUID` blast-radius tradeoff (disclosed, not hidden).**
+`CAP_SETUID` is effectively root-equivalent: a process holding it can
+`setuid(0)`. Granting it to honua-server so this backend can drop privileges
+means **any unrelated vulnerability** that lets an attacker execute code in the
+honua-server process (a completely separate bug from anything in this PR) can
+now be escalated to root, where a plain non-root honua-server process could
+not. There is no way to get automatic, code-driven UID-drop-before-exec without
+the parent holding `CAP_SETUID` in some form — this tradeoff is accepted, not
+avoided, by choosing to configure `SandboxUser`. It compounds with the
+ambient-capability finding above: the only grant mechanism that lets a
+non-root honua-server actually use this feature (`AmbientCapabilities=`) was
+also, before the round-2 fix, the escapable one. Operators must choose
+deliberately: run honua-server as root and accept the tradeoff directly, use a
+`setcap` file-capability wrapper and accept that the feature is inert (fails
+every job closed, safely), or grant an ambient capability and rely on this
+backend's `--ambient-caps=-all --bounding-set=-all` hardening (present as of
+round 2) to close the specific escape — none of these makes holding
+`CAP_SETUID` itself free.
+
 **Recommended deployment:** configure `Local:SandboxUser` to a distinct,
-unprivileged OS user (requires honua-server to hold `CAP_SETUID`) **and** run the
-backend inside a container/pod that is itself network-restricted and
-cgroup-constrained. In that configuration the remaining soft edges (filesystem
-symlink confinement, network denial, double-fork survival) are closed by the
-surrounding boundary, and the in-process controls become defense-in-depth. A
-deployment that cannot configure `SandboxUser` must explicitly acknowledge the
-same-UID risk (`Local:AcknowledgeUnconfinedExecutionRisk=true`) and should treat
-that as acceptable only inside an already-isolated container — never on a
-multi-tenant bare host. The backend is disabled by default (`Backend=Batch`) and,
-even when selected, fails closed unless `Local:Enabled=true`.
+unprivileged OS user (requires honua-server to hold `CAP_SETUID`, with the
+tradeoff above accepted deliberately) **and** run the backend inside a
+container/pod that is itself network-restricted and cgroup-constrained. In
+that configuration the remaining soft edges (filesystem symlink confinement,
+network denial, double-fork survival) are closed by the surrounding boundary,
+and the in-process controls become defense-in-depth. A deployment that cannot
+configure `SandboxUser` must explicitly acknowledge the same-UID risk
+(`Local:AcknowledgeUnconfinedExecutionRisk=true`) — including the unbounded
+fork-bomb residual — and should treat that as acceptable only inside an
+already-isolated container — never on a multi-tenant bare host. The backend is
+disabled by default (`Backend=Batch`) and, even when selected, fails closed
+unless `Local:Enabled=true`.
 
 This is a genuinely high-risk surface (in-process execution of user code) and
 warrants human security review before it is enabled in any real deployment.

@@ -104,15 +104,18 @@ public sealed class LocalProcessCustomCodeBackendTests
         // in the "acknowledged unconfined" mode — sitting OUTSIDE the job's scratch directory (so
         // scratch confinement is irrelevant here; this is a pure DAC same-UID check).
         //
-        // We deliberately do NOT demonstrate this via /proc/<ppid>/environ (reading the PARENT's
-        // environment from the CHILD): on hosts running Linux's Yama LSM in restricted mode
-        // (kernel.yama.ptrace_scope=1 — confirmed to be this test host's default, and Ubuntu's distro
-        // default) that direction is blocked by the KERNEL, because Yama's ancestor rule requires the
-        // READER to be an ancestor of the target, not the reverse. That is a real, valuable kernel
-        // mitigation this backend does not control or rely on — but asserting on it here would make the
-        // test flaky across hosts with different ptrace_scope values. The DAC file-read vector below
-        // proves the same underlying same-UID risk (arbitrary file read of anything honua-server's own
-        // OS user can read) without depending on ptrace/Yama configuration at all.
+        // NOTE on /proc/<ppid>/environ specifically (corrected after a second adversarial review pass):
+        // an earlier version of this comment claimed Linux's Yama LSM in restricted mode
+        // (kernel.yama.ptrace_scope=1, this test host's own default) blocks a child from reading its
+        // parent's /proc/environ. That claim was WRONG and was empirically disproved: Yama's
+        // ancestor-relationship restriction gates only PTRACE_MODE_ATTACH (actual attach/trace), not the
+        // PTRACE_MODE_READ_FSCREDS check /proc/PID/environ reads actually use, which is governed purely
+        // by same-UID DAC + target dumpability. That read is therefore just as unconditional as the
+        // file-read demonstrated below — it succeeds on a restricted-ptrace_scope host exactly as
+        // readily as a permissive one. We still use the file-read here (not because /proc/environ would
+        // be blocked, but simply because it is a slightly more direct minimal reproduction requiring no
+        // reasoning about which /proc file uses which ptrace mode); do not read the choice of vector as
+        // implying the /proc/environ exposure is somehow mitigated on this or any other host — it is not.
         var secretFile = TempFile();
         await File.WriteAllTextAsync(secretFile, "same-uid-file-read-marker");
         File.SetUnixFileMode(secretFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
@@ -336,6 +339,36 @@ public sealed class LocalProcessCustomCodeBackendTests
         script.Should().Contain("ulimit -v 262144 || exit 97");
         script.Should().Contain("ulimit -f 102400 || exit 97");
         script.Should().MatchRegex(@"ulimit[^;]*\|\|\s*exit\s+\d+", "every ulimit call must be guarded by a fail-closed '|| exit'");
+    }
+
+    // ---------------------------------------------------------------------
+    // Adversarial review round 2, finding #1: setpriv alone does not clear ambient/inheritable
+    // capabilities or the bounding set — an ambient CAP_SETUID grant on honua-server would otherwise
+    // survive into the "dropped-privilege" child and allow setuid(0) back to root. White-box: inspect
+    // the generated wrapper script for the capability-stripping flags whenever SandboxUser is set.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void LaunchScript_SandboxUserConfigured_StripsAmbientCapabilitiesAndBoundingSet()
+    {
+        if (!Posix) { return; }
+
+        var options = Options(o => o.SandboxUser = "honua-customcode");
+        var spec = new SandboxLaunchSpec("/bin/true", []);
+        using var process = SandboxedProcess.Create(spec, Path.GetTempPath(), new Dictionary<string, string>(), options);
+
+        var script = process.StartInfo.ArgumentList[1];
+
+        script.Should().Contain("setpriv", "SandboxUser must route the launch through setpriv");
+        script.Should().Contain("--reuid=honua-customcode");
+        script.Should().Contain("--regid=honua-customcode");
+        script.Should().Contain("--clear-groups");
+        script.Should().Contain("--no-new-privs");
+        script.Should().Contain("--ambient-caps=-all",
+            "without this, an ambient CAP_SETUID grant on honua-server would survive execve into the " +
+            "'dropped-privilege' child and allow it to setuid(0) back to root");
+        script.Should().Contain("--bounding-set=-all",
+            "the bounding set must also be cleared so the child cannot re-acquire capabilities via a " +
+            "setuid-root helper it might invoke");
     }
 
     // ---------------------------------------------------------------------
