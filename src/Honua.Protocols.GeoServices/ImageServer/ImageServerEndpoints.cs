@@ -3123,6 +3123,7 @@ internal static class ImageServerEndpoints
             Sr = GetString(values, "sr"),
             MosaicRule = GetString(values, "mosaicRule"),
             RenderingRule = GetString(values, "renderingRule"),
+            MultidimensionalDefinition = GetString(values, "multidimensionalDefinition"),
             PixelSize = TryGetInt(values, "pixelSize"),
             Time = GetString(values, "time"),
             ReturnGeometry = TryGetBool(values, "returnGeometry") ?? true,

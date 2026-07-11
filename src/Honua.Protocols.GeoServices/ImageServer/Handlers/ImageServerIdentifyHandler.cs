@@ -29,15 +29,18 @@ internal sealed class ImageServerIdentifyHandler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
+    private readonly IZarrPointSliceReader _zarrPointSliceReader;
     private readonly ILogger<ImageServerIdentifyHandler> _logger;
 
     public ImageServerIdentifyHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
+        IZarrPointSliceReader zarrPointSliceReader,
         ILogger<ImageServerIdentifyHandler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
+        _zarrPointSliceReader = zarrPointSliceReader ?? throw new ArgumentNullException(nameof(zarrPointSliceReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -83,6 +86,34 @@ internal sealed class ImageServerIdentifyHandler
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, "Invalid geometry coordinates");
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid geometry coordinates");
+            }
+
+            if (!ImageServerMultidimensionalDefinition.TryParse(
+                    request.MultidimensionalDefinition, out var dimensionConstraints, out var multidimensionalError))
+            {
+                ImageServerLog.InvalidIdentifyParameters(
+                    _logger,
+                    layerId,
+                    multidimensionalError ?? "Invalid multidimensionalDefinition");
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    multidimensionalError ?? "Invalid multidimensionalDefinition.");
+            }
+
+            if (dimensionConstraints.Count > 0)
+            {
+                scope.WithTag("honua.slice.selection_count", dimensionConstraints.Count);
+                return await IdentifyMultidimensionalSliceAsync(
+                        context,
+                        layerId,
+                        request,
+                        resolved.DisplayName,
+                        x.Value,
+                        y.Value,
+                        srid,
+                        dimensionConstraints,
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeError))
@@ -212,6 +243,90 @@ internal sealed class ImageServerIdentifyHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while identifying pixel values.");
         }
+    }
+
+    private async Task<IResult> IdentifyMultidimensionalSliceAsync(
+        HttpContext context,
+        int layerId,
+        IdentifyRequest request,
+        string displayName,
+        double x,
+        double y,
+        int? srid,
+        IReadOnlyList<ImageServerDimensionConstraint> constraints,
+        CancellationToken cancellationToken)
+    {
+        if (constraints.Any(static constraint => constraint.Values.Length != 1))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "identify point reads require exactly one coordinate value per multidimensionalDefinition entry.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Time) || !string.IsNullOrWhiteSpace(request.MosaicRule))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "time and mosaicRule cannot be combined with multidimensionalDefinition; select the time dimension in multidimensionalDefinition.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.RenderingRule))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "renderingRule is not supported for multidimensional identify reads.");
+        }
+
+        var selections = constraints.Select(static constraint => new ZarrPointSliceSelection(
+            string.IsNullOrWhiteSpace(constraint.VariableName) ? null : constraint.VariableName,
+            constraint.DimensionName,
+            constraint.Values[0])).ToArray();
+        var read = await _zarrPointSliceReader
+            .ReadAsync(layerId, x, y, srid, selections, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (read.Status is ZarrPointSliceReadStatus.RegistrationNotFound or ZarrPointSliceReadStatus.ReaderUnavailable)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                read.Error ?? "No readable multidimensional coverage is available for this layer.");
+        }
+
+        if (read.Status == ZarrPointSliceReadStatus.ReadFailed)
+        {
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                read.Error ?? "The multidimensional slice could not be read.");
+        }
+
+        if (read.Status == ZarrPointSliceReadStatus.InvalidSelection)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                read.Error ?? "multidimensionalDefinition could not be resolved.");
+        }
+
+        var hasData = read.Status == ZarrPointSliceReadStatus.Success;
+        var value = hasData ? read.Value!.Value : double.NaN;
+        var response = new IdentifyResponse
+        {
+            ObjectId = null,
+            Name = read.Variable ?? displayName,
+            Value = hasData ? value.ToString(CultureInfo.InvariantCulture) : "NoData",
+            Location = new Point { X = x, Y = y },
+            Properties = new Dictionary<string, object?>
+            {
+                ["HasData"] = hasData,
+                ["Value"] = hasData ? value : null,
+                ["Variable"] = read.Variable,
+                ["SRID"] = srid,
+                ["DimensionCount"] = constraints.Count,
+            },
+            CatalogItems = request.ReturnCatalogItems == true ? [] : null,
+        };
+
+        ImageServerLog.IdentifyCompleted(_logger, layerId, hasData, hasData ? 1 : 0);
+        return Results.Json(response, ImageServerJsonContext.Default.IdentifyResponse);
     }
 
     // Translates an Esri renderingRule into the canonical RasterIdentifyRendering threaded
