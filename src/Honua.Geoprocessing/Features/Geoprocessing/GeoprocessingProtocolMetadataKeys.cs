@@ -36,6 +36,22 @@ internal static class GeoprocessingProtocolMetadataKeys
     public const string GPServerProcessSr = "gpserver.env.processSR";
 
     /// <summary>
+    /// Job spec parameter key storing the GP <c>env:workspace</c> workspace
+    /// identifier requested by the caller. Maps onto the existing workspace
+    /// lifecycle model (<see cref="Honua.Core.Features.Geoprocessing.Abstractions.IWorkspaceLifecycleService"/>);
+    /// tool output artifacts resolve relative to this workspace when set.
+    /// </summary>
+    public const string GPServerWorkspace = "gpserver.env.workspace";
+
+    /// <summary>
+    /// Job spec parameter key storing the GP <c>env:overwriteOutput</c> flag
+    /// requested by the caller. Mirrors arcpy's <c>arcpy.env.overwriteOutput</c>
+    /// (default <c>False</c>): when absent or <c>false</c>, a write that would
+    /// collide with an existing output artifact fails instead of clobbering it.
+    /// </summary>
+    public const string GPServerOverwriteOutput = "gpserver.env.overwriteOutput";
+
+    /// <summary>
     /// Prefix for stable protocol output parameter names stored on the job spec.
     /// </summary>
     public const string OutputNamePrefix = "process.output.";

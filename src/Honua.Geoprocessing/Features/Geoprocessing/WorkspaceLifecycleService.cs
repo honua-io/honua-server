@@ -133,6 +133,71 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         return created;
     }
 
+    public async Task<Artifact> AddOrReplaceArtifactAsync(
+        string workspaceId,
+        ArtifactKind kind,
+        string label,
+        bool overwrite,
+        string? uri = null,
+        string? contentType = null,
+        long sizeBytes = 0,
+        IReadOnlyDictionary<string, string>? metadata = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
+
+        var existingArtifacts = await _artifactStore.ListByWorkspaceAsync(workspaceId, cancellationToken)
+            .ConfigureAwait(false);
+        var collision = existingArtifacts.FirstOrDefault(artifact =>
+            artifact.State == ArtifactLifecycleState.Available &&
+            string.Equals(artifact.Label, label, StringComparison.OrdinalIgnoreCase));
+
+        if (collision is not null)
+        {
+            if (!overwrite)
+            {
+                WorkspaceLifecycleLog.ArtifactOverwriteRejected(_logger, workspaceId, label);
+                throw new ArtifactAlreadyExistsException(workspaceId, label);
+            }
+
+            WorkspaceLifecycleLog.ArtifactOverwritten(_logger, collision.ArtifactId, workspaceId, label);
+            await _artifactStore.DeleteAsync(collision.ArtifactId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await AddArtifactAsync(
+            workspaceId, kind, label, uri, contentType, sizeBytes, metadata, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<Workspace> GetOrCreateNamedWorkspaceAsync(
+        string ownerId,
+        string label,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
+
+        var now = _timeProvider.GetUtcNow();
+        var owned = await _workspaceStore.ListByOwnerAsync(ownerId, cancellationToken).ConfigureAwait(false);
+        var existing = owned
+            .Where(workspace =>
+                workspace.State == WorkspaceLifecycleState.Active &&
+                !workspace.IsExpired(now) &&
+                string.Equals(workspace.Label, label, StringComparison.Ordinal))
+            .OrderByDescending(workspace => workspace.CreatedAt)
+            .FirstOrDefault();
+
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        return await CreateWorkspaceAsync(
+            WorkspaceKind.Scratch, label, ownerId, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task<ArtifactPromotionResult> PromoteArtifactAsync(
         ArtifactPromotionRequest request,
         CancellationToken cancellationToken = default)
@@ -464,4 +529,16 @@ internal static partial class WorkspaceLifecycleLog
         Level = LogLevel.Debug,
         Message = "Skipped workspace {WorkspaceId} during cleanup: state {State} is not eligible for expiration")]
     public static partial void CleanupSkippedNonExpiredState(ILogger logger, string workspaceId, WorkspaceLifecycleState state);
+
+    [LoggerMessage(
+        EventId = 9913,
+        Level = LogLevel.Warning,
+        Message = "Rejected output write to workspace {WorkspaceId}: label '{Label}' already exists and overwrite was not requested")]
+    public static partial void ArtifactOverwriteRejected(ILogger logger, string workspaceId, string label);
+
+    [LoggerMessage(
+        EventId = 9914,
+        Level = LogLevel.Information,
+        Message = "Overwrote existing artifact {ArtifactId} in workspace {WorkspaceId}: label '{Label}'")]
+    public static partial void ArtifactOverwritten(ILogger logger, string artifactId, string workspaceId, string label);
 }
