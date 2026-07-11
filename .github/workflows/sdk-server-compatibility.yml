@@ -10,6 +10,11 @@ name: SDK Server Compatibility
         required: false
         default: HEAD
         type: string
+      current_only:
+        description: 'Run only the current server x current SDK cell for focused change verification.'
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '35 8 * * 1'
 
@@ -51,6 +56,7 @@ jobs:
 
           manifest="$SDK_COMPATIBILITY_MANIFEST"
           server_current_ref="${{ github.event_name == 'workflow_dispatch' && inputs.server_current_ref || '' }}"
+          current_only="${{ github.event_name == 'workflow_dispatch' && inputs.current_only || false }}"
           jq -e '
             . as $manifest
             | ($manifest.schemaVersion == 1)
@@ -63,7 +69,7 @@ jobs:
           ' "$manifest" >/dev/null
 
           matrix="$(
-            jq -c --arg head "$GITHUB_SHA" --arg serverCurrentRef "$server_current_ref" '
+            jq -c --arg head "$GITHUB_SHA" --arg serverCurrentRef "$server_current_ref" --argjson currentOnly "$current_only" '
               def serverByLabel($manifest; $name):
                 (
                   ($manifest.serverRefs[] | select(.label == $name)) // error("Unknown server label: " + $name)
@@ -97,8 +103,14 @@ jobs:
               |
               {
                 include: (
-                  (($manifest.matrix.supported // []) | map(cell($manifest; "supported"; true)))
-                  + (($manifest.matrix.evaluation // []) | map(cell($manifest; "evaluation"; false)))
+                  (
+                    (($manifest.matrix.supported // []) | map(cell($manifest; "supported"; true)))
+                    + (($manifest.matrix.evaluation // []) | map(cell($manifest; "evaluation"; false)))
+                  )
+                  | if $currentOnly
+                    then map(select(.server_label == "current" and .sdk_label == "sdk-current"))
+                    else .
+                    end
                 )
               }
             ' "$manifest"
@@ -153,11 +165,12 @@ jobs:
           ref: ${{ github.sha }}
           path: compatibility-source
 
-      - name: Preserve current compatibility runner
+      - name: Preserve current compatibility assets
         shell: bash
         run: |
           set -euo pipefail
           cp compatibility-source/scripts/ci/run-sdk-server-compatibility.sh "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
+          cp compatibility-source/tests/seed/portal-compat.yaml "$RUNNER_TEMP/portal-compat.yaml"
           chmod +x "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
 
       - name: Checkout honua-server target
@@ -178,16 +191,28 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Install Portal seed dependency
+        if: matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current'
+        run: python -m pip install 'pyyaml>=6,<7'
+
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: tests/seed/base-schema.sql
+          # PortalCompat is additive and exists only in the current SDK/server
+          # pair. Preserve the historical compatibility cells by applying the
+          # Portal fixture only to the current x current proof (#2614).
+          post-seed-yaml: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && format('{0}/portal-compat.yaml', runner.temp) || '' }}
           log-path: logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
         env:
           # Compatibility checks exercise server/SDK runtime behavior; security audit gates run separately.
           NuGetAudit: false
           WarningsNotAsErrors: NU1901;NU1902;NU1903;NU1904
+          # The Actions service network is HTTP-only. Production retains the
+          # secure RequireHttps=true default; this enables generateToken solely
+          # for the live compatibility proof.
+          Authentication__PortalToken__RequireHttps: 'false'
 
       - name: Checkout honua-sdk-js
         uses: actions/checkout@v7
@@ -260,6 +285,8 @@ jobs:
         id: compatibility
         continue-on-error: true
         shell: bash
+        env:
+          HONUA_SDK_PORTAL_COMPAT_ENABLED: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' }}
         run: |
           mkdir -p results
           set +e
@@ -509,22 +536,18 @@ jobs:
                 }
               },
               seed_profile: $seedProfile,
+              portal_seed_profile: (
+                if $serverLabel == "current" and $sdkLabel == "sdk-current"
+                then "tests/seed/portal-compat.yaml"
+                else null
+                end
+              ),
               service_id: $serviceId,
               layer_id: $layerId,
-              protocol_surfaces: [
-                "control-plane-admin",
-                "platform-http",
-                "geoservices-catalog",
-                "feature-server",
-                "ogc-api-features",
-                "migration-scan",
-                "arcgis-import",
-                "geoserver-dry-run",
-                "migration-evidence"
-              ],
-              protocol_surfaces_by_sdk: {
-                js: [
+              protocol_surfaces: (
+                [
                   "control-plane-admin",
+                  "platform-http",
                   "geoservices-catalog",
                   "feature-server",
                   "ogc-api-features",
@@ -532,7 +555,29 @@ jobs:
                   "arcgis-import",
                   "geoserver-dry-run",
                   "migration-evidence"
-                ],
+                ]
+                + if $serverLabel == "current" and $sdkLabel == "sdk-current"
+                  then ["portal-repoint"]
+                  else []
+                  end
+              ),
+              protocol_surfaces_by_sdk: {
+                js: (
+                  [
+                    "control-plane-admin",
+                    "geoservices-catalog",
+                    "feature-server",
+                    "ogc-api-features",
+                    "migration-scan",
+                    "arcgis-import",
+                    "geoserver-dry-run",
+                    "migration-evidence"
+                  ]
+                  + if $serverLabel == "current" and $sdkLabel == "sdk-current"
+                    then ["portal-repoint"]
+                    else []
+                    end
+                ),
                 python: [
                   "control-plane-admin",
                   "platform-http",
