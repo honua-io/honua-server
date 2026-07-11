@@ -23,7 +23,7 @@
     "src/Honua.Server/Features/Infrastructure/Monitoring/",
     "src/Honua.Server/Startup/"
   ],
-  "_unmapped_source_run_all_prefixes_comment": "Safety net (#1897): a changed file under one of these prefixes that is NOT claimed by any shard's `paths` escalates to run_all. Per-prefix rationale — src/Honua.Core/, src/Honua.Postgres/, src/Honua.Server/, src/Honua.DuckDB/, tests/dotnet/Honua.Server.Tests/: shared canonical pipeline + provider + integration-test host whose unmapped slices cut across every shard. src/Honua.Geometry/, src/Honua.Jobs/, src/Honua.Routing/, src/Honua.Hosting/: cross-cutting geometry/job/routing/host-rendering primitives referenced by nearly every protocol src project (no single owning shard; routing powers NAServer + MCP, Honua.Hosting carries the shared rendering/caching/security/parsing host used by every render+query protocol — both over-included via run_all rather than mis-routed to Core). src/Honua.Aws/, src/Honua.Azure/: cloud-provider runtime whose tests are spread across the Cloud/FileImport/Infra shards; over-include via run_all (moved here from infrastructure_paths so a project-add no longer trips it). src/Honua.Protocols., src/Honua.Scene/, src/Honua.Ai/, src/Honua.Geoprocessing/, src/Honua.Geocoding/, src/Honua.Io/, src/Honua.Import/: their mapped subdirs are claimed by owning shards below (so normal feature PRs stay targeted); the net only fires for a NOT-YET-MAPPED new top-level area under them, e.g. a brand-new src/Honua.Protocols.SensorThings/ project whose tests have no shard yet.",
+  "_unmapped_source_run_all_prefixes_comment": "Safety net (#1897): a changed file under one of these prefixes that is NOT claimed by any shard's `paths` escalates to run_all. Per-prefix rationale — src/Honua.Core/, src/Honua.Postgres/, src/Honua.Server/, src/Honua.DuckDB/, tests/dotnet/Honua.Server.Tests/: shared canonical pipeline + provider + integration-test host whose unmapped slices cut across every shard. src/Honua.Geometry/, src/Honua.Jobs/, src/Honua.Routing/, src/Honua.Hosting/: cross-cutting geometry/job/routing/host primitives remain fail-safe by default; bounded ownership exceptions are declared in shard paths (for example Routing/Features/Routing -> GPServer/NAServer and Hosting/Features/Tiles -> tile/ImageServer owners). src/Honua.Aws/, src/Honua.Azure/: cloud-provider runtime whose tests are spread across the Cloud/FileImport/Infra shards; over-include via run_all (moved here from infrastructure_paths so a project-add no longer trips it). src/Honua.Protocols., src/Honua.Scene/, src/Honua.Ai/, src/Honua.Geoprocessing/, src/Honua.Geocoding/, src/Honua.Io/, src/Honua.Import/: their mapped subdirs are claimed by owning shards below (so normal feature PRs stay targeted); the net only fires for a NOT-YET-MAPPED new top-level area under them, e.g. a brand-new src/Honua.Protocols.SensorThings/ project whose tests have no shard yet.",
   "unmapped_source_run_all_prefixes": [
     "src/Honua.Core/",
     "src/Honua.Postgres/",
@@ -46,7 +46,7 @@
   "default_shards_when_no_match": [
     "Core"
   ],
-  "_targeted_override_prefixes_comment": "Narrows over-broad run_all triggers (ADR-0037 targeting follow-up). A changed file under one of these prefixes is CLAIMED by the listed shard subset instead of escalating to run_all: it is excluded from the infrastructure_paths short-circuit and the unmapped_source_run_all_prefixes net, and the listed shards are unioned into the targeted result. Evaluated AFTER the empty-diff guard and BEFORE the infrastructure_paths check. Two over-broad triggers are narrowed: (1) endpoint-registration PLUMBING — src/Honua.Server/EndpointRegistry.cs, src/Honua.Server/Program.cs, and src/Honua.Server/Startup/JsonContextRegistration.cs — which almost every feature PR touches; these route to a representative SMOKE subset spanning the main protocol families (FeatureServer, OGC API Features, one classic OGC = WMS, OData, MCP) plus the always-on API/governance and admin-infrastructure shards, NOT all 45. The architecture/governance guards that run on EVERY PR (EndpointRegistry/OperationRegistry drift + coverage, proof-ledger, in Honua.Architecture.Tests on the build job) are the safety net that catches a registration mistake regardless of which server-test shards run, which is what makes a smoke subset safe here. (2) shared FEATURE-AREA dirs under src/Honua.Hosting/ — Authentication/ and Security/ — route to the auth/security-relevant shards (Infra and Security, Admin & Infrastructure, OData Core which carries ODataAuthorizationTests), NOT all 45. IMPORTANT: keep these prefixes SPECIFIC. They MUST be narrower than the genuinely cross-cutting paths that must stay run_all: do NOT add Honua.Core abstractions, DI/host bootstrap (Honua.Hosting.csproj, Startup/InfrastructureCompositionRoot.cs), the rest of src/Honua.Hosting/Features/ (Rendering/Caching/etc. stay run_all via the unmapped net), Directory.Build.props/Directory.Packages.props, .github/workflows/**, ci-shards.json, the router scripts, or *.sln here. A registration override prefix must point at a SPECIFIC plumbing file, not a whole shared directory.",
+  "_targeted_override_prefixes_comment": "Narrows over-broad run_all triggers (ADR-0037 targeting follow-up). A changed file under one of these prefixes is CLAIMED by the listed shard subset instead of escalating to run_all: it is excluded from the infrastructure_paths short-circuit and the unmapped_source_run_all_prefixes net, and the listed shards are unioned into the targeted result. Evaluated AFTER the empty-diff guard and BEFORE the infrastructure_paths check. Two over-broad triggers are narrowed: (1) endpoint-registration PLUMBING — src/Honua.Server/EndpointRegistry.cs, src/Honua.Server/Program.cs, and src/Honua.Server/Startup/JsonContextRegistration.cs — which almost every feature PR touches; these route to a representative SMOKE subset spanning the main protocol families (FeatureServer, OGC API Features, one classic OGC = WMS, OData, MCP) plus the always-on API/governance and admin-infrastructure shards, NOT all 45. The architecture/governance guards that run on EVERY PR (EndpointRegistry/OperationRegistry drift + coverage, proof-ledger, in Honua.Architecture.Tests on the build job) are the safety net that catches a registration mistake regardless of which server-test shards run, which is what makes a smoke subset safe here. (2) shared FEATURE-AREA dirs under src/Honua.Hosting/ — Authentication/ and Security/ — route to the auth/security-relevant shards (Infra and Security, Admin & Infrastructure, OData Core which carries ODataAuthorizationTests), NOT all 45. IMPORTANT: keep these prefixes SPECIFIC. They MUST be narrower than the genuinely cross-cutting paths that must stay run_all: do NOT add Honua.Core abstractions, DI/host bootstrap (Honua.Hosting.csproj, Startup/InfrastructureCompositionRoot.cs), or unmapped src/Honua.Hosting/Features areas (Rendering/Caching/etc. stay run_all via the unmapped net; bounded Tiles ownership is declared directly on its shards), Directory.Build.props/Directory.Packages.props, .github/workflows/**, ci-shards.json, the router scripts, or *.sln here. A registration override prefix must point at a SPECIFIC plumbing file, not a whole shared directory.",
   "targeted_override_prefixes": [
     {
       "prefix": "src/Honua.Server/EndpointRegistry.cs",
@@ -168,9 +168,11 @@
         "src/Honua.Postgres/Features/Metadata/",
         "src/Honua.Core/Features/Publishing/",
         "src/Honua.Postgres/Features/Publishing/",
+        "src/Honua.Routing/Features/Routing/",
         "src/Honua.Server/Migrations/082_CreatePromotionStores.sql",
         "tests/dotnet/Honua.Server.Tests/Seed/",
         "tests/dotnet/Honua.Server.Tests/Startup/PostgresPromotionSurfaceRegistrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs",
         "tests/dotnet/Honua.Server.Tests/Helpers/",
         "tests/dotnet/Honua.Server.Tests/TestData/",
         "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs",
@@ -635,8 +637,10 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API",
+      "_paths_comment": "#2693: the exact ImageServer endpoint-registry fragment is bounded protocol registration; pair its ImageServer owner with this API-governance projection without widening other EndpointRegistry fragments.",
       "paths": [
         "src/Honua.Protocols.Stac/",
+        "src/Honua.Server/EndpointRegistry.ImageServer.cs",
         "tests/dotnet/Honua.Server.Tests/Features/API/",
         "src/Honua.Core/Features/Validation/"
       ]
@@ -860,15 +864,18 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "ADR-0037 finer-sharding: narrowed to the ImageServer + Catalog namespaces; GPServer and NAServer were carved into the GeoServices GPServer and NAServer shard. ImageServer and GPServer/NAServer use disjoint namespaces, so the two shards partition the original suite with no gaps or overlaps.",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog",
-      "_paths_comment": "src-dir->shard map (#1897 follow-up): src/Honua.Core/Features/Raster/ is the shared raster/coverage pipeline (Zarr/COG sampling, mosaic, statistics) that ImageServer adapts; it is mapped here (and to the OGC API Tiles/Coverages and WFS=Wcs shards) so a raster change like #1939 targets the raster-rendering protocol shards instead of tripping the unmapped-source net. Raster unit tests live in Honua.Core.Tests (not in the shard matrix); the server-test coverage of Raster flows through these protocol shards.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Tiles",
+      "_paths_comment": "src-dir->shard map (#1897 follow-up): src/Honua.Core/Features/Raster/ is the shared raster/coverage pipeline (Zarr/COG sampling, mosaic, statistics) that ImageServer adapts; it is mapped here (and to the OGC API Tiles/Coverages and WFS=Wcs shards) so a raster change like #1939 targets the raster-rendering protocol shards instead of tripping the unmapped-source net. #2693 also assigns the shared Hosting/Tiles package writers and their GeoServices.Tiles tests to this shard; its GeoServices test project/filter explicitly discovers those tests. Raster unit tests live in Honua.Core.Tests (not in the shard matrix); the server-test coverage of Raster flows through these protocol shards.",
       "paths": [
         "src/Honua.Protocols.GeoServices/ImageServer/",
         "src/Honua.Protocols.GeoServices/Catalog/",
+        "src/Honua.Hosting/Features/Tiles/",
+        "src/Honua.Server/EndpointRegistry.ImageServer.cs",
         "src/Honua.Core/Features/Raster/",
         "src/Honua.Postgres/Features/Raster/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/",
         "src/Honua.Core/Features/Validation/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
@@ -885,9 +892,11 @@
       "upload_odata_evidence": false,
       "_comment": "ADR-0037 finer-sharding: carved from GeoServices ImageServer. Selects the GPServer and NAServer namespaces (GPServerEndpointTests is the heaviest single class in the original ImageServer shard).",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer",
+      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
       "paths": [
         "src/Honua.Protocols.GeoServices/GPServer/",
         "src/Honua.Protocols.GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
         "src/Honua.Core/Features/Validation/"
@@ -931,9 +940,11 @@
       "upload_odata_evidence": false,
       "_comment": "Owns the Terrain and Tiles namespaces in the Honua.Server.Tests assembly. NOTE (#1899): the GeometryService namespace was REMOVED from this shard's filter — those tests live in the Honua.Protocols.GeoServices.Tests assembly, not this shard's (default) Honua.Server.Tests assembly, so the filter never matched them here; they are now owned by 'GeoServices Geometry VectorTile and Versioning' which targets the correct csproj.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Terrain|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles",
+      "_paths_comment": "#2693: shared Hosting tile-package primitives are bounded tile infrastructure, so they select this owner plus ImageServer instead of escalating every server-test shard.",
       "paths": [
         "src/Honua.Server/Features/Protocols/Terrain/",
         "src/Honua.Server/Features/Protocols/Tiles/",
+        "src/Honua.Hosting/Features/Tiles/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Terrain/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Tiles/",
         "src/Honua.Core/Features/Validation/"
