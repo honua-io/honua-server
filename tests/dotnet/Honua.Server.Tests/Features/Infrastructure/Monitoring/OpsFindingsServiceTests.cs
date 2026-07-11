@@ -74,6 +74,90 @@ public sealed class OpsFindingsServiceTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ChannelDeadLetters_ProducesScopedApprovalOnlyPauseFinding()
+    {
+        var alertHealth = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastBacklog = new AlertDispatchBacklog
+            {
+                PendingCount = 8,
+                DeadLetteredCount = 2,
+                Channels =
+                [
+                    new AlertDispatchChannelBacklog
+                    {
+                        ChannelType = AlertChannelType.Email,
+                        IsPaused = false,
+                        PendingCount = 3,
+                        RetryingCount = 2,
+                        DeadLetteredCount = 2,
+                        OldestItemAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+                    },
+                    new AlertDispatchChannelBacklog
+                    {
+                        ChannelType = AlertChannelType.Webhook,
+                        IsPaused = false,
+                        PendingCount = 3,
+                        RetryingCount = 0,
+                        DeadLetteredCount = 0,
+                        OldestItemAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+                    },
+                ],
+            },
+        };
+        var service = CreateService(alertHealth: alertHealth);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleAlertDispatchChannelFailure);
+        Assert.Equal("email", finding.Subject.Channel);
+        Assert.NotNull(finding.RecommendedAction);
+        Assert.Equal(OpsActionNames.PauseChannel, finding.RecommendedAction!.ActionDiscriminator);
+        Assert.False(finding.RecommendedAction.AutoSafe);
+        Assert.Equal(7, finding.RecommendedAction.BlastRadius);
+        Assert.Contains("\"channel\":\"email\"", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain("webhook", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_AlreadyPausedFailingChannel_ProducesEvidenceWithoutAnotherAction()
+    {
+        var alertHealth = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            LastBacklog = new AlertDispatchBacklog
+            {
+                PendingCount = 0,
+                DeadLetteredCount = 1,
+                Channels =
+                [
+                    new AlertDispatchChannelBacklog
+                    {
+                        ChannelType = AlertChannelType.Slack,
+                        IsPaused = true,
+                        PendingCount = 0,
+                        RetryingCount = 0,
+                        DeadLetteredCount = 1,
+                        OldestItemAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+                    },
+                ],
+            },
+        };
+        var service = CreateService(alertHealth: alertHealth);
+
+        var finding = (await service.EvaluateAsync())
+            .Single(f => f.Rule == OpsFindingsService.RuleAlertDispatchChannelFailure);
+
+        Assert.Equal("slack", finding.Subject.Channel);
+        Assert.Null(finding.RecommendedAction);
+        Assert.Contains("already paused", finding.Explanation, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_AlertDispatchBelowThresholds_ProducesNoFinding()
     {
         var alertHealth = new FakeAlertDispatchHealth
@@ -628,6 +712,49 @@ public sealed class OpsFindingsServiceTests
                 r.IdempotencyKey == finding.Id &&
                 r.ExecutionPayload != null &&
                 r.ExecutionPayload.Contains("\"action\":\"alerts.redrive_dead_letters\"", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_ChannelFailureFinding_RoutesApprovalOnlyScopedPauseThroughGateway()
+    {
+        var alertHealth = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            LastBacklog = new AlertDispatchBacklog
+            {
+                PendingCount = 1,
+                DeadLetteredCount = 1,
+                Channels =
+                [
+                    new AlertDispatchChannelBacklog
+                    {
+                        ChannelType = AlertChannelType.MicrosoftTeams,
+                        IsPaused = false,
+                        PendingCount = 1,
+                        RetryingCount = 0,
+                        DeadLetteredCount = 1,
+                        OldestItemAt = DateTimeOffset.UtcNow.AddMinutes(-2),
+                    },
+                ],
+            },
+        };
+        var gateway = CreateProposalGateway(OperationClass.AdminConfigChange, "proposal-channel-pause");
+        var service = CreateService(alertHealth: alertHealth, gateway: gateway);
+        var finding = (await service.EvaluateAsync())
+            .Single(f => f.Rule == OpsFindingsService.RuleAlertDispatchChannelFailure);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.ProposalCreated, result.Status);
+        await gateway.Received(1).RouteAsync(
+            Arg.Is<OperationGatewayRequest>(request =>
+                request.ActionDiscriminator == OpsActionNames.PauseChannel &&
+                request.AutonomyContext != null &&
+                !request.AutonomyContext.ActionMarkedAutoSafe &&
+                request.ExecutionPayload != null &&
+                request.ExecutionPayload.Contains("\"channel\":\"microsoft_teams\"", StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
     }
 
