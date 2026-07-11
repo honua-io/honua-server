@@ -112,6 +112,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_operate_events", "operate_events", "results"),
             ("honua_platform_release_status", "platform_release_status", "results"),
             ("honua_deploy_operations", "deploy_operations", "results"),
+            ("honua_supported_operation_kinds", "supported_operation_kinds", "results"),
             ("honua_propose_rollback", "propose_rollback", "lifecycle"),
             ("honua_list_layers", "list_layers", "results"),
             ("honua_query_features", "query_features", "results"),

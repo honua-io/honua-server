@@ -119,6 +119,7 @@ internal static class McpServiceCollectionExtensions
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlatformReleaseStatusTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DeployOperationsTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SupportedOperationKindsTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeRollbackTool>());
         }
 
