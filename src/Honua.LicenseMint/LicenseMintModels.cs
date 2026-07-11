@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.LicenseMint;
 
@@ -41,6 +42,9 @@ internal sealed class LicenseMintPayload
     /// <summary>Active feature entitlement keys resolved against <c>FeatureCatalog</c>.</summary>
     public string[]? Entitlements { get; init; }
 
+    /// <summary>Optional serving-capacity band and surge terms.</summary>
+    public LicenseCapacityTerms? Capacity { get; init; }
+
     /// <summary>Optional string-valued metadata (issuance source, support context).</summary>
     public Dictionary<string, string>? Metadata { get; init; }
 }
@@ -75,6 +79,7 @@ internal sealed class LicenseMintEnvelope
     WriteIndented = false)]
 [JsonSerializable(typeof(LicenseMintPayload))]
 [JsonSerializable(typeof(LicenseMintEnvelope))]
+[JsonSerializable(typeof(LicenseCapacityTerms))]
 internal sealed partial class LicenseMintJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }

@@ -95,8 +95,13 @@ Errors follow the Esri envelope `{ "error": { "code", "message", "details" } }`.
 
 ## Consuming repos
 
-- `honua-sdk-js` (`@honua/sdk-esri-compat`) — Portal repoint client + `sdk-server-compatibility` coverage (#1373).
-- `honua-sdk-dotnet`, `honua-sdk-python` — repoint paths confirmed or deferred with a tracked follow-up (#1373).
+- `honua-sdk-js` (`@honua/sdk-esri-compat`) — Portal repoint client
+  ([honua-sdk-js#383](https://github.com/honua-io/honua-sdk-js/pull/383)) and
+  current×current `sdk-server-compatibility` coverage (#2614).
+- `honua-sdk-dotnet` — typed Portal repoint path tracked in
+  [honua-sdk-dotnet#257](https://github.com/honua-io/honua-sdk-dotnet/issues/257).
+- `honua-sdk-python` — async/generated-sync Portal repoint path tracked in
+  [honua-sdk-python#168](https://github.com/honua-io/honua-sdk-python/issues/168).
 
 When changing this contract (service names, tiers, or the `portals/self` /
 `PortalItem` shape), bump the fixture and this doc together and notify the SDK
