@@ -470,6 +470,60 @@ assert_exact_shards \
       'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
   '["Core","GeoServices GPServer and NAServer"]'
 
+# #2709: the four shards carved from the former Server Features Misc shard
+# retained a shared source-path list after their filters diverged. Zarr tests
+# remain executable only in the Misc catch-all, so route the Zarr registrar to
+# that real owner instead of paying for three filters that cannot discover it.
+assert_exact_shards \
+  "zarr-server-source-exact-owner" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  '["Server Features Misc"]'
+assert_excludes_shard \
+  "zarr-server-source-excludes-data-sharing" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  "Server Features Data and Sharing"
+assert_excludes_shard \
+  "zarr-server-source-excludes-collaboration-content" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  "Server Features Collaboration and Content"
+assert_excludes_shard \
+  "zarr-server-source-excludes-spec-printing-staticmap" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  "Server Features Spec Printing and Static Maps"
+
+# Representative cumulative diff from #2702: shared raster changes retain the
+# ImageServer/coverage/WCS owners, while the server Zarr registrar adds only its
+# executable Misc owner.
+assert_exact_shards \
+  "zarr-point-slice-cumulative-batch" \
+  "$(printf '%s\n%s\n%s\n%s\n%s' \
+      'src/Honua.Core/Features/Raster/Abstractions/IZarrPointSliceReader.cs' \
+      'src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs' \
+      'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs' \
+      'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
+      'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Server Features Misc","WFS"]'
+
+# Narrowing Zarr must not remove the carved shards' actual feature-area paths.
+assert_descriptor \
+  "data-enrichment-source-retains-owner" \
+  "src/Honua.Server/Features/DataEnrichment/DataEnrichmentServiceCollectionExtensions.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Data and Sharing"
+assert_descriptor \
+  "collaboration-source-retains-owner" \
+  "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Collaboration and Content"
+assert_descriptor \
+  "spec-source-retains-owner" \
+  "src/Honua.Server/Features/Spec/HonuaSpecService.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Spec Printing and Static Maps"
+
 # Keep the safety net for a future unrelated Routing area; #2693 claims only
 # the existing Features/Routing slice.
 assert_descriptor \
@@ -741,6 +795,18 @@ python3 scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core"
+    "Core" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Misc" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Zarr.ZarrEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Misc" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Misc"
 
 echo "CI router validation passed."
