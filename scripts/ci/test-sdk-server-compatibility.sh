@@ -69,5 +69,11 @@ grep -Fq 'HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE: ${{ runner.temp }}/geoserver-ca
   || fail "workflow must pass the preserved fixture to historical server checkouts"
 grep -Fq 'Licensing__DevGrantEdition="Enterprise"' "$RUNNER" \
   || fail "the strict migration harness must grant the Enterprise entitlement it exercises"
+grep -Fq '8: "Completed"' "$RUNNER" \
+  || fail "the ArcGIS import harness must recognize the current completed status"
+grep -Fq '9: "NeedsReview"' "$RUNNER" \
+  || fail "the ArcGIS import harness must treat operator review as a terminal non-success status"
+grep -Fq '11: "Cancelled"' "$RUNNER" \
+  || fail "the ArcGIS import harness must recognize the current cancelled status"
 
 echo "SDK compatibility matrix and runner tests passed."

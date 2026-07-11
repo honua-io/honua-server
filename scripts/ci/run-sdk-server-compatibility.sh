@@ -429,16 +429,17 @@ if (!migrationAutomationRequired) {
 const migrationClient = new HonuaClient({ baseUrl: migrationBaseUrl, apiKey, timeoutMs: 120_000 });
 await mkdir(migrationResultsDir, { recursive: true });
 
-const terminalStatusNames = new Set(["Completed", "Failed", "Cancelled"]);
+const terminalStatusNames = new Set(["Completed", "NeedsReview", "Failed", "Cancelled"]);
 const geoServerStatusNames = {
   7: "Completed",
   8: "Failed",
   9: "Cancelled",
 };
 const geoServicesStatusNames = {
-  6: "Completed",
-  7: "Failed",
-  8: "Cancelled",
+  8: "Completed",
+  9: "NeedsReview",
+  10: "Failed",
+  11: "Cancelled",
 };
 
 function assertArtifact(value, kind, label) {
