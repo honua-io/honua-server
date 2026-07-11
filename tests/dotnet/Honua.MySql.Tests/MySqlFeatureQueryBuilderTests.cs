@@ -269,6 +269,45 @@ public class MySqlFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_WithinFilter_LeadsWithFilterGeometry()
+    {
+        // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
+        // geometry must be the FIRST operand: ST_Within(filter, feature). Leading with the
+        // feature column inverts the relationship and returns the wrong set (#2068, #2730).
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(
+                geometry: [0x01, 0x02, 0x03],
+                spatialRelationship: SpatialRelationship.Within,
+                srid: 4326)
+        };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("ST_Within(ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'), `geom`)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Within(`geom`", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
+    {
+        // Esri esriSpatialRelContains = filter geometry contains feature geometry: the filter
+        // geometry must be the FIRST operand, ST_Contains(filter, feature) (#2068, #2730).
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(
+                geometry: [0x01, 0x02, 0x03],
+                spatialRelationship: SpatialRelationship.Contains,
+                srid: 4326)
+        };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("ST_Contains(ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'), `geom`)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Contains(`geom`", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_CrossSridFilter_ThrowsNotSupported()
     {
         var query = new FeatureQuery
