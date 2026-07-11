@@ -34,10 +34,30 @@ public static class ZarrTileRenderer
         int tileSize = DefaultTileSize,
         RasterColormap? colormap = null,
         double? fillValue = null)
+        => Render(result, slice, tileSize, tileSize, colormap, fillValue);
+
+    /// <summary>
+    /// Renders a resolved slice to a rectangular PNG using bounded nearest-neighbor sampling.
+    /// </summary>
+    /// <param name="result">Decoded subset payload from <see cref="Abstractions.IZarrSubsetReader"/>.</param>
+    /// <param name="slice">Resolved slice plan describing the X/Y dimension positions.</param>
+    /// <param name="outputWidth">Output width in pixels.</param>
+    /// <param name="outputHeight">Output height in pixels.</param>
+    /// <param name="colormap">Optional colormap; grayscale auto-ramp is used when null.</param>
+    /// <param name="fillValue">Optional source fill value rendered transparent.</param>
+    /// <returns>PNG-encoded RGBA image.</returns>
+    public static byte[] Render(
+        ZarrSubsetResult result,
+        ZarrTileSlicePlan slice,
+        int outputWidth,
+        int outputHeight,
+        RasterColormap? colormap = null,
+        double? fillValue = null)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(slice);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(tileSize);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputHeight);
 
         var height = result.Shape[slice.YDimensionIndex];
         var width = result.Shape[slice.XDimensionIndex];
@@ -58,19 +78,19 @@ public static class ZarrTileRenderer
         // otherwise auto-ramp grayscale over the finite value range.
         var ramp = colormap is null ? ResolveRange(values, fillValue) : default;
 
-        var pixels = new byte[tileSize * tileSize * 4];
-        for (var py = 0; py < tileSize; py++)
+        var pixels = new byte[checked(outputWidth * outputHeight * 4)];
+        for (var py = 0; py < outputHeight; py++)
         {
             // Nearest sample row from the grid (north-up: grid row 0 is the top).
-            var gy = height == 1 ? 0 : (int)((long)py * height / tileSize);
+            var gy = height == 1 ? 0 : (int)((long)py * height / outputHeight);
             if (gy >= height)
             {
                 gy = height - 1;
             }
 
-            for (var px = 0; px < tileSize; px++)
+            for (var px = 0; px < outputWidth; px++)
             {
-                var gx = width == 1 ? 0 : (int)((long)px * width / tileSize);
+                var gx = width == 1 ? 0 : (int)((long)px * width / outputWidth);
                 if (gx >= width)
                 {
                     gx = width - 1;
@@ -78,12 +98,12 @@ public static class ZarrTileRenderer
 
                 var index = (gy * strideY) + (gx * strideX);
                 var value = index >= 0 && index < values.Length ? values[index] : double.NaN;
-                var offset = ((py * tileSize) + px) * 4;
+                var offset = ((py * outputWidth) + px) * 4;
                 WritePixel(pixels.AsSpan(offset), value, colormap, ramp, fillValue);
             }
         }
 
-        return PngEncoder.Encode(pixels, tileSize, tileSize);
+        return PngEncoder.Encode(pixels, outputWidth, outputHeight);
     }
 
     private static (int StrideY, int StrideX) ComputeSpatialStrides(int[] shape, int yDim, int xDim)

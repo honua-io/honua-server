@@ -33,18 +33,18 @@ internal sealed class ImageServerExportHandler
     private const int MaxCompressionQuality = 100;
 
     private readonly IMetadataV2GraphProvider _graphProvider;
-    private readonly IRasterStore _rasterStore;
+    private readonly ImageServerExportBackend _exportBackend;
     private readonly ITemporaryFileService _temporaryFileService;
     private readonly ILogger<ImageServerExportHandler> _logger;
 
     public ImageServerExportHandler(
         IMetadataV2GraphProvider graphProvider,
-        IRasterStore rasterStore,
+        ImageServerExportBackend exportBackend,
         ITemporaryFileService temporaryFileService,
         ILogger<ImageServerExportHandler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
-        _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
+        _exportBackend = exportBackend ?? throw new ArgumentNullException(nameof(exportBackend));
         _temporaryFileService = temporaryFileService ?? throw new ArgumentNullException(nameof(temporaryFileService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -79,6 +79,33 @@ internal sealed class ImageServerExportHandler
                 return parseError.IsNotImplemented
                     ? StandardErrorHelpers.CreateNotImplemented(context, parseError.Detail)
                     : StandardErrorHelpers.CreateBadRequest(context, parseError.Detail);
+            }
+
+            if (!ImageServerMultidimensionalDefinition.TryParse(
+                    request.MultidimensionalDefinition,
+                    out var dimensionConstraints,
+                    out var multidimensionalError))
+            {
+                ImageServerLog.InvalidExportParameters(
+                    _logger,
+                    layerId,
+                    multidimensionalError ?? "Invalid multidimensionalDefinition");
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    multidimensionalError ?? "Invalid multidimensionalDefinition.");
+            }
+
+            if (dimensionConstraints.Count > 0)
+            {
+                return await ExportMultidimensionalSliceAsync(
+                        context,
+                        layerId,
+                        request,
+                        exportQuery,
+                        dimensionConstraints,
+                        scope,
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeError))
@@ -117,7 +144,7 @@ internal sealed class ImageServerExportHandler
                 Timestamp = mosaicRule.Method == MosaicMethod.LockRaster ? null : timestamp,
             };
 
-            var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+            var selectedRasters = await _exportBackend.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
 
             if (mosaicRule.Method == MosaicMethod.LockRaster)
             {
@@ -152,16 +179,14 @@ internal sealed class ImageServerExportHandler
                 exportQuery.OutputHeight ?? DefaultOutputDimension,
                 outputFormat);
 
-            var result = selectedRasters.Length == 1
-                ? await _rasterStore.ExportImageAsync(layerId, selectedRasters[0].Id, exportQuery, cancellationToken)
-                : await _rasterStore.ExportMosaicAsync(
-                    layerId,
-                    selectedRasters.Select(r => r.Id).ToArray(),
-                    mergeStrategy,
-                    exportQuery,
-                    ordering,
-                    mosaicRule.ToAttributeSort(),
-                    cancellationToken);
+            var result = await _exportBackend.ExportAsync(
+                layerId,
+                selectedRasters,
+                mergeStrategy,
+                exportQuery,
+                ordering,
+                mosaicRule.ToAttributeSort(),
+                cancellationToken);
 
             if (WantsInlineImageResponse(request.F))
             {
@@ -180,7 +205,7 @@ internal sealed class ImageServerExportHandler
             var extent = result.Extent ?? aggregateExtent;
             if (extent == null && selectedRasters.Length == 1)
             {
-                extent = await _rasterStore.GetExtentAsync(layerId, selectedRasters[0].Id, cancellationToken);
+                extent = await _exportBackend.GetExtentAsync(layerId, selectedRasters[0].Id, cancellationToken);
             }
 
             // Esri exportImage is expected to echo the export extent. When the raster store
@@ -218,6 +243,142 @@ internal sealed class ImageServerExportHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while exporting the image.");
         }
+    }
+
+    private async Task<IResult> ExportMultidimensionalSliceAsync(
+        HttpContext context,
+        int layerId,
+        ExportImageRequest request,
+        RasterQuery exportQuery,
+        IReadOnlyList<ImageServerDimensionConstraint> constraints,
+        HonuaTelemetryScope scope,
+        CancellationToken cancellationToken)
+    {
+        if (constraints.Any(static constraint => constraint.Values.Length != 1))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "exportImage slice reads require exactly one coordinate value per multidimensionalDefinition entry.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Time) || !string.IsNullOrWhiteSpace(request.MosaicRule))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "time and mosaicRule cannot be combined with multidimensionalDefinition; select dimensions in multidimensionalDefinition.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.RenderingRule) ||
+            !string.IsNullOrWhiteSpace(request.BandIds) ||
+            !string.IsNullOrWhiteSpace(request.NoData))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "renderingRule, bandIds, and noData transforms are not supported for multidimensional Zarr exports; request the native grayscale slice.");
+        }
+
+        if (exportQuery.OutputFormat != RasterFormat.PNG)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "Multidimensional Zarr export currently supports PNG output only.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Interpolation) &&
+            !string.Equals(request.Interpolation, "RSP_NearestNeighbor", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "Multidimensional Zarr export currently supports the default or RSP_NearestNeighbor interpolation only.");
+        }
+
+        var imageSrid = SpatialReferenceHelpers.TryParseSrid(request.ImageSr);
+        var bboxSrid = SpatialReferenceHelpers.TryParseSrid(request.BboxSr);
+        if (imageSrid is not null && bboxSrid is not null && imageSrid != bboxSrid)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "Multidimensional Zarr export does not support reprojection between bboxSR and imageSR.");
+        }
+
+        RasterExtent? bounds = null;
+        if (!string.IsNullOrWhiteSpace(request.Bbox) &&
+            RasterParsingHelpers.TryParseBoundingBox(
+                request.Bbox,
+                out var minX,
+                out var minY,
+                out var maxX,
+                out var maxY))
+        {
+            bounds = new RasterExtent
+            {
+                XMin = minX,
+                YMin = minY,
+                XMax = maxX,
+                YMax = maxY,
+                Srid = bboxSrid ?? imageSrid,
+            };
+        }
+
+        var selections = constraints.Select(static constraint => new ZarrPointSliceSelection(
+            string.IsNullOrWhiteSpace(constraint.VariableName) ? null : constraint.VariableName,
+            constraint.DimensionName,
+            constraint.Values[0])).ToArray();
+        scope.WithTag("honua.slice.selection_count", selections.Length);
+
+        var read = await _exportBackend.ReadZarrSliceAsync(
+                layerId,
+                new ZarrRasterSliceReadRequest(
+                    bounds,
+                    bboxSrid ?? imageSrid,
+                    exportQuery.OutputWidth ?? DefaultOutputDimension,
+                    exportQuery.OutputHeight ?? DefaultOutputDimension,
+                    selections),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (read.Status != ZarrRasterSliceReadStatus.Success)
+        {
+            var message = read.Error ?? "The multidimensional Zarr slice could not be exported.";
+            ImageServerLog.InvalidExportParameters(_logger, layerId, message);
+            return read.Status switch
+            {
+                ZarrRasterSliceReadStatus.RegistrationNotFound or ZarrRasterSliceReadStatus.ReaderUnavailable
+                    => StandardErrorHelpers.CreateNotImplemented(context, message),
+                ZarrRasterSliceReadStatus.ReadFailed
+                    => StandardErrorHelpers.CreateInternalServerError(context, message),
+                _ => StandardErrorHelpers.CreateBadRequest(context, message),
+            };
+        }
+
+        var raster = read.Raster!.Value;
+        ImageServerLog.ExportImageStarted(_logger, layerId, raster.Width, raster.Height, "PNG");
+        scope.WithTag("honua.slice.variable", read.Variable);
+        scope.WithTag("honua.output.bytes", raster.Data.Length);
+
+        if (WantsInlineImageResponse(request.F))
+        {
+            ImageServerLog.ExportImageCompleted(_logger, layerId, raster.Data.Length);
+            scope.SetSuccess(1);
+            return Results.File(raster.Data, raster.ContentType);
+        }
+
+        var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
+            raster.Data,
+            raster.ContentType,
+            TimeSpan.FromHours(1),
+            principal: context.User,
+            cancellationToken: cancellationToken);
+        var response = new ExportImageResponse
+        {
+            Href = imageUrl,
+            Width = raster.Width,
+            Height = raster.Height,
+            Extent = BuildExtent(raster.Extent, request.Bbox, bboxSrid, raster.Srid),
+        };
+
+        ImageServerLog.ExportImageCompleted(_logger, layerId, raster.Data.Length);
+        scope.SetSuccess(1);
+        return Results.Json(response, ImageServerJsonContext.Default.ExportImageResponse);
     }
 
     // Builds the export response extent. Prefers a real extent from the raster store; when
@@ -425,6 +586,10 @@ internal sealed class ImageServerExportHandler
                 OutputHeight = requestedHeight,
                 TiffCompression = tiffCompression,
                 Bands = effectiveBands,
+                // ArcGIS exportImage defaults to bilinear interpolation. Keep that
+                // default in the canonical query while preserving whether the client
+                // explicitly supplied interpolation for multidimensional slice validation.
+                ResamplingAlgorithm = ResamplingAlgorithm.Bilinear,
                 BandArithmetic = renderingBandArithmetic,
                 Terrain = renderingTerrain,
                 Stretch = renderingStretch,

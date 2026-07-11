@@ -55,7 +55,17 @@ public static class ZarrDimensionSliceResolver
                 return false;
             }
 
-            var instant = DateTimeOffset.FromUnixTimeMilliseconds((long)coordinate);
+            DateTimeOffset instant;
+            try
+            {
+                instant = DateTimeOffset.FromUnixTimeMilliseconds((long)coordinate);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                error = "The requested time coordinate is outside the supported instant range.";
+                return false;
+            }
+
             if (!CfTimeAxisIndexer.TryResolveTimeIndexRange(
                     temporal.Start, temporal.End, temporal.StepCount, instant, instant, out var low, out _, out var timeError))
             {
