@@ -330,6 +330,7 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
         var completed = new ZarrPointSliceReadResult[results.Length];
         var successCount = 0;
         var failureCount = 0;
+        var readFailureCount = 0;
         for (var i = 0; i < results.Length; i++)
         {
             completed[i] = results[i]!.Value;
@@ -340,12 +341,25 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
             else
             {
                 failureCount++;
+                if (completed[i].Status == ZarrPointSliceReadStatus.ReadFailed)
+                {
+                    readFailureCount++;
+                }
             }
         }
 
         activity?.SetTag("honua.slice.success_count", successCount);
         activity?.SetTag("honua.slice.failure_count", failureCount);
-        activity?.SetStatus(failureCount == 0 ? ActivityStatusCode.Ok : ActivityStatusCode.Error);
+        activity?.SetTag("honua.slice.read_failure_count", readFailureCount);
+        if (readFailureCount > 0)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error);
+        }
+        else if (failureCount == 0)
+        {
+            activity?.SetStatus(ActivityStatusCode.Ok);
+        }
+
         return completed;
     }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -123,6 +124,14 @@ public class ImageServerSamplesHandlerTests
     [Operation(Operations.Query)]
     public async Task ReadAsync_WithDuplicateDimensions_ReturnsInvalidSelection()
     {
+        Activity? stoppedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == "Honua.Core.Raster.Zarr",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity => stoppedActivity = activity,
+        };
+        ActivitySource.AddActivityListener(listener);
         var store = Substitute.For<IZarrStore>();
         var reader = new ZarrPointSliceReader(
             store,
@@ -142,6 +151,12 @@ public class ImageServerSamplesHandlerTests
         result.Status.Should().Be(ZarrPointSliceReadStatus.InvalidSelection);
         result.Error.Should().Contain("may be selected only once");
         await store.DidNotReceiveWithAnyArgs().ListByLayerAsync(default, default);
+        stoppedActivity.Should().NotBeNull();
+        stoppedActivity!.Status.Should().Be(ActivityStatusCode.Unset);
+        stoppedActivity.TagObjects.Should().Contain(
+            tag => tag.Key == "honua.slice.failure_count" && Equals(tag.Value, 1));
+        stoppedActivity.TagObjects.Should().Contain(
+            tag => tag.Key == "honua.slice.read_failure_count" && Equals(tag.Value, 0));
     }
 
     [UnitTest]
