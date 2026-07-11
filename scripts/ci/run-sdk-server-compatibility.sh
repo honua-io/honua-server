@@ -9,6 +9,9 @@ LAYER_ID="${HONUA_SDK_LAYER_ID:-0}"
 JS_DIR="${HONUA_SDK_JS_DIR:-sdk/honua-sdk-js}"
 PYTHON_DIR="${HONUA_SDK_PYTHON_DIR:-sdk/honua-sdk-python}"
 DOTNET_DIR="${HONUA_SDK_DOTNET_DIR:-sdk/honua-sdk-dotnet}"
+PORTAL_COMPAT_ENABLED="${HONUA_SDK_PORTAL_COMPAT_ENABLED:-false}"
+PORTAL_USERNAME="${HONUA_SDK_PORTAL_USERNAME:-admin}"
+PORTAL_PASSWORD="${HONUA_SDK_PORTAL_PASSWORD:-$ADMIN_API_KEY}"
 
 ROOT_DIR="$(pwd)"
 RESULTS_DIR="${SDK_COMPATIBILITY_RESULTS_DIR:-$ROOT_DIR/results}"
@@ -249,6 +252,9 @@ require_dir "$JS_DIR" "honua-sdk-js"
     HONUA_SDK_MIGRATION_GEOSERVER_URL="$MIGRATION_GEOSERVER_URL" \
     HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL="$MIGRATION_ARCGIS_SERVICE_URL" \
     HONUA_SDK_MIGRATION_JS_RESULTS_DIR="$JS_MIGRATION_RESULTS_DIR" \
+    HONUA_SDK_PORTAL_COMPAT_ENABLED="$PORTAL_COMPAT_ENABLED" \
+    HONUA_SDK_PORTAL_USERNAME="$PORTAL_USERNAME" \
+    HONUA_SDK_PORTAL_PASSWORD="$PORTAL_PASSWORD" \
     node --input-type=module <<'EOF'
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -262,6 +268,9 @@ const migrationBaseUrl = process.env.HONUA_SDK_MIGRATION_SERVER_BASE_URL;
 const migrationGeoServerUrl = process.env.HONUA_SDK_MIGRATION_GEOSERVER_URL;
 const migrationArcGisServiceUrl = process.env.HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL;
 const migrationResultsDir = process.env.HONUA_SDK_MIGRATION_JS_RESULTS_DIR;
+const portalCompatEnabled = process.env.HONUA_SDK_PORTAL_COMPAT_ENABLED === "true";
+const portalUsername = process.env.HONUA_SDK_PORTAL_USERNAME;
+const portalPassword = process.env.HONUA_SDK_PORTAL_PASSWORD;
 
 const client = new HonuaClient({ baseUrl, apiKey });
 const compatibility = await client.getCompatibility({ refresh: true });
@@ -294,6 +303,55 @@ if (!Array.isArray(query.features) || query.features.length === 0) {
 const collections = await client.listOgcCollections();
 if (!Array.isArray(collections.collections) || collections.collections.length === 0) {
   throw new Error("JS SDK did not parse OGC API Features collections.");
+}
+
+if (portalCompatEnabled) {
+  const { PortalCompat } = await import("./dist/src/esri-compat-entry.js");
+  const portal = new PortalCompat({ portalUrl: baseUrl });
+
+  const info = await portal.getInfo();
+  if (info.authInfo?.isTokenBasedSecurity !== true ||
+      !info.authInfo.tokenServicesUrl?.endsWith("/sharing/rest/generateToken")) {
+    throw new Error("PortalCompat did not parse Portal token-service discovery metadata.");
+  }
+
+  const credential = await portal.generateToken({
+    username: portalUsername,
+    password: portalPassword,
+    client: "requestip",
+  });
+  if (!credential.token || !Number.isSafeInteger(credential.expiresAtMs) || credential.expiresAtMs <= Date.now()) {
+    throw new Error("PortalCompat did not preserve the generateToken Unix-millisecond expiry contract.");
+  }
+
+  const portalSelf = await portal.getPortalSelf();
+  if (portalSelf.isPortal !== true || portalSelf.user?.username !== portalUsername) {
+    throw new Error("PortalCompat did not carry the generated token into portals/self.");
+  }
+
+  const portalSearch = await portal.search({ num: 25 });
+  const publicFeatureItem = portalSearch.results.find(
+    (item) => item.type === "Feature Service" && item.url?.includes("/rest/services/portal_public/FeatureServer"),
+  );
+  if (!publicFeatureItem || portalSearch.start !== 1 || portalSearch.nextStart < -1) {
+    throw new Error("PortalCompat did not discover the seeded Portal Feature Service item with Esri paging semantics.");
+  }
+
+  const opened = await portal.openFeatureLayer(publicFeatureItem);
+  if (opened.type !== "feature-service" || opened.serviceId !== "portal_public" || opened.layerId !== 3000) {
+    throw new Error("PortalCompat did not resolve the Portal item to the seeded FeatureServer layer.");
+  }
+
+  const portalQuery = await opened.layer.queryFeatures({
+    where: "1=1",
+    outFields: ["*"],
+    returnGeometry: true,
+  });
+  if (!Array.isArray(portalQuery.features) || portalQuery.features.length === 0) {
+    throw new Error("PortalCompat opened FeatureLayer returned no seeded features.");
+  }
+
+  console.log("JS SDK PortalCompat generateToken -> search -> openFeatureLayer compatibility passed.");
 }
 
 const migrationClient = new HonuaClient({ baseUrl: migrationBaseUrl, apiKey, timeoutMs: 120_000 });
