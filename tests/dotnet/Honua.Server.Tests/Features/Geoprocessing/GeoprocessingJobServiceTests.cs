@@ -114,6 +114,42 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithStableSubject_StoresSubjectAsOwner()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreateStablePrincipal());
+
+        job.Audit.RequestedBy.Should().Be("subject-123");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_IdempotentReplayWithStableSubject_ReturnsExistingJob()
+    {
+        ExecutionJobRecord? created = null;
+        var createCalls = 0;
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                createCalls++;
+                created ??= call.Arg<ExecutionJobRecord>();
+                return createCalls == 1;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => created);
+
+        var first = await _sut.SubmitJobAsync(CreateValidPlan(), "stable-replay", CreateStablePrincipal());
+        var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "stable-replay", CreateStablePrincipal());
+
+        replay.OperationId.Should().Be(first.OperationId);
+        replay.Audit.RequestedBy.Should().Be("subject-123");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithProtocolMetadata_StoresInSpecParameters()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -846,6 +882,32 @@ public sealed class GeoprocessingJobServiceTests
         var result = await _sut.GetJobAsync("job-1", CreatePrincipal());
 
         result.OperationId.Should().Be("job-1");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}")]
+    public async Task GetJob_StableSubjectMatchesOwner_ReturnsRecord()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "subject-123");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var result = await _sut.GetJobAsync("job-1", CreateStablePrincipal());
+
+        result.OperationId.Should().Be("job-1");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}")]
+    public async Task GetJob_DisplayNameMatchesButStableSubjectDiffers_ThrowsNotFound()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "Display Name");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var act = async () => await _sut.GetJobAsync("job-1", CreateStablePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     [UnitTest]
@@ -3007,4 +3069,11 @@ public sealed class GeoprocessingJobServiceTests
     private static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, "test-user")], "Test"));
+
+    private static ClaimsPrincipal CreateStablePrincipal()
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "Display Name"),
+                new Claim(ClaimTypes.NameIdentifier, "subject-123")
+            ], "Test"));
 }

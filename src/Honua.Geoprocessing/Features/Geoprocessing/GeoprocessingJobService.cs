@@ -358,7 +358,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             Audit = new OperationAuditInfo
             {
                 IdempotencyKey = resolvedKey,
-                RequestedBy = principal.Identity?.Name,
+                RequestedBy = ResolvePrincipalId(principal),
                 RequestFingerprint = requestFingerprint,
                 CustomCodeOwnerScope = ownerScope
             },
@@ -515,21 +515,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private static bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
+        if (principal.IsInRole("admin"))
+        {
+            return true;
+        }
+
         var owner = job.Audit.RequestedBy;
         if (string.IsNullOrWhiteSpace(owner))
         {
             // #2753: an ownerless job (empty/null RequestedBy) is readable ONLY by admin.
             // Previously it was readable by anyone, so a coarse Job.Read holder (commonly
             // granted "*") could enumerate jobs whose submitter was never recorded.
-            return principal.IsInRole("admin");
+            return false;
         }
 
-        // TODO(#2753): ownership is matched on Identity.Name (the display name captured in
-        // RequestedBy at submit time). A stable subject claim (sub / NameIdentifier) would
-        // be more robust, but migrating both the capture site and this match — plus existing
-        // durable job records keyed on the name — is out of scope for this security fix.
-        return string.Equals(owner, principal.Identity?.Name, StringComparison.Ordinal)
-            || principal.IsInRole("admin");
+        return string.Equals(owner, ResolvePrincipalId(principal), StringComparison.Ordinal);
     }
 
     public async Task<AnalysisResultPackage> GetJobResultsAsync(
@@ -776,28 +776,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// </summary>
     private void EnsureJobOwnership(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
-        var owner = job.Audit.RequestedBy;
-        if (string.IsNullOrWhiteSpace(owner))
-        {
-            // #2753: an ownerless job is readable/cancellable ONLY by admin. Deny for a
-            // non-admin caller (surfaced as not-found, matching the cross-principal case)
-            // so a coarse Job grant cannot act on jobs with no recorded submitter.
-            if (principal.IsInRole("admin"))
-            {
-                return;
-            }
-
-            GeoprocessingServiceLog.JobOwnershipDenied(_logger, job.OperationId);
-            throw new GeoprocessingNotFoundException($"Job '{job.OperationId}' not found.");
-        }
-
-        var caller = principal.Identity?.Name;
-        if (string.Equals(owner, caller, StringComparison.Ordinal))
+        if (principal.IsInRole("admin"))
         {
             return;
         }
 
-        if (principal.IsInRole("admin"))
+        var owner = job.Audit.RequestedBy;
+        var caller = ResolvePrincipalId(principal);
+        if (!string.IsNullOrWhiteSpace(owner) &&
+            string.Equals(owner, caller, StringComparison.Ordinal))
         {
             return;
         }
@@ -805,6 +792,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         GeoprocessingServiceLog.JobOwnershipDenied(_logger, job.OperationId);
         throw new GeoprocessingNotFoundException($"Job '{job.OperationId}' not found.");
     }
+
+    private static string? ResolvePrincipalId(ClaimsPrincipal principal)
+        => principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? principal.FindFirst("sub")?.Value
+            ?? principal.Identity?.Name;
 
     private void EnsureApproved(ClaimsPrincipal principal, AnalysisPlan plan)
     {
@@ -1162,7 +1154,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Reject cross-principal replay: a different caller must not silently
         // receive another principal's job via an idempotency-key collision.
         var requestedBy = existing.Audit.RequestedBy;
-        var callerName = principal.Identity?.Name;
+        var callerName = ResolvePrincipalId(principal);
         if (!string.IsNullOrWhiteSpace(requestedBy)
             && !string.Equals(requestedBy, callerName, StringComparison.Ordinal))
         {
