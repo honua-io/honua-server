@@ -64,30 +64,7 @@ internal sealed class ImageServerKeyPropertiesHandler
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
-            var bandProperties = new BandProperty[raster.BandCount];
-            for (var band = 0; band < raster.BandCount; band++)
-            {
-                bandProperties[band] = new BandProperty
-                {
-                    BandName = $"Band_{band + 1}",
-                    PixelType = raster.PixelType,
-                };
-            }
-
-            var (lowCellSize, highCellSize) = ComputeCellSizes(raster.GeoTransform);
-
-            var response = new KeyPropertiesResponse
-            {
-                BandProperties = bandProperties,
-                LowCellSize = lowCellSize,
-                HighCellSize = highCellSize,
-                MaxCellSize = highCellSize,
-                ConfigKeyword = string.Empty,
-                BandDefinitionKeyword = string.Empty,
-                DataType = MapPixelType(raster.PixelType),
-                BandCount = raster.BandCount,
-                NoDataValue = raster.NoDataValue,
-            };
+            var response = BuildResponse(raster);
 
             ImageServerLog.ServiceInfoGenerated(_logger, layerId, raster.BandCount, raster.BandCount);
             scope.SetSuccess(raster.BandCount);
@@ -104,6 +81,33 @@ internal sealed class ImageServerKeyPropertiesHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving key properties.");
         }
+    }
+
+    internal static KeyPropertiesResponse BuildResponse(Core.Features.Raster.Domain.RasterInfo raster)
+    {
+        var bandProperties = new BandProperty[raster.BandCount];
+        for (var band = 0; band < raster.BandCount; band++)
+        {
+            bandProperties[band] = new BandProperty
+            {
+                BandName = $"Band_{band + 1}",
+                PixelType = raster.PixelType,
+            };
+        }
+
+        var (lowCellSize, highCellSize) = ComputeCellSizes(raster.GeoTransform);
+        return new KeyPropertiesResponse
+        {
+            BandProperties = bandProperties,
+            LowCellSize = lowCellSize,
+            HighCellSize = highCellSize,
+            MaxCellSize = highCellSize,
+            ConfigKeyword = string.Empty,
+            BandDefinitionKeyword = string.Empty,
+            DataType = MapPixelType(raster.PixelType),
+            BandCount = raster.BandCount,
+            NoDataValue = raster.NoDataValue,
+        };
     }
 
     /// <summary>
@@ -140,7 +144,7 @@ internal sealed class ImageServerKeyPropertiesHandler
         return (Math.Min(pixelWidth, pixelHeight), Math.Max(pixelWidth, pixelHeight));
     }
 
-    private static string MapPixelType(string postgisPixelType)
+    internal static string MapPixelType(string postgisPixelType)
         => postgisPixelType.ToUpperInvariant() switch
         {
             "8BUI" => "U8",
