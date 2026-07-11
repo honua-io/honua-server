@@ -249,7 +249,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // the custom-code submit gate below instead. Ordinary jobs still go through
         // the catalog validator.
         var isCustomCode = CustomCodeSubmitValidator.IsCustomCodeSubmission(protocolMetadata);
-        if (!isCustomCode)
+        if (isCustomCode)
+        {
+            // #2752: a custom-code submission runs operator-supplied code and therefore
+            // requires a dedicated, higher-privilege authorization ON TOP OF the baseline
+            // Process.Execute gate above. Without this, any Process.Execute caller could
+            // submit allowlisted custom code under the default OrgAllowlist/SignedOnly
+            // policies (the prior custom-code-specific who-gate fired only under
+            // RepoPolicy.Open). This runs at submission time, before the job is accepted,
+            // and is ADDITIVE to the repo-allowlist/signing gates the submit gate enforces.
+            await _authorizer.EnsureAuthorizedAsync(
+                principal,
+                OperatorResourceType.Process,
+                OperatorOperation.ExecuteCustomCode,
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
         {
             EnsurePlanCatalogValid(plan);
         }
@@ -343,7 +358,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             Audit = new OperationAuditInfo
             {
                 IdempotencyKey = resolvedKey,
-                RequestedBy = principal.Identity?.Name,
+                RequestedBy = ResolvePrincipalId(principal),
                 RequestFingerprint = requestFingerprint,
                 CustomCodeOwnerScope = ownerScope
             },
@@ -500,14 +515,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private static bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
-        var owner = job.Audit.RequestedBy;
-        if (string.IsNullOrWhiteSpace(owner))
+        if (principal.IsInRole("admin"))
         {
             return true;
         }
 
-        return string.Equals(owner, principal.Identity?.Name, StringComparison.Ordinal)
-            || principal.IsInRole("admin");
+        var owner = job.Audit.RequestedBy;
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            // #2753: an ownerless job (empty/null RequestedBy) is readable ONLY by admin.
+            // Previously it was readable by anyone, so a coarse Job.Read holder (commonly
+            // granted "*") could enumerate jobs whose submitter was never recorded.
+            return false;
+        }
+
+        return string.Equals(owner, ResolvePrincipalId(principal), StringComparison.Ordinal);
     }
 
     public async Task<AnalysisResultPackage> GetJobResultsAsync(
@@ -746,27 +768,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// principal that submitted the job (threat-model residual #1576). A coarse
     /// <c>Job</c>-level grant authorizes the operation class; this check pins the
     /// specific record to its submitter so one authenticated user cannot read or
-    /// cancel another user's jobs. Jobs without a recorded submitter (deployments
-    /// running with authentication disabled record no identity) keep the previous
-    /// behavior, and the conventional <c>admin</c> role retains full visibility
-    /// for operations. Denials surface as not-found so cross-principal probing
-    /// cannot confirm that a job identifier exists.
+    /// cancel another user's jobs. Jobs without a recorded submitter are readable
+    /// only by <c>admin</c> (#2753 closed the prior any-caller read of ownerless
+    /// jobs), and the conventional <c>admin</c> role retains full visibility for
+    /// operations. Denials surface as not-found so cross-principal probing cannot
+    /// confirm that a job identifier exists.
     /// </summary>
     private void EnsureJobOwnership(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
-        var owner = job.Audit.RequestedBy;
-        if (string.IsNullOrWhiteSpace(owner))
-        {
-            return;
-        }
-
-        var caller = principal.Identity?.Name;
-        if (string.Equals(owner, caller, StringComparison.Ordinal))
-        {
-            return;
-        }
-
         if (principal.IsInRole("admin"))
+        {
+            return;
+        }
+
+        var owner = job.Audit.RequestedBy;
+        var caller = ResolvePrincipalId(principal);
+        if (!string.IsNullOrWhiteSpace(owner) &&
+            string.Equals(owner, caller, StringComparison.Ordinal))
         {
             return;
         }
@@ -774,6 +792,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         GeoprocessingServiceLog.JobOwnershipDenied(_logger, job.OperationId);
         throw new GeoprocessingNotFoundException($"Job '{job.OperationId}' not found.");
     }
+
+    private static string? ResolvePrincipalId(ClaimsPrincipal principal)
+        => principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? principal.FindFirst("sub")?.Value
+            ?? principal.Identity?.Name;
 
     private void EnsureApproved(ClaimsPrincipal principal, AnalysisPlan plan)
     {
@@ -1131,7 +1154,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Reject cross-principal replay: a different caller must not silently
         // receive another principal's job via an idempotency-key collision.
         var requestedBy = existing.Audit.RequestedBy;
-        var callerName = principal.Identity?.Name;
+        var callerName = ResolvePrincipalId(principal);
         if (!string.IsNullOrWhiteSpace(requestedBy)
             && !string.Equals(requestedBy, callerName, StringComparison.Ordinal))
         {

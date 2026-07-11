@@ -75,8 +75,8 @@ internal static class JobEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IOptions<OgcProcessesOptions> options,
-        [FromQuery] int? limit = null,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        [FromServices] IGeoprocessingJobService jobService,
+        [FromQuery] int? limit = null)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjoblist");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
@@ -114,26 +114,33 @@ internal static class JobEndpoints
                 StatusCodes.Status400BadRequest);
         }
 
-        if (jobStore == null)
+        var effectiveLimit = limit ?? options.Value.DefaultJobLimit;
+        GeoprocessingJobListPage page;
+        try
+        {
+            page = await jobService.ListJobsAsync(
+                new GeoprocessingJobListFilter
+                {
+                    Limit = effectiveLimit,
+                    Statuses =
+                    [
+                        ExecutionJobStatus.Queued,
+                        ExecutionJobStatus.Provisioning,
+                        ExecutionJobStatus.Running
+                    ]
+                },
+                context.User,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (GeoprocessingStoreUnavailableException)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
             return JobStoreUnavailableResult();
         }
 
-        // BH7-009: Compute the effective limit before fetching so the store can
-        // apply a server-side cap. The 2x budget accommodates per-job authorization
-        // filters that may discard some records without starving the page.
-        var effectiveLimit = limit ?? options.Value.DefaultJobLimit;
-
-        var jobs = await jobStore.ListActiveAsync(
-            ExecutionJobKind.Geoprocessing,
-            effectiveLimit,
-            context.RequestAborted).ConfigureAwait(false);
-
-
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var statusInfosBuilder = ImmutableArray.CreateBuilder<OgcStatusInfo>();
-        foreach (var job in jobs)
+        foreach (var job in page.Items)
         {
             var jobAuthDecision = await gate.CheckAuthorizationAsync(
                 context.User,
@@ -173,7 +180,7 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        [FromServices] IGeoprocessingJobService jobService)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjobstatus");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
@@ -197,14 +204,28 @@ internal static class JobEndpoints
 
         OgcProcessesLog.JobStatusRequested(logger, jobId);
 
-        if (jobStore == null)
+        ExecutionJobRecord job;
+        try
+        {
+            job = await jobService.GetJobAsync(jobId, context.User, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (GeoprocessingNotFoundException)
+        {
+            OgcProcessesLog.JobNotFound(logger, jobId);
+            return JobNotFoundResult(jobId);
+        }
+        catch (GeoprocessingAuthorizationException authEx)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authEx.RequiresAuthentication);
+        }
+        catch (GeoprocessingStoreUnavailableException)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
             return JobStoreUnavailableResult();
         }
 
-        var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-        if (job == null || job.Spec.Kind != ExecutionJobKind.Geoprocessing)
+        if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
         {
             OgcProcessesLog.JobNotFound(logger, jobId);
             return JobNotFoundResult(jobId);
@@ -236,8 +257,7 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        [FromServices] IGeoprocessingJobService jobService,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        [FromServices] IGeoprocessingJobService jobService)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjobresults");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
@@ -261,14 +281,28 @@ internal static class JobEndpoints
 
         OgcProcessesLog.JobResultsRequested(logger, jobId);
 
-        if (jobStore == null)
+        ExecutionJobRecord job;
+        try
+        {
+            job = await jobService.GetJobAsync(jobId, context.User, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (GeoprocessingNotFoundException)
+        {
+            OgcProcessesLog.JobNotFound(logger, jobId);
+            return JobNotFoundResult(jobId);
+        }
+        catch (GeoprocessingAuthorizationException authEx)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authEx.RequiresAuthentication);
+        }
+        catch (GeoprocessingStoreUnavailableException)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
             return JobStoreUnavailableResult();
         }
 
-        var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-        if (job == null || job.Spec.Kind != ExecutionJobKind.Geoprocessing)
+        if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
         {
             OgcProcessesLog.JobNotFound(logger, jobId);
             return JobNotFoundResult(jobId);
@@ -342,9 +376,23 @@ internal static class JobEndpoints
                 StatusCodes.Status410Gone);
         }
 
-        var resultPackage = await jobService
-            .GetJobResultsAsync(jobId, context.User, context.RequestAborted)
-            .ConfigureAwait(false);
+        AnalysisResultPackage resultPackage;
+        try
+        {
+            resultPackage = await jobService
+                .GetJobResultsAsync(jobId, context.User, context.RequestAborted)
+                .ConfigureAwait(false);
+        }
+        catch (GeoprocessingNotFoundException)
+        {
+            OgcProcessesLog.JobNotFound(logger, jobId);
+            return JobNotFoundResult(jobId);
+        }
+        catch (GeoprocessingStoreUnavailableException)
+        {
+            OgcProcessesLog.JobStoreUnavailable(logger);
+            return JobStoreUnavailableResult();
+        }
 
         var resultsDocument = ToOgcResultsDocument(resultPackage);
         return Results.Json(
