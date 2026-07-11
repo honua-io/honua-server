@@ -128,10 +128,13 @@ internal sealed class ImageServerTileHandler
                 var storage = context.RequestServices.GetService<ICloudFileStorage>();
                 var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
                 var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
-                var tileCacheKey = BuildImageServerTileCacheKey(
+                var tileCacheKey = ImageServerTileCacheKey.Build(
                     storageOptions,
                     snapshot.Etag,
                     layerId,
+                    TileMatrixSetRegistry.WebMercatorQuadId,
+                    DefaultStyleId,
+                    ResolveTenantAuthKey(context),
                     selectedRasters,
                     mergeStrategy,
                     timestamp,
@@ -179,12 +182,12 @@ internal sealed class ImageServerTileHandler
                         tileCacheKey,
                         result.Data,
                         result.ContentType,
-                        $"{level.ToString(CultureInfo.InvariantCulture)}-{col.ToString(CultureInfo.InvariantCulture)}-{row.ToString(CultureInfo.InvariantCulture)}.{GetTileFileExtension(rasterFormat)}",
+                        $"{level.ToString(CultureInfo.InvariantCulture)}-{col.ToString(CultureInfo.InvariantCulture)}-{row.ToString(CultureInfo.InvariantCulture)}.{ImageServerTileCacheKey.GetTileFileExtension(rasterFormat)}",
                         ImmutableDictionary<string, string>.Empty
                             .Add("operation", "tile")
                             .Add("protocol", "ImageServer")
                             .Add("layerId", layerId.ToString(CultureInfo.InvariantCulture))
-                            .Add("tileMatrixSetId", "WebMercatorQuad")
+                            .Add("tileMatrixSetId", TileMatrixSetRegistry.WebMercatorQuadId)
                             .Add("z", level.ToString(CultureInfo.InvariantCulture))
                             .Add("x", col.ToString(CultureInfo.InvariantCulture))
                             .Add("y", row.ToString(CultureInfo.InvariantCulture))
@@ -235,6 +238,184 @@ internal sealed class ImageServerTileHandler
         }
     }
 
+    /// <summary>
+    /// Gets an image tile aligned to an explicit tile matrix set (gridset) other than the default
+    /// WebMercatorQuad, driving all tile geometry from the one canonical
+    /// <see cref="GridGeometry"/> and rendering/reprojecting through the shared raster pipeline
+    /// (<see cref="IRasterStore.GetImageTileAsync(int, long, RasterTileWindow, RasterFormat, CancellationToken)"/>).
+    /// No protocol-local geodesy is performed here: the tile bounds come from
+    /// <see cref="GridGeometry.GetTileBounds(int, int, int)"/>.
+    /// </summary>
+    public async Task<IResult> GetGridImageTileAsync(
+        HttpContext context,
+        int layerId,
+        GridGeometry grid,
+        int level,
+        int row,
+        int col,
+        string format,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(grid);
+
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "tile",
+            HonuaTelemetry.Protocols.ImageServer,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "get-image-tile")
+             .WithTag("honua.tile.matrix_set", grid.Id)
+             .WithTag(HonuaTelemetry.Tags.TileZ, level)
+             .WithTag(HonuaTelemetry.Tags.TileY, row)
+             .WithTag(HonuaTelemetry.Tags.TileX, col);
+
+        try
+        {
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            {
+                ImageServerLog.LayerNotFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+            }
+
+            if (grid.GetTileBounds(col, row, level) is not { } bounds)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid tile coordinates");
+            }
+
+            if (!RasterParsingHelpers.TryParseRasterFormat(format, out var rasterFormat))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif, cog.");
+            }
+
+            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
+            }
+
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
+                resolved.Resource,
+                context.Request.Query["mosaicRule"]);
+
+            var tileGeometry = ImageServerMosaicHelpers.CreateEnvelopeGeometry(
+                bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax);
+            var selectedRasters = await _rasterStore.QueryRastersAsync(
+                layerId,
+                new RasterSelectionQuery
+                {
+                    Geometry = tileGeometry,
+                    GeometrySrid = grid.Srid,
+                    Timestamp = timestamp
+                },
+                cancellationToken);
+
+            ImageServerLog.ImageTileRequested(_logger, layerId, level, row, col);
+
+            if (selectedRasters.Length == 0)
+            {
+                ImageServerLog.NoRastersFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
+            var storage = context.RequestServices.GetService<ICloudFileStorage>();
+            var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
+            var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
+            var tileCacheKey = ImageServerTileCacheKey.Build(
+                storageOptions,
+                snapshot.Etag,
+                layerId,
+                grid.Id,
+                DefaultStyleId,
+                ResolveTenantAuthKey(context),
+                selectedRasters,
+                mergeStrategy,
+                timestamp,
+                context.Request.Query["mosaicRule"].ToString(),
+                rasterFormat,
+                level,
+                row,
+                col);
+
+            if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
+            {
+                ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
+                scope.SetSuccess(1);
+                return Results.File(cachedTile.Data, cachedTile.ContentType);
+            }
+
+            var window = new RasterTileWindow
+            {
+                MinX = bounds.XMin,
+                MinY = bounds.YMin,
+                MaxX = bounds.XMax,
+                MaxY = bounds.YMax,
+                Srid = grid.Srid,
+                TileWidth = grid.TileWidth,
+                TileHeight = grid.TileHeight
+            };
+
+            var tileResult = selectedRasters.Length == 1
+                ? await _rasterStore.GetImageTileAsync(
+                    layerId,
+                    selectedRasters[0].Id,
+                    window,
+                    rasterFormat,
+                    cancellationToken)
+                : await _rasterStore.GetMosaicImageTileAsync(
+                    layerId,
+                    selectedRasters.Select(r => r.Id).ToArray(),
+                    mergeStrategy,
+                    window,
+                    rasterFormat,
+                    cancellationToken);
+
+            if (tileResult == null)
+            {
+                ImageServerLog.ImageTileNotFound(_logger, layerId, level, row, col);
+                return StandardErrorHelpers.CreateNotFound(context, "Image tile not found.");
+            }
+
+            var result = tileResult.Value;
+            ImageServerLog.ImageTileGenerated(_logger, layerId, result.Data.Length);
+            scope.SetSuccess(1);
+            await GeoServicesCloudTileCache.TryWriteAsync(
+                storage,
+                storageOptions,
+                tileCacheKey,
+                result.Data,
+                result.ContentType,
+                $"{level.ToString(CultureInfo.InvariantCulture)}-{col.ToString(CultureInfo.InvariantCulture)}-{row.ToString(CultureInfo.InvariantCulture)}.{ImageServerTileCacheKey.GetTileFileExtension(rasterFormat)}",
+                ImmutableDictionary<string, string>.Empty
+                    .Add("operation", "tile")
+                    .Add("protocol", "ImageServer")
+                    .Add("layerId", layerId.ToString(CultureInfo.InvariantCulture))
+                    .Add("tileMatrixSetId", grid.Id)
+                    .Add("z", level.ToString(CultureInfo.InvariantCulture))
+                    .Add("x", col.ToString(CultureInfo.InvariantCulture))
+                    .Add("y", row.ToString(CultureInfo.InvariantCulture))
+                    .Add("format", rasterFormat.ToString())
+                    .Add("metadataEtag", snapshot.Etag),
+                cancellationToken,
+                tileCacheKeyIndex).ConfigureAwait(false);
+            return Results.File(result.Data, result.ContentType);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            ImageServerLog.ImageTileFailed(_logger, ex, layerId);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the image tile.");
+        }
+    }
+
     private static byte[] CreateTileEnvelope(int level, int row, int col)
     {
         const double worldExtent = 20037508.342789244;
@@ -246,49 +427,15 @@ internal sealed class ImageServerTileHandler
         return ImageServerMosaicHelpers.CreateEnvelopeGeometry(minX, minY, maxX, maxY);
     }
 
-    private static string BuildImageServerTileCacheKey(
-        CloudStorageOptions? storageOptions,
-        string metadataEtag,
-        int layerId,
-        IReadOnlyList<RasterInfo> selectedRasters,
-        RasterMergeStrategy mergeStrategy,
-        DateTimeOffset? timestamp,
-        string mosaicRule,
-        RasterFormat rasterFormat,
-        int level,
-        int row,
-        int col)
-    {
-        var rasterKey = string.Join(
-            ',',
-            selectedRasters.Select(static raster => raster.Id.ToString(CultureInfo.InvariantCulture)));
-        var behaviorHash = GeoServicesCloudTileCache.Hash(string.Join(
-            '|',
-            metadataEtag,
-            layerId.ToString(CultureInfo.InvariantCulture),
-            rasterKey,
-            mergeStrategy.ToString(),
-            timestamp?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-            mosaicRule,
-            rasterFormat.ToString()));
+    // ImageServer tiles are only served in the "default" style; kept as a named constant so the
+    // cache key partitions by style even though a non-default style cannot currently be requested.
+    private const string DefaultStyleId = "default";
 
-        return GeoServicesCloudTileCache.BuildObjectKey(
-            storageOptions,
-            "imageserver",
-            "tiles",
-            layerId.ToString(CultureInfo.InvariantCulture),
-            behaviorHash,
-            "WebMercatorQuad",
-            level.ToString(CultureInfo.InvariantCulture),
-            col.ToString(CultureInfo.InvariantCulture),
-            $"{row.ToString(CultureInfo.InvariantCulture)}.{GetTileFileExtension(rasterFormat)}");
-    }
-
-    private static string GetTileFileExtension(RasterFormat rasterFormat)
-        => rasterFormat switch
-        {
-            RasterFormat.JPEG => "jpg",
-            RasterFormat.TIFF or RasterFormat.COG => "tif",
-            _ => "png"
-        };
+    // Derives the tenant/auth discriminator folded into the tile cache key so tiles rendered under
+    // one authenticated identity are never served to another. ImageServer is anonymous by default,
+    // in which case this resolves to the empty string.
+    private static string ResolveTenantAuthKey(HttpContext context)
+        => context.User?.Identity?.IsAuthenticated == true
+            ? context.User.Identity!.Name ?? string.Empty
+            : string.Empty;
 }

@@ -2093,6 +2093,193 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     /// <inheritdoc />
+    public async Task<RasterResult?> GetImageTileAsync(
+        int layerId,
+        long rasterId,
+        RasterTileWindow window,
+        RasterFormat format = RasterFormat.PNG,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var formatName = format.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
+
+        var effectiveTileFormat = formatName;
+        var tileCreationOptions = "";
+        if (formatName == "COG")
+        {
+            (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
+                connection, blockSize: 256, layerId, rasterId,
+                includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
+        }
+
+        var tileStats = await GetStatisticsAsync(layerId, rasterId, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var tileStretchBounds = BuildAutoTileStretchBounds(tileStats);
+
+        // The tile reference raster is aligned to the gridset window bounds in the gridset SRID, so
+        // ST_Resample both reprojects the source into the gridset CRS and spatially registers the
+        // output onto the exact tile envelope (nodata for uncovered pixels).
+        var resampleExpr = "ST_Resample(ST_Transform(src.rast, @tileSrid), tile_ref.rast)";
+        if (tileStretchBounds is { Count: > 0 })
+        {
+            resampleExpr = BuildStretchedRasterExpression(resampleExpr, tileStretchBounds);
+        }
+
+        await using var dynCommand = connection.CreateCommand();
+        dynCommand.CommandText = $"""
+            {BuildTileWindowCte(window)}
+            SELECT ST_AsGDALRaster(
+                {resampleExpr},
+                '{effectiveTileFormat}'{tileCreationOptions}
+            ) AS data
+            FROM (
+                SELECT raster AS rast
+                FROM {_rasterDataTable}, tile_bounds tb
+                WHERE layer_id = @layerId AND id = @rasterId
+                  AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
+            ) AS src, tile_ref
+            """;
+
+        AddParameter(dynCommand, "@layerId", layerId);
+        AddParameter(dynCommand, "@rasterId", rasterId);
+        AddTileWindowParameters(dynCommand, window);
+
+        var result = await dynCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (result is not byte[] data || data.Length == 0)
+        {
+            return null;
+        }
+
+        return new RasterResult
+        {
+            Data = data,
+            ContentType = format.ToContentType(),
+            Width = window.TileWidth,
+            Height = window.TileHeight,
+            Srid = window.Srid
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterResult?> GetMosaicImageTileAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        RasterTileWindow window,
+        RasterFormat format = RasterFormat.PNG,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return null;
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var formatName = format.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
+
+        var effectiveTileFormat = formatName;
+        var tileCreationOptions = "";
+        if (formatName == "COG")
+        {
+            (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
+                connection, blockSize: 256, layerId, rasterIds[0],
+                includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
+        }
+
+        var mosaicTileExpr = "rast";
+        var mosaicTileStats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var mosaicTileBounds = BuildAutoTileStretchBounds(mosaicTileStats);
+        if (mosaicTileBounds is { Count: > 0 })
+        {
+            mosaicTileExpr = BuildStretchedRasterExpression(mosaicTileExpr, mosaicTileBounds);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            {BuildTileWindowCte(window)},
+            source AS (
+                SELECT ST_Resample(ST_Transform(raster, @tileSrid), tile_ref.rast) AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {_rasterDataTable}, tile_bounds tb, tile_ref
+                WHERE layer_id = @layerId
+                  AND id IN (SELECT raster_id FROM requested)
+                  AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
+            ),
+            merged AS (
+                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                FROM source
+                WHERE rast IS NOT NULL
+            )
+            SELECT ST_AsGDALRaster({mosaicTileExpr}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
+            FROM merged
+            WHERE rast IS NOT NULL
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterIds", rasterIds);
+        AddTileWindowParameters(command, window);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (result is not byte[] data || data.Length == 0)
+        {
+            return null;
+        }
+
+        return new RasterResult
+        {
+            Data = data,
+            ContentType = format.ToContentType(),
+            Width = window.TileWidth,
+            Height = window.TileHeight,
+            Srid = window.Srid
+        };
+    }
+
+    // Builds the tile_bounds/tile_ref CTE for a gridset tile window: an envelope in the gridset
+    // SRID and a reference raster of the requested pixel dimensions aligned to that envelope. This
+    // is the gridset-parameterized form of the Web Mercator ST_TileEnvelope reference raster.
+    private static string BuildTileWindowCte(RasterTileWindow window)
+        => $"""
+            tile_bounds AS (
+                SELECT ST_MakeEnvelope(@tileMinX, @tileMinY, @tileMaxX, @tileMaxY, @tileSrid) AS geom
+            ),
+            tile_ref AS (
+                SELECT ST_MakeEmptyRaster(
+                    {window.TileWidth.ToString(CultureInfo.InvariantCulture)},
+                    {window.TileHeight.ToString(CultureInfo.InvariantCulture)},
+                    ST_XMin(tb.geom),
+                    ST_YMax(tb.geom),
+                    (ST_XMax(tb.geom) - ST_XMin(tb.geom)) / {window.TileWidth.ToString(CultureInfo.InvariantCulture)}.0,
+                    -((ST_YMax(tb.geom) - ST_YMin(tb.geom)) / {window.TileHeight.ToString(CultureInfo.InvariantCulture)}.0),
+                    0.0, 0.0, @tileSrid
+                ) AS rast
+                FROM tile_bounds tb
+            )
+            """;
+
+    private static void AddTileWindowParameters(DbCommand command, RasterTileWindow window)
+    {
+        AddParameter(command, "@tileMinX", window.MinX);
+        AddParameter(command, "@tileMinY", window.MinY);
+        AddParameter(command, "@tileMaxX", window.MaxX);
+        AddParameter(command, "@tileMaxY", window.MaxY);
+        AddParameter(command, "@tileSrid", window.Srid);
+    }
+
+    /// <inheritdoc />
     public async Task<RasterStatistics[]> GetStatisticsAsync(int layerId, long rasterId, int[]? bands = null, RasterIdentifyRendering? rendering = null, CancellationToken cancellationToken = default)
     {
         // A renderingRule changes the pixels (clip/stretch/colormap), so the persisted raw-source
