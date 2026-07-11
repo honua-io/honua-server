@@ -166,6 +166,11 @@
       "paths": [
         "src/Honua.Core/Features/Metadata/",
         "src/Honua.Postgres/Features/Metadata/",
+        "src/Honua.Core/Features/Publishing/",
+        "src/Honua.Postgres/Features/Publishing/",
+        "src/Honua.Server/Migrations/082_CreatePromotionStores.sql",
+        "tests/dotnet/Honua.Server.Tests/Seed/",
+        "tests/dotnet/Honua.Server.Tests/Startup/PostgresPromotionSurfaceRegistrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Helpers/",
         "tests/dotnet/Honua.Server.Tests/TestData/",
         "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs",
@@ -1041,6 +1046,8 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Server.Tests.Features.Providers|FullyQualifiedName~Honua.Server.Tests.Features.WorkflowGeneration",
       "paths": [
         "src/Honua.Ai/",
+        "src/Honua.Core/Features/Publishing/",
+        "src/Honua.Postgres/Features/Publishing/",
         "tests/dotnet/Honua.Ai.Tests/Source/",
         "src/Honua.Core/Features/Validation/"
       ]

@@ -194,6 +194,74 @@ assert_descriptor \
   "false" \
   "OGC API Features"
 
+# Publishing persistence is a bounded MCP/operator surface. Its canonical
+# Core/Postgres models and stores are exercised by the MCP promotion-resource
+# tests plus the Core shard's Postgres server-composition proof, so changes in
+# that slice target both owners instead of tripping the unmapped-source net.
+assert_descriptor \
+  "publishing-core-targeted" \
+  "src/Honua.Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "publishing-core-includes-mcp" \
+  "src/Honua.Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
+  "targeted" \
+  "false" \
+  "MCP"
+assert_descriptor \
+  "publishing-postgres-targeted" \
+  "src/Honua.Postgres/Features/Publishing/PostgresPublishedServiceStore.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "publishing-postgres-includes-mcp" \
+  "src/Honua.Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
+  "targeted" \
+  "false" \
+  "MCP"
+assert_excludes_shard \
+  "publishing-excludes-imageserver" \
+  "src/Honua.Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
+  "GeoServices ImageServer"
+
+# The promotion migration is selected by the Core shard's migration/startup
+# coverage. Keep this exact-file mapping narrow: unrelated future migrations
+# remain unmapped and therefore fail safe until their owners are declared.
+assert_descriptor \
+  "promotion-migration-targeted" \
+  "src/Honua.Server/Migrations/082_CreatePromotionStores.sql" \
+  "targeted" \
+  "false" \
+  "Core"
+
+# Client-compat Seed classes and the focused promotion Startup composition test
+# are selected by the Core catch-all filter. Claim their paths explicitly so a
+# test-only edit does not instantiate every server-test shard.
+assert_descriptor \
+  "client-compat-seed-targeted" \
+  "tests/dotnet/Honua.Server.Tests/Seed/ClientCompatSeedSequenceTests.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "promotion-startup-targeted" \
+  "tests/dotnet/Honua.Server.Tests/Startup/PostgresPromotionSurfaceRegistrationTests.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+
+# Do not weaken the global Postgres DI fail-safe. Arbitrary changes to the
+# shared registrar can affect every Postgres-backed fixture and must run all.
+assert_descriptor \
+  "postgres-service-registration-still-run-all" \
+  "src/Honua.Postgres/ServiceCollectionExtensions.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+
 # ---------------------------------------------------------------------------
 # #1897 guard cases: feature PRs must route to a targeted subset, not run_all,
 # and must not pull in unrelated shards — while genuinely cross-cutting changes
