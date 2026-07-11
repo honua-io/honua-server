@@ -197,6 +197,14 @@ public sealed class OpsAlertDispatchView
     [JsonPropertyName("deadLetteredCount")]
     public long? DeadLetteredCount { get; init; }
 
+    /// <summary>Gets the retrying count, when a backlog snapshot is available.</summary>
+    [JsonPropertyName("retryingCount")]
+    public long? RetryingCount { get; init; }
+
+    /// <summary>Gets the age in whole seconds of the oldest active row, when one exists.</summary>
+    [JsonPropertyName("oldestItemAgeSeconds")]
+    public long? OldestItemAgeSeconds { get; init; }
+
     /// <summary>
     /// Gets privacy-safe active backlog health grouped by stable configured channel identifier.
     /// Recipient, payload, error, credential, and secret data are never included.

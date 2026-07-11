@@ -49,7 +49,9 @@ public sealed class PostgresAlertDispatchStoreTests(PostgresFixture fixture)
         var backlog = await store.GetBacklogAsync();
 
         backlog.PendingCount.Should().Be(3, "pending, processing, and retriable-failed rows are backlog");
+        backlog.RetryingCount.Should().Be(1);
         backlog.DeadLetteredCount.Should().Be(2);
+        backlog.OldestItemAt.Should().BeCloseTo(oldest, TimeSpan.FromSeconds(1));
         backlog.Channels.Should().HaveCount(2);
         backlog.Channels[0].ChannelType.Should().Be(Honua.Core.Features.Alerts.Domain.AlertChannelType.Webhook);
         backlog.Channels[0].IsPaused.Should().BeTrue();
@@ -59,6 +61,9 @@ public sealed class PostgresAlertDispatchStoreTests(PostgresFixture fixture)
         backlog.Channels[0].OldestItemAt.Should().BeCloseTo(oldest, TimeSpan.FromSeconds(1));
         backlog.Channels[1].ChannelType.Should().Be(Honua.Core.Features.Alerts.Domain.AlertChannelType.Email);
         backlog.Channels[1].DeadLetteredCount.Should().Be(1);
+        backlog.PendingCount.Should().Be(backlog.Channels.Sum(channel => channel.PendingCount + channel.RetryingCount));
+        backlog.RetryingCount.Should().Be(backlog.Channels.Sum(channel => channel.RetryingCount));
+        backlog.DeadLetteredCount.Should().Be(backlog.Channels.Sum(channel => channel.DeadLetteredCount));
     }
 
     [IntegrationTest]

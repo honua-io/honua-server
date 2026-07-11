@@ -539,6 +539,12 @@ public sealed record AlertDispatchBacklog
     /// </summary>
     public required long DeadLetteredCount { get; init; }
 
+    /// <summary>Number of failed dispatch rows scheduled for a bounded retry.</summary>
+    public long RetryingCount { get; init; }
+
+    /// <summary>Creation time of the oldest non-delivered dispatch row, when any exist.</summary>
+    public DateTimeOffset? OldestItemAt { get; init; }
+
     /// <summary>
     /// Active dispatch rows grouped by their stable channel type. Delivered rows and
     /// destination details are intentionally excluded from this operational projection.
