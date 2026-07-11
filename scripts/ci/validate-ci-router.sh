@@ -440,6 +440,12 @@ assert_descriptor \
   "false" \
   "Core"
 assert_descriptor \
+  "routing-solver-test-targeted" \
+  "tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
   "compact-tile-writer-test-targeted" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/CompactTilePackageWriterTests.cs" \
   "targeted" \
@@ -453,6 +459,16 @@ assert_exact_shards \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
   '["Core","Geometry Tiles and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance"]'
+
+# Follow-up proof from draft PR #2700: pure routing tests share the Core owner
+# with the real pgRouting fixture and must not widen the canonical NAServer diff.
+assert_exact_shards \
+  "location-allocation-routing-batch" \
+  "$(printf '%s\n%s\n%s' \
+      'src/Honua.Routing/Features/Routing/Providers/LocationAllocationSolver.cs' \
+      'src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs' \
+      'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
+  '["Core","GeoServices GPServer and NAServer"]'
 
 # Keep the safety net for a future unrelated Routing area; #2693 claims only
 # the existing Features/Routing slice.
