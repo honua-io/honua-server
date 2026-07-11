@@ -1323,7 +1323,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "ADR-0037 finer-sharding (#2422): carved from the old 'Server Features Misc' catch-all, which ran ~77 test classes and hit exit-code-124 wall-clock timeouts (~120 min) under runner contention. This shard runs the data/enrichment/sharing slice: Honua.Server.Tests.Features.{DataEnrichment,Orchestration,Sharing,Grounding,Capabilities}.*. Partitioned by sub-namespace; together with 'Server Features Collaboration and Content' and the narrowed 'Server Features Misc' catch-all it covers EXACTLY the classes the old catch-all did (no gaps, no overlaps — verified by scripts/ci/check-server-test-shard-coverage.py). Shares the old shard's paths so per-PR routing is unchanged.",
+      "_comment": "ADR-0037 finer-sharding (#2422): carved from the old 'Server Features Misc' catch-all, which ran ~77 test classes and hit exit-code-124 wall-clock timeouts (~120 min) under runner contention. This shard runs the data/enrichment/sharing slice: Honua.Server.Tests.Features.{DataEnrichment,Orchestration,Sharing,Grounding,Capabilities}.*. Partitioned by sub-namespace; together with 'Server Features Collaboration and Content' and the narrowed 'Server Features Misc' catch-all it covers EXACTLY the classes the old catch-all did (no gaps, no overlaps — verified by scripts/ci/check-server-test-shard-coverage.py). Paths remain broad for the existing split except Protocols/Zarr, which routes only to its executable Server Features Misc owner (#2709).",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.DataEnrichment.|FullyQualifiedName~Honua.Server.Tests.Features.Orchestration.|FullyQualifiedName~Honua.Server.Tests.Features.Sharing.|FullyQualifiedName~Honua.Server.Tests.Features.Grounding.|FullyQualifiedName~Honua.Server.Tests.Features.Capabilities.)",
       "paths": [
         "tests/dotnet/Honua.Server.Tests/Features/",
@@ -1375,7 +1375,6 @@
         "src/Honua.Protocols.GeoServices/Sharing/",
         "src/Honua.Server/Features/Protocols/Coverages/",
         "src/Honua.Server/Features/Protocols/SpatialAnalytics/",
-        "src/Honua.Server/Features/Protocols/Zarr/",
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/"
       ],
@@ -1391,7 +1390,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "ADR-0037 finer-sharding (#2422): carved from the old 'Server Features Misc' catch-all (see 'Server Features Data and Sharing'). This shard runs the collaboration/content slice: Honua.Server.Tests.Features.{Collaboration,FeatureStore,Mobile,Export,Reporting,SpatialAnalytics,Studio,Identity}.*. Clean partition with 'Server Features Data and Sharing' and the 'Server Features Misc' catch-all. Shares the old shard's paths.",
+      "_comment": "ADR-0037 finer-sharding (#2422): carved from the old 'Server Features Misc' catch-all (see 'Server Features Data and Sharing'). This shard runs the collaboration/content slice: Honua.Server.Tests.Features.{Collaboration,FeatureStore,Mobile,Export,Reporting,SpatialAnalytics,Studio,Identity}.*. Clean partition with 'Server Features Data and Sharing' and the 'Server Features Misc' catch-all. Paths remain broad for the existing split except Protocols/Zarr, which routes only to its executable Server Features Misc owner (#2709).",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Collaboration.|FullyQualifiedName~Honua.Server.Tests.Features.FeatureStore.|FullyQualifiedName~Honua.Server.Tests.Features.Mobile.|FullyQualifiedName~Honua.Server.Tests.Features.Export.|FullyQualifiedName~Honua.Server.Tests.Features.Reporting.|FullyQualifiedName~Honua.Server.Tests.Features.SpatialAnalytics.|FullyQualifiedName~Honua.Server.Tests.Features.Studio.|FullyQualifiedName~Honua.Server.Tests.Features.Identity.)",
       "paths": [
         "tests/dotnet/Honua.Server.Tests/Features/",
@@ -1442,7 +1441,6 @@
         "src/Honua.Protocols.GeoServices/Sharing/",
         "src/Honua.Server/Features/Protocols/Coverages/",
         "src/Honua.Server/Features/Protocols/SpatialAnalytics/",
-        "src/Honua.Server/Features/Protocols/Zarr/",
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/"
       ],
@@ -1458,7 +1456,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "ADR-0037 finer-sharding (#2422/#2424/#2425 rebalance): carved from the 'Server Features Misc' catch-all, which — after the #2422 split — still ran ~24 classes (~356 executed tests with Theory expansion) and hit the 48-min inner test timeout (exit 124). This shard runs the OpenAPI/gRPC spec, printing/layout, and static-map slice: Honua.Server.Tests.Features.{Spec,PrintingTools,StaticMap}.*. Partitioned by sub-namespace; the trailing FullyQualifiedName!~ exclusions for these three namespaces are appended to the 'Server Features Misc' catch-all so the two shards partition the old catch-all's classes with no gaps and no overlaps (verified by scripts/ci/check-server-test-shard-coverage.py). 'Server Features Misc' remains the #1899 keystone catch-all for every other/new Features.* namespace. Shares the catch-all's paths so per-PR routing is unchanged.",
+      "_comment": "ADR-0037 finer-sharding (#2422/#2424/#2425 rebalance): carved from the 'Server Features Misc' catch-all, which — after the #2422 split — still ran ~24 classes (~356 executed tests with Theory expansion) and hit the 48-min inner test timeout (exit 124). This shard runs the OpenAPI/gRPC spec, printing/layout, and static-map slice: Honua.Server.Tests.Features.{Spec,PrintingTools,StaticMap}.*. Partitioned by sub-namespace; the trailing FullyQualifiedName!~ exclusions for these three namespaces are appended to the 'Server Features Misc' catch-all so the two shards partition the old catch-all's classes with no gaps and no overlaps (verified by scripts/ci/check-server-test-shard-coverage.py). 'Server Features Misc' remains the #1899 keystone catch-all for every other/new Features.* namespace. Paths remain broad for the existing split except Protocols/Zarr, which routes only to its executable Server Features Misc owner (#2709).",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Spec.|FullyQualifiedName~Honua.Server.Tests.Features.PrintingTools.|FullyQualifiedName~Honua.Server.Tests.Features.StaticMap.)",
       "paths": [
         "tests/dotnet/Honua.Server.Tests/Features/",
@@ -1509,7 +1507,6 @@
         "src/Honua.Protocols.GeoServices/Sharing/",
         "src/Honua.Server/Features/Protocols/Coverages/",
         "src/Honua.Server/Features/Protocols/SpatialAnalytics/",
-        "src/Honua.Server/Features/Protocols/Zarr/",
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/"
       ],
