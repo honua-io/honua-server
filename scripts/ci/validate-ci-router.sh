@@ -139,6 +139,25 @@ assert_excludes_shard() {
   fi
 }
 
+# Assert a targeted descriptor selects exactly the expected shard set. Use this
+# for measured cumulative diffs where accidental widening would recreate most
+# of the cost that path routing is intended to avoid.
+assert_exact_shards() {
+  local name="$1"
+  local changed_files="$2"
+  local expected_shards_json="$3"
+  local descriptor
+
+  descriptor="$(printf '%s\n' "${changed_files}" | scripts/ci/honua-server-targeted-tests.sh --stdin)"
+  echo "${name}: ${descriptor}"
+
+  jq -e --argjson expected "${expected_shards_json}" '
+    .run_all == false
+    and .reason == "targeted"
+    and ((.shards | sort) == ($expected | sort))
+  ' <<< "${descriptor}" >/dev/null
+}
+
 echo "Dry-running shard router cases..."
 assert_descriptor \
   "ci-shards-only" \
@@ -371,6 +390,75 @@ assert_descriptor \
 assert_descriptor \
   "hosting-rendering-run-all" \
   "src/Honua.Hosting/Features/Rendering/RasterMapRenderingPipeline.cs" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
+
+# #2693: bounded operator paths observed in merge-train child 29142991789
+# already had known test owners, but missing path ownership caused the entire
+# cumulative descriptor to fall through to unmapped_source_change.
+assert_descriptor \
+  "hosting-tiles-targets-geometry" \
+  "src/Honua.Hosting/Features/Tiles/TilePackageWriter.cs" \
+  "targeted" \
+  "false" \
+  "Geometry Tiles and Terrain"
+assert_descriptor \
+  "hosting-tiles-includes-imageserver" \
+  "src/Honua.Hosting/Features/Tiles/TilePackageWriter.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_descriptor \
+  "routing-feature-targets-naserver" \
+  "src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices GPServer and NAServer"
+assert_descriptor \
+  "routing-feature-includes-server-tests-owner" \
+  "src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "imageserver-registry-targets-imageserver" \
+  "src/Honua.Server/EndpointRegistry.ImageServer.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_descriptor \
+  "imageserver-registry-includes-governance" \
+  "src/Honua.Server/EndpointRegistry.ImageServer.cs" \
+  "targeted" \
+  "false" \
+  "STAC and API Governance"
+assert_descriptor \
+  "naserver-pgrouting-test-targeted" \
+  "tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "compact-tile-writer-test-targeted" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/CompactTilePackageWriterTests.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_exact_shards \
+  "measured-tile-routing-imageserver-batch" \
+  "$(printf '%s\n%s\n%s\n%s' \
+      'src/Honua.Hosting/Features/Tiles/CompactTilePackageWriter.cs' \
+      'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
+      'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
+      'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
+  '["Core","Geometry Tiles and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance"]'
+
+# Keep the safety net for a future unrelated Routing area; #2693 claims only
+# the existing Features/Routing slice.
+assert_descriptor \
+  "unknown-routing-area-still-run-all" \
+  "src/Honua.Routing/Features/Future/FutureRouter.cs" \
   "unmapped_source_change" \
   "true" \
   "Core"
@@ -629,6 +717,14 @@ assert_descriptor \
 # unmapped namespace fails CI here instead of silently never running.
 # ---------------------------------------------------------------------------
 echo "Checking server-test shard coverage (no orphaned test classes)..."
-python3 scripts/ci/check-server-test-shard-coverage.py
+python3 scripts/ci/check-server-test-shard-coverage.py \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices ImageServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core"
 
 echo "CI router validation passed."

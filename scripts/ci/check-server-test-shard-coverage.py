@@ -295,6 +295,13 @@ def main() -> int:
                         help="print the full class->shard map")
     parser.add_argument("--report-multi", action="store_true",
                         help="also report classes claimed by >1 shard")
+    parser.add_argument(
+        "--assert-owner",
+        action="append",
+        nargs=3,
+        metavar=("FQN", "CSPROJ", "SHARD"),
+        help="assert that SHARD targets CSPROJ and its filter selects FQN; repeatable",
+    )
     args = parser.parse_args()
 
     config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
@@ -311,6 +318,25 @@ def main() -> int:
                   f"filter: {exc}", file=sys.stderr)
             return 2
         shard_csproj[shard["name"]] = shard.get("csproj") or DEFAULT_CSPROJ
+
+    for fqn, csproj, shard_name in args.assert_owner or []:
+        if shard_name not in parsed:
+            print(f"::error::asserted owner shard {shard_name!r} does not exist", file=sys.stderr)
+            return 2
+        if shard_csproj[shard_name] != csproj:
+            print(
+                f"::error::shard {shard_name!r} targets {shard_csproj[shard_name]!r}, "
+                f"not asserted project {csproj!r}",
+                file=sys.stderr,
+            )
+            return 1
+        if not _eval(parsed[shard_name], fqn):
+            print(
+                f"::error::shard {shard_name!r} filter does not select {fqn!r}",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Owner assertion passed: {fqn} -> {shard_name} [{csproj}]")
 
     classes = enumerate_test_classes()
     if not classes:
