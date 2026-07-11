@@ -107,6 +107,22 @@ internal sealed class McpPlatformOpsReader(
         return Serialize(list, DeployControlJsonContext.Default.DeployOperationListResponse);
     }
 
+    public async Task<McpSupportedOperationKindsOutput> GetSupportedOperationKindsAsync(
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
+
+        var catalog = _services.GetService<IOperationExecutorCatalog>();
+        return new McpSupportedOperationKindsOutput
+        {
+            SupportedKinds = catalog?.SupportedKinds
+                .Select(kind => kind.ToString())
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray() ?? []
+        };
+    }
+
     public async Task<McpProposeOperationOutput> ProposeRollbackAsync(
         ClaimsPrincipal principal,
         McpProposeRollbackArgument argument,

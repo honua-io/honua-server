@@ -211,6 +211,14 @@ public static class FeatureCatalog
     public const string OidcClaimsMappingKey = "identity.claims-mapping";
 
     /// <summary>
+    /// Entitlement key for native mTLS client-certificate authentication (#2431). Enterprise-only:
+    /// gates the client-certificate trust-profile admin surface
+    /// (<c>/api/v1/admin/security/client-certificates/*</c>) and the enforcement pipeline that maps
+    /// a presented client certificate to a Honua principal.
+    /// </summary>
+    public const string MtlsClientCertificateKey = "identity.mtls-client-certificate";
+
+    /// <summary>
     /// Entitlement key for CityGML/BIM ingest into a servable Building Scene
     /// Layer 3D Tiles tileset (#1207). Enterprise-only: gates the admin
     /// <c>POST /api/v1/admin/scenes/ingest/citygml</c> surface that parses a
@@ -295,6 +303,8 @@ public static class FeatureCatalog
             HonuaEdition.Enterprise, "Configure multiple OIDC identity providers in one deployment."),
         new(OidcClaimsMappingKey, "Claims Mapping", Categories.Identity,
             HonuaEdition.Enterprise, "Custom claim-to-role mapping and identity governance for OIDC providers."),
+        new(MtlsClientCertificateKey, "mTLS Client-Certificate Authentication", Categories.Identity,
+            HonuaEdition.Enterprise, "Native client-certificate (mTLS) authentication: trust profiles, issuer/chain validation with CRL/OCSP revocation, and certificate-to-principal mapping."),
 
         // Caching — Pro
         new("caching.output-cache", "Output Caching", Categories.Caching,

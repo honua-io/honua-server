@@ -102,6 +102,51 @@ internal sealed class DeployOperationsTool(ILogger<DeployOperationsTool> logger)
 }
 
 /// <summary>
+/// MCP tool that reports operation kinds backed by the live executor catalog.
+/// </summary>
+internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKindsTool> logger) : IMcpTool
+{
+    public const string ToolName = "honua_supported_operation_kinds";
+
+    public string Name => ToolName;
+
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
+
+    public McpToolDescriptor Describe() => new()
+    {
+        Name = ToolName,
+        Title = "Supported operation kinds",
+        Description =
+            "Read-only discovery of stable operation-kind identifiers backed by executors registered "
+            + "in the live operation gateway. Use this before honua_propose_operation; absent kinds "
+            + "remain fail-closed and cannot be routed.",
+        InputSchema = McpPlatformOpsSchemas.SupportedOperationKindsInputSchema,
+        OutputSchema = McpPlatformOpsSchemas.SupportedOperationKindsOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly("Supported operation kinds")
+    };
+
+    public async Task<McpToolsCallResult> InvokeAsync(
+        HttpContext httpContext,
+        JsonElement? arguments,
+        CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity("GetSupportedOperationKinds");
+        McpLog.ToolInvoked(logger, ToolName, WorkflowFamily);
+        McpToolHelpers.EnsureNoArguments(arguments);
+
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        var output = await httpContext.RequestServices
+            .GetRequiredService<IMcpPlatformOpsReader>()
+            .GetSupportedOperationKindsAsync(principal, cancellationToken)
+            .ConfigureAwait(false);
+
+        return McpToolHelpers.SuccessResult(
+            output,
+            McpJsonContext.Default.McpSupportedOperationKindsOutput);
+    }
+}
+
+/// <summary>
 /// MCP tool that proposes a rollback as a new forward Deploy operation to a prior revision.
 /// </summary>
 internal sealed class ProposeRollbackTool(ILogger<ProposeRollbackTool> logger) : IMcpTool

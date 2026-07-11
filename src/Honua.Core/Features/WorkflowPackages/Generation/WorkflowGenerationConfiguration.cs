@@ -62,6 +62,12 @@ public sealed class WorkflowGenerationConfiguration
     public int MaxRepairAttempts { get; set; } = 1;
 
     /// <summary>
+    /// Maximum accepted natural-language prompt size, in UTF-16 characters.
+    /// Oversized prompts are rejected before registry lookup or provider invocation.
+    /// </summary>
+    public int MaxPromptCharacters { get; set; } = 16_000;
+
+    /// <summary>
     /// Per-provider configuration blocks keyed by provider id.
     /// </summary>
     public Dictionary<string, WorkflowGenerationProviderOptions> Providers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -143,6 +149,7 @@ public sealed class WorkflowGenerationConfigurationValidator : ConfigurationVali
 
         ValidateRequiredString(options.DefaultProvider, "WorkflowGeneration:DefaultProvider", errors);
         ValidateRange(options.MaxRepairAttempts, 0, 5, "WorkflowGeneration:MaxRepairAttempts", errors);
+        ValidateRange(options.MaxPromptCharacters, 1, 200_000, "WorkflowGeneration:MaxPromptCharacters", errors);
 
         var provider = (options.DefaultProvider ?? string.Empty).Trim();
         var isKnown = provider.Length == 0

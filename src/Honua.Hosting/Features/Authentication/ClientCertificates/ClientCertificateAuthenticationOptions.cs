@@ -86,6 +86,15 @@ internal sealed class ClientCertificateTrustProfileOptions
 
     public X509RevocationMode ChainRevocationMode { get; set; } = X509RevocationMode.NoCheck;
 
+    /// <summary>
+    /// When chain-trust revocation checking (<see cref="ChainRevocationMode"/>) is Online or
+    /// Offline and revocation status cannot be determined (CRL/OCSP responder unreachable),
+    /// controls whether that is fatal. <c>true</c> (default) fails closed — the certificate is
+    /// rejected. <c>false</c> fails open — an otherwise-valid chain is accepted (best-effort
+    /// revocation). A determined <em>revoked</em> status is always fatal regardless of this flag.
+    /// </summary>
+    public bool RevocationStatusUnknownIsFatal { get; set; } = true;
+
     public int ExpirationWarningThresholdDays { get; set; } = 30;
 
     public int RotationGracePeriodDays { get; set; }
