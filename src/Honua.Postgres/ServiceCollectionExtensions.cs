@@ -32,6 +32,8 @@ using Honua.Core.Features.Metadata;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Caching;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
+using Honua.Core.Features.Deployment.Abstractions;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
@@ -293,6 +295,18 @@ internal static class ServiceCollectionExtensions
         // wins over the in-memory default registered by AddContentPublishingServices.
         services.AddScoped<Honua.Core.Features.Publishing.Content.Abstractions.IContentPublicationStore>(serviceProvider =>
             new Features.Publishing.PostgresContentPublicationStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
+        // Canonical promotion lifecycle stores (#2482). Their presence causes the
+        // server composition's existing honesty gate to advertise the hosted
+        // published-service/deployment/map/app MCP resources on Postgres profiles.
+        services.AddScoped<IPublishedServiceStore>(serviceProvider =>
+            new Features.Publishing.PostgresPublishedServiceStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IDeploymentStore>(serviceProvider =>
+            new Features.Publishing.PostgresDeploymentStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 

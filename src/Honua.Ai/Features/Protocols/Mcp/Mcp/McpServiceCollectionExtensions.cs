@@ -30,9 +30,9 @@ internal static class McpServiceCollectionExtensions
     /// deployments, map/app packages) is intentionally not registered here —
     /// those handlers depend on canonical <see cref="Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore"/>
     /// and <see cref="Honua.Core.Features.Deployment.Abstractions.IDeploymentStore"/> persistence,
-    /// which is not yet wired by the default composition. Hosts that have
-    /// registered canonical persistence call <see cref="AddMcpPromotionSurface"/>
-    /// to advertise those resources.
+    /// Hosts that have registered canonical persistence call
+    /// <see cref="AddMcpPromotionSurface"/> to advertise those resources; the
+    /// Postgres server profile does this through the server composition gate.
     /// </summary>
     public static IServiceCollection AddMcpOperatorSurface(
         this IServiceCollection services,

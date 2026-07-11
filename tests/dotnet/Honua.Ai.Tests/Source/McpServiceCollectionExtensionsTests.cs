@@ -78,9 +78,9 @@ public sealed class McpServiceCollectionExtensionsTests
         services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
 
         services.Any(d => d.ServiceType == typeof(IPublishedServiceStore))
-            .Should().BeFalse("canonical publishing persistence is not yet registered by the default composition");
+            .Should().BeFalse("the transport registrar must not invent canonical publishing persistence");
         services.Any(d => d.ServiceType == typeof(IDeploymentStore))
-            .Should().BeFalse("canonical deployment persistence is not yet registered by the default composition");
+            .Should().BeFalse("the transport registrar must not invent canonical deployment persistence");
         services.Any(d => d.ServiceType == typeof(IPublishIntentStore))
             .Should().BeFalse("canonical publish-intent persistence is not yet registered by the default composition");
     }
