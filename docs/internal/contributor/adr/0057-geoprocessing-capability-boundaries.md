@@ -131,6 +131,45 @@ lean-image constraint from [ADR-0038](0038-geoetl-pipeline-architecture-and-runt
   cloud-delegation seam is designed so that adding such backends later does not
   change the public GP contract.
 
+## Addendum (2026-07): local-process custom-code execution backend
+
+The custom-code geoprocessing job model (an operator-allowlisted, git-SHA-pinned
+user script executed on behalf of a submitter) originally had exactly one
+execution backend: the isolated, cloud-managed **AWS Batch** container. That
+leaves no path for a single-host / air-gapped operator to run their own GP tool
+without a cloud batch service. `LocalProcessCustomCodeBackend`
+(`Geoprocessing:CustomCode:Backend=Local`) adds a second, **opt-in** backend that
+runs the pinned code as an **OS-sandboxed subprocess on the honua-server host
+itself**. It selects a backend for the *same* existing job model — the submit-time
+trust gate (repo allowlist / per-tenant allowlist / signed-commit posture, full
+40-hex SHA pin, scope-⊆-owner clamp, scoped-token mint) is unchanged and still
+runs regardless of backend.
+
+### Isolation boundaries and their limits (be honest)
+
+This backend executes untrusted user code on the server host. Its isolation is
+**OS-process-level**, not a container/VM boundary. The controls, and what each one
+does and does *not* guarantee:
+
+| Control | Mechanism | Strength |
+|---|---|---|
+| **Environment allowlist** | Child environment is built as an allowlist (cleared, then only `CUSTOMCODE_*` contract vars, job-scoped `HONUA_BASE_URL`/`HONUA_JOB_TOKEN`, a controlled `PATH`, and operator-named host vars). | **Hard.** The subprocess inherits no host secret. |
+| **Wall-clock timeout** | Monitor hard-kills the whole process tree at `MaxWallClock`. | **Hard** for the tracked tree. A grandchild that double-forks and re-parents to init is a residual the process-tree kill can miss; a cgroup/container closes it. |
+| **CPU + address-space limits** | POSIX `ulimit -t` (RLIMIT_CPU) / `ulimit -v` (RLIMIT_AS) via a launch wrapper. | **Hard on POSIX** (kernel-enforced). **Not enforced on non-POSIX** in-process — run inside a cgroup-constrained container there. |
+| **Single-use scratch + path-traversal safety** | Fresh per-job dir under `WorkingRoot`, is the working dir and checkout root, deleted on terminal; every constructed path is validated to resolve under that root. | **Hard** for paths the backend constructs/hands over. It does **not** chroot the process: byte-level filesystem confinement (stopping an absolute-path read of `/etc/passwd`) requires a mount namespace / container. |
+| **Network denial** | *Not enforced by this backend.* | **Deployment requirement.** OS-process-level network denial is not portably enforceable without a namespace/container boundary this MVP does not own. Run the backend inside an already-network-restricted container/namespace. The one intentional network op — the `git` checkout of the pinned commit — runs in the honua-server process, not the sandbox. |
+
+**Recommended deployment:** enable this backend only inside a container/pod that is
+itself network-restricted and cgroup-constrained. In that configuration the two
+soft edges above (filesystem confinement, network denial, double-fork survival)
+are closed by the surrounding boundary, and the in-process controls become
+defense-in-depth. On a bare host it is suitable only for trusted operators running
+trusted code. It is disabled by default (`Backend=Batch`) and, even when selected,
+fails closed unless `Geoprocessing:CustomCode:Local:Enabled=true`.
+
+This is a genuinely high-risk surface (in-process execution of user code) and
+warrants human security review before it is enabled in any real deployment.
+
 ## References
 
 - [ADR-0026: AI-First Operator Contract](0026-ai-first-operator-contract.md)

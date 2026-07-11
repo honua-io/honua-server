@@ -1,0 +1,366 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Diagnostics;
+using System.Globalization;
+using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Geoprocessing;
+using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.CustomCode.LocalBackend;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+
+namespace Honua.Server.Tests.Features.Geoprocessing;
+
+/// <summary>
+/// Adversarial coverage for <see cref="LocalProcessCustomCodeBackend"/> — the OS-sandboxed-subprocess
+/// custom-code backend. Beyond a happy-path run, each security control is exercised by a test that
+/// tries to break it: leaking a host secret through the environment, spinning forever past the
+/// wall-clock, escaping the address-space/CPU limits, and traversing out of the scratch directory.
+/// The subprocess-spawning tests use POSIX <c>/bin/sh</c> (mirroring the sibling
+/// <c>LocalProcessPoolBatchComputeBackendTests</c>); they run on the Linux CI host.
+/// </summary>
+public sealed class LocalProcessCustomCodeBackendTests
+{
+    private static bool Posix => !OperatingSystem.IsWindows();
+
+    // ---------------------------------------------------------------------
+    // Control 1: environment allowlist — the subprocess inherits no host secret.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task Environment_HostSecretIsNotLeaked_ButAllowlistedAndContractVarsAre()
+    {
+        if (!Posix) { return; }
+
+        const string secretName = "HONUA_TEST_LOCALCC_SECRET";
+        const string allowedName = "HONUA_TEST_LOCALCC_ALLOWED";
+        Environment.SetEnvironmentVariable(secretName, "topsecret-should-not-leak");
+        Environment.SetEnvironmentVariable(allowedName, "operator-allowed-value");
+        try
+        {
+            var outFile = TempFile();
+            // Write: <secret-or-EMPTY>|<allowlisted>|<contract CUSTOMCODE_RUNTIME>
+            var script =
+                $"printf '%s|%s|%s' \"${{{secretName}:-EMPTY}}\" \"${{{allowedName}:-EMPTY}}\" \"${{CUSTOMCODE_RUNTIME:-EMPTY}}\" > \"{outFile}\"";
+
+            var options = Options(o => o.EnvironmentAllowlist = [allowedName]);
+            using var backend = Backend(options, new ShellScriptPreparer(script));
+            var job = CustomCodeJob("cc-env");
+
+            (await RunToTerminalAsync(backend, job)).Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+            var parts = (await File.ReadAllTextAsync(outFile)).Split('|');
+            parts[0].Should().Be("EMPTY", "the host secret must never be inherited by the sandboxed subprocess");
+            parts[1].Should().Be("operator-allowed-value", "an explicitly allowlisted host var is passed through");
+            parts[2].Should().Be("python", "the CUSTOMCODE_* contract vars from the spec are exposed");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(secretName, null);
+            Environment.SetEnvironmentVariable(allowedName, null);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Control 2: wall-clock timeout — a spin-forever job is hard-killed.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task WallClock_SpinForeverJob_IsKilledAndReportedFailed()
+    {
+        if (!Posix) { return; }
+
+        var options = Options(o =>
+        {
+            o.MaxWallClock = TimeSpan.FromSeconds(2);
+            o.MaxCpuTime = null; // isolate the wall-clock control from the CPU limit
+        });
+        // Busy-spin (never exits on its own); only the wall-clock kill can end it.
+        using var backend = Backend(options, new ShellScriptPreparer("while true; do :; done"));
+        var job = CustomCodeJob("cc-spin");
+
+        var sw = Stopwatch.StartNew();
+        var terminal = await RunToTerminalAsync(backend, job);
+        sw.Stop();
+
+        terminal.Status.Should().Be(ExecutionJobStatus.Failed);
+        terminal.Message.Should().Contain("wall-clock");
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(20), "the deadline must fire well before the poll timeout");
+    }
+
+    // ---------------------------------------------------------------------
+    // Control 3: CPU + address-space limits are applied to the child (kernel-enforced).
+    // Proven deterministically by reading the limits back inside the sandbox: if the
+    // ulimit wrapper were absent the readback would be 'unlimited', not our values.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task ResourceLimits_CpuAndAddressSpace_AreAppliedToTheChild()
+    {
+        if (!Posix) { return; }
+
+        var outFile = TempFile();
+        var options = Options(o =>
+        {
+            o.MaxCpuTime = TimeSpan.FromSeconds(37);
+            o.MaxAddressSpaceBytes = 300L * 1024 * 1024; // 300 MiB => 307200 KiB
+        });
+        using var backend = Backend(options, new ShellScriptPreparer($"printf '%s|%s' \"$(ulimit -t)\" \"$(ulimit -v)\" > \"{outFile}\""));
+        var job = CustomCodeJob("cc-limits");
+
+        (await RunToTerminalAsync(backend, job)).Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+        var parts = (await File.ReadAllTextAsync(outFile)).Split('|');
+        parts[0].Should().Be("37", "RLIMIT_CPU (ulimit -t) must be set to the configured CPU-time ceiling");
+        parts[1].Should().Be((300L * 1024).ToString(CultureInfo.InvariantCulture), "RLIMIT_AS (ulimit -v, in KiB) must be set to the configured address-space ceiling");
+    }
+
+    [Fact]
+    public async Task ResourceLimits_MemoryHog_IsContainedByTheAddressSpaceLimit()
+    {
+        if (!Posix) { return; }
+
+        var options = Options(o =>
+        {
+            o.MaxAddressSpaceBytes = 64L * 1024 * 1024; // 64 MiB
+            o.MaxCpuTime = TimeSpan.FromSeconds(15);     // backstop if the alloc somehow spins
+            o.MaxWallClock = TimeSpan.FromSeconds(60);   // long, so the wall-clock never fires first
+        });
+        // Ask /bin/sh to build an ever-growing string; RLIMIT_AS makes an allocation fail and the
+        // shell aborts non-zero long before it can exhaust host memory.
+        using var backend = Backend(options, new ShellScriptPreparer("s=x; while true; do s=\"$s$s$s$s$s$s$s$s\"; done"));
+        var job = CustomCodeJob("cc-memhog");
+
+        var terminal = await RunToTerminalAsync(backend, job);
+        terminal.Status.Should().BeOneOf(ExecutionJobStatus.Failed);
+        terminal.Message.Should().NotContain("wall-clock",
+            "the address-space limit should abort the allocation before the wall-clock deadline");
+    }
+
+    // ---------------------------------------------------------------------
+    // Control 4: scratch confinement + path-traversal safety.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task Scratch_ChildWorkingDirectory_IsTheSingleUseScratchDir_AndIsDeletedAfter()
+    {
+        if (!Posix) { return; }
+
+        var root = Path.Combine(Path.GetTempPath(), $"honua-cc-root-{Guid.NewGuid():N}");
+        var outFile = TempFile();
+        var options = Options(o => o.WorkingRoot = root);
+        using var backend = Backend(options, new ShellScriptPreparer($"pwd > \"{outFile}\""));
+        var job = CustomCodeJob("cc-cwd");
+
+        (await RunToTerminalAsync(backend, job)).Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+        var cwd = (await File.ReadAllTextAsync(outFile)).Trim();
+        SandboxPaths.IsUnder(root, cwd).Should().BeTrue("the subprocess must be rooted inside the scratch directory");
+
+        // After a terminal observe the scratch dir must be gone (single-use, deleted after).
+        Directory.Exists(cwd).Should().BeFalse("the single-use scratch directory must be deleted once the job is terminal");
+
+        if (Directory.Exists(root)) { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void SandboxPaths_RejectsTraversalAndAbsoluteEscapes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"honua-cc-contain-{Guid.NewGuid():N}");
+
+        // A contained relative segment resolves fine.
+        SandboxPaths.ResolveContained(root, "checkout/sub").Should().StartWith(Path.GetFullPath(root));
+
+        // '..' traversal escapes and is rejected.
+        var traverse = () => SandboxPaths.ResolveContained(root, "../../etc/passwd");
+        traverse.Should().Throw<CustomCodePathEscapeException>();
+
+        // An absolute path escapes (Path.Combine discards the root) and is rejected.
+        var absolute = () => SandboxPaths.ResolveContained(root, OperatingSystem.IsWindows() ? @"C:\Windows\win.ini" : "/etc/passwd");
+        absolute.Should().Throw<CustomCodePathEscapeException>();
+
+        // Operation-id sanitization can never yield a separator or traversal token.
+        var seg = SandboxPaths.SanitizeSegment("../../evil/../id");
+        seg.Should().NotContain("/").And.NotContain("\\").And.NotContain("..");
+    }
+
+    [Fact]
+    public async Task Inputs_DepsManifestWithTraversal_IsRejectedClosed()
+    {
+        if (!Posix) { return; }
+
+        using var backend = Backend(Options(), new ShellScriptPreparer("true"));
+        var job = CustomCodeJob("cc-badmanifest", depsManifest: "../../etc/passwd");
+
+        var start = await backend.StartAsync(job);
+        start.Status.Should().Be(ExecutionJobStatus.Failed);
+        start.Message.Should().Contain("deps_manifest");
+    }
+
+    // ---------------------------------------------------------------------
+    // Fail-closed gates.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task Disabled_Backend_FailsClosed()
+    {
+        using var backend = Backend(Options(o => o.Enabled = false), new ShellScriptPreparer("true"));
+        var start = await backend.StartAsync(CustomCodeJob("cc-disabled"));
+        start.Status.Should().Be(ExecutionJobStatus.Failed);
+        start.Message.Should().Contain("not enabled");
+    }
+
+    [Fact]
+    public void BackendIdentity_MatchesContract()
+    {
+        using var backend = Backend(Options(), new ShellScriptPreparer("true"));
+        backend.BackendName.Should().Be("honua-local-customcode");
+        backend.TargetKind.Should().Be(BatchComputeTargetKind.LocalProcess);
+    }
+
+    // ---------------------------------------------------------------------
+    // Discovery (req 4): a configured local tool is surfaced through the process catalog.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void ToolCatalog_SurfacesConfiguredLocalToolWithParameterSchema()
+    {
+        var options = new CustomCodeLocalBackendOptions
+        {
+            Tools =
+            [
+                new CustomCodeLocalToolDefinition
+                {
+                    ProcessId = "customcode.my-tool",
+                    Title = "My Tool",
+                    Description = "A registered local custom tool.",
+                    Parameters = [new CustomCodeLocalToolParameter { Name = "threshold", DisplayName = "Threshold", Required = true }],
+                }
+            ]
+        };
+
+        var catalog = new CustomCodeLocalToolCatalog(
+            new BuiltInProcessCatalog(NullLogger<BuiltInProcessCatalog>.Instance),
+            Microsoft.Extensions.Options.Options.Create(options));
+
+        var tool = catalog.GetProcess("customcode.my-tool");
+        tool.Should().NotBeNull();
+        tool!.Title.Should().Be("My Tool");
+        tool.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+        tool.Parameters.Should().ContainSingle(p => p.Name == "threshold" && p.Required);
+
+        catalog.ListProcesses().Should().Contain(p => p.ProcessId == "customcode.my-tool");
+        // Built-in processes are still present (decoration, not replacement).
+        catalog.GetProcess("geometry.buffer").Should().NotBeNull();
+    }
+
+    // ---------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------
+    private static string TempFile() => Path.Combine(Path.GetTempPath(), $"honua-cc-{Guid.NewGuid():N}.txt");
+
+    private static CustomCodeLocalBackendOptions Options(Action<CustomCodeLocalBackendOptions>? configure = null)
+    {
+        var options = new CustomCodeLocalBackendOptions
+        {
+            Enabled = true,
+            MaxConcurrentProcesses = 2,
+            MaxWallClock = TimeSpan.FromSeconds(30),
+            MaxCpuTime = TimeSpan.FromSeconds(20),
+            MaxAddressSpaceBytes = 512L * 1024 * 1024,
+        };
+        configure?.Invoke(options);
+        return options;
+    }
+
+    private static LocalProcessCustomCodeBackend Backend(
+        CustomCodeLocalBackendOptions options,
+        ICustomCodeWorkloadPreparer preparer)
+        => new(
+            new StaticOptionsMonitor<CustomCodeLocalBackendOptions>(options),
+            preparer,
+            NullLogger<LocalProcessCustomCodeBackend>.Instance);
+
+    private static ExecutionJobRecord CustomCodeJob(string operationId, string depsManifest = "requirements.txt")
+    {
+        var now = DateTimeOffset.UtcNow;
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [CustomCodeJobContract.RuntimeParam] = CustomCodeJobContract.PythonRuntime,
+            [CustomCodeJobContract.RepoUrlParam] = "https://github.com/example/tool",
+            [CustomCodeJobContract.GitRefParam] = new string('a', 40),
+            [CustomCodeJobContract.EntrypointParam] = "tool.main:run",
+            [CustomCodeJobContract.DepsManifestParam] = depsManifest,
+            // The submit coordinator projects customcode.* onto env.CUSTOMCODE_* — mirror that here so
+            // the backend surfaces the contract var CUSTOMCODE_RUNTIME to the child.
+            [CustomCodeJobContract.ToEnvParamKey(CustomCodeJobContract.RuntimeEnvName)] = CustomCodeJobContract.PythonRuntime,
+        };
+
+        return new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.LocalProcess,
+                Backend = "honua-local-customcode",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "customcode",
+                RuntimeProfile = CustomCodeJobContract.RuntimeProfile,
+                Parameters = parameters,
+            },
+        };
+    }
+
+    private static async Task<BatchComputeObservation> RunToTerminalAsync(
+        LocalProcessCustomCodeBackend backend,
+        ExecutionJobRecord job)
+    {
+        var start = await backend.StartAsync(job);
+        if (start.Status is ExecutionJobStatus.Failed)
+        {
+            return new BatchComputeObservation { Status = start.Status, Message = start.Message };
+        }
+
+        var running = job with { Status = ExecutionJobStatus.Running, ProviderOperationId = start.ProviderOperationId };
+        var deadline = Stopwatch.StartNew();
+        while (deadline.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            var observation = await backend.ObserveAsync(running);
+            if (observation.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)
+            {
+                return observation;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException("The custom-code job did not reach a terminal state within 30 seconds.");
+    }
+
+    // (assertion helper removed; tests await + assert Status directly)
+
+    /// <summary>
+    /// Test preparer that drops the given POSIX shell script into the checkout directory and returns a
+    /// launch spec running it under <c>/bin/sh</c> — so the backend's OS-sandbox controls are exercised
+    /// without a git remote or a python runtime.
+    /// </summary>
+    private sealed class ShellScriptPreparer(string script) : ICustomCodeWorkloadPreparer
+    {
+        public ValueTask<SandboxLaunchSpec> PrepareAsync(
+            CustomCodeJobInputs inputs,
+            string checkoutDirectory,
+            CancellationToken cancellationToken)
+        {
+            Directory.CreateDirectory(checkoutDirectory);
+            var scriptPath = Path.Combine(checkoutDirectory, "entry.sh");
+            File.WriteAllText(scriptPath, "#!/bin/sh\n" + script + "\n");
+            return ValueTask.FromResult(new SandboxLaunchSpec("/bin/sh", [scriptPath]));
+        }
+    }
+
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue { get; } = value;
+        public T Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
+    }
+}
