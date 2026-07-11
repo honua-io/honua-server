@@ -108,45 +108,7 @@ jobs:
           DISPATCH_AUTOFIX_MODEL: ${{ github.event.inputs.autofix_model }}
           HAVE_BEDROCK_KEYS: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID != '' && secrets.BEDROCK_AWS_SECRET_ACCESS_KEY != '' }}
         run: |
-          set -euo pipefail
-          # AUTONOMOUS: scheduled + workflow_run (CI-completion) invocations LAND
-          # batches — apply + LLM + autofix (when the Bedrock access-key secrets
-          # exist). A human can still force a dry-run with workflow_dispatch +
-          # train_apply=false. Safety is intact: FF-only CAS, escalation labels,
-          # pre-existing + aux-nonblocking filters, autofix cap.
-          apply=0
-          if [[ "${EVENT_NAME}" == "schedule" || "${EVENT_NAME}" == "workflow_run" ]]; then
-            apply=1
-          elif [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_APPLY}" == "true" ]]; then
-            apply=1
-          fi
-          echo "train_apply=${apply}" >> "$GITHUB_OUTPUT"
-          mb="${DISPATCH_MAX_BATCH:-10}"; [[ -z "${mb}" ]] && mb=10
-          echo "max_batch=${mb}" >> "$GITHUB_OUTPUT"
-          # TRAIN_LLM: on whenever we're applying live AND Bedrock keys exist
-          # (autonomous schedule/workflow_run, or an explicit dispatch).
-          llm=0
-          if [[ "${apply}" == "1" && "${HAVE_BEDROCK_KEYS}" == "true" ]]; then
-            if [[ "${EVENT_NAME}" != "workflow_dispatch" || "${DISPATCH_USE_LLM}" == "true" ]]; then
-              llm=1
-            fi
-          fi
-          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_USE_LLM}" == "true" && "${HAVE_BEDROCK_KEYS}" != "true" ]]; then
-            echo "::warning::use_llm=true but BEDROCK_AWS_* secrets unset; running deterministic (TRAIN_LLM=0)."
-          fi
-          echo "train_llm=${llm}" >> "$GITHUB_OUTPUT"
-          # TRAIN_AUTOFIX: roll-forward AI fix-agent — requires LIVE (apply=1) +
-          # Bedrock keys. On for autonomous runs; on for explicit dispatch with
-          # use_autofix=true. A rare backstop (most batches land via the filters).
-          autofix=0
-          if [[ "${apply}" == "1" && "${HAVE_BEDROCK_KEYS}" == "true" ]]; then
-            if [[ "${EVENT_NAME}" != "workflow_dispatch" || "${DISPATCH_USE_AUTOFIX}" == "true" ]]; then
-              autofix=1
-            fi
-          fi
-          echo "train_autofix=${autofix}" >> "$GITHUB_OUTPUT"
-          echo "autofix_model=${DISPATCH_AUTOFIX_MODEL}" >> "$GITHUB_OUTPUT"
-          echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${mb} TRAIN_LLM=${llm} TRAIN_AUTOFIX=${autofix}"
+          scripts/ci/merge-train/resolve-mode.sh "$GITHUB_OUTPUT"
 
       # --- Roll-forward AI fix-agent setup (autofix only) --------------------
       # These steps run ONLY when autofix is enabled (TRAIN_AUTOFIX=1), which is
