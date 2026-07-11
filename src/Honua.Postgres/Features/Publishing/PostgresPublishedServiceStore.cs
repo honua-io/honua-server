@@ -2,10 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
-using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -19,15 +17,15 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
     private const string Columns =
         "service_id, intent_id, source_kind, source_id, target_kind, status, document, published_at, updated_at";
 
-    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly NpgsqlDataSource _dataSource;
     private readonly string _table;
 
     public PostgresPublishedServiceStore(
-        IAdoNetDatabaseConnectionProvider connectionProvider,
+        NpgsqlDataSource dataSource,
         string? schemaName = null)
     {
-        ArgumentNullException.ThrowIfNull(connectionProvider);
-        _connectionProvider = connectionProvider;
+        ArgumentNullException.ThrowIfNull(dataSource);
+        _dataSource = dataSource;
         _table = SchemaSearchPath.QualifyTable("promotion_published_services", schemaName);
     }
 
@@ -43,7 +41,7 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
             ON CONFLICT (service_id) DO NOTHING
             """;
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         AddParameters(command, service);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
@@ -54,7 +52,7 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
         CancellationToken cancellationToken = default)
     {
         var sql = $"SELECT document FROM {_table} WHERE service_id = @service_id";
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@service_id", NpgsqlDbType.Text, serviceId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -83,7 +81,7 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
                 updated_at = EXCLUDED.updated_at
             """;
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         AddParameters(command, service);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -113,7 +111,7 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
         CancellationToken cancellationToken)
     {
         var sql = $"SELECT document FROM {_table} WHERE {predicate} ORDER BY updated_at DESC, service_id";
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         addParameters(command);
         var services = new List<PublishedServiceRecord>();

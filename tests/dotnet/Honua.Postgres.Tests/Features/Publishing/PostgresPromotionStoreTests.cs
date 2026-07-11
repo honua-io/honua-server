@@ -1,14 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Data;
-using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Postgres.Features.Publishing;
@@ -33,9 +30,8 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
         try
         {
             await EnsureTablesAsync(schema);
-            var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var writer = new PostgresPublishedServiceStore(provider, schema);
-            var reader = new PostgresPublishedServiceStore(provider, schema);
+            var writer = new PostgresPublishedServiceStore(fixture.DataSource, schema);
+            var reader = new PostgresPublishedServiceStore(fixture.DataSource, schema);
             var service = BuildPublishedService("service-a", "result-1");
 
             (await writer.TryCreateAsync(service)).Should().BeTrue();
@@ -70,9 +66,8 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
         try
         {
             await EnsureTablesAsync(schema);
-            var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var writer = new PostgresDeploymentStore(provider, schema);
-            var reader = new PostgresDeploymentStore(provider, schema);
+            var writer = new PostgresDeploymentStore(fixture.DataSource, schema);
+            var reader = new PostgresDeploymentStore(fixture.DataSource, schema);
             var deployment = BuildDeployment("deployment-a", "service-a", "production");
 
             (await writer.TryCreateAsync(deployment)).Should().BeTrue();
@@ -208,32 +203,4 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
         await command.ExecuteNonQueryAsync();
     }
 
-    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IAdoNetDatabaseConnectionProvider
-    {
-        public string GetConnectionString() => dataSource.ConnectionString;
-
-        public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
-        {
-            var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"SET search_path TO \"{schemaName}\", public;";
-            await command.ExecuteNonQueryAsync(cancellationToken);
-            return connection;
-        }
-
-        public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
-            IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
-            CancellationToken cancellationToken = default)
-        {
-            var connection = await OpenConnectionAsync(cancellationToken);
-            var transaction = await connection.BeginTransactionAsync(isolationLevel, cancellationToken);
-            return (connection, transaction);
-        }
-
-        public Task<T> ExecuteWithDeadlockRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken = default)
-            => operation();
-
-        public Task ExecuteWithDeadlockRetryAsync(Func<Task> operation, CancellationToken cancellationToken = default)
-            => operation();
-    }
 }

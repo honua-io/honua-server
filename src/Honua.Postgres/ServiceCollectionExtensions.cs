@@ -303,11 +303,11 @@ internal static class ServiceCollectionExtensions
         // published-service/deployment/map/app MCP resources on Postgres profiles.
         services.AddSingleton<IPublishedServiceStore>(serviceProvider =>
             new Features.Publishing.PostgresPublishedServiceStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 configuration["Database:Schema"]));
         services.AddSingleton<IDeploymentStore>(serviceProvider =>
             new Features.Publishing.PostgresDeploymentStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 configuration["Database:Schema"]));
 
         // Register Postgres-backed RBAC role/permission store (#1374). Durable
