@@ -94,7 +94,10 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         var start = request.Stops[0];
         var end = request.Stops[^1];
         var length = HaversineMeters(start, end);
-        var time = length / MetersPerMinute;
+        var profileFactor = string.Equals(request.TravelMode, "walking", StringComparison.OrdinalIgnoreCase)
+            ? 2.0
+            : 1.0;
+        var time = length / MetersPerMinute * profileFactor;
         var geometry = LineStringGeoJson(start, end);
 
         var directions = new List<RouteDirectionStep>
