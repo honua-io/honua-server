@@ -411,6 +411,15 @@ public static class HonuaTelemetry
         /// <summary>SQL query complexity score.</summary>
         public const string QueryComplexity = "honua.query.complexity_score";
 
+        /// <summary>Rows a provider matched with a pushed predicate (the read bound for a query).</summary>
+        public const string RowsScanned = "honua.catalog.rows_scanned";
+
+        /// <summary>Rows a provider materialized/returned for a query.</summary>
+        public const string RowsReturned = "honua.catalog.rows_returned";
+
+        /// <summary>Provider-side query duration in milliseconds.</summary>
+        public const string ProviderDurationMs = "honua.provider.duration_ms";
+
         /// <summary>Memory allocation size category.</summary>
         public const string MemoryCategory = "honua.memory.allocation_category";
     }

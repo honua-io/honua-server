@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Services;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
@@ -812,8 +813,8 @@ public class ImageServerCatalogQueryHandlerTests
     [Operation(Operations.Query)]
     public async Task QueryCatalogAsync_RasterStoreThrows_ReturnsServerError()
     {
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns<Task<RasterInfo[]>>(_ => throw new InvalidOperationException("boom"));
+        _rasterStore.QueryCatalogAsync(1, Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns<Task<RasterCatalogPage>>(_ => throw new InvalidOperationException("boom"));
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
@@ -953,19 +954,18 @@ public class ImageServerCatalogQueryHandlerTests
     public async Task QueryCatalogAsync_GeometryFilterCrossSrid_TransformsFilterBox()
     {
         // Footprint is in 3857; the filter box is supplied in 4326 and must be transformed
-        // into 3857 before the intersect test. The stub transform maps the 4326 box onto the
-        // footprint so the raster is kept.
-        SetupLayerWithRasters([
-            CreateRaster(100, "scene", xMin: 0, yMin: 0, xMax: 100, yMax: 100, srid: 3857),
-        ]);
-
+        // into 3857 before the intersect test. The transform (a provider concern under the
+        // pushdown contract — PostGIS does this in SQL via ST_Transform) maps the 4326 box onto
+        // the footprint so the raster is kept.
         var transform = Substitute.For<ICoordinateTransformService>();
         transform.TransformExtentAsync(
                 Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(),
                 4326, 3857, Arg.Any<CancellationToken>())
             .Returns(((double MinX, double MinY, double MaxX, double MaxY)?)(10.0, 10.0, 50.0, 50.0));
 
-        var handler = BuildHandler(transform);
+        SetupLayerWithRasters(
+            [CreateRaster(100, "scene", xMin: 0, yMin: 0, xMax: 100, yMax: 100, srid: 3857)],
+            filterTransform: transform);
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
@@ -975,7 +975,7 @@ public class ImageServerCatalogQueryHandlerTests
         };
 
         var context = CreateImageServerContext();
-        var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
         var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
         jsonResult.Should().NotBeNull();
@@ -983,10 +983,18 @@ public class ImageServerCatalogQueryHandlerTests
             .Should().BeEquivalentTo([100L]);
     }
 
-    private void SetupLayerWithRasters(RasterInfo[] rasters)
+    private void SetupLayerWithRasters(RasterInfo[] rasters, ICoordinateTransformService? filterTransform = null)
     {
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(rasters);
+        // The reader now drives the neutral IRasterStore.QueryCatalogAsync pushdown contract. The
+        // provider is exercised for real (indexed SQL) in Honua.Postgres.Tests; here we back it with
+        // the shared reference evaluator so the handler-level count/extent/paging/ordering/masking and
+        // envelope-intersects assertions run against the exact semantics a provider must preserve.
+        _rasterStore.QueryCatalogAsync(1, Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ci => RasterCatalogQueryEvaluator.EvaluateAsync(
+                rasters,
+                ci.ArgAt<RasterCatalogQuery>(1),
+                filterTransform,
+                ci.ArgAt<CancellationToken>(2)));
         _rasterStore.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>());
     }

@@ -208,6 +208,23 @@ main() {
   local autofix_attempts=0
   while [[ "${gate}" != "SUCCESS" ]]; do
     local run_id; run_id="$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null || echo "")"
+
+    # Only an ordinary FAILURE has actionable failed jobs. A cancelled,
+    # missing, timed-out, stale, neutral, or otherwise incomplete gate must
+    # never flow into failure subtraction/classification: doing so can turn an
+    # empty failure list into a false success and land unvalidated code.
+    if [[ "${gate}" != "FAILURE" ]] \
+      || ! train_ci_jobs_are_terminal "${run_id}" \
+      || ! train_expected_shards_are_classifiable "${run_id}" "${shard_descriptor}"; then
+      _write_state "${batch}" "${trunk_sha}" "${included}" "ci-incomplete" "${run_id}" "${fwdfix}" "${flake_reruns}"
+      train_annotate_warn "CI Gate/run is ${gate} with incomplete or unusable jobs; failing closed without landing or dropping PRs"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-incomplete" "${trunk_sha}" "" "${shard_descriptor}"
+      _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
+        "STOPPED: CI Gate/run ${gate} is incomplete or unusable; explicit successful validation required"
+      return 1
+    fi
+
     local failing; failing="$(train_failing_jobs "${run_id}")"
 
     # --- (0) NON-BLOCKING aux/aggregator filter (deterministic) --------------
@@ -216,11 +233,23 @@ main() {
     # aggregators. The train lands on its SHARD results; real regressions in the
     # aux jobs are caught by post-merge trunk CI. If nothing real-fails after
     # stripping, the batch is green-enough → land.
+    local nonblocking_only=0
+    train_nonblocking_failures_are_safe "${run_id}" "${shard_descriptor}" && nonblocking_only=1
     failing="$(train_subtract_lines "${TRAIN_NONBLOCKING_JOBS}" "${failing}")"
     if [[ -z "${failing//[$'\n'$'\t' ]/}" ]]; then
-      train_metric_set nonblocking_passes 1
-      train_notice "only non-blocking aux/aggregator jobs failed; landing on shard results"
-      gate="SUCCESS"; continue
+      if [[ "${nonblocking_only}" == "1" ]]; then
+        train_metric_set nonblocking_passes 1
+        train_notice "only non-blocking aux/aggregator jobs failed and every selected shard explicitly succeeded; landing on shard results"
+        gate="SUCCESS"; continue
+      fi
+
+      _write_state "${batch}" "${trunk_sha}" "${included}" "ci-incomplete" "${run_id}" "${fwdfix}" "${flake_reruns}"
+      train_annotate_warn "CI has no blocking failures to classify but selected-shard evidence is missing or skipped; failing closed"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-incomplete" "${trunk_sha}" "" "${shard_descriptor}"
+      _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
+        "STOPPED: selected-shard evidence missing or skipped; explicit successful validation required"
+      return 1
     fi
 
     # forward-fix: only when the SOLE failure is the format-verify step.
