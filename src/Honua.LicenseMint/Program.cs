@@ -101,6 +101,7 @@ internal static class CliRunner
         var entitlements = options.Get("entitlements") is { } csv
             ? csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : null;
+        var capacity = ParseCapacityTerms(options);
 
         var request = new LicenseMintRequest
         {
@@ -109,7 +110,8 @@ internal static class CliRunner
             LicensedTo = licensedTo,
             Edition = edition,
             ExpiresAt = expiresAt,
-            Entitlements = entitlements
+            Entitlements = entitlements,
+            Capacity = capacity
         };
 
         LicenseMintResult result;
@@ -131,6 +133,13 @@ internal static class CliRunner
             Console.WriteLine(expiresAt is { } e
                 ? $"expiresAt: {e:O}"
                 : "expiresAt: (perpetual)");
+            if (capacity is not null)
+            {
+                Console.WriteLine(
+                    $"capacity: {capacity.MaxSustainedServingUnits.ToString(CultureInfo.InvariantCulture)} serving units; " +
+                    $"surgeDays: {capacity.AnnualSurgeDays?.ToString(CultureInfo.InvariantCulture) ?? "unlimited"}; " +
+                    $"surgeAllowance: {capacity.SurgeAllowance}");
+            }
         }
         else
         {
@@ -138,6 +147,74 @@ internal static class CliRunner
         }
 
         return 0;
+    }
+
+    internal static LicenseCapacityTerms? ParseCapacityTerms(ArgMap options)
+    {
+        var unitsRaw = options.Get("capacity-units");
+        var surgeDaysRaw = options.Get("annual-surge-days");
+        var surgeAllowanceRaw = options.Get("surge-allowance");
+
+        if (unitsRaw is null && surgeDaysRaw is null && surgeAllowanceRaw is null)
+        {
+            return null;
+        }
+
+        if (unitsRaw is null)
+        {
+            throw new CliException(
+                "--capacity-units is required when annual surge days or surge allowance is specified.");
+        }
+
+        if (!decimal.TryParse(
+                unitsRaw,
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out var capacityUnits) ||
+            capacityUnits <= 0m)
+        {
+            throw new CliException("--capacity-units must be a number greater than zero.");
+        }
+
+        int? annualSurgeDays = 14;
+        if (surgeDaysRaw is not null)
+        {
+            if (string.Equals(surgeDaysRaw, "unlimited", StringComparison.OrdinalIgnoreCase))
+            {
+                annualSurgeDays = null;
+            }
+            else if (int.TryParse(
+                         surgeDaysRaw,
+                         NumberStyles.Integer,
+                         CultureInfo.InvariantCulture,
+                         out var parsedDays) &&
+                     parsedDays >= 0)
+            {
+                annualSurgeDays = parsedDays;
+            }
+            else
+            {
+                throw new CliException(
+                    "--annual-surge-days must be a non-negative integer or 'unlimited'.");
+            }
+        }
+
+        var surgeAllowance = surgeAllowanceRaw?.ToLowerInvariant()
+            ?? LicenseCapacitySurgeAllowances.Standard;
+        if (surgeAllowance is not (
+            LicenseCapacitySurgeAllowances.Standard or
+            LicenseCapacitySurgeAllowances.High or
+            LicenseCapacitySurgeAllowances.Unlimited))
+        {
+            throw new CliException("--surge-allowance must be standard, high, or unlimited.");
+        }
+
+        return new LicenseCapacityTerms
+        {
+            MaxSustainedServingUnits = capacityUnits,
+            AnnualSurgeDays = annualSurgeDays,
+            SurgeAllowance = surgeAllowance
+        };
     }
 
     private static LicenseSigningKeyPair LoadPrivateKey(ArgMap options)
@@ -274,6 +351,11 @@ internal static class CliRunner
               --expires <when>       RFC 3339 timestamp or duration (e.g. 365d). Omit for perpetual.
               --entitlements <keys>  Comma-separated FeatureCatalog keys. Defaults to all keys
                                      at or below the edition.
+              --capacity-units <n>   Maximum sustained serving units. Omit for an unbanded license.
+              --annual-surge-days <days|unlimited>
+                                     Annual declared-surge days (default: 14).
+              --surge-allowance <standard|high|unlimited>
+                                     Contractual surge tier (default: standard).
               --private-key-file <p> File holding the Base64URL private seed.
               --private-key <b64url> Inline Base64URL private seed.
                                      (or set HONUA_LICENSE_SIGNING_KEY)
@@ -283,6 +365,7 @@ internal static class CliRunner
               honua-license-mint keygen --key-id honua-2026-q3 --private-out signing.key
               honua-license-mint mint --key-id honua-2026-q3 --license-id lic-acme-001 \
                 --licensed-to "Acme Corp" --edition Pro --expires 365d \
+                --capacity-units 4 --annual-surge-days 14 --surge-allowance standard \
                 --private-key-file signing.key --out acme.honua-license.json
             """);
     }

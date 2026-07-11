@@ -102,6 +102,113 @@ public sealed class LicenseMintRoundTripTests
     }
 
     [UnitTest]
+    public async Task Mint_CapacityTerms_RuntimePreservesCapacityBand()
+    {
+        var keyPair = LicenseSigningKeyPair.Generate();
+        var result = LicenseMinter.Mint(
+            new LicenseMintRequest
+            {
+                KeyId = KeyId,
+                LicenseId = "lic-mint-capacity",
+                LicensedTo = "Capacity Operator",
+                Edition = HonuaEdition.Pro,
+                Capacity = new LicenseCapacityTerms
+                {
+                    MaxSustainedServingUnits = 8.5m,
+                    AnnualSurgeDays = 30,
+                    SurgeAllowance = LicenseCapacitySurgeAllowances.High
+                }
+            },
+            keyPair);
+
+        var snapshot = await ValidateAsync(result.EnvelopeJson, keyPair.PublicKeyTrustedKeySetting());
+
+        snapshot.ValidationState.Should().Be(LicenseValidationState.Valid);
+        snapshot.CapacityTerms.Should().BeEquivalentTo(new LicenseCapacityTerms
+        {
+            MaxSustainedServingUnits = 8.5m,
+            AnnualSurgeDays = 30,
+            SurgeAllowance = LicenseCapacitySurgeAllowances.High
+        });
+    }
+
+    [Theory]
+    [InlineData(0, 14, LicenseCapacitySurgeAllowances.Standard)]
+    [InlineData(-1, 14, LicenseCapacitySurgeAllowances.Standard)]
+    [InlineData(1, -1, LicenseCapacitySurgeAllowances.Standard)]
+    [InlineData(1, 14, "unknown")]
+    public void Mint_InvalidCapacityTerms_IsRejected(
+        double maxSustainedServingUnits,
+        int annualSurgeDays,
+        string surgeAllowance)
+    {
+        var keyPair = LicenseSigningKeyPair.Generate();
+        var request = new LicenseMintRequest
+        {
+            KeyId = KeyId,
+            LicenseId = "lic-mint-invalid-capacity",
+            LicensedTo = "Invalid Capacity Operator",
+            Edition = HonuaEdition.Pro,
+            Capacity = new LicenseCapacityTerms
+            {
+                MaxSustainedServingUnits = (decimal)maxSustainedServingUnits,
+                AnnualSurgeDays = annualSurgeDays,
+                SurgeAllowance = surgeAllowance
+            }
+        };
+
+        var act = () => LicenseMinter.Mint(request, keyPair);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [UnitTest]
+    public void MintCli_CapacityBandWithDefaults_UsesStandardSurgeTerms()
+    {
+        var options = ArgMap.Parse(["--capacity-units", "4.5"]);
+
+        var capacity = CliRunner.ParseCapacityTerms(options);
+
+        capacity.Should().BeEquivalentTo(new LicenseCapacityTerms
+        {
+            MaxSustainedServingUnits = 4.5m,
+            AnnualSurgeDays = 14,
+            SurgeAllowance = LicenseCapacitySurgeAllowances.Standard
+        });
+    }
+
+    [UnitTest]
+    public void MintCli_UnlimitedSurgeDays_PreservesNullAllowanceDays()
+    {
+        var options = ArgMap.Parse(
+        [
+            "--capacity-units", "12",
+            "--annual-surge-days", "unlimited",
+            "--surge-allowance", "unlimited"
+        ]);
+
+        var capacity = CliRunner.ParseCapacityTerms(options);
+
+        capacity.Should().NotBeNull();
+        capacity!.AnnualSurgeDays.Should().BeNull();
+        capacity.SurgeAllowance.Should().Be(LicenseCapacitySurgeAllowances.Unlimited);
+    }
+
+    [Theory]
+    [InlineData("--annual-surge-days", "14")]
+    [InlineData("--surge-allowance", "high")]
+    [InlineData("--capacity-units", "0")]
+    [InlineData("--capacity-units", "not-a-number")]
+    public void MintCli_IncompleteOrInvalidCapacityOptions_AreRejected(string option, string value)
+    {
+        var options = ArgMap.Parse([option, value]);
+
+        var act = () => CliRunner.ParseCapacityTerms(options);
+
+        act.Should().Throw<CliException>();
+    }
+
+    [UnitTest]
     public async Task Mint_TamperedPayload_RuntimeRejectsSignature()
     {
         var keyPair = LicenseSigningKeyPair.Generate();
