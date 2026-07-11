@@ -125,6 +125,65 @@ internal sealed class ImageServerCatalogQueryHandler
         }
     }
 
+    /// <summary>
+    /// Returns one raster catalog item as an Esri feature resource.
+    /// </summary>
+    public async Task<IResult> GetCatalogItemAsync(
+        HttpContext context,
+        int layerId,
+        long rasterId,
+        CancellationToken cancellationToken)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "get-catalog-item",
+            HonuaTelemetry.Protocols.ImageServer,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "get-catalog-item");
+
+        try
+        {
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            {
+                ImageServerLog.LayerNotFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
+            }
+
+            var query = new ImageServerCatalogQuery
+            {
+                ObjectIds = [rasterId],
+                Limit = 1,
+                ReturnGeometry = true,
+            };
+            var page = await _catalogReader.ReadAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            var item = page.Items.SingleOrDefault();
+            if (item is null)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Raster catalog item {rasterId} not found.");
+            }
+
+            var maskedFields = resolved.Resource is { } resource
+                ? await _fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false)
+                : ImmutableArray<string>.Empty;
+            var feature = BuildFeature(item, query, maskedFields);
+
+            scope.SetSuccess(1);
+            return Results.Json(feature, ImageServerJsonContext.Default.CatalogQueryFeature);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            ImageServerLog.CatalogQueryFailed(_logger, ex, layerId);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "An error occurred while retrieving the raster catalog item.");
+        }
+    }
+
     private static bool TryParseQuery(
         IReadOnlyDictionary<string, StringValues> values,
         out ImageServerCatalogQuery query,
