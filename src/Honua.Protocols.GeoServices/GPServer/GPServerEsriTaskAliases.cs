@@ -56,7 +56,7 @@ internal static class GPServerEsriTaskAliases
         ["proximity.euclidean-allocation"] = "EucAllocation",
 
         // Statistics
-        ["statistics.summarize"] = "SummaryStatistics",
+        ["statistics.summarize"] = "Statistics",
         ["statistics.frequency"] = "Frequency",
 
         // Surface (DEM-derived)
