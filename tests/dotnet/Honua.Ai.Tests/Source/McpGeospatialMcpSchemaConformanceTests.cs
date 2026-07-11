@@ -88,6 +88,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_operate_events"] = "operate_events",
             ["honua_platform_release_status"] = "platform_release_status",
             ["honua_deploy_operations"] = "deploy_operations",
+            ["honua_supported_operation_kinds"] = "supported_operation_kinds",
             ["honua_propose_rollback"] = "propose_rollback",
             // Honua extensions over the bare taxonomy (#1949): the standard models
             // entity resolution and capability discovery as CapabilityCatalog reads;
