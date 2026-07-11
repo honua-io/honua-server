@@ -102,7 +102,7 @@ Current rung by concern:
 | Aggregate operating posture | L0 | `GET /api/v1/operate/status` gives one server verdict and drill-down sources. |
 | Ops health history and cluster aggregation | L0 | `GET /api/v1/admin/observability/ops-health/history` stores bounded rollups for reconnect gap-fill and trend views. |
 | Alert dispatch dead letters | L3 (opt-in) | The `alert-dispatch-backlog` rule can auto-apply `alerts.redrive_dead_letters`; integration proof covers convergence, durable audit/outcome evidence, and the kill switch stopping the next evaluation. The default remains L2/ProposeOnly. |
-| Alert channel pause/resume | L2 foundation | The action fabric registers pause/resume actuators; automated channel selection remains a policy/finding concern. |
+| Alert channel pause/resume | L2 | Privacy-safe per-channel backlog health identifies a failing channel and offers a scoped `alerts.pause_channel` proposal. Pause remains approval-gated and non-auto-safe because it suppresses delivery; healthy channels continue dispatching. |
 | Database bounded-admission pressure | L2 where supported | The Postgres runtime-tunable admission gate can be lowered through a proposed `db.tune_bounded_admission` action when headroom exists. |
 | Deploy stuck in manual intervention | L2 when a prior revision is known | The finding can propose a rollback Deploy operation only when the previous revision is recorded. |
 | Platform release runtime divergence | L2 | For unpinned divergent serving targets, the finding proposes a Deploy operation to the declared platform release artifact. |

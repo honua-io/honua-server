@@ -8,18 +8,21 @@
       "label": "current",
       "ref": "HEAD",
       "channel": "preview",
+      "capabilities": { "migrationAutomation": true },
       "description": "The workflow trigger commit. GitHub Actions resolves this to github.sha before checkout so post-merge runs exercise the just-built server revision."
     },
     {
       "label": "trunk-previous-1",
       "ref": "f04c09c0b33a4986d017ea5e1f8c3f1481034fef",
       "channel": "preview",
+      "capabilities": { "migrationAutomation": false },
       "description": "Previous trunk commit retained until tagged server releases are available."
     },
     {
       "label": "trunk-previous-2",
       "ref": "297936162efab3a0d7cdd7e6e8d0031e018c0ecd",
       "channel": "preview",
+      "capabilities": { "migrationAutomation": false },
       "description": "Second previous trunk commit retained until tagged server releases are available."
     }
   ],
@@ -27,6 +30,7 @@
     {
       "label": "sdk-current",
       "channel": "preview",
+      "capabilities": { "migrationAutomation": true },
       "description": "Current trunk heads for the generated JavaScript/TypeScript, Python, and .NET SDKs.",
       "refs": {
         "js": "trunk",
@@ -37,6 +41,7 @@
     {
       "label": "sdk-previous-1",
       "channel": "preview",
+      "capabilities": { "migrationAutomation": false },
       "description": "Previous SDK set snapshot from each SDK trunk lineage.",
       "refs": {
         "js": "091d4b2b47c69721c5e6f55814fcdc0b05681637",
@@ -47,6 +52,7 @@
     {
       "label": "sdk-previous-2",
       "channel": "preview",
+      "capabilities": { "migrationAutomation": false },
       "description": "Second previous SDK set snapshot from each SDK trunk lineage.",
       "refs": {
         "js": "3416b28b43eddc40bb007c84e6ca9020a7b8b70f",

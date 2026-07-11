@@ -196,6 +196,49 @@ public sealed class OpsAlertDispatchView
     /// <summary>Gets the dead-lettered count, when a backlog snapshot is available.</summary>
     [JsonPropertyName("deadLetteredCount")]
     public long? DeadLetteredCount { get; init; }
+
+    /// <summary>Gets the retrying count, when a backlog snapshot is available.</summary>
+    [JsonPropertyName("retryingCount")]
+    public long? RetryingCount { get; init; }
+
+    /// <summary>Gets the age in whole seconds of the oldest active row, when one exists.</summary>
+    [JsonPropertyName("oldestItemAgeSeconds")]
+    public long? OldestItemAgeSeconds { get; init; }
+
+    /// <summary>
+    /// Gets privacy-safe active backlog health grouped by stable configured channel identifier.
+    /// Recipient, payload, error, credential, and secret data are never included.
+    /// </summary>
+    [JsonPropertyName("channels")]
+    public IReadOnlyList<OpsAlertDispatchChannelView> Channels { get; init; } = [];
+}
+
+/// <summary>Bounded active alert-dispatch health for one delivery channel.</summary>
+public sealed class OpsAlertDispatchChannelView
+{
+    /// <summary>Gets the canonical channel identifier.</summary>
+    [JsonPropertyName("channel")]
+    public required string Channel { get; init; }
+
+    /// <summary>Gets whether new delivery claims are paused for this channel.</summary>
+    [JsonPropertyName("paused")]
+    public required bool Paused { get; init; }
+
+    /// <summary>Gets rows pending or currently being processed.</summary>
+    [JsonPropertyName("pendingCount")]
+    public required long PendingCount { get; init; }
+
+    /// <summary>Gets failed rows scheduled for retry.</summary>
+    [JsonPropertyName("retryingCount")]
+    public required long RetryingCount { get; init; }
+
+    /// <summary>Gets rows that exhausted their retry budget.</summary>
+    [JsonPropertyName("deadLetteredCount")]
+    public required long DeadLetteredCount { get; init; }
+
+    /// <summary>Gets the age in whole seconds of the oldest non-delivered row.</summary>
+    [JsonPropertyName("oldestItemAgeSeconds")]
+    public required long OldestItemAgeSeconds { get; init; }
 }
 
 /// <summary>Coordinated-deploy readiness and platform-release skew summary view.</summary>
