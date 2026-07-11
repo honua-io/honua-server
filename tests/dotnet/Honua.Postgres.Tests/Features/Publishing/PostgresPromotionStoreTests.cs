@@ -114,10 +114,10 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
 
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IPublishedServiceStore) &&
-            descriptor.Lifetime == ServiceLifetime.Scoped);
+            descriptor.Lifetime == ServiceLifetime.Singleton);
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IDeploymentStore) &&
-            descriptor.Lifetime == ServiceLifetime.Scoped);
+            descriptor.Lifetime == ServiceLifetime.Singleton);
     }
 
     private static PublishedServiceRecord BuildPublishedService(string serviceId, string sourceId)

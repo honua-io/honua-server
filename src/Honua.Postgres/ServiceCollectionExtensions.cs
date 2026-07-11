@@ -301,11 +301,11 @@ internal static class ServiceCollectionExtensions
         // Canonical promotion lifecycle stores (#2482). Their presence causes the
         // server composition's existing honesty gate to advertise the hosted
         // published-service/deployment/map/app MCP resources on Postgres profiles.
-        services.AddScoped<IPublishedServiceStore>(serviceProvider =>
+        services.AddSingleton<IPublishedServiceStore>(serviceProvider =>
             new Features.Publishing.PostgresPublishedServiceStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
-        services.AddScoped<IDeploymentStore>(serviceProvider =>
+        services.AddSingleton<IDeploymentStore>(serviceProvider =>
             new Features.Publishing.PostgresDeploymentStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
