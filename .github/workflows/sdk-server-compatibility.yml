@@ -183,11 +183,19 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: tests/seed/base-schema.sql
+          # PortalCompat is additive and exists only in the current SDK/server
+          # pair. Preserve the historical compatibility cells by applying the
+          # Portal fixture only to the current x current proof (#2614).
+          post-seed-yaml: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && 'compatibility-source/tests/seed/portal-compat.yaml' || '' }}
           log-path: logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
         env:
           # Compatibility checks exercise server/SDK runtime behavior; security audit gates run separately.
           NuGetAudit: false
           WarningsNotAsErrors: NU1901;NU1902;NU1903;NU1904
+          # The Actions service network is HTTP-only. Production retains the
+          # secure RequireHttps=true default; this enables generateToken solely
+          # for the live compatibility proof.
+          Authentication__PortalToken__RequireHttps: 'false'
 
       - name: Checkout honua-sdk-js
         uses: actions/checkout@v7
@@ -260,6 +268,8 @@ jobs:
         id: compatibility
         continue-on-error: true
         shell: bash
+        env:
+          HONUA_SDK_PORTAL_COMPAT_ENABLED: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' }}
         run: |
           mkdir -p results
           set +e
@@ -509,22 +519,18 @@ jobs:
                 }
               },
               seed_profile: $seedProfile,
+              portal_seed_profile: (
+                if $serverLabel == "current" and $sdkLabel == "sdk-current"
+                then "tests/seed/portal-compat.yaml"
+                else null
+                end
+              ),
               service_id: $serviceId,
               layer_id: $layerId,
-              protocol_surfaces: [
-                "control-plane-admin",
-                "platform-http",
-                "geoservices-catalog",
-                "feature-server",
-                "ogc-api-features",
-                "migration-scan",
-                "arcgis-import",
-                "geoserver-dry-run",
-                "migration-evidence"
-              ],
-              protocol_surfaces_by_sdk: {
-                js: [
+              protocol_surfaces: (
+                [
                   "control-plane-admin",
+                  "platform-http",
                   "geoservices-catalog",
                   "feature-server",
                   "ogc-api-features",
@@ -532,7 +538,29 @@ jobs:
                   "arcgis-import",
                   "geoserver-dry-run",
                   "migration-evidence"
-                ],
+                ]
+                + if $serverLabel == "current" and $sdkLabel == "sdk-current"
+                  then ["portal-repoint"]
+                  else []
+                  end
+              ),
+              protocol_surfaces_by_sdk: {
+                js: (
+                  [
+                    "control-plane-admin",
+                    "geoservices-catalog",
+                    "feature-server",
+                    "ogc-api-features",
+                    "migration-scan",
+                    "arcgis-import",
+                    "geoserver-dry-run",
+                    "migration-evidence"
+                  ]
+                  + if $serverLabel == "current" and $sdkLabel == "sdk-current"
+                    then ["portal-repoint"]
+                    else []
+                    end
+                ),
                 python: [
                   "control-plane-admin",
                   "platform-http",
