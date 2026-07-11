@@ -128,6 +128,30 @@ public sealed class WorkflowGenerationServiceTests
     }
 
     [UnitTest]
+    public async Task GenerateAsync_OversizedPrompt_ReturnsErrorBeforeRegistryOrProviderCalls()
+    {
+        var registry = Substitute.For<IWorkflowNodeRegistry>();
+        var provider = Substitute.For<IWorkflowGenerationProvider>();
+        provider.ProviderId.Returns(WorkflowGenerationConfiguration.DeterministicProviderId);
+        provider.IsConfigured.Returns(true);
+        var service = CreateService(
+            enabled: true,
+            registry,
+            [provider],
+            maxPromptCharacters: 10);
+
+        var result = await service.GenerateAsync(new WorkflowGenerationRequest { Prompt = new string('x', 11) });
+
+        result.Status.Should().Be(WorkflowGenerationStatus.Error);
+        result.Rationale.Should().Contain(nameof(WorkflowGenerationConfiguration.MaxPromptCharacters));
+        result.Rationale.Should().NotContain(new string('x', 11));
+        _ = registry.DidNotReceive().GetSnapshotAsync(Arg.Any<CancellationToken>());
+        _ = provider.DidNotReceive().GenerateAsync(
+            Arg.Any<WorkflowGenerationProviderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task GetProvidersAsync_WhenEnabled_ReportsTheDeterministicProviderAsAvailable()
     {
         var service = CreateService(enabled: true);
@@ -150,12 +174,16 @@ public sealed class WorkflowGenerationServiceTests
         providers.Enabled.Should().BeFalse();
     }
 
-    private static WorkflowGenerationService CreateService(bool enabled)
+    private static WorkflowGenerationService CreateService(
+        bool enabled,
+        IWorkflowNodeRegistry? registry = null,
+        IReadOnlyList<IWorkflowGenerationProvider>? providers = null,
+        int maxPromptCharacters = 16_000)
     {
-        var registry = Substitute.For<IWorkflowNodeRegistry>();
+        registry ??= Substitute.For<IWorkflowNodeRegistry>();
         registry.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(_ => Snapshot());
 
-        var providers = new IWorkflowGenerationProvider[]
+        providers ??= new IWorkflowGenerationProvider[]
         {
             new DeterministicWorkflowGenerationProvider(
                 new WorkflowGenerationFixtureCatalog(),
@@ -165,7 +193,8 @@ public sealed class WorkflowGenerationServiceTests
         var configuration = Options.Create(new WorkflowGenerationConfiguration
         {
             Enabled = enabled,
-            DefaultProvider = WorkflowGenerationConfiguration.DeterministicProviderId
+            DefaultProvider = WorkflowGenerationConfiguration.DeterministicProviderId,
+            MaxPromptCharacters = maxPromptCharacters
         });
 
         return new WorkflowGenerationService(

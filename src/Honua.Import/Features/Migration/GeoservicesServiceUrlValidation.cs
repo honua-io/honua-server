@@ -52,7 +52,7 @@ internal static class GeoservicesServiceUrlValidation
     /// <summary>
     /// Validates the service URL, optionally enforcing a host-suffix allowlist.
     /// When <paramref name="allowedHostSuffixes"/> is non-null and non-empty, the request host
-    /// must end with at least one of the listed suffixes (e.g. ".arcgisonline.com").
+    /// must exactly match, or be a subdomain of, at least one listed suffix (e.g. ".arcgisonline.com").
     /// An empty allowlist rejects all hosts. A null allowlist allows any public host.
     /// </summary>
     public static Task<GeoservicesServiceUrlValidationResult> ValidateAsync(
@@ -100,8 +100,8 @@ internal static class GeoservicesServiceUrlValidation
         }
 
         // PA-153: optional per-deployment host allowlist. When configured, only URLs whose host
-        // ends with one of the listed suffixes are accepted. This prevents credentialed SSRF to
-        // arbitrary public internet hosts if admin credentials are compromised.
+        // exactly matches a listed suffix, or is below it on a DNS label boundary, are accepted.
+        // This prevents credentialed SSRF to arbitrary public internet hosts if admin credentials are compromised.
         if (allowedHostSuffixes is not null && !IsHostAllowed(uri.Host, allowedHostSuffixes))
         {
             return GeoservicesServiceUrlValidationResult.Failure(DisallowedHostMessage);
@@ -117,17 +117,22 @@ internal static class GeoservicesServiceUrlValidation
             return false;
         }
 
-        var lower = host.ToLowerInvariant();
+        var normalizedHost = NormalizeHostAllowlistToken(host);
+        if (normalizedHost.Length == 0)
+        {
+            return false;
+        }
+
         foreach (var suffix in allowedSuffixes)
         {
-            if (string.IsNullOrWhiteSpace(suffix))
+            var normalizedSuffix = NormalizeHostAllowlistToken(suffix);
+            if (normalizedSuffix.Length == 0)
             {
                 continue;
             }
 
-            var normalizedSuffix = suffix.ToLowerInvariant();
-            if (lower == normalizedSuffix || lower.EndsWith("." + normalizedSuffix, StringComparison.Ordinal)
-                || lower.EndsWith(normalizedSuffix, StringComparison.Ordinal))
+            if (normalizedHost == normalizedSuffix ||
+                normalizedHost.EndsWith("." + normalizedSuffix, StringComparison.Ordinal))
             {
                 return true;
             }
@@ -135,6 +140,11 @@ internal static class GeoservicesServiceUrlValidation
 
         return false;
     }
+
+    private static string NormalizeHostAllowlistToken(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().Trim('.').ToLowerInvariant();
 
     private static bool IsServiceRootUrl(Uri uri)
     {
