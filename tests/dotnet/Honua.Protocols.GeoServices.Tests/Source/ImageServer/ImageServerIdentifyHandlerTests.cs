@@ -28,6 +28,7 @@ public class ImageServerIdentifyHandlerTests
 {
     private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
+    private readonly IZarrPointSliceReader _zarrPointSliceReader = Substitute.For<IZarrPointSliceReader>();
     private readonly ImageServerIdentifyHandler _handler;
 
     public ImageServerIdentifyHandlerTests()
@@ -35,6 +36,7 @@ public class ImageServerIdentifyHandlerTests
         _handler = new ImageServerIdentifyHandler(
             _graphProvider,
             _rasterStore,
+            _zarrPointSliceReader,
             NullLogger<ImageServerIdentifyHandler>.Instance);
     }
 
@@ -462,6 +464,90 @@ public class ImageServerIdentifyHandlerTests
             1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(),
             Arg.Is<RasterIdentifyRendering?>(r => r == null),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_WithMultidimensionalDefinition_ReturnsCanonicalSliceValue()
+    {
+        _zarrPointSliceReader.ReadAsync(
+                1, 10, 20, 4326, Arg.Any<IReadOnlyList<ZarrPointSliceSelection>>(), Arg.Any<CancellationToken>())
+            .Returns(new ZarrPointSliceReadResult(
+                ZarrPointSliceReadStatus.Success, 1022, "temperature", null));
+        var request = new IdentifyRequest
+        {
+            Geometry = "10,20",
+            GeometryType = "esriGeometryPoint",
+            Sr = "4326",
+            MultidimensionalDefinition =
+                "[{\"variableName\":\"temperature\",\"dimensionName\":\"elevation\",\"values\":[333.3333]}]",
+        };
+        var context = CreateImageServerContext();
+
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(context.Response.Body);
+        json.RootElement.GetProperty("value").GetString().Should().Be("1022");
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(default, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_WithUnavailableMultidimensionalReader_ReturnsNotImplemented()
+    {
+        _zarrPointSliceReader.ReadAsync(
+                1, 10, 20, null, Arg.Any<IReadOnlyList<ZarrPointSliceSelection>>(), Arg.Any<CancellationToken>())
+            .Returns(new ZarrPointSliceReadResult(
+                ZarrPointSliceReadStatus.ReaderUnavailable,
+                null,
+                "temperature",
+                "The storage reader for this multidimensional coverage is not configured."));
+        var request = new IdentifyRequest
+        {
+            Geometry = "10,20",
+            MultidimensionalDefinition = "[{\"dimensionName\":\"elevation\",\"values\":[10]}]",
+        };
+        var context = CreateImageServerContext();
+
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(context.Response.Body);
+        json.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+            .Should().Be(StatusCodes.Status500InternalServerError);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_WithOutOfRangeSliceCoordinate_ReturnsBadRequest()
+    {
+        _zarrPointSliceReader.ReadAsync(
+                1, 10, 20, null, Arg.Any<IReadOnlyList<ZarrPointSliceSelection>>(), Arg.Any<CancellationToken>())
+            .Returns(new ZarrPointSliceReadResult(
+                ZarrPointSliceReadStatus.InvalidSelection,
+                null,
+                "temperature",
+                "The requested coordinate is outside the coverage axis 'elevation'."));
+        var request = new IdentifyRequest
+        {
+            Geometry = "10,20",
+            MultidimensionalDefinition = "[{\"dimensionName\":\"elevation\",\"values\":[9999]}]",
+        };
+        var context = CreateImageServerContext();
+
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(context.Response.Body);
+        json.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+            .Should().Be(StatusCodes.Status400BadRequest);
     }
 
     private static DefaultHttpContext CreateImageServerContext()
