@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/docs/developer/sdk-compatibility-versions.json"
 MATRIX_BUILDER="$ROOT_DIR/scripts/ci/build-sdk-compatibility-matrix.sh"
 RUNNER="$ROOT_DIR/scripts/ci/run-sdk-server-compatibility.sh"
+REPORTER="$ROOT_DIR/scripts/ci/generate-sdk-compatibility-table.sh"
 WORKFLOW="$ROOT_DIR/.github/workflows/sdk-server-compatibility.yml"
 HEAD_SHA="1111111111111111111111111111111111111111"
 TMP_DIR="$(mktemp -d)"
@@ -39,6 +40,36 @@ jq -e --arg override "$override_sha" '
   and .include[0].server_checkout_ref == $override
   and .include[0].migration_automation_required == true
 ' <<<"$current_matrix" >/dev/null || fail "current_only must retain one strict current x current cell"
+
+printf '%s\n' "$current_matrix" > "$TMP_DIR/current-matrix.json"
+mkdir -p "$TMP_DIR/current-results/cell"
+jq -n '{
+  server_label: "current",
+  sdk_label: "sdk-current",
+  passed: true,
+  exit_code: 0
+}' > "$TMP_DIR/current-results/cell/compat-result.json"
+bash "$REPORTER" "$MANIFEST" "$TMP_DIR/current-results" "$TMP_DIR/current-report" "$TMP_DIR/current-matrix.json"
+jq -e '
+  .total_cells == 1
+  and .supported_cells == 1
+  and .passed == true
+  and (.regressions | length) == 0
+  and ([.cells[] | select(.status == "not-run")] | length) == 8
+' "$TMP_DIR/current-report/sdk-compatibility-summary.json" >/dev/null \
+  || fail "current_only report must evaluate only the selected cell"
+grep -Fq '| `current` | PASS | NOT RUN | NOT RUN |' "$TMP_DIR/current-report/sdk-compatibility-matrix.md" \
+  || fail "current_only table must distinguish intentionally unrun cells"
+
+bash "$REPORTER" "$MANIFEST" "$TMP_DIR/empty-results" "$TMP_DIR/full-report"
+jq -e '
+  .total_cells == 9
+  and .supported_cells == 9
+  and .passed == false
+  and (.regressions | length) == 9
+  and ([.cells[] | select(.status == "not-run")] | length) == 0
+' "$TMP_DIR/full-report/sdk-compatibility-summary.json" >/dev/null \
+  || fail "full report must retain complete 3x3 enforcement"
 
 historical_results="$TMP_DIR/historical-results"
 SDK_COMPATIBILITY_CLASSIFY_ONLY=true \

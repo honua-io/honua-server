@@ -622,12 +622,16 @@ jobs:
 
       - name: Generate compatibility table
         shell: bash
+        env:
+          SELECTED_MATRIX: ${{ needs.load-matrix.outputs.matrix }}
         run: |
           set -euo pipefail
+          printf '%s\n' "$SELECTED_MATRIX" > sdk-compat-selected-matrix.json
           bash scripts/ci/generate-sdk-compatibility-table.sh \
             "$SDK_COMPATIBILITY_MANIFEST" \
             sdk-compat-results \
-            sdk-compat-report
+            sdk-compat-report \
+            sdk-compat-selected-matrix.json
           cat sdk-compat-report/sdk-compatibility-matrix.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload SDK compatibility table
