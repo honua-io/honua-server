@@ -59,8 +59,13 @@ public sealed class PgRoutingFixture : IAsyncLifetime
             name          TEXT,
             cost          DOUBLE PRECISION,
             reverse_cost  DOUBLE PRECISION,
+            walking_cost  DOUBLE PRECISION,
+            walking_reverse_cost DOUBLE PRECISION,
             the_geom      geometry(LineString, 4326)
         );
+
+        ALTER TABLE public.ways ADD COLUMN IF NOT EXISTS walking_cost DOUBLE PRECISION;
+        ALTER TABLE public.ways ADD COLUMN IF NOT EXISTS walking_reverse_cost DOUBLE PRECISION;
 
         CREATE INDEX IF NOT EXISTS idx_ways_the_geom_gist
             ON public.ways USING GIST (the_geom);
@@ -84,19 +89,20 @@ public sealed class PgRoutingFixture : IAsyncLifetime
          (9, ST_SetSRID(ST_MakePoint(0.02, 0.02), 4326))
         ON CONFLICT (id) DO NOTHING;
 
-        INSERT INTO public.ways (gid, source, target, name, cost, reverse_cost, the_geom) VALUES
-         (1,  1, 2, 'h1', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.00), ST_MakePoint(0.01,0.00)),4326)),
-         (2,  2, 3, 'h2', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.00), ST_MakePoint(0.02,0.00)),4326)),
-         (3,  4, 5, 'h3', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.01), ST_MakePoint(0.01,0.01)),4326)),
-         (4,  5, 6, 'h4', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.01), ST_MakePoint(0.02,0.01)),4326)),
-         (5,  7, 8, 'h5', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.02), ST_MakePoint(0.01,0.02)),4326)),
-         (6,  8, 9, 'h6', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.02), ST_MakePoint(0.02,0.02)),4326)),
-         (7,  1, 4, 'v1', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.00), ST_MakePoint(0.00,0.01)),4326)),
-         (8,  4, 7, 'v2', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.01), ST_MakePoint(0.00,0.02)),4326)),
-         (9,  2, 5, 'v3', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.00), ST_MakePoint(0.01,0.01)),4326)),
-         (10, 5, 8, 'v4', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.01), ST_MakePoint(0.01,0.02)),4326)),
-         (11, 3, 6, 'v5', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.02,0.00), ST_MakePoint(0.02,0.01)),4326)),
-         (12, 6, 9, 'v6', 1, 1, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.02,0.01), ST_MakePoint(0.02,0.02)),4326))
+        INSERT INTO public.ways
+            (gid, source, target, name, cost, reverse_cost, walking_cost, walking_reverse_cost, the_geom) VALUES
+         (1,  1, 2, 'h1', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.00), ST_MakePoint(0.01,0.00)),4326)),
+         (2,  2, 3, 'h2', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.00), ST_MakePoint(0.02,0.00)),4326)),
+         (3,  4, 5, 'h3', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.01), ST_MakePoint(0.01,0.01)),4326)),
+         (4,  5, 6, 'h4', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.01), ST_MakePoint(0.02,0.01)),4326)),
+         (5,  7, 8, 'h5', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.02), ST_MakePoint(0.01,0.02)),4326)),
+         (6,  8, 9, 'h6', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.02), ST_MakePoint(0.02,0.02)),4326)),
+         (7,  1, 4, 'v1', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.00), ST_MakePoint(0.00,0.01)),4326)),
+         (8,  4, 7, 'v2', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.00,0.01), ST_MakePoint(0.00,0.02)),4326)),
+         (9,  2, 5, 'v3', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.00), ST_MakePoint(0.01,0.01)),4326)),
+         (10, 5, 8, 'v4', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.01,0.01), ST_MakePoint(0.01,0.02)),4326)),
+         (11, 3, 6, 'v5', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.02,0.00), ST_MakePoint(0.02,0.01)),4326)),
+         (12, 6, 9, 'v6', 1, 1, 2, 2, ST_SetSRID(ST_MakeLine(ST_MakePoint(0.02,0.01), ST_MakePoint(0.02,0.02)),4326))
         ON CONFLICT (gid) DO NOTHING;
         """;
 
