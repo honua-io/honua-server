@@ -867,16 +867,102 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
-    public async Task GetJob_WithoutRecordedSubmitter_RemainsAccessible()
+    public async Task GetJob_WithoutRecordedSubmitter_DeniedToNonAdmin()
     {
-        // Jobs submitted while authentication is disabled record no owner and
-        // keep the coarse Job-grant behavior.
-        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running);
+        // #2753: an ownerless job (no recorded submitter) must NOT be readable by an
+        // ordinary Job.Read holder — that was the null-owner read bypass. Surfaced as
+        // not-found, matching the cross-principal case.
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running, owner: null);
         _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
 
-        var result = await _sut.GetJobAsync("job-1", CreatePrincipal());
+        var act = async () => await _sut.GetJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task GetJob_WithoutRecordedSubmitter_AdminCanRead()
+    {
+        // #2753: admin retains full visibility, including ownerless jobs.
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running, owner: null);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var admin = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "ops-admin"), new Claim(ClaimTypes.Role, "admin")], "Test"));
+
+        var result = await _sut.GetJobAsync("job-1", admin);
 
         result.OperationId.Should().Be("job-1");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
+    public async Task ListJobs_NonAdmin_ReturnsOnlyCallersOwnJobs()
+    {
+        // #2753: a Job.Read holder must see only its OWN jobs. The store page mixes the
+        // caller's job, another owner's job, and an ownerless job; only the caller's own
+        // job survives the ownership filter (ownerless is admin-only).
+        _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobPage
+            {
+                Items =
+                [
+                    CreateOwnedJobRecord("job-mine", ExecutionJobStatus.Running, owner: "test-user"),
+                    CreateOwnedJobRecord("job-theirs", ExecutionJobStatus.Running, owner: "other-user"),
+                    CreateJobRecord("job-ownerless", ExecutionJobStatus.Running, owner: null)
+                ]
+            });
+
+        var page = await _sut.ListJobsAsync(new GeoprocessingJobListFilter(), CreatePrincipal());
+
+        page.Items.Select(j => j.OperationId).Should().Equal("job-mine");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
+    public async Task ListJobs_Admin_SeesAllJobsIncludingOwnerless()
+    {
+        // #2753: admin retains full visibility across all owners and ownerless jobs.
+        _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobPage
+            {
+                Items =
+                [
+                    CreateOwnedJobRecord("job-a", ExecutionJobStatus.Running, owner: "test-user"),
+                    CreateOwnedJobRecord("job-b", ExecutionJobStatus.Running, owner: "other-user"),
+                    CreateJobRecord("job-ownerless", ExecutionJobStatus.Running, owner: null)
+                ]
+            });
+
+        var admin = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "ops-admin"), new Claim(ClaimTypes.Role, "admin")], "Test"));
+
+        var page = await _sut.ListJobsAsync(new GeoprocessingJobListFilter(), admin);
+
+        page.Items.Select(j => j.OperationId).Should()
+            .BeEquivalentTo("job-a", "job-b", "job-ownerless");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
+    public async Task ListJobs_NonAdmin_OwnerlessJobExcluded()
+    {
+        // #2753: the null-owner read bypass — an ownerless job must not leak into a
+        // non-admin's listing even when it is the only job.
+        _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobPage
+            {
+                Items = [CreateJobRecord("job-ownerless", ExecutionJobStatus.Running, owner: null)]
+            });
+
+        var page = await _sut.ListJobsAsync(new GeoprocessingJobListFilter(), CreatePrincipal());
+
+        page.Items.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -2885,16 +2971,21 @@ public sealed class GeoprocessingJobServiceTests
         ]
     };
 
+    // Jobs default to being owned by the "test-user" principal that CreatePrincipal()
+    // returns, so ownership-scoped operations (get/results/cancel) succeed for the
+    // conventional caller. Pass owner: null to exercise the ownerless (admin-only) path.
     private static ExecutionJobRecord CreateJobRecord(
         string jobId,
         ExecutionJobStatus status,
         string backend = LocalBatchComputeBackend.BackendId,
-        BatchComputeTargetKind targetKind = BatchComputeTargetKind.KubernetesJob) => new()
+        BatchComputeTargetKind targetKind = BatchComputeTargetKind.KubernetesJob,
+        string? owner = "test-user") => new()
         {
             OperationId = jobId,
             Status = status,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
+            Audit = new OperationAuditInfo { RequestedBy = owner },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,

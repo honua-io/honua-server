@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -149,6 +150,16 @@ internal static class JobEndpoints
                 continue;
             }
 
+            // #2753: scope the listing to the caller's OWN jobs (admin sees all). The
+            // per-job RBAC check above authorizes the operation class but not ownership,
+            // so without this a coarse Job.Read holder could enumerate other owners'
+            // jobs. Mirrors GeoprocessingJobService.IsJobReadable, including the rule
+            // that an ownerless job is visible only to admin.
+            if (!IsJobReadableByCaller(job, context.User))
+            {
+                continue;
+            }
+
             statusInfosBuilder.Add(OgcProcessesConversionHelpers.ToOgcStatusInfo(
                 job, ResolveOgcProcessId(job), baseUrl));
             if (statusInfosBuilder.Count >= effectiveLimit)
@@ -173,6 +184,7 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
+        [FromServices] IGeoprocessingJobService jobService,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjobstatus");
@@ -223,6 +235,31 @@ internal static class JobEndpoints
         {
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
             return ProcessEndpoints.FormatOgcAuthError(authDecision);
+        }
+
+        // #2753: the coarse Job.Read grant above authorizes the operation class but does
+        // NOT bind the record to its submitter. Route through the ownership-enforcing
+        // service path (the same GetJobAsync/EnsureJobOwnership the results endpoint uses)
+        // so a non-owner non-admin — or an ownerless-job reader — gets a not-found (404)
+        // rather than another owner's job status.
+        try
+        {
+            job = await jobService.GetJobAsync(jobId, context.User, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (GeoprocessingNotFoundException)
+        {
+            OgcProcessesLog.JobNotFound(logger, jobId);
+            return JobNotFoundResult(jobId);
+        }
+        catch (GeoprocessingAuthorizationException authEx)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authEx.RequiresAuthentication);
+        }
+        catch (GeoprocessingStoreUnavailableException)
+        {
+            OgcProcessesLog.JobStoreUnavailable(logger);
+            return JobStoreUnavailableResult();
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -797,6 +834,25 @@ internal static class JobEndpoints
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         return BuildDismissOutcomeResult(baseUrl, jobId, job);
+    }
+
+    /// <summary>
+    /// #2753: per-job ownership predicate for the OGC job list, mirroring
+    /// <c>GeoprocessingJobService.IsJobReadable</c>. A job is readable when the caller is
+    /// its submitter or an admin; an ownerless job (no recorded submitter) is readable
+    /// only by admin so a coarse <c>Job.Read</c> holder cannot enumerate other owners'
+    /// (or unattributed) jobs.
+    /// </summary>
+    private static bool IsJobReadableByCaller(ExecutionJobRecord job, ClaimsPrincipal principal)
+    {
+        var owner = job.Audit.RequestedBy;
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            return principal.IsInRole("admin");
+        }
+
+        return string.Equals(owner, principal.Identity?.Name, StringComparison.Ordinal)
+            || principal.IsInRole("admin");
     }
 
     private static IResult JobStoreUnavailableResult() => OgcProcessesResults.StoreUnavailable();

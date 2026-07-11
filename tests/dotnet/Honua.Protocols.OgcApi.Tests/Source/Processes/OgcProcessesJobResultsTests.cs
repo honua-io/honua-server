@@ -223,6 +223,138 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
 }
 
 /// <summary>
+/// #2753 IDOR regression: GET /ogc/processes/jobs/{jobId} must enforce per-job
+/// ownership through the shared service path. A job that exists in the store (so it
+/// clears the coarse Job.Read gate and the geoprocessing-kind check) but whose
+/// ownership check denies the caller must surface as a 404 — not a 200 leaking the
+/// other owner's job status.
+/// </summary>
+[Collection("Database.OgcApiData")]
+[Protocol(TestProtocols.OgcApiProcesses)]
+public sealed class OgcProcessesJobStatusOwnershipTests : IClassFixture<OgcProcessesJobStatusOwnershipTestsFixture>
+{
+    private const string JobId = "ogc-gp-foreign-job";
+
+    private readonly WebAppFixture _fixture;
+
+    public OgcProcessesJobStatusOwnershipTests(OgcProcessesJobStatusOwnershipTestsFixture fixture)
+        => _fixture = fixture.App;
+
+    [IntegrationTest]
+    [Operation(Operations.JobStatus)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}")]
+    public async Task JobStatus_NonOwnedJob_ReturnsNotFound()
+    {
+        using var response = await _fixture.Client.GetAsync($"/ogc/processes/jobs/{JobId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "the ownership-enforcing service path denies a non-owned job, and the endpoint " +
+            "must map that denial to a not-found rather than leaking the job status (#2753)");
+    }
+}
+
+/// <summary>
+/// Fixture for <see cref="OgcProcessesJobStatusOwnershipTests"/>: the store returns a
+/// geoprocessing job so the endpoint reaches the ownership check, but the job service's
+/// ownership-enforcing GetJobAsync denies it (as the real service does for a non-owner).
+/// </summary>
+public sealed class OgcProcessesJobStatusOwnershipTestsFixture : IAsyncLifetime
+{
+    private const string JobId = "ogc-gp-foreign-job";
+
+    public WebAppFixture App { get; }
+
+    public OgcProcessesJobStatusOwnershipTestsFixture()
+    {
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(CreateForeignJob());
+
+        App = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.AddSingleton(jobStore);
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(new OwnershipDenyingJobService());
+            });
+    }
+
+    public Task InitializeAsync() => App.InitializeAsync();
+
+    public Task DisposeAsync() => App.DisposeAsync();
+
+    private static ExecutionJobRecord CreateForeignJob()
+        => new()
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Audit = new OperationAuditInfo { RequestedBy = "some-other-owner" },
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geometry-buffer"
+            }
+        };
+
+    /// <summary>
+    /// An <see cref="IGeoprocessingJobService"/> whose ownership-enforcing GetJobAsync
+    /// denies every caller (surfaced as not-found, exactly as the real service does for a
+    /// non-owner), so the endpoint's deny→404 mapping is exercised end to end.
+    /// </summary>
+    private sealed class OwnershipDenyingJobService : IGeoprocessingJobService
+    {
+        public Task<ExecutionJobRecord> GetJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
+
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> SubmitJobAsync(
+            AnalysisPlan plan,
+            string? idempotencyKey,
+            ClaimsPrincipal principal,
+            IReadOnlyDictionary<string, string>? protocolMetadata = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<AnalysisResultPackage> GetJobResultsAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task CancelJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+}
+
+/// <summary>
 /// Integration coverage for the OGC API Processes GET /jobs/{jobId}/results failed-job case.
 /// PA-205: results for a failed job must use a registered OGC exception type URI, not about:blank.
 /// </summary>
