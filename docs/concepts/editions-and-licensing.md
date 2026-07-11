@@ -99,6 +99,9 @@ dotnet run --project src/Honua.LicenseMint -- \
        --licensed-to "Acme Corp" \
        --edition Pro \
        --expires 365d \
+       --capacity-units 4 \
+       --annual-surge-days 14 \
+       --surge-allowance standard \
        --private-key-file signing.key \
        --out acme.honua-license.json
 ```
@@ -109,6 +112,10 @@ dotnet run --project src/Honua.LicenseMint -- \
 - `--expires` accepts an RFC 3339 timestamp or a duration like `365d`. Omit it for a
   perpetual license. BYOL files are typically ≤ 1 year; marketplace-issued files ≤ 90 days
   (ADR-0033).
+- `--capacity-units` signs the maximum sustained serving-unit band into the license.
+  When present, `--annual-surge-days` defaults to `14` (or accepts `unlimited`) and
+  `--surge-allowance` defaults to `standard` (`high` and `unlimited` are also valid).
+  Omit all three options only when the commercial license is intentionally unbanded.
 - The signing key can also be supplied inline with `--private-key <base64url>` or via the
   `HONUA_LICENSE_SIGNING_KEY` environment variable.
 
