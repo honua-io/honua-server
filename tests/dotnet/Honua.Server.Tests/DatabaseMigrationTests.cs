@@ -147,6 +147,22 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             """;
         var indexesExist = (int)(long)(await indexesCmd.ExecuteScalarAsync())!;
         indexesExist.Should().Be(9, "performance indexes should exist");
+
+        await using var topologyGenerationCmd = connection.CreateCommand();
+        topologyGenerationCmd.CommandText = """
+            SELECT COUNT(*)::int
+            FROM honua.network_topology_generations
+            WHERE dataset_id = 'default'
+              AND generation = 1
+              AND state = 'active'
+              AND row_version = 1
+              AND edge_table = 'public.ways'
+              AND vertex_table = 'public.ways_vertices_pgr'
+              AND activated_at IS NOT NULL
+            """;
+        var activeTopologyGenerations = (int)(await topologyGenerationCmd.ExecuteScalarAsync())!;
+        activeTopologyGenerations.Should().Be(1,
+            "a fresh database should preserve the default solve mapping as one active generation");
     }
 
     [Fact]
@@ -176,6 +192,72 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
 
         firstResult.Scripts.Should().HaveCountGreaterThan(0, "first run should apply scripts");
         secondResult.Scripts.Should().BeEmpty("second run should apply no scripts");
+    }
+
+    [Fact]
+    public async Task NetworkTopologyGenerationMigration_ExistingRegistry_BackfillsOnceAndIsRestartSafe()
+    {
+        await using var connection = await OpenSchemaConnectionAsync();
+        await using (var arrange = connection.CreateCommand())
+        {
+            arrange.CommandText = """
+                CREATE SCHEMA honua;
+                CREATE TABLE honua.network_datasets (
+                    id TEXT PRIMARY KEY,
+                    edge_table TEXT NOT NULL,
+                    vertex_table TEXT NOT NULL,
+                    srid INTEGER NOT NULL,
+                    topology_version INTEGER NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL
+                );
+                INSERT INTO honua.network_datasets
+                    (id, edge_table, vertex_table, srid, topology_version, created_at, updated_at)
+                VALUES
+                    ('island', 'routing.island_edges', 'routing.island_vertices', 3857, 12,
+                     '2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z');
+                """;
+            await arrange.ExecuteNonQueryAsync();
+        }
+
+        var migrationSql = await ReadEmbeddedMigrationAsync("084_CreateNetworkTopologyGenerations.sql");
+        await using (var apply = connection.CreateCommand())
+        {
+            apply.CommandText = migrationSql;
+            await apply.ExecuteNonQueryAsync();
+            await apply.ExecuteNonQueryAsync();
+        }
+
+        await using (var backfill = connection.CreateCommand())
+        {
+            backfill.CommandText = """
+                SELECT generation, source_revision, state, row_version,
+                       edge_table, vertex_table, srid, COUNT(*) OVER ()
+                FROM honua.network_topology_generations
+                WHERE dataset_id = 'island'
+                """;
+            await using var reader = await backfill.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(0).Should().Be(12);
+            reader.GetInt64(1).Should().Be(0);
+            reader.GetString(2).Should().Be("active");
+            reader.GetInt64(3).Should().Be(1);
+            reader.GetString(4).Should().Be("routing.island_edges");
+            reader.GetString(5).Should().Be("routing.island_vertices");
+            reader.GetInt32(6).Should().Be(3857);
+            reader.GetInt64(7).Should().Be(1, "re-applying the migration must not allocate another generation");
+        }
+
+        await using var duplicateActive = connection.CreateCommand();
+        duplicateActive.CommandText = """
+            INSERT INTO honua.network_topology_generations
+                (dataset_id, generation, state, edge_table, vertex_table, srid, activated_at)
+            VALUES
+                ('island', 13, 'active', 'routing.next_edges', 'routing.next_vertices', 3857, now())
+            """;
+        var exception = await Assert.ThrowsAsync<Npgsql.PostgresException>(
+            () => duplicateActive.ExecuteNonQueryAsync());
+        exception.SqlState.Should().Be(Npgsql.PostgresErrorCodes.UniqueViolation);
     }
 
     [Fact]
