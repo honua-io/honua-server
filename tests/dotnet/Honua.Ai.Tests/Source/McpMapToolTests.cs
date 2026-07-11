@@ -303,7 +303,7 @@ public sealed class McpMapToolTests
                         {
                             Id = id,
                             Geometry = [0x01],
-                            Attributes = ImmutableDictionary<string, object?>.Empty.Add("idx", id)
+                            Attributes = ImmutableDictionary<string, object?>.Empty.Add("OBJECTID", id)
                         })
                         .ToImmutableArray()
                 };
@@ -334,7 +334,7 @@ public sealed class McpMapToolTests
             StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
             foreach (var feature in structured.GetProperty("features").EnumerateArray())
             {
-                seenIds.Add(feature.GetProperty("id").GetInt64());
+                seenIds.Add(feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64());
             }
 
             if (!structured.GetProperty("exceededTransferLimit").GetBoolean())
@@ -370,6 +370,34 @@ public sealed class McpMapToolTests
         structured.GetProperty("code").GetString().Should().Be("invalid_argument");
         structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("ValidationFailed");
         structured.GetProperty("error").GetProperty("violations").GetArrayLength().Should().BeGreaterThan(0);
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_MissingLayerId_ReturnsCertificationErrorShape()
+    {
+        // This is the exact invalid-argument shape used by the external MCP
+        // certification error-shape contract: serviceId is present and layerId
+        // is omitted. It must remain a structured tool error, not -32602.
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices()),
+            ToolCall("query-cert-invalid-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}"}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("code").GetString().Should().Be("invalid_argument");
+        var error = structured.GetProperty("error");
+        error.GetProperty("kind").GetString().Should().Be("ValidationFailed");
+        error.GetProperty("violations").GetArrayLength().Should().BeGreaterThan(0);
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
     }
 
