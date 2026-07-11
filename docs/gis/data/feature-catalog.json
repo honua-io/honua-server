@@ -17375,7 +17375,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_ProviderWithoutStraightLineSupport_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_ProviderWithoutSupport_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_StraightLines_ReturnsGeometryInRequestedSpatialReference",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_TrueShape_ReturnsPrecise400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_TwoByTwo_ReturnsRankedLines"
       ],
       "proof_ledger_surface": "naserver-routing",

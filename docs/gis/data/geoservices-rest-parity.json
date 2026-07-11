@@ -2860,14 +2860,14 @@
         "Route solve (GET + POST)",
         "ServiceArea solveServiceArea",
         "ClosestFacility solveClosestFacility (canonical cost-matrix solver)",
-        "ODCostMatrix solveODCostMatrix (cost-only)",
+        "ODCostMatrix solveODCostMatrix (cost-only + straight lines)",
         "LocationAllocation solveLocationAllocation (minimize-impedance + maximize-coverage)",
         "Point/line/polygon barriers (pgRouting edge exclusion)",
         "travelMode parsing and capability validation (driving routable)",
         "Addressable network-dataset registry (Phase 0 of editing)"
       ],
       "knownGaps": [
-        "OD cost matrix line geometry (cost-only output today)",
+        "OD cost matrix true-shape network geometry (straight lines are implemented)",
         "Location-allocation problem types beyond minimize-impedance/maximize-coverage",
         "non-driving travel modes (single stored cost weight)",
         "network-dataset editing (Phase 2: edge/vertex CRUD + topology rebuild)"
@@ -2963,7 +2963,7 @@
             "honuaEndpoints": [
               "POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix"
             ],
-            "notes": "Computes ranked origin/destination impedance cells through the canonical routing provider. Cost-only output is implemented; line geometry remains deferred."
+            "notes": "Computes ranked origin/destination impedance cells through the canonical routing provider. esriNAODOutputNoLines preserves the cost-only fast path; esriNAODOutputStraightLines returns two-vertex polylines in outSR (the pgRouting provider batch-transforms all cells through PostGIS in one query). Providers without straight-line capability and true-shape modes return precise GeoServices 400 responses."
           },
           {
             "name": "LocationAllocation solveLocationAllocation",
