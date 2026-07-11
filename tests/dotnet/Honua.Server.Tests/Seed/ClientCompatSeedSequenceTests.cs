@@ -111,6 +111,15 @@ public sealed class ClientCompatSeedSequenceTests
                 "layer_id",
                 "the features table is shared across layers and reads must be constrained by layer_id");
             options.GetProperty("primaryKeyColumn").GetString().Should().Be("objectid");
+
+            var resource = document.RootElement
+                .GetProperty("resources")
+                .EnumerateArray()
+                .Single(r => r.GetProperty("metadata").GetProperty("id").GetString() == "res-layer-0");
+
+            resource.GetProperty("temporal").GetProperty("startTimeField").GetString().Should().Be(
+                "created_at",
+                "the canonical client-compat layer must opt into FeatureServer time filtering (#2643)");
         }
     }
 
