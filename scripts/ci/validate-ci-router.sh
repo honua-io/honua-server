@@ -74,7 +74,10 @@ jq -e '
   || { echo "::error::a targeted_override_prefixes entry references an unknown shard name" >&2; exit 1; }
 
 echo "Checking shell script syntax..."
-bash -n scripts/ci/*.sh
+scripts/ci/validate-shell-syntax.sh
+
+echo "Checking local pre-PR change routing..."
+scripts/ci/fixtures/validate-pre-pr-routing.sh
 
 echo "Checking Python helper syntax..."
 python3 -m py_compile scripts/ci/*.py
