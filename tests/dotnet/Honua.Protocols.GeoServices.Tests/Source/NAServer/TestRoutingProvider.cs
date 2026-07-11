@@ -19,6 +19,7 @@ internal sealed class TestRoutingProvider : IRoutingProvider
 {
     private const double MetersPerDegree = 111_320.0;
     private const double MetersPerMinute = 50_000.0 / 60.0;
+    private readonly Func<RouteSolveRequest, Exception?>? _routeExceptionFactory;
 
     /// <summary>
     /// Creates a provider advertising full capabilities (route + service area, both
@@ -57,10 +58,14 @@ internal sealed class TestRoutingProvider : IRoutingProvider
     /// travel direction not advertised).
     /// </summary>
     /// <param name="capabilities">Capabilities the provider should advertise.</param>
-    public TestRoutingProvider(RoutingProviderCapabilities capabilities)
+    /// <param name="routeExceptionFactory">Optional exception factory for route solve tests.</param>
+    public TestRoutingProvider(
+        RoutingProviderCapabilities capabilities,
+        Func<RouteSolveRequest, Exception?>? routeExceptionFactory = null)
     {
         ArgumentNullException.ThrowIfNull(capabilities);
         Capabilities = capabilities;
+        _routeExceptionFactory = routeExceptionFactory;
     }
 
     public string Name => "test";
@@ -72,6 +77,11 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        if (_routeExceptionFactory?.Invoke(request) is { } exception)
+        {
+            return Task.FromException<RouteSolveResult>(exception);
+        }
 
         if (request.Stops.Count < 2)
         {

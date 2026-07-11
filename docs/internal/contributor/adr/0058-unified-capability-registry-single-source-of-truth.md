@@ -144,6 +144,18 @@ ADR gives the registry, and the manifest lever the Console release gate
 > hardened in #2429 so no provider silently returns rows outside the requested
 > window.
 
+> **Update (#2431).** **mTLS client-certificate validation** (`security.mtls`,
+> `/api/v1/admin/security/client-certificates/*`) was promoted from `experimental`
+> to `Implemented` (GA), after
+> hardening chain validation and CRL/OCSP revocation (a fail-closed
+> revocation-status-unknown policy and a distinct revoked-vs-untrusted-chain
+> outcome). It is therefore no longer part of the registry-flag experimental roster
+> (a): its routes ship on the default first-release surface. mTLS carries an
+> Enterprise entitlement (`identity.mtls-client-certificate`), so the manifest and
+> registry advertise it as Enterprise-gated; GA does not mean on-by-default —
+> client-certificate enforcement still self-gates on
+> `Authentication:ClientCertificates:Mode` (default `Disabled`).
+
 > **Update (#2428).** **Realtime feature streams** (`realtime.feature-streams`,
 > `/api/v1/streaming/features` + `/api/v1/admin/(operations/)streaming/*`) — the
 > WebSocket/SSE feature-change streams with subscription filters and durable

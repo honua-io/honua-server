@@ -69,6 +69,69 @@ public sealed class McpPlatformOpsReaderTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task GetSupportedOperationKinds_Authorized_UsesOpsReadPolicyAndReturnsSortedKinds()
+    {
+        var principal = CreatePrincipal();
+        var authorization = CreateAuthorization(AuthorizationResult.Success());
+        var catalog = new MutableExecutorCatalog(
+            [OperationClass.MetadataRelease, OperationClass.Deploy, OperationClass.AdminConfigChange]);
+
+        using var services = CreateServices(catalog: catalog);
+        var reader = CreateReader(authorization: authorization, services: services);
+
+        var result = await reader.GetSupportedOperationKindsAsync(principal, CancellationToken.None);
+
+        result.SupportedKinds.Should().Equal("AdminConfigChange", "Deploy", "MetadataRelease");
+        await authorization.Received(1).AuthorizeAsync(
+            principal,
+            Arg.Is<object>(resource => IsOpsReadResource(resource, principal)),
+            AuthenticationExtensions.OpsReadPolicy);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetSupportedOperationKinds_EmptyCatalog_ReturnsEmptyKinds()
+    {
+        using var services = CreateServices(catalog: new MutableExecutorCatalog([]));
+        var reader = CreateReader(services: services);
+
+        var result = await reader.GetSupportedOperationKindsAsync(CreatePrincipal(), CancellationToken.None);
+
+        result.SupportedKinds.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetSupportedOperationKinds_CatalogChanges_ReflectsLatestKinds()
+    {
+        var catalog = new MutableExecutorCatalog([OperationClass.Deploy]);
+        using var services = CreateServices(catalog: catalog);
+        var reader = CreateReader(services: services);
+
+        var initial = await reader.GetSupportedOperationKindsAsync(CreatePrincipal(), CancellationToken.None);
+        catalog.SupportedKinds = [OperationClass.AdminConfigChange, OperationClass.MetadataRelease];
+        var changed = await reader.GetSupportedOperationKindsAsync(CreatePrincipal(), CancellationToken.None);
+
+        initial.SupportedKinds.Should().Equal("Deploy");
+        changed.SupportedKinds.Should().Equal("AdminConfigChange", "MetadataRelease");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetSupportedOperationKinds_WithoutOpsReadPermission_IsRejected()
+    {
+        using var services = CreateServices(catalog: new MutableExecutorCatalog([OperationClass.Deploy]));
+        var reader = CreateReader(
+            authorization: CreateAuthorization(AuthorizationResult.Failed()),
+            services: services);
+
+        var act = () => reader.GetSupportedOperationKindsAsync(CreatePrincipal(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingAuthorizationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task GetDeployOperations_List_TranslatesFiltersAndClampsPageSize()
     {
         var store = new RecordingWorkflowOperationStore(
@@ -531,6 +594,11 @@ public sealed class McpPlatformOpsReaderTests
     private sealed class StaticExecutorCatalog(IReadOnlyCollection<OperationClass> supportedKinds) : IOperationExecutorCatalog
     {
         public IReadOnlyCollection<OperationClass> SupportedKinds { get; } = supportedKinds;
+    }
+
+    private sealed class MutableExecutorCatalog(IReadOnlyCollection<OperationClass> supportedKinds) : IOperationExecutorCatalog
+    {
+        public IReadOnlyCollection<OperationClass> SupportedKinds { get; set; } = supportedKinds;
     }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>

@@ -97,7 +97,11 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
-        var discoverUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(request.ServiceUrl, cancellationToken);
+        var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
+        var discoverUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(
+            request.ServiceUrl,
+            allowedHostSuffixes,
+            cancellationToken);
         if (!discoverUrlValidation.IsValid)
         {
             await AdminResponseWriter.WriteErrorAsync(context,
@@ -254,7 +258,11 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
-        var startUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(request.ServiceUrl, cancellationToken);
+        var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
+        var startUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(
+            request.ServiceUrl,
+            allowedHostSuffixes,
+            cancellationToken);
         if (!startUrlValidation.IsValid)
         {
             await AdminResponseWriter.WriteErrorAsync(context,

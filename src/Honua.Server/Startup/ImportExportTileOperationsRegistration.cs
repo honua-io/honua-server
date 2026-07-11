@@ -48,6 +48,8 @@ internal static class ImportExportTileOperationsRegistration
 
         services.Configure<FileUploadOptions>(
             configuration.GetSection(FileUploadOptions.SectionName));
+        services.Configure<MigrationUrlValidationOptions>(
+            configuration.GetSection(MigrationUrlValidationOptions.SectionName));
         services.AddSingleton<StreamingFileUploadService>();
         services.AddSingleton<IUploadQueueMetricsProvider>(sp =>
             sp.GetRequiredService<StreamingFileUploadService>());
