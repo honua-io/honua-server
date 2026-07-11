@@ -65,6 +65,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0060](0060-two-plane-operability-architecture.md) | Two-Plane Operability Architecture — Substrate-Neutral Executors Over a Unified Catalog | Proposed | 2026-07 |
 | [0061](0061-mcp-native-elicitation-mapping.md) | Map the Clarification Envelope onto MCP-Native Elicitation | Accepted | 2026-07 |
 | [0062](0062-graduated-ops-autonomy-policy.md) | Graduated Autonomy Policy for Ops Findings | Accepted | 2026-07 |
+| [0063](0063-custom-code-execution-is-aws-batch-only.md) | Custom-code (custom GP tool) execution is AWS-Batch-only | Accepted | 2026-07 |
 
 ## Template
 
