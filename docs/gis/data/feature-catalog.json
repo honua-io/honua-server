@@ -7458,6 +7458,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithInlineImageFormat_ReturnsImageBytes",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithMultidimensionalDefinition_ReturnsNativeSlicePng",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithValidParameters_ReturnsImageOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ExportsInlinePngImage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ReceivesEsriErrorShapeForInvalidRequests",
@@ -15718,6 +15719,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_PostFormBody_ReturnsImageOrNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithMultidimensionalDefinition_ReturnsNativeSlicePng",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ExportImagePost_WithTime_SelectsTemporalSliceAndAgreesWithGet",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_PostFormBody_WithEsriJsonSpatialReferences_DoesNotReturnBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_PostJsonBody_WithEsriJsonSpatialReferences_DoesNotReturnBadRequest"
