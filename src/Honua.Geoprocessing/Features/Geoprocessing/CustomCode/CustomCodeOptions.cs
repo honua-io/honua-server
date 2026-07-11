@@ -42,6 +42,32 @@ public enum CustomCodeRepoPolicy
 }
 
 /// <summary>
+/// Selects which <see cref="Honua.Core.Features.ControlPlane.Abstractions.IBatchComputeBackend"/>
+/// executes an admitted custom-code job. This is a deployment-substrate choice, orthogonal to the
+/// repo-trust <see cref="CustomCodeRepoPolicy"/> gate (which still applies regardless of backend).
+/// </summary>
+public enum CustomCodeBackendKind
+{
+    /// <summary>
+    /// The default: custom-code runs in the isolated, cloud-managed Batch container reached by the
+    /// param-driven remote-backend submission (AWS Batch et al.). No in-process/local execution.
+    /// This is the pre-existing behavior and is unchanged when the operator does not opt in.
+    /// </summary>
+    Batch = 0,
+
+    /// <summary>
+    /// Opt-in: custom-code runs as an OS-sandboxed subprocess on the honua-server host itself via
+    /// <c>LocalProcessCustomCodeBackend</c> — the no-cloud-infra path for single-host / air-gapped
+    /// deployments. This surface executes operator-allowlisted, git-pinned user code locally; its
+    /// isolation is OS-process-level, NOT a container/VM boundary. Selecting it activates the local
+    /// backend AND requires <see cref="LocalBackend.CustomCodeLocalBackendOptions.Enabled"/> = true; the repo
+    /// allowlist / signed-commit gate is still enforced. Read the security model on
+    /// <c>LocalProcessCustomCodeBackend</c> before enabling.
+    /// </summary>
+    Local = 1,
+}
+
+/// <summary>
 /// Configuration for the custom-code geoprocessing submit path: the repository
 /// allowlist policy, the Honua API base URL injected into user-code containers,
 /// the server-set S3 output-prefix root, and the scoped-token lifetime knobs.
@@ -60,6 +86,15 @@ internal sealed class CustomCodeOptions
     /// opt-in Phase 3 supply-chain posture.
     /// </summary>
     public CustomCodeRepoPolicy RepoPolicy { get; set; } = CustomCodeRepoPolicy.OrgAllowlist;
+
+    /// <summary>
+    /// Which backend executes an admitted custom-code job. Defaults to
+    /// <see cref="CustomCodeBackendKind.Batch"/> so behavior is unchanged for every existing
+    /// deployment; <see cref="CustomCodeBackendKind.Local"/> is the opt-in single-host
+    /// OS-sandboxed-subprocess path (see <see cref="LocalBackend.CustomCodeLocalBackendOptions"/>). Bound from
+    /// <c>Geoprocessing:CustomCode:Backend</c>.
+    /// </summary>
+    public CustomCodeBackendKind Backend { get; set; } = CustomCodeBackendKind.Batch;
 
     /// <summary>
     /// Allowed repository hosts (e.g. <c>github.com</c>,

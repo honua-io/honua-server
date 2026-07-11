@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.CustomCode.LocalBackend;
 using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.LocalRunner;
 using Honua.Infrastructure.Abstractions;
@@ -213,12 +214,64 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, CustomCodeDispatchJobExecutor>());
 
+        // Opt-in single-host local custom-code backend (feat/gpserver-local-custom-tool-mvp).
+        // Registers an OS-sandboxed-subprocess IBatchComputeBackend ONLY when the operator selects
+        // Geoprocessing:CustomCode:Backend=Local. Default (Batch) leaves everything below unregistered
+        // so behavior is unchanged for every existing deployment.
+        AddLocalCustomCodeBackend(services, configuration);
+
         // Job orchestration substrate (queue, log store — ticket #681) is wired
         // by the Honua.Server composition root via AddJobOrchestration, which
         // also registers the Share-export terminal callback that depends on
         // Honua.Server.Features.Admin.Share (out of reach for this assembly).
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers the opt-in single-host local custom-code backend and, when local custom tools are
+    /// configured, decorates the process catalog so those tools are discoverable through the GPServer
+    /// task-listing / task-info routes. Everything here is gated on
+    /// <c>Geoprocessing:CustomCode:Backend=Local</c> and the per-backend <c>Enabled</c> flag, both of
+    /// which default off, so a deployment that has not opted in is byte-for-byte unchanged.
+    /// </summary>
+    private static void AddLocalCustomCodeBackend(IServiceCollection services, IConfiguration configuration)
+    {
+        // Bind + validate the options regardless of selection so a misconfiguration surfaces at startup.
+        services
+            .AddOptions<CustomCodeLocalBackendOptions>()
+            .Bind(configuration.GetSection(CustomCodeLocalBackendOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<CustomCodeLocalBackendOptions>, CustomCodeLocalBackendOptionsValidator>();
+
+        var backendKind = configuration
+            .GetSection(CustomCodeOptions.SectionName)
+            .GetValue("Backend", CustomCodeBackendKind.Batch);
+
+        if (backendKind != CustomCodeBackendKind.Local)
+        {
+            // Batch (default): do not register the local execution surface at all.
+            return;
+        }
+
+        // The workload preparer (git checkout + python launch planning) and the sandboxed-subprocess
+        // backend. The backend still fails closed at StartAsync unless Local:Enabled=true.
+        services.TryAddSingleton<ICustomCodeWorkloadPreparer, GitPythonWorkloadPreparer>();
+        services.AddSingleton<LocalProcessCustomCodeBackend>();
+        services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<LocalProcessCustomCodeBackend>());
+
+        // Discovery: decorate IProcessCatalog with configured local custom tools so an ArcGIS client can
+        // see them via GPServer. Only when at least one tool is declared, and never shadowing a built-in.
+        var localOptions = new CustomCodeLocalBackendOptions();
+        configuration.GetSection(CustomCodeLocalBackendOptions.SectionName).Bind(localOptions);
+        if (localOptions.Tools.Count > 0)
+        {
+            services.TryAddSingleton<BuiltInProcessCatalog>();
+            services.RemoveAll<IProcessCatalog>();
+            services.AddSingleton<IProcessCatalog>(sp => new CustomCodeLocalToolCatalog(
+                sp.GetRequiredService<BuiltInProcessCatalog>(),
+                sp.GetRequiredService<IOptions<CustomCodeLocalBackendOptions>>()));
+        }
     }
 
     /// <summary>
