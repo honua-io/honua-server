@@ -6410,7 +6410,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_ServiceRoute_ReturnsAccessibleRasterCoverage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_UnknownNamedCoverage_ReturnsNoSuchCoverageException"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_UnknownNamedCoverage_ReturnsNoSuchCoverageException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ServiceRoute_ReturnsRegisteredZarrSlicePng"
       ],
       "proof_ledger_surface": "wcs-2.0.1",
       "maturity": "implemented"
@@ -7317,7 +7318,12 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithScaleSize_SetsOutputDimensions",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithSubsetFormatAndOutputCrs_ReturnsRasterBytes",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnknownRangeSubsetField_ReturnsException",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnsupportedInterpolation_ReturnsException"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnsupportedInterpolation_ReturnsException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_NumericImageServerRoute_ReturnsRegisteredZarrSlicePng",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_OutOfRangeZarrCoordinate_ReturnsInvalidSubsetting",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_OversizeZarrSlice_ReturnsInvalidParameterValue",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_UnavailableZarrReader_ReturnsOperationNotSupported",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ZarrSliceWithTiff_ReturnsOperationNotSupported"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
