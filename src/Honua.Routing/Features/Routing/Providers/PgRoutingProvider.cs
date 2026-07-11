@@ -166,12 +166,13 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         // and validates travelMode, but only this mode is genuinely routable.
         SupportedTravelModes = [DrivingTravelMode],
 
-        // The two cost-matrix problem types implemented for #1874. Other Esri
-        // problem types are gated with a 400 by the adapter.
+        // Objectives implemented over the bounded canonical cost matrix. Other
+        // Esri objectives require contract inputs we do not model and remain gated.
         SupportedLocationAllocationProblemTypes =
         [
             LocationAllocationProblemType.MinimizeImpedance,
             LocationAllocationProblemType.MaximizeCoverage,
+            LocationAllocationProblemType.MinimizeFacilities,
         ],
     };
 
@@ -778,7 +779,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 }
             }
 
-            var result = LocationAllocationSolver.Solve(request, matrix);
+            var result = LocationAllocationSolver.Solve(request, matrix, cancellationToken);
             activity?.SetTag("honua.routing.solved", result.ChosenFacilityIds.Count > 0);
             activity?.SetTag("honua.routing.chosen_facilities", result.ChosenFacilityIds.Count);
             return result;

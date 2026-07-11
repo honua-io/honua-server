@@ -372,6 +372,13 @@ internal static class NAServerParameterTranslation
         var facilitiesToFind = ParsePositiveInt(
             GetValue(parameters, "numberFacilitiesToFind"), "numberFacilitiesToFind") ?? 1;
         var cutoff = ParseCutoff(parameters, "impedanceCutoff", "defaultCutoff");
+        if (problemType == LocationAllocationProblemType.MinimizeFacilities && cutoff is null)
+        {
+            throw new NAServerParameterException(
+                "location-allocation problem type 'esriMFPMinimizeFacilities' requires " +
+                "'impedanceCutoff' or 'defaultCutoff' so demand coverage is bounded.");
+        }
+
         var barriers = ParseBarriers(parameters, caps);
         var travelMode = ParseTravelMode(parameters);
 
@@ -421,7 +428,8 @@ internal static class NAServerParameterTranslation
 
     /// <summary>
     /// Maps the Esri location-allocation <c>problem_type</c> token to the canonical
-    /// enum. Only the two implemented types are accepted; other Esri problem types
+    /// enum. Only objectives supported by the canonical bounded solver are accepted;
+    /// other Esri problem types
     /// throw so the adapter returns a clear "unsupported problem type" 400.
     /// </summary>
     public static LocationAllocationProblemType ParseLocationAllocationProblemType(string? value)
@@ -446,9 +454,20 @@ internal static class NAServerParameterTranslation
             return LocationAllocationProblemType.MaximizeCoverage;
         }
 
+        if (string.Equals(trimmed, "esriMFPMinimizeFacilities", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "MinimizeFacilities", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "Minimize Facilities", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "2", StringComparison.Ordinal))
+        {
+            return LocationAllocationProblemType.MinimizeFacilities;
+        }
+
         throw new NAServerParameterException(
             $"location-allocation problem type '{value}' is not supported. Supported types: " +
-            "esriMFPMinimizeImpedance, esriMFPMaximizeCoverage.");
+            "esriMFPMinimizeImpedance, esriMFPMaximizeCoverage, esriMFPMinimizeFacilities. " +
+            "Maximize Attendance requires impedance-transformation inputs; Maximize Capacitated " +
+            "Coverage requires facility capacities; market-share objectives require competitor " +
+            "facilities and attractiveness weights.");
     }
 
     /// <summary>
