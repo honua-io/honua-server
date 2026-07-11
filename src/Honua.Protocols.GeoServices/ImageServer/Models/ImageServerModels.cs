@@ -822,6 +822,12 @@ public sealed class IdentifyRequest
     [StringLength(1000, ErrorMessage = "RenderingRule is too long")]
     public string? RenderingRule { get; init; }
 
+    /// <summary>
+    /// Coordinate-valued dimension selections for a registered multidimensional coverage.
+    /// </summary>
+    [StringLength(8192, ErrorMessage = "MultidimensionalDefinition is too long")]
+    public string? MultidimensionalDefinition { get; init; }
+
     [Range(1, 1000, ErrorMessage = "PixelSize must be between 1 and 1000")]
     public int? PixelSize { get; init; }
 
