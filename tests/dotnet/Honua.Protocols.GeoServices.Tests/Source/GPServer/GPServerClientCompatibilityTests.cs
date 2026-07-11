@@ -113,9 +113,10 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
     {
         var client = new GPServerClient(_fixture.Client, ServiceId);
 
-        // The async submitJob contract rejects ALL env:* controls with a clear Esri
-        // 400. env:outSR / env:processSR are honored only on the additive synchronous
-        // execute route (see the dedicated execute outSR tests), not on submitJob.
+        // submitJob recognizes env:outSR/env:processSR/env:workspace/env:overwriteOutput
+        // (see GPServerEndpointTests' env:workspace/overwriteOutput coverage); any
+        // other env:* control still yields a clear Esri 400 instead of being
+        // silently stripped.
         var error = await client.SubmitBufferJobExpectingErrorAsync(
             PointWkbBase64,
             4326,

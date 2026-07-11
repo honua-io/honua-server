@@ -4,6 +4,8 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.ControlPlane;
@@ -12,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -128,6 +131,225 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     {
         var dispatcher = CreateDispatcher();
         dispatcher.Kind.Should().Be(ExecutionJobKind.Geoprocessing);
+    }
+
+    // -----------------------------------------------------------------------
+    // env:workspace / env:overwriteOutput routing (GPServer submitJob/execute)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    public async Task ExecuteAsync_NoWorkspaceRequested_PublishesArtifactWithoutTouchingWorkspaceService()
+    {
+        var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-no-workspace");
+
+        var record = CreateFakeExecutorJobRecord(workspaceId: null, overwriteOutput: null);
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await context.Received(1).PublishArtifactAsync("data:fake-artifact", Arg.Any<CancellationToken>());
+        await workspaceLifecycle.DidNotReceiveWithAnyArgs().AddOrReplaceArtifactAsync(
+            default!, default, default!, default, cancellationToken: default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_WorkspaceRequested_RoutesArtifactThroughWorkspaceLifecycle()
+    {
+        var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        workspaceLifecycle
+            .AddOrReplaceArtifactAsync(
+                "ws-1", ArtifactKind.File, "artifact1", false,
+                uri: "data:fake-artifact", cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(new Artifact
+            {
+                ArtifactId = "art-1",
+                Kind = ArtifactKind.File,
+                Label = "artifact1",
+                State = ArtifactLifecycleState.Available,
+                CreatedAt = DateTimeOffset.UtcNow,
+                WorkspaceId = "ws-1"
+            });
+
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-workspace");
+
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await workspaceLifecycle.Received(1).AddOrReplaceArtifactAsync(
+            "ws-1", ArtifactKind.File, "artifact1", false,
+            uri: "data:fake-artifact", cancellationToken: Arg.Any<CancellationToken>());
+        // The workspace ledger write does not replace the durable job-record publish.
+        await context.Received(1).PublishArtifactAsync("data:fake-artifact", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_WorkspaceCollisionWithoutOverwrite_FailsWithClearMessage()
+    {
+        var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        workspaceLifecycle
+            .AddOrReplaceArtifactAsync(
+                "ws-1", ArtifactKind.File, "artifact1", false,
+                uri: Arg.Any<string>(), cancellationToken: Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ArtifactAlreadyExistsException("ws-1", "artifact1"));
+
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-collision");
+
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("artifact1");
+        result.ErrorMessage.Should().Contain("overwriteOutput");
+        // The collision is caught before the durable job-record publish happens.
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_WorkspaceCollisionWithOverwrite_SucceedsAndReplaces()
+    {
+        var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        workspaceLifecycle
+            .AddOrReplaceArtifactAsync(
+                "ws-1", ArtifactKind.File, "artifact1", true,
+                uri: Arg.Any<string>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(new Artifact
+            {
+                ArtifactId = "art-2",
+                Kind = ArtifactKind.File,
+                Label = "artifact1",
+                State = ArtifactLifecycleState.Available,
+                CreatedAt = DateTimeOffset.UtcNow,
+                WorkspaceId = "ws-1"
+            });
+
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-overwrite");
+
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: true);
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await workspaceLifecycle.Received(1).AddOrReplaceArtifactAsync(
+            "ws-1", ArtifactKind.File, "artifact1", true,
+            uri: Arg.Any<string>(), cancellationToken: Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_WorkspaceRequestedWithNoProviderConfigured_FailsFastWithoutRunningHandler()
+    {
+        // No IServiceScopeFactory at all: the dispatcher itself was constructed
+        // without one (mirrors positional test construction / hosts with no
+        // workspace storage provider registered).
+        var dispatcher = CreateFakeExecutorDispatcher(scopeFactory: null);
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-no-provider");
+
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("ws-1");
+        result.ErrorMessage.Should().Contain("no workspace storage provider");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    private static IServiceScopeFactory BuildScopeFactory(IWorkspaceLifecycleService workspaceLifecycle)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(workspaceLifecycle);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
+
+    /// <summary>
+    /// Job record routed to <see cref="FakeArtifactPublishingExecutor"/> (registered
+    /// only in the dispatchers these workspace-routing tests build), isolating the
+    /// workspace-routing behavior from real geometry executor logic.
+    /// </summary>
+    private static ExecutionJobRecord CreateFakeExecutorJobRecord(string? workspaceId, bool? overwriteOutput)
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = FakeArtifactPublishingExecutor.HandledProcessId,
+            ["protocolProcessId"] = FakeArtifactPublishingExecutor.HandledProcessId,
+            [$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}0"] = "artifact1"
+        };
+
+        if (workspaceId is not null)
+        {
+            parameters[GeoprocessingProtocolMetadataKeys.GPServerWorkspace] = workspaceId;
+        }
+
+        if (overwriteOutput is { } overwrite)
+        {
+            parameters[GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput] = overwrite ? "true" : "false";
+        }
+
+        return new ExecutionJobRecord
+        {
+            OperationId = "op-fake",
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geoprocessing:test",
+                Parameters = parameters
+            }
+        };
+    }
+
+    /// <summary>
+    /// Minimal <see cref="IProcessExecutor"/> that publishes a single fixed
+    /// artifact and succeeds, used to isolate workspace-routing tests from real
+    /// geometry executor logic.
+    /// </summary>
+    private sealed class FakeArtifactPublishingExecutor : IProcessExecutor
+    {
+        public const string HandledProcessId = "test.fake-artifact-publisher";
+
+        public IReadOnlySet<string> ProcessIds { get; } = new HashSet<string> { HandledProcessId };
+
+        public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
+
+        public async Task<JobExecutionResult> ExecuteAsync(
+            ExecutionJobRecord job, IJobExecutionContext context, CancellationToken cancellationToken)
+        {
+            await context.PublishArtifactAsync("data:fake-artifact", cancellationToken).ConfigureAwait(false);
+            return JobExecutionResult.Succeeded();
+        }
+    }
+
+    /// <summary>
+    /// Builds a dispatcher routing only <see cref="FakeArtifactPublishingExecutor"/>,
+    /// isolated from <see cref="CreateDispatcher"/>'s full executor set so the
+    /// exact-match <see cref="SupportedProcessIds_ListsSliceFiveExecutors"/>
+    /// assertion is unaffected by these workspace-routing tests.
+    /// </summary>
+    private static GeoprocessingDispatchJobExecutor CreateFakeExecutorDispatcher(
+        IServiceScopeFactory? scopeFactory)
+    {
+        IProcessExecutor[] executors = { new FakeArtifactPublishingExecutor() };
+        return new GeoprocessingDispatchJobExecutor(
+            executors,
+            NullLogger<GeoprocessingDispatchJobExecutor>.Instance,
+            usageTelemetry: null,
+            serviceScopeFactory: scopeFactory);
     }
 
     private static GeoprocessingDispatchJobExecutor CreateDispatcher()

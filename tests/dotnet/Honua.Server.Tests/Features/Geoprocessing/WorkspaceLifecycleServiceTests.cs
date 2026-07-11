@@ -138,6 +138,149 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task AddOrReplaceArtifact_NoCollision_CreatesArtifact()
+    {
+        SetupWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        _artifactStore.ListByWorkspaceAsync("ws-1", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Artifact>());
+
+        var artifact = await _service.AddOrReplaceArtifactAsync(
+            "ws-1", ArtifactKind.FeatureLayer, "result", overwrite: false, uri: "data:1");
+
+        Assert.Equal("result", artifact.Label);
+        Assert.Equal("ws-1", artifact.WorkspaceId);
+        await _artifactStore.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AddOrReplaceArtifact_CollisionWithoutOverwrite_Throws()
+    {
+        SetupWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        var existing = new Artifact
+        {
+            ArtifactId = "art-existing",
+            Kind = ArtifactKind.FeatureLayer,
+            Label = "result",
+            State = ArtifactLifecycleState.Available,
+            CreatedAt = Now.AddMinutes(-5),
+            WorkspaceId = "ws-1"
+        };
+        _artifactStore.ListByWorkspaceAsync("ws-1", Arg.Any<CancellationToken>())
+            .Returns([existing]);
+
+        var ex = await Assert.ThrowsAsync<ArtifactAlreadyExistsException>(
+            () => _service.AddOrReplaceArtifactAsync(
+                "ws-1", ArtifactKind.FeatureLayer, "result", overwrite: false, uri: "data:2"));
+
+        Assert.Contains("result", ex.Message);
+        Assert.Contains("overwriteOutput", ex.Message);
+        await _artifactStore.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _artifactStore.DidNotReceive().CreateAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AddOrReplaceArtifact_CollisionWithOverwrite_DeletesExistingAndCreatesNew()
+    {
+        SetupWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        var existing = new Artifact
+        {
+            ArtifactId = "art-existing",
+            Kind = ArtifactKind.FeatureLayer,
+            Label = "result",
+            State = ArtifactLifecycleState.Available,
+            CreatedAt = Now.AddMinutes(-5),
+            WorkspaceId = "ws-1"
+        };
+        _artifactStore.ListByWorkspaceAsync("ws-1", Arg.Any<CancellationToken>())
+            .Returns([existing]);
+        _artifactStore.DeleteAsync("art-existing", Arg.Any<CancellationToken>()).Returns(true);
+
+        var artifact = await _service.AddOrReplaceArtifactAsync(
+            "ws-1", ArtifactKind.FeatureLayer, "result", overwrite: true, uri: "data:2");
+
+        Assert.Equal("result", artifact.Label);
+        await _artifactStore.Received(1).DeleteAsync("art-existing", Arg.Any<CancellationToken>());
+        await _artifactStore.Received(1).CreateAsync(
+            Arg.Is<Artifact>(a => a.Label == "result" && a.Uri == "data:2"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AddOrReplaceArtifact_IgnoresNonAvailableCollision()
+    {
+        SetupWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        var deleted = new Artifact
+        {
+            ArtifactId = "art-old",
+            Kind = ArtifactKind.FeatureLayer,
+            Label = "result",
+            State = ArtifactLifecycleState.Deleted,
+            CreatedAt = Now.AddMinutes(-5),
+            WorkspaceId = "ws-1"
+        };
+        _artifactStore.ListByWorkspaceAsync("ws-1", Arg.Any<CancellationToken>())
+            .Returns([deleted]);
+
+        var artifact = await _service.AddOrReplaceArtifactAsync(
+            "ws-1", ArtifactKind.FeatureLayer, "result", overwrite: false, uri: "data:3");
+
+        Assert.Equal("result", artifact.Label);
+        await _artifactStore.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetOrCreateNamedWorkspace_NoExisting_CreatesScratchWorkspace()
+    {
+        _workspaceStore.ListByOwnerAsync("owner-1", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Workspace>());
+        _retentionPolicy.ComputeExpiration(WorkspaceKind.Scratch, Now)
+            .Returns(Now.AddHours(1));
+
+        var workspace = await _service.GetOrCreateNamedWorkspaceAsync("owner-1", "my-scratch");
+
+        Assert.Equal(WorkspaceKind.Scratch, workspace.Kind);
+        Assert.Equal("my-scratch", workspace.Label);
+        Assert.Equal("owner-1", workspace.OwnerId);
+        await _workspaceStore.Received(1).CreateAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetOrCreateNamedWorkspace_ExistingActiveMatch_ReusesWorkspace()
+    {
+        var existing = CreateWorkspace("ws-existing", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active) with
+        {
+            Label = "my-scratch",
+            ExpiresAt = Now.AddHours(1)
+        };
+        _workspaceStore.ListByOwnerAsync("owner-1", Arg.Any<CancellationToken>())
+            .Returns([existing]);
+
+        var workspace = await _service.GetOrCreateNamedWorkspaceAsync("owner-1", "my-scratch");
+
+        Assert.Equal("ws-existing", workspace.WorkspaceId);
+        await _workspaceStore.DidNotReceive().CreateAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetOrCreateNamedWorkspace_ExistingExpired_CreatesNewWorkspace()
+    {
+        var expired = CreateWorkspace("ws-expired", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active) with
+        {
+            Label = "my-scratch",
+            ExpiresAt = Now.AddHours(-1)
+        };
+        _workspaceStore.ListByOwnerAsync("owner-1", Arg.Any<CancellationToken>())
+            .Returns([expired]);
+        _retentionPolicy.ComputeExpiration(WorkspaceKind.Scratch, Now)
+            .Returns(Now.AddHours(1));
+
+        var workspace = await _service.GetOrCreateNamedWorkspaceAsync("owner-1", "my-scratch");
+
+        Assert.NotEqual("ws-expired", workspace.WorkspaceId);
+        await _workspaceStore.Received(1).CreateAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task PromoteArtifact_SourceNotFound_Fails()
     {
         _workspaceStore.GetAsync("missing", Arg.Any<CancellationToken>())

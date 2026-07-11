@@ -439,7 +439,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK,
-                "env:outSR is accepted on the synchronous execute route (unlike submitJob which rejects all env controls)");
+                "env:outSR is accepted on the synchronous execute route (and, as of #1228 follow-up, on submitJob too)");
         }
         finally
         {
@@ -1031,10 +1031,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     // -----------------------------------------------------------------------
 
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_WithEnvOutSR_ReturnsBadRequest()
+    public async Task SubmitJob_WithEnvOutSR_IsAccepted()
     {
+        // env:outSR is now recognized (not rejected) on submitJob, matching the
+        // synchronous execute route's behavior. See #1228.
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -1047,17 +1049,19 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("env:outSR must not be rejected on submitJob");
+        doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
     }
 
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJobPost_WithEnvInQueryString_ReturnsBadRequest()
+    public async Task SubmitJobPost_WithEnvInQueryString_IsAccepted()
     {
         // POST with form body but env control in query string â€” the query-string
-        // parameter must still be read and rejected (not silently dropped).
+        // parameter must still be read and honored (not silently dropped).
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -1069,20 +1073,100 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?env:outSR=4326", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("env:outSR must not be rejected on submitJob");
+        doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
     }
 
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.Create)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJobGet_WithEnvProcessSR_ReturnsBadRequest()
+    public async Task SubmitJobGet_WithEnvProcessSR_IsAccepted()
     {
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10&env:processSR=3857");
 
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("env:processSR must not be rejected on submitJob");
+        doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithEnvWorkspaceAndOverwriteOutput_ThreadsProtocolMetadata()
+    {
+        var recordingService = new RecordingGeoprocessingJobService();
+        var submitFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(recordingService);
+            });
+
+        await submitFixture.InitializeAsync();
+        try
+        {
+            using var client = submitFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "10",
+                ["env:workspace"] = "ws-scratch-1",
+                ["env:overwriteOutput"] = "true"
+            });
+
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            doc.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+            doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+
+            recordingService.LastProtocolMetadata.Should().Contain(
+                new KeyValuePair<string, string>("gpserver.env.workspace", "ws-scratch-1"));
+            recordingService.LastProtocolMetadata.Should().Contain(
+                new KeyValuePair<string, string>("gpserver.env.overwriteOutput", "true"));
+        }
+        finally
+        {
+            await submitFixture.DisposeAsync();
+        }
+    }
+
+    // Note: there is no HTTP-level "empty env:workspace" test — GPServerParameterTranslation.
+    // ReadRequestParametersAsync drops any parameter with an empty string value before it
+    // ever reaches TryParseEnvControls (pre-existing behavior shared by every GPServer
+    // parameter, not specific to env:workspace), so an empty env:workspace on the wire is
+    // indistinguishable from an absent one. TryParseEnvControls' empty-value guard remains
+    // as defensive coding for direct callers.
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithInvalidEnvOverwriteOutput_ReturnsBadRequest()
+    {
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10",
+            ["env:overwriteOutput"] = "not-a-bool"
+        });
+
+        var response = await _client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
+
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
     }
 
     // -----------------------------------------------------------------------
@@ -1185,14 +1269,17 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         {
             var client = authFixture.Client;
 
-            // Include env:outSR which would trigger a 400 if auth were skipped.
+            // Include an unsupported env:* control which would trigger a 400 if
+            // auth were skipped. env:outSR/env:processSR/env:workspace/
+            // env:overwriteOutput are now recognized (not rejected) on submitJob,
+            // so this uses a control that stays unsupported.
             var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["f"] = "json",
                 ["wkb"] = PointWkbBase64,
                 ["srid"] = "4326",
                 ["distance"] = "10",
-                ["env:outSR"] = "4326"
+                ["env:transferDomains"] = "true"
             });
 
             var response = await client.PostAsync(
