@@ -145,27 +145,37 @@ trust gate (repo allowlist / per-tenant allowlist / signed-commit posture, full
 40-hex SHA pin, scope-⊆-owner clamp, scoped-token mint) is unchanged and still
 runs regardless of backend.
 
-### Isolation boundaries and their limits (be honest)
+### Isolation boundaries and their limits (be honest — corrected after adversarial review)
 
 This backend executes untrusted user code on the server host. Its isolation is
-**OS-process-level**, not a container/VM boundary. The controls, and what each one
-does and does *not* guarantee:
+**OS-process-level**, not a container/VM boundary. An adversarial review of the
+first revision of this addendum found the environment-allowlist row below
+overstated ("Hard") and two gaps it did not disclose at all: no UID separation
+(a same-UID script can read honua-server's full environment via `/proc`, signal
+it, or read files it can read — regardless of the allowlist) and the raw
+`HONUA_JOB_TOKEN` callback credential being handed to user code in cleartext.
+Both are fixed; the table below reflects the corrected posture.
 
 | Control | Mechanism | Strength |
 |---|---|---|
-| **Environment allowlist** | Child environment is built as an allowlist (cleared, then only `CUSTOMCODE_*` contract vars, job-scoped `HONUA_BASE_URL`/`HONUA_JOB_TOKEN`, a controlled `PATH`, and operator-named host vars). | **Hard.** The subprocess inherits no host secret. |
-| **Wall-clock timeout** | Monitor hard-kills the whole process tree at `MaxWallClock`. | **Hard** for the tracked tree. A grandchild that double-forks and re-parents to init is a residual the process-tree kill can miss; a cgroup/container closes it. |
-| **CPU + address-space limits** | POSIX `ulimit -t` (RLIMIT_CPU) / `ulimit -v` (RLIMIT_AS) via a launch wrapper. | **Hard on POSIX** (kernel-enforced). **Not enforced on non-POSIX** in-process — run inside a cgroup-constrained container there. |
-| **Single-use scratch + path-traversal safety** | Fresh per-job dir under `WorkingRoot`, is the working dir and checkout root, deleted on terminal; every constructed path is validated to resolve under that root. | **Hard** for paths the backend constructs/hands over. It does **not** chroot the process: byte-level filesystem confinement (stopping an absolute-path read of `/etc/passwd`) requires a mount namespace / container. |
+| **Process UID separation** (`Local:SandboxUser`) | The child is switched to a distinct, unprivileged OS user via `setpriv --reuid/--regid --clear-groups --no-new-privs` before its target program runs. Requires honua-server to have `CAP_SETUID`; if the drop fails, the launch fails closed. | **Hard on POSIX when configured.** This is the control the others depend on: without it the child is same-UID with honua-server, and a same-UID script can (a) *unconditionally* read any file honua-server itself can read via plain DAC file permissions — no special kernel configuration needed — and (b), on hosts where Linux's Yama LSM permits it (`kernel.yama.ptrace_scope=0`; **not** the Ubuntu-style restricted default of `1`, which this repo's own CI/dev hosts run), read `/proc/<honua-server-pid>/environ` directly to recover the ENTIRE host environment regardless of the allowlist, and signal honua-server. Without `SandboxUser`, the operator must set `Local:AcknowledgeUnconfinedExecutionRisk=true` — a **code-enforced gate re-checked on every job**, not just at startup — or the backend refuses to run anything. |
+| **Environment allowlist** | Child environment is built as an allowlist (cleared, then only `CUSTOMCODE_*` contract vars, job-scoped `HONUA_BASE_URL`, a controlled `PATH`, and operator-named host vars). `HONUA_JOB_TOKEN` is deliberately never placed in the child's environment at all — this MVP does not yet give a local custom tool a Honua API callback client (the cloud path's harness constructs a scoped client and then scrubs the token; this backend just never hands it out). | Blocks inheritance via the environment vector unconditionally. **A real confidentiality boundary only in combination with UID separation above** — without it, `/proc` access defeats it (see above). |
+| **Wall-clock timeout** | Monitor hard-kills the whole process tree at `MaxWallClock`. | **Hard** for the tracked tree. A grandchild that double-forks and re-parents to init is a residual the process-tree kill can miss; because the CPU limit below counts CPU-*seconds*, not wall-clock, a mostly-sleeping escapee can persist a long time — even across a honua-server restart — on a bare host. This is a **persistent-implant risk**, not just a leaked pool slot. A container/PID-namespace boundary closes it by tearing down the whole namespace on exit. |
+| **CPU + address-space + output-size limits** | POSIX `ulimit -t` (RLIMIT_CPU) / `ulimit -v` (RLIMIT_AS) / `ulimit -f` (RLIMIT_FSIZE) via a launch wrapper; each call is now guarded by `\|\| exit 97` so a limit the kernel refuses to apply **aborts the launch** instead of silently continuing unconfined (the original wrapper swallowed such failures with `2>/dev/null`). `Local:MaxProcessCount` (RLIMIT_NPROC) is applied **only** alongside `SandboxUser`, because RLIMIT_NPROC is enforced per real UID host-wide on Linux — applying it without a distinct sandbox UID would count against honua-server's own large thread/process footprint. | **Hard on POSIX** (kernel-enforced, fail-closed). **Not enforced on non-POSIX** in-process — run inside a cgroup-constrained container there. |
+| **Single-use scratch + path-traversal safety** | Fresh per-job dir under `WorkingRoot`, is the working dir and checkout root, deleted on terminal; every constructed path is validated to resolve under that root (`Path.GetFullPath`, lexical). | **Hard** for paths the backend constructs/hands over. Lexical containment does **not** resolve symlinks — a pinned repo shipping a symlink could point outside the scratch directory. This is subsumed by UID separation above (without it the process can already read arbitrary DAC-permitted files); fully closing it needs a mount-namespace/container boundary. |
 | **Network denial** | *Not enforced by this backend.* | **Deployment requirement.** OS-process-level network denial is not portably enforceable without a namespace/container boundary this MVP does not own. Run the backend inside an already-network-restricted container/namespace. The one intentional network op — the `git` checkout of the pinned commit — runs in the honua-server process, not the sandbox. |
 
-**Recommended deployment:** enable this backend only inside a container/pod that is
-itself network-restricted and cgroup-constrained. In that configuration the two
-soft edges above (filesystem confinement, network denial, double-fork survival)
-are closed by the surrounding boundary, and the in-process controls become
-defense-in-depth. On a bare host it is suitable only for trusted operators running
-trusted code. It is disabled by default (`Backend=Batch`) and, even when selected,
-fails closed unless `Geoprocessing:CustomCode:Local:Enabled=true`.
+**Recommended deployment:** configure `Local:SandboxUser` to a distinct,
+unprivileged OS user (requires honua-server to hold `CAP_SETUID`) **and** run the
+backend inside a container/pod that is itself network-restricted and
+cgroup-constrained. In that configuration the remaining soft edges (filesystem
+symlink confinement, network denial, double-fork survival) are closed by the
+surrounding boundary, and the in-process controls become defense-in-depth. A
+deployment that cannot configure `SandboxUser` must explicitly acknowledge the
+same-UID risk (`Local:AcknowledgeUnconfinedExecutionRisk=true`) and should treat
+that as acceptable only inside an already-isolated container — never on a
+multi-tenant bare host. The backend is disabled by default (`Backend=Batch`) and,
+even when selected, fails closed unless `Local:Enabled=true`.
 
 This is a genuinely high-risk surface (in-process execution of user code) and
 warrants human security review before it is enabled in any real deployment.

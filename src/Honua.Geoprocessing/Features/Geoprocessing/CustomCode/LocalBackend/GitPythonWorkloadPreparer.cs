@@ -114,8 +114,16 @@ internal sealed partial class GitPythonWorkloadPreparer : ICustomCodeWorkloadPre
     /// interpolated into the source), imports the module, and invokes the function with the opaque user
     /// params. Kept minimal and dependency-free.
     /// </summary>
+    /// <remarks>
+    /// F2 (adversarial review): defense-in-depth scrub. <c>LocalProcessCustomCodeBackend.BuildEnvironment</c>
+    /// never places <c>HONUA_JOB_TOKEN</c> in the child's environment to begin with, mirroring (and
+    /// strengthening) the cloud harness's post-construction scrub — but this bootstrap ALSO deletes it
+    /// from <c>os.environ</c> before importing user code, so a future change to the env-building side
+    /// that reintroduces it does not silently regress this guarantee.
+    /// </remarks>
     private const string PythonBootstrap =
         "import sys, os, json, importlib\n" +
+        "os.environ.pop('HONUA_JOB_TOKEN', None)\n" +
         "checkout, entry = sys.argv[1], sys.argv[2]\n" +
         "sys.path.insert(0, checkout)\n" +
         "module_name, _, func_name = entry.partition(':')\n" +

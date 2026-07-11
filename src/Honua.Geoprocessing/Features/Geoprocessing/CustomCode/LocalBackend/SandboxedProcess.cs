@@ -2,8 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Globalization;
-using System.Text;
+using System.Linq;
 
 namespace Honua.Geoprocessing.CustomCode.LocalBackend;
 
@@ -75,30 +74,70 @@ internal static class SandboxedProcess
         var addressSpaceKib = options.MaxAddressSpaceBytes is { } mem && mem > 0
             ? Math.Max(1, mem / 1024)
             : (long?)null;
+        // ulimit -f is specified in 512-byte blocks (POSIX; bash/dash/ash agree).
+        var fileSizeBlocks = options.MaxOutputFileBytes is { } fileBytes && fileBytes > 0
+            ? Math.Max(1, fileBytes / 512)
+            : (long?)null;
+        var sandboxUser = string.IsNullOrWhiteSpace(options.SandboxUser) ? null : options.SandboxUser.Trim();
+        // RLIMIT_NPROC (ulimit -u) is enforced per REAL UID across the WHOLE host on Linux. Applying it
+        // without dropping to a distinct sandbox UID would count against honua-server's own already-large
+        // thread/process footprint and could break launches outright — so it is applied ONLY alongside
+        // SandboxUser (see CustomCodeLocalBackendOptions remarks).
+        var processCount = sandboxUser is not null && options.MaxProcessCount is { } procs && procs > 0
+            ? (long?)procs
+            : null;
 
-        if (!OperatingSystem.IsWindows() && (cpuSeconds is not null || addressSpaceKib is not null))
+        if (sandboxUser is not null)
         {
-            // POSIX hosts (the real deployment/CI target): apply RLIMIT_CPU / RLIMIT_AS through a
-            // ulimit shell wrapper the kernel enforces. The wrapper never interpolates the executable
-            // or its arguments — they are passed as positional parameters ("$0"/"$@") and reached via
-            // `exec`, so there is no injection surface and the shell is replaced by the target process
-            // (keeping the process tree flat for the kill path).
-            var script = new StringBuilder();
+            // Defense in depth even though the options validator already constrains this charset: never
+            // let an unvalidated SandboxUser value (e.g. a hand-built options object bypassing the
+            // registered validator, as tests may do) reach shell interpolation below.
+            ValidateSandboxUserCharset(sandboxUser);
+        }
+
+        var hasAnyPosixControl = cpuSeconds is not null || addressSpaceKib is not null
+            || fileSizeBlocks is not null || sandboxUser is not null;
+
+        if (!OperatingSystem.IsWindows() && hasAnyPosixControl)
+        {
+            // POSIX hosts (the real deployment/CI target): apply RLIMIT_CPU / RLIMIT_AS / RLIMIT_FSIZE
+            // through a ulimit shell wrapper the kernel enforces, then (when configured) drop to the
+            // distinct SandboxUser via setpriv before the target program runs. The wrapper never
+            // interpolates the executable or its arguments — they are passed as positional parameters
+            // ("$0"/"$@") and reached via `exec`, so there is no injection surface and the shell (and,
+            // when present, setpriv) is replaced by the target process, keeping the process tree flat
+            // for the kill path. Each ulimit call is followed by "|| exit 97": a limit the kernel refuses
+            // (e.g. above the process's hard ceiling) now ABORTS the launch instead of silently
+            // proceeding unconfined — the previous "2>/dev/null; " form swallowed such failures.
+            var lines = new List<string>();
             if (addressSpaceKib is { } kib)
             {
-                script.Append(CultureInfo.InvariantCulture, $"ulimit -v {kib} 2>/dev/null; ");
+                lines.Add(FormattableString.Invariant($"ulimit -v {kib} || exit 97"));
             }
 
             if (cpuSeconds is { } secs)
             {
-                script.Append(CultureInfo.InvariantCulture, $"ulimit -t {secs} 2>/dev/null; ");
+                lines.Add(FormattableString.Invariant($"ulimit -t {secs} || exit 97"));
             }
 
-            script.Append("exec \"$0\" \"$@\"");
+            if (fileSizeBlocks is { } blocks)
+            {
+                lines.Add(FormattableString.Invariant($"ulimit -f {blocks} || exit 97"));
+            }
+
+            if (processCount is { } maxProcs)
+            {
+                lines.Add(FormattableString.Invariant($"ulimit -u {maxProcs} || exit 97"));
+            }
+
+            lines.Add(sandboxUser is not null
+                ? FormattableString.Invariant(
+                    $"exec {ResolveSetprivExecutable(options)} --reuid={sandboxUser} --regid={sandboxUser} --clear-groups --no-new-privs -- \"$0\" \"$@\"")
+                : "exec \"$0\" \"$@\"");
 
             startInfo.FileName = "/bin/sh";
             startInfo.ArgumentList.Add("-c");
-            startInfo.ArgumentList.Add(script.ToString());
+            startInfo.ArgumentList.Add(string.Join("; ", lines));
             startInfo.ArgumentList.Add(spec.Executable); // becomes $0
             foreach (var argument in spec.Arguments)
             {
@@ -107,8 +146,9 @@ internal static class SandboxedProcess
         }
         else
         {
-            // Non-POSIX host (or no limits configured): launch directly. CPU/address-space limits are
-            // NOT enforced in-process here — run inside a cgroup-constrained container on such hosts.
+            // Non-POSIX host (or no limits configured): launch directly. CPU/address-space/UID-drop
+            // controls are NOT enforced in-process here — run inside a cgroup-constrained container on
+            // such hosts.
             startInfo.FileName = spec.Executable;
             foreach (var argument in spec.Arguments)
             {
@@ -117,6 +157,25 @@ internal static class SandboxedProcess
         }
 
         return new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+    }
+
+    private static string ResolveSetprivExecutable(CustomCodeLocalBackendOptions options)
+        => string.IsNullOrWhiteSpace(options.SetprivExecutable) ? "setpriv" : options.SetprivExecutable;
+
+    /// <summary>
+    /// Restricts <see cref="CustomCodeLocalBackendOptions.SandboxUser"/> to a plain POSIX username
+    /// charset before it is interpolated into the launch wrapper's shell script. The options validator
+    /// enforces the same rule at startup; this is a second, load-bearing check so a hand-built options
+    /// object (bypassing DI validation) can never smuggle a shell metacharacter into the wrapper.
+    /// </summary>
+    private static void ValidateSandboxUserCharset(string sandboxUser)
+    {
+        if (sandboxUser.Length == 0 ||
+            !sandboxUser.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.'))
+        {
+            throw new InvalidOperationException(
+                "CustomCodeLocalBackendOptions.SandboxUser must be a plain POSIX username (letters/digits/-/_/.) with no path or shell metacharacters.");
+        }
     }
 }
 

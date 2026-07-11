@@ -16,14 +16,20 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// <summary>
 /// Adversarial coverage for <see cref="LocalProcessCustomCodeBackend"/> — the OS-sandboxed-subprocess
 /// custom-code backend. Beyond a happy-path run, each security control is exercised by a test that
-/// tries to break it: leaking a host secret through the environment, spinning forever past the
-/// wall-clock, escaping the address-space/CPU limits, and traversing out of the scratch directory.
-/// The subprocess-spawning tests use POSIX <c>/bin/sh</c> (mirroring the sibling
-/// <c>LocalProcessPoolBatchComputeBackendTests</c>); they run on the Linux CI host.
+/// tries to break it: leaking a host secret through the environment, escaping via <c>/proc</c> in the
+/// same-UID mode, exposing the raw job token, spinning forever past the wall-clock, escaping the
+/// address-space/CPU/output-size limits, and traversing out of the scratch directory. The
+/// subprocess-spawning tests use POSIX <c>/bin/sh</c> (mirroring the sibling
+/// <c>LocalProcessPoolBatchComputeBackendTests</c>); they run on the Linux CI host, which is
+/// non-root — so tests that require an actual privilege drop assert the fail-closed behavior when the
+/// drop is impossible, rather than the (untestable-without-root) success case.
 /// </summary>
 public sealed class LocalProcessCustomCodeBackendTests
 {
     private static bool Posix => !OperatingSystem.IsWindows();
+
+    private static bool SetprivAvailable => Posix &&
+        (File.Exists("/usr/bin/setpriv") || File.Exists("/bin/setpriv") || File.Exists("/usr/sbin/setpriv"));
 
     // ---------------------------------------------------------------------
     // Control 1: environment allowlist — the subprocess inherits no host secret.
@@ -60,6 +66,134 @@ public sealed class LocalProcessCustomCodeBackendTests
             Environment.SetEnvironmentVariable(secretName, null);
             Environment.SetEnvironmentVariable(allowedName, null);
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // F1 (adversarial review): UID separation is a code-enforced gate, and without it the env
+    // allowlist does NOT stop a same-UID script reading the parent's full environment via /proc.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task Gate_NoSandboxUserAndNotAcknowledged_FailsClosed()
+    {
+        // Deliberately bypass the Options() helper's default acknowledgement so this exercises the
+        // actual default posture: SandboxUser unset, risk not acknowledged.
+        var options = new CustomCodeLocalBackendOptions
+        {
+            Enabled = true,
+            SandboxUser = null,
+            AcknowledgeUnconfinedExecutionRisk = false,
+        };
+        using var backend = Backend(options, new ShellScriptPreparer("true"));
+
+        var start = await backend.StartAsync(CustomCodeJob("cc-gate"));
+
+        start.Status.Should().Be(ExecutionJobStatus.Failed);
+        start.Message.Should().Contain("SandboxUser");
+    }
+
+    [Fact]
+    public async Task SameUidFileRead_WithoutSandboxUser_CurrentlySucceeds_DocumentingSameUidRisk()
+    {
+        // Guarded directly with OperatingSystem.IsWindows() (rather than the Posix property) so the
+        // platform-compatibility analyzer recognizes this as a genuine POSIX-only guard around the
+        // Unix-only File.SetUnixFileMode call below.
+        if (OperatingSystem.IsWindows()) { return; }
+
+        // Demonstrates the same-UID risk with a vector that is deterministic across hosts: a "secret"
+        // file mode-600-owned by the CURRENT process's UID — the same UID the sandboxed child runs as
+        // in the "acknowledged unconfined" mode — sitting OUTSIDE the job's scratch directory (so
+        // scratch confinement is irrelevant here; this is a pure DAC same-UID check).
+        //
+        // We deliberately do NOT demonstrate this via /proc/<ppid>/environ (reading the PARENT's
+        // environment from the CHILD): on hosts running Linux's Yama LSM in restricted mode
+        // (kernel.yama.ptrace_scope=1 — confirmed to be this test host's default, and Ubuntu's distro
+        // default) that direction is blocked by the KERNEL, because Yama's ancestor rule requires the
+        // READER to be an ancestor of the target, not the reverse. That is a real, valuable kernel
+        // mitigation this backend does not control or rely on — but asserting on it here would make the
+        // test flaky across hosts with different ptrace_scope values. The DAC file-read vector below
+        // proves the same underlying same-UID risk (arbitrary file read of anything honua-server's own
+        // OS user can read) without depending on ptrace/Yama configuration at all.
+        var secretFile = TempFile();
+        await File.WriteAllTextAsync(secretFile, "same-uid-file-read-marker");
+        File.SetUnixFileMode(secretFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+
+        try
+        {
+            var outFile = TempFile();
+            var script = $"cat \"{secretFile}\" > \"{outFile}\" 2>/dev/null || echo READFAILED > \"{outFile}\"";
+            var options = Options(); // AcknowledgeUnconfinedExecutionRisk = true, no SandboxUser
+            using var backend = Backend(options, new ShellScriptPreparer(script));
+
+            (await RunToTerminalAsync(backend, CustomCodeJob("cc-file-read"))).Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+            (await File.ReadAllTextAsync(outFile)).Should().Contain(
+                "same-uid-file-read-marker",
+                "without SandboxUser the sandboxed child runs under the SAME OS user as its parent and " +
+                "can read any file that user owns via plain DAC permissions — regardless of scratch-dir " +
+                "confinement or the environment allowlist — which is why AcknowledgeUnconfinedExecutionRisk " +
+                "exists and why SandboxUser is the recommended posture");
+        }
+        finally
+        {
+            File.Delete(secretFile);
+        }
+    }
+
+    [Fact]
+    public async Task SandboxUser_WhenPrivilegeDropIsImpossible_FailsClosed_NeverRunsUnconfined()
+    {
+        if (!SetprivAvailable) { return; }
+
+        // The test runner is non-root (typical CI), so setpriv cannot actually drop to a different real
+        // UID (EPERM). Before the F4 fix this class of failure was invisible; now the wrapper's `exec
+        // setpriv ...` failing must abort the whole launch — proving the backend never silently falls
+        // back to running the job unconfined when the configured privilege drop cannot happen.
+        var outFile = TempFile();
+        var options = Options(o =>
+        {
+            o.SandboxUser = "nobody";
+            o.AcknowledgeUnconfinedExecutionRisk = false; // SandboxUser alone must satisfy the gate
+        });
+        using var backend = Backend(options, new ShellScriptPreparer($"echo SHOULD_NOT_RUN > \"{outFile}\""));
+
+        var terminal = await RunToTerminalAsync(backend, CustomCodeJob("cc-drop-fails"));
+
+        terminal.Status.Should().Be(ExecutionJobStatus.Failed);
+        File.Exists(outFile).Should().BeFalse(
+            "the target script must never execute when the privilege drop to SandboxUser fails");
+    }
+
+    // ---------------------------------------------------------------------
+    // F2 (adversarial review): the raw HONUA_JOB_TOKEN callback credential must never reach the child.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task Environment_JobTokenIsNeverExposedToTheChild()
+    {
+        if (!Posix) { return; }
+
+        var outFile = TempFile();
+        var script = $"printf '%s' \"${{HONUA_JOB_TOKEN:-EMPTY}}\" > \"{outFile}\"";
+        using var backend = Backend(Options(), new ShellScriptPreparer(script));
+
+        var job = CustomCodeJob("cc-token");
+        job = job with
+        {
+            Spec = job.Spec with
+            {
+                Parameters = new Dictionary<string, string>(job.Spec.Parameters, StringComparer.Ordinal)
+                {
+                    [CustomCodeJobContract.JobTokenEnvParam] = "sekrit-scoped-bearer-token",
+                    [CustomCodeJobContract.BaseUrlEnvParam] = "https://honua.example/api",
+                },
+            },
+        };
+
+        (await RunToTerminalAsync(backend, job)).Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+        (await File.ReadAllTextAsync(outFile)).Should().Be(
+            "EMPTY",
+            "HONUA_JOB_TOKEN must never be placed in the sandboxed child's environment, even though the " +
+            "job spec carries it for the Batch backend's callback client");
     }
 
     // ---------------------------------------------------------------------
@@ -134,6 +268,74 @@ public sealed class LocalProcessCustomCodeBackendTests
         terminal.Status.Should().BeOneOf(ExecutionJobStatus.Failed);
         terminal.Message.Should().NotContain("wall-clock",
             "the address-space limit should abort the allocation before the wall-clock deadline");
+    }
+
+    // ---------------------------------------------------------------------
+    // F3 (adversarial review): output-file-size ceiling (always) and process-count ceiling (only
+    // alongside SandboxUser — RLIMIT_NPROC is per-real-UID host-wide on Linux).
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task ResourceLimits_OutputFileSize_IsAppliedRegardlessOfSandboxUser()
+    {
+        if (!Posix) { return; }
+
+        var outFile = TempFile();
+        var options = Options(o => o.MaxOutputFileBytes = 100L * 1024 * 1024); // 100 MiB => 204800 blocks
+        using var backend = Backend(options, new ShellScriptPreparer($"printf '%s' \"$(ulimit -f)\" > \"{outFile}\""));
+
+        (await RunToTerminalAsync(backend, CustomCodeJob("cc-fsize"))).Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+        (await File.ReadAllTextAsync(outFile)).Should().Be(
+            (100L * 1024 * 1024 / 512).ToString(CultureInfo.InvariantCulture),
+            "RLIMIT_FSIZE (ulimit -f, in 512-byte blocks) must be set to the configured output-size ceiling");
+    }
+
+    [Fact]
+    public async Task ResourceLimits_ProcessCount_IsSkippedWithoutSandboxUser()
+    {
+        if (!Posix) { return; }
+
+        var outFile = TempFile();
+        // MaxProcessCount is configured but SandboxUser is NOT — applying RLIMIT_NPROC here would count
+        // against honua-server's own (large) thread/process footprint under the shared UID, so the
+        // launch script must skip -u entirely in this mode.
+        var options = Options(o => o.MaxProcessCount = 7);
+        using var backend = Backend(options, new ShellScriptPreparer($"printf '%s' \"$(ulimit -u)\" > \"{outFile}\""));
+
+        (await RunToTerminalAsync(backend, CustomCodeJob("cc-nproc-skip"))).Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+        (await File.ReadAllTextAsync(outFile)).Should().NotBe("7",
+            "ulimit -u must NOT be applied when SandboxUser is unset, regardless of MaxProcessCount");
+    }
+
+    // ---------------------------------------------------------------------
+    // F4 (adversarial review): a ulimit the wrapper fails to apply must abort the launch (fail closed),
+    // not silently continue unconfined. White-box: inspect the generated wrapper script itself so the
+    // guarantee is verified independent of any particular host's rlimit ceilings.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void LaunchScript_UlimitCalls_AbortOnFailure_NotSwallowed()
+    {
+        if (!Posix) { return; }
+
+        var options = Options(o =>
+        {
+            o.MaxCpuTime = TimeSpan.FromSeconds(10);
+            o.MaxAddressSpaceBytes = 256L * 1024 * 1024;
+            o.MaxOutputFileBytes = 50L * 1024 * 1024;
+        });
+        var spec = new SandboxLaunchSpec("/bin/true", []);
+        using var process = SandboxedProcess.Create(spec, Path.GetTempPath(), new Dictionary<string, string>(), options);
+
+        process.StartInfo.FileName.Should().Be("/bin/sh");
+        var script = process.StartInfo.ArgumentList[1];
+
+        script.Should().NotContain("2>/dev/null",
+            "the old swallow-and-continue pattern must be gone: a ulimit failure has to be visible and fatal");
+        script.Should().Contain("ulimit -t 10 || exit 97");
+        script.Should().Contain("ulimit -v 262144 || exit 97");
+        script.Should().Contain("ulimit -f 102400 || exit 97");
+        script.Should().MatchRegex(@"ulimit[^;]*\|\|\s*exit\s+\d+", "every ulimit call must be guarded by a fail-closed '|| exit'");
     }
 
     // ---------------------------------------------------------------------
@@ -216,6 +418,73 @@ public sealed class LocalProcessCustomCodeBackendTests
     }
 
     // ---------------------------------------------------------------------
+    // F1: options-validator gates, so a misconfigured deployment fails at startup, not at first job.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void Validator_EnabledWithoutSandboxUserOrAcknowledgement_Fails()
+    {
+        var result = new CustomCodeLocalBackendOptionsValidator().Validate(
+            null, new CustomCodeLocalBackendOptions { Enabled = true });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("SandboxUser");
+        result.FailureMessage.Should().Contain("AcknowledgeUnconfinedExecutionRisk");
+    }
+
+    [Fact]
+    public void Validator_EnabledWithAcknowledgement_Passes()
+    {
+        var result = new CustomCodeLocalBackendOptionsValidator().Validate(
+            null, new CustomCodeLocalBackendOptions { Enabled = true, AcknowledgeUnconfinedExecutionRisk = true });
+
+        result.Failed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Validator_EnabledWithValidSandboxUser_Passes()
+    {
+        var result = new CustomCodeLocalBackendOptionsValidator().Validate(
+            null, new CustomCodeLocalBackendOptions { Enabled = true, SandboxUser = "honua-customcode" });
+
+        result.Failed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Validator_SandboxUserRoot_Fails()
+    {
+        var result = new CustomCodeLocalBackendOptionsValidator().Validate(
+            null, new CustomCodeLocalBackendOptions { Enabled = true, SandboxUser = "root" });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("root");
+    }
+
+    [Fact]
+    public void Validator_SandboxUserWithShellMetacharacters_Fails()
+    {
+        var result = new CustomCodeLocalBackendOptionsValidator().Validate(
+            null, new CustomCodeLocalBackendOptions { Enabled = true, SandboxUser = "nobody; rm -rf /" });
+
+        result.Failed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SandboxedProcess_RejectsUnvalidatedSandboxUserCharset_EvenIfValidatorWasBypassed()
+    {
+        if (!Posix) { return; }
+
+        // Defense in depth: a hand-built options object (bypassing the registered validator, exactly as
+        // a test double or a future caller could do) must still never let a malicious SandboxUser value
+        // reach shell interpolation in the launch wrapper.
+        var options = Options(o => o.SandboxUser = "nobody`touch /tmp/pwned`");
+        var spec = new SandboxLaunchSpec("/bin/true", []);
+
+        var act = () => SandboxedProcess.Create(spec, Path.GetTempPath(), new Dictionary<string, string>(), options);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    // ---------------------------------------------------------------------
     // Discovery (req 4): a configured local tool is surfaced through the process catalog.
     // ---------------------------------------------------------------------
     [Fact]
@@ -255,15 +524,25 @@ public sealed class LocalProcessCustomCodeBackendTests
     // ---------------------------------------------------------------------
     private static string TempFile() => Path.Combine(Path.GetTempPath(), $"honua-cc-{Guid.NewGuid():N}.txt");
 
+    /// <summary>
+    /// Default test options run in the "acknowledged unconfined" mode (no SandboxUser — CI is non-root
+    /// and cannot actually drop privileges) so most of these tests can exercise the OTHER controls
+    /// (env allowlist, wall-clock, resource limits, scratch confinement) in isolation. The F1 tests
+    /// above explicitly build options WITHOUT the acknowledgement, or WITH SandboxUser, to exercise the
+    /// UID-separation gate itself.
+    /// </summary>
     private static CustomCodeLocalBackendOptions Options(Action<CustomCodeLocalBackendOptions>? configure = null)
     {
         var options = new CustomCodeLocalBackendOptions
         {
             Enabled = true,
+            AcknowledgeUnconfinedExecutionRisk = true,
             MaxConcurrentProcesses = 2,
             MaxWallClock = TimeSpan.FromSeconds(30),
             MaxCpuTime = TimeSpan.FromSeconds(20),
             MaxAddressSpaceBytes = 512L * 1024 * 1024,
+            MaxProcessCount = null, // opt in per-test; skipped anyway without SandboxUser
+            MaxOutputFileBytes = null, // opt in per-test so unrelated tests aren't coupled to this limit
         };
         configure?.Invoke(options);
         return options;

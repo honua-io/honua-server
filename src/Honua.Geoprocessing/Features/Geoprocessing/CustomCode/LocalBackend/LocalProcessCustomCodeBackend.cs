@@ -19,27 +19,53 @@ namespace Honua.Geoprocessing.CustomCode.LocalBackend;
 /// <remarks>
 /// <para>
 /// <b>SECURITY MODEL — READ BEFORE ENABLING. This surface executes untrusted user code on the server
-/// host.</b> It layers five controls; the first four are enforced in-process, the fifth is a
-/// deployment requirement this MVP cannot self-enforce:
+/// host.</b> Corrected after adversarial review: an earlier revision overstated the environment
+/// allowlist's strength and omitted UID separation and a raw-token leak entirely — see below and
+/// <see cref="CustomCodeLocalBackendOptions"/> for the full, honest picture.
 /// </para>
 /// <list type="number">
-///   <item><description><b>Environment allowlist (hard).</b> The subprocess inherits NOTHING from the
-///   honua-server environment. Only the custom-code contract variables (<c>CUSTOMCODE_*</c> and the
-///   job-scoped <c>HONUA_BASE_URL</c>/<c>HONUA_JOB_TOKEN</c>), a controlled minimal <c>PATH</c>, the
-///   standard <c>HONUA_*</c> job markers, and any names the operator explicitly listed in
-///   <see cref="CustomCodeLocalBackendOptions.EnvironmentAllowlist"/> are exposed — built as an
-///   allowlist, never a filtered copy of the parent environment.</description></item>
-///   <item><description><b>Wall-clock timeout + process-tree kill (hard).</b> A monitor kills the
-///   entire process tree at <see cref="CustomCodeLocalBackendOptions.MaxWallClock"/>, so a job that
-///   spins forever (or double-forks a child) is terminated and its slot reclaimed.</description></item>
-///   <item><description><b>CPU + address-space limits (POSIX).</b> On POSIX hosts the child is launched
-///   through a kernel-enforced <c>ulimit</c> wrapper (RLIMIT_CPU / RLIMIT_AS). On non-POSIX hosts these
-///   are not enforced in-process — run inside a cgroup-constrained container there.</description></item>
-///   <item><description><b>Single-use scratch confinement + path-traversal safety (hard).</b> A fresh
+///   <item><description><b>Process UID separation (<see cref="CustomCodeLocalBackendOptions.SandboxUser"/>,
+///   POSIX).</b> The control the others depend on for real strength. WITHOUT it, the subprocess runs
+///   under the SAME OS user as honua-server: a same-UID script can unconditionally read any file
+///   honua-server itself can read via plain DAC file permissions, and — on hosts where Linux's Yama
+///   LSM allows it (<c>kernel.yama.ptrace_scope=0</c>; NOT the Ubuntu-style restricted default) — read
+///   <c>/proc/&lt;honua-server-pid&gt;/environ</c> directly to recover honua-server's ENTIRE process
+///   environment regardless of the allowlist below, and signal honua-server. WITH it, the child is
+///   switched to a distinct, unprivileged user via <c>setpriv</c> before its target program runs,
+///   closing all of the above regardless of the host's Yama configuration. Requires honua-server to
+///   have <c>CAP_SETUID</c>; if the drop fails, the launch fails closed. Without
+///   <see cref="CustomCodeLocalBackendOptions.SandboxUser"/> the operator must set
+///   <see cref="CustomCodeLocalBackendOptions.AcknowledgeUnconfinedExecutionRisk"/> — a code-enforced
+///   gate the backend checks at every <see cref="StartAsync"/>, not just at startup — or the backend
+///   refuses to run any job.</description></item>
+///   <item><description><b>Environment allowlist.</b> The subprocess inherits NOTHING via the
+///   environment vector: only the custom-code contract variables (<c>CUSTOMCODE_*</c> and the
+///   job-scoped <c>HONUA_BASE_URL</c>), a controlled minimal <c>PATH</c>, the standard <c>HONUA_*</c>
+///   job markers, and any names the operator explicitly listed in
+///   <see cref="CustomCodeLocalBackendOptions.EnvironmentAllowlist"/> are exposed. The raw
+///   <c>HONUA_JOB_TOKEN</c> callback credential is deliberately NEVER copied into the child's
+///   environment (see <see cref="BuildEnvironment"/>) — this MVP does not yet give a local custom tool
+///   a Honua API callback client. This is a real confidentiality boundary only in combination with UID
+///   separation above; without it, same-UID file/proc access defeats it (see item 1).</description></item>
+///   <item><description><b>Wall-clock timeout + process-tree kill.</b> A monitor kills the entire
+///   process tree at <see cref="CustomCodeLocalBackendOptions.MaxWallClock"/>. A detached
+///   double-forked grandchild can survive the tree-kill, and because the CPU limit below counts
+///   CPU-seconds (not wall-clock), a mostly-sleeping escapee can persist a long time — even across a
+///   honua-server restart — on a bare host; a container/PID-namespace boundary closes this by tearing
+///   down the whole namespace on exit.</description></item>
+///   <item><description><b>CPU + address-space + output-size limits (POSIX).</b> The child is launched
+///   through a kernel-enforced <c>ulimit</c> wrapper (RLIMIT_CPU / RLIMIT_AS / RLIMIT_FSIZE); a limit
+///   the wrapper fails to apply now aborts the launch (fails closed) rather than silently proceeding
+///   unconfined. <see cref="CustomCodeLocalBackendOptions.MaxProcessCount"/> (RLIMIT_NPROC) applies
+///   only alongside <see cref="CustomCodeLocalBackendOptions.SandboxUser"/> (RLIMIT_NPROC is per-UID
+///   host-wide on Linux). Not enforced in-process on non-POSIX hosts — run inside a
+///   cgroup-constrained container there.</description></item>
+///   <item><description><b>Single-use scratch confinement + path-traversal safety.</b> A fresh
 ///   directory is created per job under <see cref="CustomCodeLocalBackendOptions.WorkingRoot"/>, is the
-///   only path handed to the child (as its working directory and checkout root), and is deleted on
-///   terminal. Every constructed path is validated to resolve strictly under that root
-///   (<see cref="SandboxPaths"/>), so a crafted id / manifest / repo layout cannot escape it.</description></item>
+///   only path handed to the child, and is deleted on terminal. Every constructed path is validated to
+///   resolve strictly under that root (<see cref="SandboxPaths"/>) — lexically, not symlink-resolving;
+///   this is subsumed by UID separation (item 1) and fully closing it needs a mount-namespace/container
+///   boundary.</description></item>
 ///   <item><description><b>Network (NOT enforced here).</b> OS-process-level network denial is not
 ///   portably enforceable without a namespace/container boundary this MVP does not own. Treat network
 ///   isolation as a deployment requirement: run this backend inside an already-network-restricted
@@ -114,6 +140,21 @@ internal sealed partial class LocalProcessCustomCodeBackend : IBatchComputeBacke
         {
             Log.BackendDisabled(_logger, job.OperationId);
             return Failed("The local custom-code backend is not enabled (set Geoprocessing:CustomCode:Local:Enabled=true).");
+        }
+
+        // F1 (adversarial review): re-check the UID-separation gate on every StartAsync, not just at
+        // options-validator startup time — IOptionsMonitor can observe a config reload, and this is the
+        // load-bearing control the environment allowlist depends on for real strength (see class docs).
+        if (string.IsNullOrWhiteSpace(options.SandboxUser) && !options.AcknowledgeUnconfinedExecutionRisk)
+        {
+            Log.UnconfinedExecutionRefused(_logger, job.OperationId);
+            return Failed(
+                "The local custom-code backend requires either Geoprocessing:CustomCode:Local:SandboxUser " +
+                "(recommended — drops the child to a distinct unprivileged OS user) or an explicit " +
+                "Geoprocessing:CustomCode:Local:AcknowledgeUnconfinedExecutionRisk=true. Without a sandbox " +
+                "user the subprocess runs under the SAME OS user as honua-server and can read any file " +
+                "honua-server can read (and, depending on the host, honua-server's process environment via " +
+                "/proc); refusing to run closed.");
         }
 
         CustomCodeJobInputs inputs;
@@ -422,6 +463,16 @@ internal sealed partial class LocalProcessCustomCodeBackend : IBatchComputeBacke
     /// Builds the EXACT environment the subprocess sees as a strict allowlist. Nothing is copied
     /// wholesale from the parent; each entry is added by name.
     /// </summary>
+    /// <remarks>
+    /// F2 (adversarial review): the raw <c>HONUA_JOB_TOKEN</c> callback credential is deliberately NEVER
+    /// added here, unlike the cloud custom-code path's harness (<c>sandbox.py</c>), which constructs a
+    /// scoped client from it and then scrubs it from the environment before user code runs. This MVP
+    /// local backend has no equivalent scoped-client construction (no guaranteed <c>honua_sdk</c> on the
+    /// host, no network into the sandbox to use it even if present), so rather than hand a local custom
+    /// tool a raw bearer token it cannot safely use, this backend does not expose one at all. A tool that
+    /// needs to call back into honua-server's API is not yet supported by this backend — use the Batch
+    /// backend for that use case.
+    /// </remarks>
     private static Dictionary<string, string> BuildEnvironment(
         ExecutionJobRecord job,
         CustomCodeJobInputs inputs,
@@ -454,15 +505,17 @@ internal sealed partial class LocalProcessCustomCodeBackend : IBatchComputeBacke
         }
 
         // 3) Custom-code contract variables — ONLY the known CUSTOMCODE_* names plus the job-scoped
-        //    HONUA_BASE_URL / HONUA_JOB_TOKEN — read from the submit-injected env.* spec keys. Arbitrary
-        //    caller-supplied env.* keys are NOT surfaced: this is an allowlist keyed by contract name.
+        //    HONUA_BASE_URL — read from the submit-injected env.* spec keys. Arbitrary caller-supplied
+        //    env.* keys are NOT surfaced: this is an allowlist keyed by contract name.
+        //
+        //    HONUA_JOB_TOKEN is deliberately EXCLUDED (F2, adversarial review): the raw scoped bearer
+        //    token is never placed in the child's environment at all. See the remarks on this method.
         foreach (var envName in CustomCodeJobContract.ParameterToEnvName.Values)
         {
             CopyEnvParam(job.Spec.Parameters, envName, env);
         }
 
         CopyEnvParam(job.Spec.Parameters, CustomCodeJobContract.BaseUrlEnvName, env);
-        CopyEnvParam(job.Spec.Parameters, CustomCodeJobContract.JobTokenEnvName, env);
 
         // 4) Controlled PATH — the host PATH is never inherited. Always wins over an allowlisted "PATH".
         env["PATH"] = options.Path;
@@ -731,5 +784,8 @@ internal sealed partial class LocalProcessCustomCodeBackend : IBatchComputeBacke
 
         [LoggerMessage(9320, LogLevel.Warning, "Local custom-code backend was selected but is not enabled; failing job {OperationId} closed")]
         public static partial void BackendDisabled(ILogger logger, string operationId);
+
+        [LoggerMessage(9321, LogLevel.Warning, "Local custom-code backend refused job {OperationId}: no SandboxUser configured and AcknowledgeUnconfinedExecutionRisk is not set; failing closed")]
+        public static partial void UnconfinedExecutionRefused(ILogger logger, string operationId);
     }
 }
