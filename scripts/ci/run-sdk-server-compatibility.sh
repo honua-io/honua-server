@@ -23,6 +23,9 @@ MIGRATION_SERVER_BASE_URL="${HONUA_SDK_MIGRATION_SERVER_BASE_URL:-http://localho
 MIGRATION_GEOSERVER_URL="${HONUA_SDK_MIGRATION_GEOSERVER_URL:-http://127.0.0.1:5011/geoserver/rest}"
 MIGRATION_GEOSERVER_FIXTURE="${HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE:-tests/dotnet/Honua.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json}"
 MIGRATION_ARCGIS_SERVICE_URL="${HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL:-https://sampleserver6.arcgisonline.com/arcgis/rest/services/ServiceRequest/FeatureServer}"
+MIGRATION_AUTOMATION_REQUIRED="${HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED:-true}"
+COMPAT_SERVER_LABEL="${HONUA_SDK_COMPAT_SERVER_LABEL:-unknown-server}"
+COMPAT_SDK_LABEL="${HONUA_SDK_COMPAT_SDK_LABEL:-unknown-sdk}"
 
 cleanup_pids=()
 
@@ -69,9 +72,13 @@ cleanup() {
 trap cleanup EXIT
 
 start_geoserver_fixture() {
-    local fixture_path="$ROOT_DIR/$MIGRATION_GEOSERVER_FIXTURE"
+    local fixture_path="$MIGRATION_GEOSERVER_FIXTURE"
     local fixture_port
     local log_path="$RESULTS_DIR/geoserver-fixture.log"
+
+    if [[ "$fixture_path" != /* ]]; then
+        fixture_path="$ROOT_DIR/$fixture_path"
+    fi
 
     fixture_port="$(url_port "$MIGRATION_GEOSERVER_URL")"
 
@@ -225,18 +232,75 @@ write_migration_automation_summary() {
       }' > "$MIGRATION_EVIDENCE_FILE"
 }
 
+write_migration_automation_not_applicable_summary() {
+    local reason="Migration automation is additive and is not claimed by ${COMPAT_SERVER_LABEL} x ${COMPAT_SDK_LABEL}."
+
+    jq -n --arg reason "$reason" '
+      def surface($name; $ticket):
+        {
+          surface: $name,
+          status: "not-applicable",
+          passed: true,
+          linked_ticket: $ticket,
+          reason: $reason
+        };
+      {
+        migration_automation: {
+          required: false,
+          status: "not-applicable",
+          passed: true,
+          reason: $reason
+        },
+        migration_automation_by_sdk: {
+          js: [
+            surface("migration-scan"; "honua-sdk-js#105"),
+            surface("arcgis-import"; "honua-sdk-js#105"),
+            surface("geoserver-dry-run"; "honua-sdk-js#105"),
+            surface("migration-evidence"; "honua-sdk-js#105")
+          ],
+          python: [
+            surface("migration-scan"; "honua-sdk-python#49"),
+            surface("arcgis-import"; "honua-sdk-python#49"),
+            surface("geoserver-dry-run"; "honua-sdk-python#49"),
+            surface("migration-evidence"; "honua-sdk-python#49")
+          ],
+          dotnet: [
+            surface("migration-scan"; "honua-sdk-dotnet#134"),
+            surface("arcgis-import"; "honua-sdk-dotnet#134"),
+            surface("geoserver-dry-run"; "honua-sdk-dotnet#134"),
+            surface("migration-evidence"; "honua-sdk-dotnet#134")
+          ]
+        }
+      }
+    ' > "$MIGRATION_EVIDENCE_FILE"
+}
+
 mkdir -p \
     "$RESULTS_DIR" \
     "$JS_MIGRATION_RESULTS_DIR" \
     "$PYTHON_MIGRATION_RESULTS_DIR" \
     "$DOTNET_MIGRATION_RESULTS_DIR"
 
+if [[ "${SDK_COMPATIBILITY_CLASSIFY_ONLY:-false}" == "true" ]]; then
+    if [[ "$MIGRATION_AUTOMATION_REQUIRED" == "true" ]]; then
+        echo "Current capability cells must execute migration automation; classify-only is invalid." >&2
+        exit 3
+    fi
+    write_migration_automation_not_applicable_summary
+    exit 0
+fi
+
 section "Honua Server readiness"
 curl -fsS "$BASE_URL/healthz/ready" >/dev/null
 
 section "SDK migration fixture readiness"
-start_geoserver_fixture
-start_migration_honua_server
+if [[ "$MIGRATION_AUTOMATION_REQUIRED" == "true" ]]; then
+    start_geoserver_fixture
+    start_migration_honua_server
+else
+    write_migration_automation_not_applicable_summary
+    printf 'Migration automation not applicable for %s x %s.\n' "$COMPAT_SERVER_LABEL" "$COMPAT_SDK_LABEL"
+fi
 
 section "JavaScript SDK live compatibility"
 require_dir "$JS_DIR" "honua-sdk-js"
@@ -252,6 +316,7 @@ require_dir "$JS_DIR" "honua-sdk-js"
     HONUA_SDK_MIGRATION_GEOSERVER_URL="$MIGRATION_GEOSERVER_URL" \
     HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL="$MIGRATION_ARCGIS_SERVICE_URL" \
     HONUA_SDK_MIGRATION_JS_RESULTS_DIR="$JS_MIGRATION_RESULTS_DIR" \
+    HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED="$MIGRATION_AUTOMATION_REQUIRED" \
     HONUA_SDK_PORTAL_COMPAT_ENABLED="$PORTAL_COMPAT_ENABLED" \
     HONUA_SDK_PORTAL_USERNAME="$PORTAL_USERNAME" \
     HONUA_SDK_PORTAL_PASSWORD="$PORTAL_PASSWORD" \
@@ -268,6 +333,7 @@ const migrationBaseUrl = process.env.HONUA_SDK_MIGRATION_SERVER_BASE_URL;
 const migrationGeoServerUrl = process.env.HONUA_SDK_MIGRATION_GEOSERVER_URL;
 const migrationArcGisServiceUrl = process.env.HONUA_SDK_MIGRATION_ARCGIS_SERVICE_URL;
 const migrationResultsDir = process.env.HONUA_SDK_MIGRATION_JS_RESULTS_DIR;
+const migrationAutomationRequired = process.env.HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED === "true";
 const portalCompatEnabled = process.env.HONUA_SDK_PORTAL_COMPAT_ENABLED === "true";
 const portalUsername = process.env.HONUA_SDK_PORTAL_USERNAME;
 const portalPassword = process.env.HONUA_SDK_PORTAL_PASSWORD;
@@ -352,6 +418,11 @@ if (portalCompatEnabled) {
   }
 
   console.log("JS SDK PortalCompat generateToken -> search -> openFeatureLayer compatibility passed.");
+}
+
+if (!migrationAutomationRequired) {
+  console.log(`JS SDK core compatibility passed for server ${compatibility.serverVersion}; migration automation is not applicable.`);
+  process.exit(0);
 }
 
 const migrationClient = new HonuaClient({ baseUrl: migrationBaseUrl, apiKey, timeoutMs: 120_000 });
@@ -614,14 +685,18 @@ require_dir "$DOTNET_DIR" "honua-sdk-dotnet"
     dotnet add "$smoke_project" reference "$dotnet_admin_project" >/dev/null
     cat > "$smoke_dir/Program.cs" <<'CS'
 using Honua.Sdk.Admin;
+#if MIGRATION_AUTOMATION
 using Honua.Sdk.Admin.Models;
 using System.Text.Json;
+#endif
 
 var baseUrl = Environment.GetEnvironmentVariable("HONUA_SERVER_BASE_URL") ?? "http://localhost:5000";
 var apiKey = Environment.GetEnvironmentVariable("HONUA_ADMIN_API_KEY") ?? "ci-admin-password";
+#if MIGRATION_AUTOMATION
 var migrationBaseUrl = Environment.GetEnvironmentVariable("HONUA_SDK_MIGRATION_SERVER_BASE_URL") ?? baseUrl;
 var migrationGeoServerUrl = Environment.GetEnvironmentVariable("HONUA_SDK_MIGRATION_GEOSERVER_URL") ?? "http://127.0.0.1:5011/geoserver/rest";
 var migrationResultsDir = Environment.GetEnvironmentVariable("HONUA_SDK_MIGRATION_DOTNET_RESULTS_DIR");
+#endif
 
 using var httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
 httpClient.DefaultRequestHeaders.TryAddWithoutValidation("X-API-Key", apiKey);
@@ -645,6 +720,7 @@ if (!compatibility.IsSupported)
     throw new InvalidOperationException($".NET SDK rejected the seeded server: {compatibility.UnsupportedReason}");
 }
 
+#if MIGRATION_AUTOMATION
 if (!string.IsNullOrWhiteSpace(migrationResultsDir))
 {
     Directory.CreateDirectory(migrationResultsDir);
@@ -672,6 +748,7 @@ if (!string.IsNullOrWhiteSpace(migrationResultsDir))
         Path.Combine(migrationResultsDir, "migration-scan.json"),
         JsonSerializer.Serialize(scan, jsonOptions) + Environment.NewLine);
 }
+#endif
 
 Console.WriteLine($".NET SDK compatibility passed for server {capabilities.ServerVersion}.");
 CS
@@ -681,8 +758,12 @@ CS
         -p:WarningsAsErrors=
         -p:CodeAnalysisTreatWarningsAsErrors=false
     )
+    if [[ "$MIGRATION_AUTOMATION_REQUIRED" == "true" ]]; then
+        dotnet_msbuild_props+=("-p:DefineConstants=MIGRATION_AUTOMATION")
+    fi
     HONUA_SERVER_BASE_URL="$BASE_URL" \
     HONUA_ADMIN_API_KEY="$ADMIN_API_KEY" \
+    HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED="$MIGRATION_AUTOMATION_REQUIRED" \
     dotnet build "$smoke_project" --configuration Release "${dotnet_msbuild_props[@]}" >/dev/null
     HONUA_SERVER_BASE_URL="$BASE_URL" \
     HONUA_ADMIN_API_KEY="$ADMIN_API_KEY" \
@@ -693,11 +774,19 @@ CS
 )
 
 section "SDK migration automation evidence"
-write_migration_automation_summary
-jq -e '
-  .migration_automation.status == "supported"
-  and (.migration_automation_by_sdk.js | map(select(.status == "supported")) | length == 4)
-  and (.migration_automation_by_sdk.dotnet | map(select(.surface == "migration-scan" and .status == "supported")) | length == 1)
-' "$MIGRATION_EVIDENCE_FILE" >/dev/null
+if [[ "$MIGRATION_AUTOMATION_REQUIRED" == "true" ]]; then
+    write_migration_automation_summary
+    jq -e '
+      .migration_automation.status == "supported"
+      and (.migration_automation_by_sdk.js | map(select(.status == "supported")) | length == 4)
+      and (.migration_automation_by_sdk.dotnet | map(select(.surface == "migration-scan" and .status == "supported")) | length == 1)
+    ' "$MIGRATION_EVIDENCE_FILE" >/dev/null
+else
+    jq -e '
+      .migration_automation.status == "not-applicable"
+      and .migration_automation.passed == true
+      and all(.migration_automation_by_sdk[][]; .status == "not-applicable" and .passed == true)
+    ' "$MIGRATION_EVIDENCE_FILE" >/dev/null
+fi
 
 section "SDK compatibility complete"
