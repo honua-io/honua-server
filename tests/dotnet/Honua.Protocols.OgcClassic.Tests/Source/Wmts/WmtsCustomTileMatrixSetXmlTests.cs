@@ -36,18 +36,18 @@ public class WmtsCustomTileMatrixSetXmlTests
         string crs = "urn:ogc:def:crs:OGC:1.3:CRS84",
         double topLeftX = -180.0,
         double topLeftY = 90.0) => new()
-    {
-        Id = "DemoGeographic",
-        Crs = crs,
-        Srid = 4326,
-        TopLeftCorner = [topLeftX, topLeftY],
-        TileWidth = 256,
-        TileHeight = 256,
-        Levels =
-        [
-            new TileMatrixLevel { Id = 0, ScaleDenominator = 279541132.0143589, CellSize = 0.703125, MatrixWidth = 2, MatrixHeight = 1 }
-        ]
-    };
+        {
+            Id = "DemoGeographic",
+            Crs = crs,
+            Srid = 4326,
+            TopLeftCorner = [topLeftX, topLeftY],
+            TileWidth = 256,
+            TileHeight = 256,
+            Levels =
+            [
+                new TileMatrixLevel { Id = 0, ScaleDenominator = 279541132.0143589, CellSize = 0.703125, MatrixWidth = 2, MatrixHeight = 1 }
+            ]
+        };
 
     [Fact]
     public void AppendCustomTileMatrixSets_NullRegistry_EmitsNothing()
