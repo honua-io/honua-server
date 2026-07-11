@@ -4,6 +4,7 @@
 using Honua.Alerts;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
+using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -25,6 +26,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     internal const string RequestedByAgent = "ops-findings";
 
     internal const string RuleAlertDispatchBacklog = "alert-dispatch-backlog";
+    internal const string RuleAlertDispatchChannelFailure = "alert-dispatch-channel-failure";
     internal const string RulePlatformReleaseSkew = "platform-release-skew";
     internal const string RulePendingContractMigrations = "pending-contract-migrations";
     internal const string RuleGpQueueDepth = "gp-queue-depth";
@@ -83,6 +85,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         var findings = new List<OpsFinding>();
 
         EvaluateAlertDispatchBacklog(now, options, findings);
+        EvaluateAlertDispatchChannelFailures(now, options, findings);
         EvaluateLocalBackendSubstrate(now, findings);
         EvaluatePlatformReleaseSkew(now, findings);
         EvaluateDbBoundedAdmissionPressure(now, options, findings);
@@ -215,7 +218,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
                 AutoSafe = true,
                 BlastRadius = backlog.DeadLetteredCount > int.MaxValue ? int.MaxValue : (int)Math.Max(1, backlog.DeadLetteredCount),
             };
-            explanation = $"The alert dispatcher has {backlog.DeadLetteredCount} dead-lettered notification(s) that exhausted retries and require operator triage (pending backlog {backlog.PendingCount}). Redriving re-enqueues them for redelivery; if the underlying channel is unhealthy the same rows will dead-letter again, and repeated storms should be triaged by pausing the affected channel directly (no per-channel breakdown is available from this signal to safely automate that step yet).";
+            explanation = $"The alert dispatcher has {backlog.DeadLetteredCount} dead-lettered notification(s) that exhausted retries and require operator triage (pending backlog {backlog.PendingCount}). Redriving re-enqueues them for redelivery; channel-attributed failures also produce a scoped isolation finding whose pause action remains approval-gated.";
         }
         else
         {
@@ -234,6 +237,66 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             EvidenceRefs = ["healthcheck:alert-dispatch", "GET /monitoring/health/comprehensive"],
             RecommendedAction = action,
         });
+    }
+
+    // Channel-scoped isolation stays deliberately approval-only. Dead-letter attribution is a
+    // deterministic signal for the affected channel, but pausing delivery can suppress alerts and
+    // therefore must never inherit the redrive action's autonomous safety classification.
+    private void EvaluateAlertDispatchChannelFailures(
+        DateTimeOffset now,
+        OpsFindingsOptions options,
+        List<OpsFinding> findings)
+    {
+        if (!_alertHealth.IsDispatcherEnabled || _alertHealth.LastBacklog is not { } backlog)
+        {
+            return;
+        }
+
+        foreach (var channel in backlog.Channels
+                     .Where(channel => channel.DeadLetteredCount >= options.AlertDispatchDeadLetterThreshold)
+                     .OrderBy(channel => channel.ChannelType))
+        {
+            var channelName = channel.ChannelType.ToExternalName();
+            var subject = new OpsFindingSubject { Channel = channelName };
+            var boundedActiveCount = Math.Min(channel.PendingCount, int.MaxValue)
+                + Math.Min(channel.RetryingCount, int.MaxValue)
+                + Math.Min(channel.DeadLetteredCount, int.MaxValue);
+            OpsFindingRecommendedAction? action = null;
+            if (!channel.IsPaused)
+            {
+                action = new OpsFindingRecommendedAction
+                {
+                    Kind = OperationClass.AdminConfigChange,
+                    ActionDiscriminator = OpsActionNames.PauseChannel,
+                    Summary = $"Pause the failing {channelName} alert channel while delivery is investigated.",
+                    ExecutionPayload = OpsActionExecutionPayloads.PauseChannel(channelName),
+                    Reason = $"The {channelName} channel has {channel.DeadLetteredCount} dead-lettered notification(s).",
+                    AutoSafe = false,
+                    BlastRadius = (int)Math.Clamp(boundedActiveCount, 1, int.MaxValue),
+                };
+            }
+
+            var pauseState = channel.IsPaused
+                ? "The channel is already paused, so no additional action is proposed."
+                : "Pausing is approval-gated because it suppresses delivery; healthy channels remain active.";
+            findings.Add(new OpsFinding
+            {
+                Id = OpsFindingId.Create(RuleAlertDispatchChannelFailure, subject),
+                Rule = RuleAlertDispatchChannelFailure,
+                Severity = OpsFindingSeverity.Critical,
+                Title = $"Alert delivery is failing on {channelName}",
+                Explanation = $"The {channelName} channel has {channel.DeadLetteredCount} dead-lettered, "
+                    + $"{channel.RetryingCount} retrying, and {channel.PendingCount} pending notification(s). {pauseState}",
+                DetectedAt = now,
+                Subject = subject,
+                EvidenceRefs =
+                [
+                    "GET /api/v1/admin/observability/ops-health",
+                    $"alert-dispatch-channel:{channelName}",
+                ],
+                RecommendedAction = action,
+            });
+        }
     }
 
     // Rule (f): database connection-pool pressure (utilization and/or acquisition timeouts over

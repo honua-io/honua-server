@@ -60,6 +60,7 @@ public sealed class OpsActionApplierTests : IAsyncLifetime
     {
         var channel = AlertChannelType.AwsSqs;
         var eventId = await SeedDispatchAsync(channel);
+        var healthyEventId = await SeedDispatchAsync(AlertChannelType.Webhook);
         var store = _fixture.GetService<IAlertDispatchStore>();
 
         var pauseChangeId = await Applier.ApplyAsync(
@@ -73,6 +74,9 @@ public sealed class OpsActionApplierTests : IAsyncLifetime
         pausedClaims.Should().NotContain(
             item => item.EventId == eventId,
             "a paused channel's rows must not be claimed");
+        pausedClaims.Should().Contain(
+            item => item.EventId == healthyEventId,
+            "pausing one failing channel must not suppress healthy channel delivery");
 
         // Idempotent: pausing an already-paused channel succeeds and stays paused.
         (await Applier.ApplyAsync("""{"action":"alerts.pause_channel","params":{"channel":"aws_sqs"}}"""))
