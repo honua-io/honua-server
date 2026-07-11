@@ -6,6 +6,7 @@ set -euo pipefail
 CONTRACT="honua.server-test-binaries.v1"
 MAX_ARCHIVE_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES:-268435456}"
 MAX_UNPACKED_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES:-536870912}"
+MAX_EVIDENCE_TTL_SECONDS="${HONUA_SERVER_TEST_ARTIFACT_MAX_TTL_SECONDS:-86400}"
 manifest=""
 destination=""
 expected_project=""
@@ -42,6 +43,11 @@ if [[ -z "${dotnet_sdk}" ]]; then
   command -v dotnet >/dev/null || { echo "::error::Required command 'dotnet' is unavailable." >&2; exit 2; }
   dotnet_sdk="$(dotnet --version)"
 fi
+now_epoch="${HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH:-$(date +%s)}"
+if [[ ! "${now_epoch}" =~ ^[0-9]+$ ]] || [[ ! "${MAX_EVIDENCE_TTL_SECONDS}" =~ ^[0-9]+$ ]]; then
+  echo "::error::Evidence time bounds must be positive integers." >&2
+  exit 2
+fi
 
 jq -e \
   --arg contract "${CONTRACT}" \
@@ -57,10 +63,19 @@ jq -e \
     (.archive_bytes | type == "number" and . > 0) and
     (.unpacked_bytes | type == "number" and . > 0) and
     (.file_count | type == "number" and . > 0)
+    and ((.created_at_epoch | type) == "number" and .created_at_epoch > 0)
+    and ((.expires_at_epoch | type) == "number" and .expires_at_epoch > .created_at_epoch)
   ' "${manifest}" >/dev/null || {
   echo "::error::Artifact manifest does not match the exact source/project/toolchain contract." >&2
   exit 1
 }
+
+created_at_epoch="$(jq -r '.created_at_epoch' "${manifest}")"
+expires_at_epoch="$(jq -r '.expires_at_epoch' "${manifest}")"
+if (( created_at_epoch > now_epoch || expires_at_epoch < now_epoch || expires_at_epoch - created_at_epoch > MAX_EVIDENCE_TTL_SECONDS )); then
+  echo "::error::Artifact evidence is not within its accepted validity window." >&2
+  exit 1
+fi
 
 archive_file="$(jq -r '.archive_file' "${manifest}")"
 archive_path="${manifest_dir}/${archive_file}"

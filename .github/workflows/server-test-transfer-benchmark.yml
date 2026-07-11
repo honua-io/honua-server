@@ -1,0 +1,407 @@
+name: Server Test Transfer Benchmark
+
+on:
+  push:
+    branches:
+      - ci/2722-hosted-transfer-benchmark
+    paths:
+      - .github/server-test-transfer-benchmark.json
+      - .github/workflows/server-test-transfer-benchmark.yml
+      - scripts/ci/benchmark-server-test-transfer.sh
+      - scripts/ci/package-server-test-binaries.sh
+      - scripts/ci/restore-server-test-binaries.sh
+      - scripts/ci/summarize-server-test-transfer-benchmark.py
+      - scripts/ci/validate-server-test-transfer-benchmark.sh
+  workflow_dispatch:
+
+run-name: Server test transfer benchmark @ ${{ github.sha }} (attempt ${{ github.run_attempt }})
+
+concurrency:
+  group: server-test-transfer-benchmark-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  DOTNET_VERSION: 10.0.x
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  plan:
+    name: Benchmark plan
+    runs-on: ubuntu-latest
+    outputs:
+      producers: ${{ steps.plan.outputs.producers }}
+      consumers: ${{ steps.plan.outputs.consumers }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: plan
+        name: Validate and emit bounded matrices
+        shell: bash
+        run: |
+          scripts/ci/validate-server-test-transfer-benchmark.sh
+          producers="$(jq -c '{include: [.shards | unique_by(.artifact_suffix)[] | {identity:.artifact_suffix, project, suffix:.artifact_suffix}]}' .github/server-test-transfer-benchmark.json)"
+          consumers="$(jq -c '{include: [.shards[] | {identity:.name, project, suffix:.artifact_suffix}]}' .github/server-test-transfer-benchmark.json)"
+          echo "producers=${producers}" >> "${GITHUB_OUTPUT}"
+          echo "consumers=${consumers}" >> "${GITHUB_OUTPUT}"
+
+  producer:
+    name: Payload producer / ${{ matrix.identity }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.producers) }}
+    steps:
+      - id: job_start
+        name: Start producer job timer
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - id: toolchain
+        name: Resolve exact toolchain
+        shell: bash
+        run: echo "sdk=$(dotnet --version)" >> "${GITHUB_OUTPUT}"
+      - name: Restore, build, and package project payload
+        shell: bash
+        run: |
+          scripts/ci/benchmark-server-test-transfer.sh producer \
+            --project '${{ matrix.project }}' \
+            --source-sha '${{ github.sha }}' \
+            --payload payload \
+            --metrics metrics/producer-${{ matrix.identity }}.json \
+            --identity '${{ matrix.identity }}'
+      - id: artifact_start
+        name: Start artifact upload timer
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - name: Upload immutable same-run payload
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-${{ github.sha }}-${{ matrix.suffix }}
+          path: payload/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+      - id: artifact_end
+        name: Record artifact upload duration
+        shell: bash
+        run: |
+          duration_ms=$(( $(date +%s%3N) - ${{ steps.artifact_start.outputs.epoch_ms }} ))
+          jq --argjson duration_ms "${duration_ms}" \
+            --argjson job_elapsed_ms "$(( $(date +%s%3N) - ${{ steps.job_start.outputs.epoch_ms }} ))" \
+            '.artifact_upload_ms=$duration_ms | .artifact_total_ms=(.total_ms+$duration_ms) | .artifact_job_elapsed_ms=$job_elapsed_ms' \
+            metrics/producer-${{ matrix.identity }}.json > metrics/updated.json
+          mv metrics/updated.json metrics/producer-${{ matrix.identity }}.json
+      - id: cache_start
+        name: Start exact-head cache save timer
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - name: Save exact-head project cache
+        uses: actions/cache/save@v5
+        with:
+          path: payload/
+          key: server-test-v1-${{ runner.os }}-${{ github.sha }}-${{ steps.toolchain.outputs.sdk }}-${{ matrix.suffix }}-${{ hashFiles('.github/server-test-artifact-projects.json') }}
+      - name: Record cache save duration
+        shell: bash
+        run: |
+          duration_ms=$(( $(date +%s%3N) - ${{ steps.cache_start.outputs.epoch_ms }} ))
+          cache_job_elapsed_ms=$(( ${{ steps.artifact_start.outputs.epoch_ms }} - ${{ steps.job_start.outputs.epoch_ms }} + duration_ms ))
+          jq --argjson duration_ms "${duration_ms}" \
+            --argjson job_elapsed_ms "${cache_job_elapsed_ms}" \
+            '.cache_save_ms=$duration_ms | .cache_total_ms=(.total_ms+$duration_ms) | .cache_job_elapsed_ms=$job_elapsed_ms' \
+            metrics/producer-${{ matrix.identity }}.json > metrics/updated.json
+          mv metrics/updated.json metrics/producer-${{ matrix.identity }}.json
+      - name: Upload producer metrics
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-metrics-producer-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
+          path: metrics/
+          retention-days: 7
+
+  baseline:
+    name: Baseline benchmark shard / ${{ matrix.identity }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.consumers) }}
+    steps:
+      - id: job_start
+        name: Start baseline job timer
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore, build, discover, and run proof selection
+        shell: bash
+        run: |
+          scripts/ci/benchmark-server-test-transfer.sh baseline \
+            --project '${{ matrix.project }}' \
+            --source-sha '${{ github.sha }}' \
+            --metrics metrics/baseline-${{ matrix.identity }}.json \
+            --identity '${{ matrix.identity }}'
+          jq --argjson job_elapsed_ms "$(( $(date +%s%3N) - ${{ steps.job_start.outputs.epoch_ms }} ))" \
+            '.job_elapsed_ms=$job_elapsed_ms' metrics/baseline-${{ matrix.identity }}.json > metrics/updated.json
+          mv metrics/updated.json metrics/baseline-${{ matrix.identity }}.json
+      - name: Upload baseline metrics
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-metrics-baseline-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
+          path: metrics/
+          retention-days: 7
+
+  artifact-consumer:
+    name: Artifact benchmark shard / ${{ matrix.identity }}
+    needs: [plan, producer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.consumers) }}
+    steps:
+      - id: job_start
+        name: Start artifact-consumer job timer
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - id: transfer_start
+        name: Start artifact download timer
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - name: Download exact same-run project artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: server-test-${{ github.sha }}-${{ matrix.suffix }}
+          path: payload/
+      - id: transfer_end
+        name: Record artifact download duration
+        shell: bash
+        run: echo "duration_ms=$(( $(date +%s%3N) - ${{ steps.transfer_start.outputs.epoch_ms }} ))" >> "${GITHUB_OUTPUT}"
+      - name: Verify, unpack, discover, and run without build
+        shell: bash
+        run: |
+          scripts/ci/benchmark-server-test-transfer.sh consumer-artifact \
+            --project '${{ matrix.project }}' \
+            --source-sha '${{ github.sha }}' \
+            --payload payload \
+            --metrics metrics/consumer-artifact-${{ matrix.identity }}.json \
+            --identity '${{ matrix.identity }}'
+          jq --argjson transfer_ms '${{ steps.transfer_end.outputs.duration_ms }}' \
+            --argjson job_elapsed_ms "$(( $(date +%s%3N) - ${{ steps.job_start.outputs.epoch_ms }} ))" \
+            '.transfer_ms=$transfer_ms | .total_with_transfer_ms=(.total_ms+$transfer_ms) | .job_elapsed_ms=$job_elapsed_ms' \
+            metrics/consumer-artifact-${{ matrix.identity }}.json > metrics/updated.json
+          mv metrics/updated.json metrics/consumer-artifact-${{ matrix.identity }}.json
+      - name: Upload artifact-consumer metrics
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-metrics-artifact-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
+          path: metrics/
+          retention-days: 7
+      - name: Deliberately fail one artifact consumer on attempt one
+        if: matrix.identity == 'server-b' && github.run_attempt == 1
+        shell: bash
+        run: |
+          echo "Intentional failure: rerun this workflow with --failed to prove same-run artifact reuse."
+          exit 1
+
+  cache-consumer:
+    name: Cache benchmark shard / ${{ matrix.identity }}
+    needs: [plan, producer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.consumers) }}
+    steps:
+      - id: job_start
+        name: Start cache-consumer job timer
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - id: toolchain
+        name: Resolve exact toolchain
+        shell: bash
+        run: echo "sdk=$(dotnet --version)" >> "${GITHUB_OUTPUT}"
+      - id: transfer_start
+        name: Start exact-head cache restore timer
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+      - id: cache
+        name: Restore exact-head project cache
+        uses: actions/cache/restore@v5
+        with:
+          path: payload/
+          key: server-test-v1-${{ runner.os }}-${{ github.sha }}-${{ steps.toolchain.outputs.sdk }}-${{ matrix.suffix }}-${{ hashFiles('.github/server-test-artifact-projects.json') }}
+          fail-on-cache-miss: true
+      - id: transfer_end
+        name: Record cache restore duration
+        shell: bash
+        run: |
+          test '${{ steps.cache.outputs.cache-hit }}' = 'true'
+          echo "duration_ms=$(( $(date +%s%3N) - ${{ steps.transfer_start.outputs.epoch_ms }} ))" >> "${GITHUB_OUTPUT}"
+      - name: Verify, unpack, discover, and run without build
+        shell: bash
+        run: |
+          scripts/ci/benchmark-server-test-transfer.sh consumer-cache \
+            --project '${{ matrix.project }}' \
+            --source-sha '${{ github.sha }}' \
+            --payload payload \
+            --metrics metrics/consumer-cache-${{ matrix.identity }}.json \
+            --identity '${{ matrix.identity }}'
+          jq --argjson transfer_ms '${{ steps.transfer_end.outputs.duration_ms }}' \
+            --argjson job_elapsed_ms "$(( $(date +%s%3N) - ${{ steps.job_start.outputs.epoch_ms }} ))" \
+            '.transfer_ms=$transfer_ms | .total_with_transfer_ms=(.total_ms+$transfer_ms) | .job_elapsed_ms=$job_elapsed_ms' \
+            metrics/consumer-cache-${{ matrix.identity }}.json > metrics/updated.json
+          mv metrics/updated.json metrics/consumer-cache-${{ matrix.identity }}.json
+      - name: Upload cache-consumer metrics
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-metrics-cache-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
+          path: metrics/
+          retention-days: 7
+      - name: Deliberately fail one cache consumer on attempt one
+        if: matrix.identity == 'server-b' && github.run_attempt == 1
+        shell: bash
+        run: |
+          echo "Intentional failure: rerun this workflow with --failed to prove exact-head cache reuse."
+          exit 1
+
+  negative-transport-probes:
+    name: Missing, mismatch, and expiry probes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - id: missing_artifact
+        name: Reject missing same-run artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: deliberately-missing-${{ github.sha }}
+          path: missing-artifact/
+      - id: missing_cache
+        name: Reject missing or evicted exact-head cache
+        continue-on-error: true
+        uses: actions/cache/restore@v5
+        with:
+          path: missing-cache/
+          key: deliberately-missing-v1-${{ github.sha }}
+          fail-on-cache-miss: true
+      - name: Assert transport misses failed closed
+        shell: bash
+        run: |
+          test '${{ steps.missing_artifact.outcome }}' = 'failure'
+          test '${{ steps.missing_cache.outcome }}' = 'failure'
+      - name: Exercise digest, contract, path, size, and expiry rejection
+        shell: bash
+        run: scripts/ci/validate-server-test-binary-artifacts.sh
+
+  producer-failure-probe:
+    name: Producer failure probe
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deliberately fail producer on attempt one
+        shell: bash
+        run: |
+          if [[ '${{ github.run_attempt }}' == '1' ]]; then
+            echo "Intentional producer failure; no consumer may run from this job."
+            exit 1
+          fi
+          echo "Producer retry succeeded on attempt ${{ github.run_attempt }}."
+
+  producer-failure-consumer:
+    name: Producer failure blocks consumer
+    needs: producer-failure-probe
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert fail-closed dependency behavior
+        shell: bash
+        run: |
+          if [[ '${{ github.run_attempt }}' == '1' ]]; then
+            test '${{ needs.producer-failure-probe.result }}' = 'failure'
+            echo "Consumer observed producer failure and consumed no payload."
+          else
+            test '${{ needs.producer-failure-probe.result }}' = 'success'
+          fi
+
+  summary:
+    name: Benchmark evidence summary
+    needs: [plan, producer, baseline, artifact-consumer, cache-consumer, negative-transport-probes, producer-failure-probe, producer-failure-consumer]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download raw benchmark metrics
+        uses: actions/download-artifact@v8
+        with:
+          pattern: benchmark-metrics-*
+          path: raw-metrics/
+      - name: Capture raw hosted job and step timings for every attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p raw-jobs
+          for attempt in $(seq 1 '${{ github.run_attempt }}'); do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              '${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/'"${attempt}"'/jobs?per_page=100' \
+              > "raw-jobs/attempt-${attempt}.json"
+          done
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            '${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?per_page=100' \
+            > raw-jobs/artifacts.json
+          curl --fail --silent --show-error --get \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --data-urlencode 'ref=${{ github.ref }}' \
+            --data-urlencode 'per_page=100' \
+            '${{ github.api_url }}/repos/${{ github.repository }}/actions/caches' \
+            > raw-jobs/caches.json
+      - name: Apply the predeclared decision threshold
+        shell: bash
+        run: |
+          scripts/ci/summarize-server-test-transfer-benchmark.py \
+            --metrics raw-metrics \
+            --config .github/server-test-transfer-benchmark.json \
+            --output evidence/summary.json \
+            --markdown evidence/summary.md
+          cat evidence/summary.md >> "${GITHUB_STEP_SUMMARY}"
+          cp -a raw-metrics evidence/raw-metrics
+          cp -a raw-jobs evidence/raw-jobs
+          jq -n \
+            --arg run_id '${{ github.run_id }}' \
+            --arg run_attempt '${{ github.run_attempt }}' \
+            --arg source_sha '${{ github.sha }}' \
+            '{run_id:($run_id|tonumber),run_attempt:($run_attempt|tonumber),source_sha:$source_sha}' \
+            > evidence/run.json
+      - name: Upload raw and summarized hosted evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-transfer-evidence-attempt-${{ github.run_attempt }}
+          path: evidence/
+          retention-days: 7
