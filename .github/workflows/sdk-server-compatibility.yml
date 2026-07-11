@@ -10,6 +10,11 @@ name: SDK Server Compatibility
         required: false
         default: HEAD
         type: string
+      current_only:
+        description: 'Run only the current server x current SDK cell for focused change verification.'
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '35 8 * * 1'
 
@@ -51,6 +56,7 @@ jobs:
 
           manifest="$SDK_COMPATIBILITY_MANIFEST"
           server_current_ref="${{ github.event_name == 'workflow_dispatch' && inputs.server_current_ref || '' }}"
+          current_only="${{ github.event_name == 'workflow_dispatch' && inputs.current_only || false }}"
           jq -e '
             . as $manifest
             | ($manifest.schemaVersion == 1)
@@ -63,7 +69,7 @@ jobs:
           ' "$manifest" >/dev/null
 
           matrix="$(
-            jq -c --arg head "$GITHUB_SHA" --arg serverCurrentRef "$server_current_ref" '
+            jq -c --arg head "$GITHUB_SHA" --arg serverCurrentRef "$server_current_ref" --argjson currentOnly "$current_only" '
               def serverByLabel($manifest; $name):
                 (
                   ($manifest.serverRefs[] | select(.label == $name)) // error("Unknown server label: " + $name)
@@ -97,8 +103,14 @@ jobs:
               |
               {
                 include: (
-                  (($manifest.matrix.supported // []) | map(cell($manifest; "supported"; true)))
-                  + (($manifest.matrix.evaluation // []) | map(cell($manifest; "evaluation"; false)))
+                  (
+                    (($manifest.matrix.supported // []) | map(cell($manifest; "supported"; true)))
+                    + (($manifest.matrix.evaluation // []) | map(cell($manifest; "evaluation"; false)))
+                  )
+                  | if $currentOnly
+                    then map(select(.server_label == "current" and .sdk_label == "sdk-current"))
+                    else .
+                    end
                 )
               }
             ' "$manifest"
@@ -177,6 +189,10 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Portal seed dependency
+        if: matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current'
+        run: python -m pip install 'pyyaml>=6,<7'
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
