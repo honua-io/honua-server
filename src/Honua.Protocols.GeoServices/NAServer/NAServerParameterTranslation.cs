@@ -261,8 +261,9 @@ internal static class NAServerParameterTranslation
     /// <summary>
     /// Builds a canonical <see cref="OdCostMatrixSolveRequest"/> from raw NAServer
     /// parameters. Parses <c>origins</c>, <c>destinations</c>, <c>defaultCutoff</c>,
-    /// <c>defaultTargetDestinationCount</c>, <c>outputType</c> (cost-only output
-    /// only; geometry output deferred), plus barriers and travel mode.
+    /// <c>defaultTargetDestinationCount</c>, <c>outputType</c> (cost-only or
+    /// straight-line output), plus barriers and travel mode. True-shape modes are
+    /// rejected until the provider contract exposes bounded path geometry.
     /// </summary>
     public static OdCostMatrixSolveRequest BuildOdCostMatrixSolveRequest(
         IReadOnlyDictionary<string, string> parameters,
@@ -270,7 +271,7 @@ internal static class NAServerParameterTranslation
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        ValidateOdOutputType(GetValue(parameters, "outputType"));
+        var outputType = ParseOdOutputType(GetValue(parameters, "outputType"));
 
         var outSrid = ParseOutSr(parameters);
         var inSrid = ParseInSr(parameters, outSrid);
@@ -314,6 +315,7 @@ internal static class NAServerParameterTranslation
             DestinationCount = destinationCount,
             Barriers = barriers,
             TravelMode = travelMode,
+            OutputType = outputType,
         };
     }
 
@@ -370,6 +372,13 @@ internal static class NAServerParameterTranslation
         var facilitiesToFind = ParsePositiveInt(
             GetValue(parameters, "numberFacilitiesToFind"), "numberFacilitiesToFind") ?? 1;
         var cutoff = ParseCutoff(parameters, "impedanceCutoff", "defaultCutoff");
+        if (problemType == LocationAllocationProblemType.MinimizeFacilities && cutoff is null)
+        {
+            throw new NAServerParameterException(
+                "location-allocation problem type 'esriMFPMinimizeFacilities' requires " +
+                "'impedanceCutoff' or 'defaultCutoff' so demand coverage is bounded.");
+        }
+
         var barriers = ParseBarriers(parameters, caps);
         var travelMode = ParseTravelMode(parameters);
 
@@ -419,7 +428,8 @@ internal static class NAServerParameterTranslation
 
     /// <summary>
     /// Maps the Esri location-allocation <c>problem_type</c> token to the canonical
-    /// enum. Only the two implemented types are accepted; other Esri problem types
+    /// enum. Only objectives supported by the canonical bounded solver are accepted;
+    /// other Esri problem types
     /// throw so the adapter returns a clear "unsupported problem type" 400.
     /// </summary>
     public static LocationAllocationProblemType ParseLocationAllocationProblemType(string? value)
@@ -444,33 +454,55 @@ internal static class NAServerParameterTranslation
             return LocationAllocationProblemType.MaximizeCoverage;
         }
 
+        if (string.Equals(trimmed, "esriMFPMinimizeFacilities", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "MinimizeFacilities", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "Minimize Facilities", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "2", StringComparison.Ordinal))
+        {
+            return LocationAllocationProblemType.MinimizeFacilities;
+        }
+
         throw new NAServerParameterException(
             $"location-allocation problem type '{value}' is not supported. Supported types: " +
-            "esriMFPMinimizeImpedance, esriMFPMaximizeCoverage.");
+            "esriMFPMinimizeImpedance, esriMFPMaximizeCoverage, esriMFPMinimizeFacilities. " +
+            "Maximize Attendance requires impedance-transformation inputs; Maximize Capacitated " +
+            "Coverage requires facility capacities; market-share objectives require competitor " +
+            "facilities and attractiveness weights.");
     }
 
     /// <summary>
-    /// Validates the OD cost matrix <c>outputType</c>. Only the cost-only output
-    /// (<c>esriNAODOutputNoLines</c>) and straight-line output (treated as cost-only
-    /// — geometry deferred) are accepted; any other value throws.
+    /// Parses the OD cost matrix <c>outputType</c> into the canonical materialization
+    /// mode. True-shape network paths remain explicitly unsupported.
     /// </summary>
-    private static void ValidateOdOutputType(string? value)
+    private static OdLineOutputType ParseOdOutputType(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return;
+            return OdLineOutputType.NoLines;
         }
 
         var trimmed = value.Trim();
-        if (string.Equals(trimmed, "esriNAODOutputNoLines", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(trimmed, "esriNAODOutputStraightLines", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(trimmed, "esriNAODOutputNoLines", StringComparison.OrdinalIgnoreCase))
         {
-            return;
+            return OdLineOutputType.NoLines;
+        }
+
+        if (string.Equals(trimmed, "esriNAODOutputStraightLines", StringComparison.OrdinalIgnoreCase))
+        {
+            return OdLineOutputType.StraightLines;
+        }
+
+        if (string.Equals(trimmed, "esriNAODOutputTrueShape", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "esriNAODOutputTrueShapeWithMeasure", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NAServerParameterException(
+                $"'outputType' value '{value}' is not implemented: true-shape OD lines require " +
+                "provider path geometry. Use 'esriNAODOutputNoLines' or 'esriNAODOutputStraightLines'.");
         }
 
         throw new NAServerParameterException(
             $"'outputType' value '{value}' is not supported. Use 'esriNAODOutputNoLines' " +
-            "(true-shape line geometry output is not implemented).");
+            "or 'esriNAODOutputStraightLines'.");
     }
 
     /// <summary>

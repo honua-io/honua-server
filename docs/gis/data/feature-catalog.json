@@ -2790,6 +2790,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_WithAdminAuth_ReturnsComposedSnapshot",
+        "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_WithMixedChannelHealth_SerializesExactPrivacySafeProjection",
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_WithoutAdminAuth_IsUnauthorized"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -6148,6 +6149,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.RenderDatasetMap_BoundVectorStyle_IsAppliedAtPixelLevelAndVariesByStyle",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithCollections_ReturnsMap",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithMisalignedRasterCollections_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithoutCollections_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetDatasetMap_AllUnknownCollectionIds_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetDatasetMap_CollectionsExceedLimit_ReturnsBadRequest",
@@ -7456,6 +7458,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithInlineImageFormat_ReturnsImageBytes",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithMultidimensionalDefinition_ReturnsNativeSlicePng",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithValidParameters_ReturnsImageOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ExportsInlinePngImage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ReceivesEsriErrorShapeForInvalidRequests",
@@ -7753,6 +7756,73 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetImageTile_JpegFormat_ReturnsExpectedContentType",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetImageTile_PngFormat_ReturnsExpectedContentType",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetImageTile_VariousZoomLevels_ReturnsExpectedStatus"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterCatalogItem_ExistingRaster_ReturnsFeature",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterCatalogItem_UnknownRaster_ReturnsNotFoundError"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-image",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/image",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImage_ExistingRaster_ReturnsSelectedRasterPixels"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-info",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/info",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemInfo_ExistingRaster_ReturnsCanonicalMetadata",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemInfo_UnknownRaster_ReturnsNotFoundError"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-info-histograms",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/info/histograms",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-info-keyproperties",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/info/keyProperties",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -9244,6 +9314,71 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-serviceid-imageserver-rasterid",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterCatalogItem_ByServiceName_ReturnsFeature"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-image",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/image",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImage_ExistingRaster_ReturnsSelectedRasterPixels"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-info",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/info",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemInfo_ExistingRaster_ReturnsCanonicalMetadata"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-info-histograms",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/info/histograms",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-info-keyproperties",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/info/keyProperties",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-serviceid-mapserver",
       "route": "/rest/services/{serviceId}/MapServer",
       "method": "GET",
@@ -9791,6 +9926,20 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_FeatureResource_WithUnknownObjectId_ReturnsNotFound"
       ],
       "proof_ledger_surface": "map-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-naserver-route-solve",
+      "route": "/rest/services/{serviceId}/NAServer/Route/solve",
+      "method": "GET",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_GetWithInsufficientStops_ReturnsGeoServicesError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_GetWithQueryParameters_ReturnsEsriRouteFeatureSet"
+      ],
+      "proof_ledger_surface": "naserver-routing",
       "maturity": "implemented"
     },
     {
@@ -15570,6 +15719,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_PostFormBody_ReturnsImageOrNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ExportImage_WithMultidimensionalDefinition_ReturnsNativeSlicePng",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ExportImagePost_WithTime_SelectsTemporalSliceAndAgreesWithGet",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_PostFormBody_WithEsriJsonSpatialReferences_DoesNotReturnBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_PostJsonBody_WithEsriJsonSpatialReferences_DoesNotReturnBadRequest"
@@ -17212,7 +17362,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_MinimizeFacilities_CoversDemandWithDeterministicFacilitySet",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_MinimizeImpedance_ChoosesFacilityAndAllocatesDemand",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_ProviderWithoutMinimizeFacilitiesCapability_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_ProviderWithoutSupport_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveLocationAllocation_UnsupportedProblemType_Returns400"
       ],
@@ -17227,7 +17379,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_ProviderWithoutStraightLineSupport_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_ProviderWithoutSupport_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_StraightLines_ReturnsGeometryInRequestedSpatialReference",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_TrueShape_ReturnsPrecise400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.SolveOdCostMatrix_TwoByTwo_ReturnsRankedLines"
       ],
       "proof_ledger_surface": "naserver-routing",
@@ -17243,6 +17398,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_MissingStops_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_PJsonFormat_ReturnsIndentedJson",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_ProfileBackedTravelModes_ReturnDistinctCosts",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_ProviderInvalidSridFailure_ReturnsSanitized400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_ProviderWithoutRouteSupport_ReturnsError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_TwoStops_ReturnsEsriRouteFeatureSet",

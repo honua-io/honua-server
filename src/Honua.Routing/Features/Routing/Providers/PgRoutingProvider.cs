@@ -122,14 +122,35 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     // built-in default is a trusted constant), so it is safe to embed in the SQL text
     // that pgRouting re-parses (which cannot reference bound parameters). No user
     // value is interpolated.
-    private static string OutboundEdgesSql(NetworkDataset dataset)
-        => $"SELECT gid AS id, source, target, cost, reverse_cost FROM {dataset.EdgeTable}";
+    private static string OutboundEdgesSql(NetworkDataset dataset, RoutingTravelProfile profile)
+        => $"SELECT gid AS id, source, target, {profile.ForwardCostColumn} AS cost, " +
+           $"{profile.ReverseCostColumn} AS reverse_cost FROM {dataset.EdgeTable}";
 
-    private static string ReversedEdgesSql(NetworkDataset dataset)
-        => $"SELECT gid AS id, target AS source, source AS target, cost, reverse_cost FROM {dataset.EdgeTable}";
+    private static string ReversedEdgesSql(NetworkDataset dataset, RoutingTravelProfile profile)
+        => $"SELECT gid AS id, target AS source, source AS target, " +
+           $"{profile.ReverseCostColumn} AS cost, {profile.ForwardCostColumn} AS reverse_cost " +
+           $"FROM {dataset.EdgeTable}";
 
-    private static string RouteBaseEdgesSqlFor(NetworkDataset dataset)
-        => $"SELECT gid AS id, source, target, cost, reverse_cost FROM {dataset.EdgeTable}";
+    private static string RouteBaseEdgesSqlFor(NetworkDataset dataset, RoutingTravelProfile profile)
+        => OutboundEdgesSql(dataset, profile);
+
+    private static RoutingTravelProfile ResolveTravelProfile(NetworkDataset dataset, string? requestedProfile)
+    {
+        var name = string.IsNullOrWhiteSpace(requestedProfile) ? DrivingTravelMode : requestedProfile;
+        var profile = dataset.TravelProfiles.FirstOrDefault(profile =>
+                   string.Equals(profile.Name, name, StringComparison.OrdinalIgnoreCase))
+               ?? throw new InvalidOperationException(
+                   $"Travel profile '{name}' is not backed by network dataset '{dataset.Id}'.");
+        if (!NetworkDatasetValidation.IsValidTravelProfileName(profile.Name) ||
+            !NetworkDatasetValidation.IsValidColumnIdentifier(profile.ForwardCostColumn) ||
+            !NetworkDatasetValidation.IsValidColumnIdentifier(profile.ReverseCostColumn))
+        {
+            throw new InvalidOperationException(
+                $"Travel profile '{profile.Name}' contains an unsafe impedance column identifier.");
+        }
+
+        return profile;
+    }
 
     /// <inheritdoc />
     public string Name => ProviderName;
@@ -151,6 +172,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         SupportsOdCostMatrix: true,
         SupportsLocationAllocation: true)
     {
+        SupportsOdStraightLines = true,
+
         // pgRouting honours all three barrier families by excluding the graph
         // edges each barrier geometry interacts with (see BuildBlockedEdgeFilter).
         SupportedBarrierKinds =
@@ -164,14 +187,26 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         // and validates travelMode, but only this mode is genuinely routable.
         SupportedTravelModes = [DrivingTravelMode],
 
-        // The two cost-matrix problem types implemented for #1874. Other Esri
-        // problem types are gated with a 400 by the adapter.
+        // Objectives implemented over the bounded canonical cost matrix. Other
+        // Esri objectives require contract inputs we do not model and remain gated.
         SupportedLocationAllocationProblemTypes =
         [
             LocationAllocationProblemType.MinimizeImpedance,
             LocationAllocationProblemType.MaximizeCoverage,
+            LocationAllocationProblemType.MinimizeFacilities,
         ],
     };
+
+    /// <inheritdoc />
+    public async Task<RoutingProviderCapabilities> GetCapabilitiesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
+        return Capabilities with
+        {
+            SupportedTravelModes = dataset.TravelProfiles.Select(profile => profile.Name).ToArray(),
+        };
+    }
 
     /// <inheritdoc />
     public async Task<RouteSolveResult> SolveRouteAsync(
@@ -197,6 +232,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);
+            var profile = ResolveTravelProfile(dataset, request.TravelMode ?? request.TravelProfile);
+            activity?.SetTag("honua.routing.travel_profile", profile.Name);
 
             // Resolve barrier-restricted edges first so the same exclusion set
             // applies to every leg. Empty when no barriers are supplied.
@@ -204,7 +241,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.barriers", request.Barriers.Count);
             activity?.SetTag("honua.routing.blocked_edges", blockedEdges.Count);
-            var edgesSql = BuildRouteEdgesSql(dataset, blockedEdges);
+            var edgesSql = BuildRouteEdgesSql(dataset, profile, blockedEdges);
 
             // Snap each stop to its nearest graph vertex (input transformed from the
             // request SRID to the graph SRID 4326 before the KNN snap).
@@ -309,6 +346,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);
+            var profile = ResolveTravelProfile(dataset, request.TravelMode);
+            activity?.SetTag("honua.routing.travel_profile", profile.Name);
 
             // Resolve barrier-restricted edges once and exclude them from the
             // reachability graph for every facility/break.
@@ -321,8 +360,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             // (source/target swapped) so it computes who can reach the facility
             // within the cost cutoff; FromFacility uses the outbound graph.
             var baseEdgesSql = request.TravelDirection == ServiceAreaTravelDirection.ToFacility
-                ? ReversedEdgesSql(dataset)
-                : OutboundEdgesSql(dataset);
+                ? ReversedEdgesSql(dataset, profile)
+                : OutboundEdgesSql(dataset, profile);
             var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdges);
 
             var polygons = new List<ServiceAreaPolygon>();
@@ -402,6 +441,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);
+            var profile = ResolveTravelProfile(dataset, request.TravelMode);
+            activity?.SetTag("honua.routing.travel_profile", profile.Name);
 
             var blockedEdges = await ResolveBlockedEdgesAsync(
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
@@ -411,8 +452,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             // incident -> facility over the reversed graph (so the same one-to-many
             // probe from the incident vertex applies).
             var baseEdgesSql = request.Direction == ClosestFacilityTravelDirection.FromFacility
-                ? ReversedEdgesSql(dataset)
-                : OutboundEdgesSql(dataset);
+                ? ReversedEdgesSql(dataset, profile)
+                : OutboundEdgesSql(dataset, profile);
             var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdges);
 
             // Snap facilities once; reused across incidents.
@@ -518,6 +559,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         activity?.SetTag("honua.routing.provider", ProviderName);
         activity?.SetTag("honua.routing.origins", request.Origins.Count);
         activity?.SetTag("honua.routing.destinations", request.Destinations.Count);
+        activity?.SetTag("honua.routing.od_output_type", request.OutputType.ToString());
+        activity?.SetTag("honua.routing.out_srid", request.OutSrid);
 
         try
         {
@@ -530,10 +573,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);
+            var profile = ResolveTravelProfile(dataset, request.TravelMode);
+            activity?.SetTag("honua.routing.travel_profile", profile.Name);
 
             var blockedEdges = await ResolveBlockedEdgesAsync(
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
-            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset), blockedEdges);
+            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset, profile), blockedEdges);
 
             var originVertices = await SnapAllAsync(
                 session, dataset, request.Origins, request.InSrid, cancellationToken).ConfigureAwait(false);
@@ -603,6 +648,16 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 }
             }
 
+            if (request.OutputType == OdLineOutputType.StraightLines && lines.Count > 0)
+            {
+                var geometries = await MaterializeOdStraightLinesAsync(
+                    session, request, lines, cancellationToken).ConfigureAwait(false);
+                for (var index = 0; index < lines.Count; index++)
+                {
+                    lines[index] = lines[index] with { GeometryGeoJson = geometries[index] };
+                }
+            }
+
             activity?.SetTag("honua.routing.solved", lines.Count > 0);
             activity?.SetTag("honua.routing.lines", lines.Count);
             return new OdCostMatrixSolveResult(lines);
@@ -612,6 +667,79 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Materializes all requested OD straight lines in one parameterized query.
+    /// This keeps the cost-only path unchanged and avoids a per-cell reprojection
+    /// query while delegating CRS handling to the same PostGIS substrate used by
+    /// route and service-area geometry.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> MaterializeOdStraightLinesAsync(
+        IDatabaseSession session,
+        OdCostMatrixSolveRequest request,
+        List<OdLine> lines,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                pair.ord,
+                ST_AsGeoJSON(
+                    ST_Transform(
+                        ST_SetSRID(
+                            ST_MakeLine(
+                                ST_MakePoint(pair.origin_x, pair.origin_y),
+                                ST_MakePoint(pair.destination_x, pair.destination_y)),
+                            @in_srid),
+                        @out_srid)) AS geojson
+            FROM unnest(
+                @origin_x::double precision[],
+                @origin_y::double precision[],
+                @destination_x::double precision[],
+                @destination_y::double precision[])
+                WITH ORDINALITY AS pair(origin_x, origin_y, destination_x, destination_y, ord)
+            ORDER BY pair.ord;
+            """;
+
+        var originX = new double[lines.Count];
+        var originY = new double[lines.Count];
+        var destinationX = new double[lines.Count];
+        var destinationY = new double[lines.Count];
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var line = lines[index];
+            var origin = request.Origins[line.OriginId];
+            var destination = request.Destinations[line.DestinationId];
+            originX[index] = origin.Lon;
+            originY[index] = origin.Lat;
+            destinationX[index] = destination.Lon;
+            destinationY[index] = destination.Lat;
+        }
+
+        var geometries = new List<string>(lines.Count);
+        await foreach (var geometry in session.QueryAsync(
+                           sql,
+                           static row => row.IsNull(1) ? string.Empty : row.GetFieldValue<string>(1),
+                           new Dictionary<string, object?>
+                           {
+                               ["origin_x"] = originX,
+                               ["origin_y"] = originY,
+                               ["destination_x"] = destinationX,
+                               ["destination_y"] = destinationY,
+                               ["in_srid"] = request.InSrid,
+                               ["out_srid"] = request.OutSrid,
+                           },
+                           cancellationToken).ConfigureAwait(false))
+        {
+            geometries.Add(geometry);
+        }
+
+        if (geometries.Count != lines.Count || geometries.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new InvalidOperationException("PostGIS did not materialize every requested OD straight line.");
+        }
+
+        return geometries;
     }
 
     /// <inheritdoc />
@@ -638,10 +766,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);
+            var profile = ResolveTravelProfile(dataset, request.TravelMode);
+            activity?.SetTag("honua.routing.travel_profile", profile.Name);
 
             var blockedEdges = await ResolveBlockedEdgesAsync(
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
-            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset), blockedEdges);
+            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset, profile), blockedEdges);
 
             // Build the candidate-facility × demand-point impedance matrix:
             // matrix[facility][demand] = network cost (PositiveInfinity when
@@ -691,7 +821,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 }
             }
 
-            var result = LocationAllocationSolver.Solve(request, matrix);
+            var result = LocationAllocationSolver.Solve(request, matrix, cancellationToken);
             activity?.SetTag("honua.routing.solved", result.ChosenFacilityIds.Count > 0);
             activity?.SetTag("honua.routing.chosen_facilities", result.ChosenFacilityIds.Count);
             return result;
@@ -1062,8 +1192,11 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     /// gids. Only the validated edge-table identifier and integers (formatted
     /// invariantly) are embedded; no user string ever enters the SQL text.
     /// </summary>
-    private static string BuildRouteEdgesSql(NetworkDataset dataset, IReadOnlyList<long> blockedEdges)
-        => ApplyBlockedEdgeFilter(RouteBaseEdgesSqlFor(dataset), blockedEdges);
+    private static string BuildRouteEdgesSql(
+        NetworkDataset dataset,
+        RoutingTravelProfile profile,
+        IReadOnlyList<long> blockedEdges)
+        => ApplyBlockedEdgeFilter(RouteBaseEdgesSqlFor(dataset, profile), blockedEdges);
 
     /// <summary>
     /// Appends a <c>WHERE gid NOT IN (...)</c> exclusion of the blocked edge gids to

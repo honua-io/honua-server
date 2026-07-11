@@ -21,6 +21,8 @@ internal static class ZarrServiceCollectionExtensions
         services.AddSingleton<IZarrMetadataReader, ZarrMetadataExtractor>();
         services.AddSingleton<IZarrSubsetReader, ZarrSubsetReader>();
         services.AddSingleton<IZarrStore, InMemoryZarrStore>();
+        services.AddSingleton<IZarrPointSliceReader, ZarrPointSliceReader>();
+        services.AddSingleton<IZarrRasterSliceReader, ZarrRasterSliceReader>();
         return services;
     }
 }

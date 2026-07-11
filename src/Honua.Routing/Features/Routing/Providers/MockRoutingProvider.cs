@@ -56,6 +56,7 @@ internal sealed class MockRoutingProvider : IRoutingProvider
         [
             LocationAllocationProblemType.MinimizeImpedance,
             LocationAllocationProblemType.MaximizeCoverage,
+            LocationAllocationProblemType.MinimizeFacilities,
         ],
     };
 
@@ -209,7 +210,16 @@ internal sealed class MockRoutingProvider : IRoutingProvider
             var rank = 1;
             foreach (var entry in ranked)
             {
-                lines.Add(new OdLine(originId, entry.DestinationId, rank, entry.Minutes, entry.Meters));
+                var geometry = request.OutputType == OdLineOutputType.StraightLines
+                    ? LineStringGeoJson([origin, request.Destinations[entry.DestinationId]])
+                    : null;
+                lines.Add(new OdLine(
+                    originId,
+                    entry.DestinationId,
+                    rank,
+                    entry.Minutes,
+                    entry.Meters,
+                    geometry));
                 rank++;
             }
         }
@@ -236,7 +246,7 @@ internal sealed class MockRoutingProvider : IRoutingProvider
             }
         }
 
-        return Task.FromResult(LocationAllocationSolver.Solve(request, matrix));
+        return Task.FromResult(LocationAllocationSolver.Solve(request, matrix, cancellationToken));
     }
 
     private static double HaversineMeters(RoutePoint a, RoutePoint b)

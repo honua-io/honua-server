@@ -33,6 +33,12 @@ public static partial class NetworkDatasetValidation
     [GeneratedRegex(@"^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$", RegexOptions.CultureInvariant)]
     private static partial Regex SqlIdentifierPattern();
 
+    [GeneratedRegex(@"^[a-z_][a-z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex SqlColumnPattern();
+
+    [GeneratedRegex(@"^[a-z][a-z0-9_-]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex TravelProfilePattern();
+
     /// <summary>
     /// Validates a network-dataset id.
     /// </summary>
@@ -118,6 +124,21 @@ public static partial class NetworkDatasetValidation
         => !string.IsNullOrWhiteSpace(identifier)
             && identifier.Length <= MaxIdentifierLength
             && SqlIdentifierPattern().IsMatch(identifier);
+
+    /// <summary>Returns whether a profile name is safe and stable for public matching.</summary>
+    public static bool IsValidTravelProfileName(string? name)
+        => !string.IsNullOrWhiteSpace(name)
+            && name.Length <= MaxIdentifierLength
+            && TravelProfilePattern().IsMatch(name);
+
+    /// <summary>
+    /// Returns whether an edge-column identifier is safe to interpolate into the
+    /// pgRouting edges SQL. Qualified names are deliberately rejected here.
+    /// </summary>
+    public static bool IsValidColumnIdentifier(string? identifier)
+        => !string.IsNullOrWhiteSpace(identifier)
+            && identifier.Length <= MaxIdentifierLength
+            && SqlColumnPattern().IsMatch(identifier);
 
     /// <summary>
     /// Validates an SRID.

@@ -139,6 +139,25 @@ assert_excludes_shard() {
   fi
 }
 
+# Assert a targeted descriptor selects exactly the expected shard set. Use this
+# for measured cumulative diffs where accidental widening would recreate most
+# of the cost that path routing is intended to avoid.
+assert_exact_shards() {
+  local name="$1"
+  local changed_files="$2"
+  local expected_shards_json="$3"
+  local descriptor
+
+  descriptor="$(printf '%s\n' "${changed_files}" | scripts/ci/honua-server-targeted-tests.sh --stdin)"
+  echo "${name}: ${descriptor}"
+
+  jq -e --argjson expected "${expected_shards_json}" '
+    .run_all == false
+    and .reason == "targeted"
+    and ((.shards | sort) == ($expected | sort))
+  ' <<< "${descriptor}" >/dev/null
+}
+
 echo "Dry-running shard router cases..."
 assert_descriptor \
   "ci-shards-only" \
@@ -193,6 +212,74 @@ assert_descriptor \
   "targeted" \
   "false" \
   "OGC API Features"
+
+# Publishing persistence is a bounded MCP/operator surface. Its canonical
+# Core/Postgres models and stores are exercised by the MCP promotion-resource
+# tests plus the Core shard's Postgres server-composition proof, so changes in
+# that slice target both owners instead of tripping the unmapped-source net.
+assert_descriptor \
+  "publishing-core-targeted" \
+  "src/Honua.Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "publishing-core-includes-mcp" \
+  "src/Honua.Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
+  "targeted" \
+  "false" \
+  "MCP"
+assert_descriptor \
+  "publishing-postgres-targeted" \
+  "src/Honua.Postgres/Features/Publishing/PostgresPublishedServiceStore.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "publishing-postgres-includes-mcp" \
+  "src/Honua.Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
+  "targeted" \
+  "false" \
+  "MCP"
+assert_excludes_shard \
+  "publishing-excludes-imageserver" \
+  "src/Honua.Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
+  "GeoServices ImageServer"
+
+# The promotion migration is selected by the Core shard's migration/startup
+# coverage. Keep this exact-file mapping narrow: unrelated future migrations
+# remain unmapped and therefore fail safe until their owners are declared.
+assert_descriptor \
+  "promotion-migration-targeted" \
+  "src/Honua.Server/Migrations/082_CreatePromotionStores.sql" \
+  "targeted" \
+  "false" \
+  "Core"
+
+# Client-compat Seed classes and the focused promotion Startup composition test
+# are selected by the Core catch-all filter. Claim their paths explicitly so a
+# test-only edit does not instantiate every server-test shard.
+assert_descriptor \
+  "client-compat-seed-targeted" \
+  "tests/dotnet/Honua.Server.Tests/Seed/ClientCompatSeedSequenceTests.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "promotion-startup-targeted" \
+  "tests/dotnet/Honua.Server.Tests/Startup/PostgresPromotionSurfaceRegistrationTests.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+
+# Do not weaken the global Postgres DI fail-safe. Arbitrary changes to the
+# shared registrar can affect every Postgres-backed fixture and must run all.
+assert_descriptor \
+  "postgres-service-registration-still-run-all" \
+  "src/Honua.Postgres/ServiceCollectionExtensions.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
 
 # ---------------------------------------------------------------------------
 # #1897 guard cases: feature PRs must route to a targeted subset, not run_all,
@@ -303,6 +390,178 @@ assert_descriptor \
 assert_descriptor \
   "hosting-rendering-run-all" \
   "src/Honua.Hosting/Features/Rendering/RasterMapRenderingPipeline.cs" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
+
+# #2693: bounded operator paths observed in merge-train child 29142991789
+# already had known test owners, but missing path ownership caused the entire
+# cumulative descriptor to fall through to unmapped_source_change.
+assert_descriptor \
+  "hosting-tiles-targets-geometry" \
+  "src/Honua.Hosting/Features/Tiles/TilePackageWriter.cs" \
+  "targeted" \
+  "false" \
+  "Geometry Tiles and Terrain"
+assert_descriptor \
+  "hosting-tiles-includes-imageserver" \
+  "src/Honua.Hosting/Features/Tiles/TilePackageWriter.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_descriptor \
+  "routing-feature-targets-naserver" \
+  "src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices GPServer and NAServer"
+assert_descriptor \
+  "routing-feature-includes-server-tests-owner" \
+  "src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "imageserver-registry-targets-imageserver" \
+  "src/Honua.Server/EndpointRegistry.ImageServer.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_descriptor \
+  "imageserver-registry-includes-governance" \
+  "src/Honua.Server/EndpointRegistry.ImageServer.cs" \
+  "targeted" \
+  "false" \
+  "STAC and API Governance"
+assert_descriptor \
+  "naserver-pgrouting-test-targeted" \
+  "tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "routing-solver-test-targeted" \
+  "tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs" \
+  "targeted" \
+  "false" \
+  "Core"
+assert_descriptor \
+  "compact-tile-writer-test-targeted" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/CompactTilePackageWriterTests.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices ImageServer"
+assert_exact_shards \
+  "measured-tile-routing-imageserver-batch" \
+  "$(printf '%s\n%s\n%s\n%s' \
+      'src/Honua.Hosting/Features/Tiles/CompactTilePackageWriter.cs' \
+      'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
+      'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
+      'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
+  '["Core","Geometry Tiles and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance"]'
+
+# Follow-up proof from draft PR #2700: pure routing tests share the Core owner
+# with the real pgRouting fixture and must not widen the canonical NAServer diff.
+assert_exact_shards \
+  "location-allocation-routing-batch" \
+  "$(printf '%s\n%s\n%s' \
+      'src/Honua.Routing/Features/Routing/Providers/LocationAllocationSolver.cs' \
+      'src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs' \
+      'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
+  '["Core","GeoServices GPServer and NAServer"]'
+
+# #2712: migration 083 and the exact pgRouting TestKit fixture are bounded
+# companions to the canonical Routing/NAServer slice. Keep other migrations
+# and shared TestKit files on their existing fail-safe paths.
+assert_exact_shards \
+  "routing-profile-migration-owner" \
+  "src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql" \
+  '["Core"]'
+assert_exact_shards \
+  "pgrouting-fixture-owner" \
+  "tests/dotnet/Honua.TestKit/PgRoutingFixture.cs" \
+  '["Core"]'
+assert_exact_shards \
+  "routing-profile-cumulative-batch" \
+  "$(printf '%s\n%s\n%s\n%s\n%s' \
+      'src/Honua.Routing/Features/Routing/Providers/NetworkDatasetRegistry.cs' \
+      'src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs' \
+      'src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql' \
+      'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
+      'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
+  '["Core","GeoServices GPServer and NAServer"]'
+assert_descriptor \
+  "unknown-migration-still-run-all" \
+  "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \
+  "unmapped_source_change" \
+  "true" \
+  "Core"
+assert_descriptor \
+  "unrelated-testkit-still-run-all" \
+  "tests/dotnet/Honua.TestKit/FutureSharedFixture.cs" \
+  "infrastructure_change" \
+  "true" \
+  "Core"
+
+# #2709: the four shards carved from the former Server Features Misc shard
+# retained a shared source-path list after their filters diverged. Zarr tests
+# remain executable only in the Misc catch-all, so route the Zarr registrar to
+# that real owner instead of paying for three filters that cannot discover it.
+assert_exact_shards \
+  "zarr-server-source-exact-owner" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  '["Server Features Misc"]'
+assert_excludes_shard \
+  "zarr-server-source-excludes-data-sharing" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  "Server Features Data and Sharing"
+assert_excludes_shard \
+  "zarr-server-source-excludes-collaboration-content" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  "Server Features Collaboration and Content"
+assert_excludes_shard \
+  "zarr-server-source-excludes-spec-printing-staticmap" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  "Server Features Spec Printing and Static Maps"
+
+# Representative cumulative diff from #2702: shared raster changes retain the
+# ImageServer/coverage/WCS owners, while the server Zarr registrar adds only its
+# executable Misc owner.
+assert_exact_shards \
+  "zarr-point-slice-cumulative-batch" \
+  "$(printf '%s\n%s\n%s\n%s\n%s' \
+      'src/Honua.Core/Features/Raster/Abstractions/IZarrPointSliceReader.cs' \
+      'src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs' \
+      'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs' \
+      'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
+      'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Server Features Misc","WFS"]'
+
+# Narrowing Zarr must not remove the carved shards' actual feature-area paths.
+assert_descriptor \
+  "data-enrichment-source-retains-owner" \
+  "src/Honua.Server/Features/DataEnrichment/DataEnrichmentServiceCollectionExtensions.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Data and Sharing"
+assert_descriptor \
+  "collaboration-source-retains-owner" \
+  "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Collaboration and Content"
+assert_descriptor \
+  "spec-source-retains-owner" \
+  "src/Honua.Server/Features/Spec/HonuaSpecService.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Spec Printing and Static Maps"
+
+# Keep the safety net for a future unrelated Routing area; #2693 claims only
+# the existing Features/Routing slice.
+assert_descriptor \
+  "unknown-routing-area-still-run-all" \
+  "src/Honua.Routing/Features/Future/FutureRouter.cs" \
   "unmapped_source_change" \
   "true" \
   "Core"
@@ -561,6 +820,34 @@ assert_descriptor \
 # unmapped namespace fails CI here instead of silently never running.
 # ---------------------------------------------------------------------------
 echo "Checking server-test shard coverage (no orphaned test classes)..."
-python3 scripts/ci/check-server-test-shard-coverage.py
+python3 scripts/ci/check-server-test-shard-coverage.py \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices ImageServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core" \
+  --assert-owner \
+    "Honua.Server.Tests.Routing.NetworkDatasetValidationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core" \
+  --assert-owner \
+    "Honua.Server.Tests.Routing.PgRoutingProviderIntegrationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Misc" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Zarr.ZarrEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Misc" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Misc"
 
 echo "CI router validation passed."

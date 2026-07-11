@@ -309,6 +309,7 @@ BEGIN
             SELECT
                 sl.service_name,
                 COALESCE(s.description, '') AS service_description,
+                COALESCE(s.capabilities, ARRAY['Query']::text[]) AS service_capabilities,
                 l.layer_id,
                 l.layer_name,
                 COALESCE(l.description, '') AS layer_description,
@@ -574,7 +575,7 @@ BEGIN
             FROM layer_rows
         ),
         service_names AS (
-            SELECT DISTINCT service_name, service_part, service_access_policy
+            SELECT DISTINCT service_name, service_part, service_access_policy, service_capabilities
             FROM layer_rows
         ),
         service_rows AS (
@@ -585,7 +586,7 @@ BEGIN
                     'publicationIds', '[]'::jsonb,
                     'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
                     'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
-                    'options', '{}'::jsonb,
+                    'options', jsonb_build_object('capabilities', to_jsonb(service_capabilities)),
                     'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
@@ -854,7 +855,7 @@ INSERT INTO honua.services (
 VALUES (
     'test_service', 'Client compatibility certification service', 4326, 1000,
     ARRAY['JSON', 'GeoJSON'],
-    ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete'],
+    ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete', 'Sync'],
     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326)
 )
 ON CONFLICT (service_name) DO UPDATE SET
@@ -889,7 +890,10 @@ ON CONFLICT (layer_id) DO UPDATE SET
     default_visibility = EXCLUDED.default_visibility;
 
 UPDATE honua.layers
-SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+SET metadata = jsonb_build_object(
+    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+    'timeInfo', jsonb_build_object('startTimeField', 'created_at')
+)
 WHERE layer_id = 0;
 
 INSERT INTO honua.layer_fields (

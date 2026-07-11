@@ -10,6 +10,11 @@ name: SDK Server Compatibility
         required: false
         default: HEAD
         type: string
+      current_only:
+        description: 'Run only the current server x current SDK cell for focused change verification.'
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '35 8 * * 1'
 
@@ -43,6 +48,10 @@ jobs:
       - name: Checkout honua-server
         uses: actions/checkout@v7
 
+      - name: Validate matrix and capability classification
+        shell: bash
+        run: bash scripts/ci/test-sdk-server-compatibility.sh
+
       - name: Build matrix from manifest
         id: matrix
         shell: bash
@@ -51,57 +60,10 @@ jobs:
 
           manifest="$SDK_COMPATIBILITY_MANIFEST"
           server_current_ref="${{ github.event_name == 'workflow_dispatch' && inputs.server_current_ref || '' }}"
-          jq -e '
-            . as $manifest
-            | ($manifest.schemaVersion == 1)
-            and ($manifest.adminApiMajor | type == "string" and length > 0)
-            and ($manifest.matrixDepth == 3)
-            and ($manifest.serverRefs | type == "array" and length == $manifest.matrixDepth)
-            and ($manifest.sdkSetVersions | type == "array" and length == $manifest.matrixDepth)
-            and all($manifest.serverRefs[]; (.label | type == "string" and length > 0) and (.ref | type == "string" and length > 0))
-            and all($manifest.sdkSetVersions[]; (.label | type == "string" and length > 0) and (.refs.js | type == "string" and length > 0) and (.refs.python | type == "string" and length > 0) and (.refs.dotnet | type == "string" and length > 0))
-          ' "$manifest" >/dev/null
-
+          current_only="${{ github.event_name == 'workflow_dispatch' && inputs.current_only || false }}"
           matrix="$(
-            jq -c --arg head "$GITHUB_SHA" --arg serverCurrentRef "$server_current_ref" '
-              def serverByLabel($manifest; $name):
-                (
-                  ($manifest.serverRefs[] | select(.label == $name)) // error("Unknown server label: " + $name)
-                )
-                | if .label == "current" and ($serverCurrentRef | length) > 0
-                  then . + { ref: $serverCurrentRef }
-                  else .
-                  end;
-              def sdkByLabel($manifest; $name):
-                ($manifest.sdkSetVersions[] | select(.label == $name)) // error("Unknown SDK set label: " + $name);
-              def checkoutRef($ref):
-                  if $ref == "HEAD" then $head else $ref end;
-              def cell($manifest; $status; $expectedSupported):
-                  . as $cell
-                  | (serverByLabel($manifest; $cell.server)) as $server
-                  | (sdkByLabel($manifest; $cell.sdk)) as $sdk
-                  | {
-                      server_label: $server.label,
-                      server_ref: $server.ref,
-                      server_checkout_ref: checkoutRef($server.ref),
-                      server_channel: $server.channel,
-                      sdk_label: $sdk.label,
-                      sdk_channel: $sdk.channel,
-                      sdk_js_ref: $sdk.refs.js,
-                      sdk_python_ref: $sdk.refs.python,
-                      sdk_dotnet_ref: $sdk.refs.dotnet,
-                      cell_status: $status,
-                      expected_supported: $expectedSupported
-                    };
-              . as $manifest
-              |
-              {
-                include: (
-                  (($manifest.matrix.supported // []) | map(cell($manifest; "supported"; true)))
-                  + (($manifest.matrix.evaluation // []) | map(cell($manifest; "evaluation"; false)))
-                )
-              }
-            ' "$manifest"
+            bash scripts/ci/build-sdk-compatibility-matrix.sh \
+              "$manifest" "$GITHUB_SHA" "$server_current_ref" "$current_only"
           )"
 
           cell_count="$(jq '.include | length' <<<"$matrix")"
@@ -153,11 +115,14 @@ jobs:
           ref: ${{ github.sha }}
           path: compatibility-source
 
-      - name: Preserve current compatibility runner
+      - name: Preserve current compatibility assets
         shell: bash
         run: |
           set -euo pipefail
           cp compatibility-source/scripts/ci/run-sdk-server-compatibility.sh "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
+          cp compatibility-source/tests/seed/portal-compat.yaml "$RUNNER_TEMP/portal-compat.yaml"
+          cp compatibility-source/tests/dotnet/Honua.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json \
+            "$RUNNER_TEMP/geoserver-catalog-apply-slice.json"
           chmod +x "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
 
       - name: Checkout honua-server target
@@ -178,16 +143,28 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Install Portal seed dependency
+        if: matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current'
+        run: python -m pip install 'pyyaml>=6,<7'
+
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: tests/seed/base-schema.sql
+          # PortalCompat is additive and exists only in the current SDK/server
+          # pair. Preserve the historical compatibility cells by applying the
+          # Portal fixture only to the current x current proof (#2614).
+          post-seed-yaml: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && format('{0}/portal-compat.yaml', runner.temp) || '' }}
           log-path: logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
         env:
           # Compatibility checks exercise server/SDK runtime behavior; security audit gates run separately.
           NuGetAudit: false
           WarningsNotAsErrors: NU1901;NU1902;NU1903;NU1904
+          # The Actions service network is HTTP-only. Production retains the
+          # secure RequireHttps=true default; this enables generateToken solely
+          # for the live compatibility proof.
+          Authentication__PortalToken__RequireHttps: 'false'
 
       - name: Checkout honua-sdk-js
         uses: actions/checkout@v7
@@ -260,6 +237,12 @@ jobs:
         id: compatibility
         continue-on-error: true
         shell: bash
+        env:
+          HONUA_SDK_PORTAL_COMPAT_ENABLED: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' }}
+          HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED: ${{ matrix.migration_automation_required }}
+          HONUA_SDK_COMPAT_SERVER_LABEL: ${{ matrix.server_label }}
+          HONUA_SDK_COMPAT_SDK_LABEL: ${{ matrix.sdk_label }}
+          HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE: ${{ runner.temp }}/geoserver-catalog-apply-slice.json
         run: |
           mkdir -p results
           set +e
@@ -509,22 +492,18 @@ jobs:
                 }
               },
               seed_profile: $seedProfile,
+              portal_seed_profile: (
+                if $serverLabel == "current" and $sdkLabel == "sdk-current"
+                then "tests/seed/portal-compat.yaml"
+                else null
+                end
+              ),
               service_id: $serviceId,
               layer_id: $layerId,
-              protocol_surfaces: [
-                "control-plane-admin",
-                "platform-http",
-                "geoservices-catalog",
-                "feature-server",
-                "ogc-api-features",
-                "migration-scan",
-                "arcgis-import",
-                "geoserver-dry-run",
-                "migration-evidence"
-              ],
-              protocol_surfaces_by_sdk: {
-                js: [
+              protocol_surfaces: (
+                [
                   "control-plane-admin",
+                  "platform-http",
                   "geoservices-catalog",
                   "feature-server",
                   "ogc-api-features",
@@ -532,7 +511,29 @@ jobs:
                   "arcgis-import",
                   "geoserver-dry-run",
                   "migration-evidence"
-                ],
+                ]
+                + if $serverLabel == "current" and $sdkLabel == "sdk-current"
+                  then ["portal-repoint"]
+                  else []
+                  end
+              ),
+              protocol_surfaces_by_sdk: {
+                js: (
+                  [
+                    "control-plane-admin",
+                    "geoservices-catalog",
+                    "feature-server",
+                    "ogc-api-features",
+                    "migration-scan",
+                    "arcgis-import",
+                    "geoserver-dry-run",
+                    "migration-evidence"
+                  ]
+                  + if $serverLabel == "current" and $sdkLabel == "sdk-current"
+                    then ["portal-repoint"]
+                    else []
+                    end
+                ),
                 python: [
                   "control-plane-admin",
                   "platform-http",
@@ -621,12 +622,16 @@ jobs:
 
       - name: Generate compatibility table
         shell: bash
+        env:
+          SELECTED_MATRIX: ${{ needs.load-matrix.outputs.matrix }}
         run: |
           set -euo pipefail
+          printf '%s\n' "$SELECTED_MATRIX" > sdk-compat-selected-matrix.json
           bash scripts/ci/generate-sdk-compatibility-table.sh \
             "$SDK_COMPATIBILITY_MANIFEST" \
             sdk-compat-results \
-            sdk-compat-report
+            sdk-compat-report \
+            sdk-compat-selected-matrix.json
           cat sdk-compat-report/sdk-compatibility-matrix.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload SDK compatibility table

@@ -178,14 +178,26 @@ are now delivered:
   `pgr_dijkstra` / `pgr_drivingDistance`. A provider that does not advertise a
   barrier kind (e.g. the straight-line mock) returns a GeoServices 400 rather than
   silently dropping the barrier. Bounded by `Routing:MaxBarriers` (default 1000).
-- **Multiple travel modes** are partially delivered: the request surface
+- **Multiple travel modes** are dataset-backed: the request surface
   (`travelMode`, bare token or Esri object `name`), validation against the
   provider's advertised `SupportedTravelModes`, and capability advertisement are
-  wired. Because the `ways` topology stores a single `cost` / `reverse_cost`
-  weight pair, only the **driving** mode is genuinely routable; walking / cycling
-  / truck require additional per-mode cost columns and stay deferred. Unsupported
-  modes return a GeoServices 400 — Honua does not fabricate a mode-specific solve
-  it cannot honour.
+  wired. Migration 083 stores validated profile-to-forward/reverse-column mappings
+  on each network dataset; only mappings whose columns actually exist are
+  advertised. All pgRouting solve families use the selected pair. The built-in
+  topology intentionally remains **driving-only** until operators supply genuine
+  non-driving weights. Unsupported modes return a GeoServices 400 — Honua does not
+  fabricate a mode-specific solve it cannot honour.
+
+**Update (post-MVP, #1861 / #1864 / #1874 / #1882 / #2652).** The remaining
+operation-level deferrals are now delivered: ClosestFacility uses the canonical
+provider contract and real pgRouting impedance, OD cost matrix returns bounded
+cost-only cells, LocationAllocation supports minimize-impedance and
+maximize-coverage, and the addressable network-dataset registry has
+admin-authorized mapping/metadata CRUD. Route solve accepts both GET query
+parameters and POST form parameters through the same handler. The remaining
+subfeature deferrals are OD line geometry, additional allocation objectives,
+and edge/vertex/turn-restriction editing with topology rebuild; these are tracked
+by #2653-#2656.
 
 **Input bounds (DoS guard).** The NAServer adapter caps input counts to bound
 serial DB fan-out (each stop is a Dijkstra leg; each facility×break is a

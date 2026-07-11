@@ -25,6 +25,16 @@ public interface IRoutingProvider
     RoutingProviderCapabilities Capabilities { get; }
 
     /// <summary>
+    /// Resolves the capability snapshot for the selected backing dataset. Providers
+    /// with static capabilities inherit the default implementation; dataset-backed
+    /// providers override it so adapters advertise only real profiles.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The capabilities applicable to the next solve.</returns>
+    Task<RoutingProviderCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(Capabilities);
+
+    /// <summary>
     /// Solve a multi-stop route through the requested stops in order.
     /// </summary>
     /// <param name="request">The route solve request.</param>
@@ -60,8 +70,11 @@ public interface IRoutingProvider
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Solve an origins×destinations cost matrix (attribute-only impedance, no
-    /// route geometry). Implementations that do not support this advertise
+    /// Solve an origins×destinations cost matrix. The canonical request preserves
+    /// an attribute-only fast path and can request straight-line geometry;
+    /// implementations that cannot materialize it advertise
+    /// <see cref="RoutingProviderCapabilities.SupportsOdStraightLines"/> as
+    /// <c>false</c>. Implementations that cannot solve the matrix at all advertise
     /// <see cref="RoutingProviderCapabilities.SupportsOdCostMatrix"/> as <c>false</c>.
     /// </summary>
     /// <param name="request">The OD cost matrix solve request.</param>

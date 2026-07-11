@@ -43,6 +43,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerIdentifyHandler>();
         services.AddScoped<ImageServerTileHandler>();
         services.AddScoped<ImageServerCatalogQueryHandler>();
+        services.AddScoped<ImageServerRasterItemHandler>();
         services.AddScoped<ImageServerStatisticsHistogramsHandler>();
         services.AddScoped<ImageServerSamplesHandler>();
         services.AddScoped<ImageServerKeyPropertiesHandler>();
@@ -55,6 +56,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerFindHandler>();
         services.AddScoped<ImageServerMeasureHandler>();
         services.AddScoped<ImageServerWmtsHandler>();
+        services.AddScoped<ImageServerExportBackend>();
 
         // Register supporting services
         services.TryAddScoped<SpatialReferenceResolver>();
@@ -81,11 +83,6 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<IImageServerMultidimensionalInfoBuilder>(static provider =>
             new ImageServerMultidimensionalInfoBuilder(
                 provider.GetService<Core.Features.Raster.Multidimensional.Abstractions.IMultidimensionalCoverageStore>()));
-
-        // Per-slice point sampler for getSamples multidimensionalDefinition (#1869).
-        // Reuses the shared Zarr catalog + subset reader; ICloudRangeReader instances
-        // are contributed by the active cloud-storage providers.
-        services.AddScoped<ZarrPointSampler>();
 
         return services;
     }

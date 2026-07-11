@@ -80,8 +80,8 @@ public enum ServiceAreaTravelDirection
 /// </param>
 /// <param name="TravelProfile">
 /// Optional travel profile / cost model selector (e.g. "driving", "walking").
-/// MVP providers treat this as advisory and route on the topology's stored
-/// <c>cost</c>/<c>reverse_cost</c> weights regardless of profile.
+/// Dataset-backed providers resolve it to validated forward/reverse impedance
+/// columns. <c>driving</c> remains the backward-compatible default.
 /// </param>
 /// <param name="OutSrid">
 /// Output spatial reference (SRID/WKID) for returned geometry. Defaults to 4326.
@@ -403,6 +403,27 @@ public sealed record OdCostMatrixSolveRequest(
     /// Validated against the provider's advertised modes by the adapter.
     /// </summary>
     public string? TravelMode { get; init; }
+
+    /// <summary>
+    /// Requested line materialization mode. The default preserves the cost-only
+    /// fast path; straight lines connect the original origin/destination points
+    /// and are emitted in <see cref="OutSrid"/>.
+    /// </summary>
+    public OdLineOutputType OutputType { get; init; } = OdLineOutputType.NoLines;
+}
+
+/// <summary>
+/// Geometry materialization modes supported by the canonical OD matrix pipeline.
+/// Network true-shape lines are intentionally absent until providers expose a
+/// bounded path-geometry contract.
+/// </summary>
+public enum OdLineOutputType
+{
+    /// <summary>Return ranked costs without line geometry.</summary>
+    NoLines,
+
+    /// <summary>Return a two-vertex line from each origin to its destination.</summary>
+    StraightLines,
 }
 
 /// <summary>
@@ -416,12 +437,17 @@ public sealed record OdCostMatrixSolveRequest(
 /// Aggregate length (meters) for the pair. 0 when length was not materialized
 /// (cost-only matrices estimate length lazily; the MVP returns 0).
 /// </param>
+/// <param name="GeometryGeoJson">
+/// Optional GeoJSON LineString in the request's output SRID. Present only when
+/// <see cref="OdCostMatrixSolveRequest.OutputType"/> requests materialized lines.
+/// </param>
 public sealed record OdLine(
     int OriginId,
     int DestinationId,
     int DestinationRank,
     double TotalCostMinutes,
-    double TotalLengthMeters);
+    double TotalLengthMeters,
+    string? GeometryGeoJson = null);
 
 /// <summary>
 /// Result of solving an OD cost matrix.
@@ -445,9 +471,9 @@ public sealed record OdCostMatrixSolveResult(
 public sealed record DemandPoint(RoutePoint Location, double Weight = 1.0);
 
 /// <summary>
-/// The location-allocation problem type. The MVP implements the two most-requested
-/// types over a precomputed cost matrix; other Esri types are gated with a 400 by
-/// the adapter.
+/// Location-allocation objectives implemented over the canonical precomputed cost
+/// matrix. Objectives whose Esri contract requires capacity, competitor, facility
+/// attractiveness, or impedance-transformation inputs are intentionally absent.
 /// </summary>
 public enum LocationAllocationProblemType
 {
@@ -462,6 +488,13 @@ public enum LocationAllocationProblemType
     /// impedance cutoff (the maximal-coverage problem).
     /// </summary>
     MaximizeCoverage = 1,
+
+    /// <summary>
+    /// Choose the smallest observed candidate set that covers every reachable
+    /// demand point within the impedance cutoff. The bounded solver uses the
+    /// deterministic greedy set-cover approximation.
+    /// </summary>
+    MinimizeFacilities = 2,
 }
 
 /// <summary>
@@ -473,10 +506,15 @@ public enum LocationAllocationProblemType
 /// <param name="Facilities">Candidate facility locations to choose from.</param>
 /// <param name="DemandPoints">Weighted demand points to allocate.</param>
 /// <param name="ProblemType">The optimization objective.</param>
-/// <param name="FacilitiesToFind">Number of facilities to choose. Defaults to 1.</param>
+/// <param name="FacilitiesToFind">
+/// Number of facilities to choose. Defaults to 1 and is ignored by
+/// <see cref="LocationAllocationProblemType.MinimizeFacilities"/>, which derives
+/// the bounded facility count needed to cover reachable demand.
+/// </param>
 /// <param name="ImpedanceCutoff">
 /// Maximum impedance (minutes) a demand point may be from a facility to be served.
-/// Required for <see cref="LocationAllocationProblemType.MaximizeCoverage"/>;
+/// Required for <see cref="LocationAllocationProblemType.MaximizeCoverage"/> and
+/// <see cref="LocationAllocationProblemType.MinimizeFacilities"/>;
 /// optional for minimize-impedance (demand beyond the cutoff is treated as
 /// unallocated). <c>null</c> applies no cutoff.
 /// </param>

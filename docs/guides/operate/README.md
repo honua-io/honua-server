@@ -6,8 +6,9 @@ source of truth for health, findings, proposals, approvals, and execution. Tools
 may explain or propose, but the control plane applies only deterministic,
 authorized operations.
 
-This guide describes behavior on `trunk` as of July 8, 2026. Items that are
-still tracked by #2552 are called out explicitly.
+This guide describes behavior on `trunk` as of July 10, 2026. The self-operating
+platform workstream in #2552 is landed; the remaining limits are called out
+explicitly so “runs itself” never means “may mutate anything unattended.”
 
 ## The loop
 
@@ -73,7 +74,8 @@ without requiring write authority; do not assume unsupported kinds. The
 `supportedKinds` field on rejected `honua_propose_operation` responses remains a
 compatibility aid but is deprecated as a discovery mechanism. Platform-ops MCP
 tools for release status, deploy operation listing, and rollback proposal are
-also part of the current-trunk baseline.
+also part of the current-trunk baseline. Architecture tests enforce the REST/MCP
+seat-parity map and reject a finding action that has no real executor.
 
 ## The autonomy ladder
 
@@ -86,11 +88,12 @@ Every concern sits on an explicit rung:
 | L2 remediable | The finding can route a real operation through the gateway and approval lane. |
 | L3 autonomous | A policy explicitly allows AutoApply under guardrails, audit, lease/singleton execution, and a kill switch. |
 
-Current trunk has L0-L2 pieces for selected concerns. L3 is still in progress:
-#2557 owns the graduated autonomy policy and kill switch, and #2568 owns the
-dead-letter self-heal proof. Until those land, there is no supported
-`AutoApply` rule opt-in setting to document or enable. Treat every "auto-apply"
-claim as future work unless a later release note points to the policy surface.
+Current trunk has all four rungs for selected concerns. `ProposeOnly` remains the
+default. L3 requires a durable policy store, a per-rule `AutoApply` opt-in, an
+action marked auto-safe by both the finding and action catalogs, blast-radius and
+rate-window bounds, the global kill switch to be off, and a successful durable
+reservation. Every autonomous attempt still passes through the operation gateway
+and writes audit, outcome, notification, and convergence evidence.
 
 Current rung by concern:
 
@@ -98,8 +101,8 @@ Current rung by concern:
 |---|---:|---|
 | Aggregate operating posture | L0 | `GET /api/v1/operate/status` gives one server verdict and drill-down sources. |
 | Ops health history and cluster aggregation | L0 | `GET /api/v1/admin/observability/ops-health/history` stores bounded rollups for reconnect gap-fill and trend views. |
-| Alert dispatch dead letters | L2 | A critical finding can propose `alerts.redrive_dead_letters`; the real applier re-enqueues dead-lettered dispatch rows. L3 dead-letter auto-redrive is not landed. |
-| Alert channel pause/resume | L2 foundation | The action fabric registers pause/resume actuators; automated channel selection remains a policy/finding concern. |
+| Alert dispatch dead letters | L3 (opt-in) | The `alert-dispatch-backlog` rule can auto-apply `alerts.redrive_dead_letters`; integration proof covers convergence, durable audit/outcome evidence, and the kill switch stopping the next evaluation. The default remains L2/ProposeOnly. |
+| Alert channel pause/resume | L2 | Privacy-safe per-channel backlog health identifies a failing channel and offers a scoped `alerts.pause_channel` proposal. Pause remains approval-gated and non-auto-safe because it suppresses delivery; healthy channels continue dispatching. |
 | Database bounded-admission pressure | L2 where supported | The Postgres runtime-tunable admission gate can be lowered through a proposed `db.tune_bounded_admission` action when headroom exists. |
 | Deploy stuck in manual intervention | L2 when a prior revision is known | The finding can propose a rollback Deploy operation only when the previous revision is recorded. |
 | Platform release runtime divergence | L2 | For unpinned divergent serving targets, the finding proposes a Deploy operation to the declared platform release artifact. |
@@ -109,8 +112,7 @@ Current rung by concern:
 | Local backend on incompatible substrate | L1 | The finding explains the topology problem; remediation is a deployment decision. |
 | Generic serving latency or error-rate SLO breach | L1 | No single safe generic action exists outside a specific deploy operation. |
 
-When L3 lands, a rule should be opted into AutoApply only if all of these are
-true:
+Opt a rule into AutoApply only if all of these are true:
 
 - The signal is deterministic and bounded to one concern.
 - The recommended action already has a real executor and is proven by tests.
@@ -123,6 +125,50 @@ true:
 Never automate contract or breaking migrations, data deletion, cross-environment
 promotion, source-data edits, or any action whose approval gate says it is
 data-affecting.
+
+### Configure bounded autonomy
+
+Read the live policy and track record before graduating a rule:
+
+```bash
+curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
+  http://localhost:8080/api/v1/admin/observability/autonomy/policies/alert-dispatch-backlog
+```
+
+The following example opts only the proven dead-letter rule into AutoApply,
+limits it to two actions per ten-minute window, and caps its blast radius. Policy
+updates require admin authorization and are audited.
+
+```bash
+curl -sS -X PUT \
+  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "AutoApply",
+    "maxAutoActionsPerWindow": 2,
+    "windowSeconds": 600,
+    "maxBlastRadius": 2,
+    "reason": "graduated after reviewed successful proposals"
+  }' \
+  http://localhost:8080/api/v1/admin/observability/autonomy/policies/alert-dispatch-backlog
+```
+
+Freeze all autonomous evaluation immediately with the global kill switch. This
+does not delete the saved rule policies; setting it back to `false` restores
+their eligibility after the incident review.
+
+```bash
+curl -sS -X PUT \
+  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
+  -H "Content-Type: application/json" \
+  -d '{"killSwitchEnabled":true,"reason":"incident freeze"}' \
+  http://localhost:8080/api/v1/admin/observability/autonomy/settings
+```
+
+Hosts without the durable control plane fail closed: autonomy is inert and
+policy changes are read-only even if configuration asks for AutoApply. See
+[ADR-0062](../../internal/contributor/adr/0062-graduated-ops-autonomy-policy.md)
+for the route-time guardrail contract.
 
 ## Rollback taxonomy
 
@@ -216,17 +262,27 @@ docker compose -f docker/monitoring/compose.yml up -d
 See [Monitor Honua Server](../deploy/monitoring.md) for metrics, alert rules,
 OTLP, and the one-command monitoring bundle.
 
-## Current open edges
+## Honest limits
 
-These are intentionally not described as shipped behavior:
+The #2552 implementation workstream is complete: persisted cluster health,
+realtime fan-out, the Console quickstart/dashboard/cockpit, MCP observability and
+platform tools, real operation executors, graduated autonomy, seat-parity tests,
+dead-letter self-heal proof, and the platform rollback cell are on trunk.
 
-- #2557: graduated autonomy policy, AutoApply storage/evaluator, and kill
-  switch.
-- #2567: seat-parity contract tests proving REST and MCP action parity.
-- #2568: end-to-end dead-letter self-heal through approval and autonomy.
-- #2558: quickstart compose packaging that includes the Console ops dashboard.
-- #2569: cloud-integration rollback cell for the agent-driven platform rollback
-  proof.
+That does not make every operational concern autonomous:
+
+- The proven L3 path is bounded alert dead-letter redrive. Other rules stay
+  ProposeOnly until their deterministic signal, real auto-safe actuator,
+  rollback/convergence proof, and guardrails exist.
+- GP queue depth is diagnosable, but the server does not invent a generic scale
+  action. Kubernetes HPA and cloud/serverless substrate scaling remain deployment
+  concerns; HTTP serving does not claim scale-to-zero.
+- Generic latency/error SLO breaches remain findings unless they occur inside a
+  deploy operation with a known health-gated rollback path.
+- Contract/breaking migrations, destructive changes, source-data edits, and
+  cross-environment promotion always retain explicit human governance.
+- The bounded built-in history is operational memory, not a TSDB. Use the
+  optional OTLP/LGTM integration for long retention and deep correlation.
 
 ## Related docs
 

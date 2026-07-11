@@ -5,6 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Routing.Features.Routing.Abstractions;
+using Honua.Routing.Features.Routing.Domain;
 using Honua.Routing.Features.Routing.Providers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -12,6 +13,7 @@ using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Honua.Server.Tests.Routing;
@@ -65,7 +67,9 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
                         new FixtureDatabaseConnectionProvider(
                             routingFixture.DataSource,
                             routingFixture.ConnectionString)),
-                    NullLogger<PgRoutingProvider>.Instance));
+                    NullLogger<PgRoutingProvider>.Instance,
+                    new ProfiledNetworkDatasetResolver(),
+                    Options.Create(new RoutingConfiguration())));
             });
     }
 
@@ -108,6 +112,33 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         var attributes = feature.GetProperty("attributes");
         attributes.GetProperty("Total_Length").GetDouble().Should().BeGreaterThan(0);
         attributes.GetProperty("Total_TravelTime").GetDouble().Should().BeGreaterThan(0);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task RouteSolve_ProfileBackedTravelModes_ReturnDistinctCosts()
+    {
+        async Task<double> SolveAsync(string travelMode)
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("stops", "0.0,0.0;0.02,0.02"),
+                new KeyValuePair<string, string>("travelMode", travelMode),
+            ]);
+            var response = await _fixture.Client.PostAsync(
+                $"/rest/services/{ServiceId}/NAServer/Route/solve", payload, CancellationToken.None);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(CancellationToken.None));
+            return document.RootElement.GetProperty("routes").GetProperty("features")[0]
+                .GetProperty("attributes").GetProperty("Total_TravelTime").GetDouble();
+        }
+
+        var driving = await SolveAsync("driving");
+        var walking = await SolveAsync("walking");
+
+        driving.Should().BeApproximately(4, 0.001);
+        walking.Should().BeApproximately(8, 0.001);
     }
 
     [RoutingTest(RoutingTestEnv)]
@@ -252,5 +283,66 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         // 2 origins x 2 destinations => 4 cost cells.
         features.GetArrayLength().Should().Be(4);
         features[0].GetProperty("attributes").GetProperty("Total_Time").GetDouble().Should().BeGreaterThan(0);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task OdCostMatrix_StraightLines_OverRealPgRouting_TransformsGeometryToOutSrid()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("origins", "0.0,0.0"),
+            new KeyValuePair<string, string>("destinations", "0.02,0.02"),
+            new KeyValuePair<string, string>("inSR", "4326"),
+            new KeyValuePair<string, string>("outSR", "3857"),
+            new KeyValuePair<string, string>("outputType", "esriNAODOutputStraightLines"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/ODCostMatrix/solveODCostMatrix",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var odLines = document.RootElement.GetProperty("odLines");
+        odLines.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        var path = odLines.GetProperty("features")[0].GetProperty("geometry").GetProperty("paths")[0];
+        path[0][0].GetDouble().Should().BeApproximately(0, 1e-6);
+        path[0][1].GetDouble().Should().BeApproximately(0, 1e-6);
+        path[1][0].GetDouble().Should().BeApproximately(2226.39, 1);
+        path[1][1].GetDouble().Should().BeApproximately(2226.39, 1);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task LocationAllocation_MinimizeFacilities_OverRealPgRouting_CoversBothDemandClusters()
+    {
+        // Each bottom-corner facility reaches its top-corner demand in two hops;
+        // the cross-corner path costs four, so a two-minute cutoff requires both.
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("facilities", "0.0,0.0;0.02,0.0"),
+            new KeyValuePair<string, string>("demandPoints", "0.0,0.02;0.02,0.02"),
+            new KeyValuePair<string, string>("numberFacilitiesToFind", "1"),
+            new KeyValuePair<string, string>("impedanceCutoff", "2"),
+            new KeyValuePair<string, string>("problemType", "esriMFPMinimizeFacilities"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/LocationAllocation/solveLocationAllocation",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        document.RootElement.GetProperty("facilities").GetProperty("features")
+            .GetArrayLength().Should().Be(2);
+        document.RootElement.GetProperty("demandPoints").GetProperty("features")
+            .EnumerateArray()
+            .Should().OnlyContain(feature =>
+                feature.GetProperty("attributes").GetProperty("FacilityID").GetInt32() > 0);
     }
 }

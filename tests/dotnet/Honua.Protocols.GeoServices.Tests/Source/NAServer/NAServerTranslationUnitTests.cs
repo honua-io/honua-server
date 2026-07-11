@@ -425,6 +425,25 @@ public sealed class NAServerTranslationUnitTests
         request.Destinations.Should().HaveCount(2);
         request.Cutoff.Should().Be(30);
         request.DestinationCount.Should().Be(1);
+        request.OutputType.Should().Be(OdLineOutputType.NoLines);
+    }
+
+    [UnitTest]
+    [Operation(Operations.OdCostMatrix)]
+    public void BuildOdCostMatrixSolveRequest_StraightLines_ModelsCanonicalOutputType()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["origins"] = "-157.85,21.30",
+            ["destinations"] = "-157.90,21.40",
+            ["outputType"] = "esriNAODOutputStraightLines",
+            ["outSR"] = "3857",
+        };
+
+        var request = NAServerParameterTranslation.BuildOdCostMatrixSolveRequest(parameters);
+
+        request.OutputType.Should().Be(OdLineOutputType.StraightLines);
+        request.OutSrid.Should().Be(3857);
     }
 
     [UnitTest]
@@ -454,13 +473,46 @@ public sealed class NAServerTranslationUnitTests
             new OdLine(OriginId: 0, DestinationId: 0, DestinationRank: 2, TotalCostMinutes: 9.9, TotalLengthMeters: 0),
         ]);
 
-        var response = NAServerResultMapping.MapOdCostMatrix(result);
+        var response = NAServerResultMapping.MapOdCostMatrix(result, OdLineOutputType.NoLines, outSrid: 4326);
 
         response.OdLines.Features.Should().HaveCount(2);
         response.OdLines.Features[0].Attributes.OriginId.Should().Be(1);
         response.OdLines.Features[0].Attributes.DestinationId.Should().Be(2);
         response.OdLines.Features[0].Attributes.DestinationRank.Should().Be(1);
         response.OdLines.Features[0].Attributes.TotalTime.Should().Be(4.2);
+        response.OdLines.GeometryType.Should().BeNull();
+        response.OdLines.SpatialReference.Should().BeNull();
+        response.OdLines.Features.Should().OnlyContain(feature => feature.Geometry == null);
+    }
+
+    [UnitTest]
+    [Operation(Operations.OdCostMatrix)]
+    public void MapOdCostMatrix_StraightLines_ProducesPolylineGeometryAndSpatialReference()
+    {
+        var result = new OdCostMatrixSolveResult(
+        [
+            new OdLine(
+                OriginId: 0,
+                DestinationId: 0,
+                DestinationRank: 1,
+                TotalCostMinutes: 4.2,
+                TotalLengthMeters: 100,
+                GeometryGeoJson: """{"type":"LineString","coordinates":[[0,0],[1000,1000]]}"""),
+        ]);
+
+        var response = NAServerResultMapping.MapOdCostMatrix(
+            result, OdLineOutputType.StraightLines, outSrid: 3857);
+
+        response.OdLines.GeometryType.Should().Be("esriGeometryPolyline");
+        response.OdLines.SpatialReference.Should().NotBeNull();
+        response.OdLines.SpatialReference!.Wkid.Should().Be(3857);
+        response.OdLines.Features.Should().ContainSingle();
+        var path = response.OdLines.Features[0].Geometry!.Paths[0];
+        path.Should().HaveCount(2);
+        path[0][0].Should().Be(0);
+        path[0][1].Should().Be(0);
+        path[1][0].Should().Be(1000);
+        path[1][1].Should().Be(1000);
     }
 
     [UnitTest]
@@ -471,9 +523,30 @@ public sealed class NAServerTranslationUnitTests
             .Should().Be(LocationAllocationProblemType.MinimizeImpedance);
         NAServerParameterTranslation.ParseLocationAllocationProblemType("esriMFPMaximizeCoverage")
             .Should().Be(LocationAllocationProblemType.MaximizeCoverage);
+        NAServerParameterTranslation.ParseLocationAllocationProblemType("esriMFPMinimizeFacilities")
+            .Should().Be(LocationAllocationProblemType.MinimizeFacilities);
+        NAServerParameterTranslation.ParseLocationAllocationProblemType("Minimize Facilities")
+            .Should().Be(LocationAllocationProblemType.MinimizeFacilities);
 
         var act = () => NAServerParameterTranslation.ParseLocationAllocationProblemType("esriMFPTargetMarketShare");
         act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.LocationAllocation)]
+    public void BuildLocationAllocationSolveRequest_MinimizeFacilitiesWithoutCutoff_ThrowsPreciseError()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["facilities"] = "-157.85,21.30",
+            ["demandPoints"] = "-157.86,21.31",
+            ["problemType"] = "esriMFPMinimizeFacilities",
+        };
+
+        var act = () => NAServerParameterTranslation.BuildLocationAllocationSolveRequest(parameters);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*requires 'impedanceCutoff' or 'defaultCutoff'*");
     }
 
     [UnitTest]

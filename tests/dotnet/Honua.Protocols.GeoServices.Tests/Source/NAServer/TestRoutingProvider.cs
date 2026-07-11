@@ -36,6 +36,7 @@ internal sealed class TestRoutingProvider : IRoutingProvider
             SupportsOdCostMatrix: true,
             SupportsLocationAllocation: true)
         {
+            SupportsOdStraightLines = true,
             SupportedBarrierKinds =
             [
                 RouteBarrierKind.Point,
@@ -47,6 +48,7 @@ internal sealed class TestRoutingProvider : IRoutingProvider
             [
                 LocationAllocationProblemType.MinimizeImpedance,
                 LocationAllocationProblemType.MaximizeCoverage,
+                LocationAllocationProblemType.MinimizeFacilities,
             ],
         })
     {
@@ -77,6 +79,7 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (_routeExceptionFactory?.Invoke(request) is { } exception)
         {
@@ -91,7 +94,10 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         var start = request.Stops[0];
         var end = request.Stops[^1];
         var length = HaversineMeters(start, end);
-        var time = length / MetersPerMinute;
+        var profileFactor = string.Equals(request.TravelMode, "walking", StringComparison.OrdinalIgnoreCase)
+            ? 2.0
+            : 1.0;
+        var time = length / MetersPerMinute * profileFactor;
         var geometry = LineStringGeoJson(start, end);
 
         var directions = new List<RouteDirectionStep>
@@ -198,7 +204,16 @@ internal sealed class TestRoutingProvider : IRoutingProvider
             var rank = 1;
             foreach (var entry in ranked)
             {
-                lines.Add(new OdLine(originId, entry.DestinationId, rank, entry.Minutes, entry.Meters));
+                var geometry = request.OutputType == OdLineOutputType.StraightLines
+                    ? LineStringGeoJson(origin, request.Destinations[entry.DestinationId])
+                    : null;
+                lines.Add(new OdLine(
+                    originId,
+                    entry.DestinationId,
+                    rank,
+                    entry.Minutes,
+                    entry.Meters,
+                    geometry));
                 rank++;
             }
         }
@@ -211,16 +226,21 @@ internal sealed class TestRoutingProvider : IRoutingProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        // Greedy nearest-facility allocation: choose the requested number of
-        // facilities minimizing demand-weighted haversine impedance.
+        // Deterministic greedy allocation over a haversine cost matrix. The
+        // minimize-facilities branch keeps selecting candidates until no uncovered
+        // demand is reachable within the cutoff.
         var chosen = new List<int>();
         var demandBest = new double[request.DemandPoints.Count];
         Array.Fill(demandBest, double.PositiveInfinity);
-        var toFind = Math.Clamp(request.FacilitiesToFind, 1, Math.Max(1, request.Facilities.Count));
+        var toFind = request.ProblemType == LocationAllocationProblemType.MinimizeFacilities
+            ? request.Facilities.Count
+            : Math.Clamp(request.FacilitiesToFind, 1, Math.Max(1, request.Facilities.Count));
 
         for (var pick = 0; pick < toFind; pick++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var bestFacility = -1;
             var bestGain = double.NegativeInfinity;
             for (var f = 0; f < request.Facilities.Count; f++)
@@ -239,7 +259,14 @@ internal sealed class TestRoutingProvider : IRoutingProvider
                         continue;
                     }
 
-                    if (cost < demandBest[d])
+                    if (request.ProblemType == LocationAllocationProblemType.MinimizeFacilities)
+                    {
+                        if (double.IsInfinity(demandBest[d]))
+                        {
+                            gain++;
+                        }
+                    }
+                    else if (cost < demandBest[d])
                     {
                         gain += (double.IsInfinity(demandBest[d]) ? 1e6 : demandBest[d] - cost) * request.DemandPoints[d].Weight;
                     }
@@ -252,7 +279,8 @@ internal sealed class TestRoutingProvider : IRoutingProvider
                 }
             }
 
-            if (bestFacility < 0)
+            if (bestFacility < 0 ||
+                (request.ProblemType == LocationAllocationProblemType.MinimizeFacilities && bestGain <= 0))
             {
                 break;
             }

@@ -38,6 +38,9 @@ internal sealed record LicenseMintRequest
     /// </summary>
     public string[]? Entitlements { get; init; }
 
+    /// <summary>Optional serving-capacity band and surge terms.</summary>
+    public LicenseCapacityTerms? Capacity { get; init; }
+
     /// <summary>Optional issuance-context metadata.</summary>
     public Dictionary<string, string>? Metadata { get; init; }
 }
@@ -85,6 +88,8 @@ internal static class LicenseMinter
                 nameof(request));
         }
 
+        ValidateCapacityTerms(request.Capacity);
+
         var entitlements = ResolveEntitlements(request);
 
         var payload = new LicenseMintPayload
@@ -96,6 +101,7 @@ internal static class LicenseMinter
             IssuedAt = request.IssuedAt ?? DateTimeOffset.UtcNow,
             ExpiresAt = request.ExpiresAt,
             Entitlements = entitlements,
+            Capacity = request.Capacity,
             Metadata = request.Metadata is { Count: > 0 } ? request.Metadata : null
         };
 
@@ -153,6 +159,38 @@ internal static class LicenseMinter
         return request.Entitlements
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static void ValidateCapacityTerms(LicenseCapacityTerms? capacity)
+    {
+        if (capacity is null)
+        {
+            return;
+        }
+
+        if (capacity.MaxSustainedServingUnits <= 0m)
+        {
+            throw new ArgumentException(
+                "Capacity max sustained serving units must be greater than zero.",
+                nameof(capacity));
+        }
+
+        if (capacity.AnnualSurgeDays is < 0)
+        {
+            throw new ArgumentException(
+                "Capacity annual surge days cannot be negative.",
+                nameof(capacity));
+        }
+
+        if (capacity.SurgeAllowance is not (
+            LicenseCapacitySurgeAllowances.Standard or
+            LicenseCapacitySurgeAllowances.High or
+            LicenseCapacitySurgeAllowances.Unlimited))
+        {
+            throw new ArgumentException(
+                "Capacity surge allowance must be standard, high, or unlimited.",
+                nameof(capacity));
+        }
     }
 
     private static byte[] Sign(byte[] payloadBytes, byte[] privateSeed)

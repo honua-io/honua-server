@@ -32,6 +32,13 @@ public sealed record RoutingProviderCapabilities(
     bool SupportsLocationAllocation = false)
 {
     /// <summary>
+    /// Whether OD cost-matrix solves can materialize straight-line geometry in the
+    /// requested output SRID. Providers that only compute impedance cells leave
+    /// this false so adapters reject geometry requests instead of fabricating them.
+    /// </summary>
+    public bool SupportsOdStraightLines { get; init; }
+
+    /// <summary>
     /// Service-area travel directions the provider honors. An empty set means the
     /// provider does not differentiate travel direction.
     /// </summary>
@@ -56,7 +63,9 @@ public sealed record RoutingProviderCapabilities(
     public bool SupportsBarriers => SupportedBarrierKinds.Count > 0;
 
     /// <summary>
-    /// Named travel modes the provider can route, compared case-insensitively. An
+    /// Named travel modes the provider can route, compared case-insensitively. For
+    /// dataset-backed providers, callers use <c>GetCapabilitiesAsync</c> to obtain
+    /// the selected dataset's verified profile set. An
     /// empty set means the provider does not differentiate modes; the adapter then
     /// accepts only an absent/empty <c>travelMode</c> and routes on the topology's
     /// stored cost weights. When non-empty, the adapter rejects any

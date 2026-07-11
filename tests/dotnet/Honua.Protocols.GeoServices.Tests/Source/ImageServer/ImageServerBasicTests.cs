@@ -1,13 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.ZarrParser;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -201,27 +204,148 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
     [Operation(Operations.Identify)]
     public async Task Identify_WithValidPoint_ReturnsIdentifyResult()
     {
-        // Arrange
-        var queryParams = "?geometry=0,0&geometryType=esriGeometryPoint&f=json";
-
-        // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestLayerId}/ImageServer/identify{queryParams}");
-
-        // Assert
-        // Note: This test might fail until raster data is available in the test database
-        // For now, we expect either success or a 404 (no rasters found)
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
-
-        if (response.StatusCode == HttpStatusCode.OK)
+        const string root = "stores/identify-vertical";
+        var rangeReader = new ImageServerFixtureRangeReader(
+            ImageServerZarrTestFixture.BuildVerticalStore(root, levels: 4, rows: 4, cols: 4));
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(rangeReader, "bucket", root);
+        var registration = new ZarrRegistration
         {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            Id = 1,
+            LayerId = TestLayerId,
+            Name = "vertical",
+            Provider = CloudStorageProvider.AwsS3,
+            Bucket = "bucket",
+            RootPath = root,
+            Metadata = metadata,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        var zarrStore = Substitute.For<IZarrStore>();
+        zarrStore.ListByLayerAsync(TestLayerId, Arg.Any<CancellationToken>()).Returns([registration]);
+        var sliceReader = new ZarrPointSliceReader(zarrStore, new ZarrSubsetReader(), [rangeReader]);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IZarrPointSliceReader>();
+            services.AddSingleton<IZarrPointSliceReader>(sliceReader);
+        });
+        await fixture.InitializeAsync();
 
-            var content = await response.Content.ReadAsStringAsync();
-            var json = JsonDocument.Parse(content);
+        try
+        {
+            var definition = Uri.EscapeDataString(
+                "[{\"variableName\":\"temperature\",\"dimensionName\":\"elevation\",\"values\":[333.3333],\"isSlice\":true}]");
+            var query = $"?geometry=0,0&geometryType=esriGeometryPoint&sr=4326&multidimensionalDefinition={definition}&f=json";
 
-            // Verify identify response structure
-            json.RootElement.TryGetProperty("location", out _).Should().BeTrue();
-            json.RootElement.TryGetProperty("properties", out _).Should().BeTrue();
+            foreach (var route in new[]
+            {
+                $"/rest/services/{TestLayerId}/ImageServer/identify{query}",
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/identify{query}",
+            })
+            {
+                var response = await fixture.Client.GetAsync(route);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                json.RootElement.GetProperty("value").GetString().Should().Be("1022");
+                json.RootElement.GetProperty("name").GetString().Should().Be("temperature");
+                json.RootElement.GetProperty("properties").GetProperty("HasData").GetBoolean().Should().BeTrue();
+                json.RootElement.GetProperty("properties").GetProperty("DimensionCount").GetInt32().Should().Be(1);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/exportImage")]
+    [Operation(Operations.Export)]
+    public async Task ExportImage_WithMultidimensionalDefinition_ReturnsNativeSlicePng()
+    {
+        const string root = "stores/export-vertical";
+        var rangeReader = new ImageServerFixtureRangeReader(
+            ImageServerZarrTestFixture.BuildVerticalStore(root, levels: 4, rows: 4, cols: 4));
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(rangeReader, "bucket", root);
+        var registration = new ZarrRegistration
+        {
+            Id = 2,
+            LayerId = TestLayerId,
+            Name = "vertical-export",
+            Provider = CloudStorageProvider.AwsS3,
+            Bucket = "bucket",
+            RootPath = root,
+            Metadata = metadata,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        var zarrStore = Substitute.For<IZarrStore>();
+        zarrStore.ListByLayerAsync(TestLayerId, Arg.Any<CancellationToken>()).Returns([registration]);
+        var sliceReader = new ZarrRasterSliceReader(zarrStore, new ZarrSubsetReader(), [rangeReader]);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IZarrRasterSliceReader>();
+            services.AddSingleton<IZarrRasterSliceReader>(sliceReader);
+        });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            const string definition =
+                "[{\"variableName\":\"temperature\",\"dimensionName\":\"elevation\",\"values\":[333.3333],\"isSlice\":true}]";
+            var encodedDefinition = Uri.EscapeDataString(definition);
+            var query = $"?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=4,3&format=png&interpolation=RSP_NearestNeighbor&multidimensionalDefinition={encodedDefinition}&f=image";
+            var outputs = new List<byte[]>();
+
+            foreach (var route in new[]
+            {
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage{query}",
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/exportImage{query}",
+            })
+            {
+                var response = await fixture.Client.GetAsync(route);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+                outputs.Add(await response.Content.ReadAsByteArrayAsync());
+            }
+
+            foreach (var route in new[]
+            {
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage",
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/exportImage",
+            })
+            {
+                using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["bbox"] = "-180,-90,180,90",
+                    ["bboxSR"] = "4326",
+                    ["imageSR"] = "4326",
+                    ["size"] = "4,3",
+                    ["format"] = "png",
+                    ["interpolation"] = "RSP_NearestNeighbor",
+                    ["multidimensionalDefinition"] = definition,
+                    ["f"] = "image",
+                });
+                var response = await fixture.Client.PostAsync(route, content);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+                outputs.Add(await response.Content.ReadAsByteArrayAsync());
+            }
+
+            outputs.Should().HaveCount(4);
+            foreach (var output in outputs)
+            {
+                output.Take(8).Should().Equal(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+                BinaryPrimitives.ReadInt32BigEndian(output.AsSpan(16, 4)).Should().Be(4);
+                BinaryPrimitives.ReadInt32BigEndian(output.AsSpan(20, 4)).Should().Be(3);
+            }
+
+            outputs.Skip(1).Should().OnlyContain(bytes => bytes.SequenceEqual(outputs[0]));
+            await zarrStore.Received(4).ListByLayerAsync(TestLayerId, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 

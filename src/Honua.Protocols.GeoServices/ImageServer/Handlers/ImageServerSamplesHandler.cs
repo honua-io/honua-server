@@ -30,18 +30,18 @@ internal sealed class ImageServerSamplesHandler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
-    private readonly ZarrPointSampler _zarrPointSampler;
+    private readonly IZarrPointSliceReader _zarrPointSliceReader;
     private readonly ILogger<ImageServerSamplesHandler> _logger;
 
     public ImageServerSamplesHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
-        ZarrPointSampler zarrPointSampler,
+        IZarrPointSliceReader zarrPointSliceReader,
         ILogger<ImageServerSamplesHandler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
-        _zarrPointSampler = zarrPointSampler ?? throw new ArgumentNullException(nameof(zarrPointSampler));
+        _zarrPointSliceReader = zarrPointSliceReader ?? throw new ArgumentNullException(nameof(zarrPointSliceReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -202,43 +202,59 @@ internal sealed class ImageServerSamplesHandler
         string? srRaw,
         CancellationToken cancellationToken)
     {
-        var registration = await _zarrPointSampler.FindServableRegistrationAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (registration is null)
-        {
-            const string message =
-                "getSamples multidimensionalDefinition (per-slice sampling of a multidimensional cube) requires a registered Zarr coverage for this layer; none is available.";
-            ImageServerLog.InvalidIdentifyParameters(_logger, layerId, message);
-            return StandardErrorHelpers.CreateNotImplemented(context, message);
-        }
-
         var requestSrid = ImageServerGeometryHelpers.TryParseSrid(srRaw);
         var maxSampleCount = DefaultMaxSampleCount;
         var samples = new List<SampleEntry>(Math.Min(samplePoints.Count, maxSampleCount));
-        var processedPoints = 0;
-
-        foreach (var point in samplePoints)
+        if (constraints.Any(static constraint => constraint.Values.Length != 1))
         {
-            if (processedPoints++ >= maxSampleCount)
-            {
-                break;
-            }
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "getSamples point reads require exactly one coordinate value per multidimensionalDefinition entry.");
+        }
 
-            var srid = point.Srid ?? requestSrid;
-            var (ok, value, error) = await _zarrPointSampler
-                .TrySampleAsync(registration, point.X, point.Y, constraints, cancellationToken)
-                .ConfigureAwait(false);
+        var selections = constraints.Select(static constraint => new ZarrPointSliceSelection(
+            string.IsNullOrWhiteSpace(constraint.VariableName) ? null : constraint.VariableName,
+            constraint.DimensionName,
+            constraint.Values[0])).ToArray();
 
-            if (!ok)
+        var pointsToRead = samplePoints.Take(maxSampleCount).ToArray();
+        var reads = await _zarrPointSliceReader
+            .ReadBatchAsync(
+                layerId,
+                pointsToRead.Select(point => new ZarrPointSliceReadRequest(
+                    point.X,
+                    point.Y,
+                    point.Srid ?? requestSrid,
+                    selections)).ToArray(),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        for (var i = 0; i < reads.Count; i++)
+        {
+            var point = pointsToRead[i];
+            var read = reads[i];
+
+            if (read.Status != ZarrPointSliceReadStatus.Success)
             {
-                // A point outside the grid yields no sample (consistent with the 2D path);
-                // a genuine resolution error (unknown axis, out-of-range coordinate) is a 400.
-                if (IsPointOutsideError(error))
+                if (read.Status == ZarrPointSliceReadStatus.OutsideCoverage)
                 {
                     continue;
                 }
-                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, error ?? "multidimensionalDefinition could not be resolved");
-                return StandardErrorHelpers.CreateBadRequest(context, error ?? "multidimensionalDefinition could not be resolved.");
+
+                var message = read.Error ?? "multidimensionalDefinition could not be resolved.";
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, message);
+                if (read.Status is ZarrPointSliceReadStatus.RegistrationNotFound or ZarrPointSliceReadStatus.ReaderUnavailable)
+                {
+                    return StandardErrorHelpers.CreateNotImplemented(context, message);
+                }
+
+                return read.Status == ZarrPointSliceReadStatus.ReadFailed
+                    ? StandardErrorHelpers.CreateInternalServerError(context, message)
+                    : StandardErrorHelpers.CreateBadRequest(context, message);
             }
+
+            var value = read.Value!.Value;
+            var srid = point.Srid ?? requestSrid;
 
             samples.Add(new SampleEntry
             {
@@ -249,7 +265,7 @@ internal sealed class ImageServerSamplesHandler
                     Y = point.Y,
                     SpatialReference = srid is null ? null : new SpatialReference { Wkid = srid.Value, LatestWkid = srid.Value },
                 },
-                Value = ZarrPointSampler.FormatValue(value),
+                Value = FormatValue(value),
                 Resolution = null,
                 Attributes = new Dictionary<string, object?> { ["Value"] = value },
             });
@@ -259,9 +275,6 @@ internal sealed class ImageServerSamplesHandler
         var response = new GetSamplesResponse { Samples = samples.ToArray() };
         return Results.Json(response, ImageServerJsonContext.Default.GetSamplesResponse);
     }
-
-    private static bool IsPointOutsideError(string? error)
-        => error is not null && error.Contains("outside the coverage extent", StringComparison.Ordinal);
 
     private static int ResolveSampleCount(string? raw)
     {
@@ -296,6 +309,9 @@ internal sealed class ImageServerSamplesHandler
             .OrderBy(kvp => kvp.Key)
             .Select(kvp => kvp.Value?.ToString() ?? "NoData"));
     }
+
+    private static string FormatValue(double value)
+        => double.IsFinite(value) ? value.ToString(CultureInfo.InvariantCulture) : "NoData";
 
     private static Dictionary<string, object?> BuildAttributes(Dictionary<int, object?> bandValues)
     {
