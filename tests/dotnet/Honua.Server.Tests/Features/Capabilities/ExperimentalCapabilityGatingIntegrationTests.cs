@@ -18,11 +18,11 @@ namespace Honua.Server.Tests.Features.Capabilities;
 /// <summary>
 /// Track-B integration coverage for honua-server#2347 (T11): the built-experimental
 /// capabilities the T10 flip (#2346) gated OFF the first-release surface
-/// (<c>sync.offline</c>, <c>security.mtls</c>, <c>versioning.branch</c>;
-/// <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, and <c>temporal.*</c>
-/// were promoted to GA, so they are no longer experimental) must be genuinely
-/// <b>absent</b> from every served surface end-to-end when experimental is disabled (the
-/// production default), and become present/served the moment a customer opts one in via
+/// (<c>sync.offline</c> and <c>versioning.branch</c>; <c>alerts.geofence</c>,
+/// <c>realtime.feature-streams</c>, <c>security.mtls</c>, and <c>temporal.*</c> were
+/// promoted to GA, so they are no longer experimental) must be genuinely <b>absent</b>
+/// from every served surface end-to-end when experimental is disabled (the production
+/// default), and become present/served the moment a customer opts one in via
 /// <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and B3 (#2335)
 /// opened at the registry/composition layer by asserting the posture at the wire:
 /// <list type="bullet">
@@ -32,10 +32,9 @@ namespace Honua.Server.Tests.Features.Capabilities;
 ///     opted-in one;
 ///   </description></item>
 ///   <item><description>
-///     the gated HTTP route groups (<c>/api/v1/admin/security/client-certificates</c>,
-///     <c>/rest/services/{id}/VersionManagementServer</c>) short-circuit with
-///     <c>404 honua:capability-experimental-disabled</c> while disabled, and open
-///     per-capability when opted in. The now-GA <c>/api/v1/temporal/*</c> group is
+///     the gated VMS route group (<c>/rest/services/{id}/VersionManagementServer</c>)
+///     short-circuits with <c>404 honua:capability-experimental-disabled</c> while
+///     disabled. The now-GA client-certificate, streaming, and temporal groups are
 ///     asserted to NOT short-circuit even with experimental off.
 ///   </description></item>
 /// </list>
@@ -57,8 +56,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
         "sync.offline",
         // realtime.feature-streams promoted to GA (Implemented) in #2428 — no longer experimental-gated.
-        // alerts.geofence promoted to GA (Implemented) in #2427 — no longer experimental-gated.
-        "security.mtls",
+        // alerts.geofence promoted in #2427 and security.mtls in #2431 — neither is gated.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
     ];
@@ -216,6 +214,31 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    public async Task ClientCertificatesEndpoint_AfterGaPromotion_IsNotExperimentalGated()
+    {
+        // #2431 promoted security.mtls Experimental -> Implemented (GA). The client-certificate
+        // trust-profile admin group must no longer short-circuit as experimental-disabled even
+        // with the global experimental switch OFF — the request reaches the handler (subject to
+        // admin auth / edition) instead of the 404 the T10 flip previously produced.
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync(
+                "/api/v1/admin/security/client-certificates/profiles");
+
+            await AssertNotExperimentalDisabledAsync(response);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
     public async Task StreamingEndpoint_AfterGaPromotion_IsNotExperimentalGated()
     {
@@ -233,38 +256,6 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var response = await client.GetAsync("/api/v1/admin/operations/streaming/subscribers");
 
             await AssertNotExperimentalDisabledAsync(response);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
-    public async Task GatedEndpoints_WhenExperimentalEnabledPerCapability_OpenOnlyThatCapability()
-    {
-        // Opt security.mtls in but leave versioning.branch off. The client-certificate gate
-        // must OPEN (no longer the experimental-disabled 404 — the request reaches the
-        // handler), while the still-disabled VMS group keeps returning the experimental-
-        // disabled 404. Alerts, realtime, and temporal are all GA and therefore no longer
-        // valid experimental controls.
-        var fixture = CreateFixture(
-            experimentalGlobalEnabled: false,
-            perCapabilityEnabled: "security.mtls");
-        await fixture.InitializeAsync();
-
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-
-            using var mtlsResponse = await client.GetAsync(
-                "/api/v1/admin/security/client-certificates/profiles");
-            await AssertNotExperimentalDisabledAsync(mtlsResponse);
-
-            using var vmsResponse = await client.GetAsync(
-                "/rest/services/svc-vms-gate-test/VersionManagementServer?f=json");
-            await AssertExperimentalDisabledAsync(vmsResponse);
         }
         finally
         {

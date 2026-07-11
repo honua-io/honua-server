@@ -49,6 +49,12 @@ through the remaining rows. This is standard OData server-driven paging and keep
 spatial queries (for example `geo.intersects` combined with `$select`) from forcing a
 pathological database plan on a very large `LIMIT`.
 
+Opaque `$skiptoken` values are scoped to the query, resolved tenant, and authenticated
+subject or API key that received them. Clients must not reuse a token after changing
+identity or tenant. Treat emitted next links as short-lived: after a server upgrade that
+changes cursor validation, restart pagination from the original query rather than
+persisting an old token across deployments.
+
 > **Behind a proxy/CDN:** `@odata.nextLink` (and all emitted links) use the configured
 > public origin, not the inbound `Host` header. Set `PUBLIC_BASE_URL` (or `Public:BaseUrl`)
 > so paging links resolve to the external URL. Clients that resolve `@odata.nextLink`
