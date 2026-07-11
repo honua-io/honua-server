@@ -17,13 +17,24 @@ internal interface ITileExportPackageProducer
     Task ProduceAsync(TileExportJobPlan plan, Stream destination, CancellationToken cancellationToken);
 }
 
+internal interface ITileExportSourceFence
+{
+    TileExportSourceKind SourceKind { get; }
+
+    ValueTask<bool> IsAvailableAsync(TileExportJobPlan plan, CancellationToken cancellationToken);
+}
+
 internal sealed partial class TileExportJobExecutor(
     ICloudFileStorage storage,
     IEnumerable<ITileExportPackageProducer> producers,
+    IEnumerable<ITileExportSourceFence> sourceFences,
     TimeProvider timeProvider,
     ILogger<TileExportJobExecutor> logger) : IJobExecutor
 {
     public ExecutionJobKind Kind => ExecutionJobKind.TileExport;
+
+    public IReadOnlySet<string> AcceptedRuntimeProfiles { get; } =
+        ImmutableHashSet.Create(StringComparer.Ordinal, TileExportExecutionSpecBuilder.RuntimeProfile);
 
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
@@ -37,6 +48,13 @@ internal sealed partial class TileExportJobExecutor(
             return JobExecutionResult.Failed(parseError ?? "Invalid tile-export job plan.");
 
         var parsedPlan = plan!;
+        var matchingFences = sourceFences.Where(candidate => candidate.SourceKind == parsedPlan.SourceKind).Take(2).ToArray();
+        if (matchingFences.Length != 1 ||
+            !await matchingFences[0].IsAvailableAsync(parsedPlan, cancellationToken).ConfigureAwait(false))
+        {
+            return JobExecutionResult.Failed("Pinned tile-export source is unavailable or has changed.");
+        }
+
         var artifactKey = TileExportArtifactIdentity.BuildObjectKey(parsedPlan);
         var existing = await storage.GetMetadataAsync(artifactKey, cancellationToken).ConfigureAwait(false);
         if (IsReusable(existing, parsedPlan))
