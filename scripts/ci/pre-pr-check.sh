@@ -29,6 +29,10 @@ set -euo pipefail
 #                           concurrently in SMART/FULL mode (default 2). Each
 #                           shard is a separate dotnet-test process with its own
 #                           Postgres container, so keep this modest.
+#
+# A diff containing only the same CI/docs paths excluded from hosted CI's
+# BUILD_FILES takes a shell-only path: governance and shell fixtures run, but
+# package restore, managed builds/tests, Docker and AOT do not.
 
 BASE_REF="${HONUA_PRE_PR_BASE:-origin/trunk}"
 FULL="${HONUA_PRE_PR_FULL:-0}"
@@ -54,6 +58,50 @@ echo "🔍 Running pre-PR validation..."
 if [[ "${FULL}" == "1" ]]; then
     FAST=0
 fi
+
+# Include committed, staged, unstaged and untracked files. Only positive,
+# complete CI_ONLY evidence can bypass managed validation; UNKNOWN and NORMAL
+# both continue through the existing fail-safe path.
+PRE_PR_SCOPE="NORMAL"
+PRE_PR_CHANGED_FILES=""
+if [[ "${FULL}" != "1" ]]; then
+    scope_output="$(scripts/ci/classify-pre-pr-changes.sh "${BASE_REF}" HEAD 2>/dev/null || echo UNKNOWN)"
+    PRE_PR_SCOPE="$(head -1 <<< "${scope_output}")"
+    PRE_PR_CHANGED_FILES="$(tail -n +2 <<< "${scope_output}")"
+fi
+
+if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" ]]; then
+    echo "    Mode: CI-SHELL-ONLY (committed + working tree vs ${BASE_REF})."
+    echo "1. Checking canonical instructions..."
+    bash scripts/ci/check-instructions-sync.sh
+
+    mapfile -t changed_shell_scripts < <(
+        printf '%s\n' "${PRE_PR_CHANGED_FILES}" \
+            | sed '/^$/d' \
+            | while IFS= read -r path; do
+                [[ "${path}" == *.sh && -f "${path}" ]] && printf '%s\n' "${path}"
+              done
+    )
+    echo "2. Checking changed shell script syntax..."
+    scripts/ci/validate-shell-syntax.sh "${changed_shell_scripts[@]}"
+
+    echo "3. Validating CI workflow and shard routing..."
+    scripts/ci/validate-ci-router.sh
+
+    echo "4. Running merge-train mode fixtures..."
+    scripts/ci/merge-train/fixtures/validate-mode.sh
+
+    if grep -qE '^scripts/ci/merge-train/' <<< "${PRE_PR_CHANGED_FILES}"; then
+        echo "5. Running merge-train fixtures..."
+        scripts/ci/merge-train/fixtures/validate-merge-train.sh
+    else
+        echo "5. Merge-train fixtures not required (surface unchanged)."
+    fi
+
+    echo "✅ CI shell-only pre-PR checks passed; managed build/test work was not required."
+    exit 0
+fi
+
 if [[ "${FAST}" == "1" ]]; then
     echo "    Tier: FAST (build + format + unit + architecture; server-test shards"
     echo "          and AOT deferred to CI / the merge queue). Run without"
