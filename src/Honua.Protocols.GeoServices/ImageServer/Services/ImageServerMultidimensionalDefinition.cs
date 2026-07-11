@@ -28,13 +28,14 @@ internal readonly record struct ImageServerDimensionConstraint(
 /// </summary>
 /// <remarks>
 /// This validates request shape only. Resolving a parsed constraint to an actual pixel read is
-/// deferred (#1869): an ImageServer layer carries multidimensional descriptor metadata but has no
-/// readable per-slice backing store wired into the getSamples path today, so callers receive an
-/// honest 501 for any supplied definition rather than a silently-ignored parameter or a value
-/// sampled from the wrong (collapsed) raster.
+/// delegated to the canonical Zarr point-slice reader so ImageServer adapters do not duplicate
+/// storage, coordinate, or dimension-index behavior.
 /// </remarks>
 internal static class ImageServerMultidimensionalDefinition
 {
+    private const int MaxDefinitionLength = 8192;
+    private const int MaxConstraints = 8;
+
     /// <summary>
     /// Attempts to parse the raw <c>multidimensionalDefinition</c> value. Returns <c>true</c>
     /// (with an empty <paramref name="constraints"/>) when the value is absent. Returns
@@ -49,6 +50,12 @@ internal static class ImageServerMultidimensionalDefinition
         if (string.IsNullOrWhiteSpace(raw))
         {
             return true;
+        }
+
+        if (raw.Length > MaxDefinitionLength)
+        {
+            error = $"multidimensionalDefinition must not exceed {MaxDefinitionLength} characters.";
+            return false;
         }
 
         JsonDocument document;
@@ -75,6 +82,12 @@ internal static class ImageServerMultidimensionalDefinition
             if (array.ValueKind != JsonValueKind.Array)
             {
                 error = "multidimensionalDefinition must be a JSON array of dimension constraints.";
+                return false;
+            }
+
+            if (array.GetArrayLength() > MaxConstraints)
+            {
+                error = $"multidimensionalDefinition supports at most {MaxConstraints} dimension constraints.";
                 return false;
             }
 

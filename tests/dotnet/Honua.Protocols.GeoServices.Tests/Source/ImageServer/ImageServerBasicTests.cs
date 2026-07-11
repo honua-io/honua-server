@@ -6,8 +6,10 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.ZarrParser;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -201,27 +203,57 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
     [Operation(Operations.Identify)]
     public async Task Identify_WithValidPoint_ReturnsIdentifyResult()
     {
-        // Arrange
-        var queryParams = "?geometry=0,0&geometryType=esriGeometryPoint&f=json";
-
-        // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestLayerId}/ImageServer/identify{queryParams}");
-
-        // Assert
-        // Note: This test might fail until raster data is available in the test database
-        // For now, we expect either success or a 404 (no rasters found)
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
-
-        if (response.StatusCode == HttpStatusCode.OK)
+        const string root = "stores/identify-vertical";
+        var rangeReader = new ImageServerFixtureRangeReader(
+            ImageServerZarrTestFixture.BuildVerticalStore(root, levels: 4, rows: 4, cols: 4));
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(rangeReader, "bucket", root);
+        var registration = new ZarrRegistration
         {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            Id = 1,
+            LayerId = TestLayerId,
+            Name = "vertical",
+            Provider = CloudStorageProvider.AwsS3,
+            Bucket = "bucket",
+            RootPath = root,
+            Metadata = metadata,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        var zarrStore = Substitute.For<IZarrStore>();
+        zarrStore.ListByLayerAsync(TestLayerId, Arg.Any<CancellationToken>()).Returns([registration]);
+        var sliceReader = new ZarrPointSliceReader(zarrStore, new ZarrSubsetReader(), [rangeReader]);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IZarrPointSliceReader>();
+            services.AddSingleton<IZarrPointSliceReader>(sliceReader);
+        });
+        await fixture.InitializeAsync();
 
-            var content = await response.Content.ReadAsStringAsync();
-            var json = JsonDocument.Parse(content);
+        try
+        {
+            var definition = Uri.EscapeDataString(
+                "[{\"variableName\":\"temperature\",\"dimensionName\":\"elevation\",\"values\":[333.3333],\"isSlice\":true}]");
+            var query = $"?geometry=0,0&geometryType=esriGeometryPoint&sr=4326&multidimensionalDefinition={definition}&f=json";
 
-            // Verify identify response structure
-            json.RootElement.TryGetProperty("location", out _).Should().BeTrue();
-            json.RootElement.TryGetProperty("properties", out _).Should().BeTrue();
+            foreach (var route in new[]
+            {
+                $"/rest/services/{TestLayerId}/ImageServer/identify{query}",
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/identify{query}",
+            })
+            {
+                var response = await fixture.Client.GetAsync(route);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                json.RootElement.GetProperty("value").GetString().Should().Be("1022");
+                json.RootElement.GetProperty("name").GetString().Should().Be("temperature");
+                json.RootElement.GetProperty("properties").GetProperty("HasData").GetBoolean().Should().BeTrue();
+                json.RootElement.GetProperty("properties").GetProperty("DimensionCount").GetInt32().Should().Be(1);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 
