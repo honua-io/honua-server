@@ -518,7 +518,7 @@ run_desktop_lane() {
     "featureserver-layer-metadata" \
     "${BASE_URL}/rest/services/${SERVICE_ID}/FeatureServer/${LAYER_ID}?f=json" \
     "200" \
-    '.id == 0 and (.fields | length) > 0 and .geometryType == "esriGeometryPoint"' || lane_failed=1
+    '.id == 0 and (.fields | length) > 0 and .geometryType == "esriGeometryPoint" and .timeInfo.startTimeField == "created_at"' || lane_failed=1
 
   request_json \
     "featureserver-query-active-subset" \
@@ -620,8 +620,22 @@ run_full_featureserver() {
   request_json \
     "featureserver-layer-metadata" \
     "${fs_base}/${LAYER_ID}?f=json" "200" \
-    ".id == ${LAYER_ID} and (.fields | length) > 0 and .geometryType == \"esriGeometryPoint\"" || failed=1
+    ".id == ${LAYER_ID} and (.fields | length) > 0 and .geometryType == \"esriGeometryPoint\" and .timeInfo.startTimeField == \"created_at\"" || failed=1
   append_cert_result "$proto" "CERT-DISC-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
+
+  # Client-compat extension: the canonical layer is time-aware and constrains
+  # both an in-range window and a disjoint pre-seed window (#2643). These lane
+  # checks stay outside the stable cross-client CERT-* vocabulary.
+  request_json \
+    "fs-temporal-window" \
+    "${fs_base}/${LAYER_ID}/query?where=1%3D1&time=1704240000000%2C1704412799000&returnGeometry=false&f=json" \
+    "200" \
+    '(.features | length) == 2' || failed=1
+  request_json \
+    "fs-temporal-disjoint" \
+    "${fs_base}/${LAYER_ID}/query?where=1%3D1&time=0%2C1&returnGeometry=false&f=json" \
+    "200" \
+    '(.features | length) == 0' || failed=1
 
   # CERT-SCHM-01: Typed fields array
   request_json \

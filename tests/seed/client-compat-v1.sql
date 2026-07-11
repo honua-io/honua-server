@@ -889,7 +889,10 @@ ON CONFLICT (layer_id) DO UPDATE SET
     default_visibility = EXCLUDED.default_visibility;
 
 UPDATE honua.layers
-SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+SET metadata = jsonb_build_object(
+    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+    'timeInfo', jsonb_build_object('startTimeField', 'created_at')
+)
 WHERE layer_id = 0;
 
 INSERT INTO honua.layer_fields (
