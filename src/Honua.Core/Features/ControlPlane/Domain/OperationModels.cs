@@ -220,7 +220,12 @@ public enum ExecutionJobKind
     /// Per-area routing-graph build workload. Clips a road-network feedstock layer to
     /// an area and emits a pgRouting topology artifact a routing endpoint can solve over.
     /// </summary>
-    RouterBuild
+    RouterBuild,
+
+    /// <summary>
+    /// Durable map or imagery tile-package export workload.
+    /// </summary>
+    TileExport
 }
 
 /// <summary>
