@@ -1236,11 +1236,73 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.Area.Should().NotBeNull();
-            measure.Area!.Value.Should().BeApproximately(50d, 1e-9);
+            // 10x5 EPSG:3857 envelope near the equator: ground area/perimeter ≈ the map-unit
+            // values (Web Mercator scale ≈ 1 at the equator), now measured geodesically (#2734).
+            measure.Area!.Value.Should().BeApproximately(50d, 0.2d);
             measure.Area.Unit.Should().Be("esriSquareMeters");
             measure.Perimeter.Should().NotBeNull();
-            measure.Perimeter!.Value.Should().BeApproximately(30d, 1e-9);
+            measure.Perimeter!.Value.Should().BeApproximately(30d, 0.1d);
             measure.Perimeter.Unit.Should().Be("esriMeters");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_DistanceAndAngle_GeographicDegrees_ReturnsGroundMeters()
+    {
+        // EPSG:4269 (NAD83) 1° of longitude at 40°N. The pre-fix planar path returned the raw
+        // degree delta (~1.0) as "meters"; the ground distance is ~85 km (#2734).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":40,"spatialReference":{"wkid":4269}}""";
+            const string toGeometry = """{"x":1,"y":40,"spatialReference":{"wkid":4269}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Distance.Should().NotBeNull();
+            measure.Distance!.Value.Should().BeInRange(84_500d, 85_500d);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_AreaAndPerimeter_AntimeridianPolygon_ReturnsFiniteArea()
+    {
+        // A ~2°x1° polygon straddling the antimeridian (179°E .. -179°E) in WGS 84. Without
+        // longitude unwrapping this projects to a ~358°-wide polygon (area ~1e14 m²); unwrapping
+        // keeps it a small finite quadrangle of a few 1e10 m² (#2734).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationAreaAndPerimeter&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Area.Should().NotBeNull();
+            measure.Area!.Value.Should().BeInRange(1e10, 1e12);
         }
         finally
         {
@@ -2714,10 +2776,13 @@ public class ImageServerEndpointsTests
         measure!.Name.Should().Be("test-raster");
         measure.SensorName.Should().Be("Unknown");
         measure.Distance.Should().NotBeNull();
-        measure.Distance!.Value.Should().BeApproximately(5d, 1e-9);
+        // (0,0)->(3,4) in EPSG:3857 near the equator: the ground distance is ~5 m (Web Mercator
+        // scale ≈ 1 at the equator), computed geodesically on the mean-radius sphere (#2734).
+        measure.Distance!.Value.Should().BeApproximately(5d, 0.05d);
         measure.Distance.Unit.Should().Be("esriMeters");
         measure.AzimuthAngle.Should().NotBeNull();
-        measure.AzimuthAngle!.Value.Should().BeApproximately(36.86989764584402d, 1e-9);
+        // 3-east / 4-north near the equator still gives atan(3/4) ≈ 36.87° true bearing.
+        measure.AzimuthAngle!.Value.Should().BeApproximately(36.86989764584402d, 1e-4);
         measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
     }
 
