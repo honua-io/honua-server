@@ -1190,6 +1190,7 @@
         "WMTS 1.0 GetCapabilities/GetTile/GetFeatureInfo",
         "query (raster catalog features)",
         "raster catalog item resource ({rasterId})",
+        "raster catalog item image and info resources ({rasterId}/image, {rasterId}/info, keyProperties, histograms)",
         "find",
         "measure (Basic mensuration)",
         "computeStatisticsHistograms",
@@ -1297,6 +1298,24 @@
               "GET /rest/services/{serviceId}/ImageServer/{rasterId}"
             ],
             "notes": "Returns one raster catalog item as an Esri feature with catalog attributes and footprint geometry. Uses the shared catalog reader and applies the same access policy and field masking as ImageServer query."
+          },
+          {
+            "name": "Raster Catalog Item Image and Info",
+            "esriPath": "/rest/services/{id}/ImageServer/{rasterId}/image",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/{rasterId}/image",
+              "GET /rest/services/{serviceId}/ImageServer/{rasterId}/image",
+              "GET /rest/services/{id}/ImageServer/{rasterId}/info",
+              "GET /rest/services/{serviceId}/ImageServer/{rasterId}/info",
+              "GET /rest/services/{id}/ImageServer/{rasterId}/info/keyProperties",
+              "GET /rest/services/{serviceId}/ImageServer/{rasterId}/info/keyProperties",
+              "GET /rest/services/{id}/ImageServer/{rasterId}/info/histograms",
+              "GET /rest/services/{serviceId}/ImageServer/{rasterId}/info/histograms"
+            ],
+            "notes": "Renders the selected raster through the canonical export pipeline and returns its storage info, key properties, and histograms from the canonical raster store. Both route families apply the ImageServer access policy; unknown raster IDs return an Esri 404 error document."
           },
           {
             "name": "Tile",
@@ -1746,12 +1765,11 @@
         ],
         "notImplemented": [
           "colormap",
-          "info/*",
           "imageSupportData",
+          "{rasterId}/info/metadata",
+          "{rasterId}/info/thumbnail",
           "kml",
-          "{rasterId}/*",
-          "rasterFile",
-          "slices"
+          "rasterFile"
         ]
       },
       "parameterCoverage": {
@@ -2842,14 +2860,14 @@
         "Route solve (GET + POST)",
         "ServiceArea solveServiceArea",
         "ClosestFacility solveClosestFacility (canonical cost-matrix solver)",
-        "ODCostMatrix solveODCostMatrix (cost-only)",
+        "ODCostMatrix solveODCostMatrix (cost-only + straight lines)",
         "LocationAllocation solveLocationAllocation (minimize-impedance + maximize-coverage)",
         "Point/line/polygon barriers (pgRouting edge exclusion)",
         "travelMode parsing and capability validation (driving routable)",
         "Addressable network-dataset registry (Phase 0 of editing)"
       ],
       "knownGaps": [
-        "OD cost matrix line geometry (cost-only output today)",
+        "OD cost matrix true-shape network geometry (straight lines are implemented)",
         "Location-allocation problem types beyond minimize-impedance/maximize-coverage",
         "non-driving travel modes (single stored cost weight)",
         "network-dataset editing (Phase 2: edge/vertex CRUD + topology rebuild)"
@@ -2945,7 +2963,7 @@
             "honuaEndpoints": [
               "POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix"
             ],
-            "notes": "Computes ranked origin/destination impedance cells through the canonical routing provider. Cost-only output is implemented; line geometry remains deferred."
+            "notes": "Computes ranked origin/destination impedance cells through the canonical routing provider. esriNAODOutputNoLines preserves the cost-only fast path; esriNAODOutputStraightLines returns two-vertex polylines in outSR (the pgRouting provider batch-transforms all cells through PostGIS in one query). Providers without straight-line capability and true-shape modes return precise GeoServices 400 responses."
           },
           {
             "name": "LocationAllocation solveLocationAllocation",

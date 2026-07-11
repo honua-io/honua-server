@@ -525,6 +525,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("origins", "-157.86,21.30;-157.80,21.40"),
             new KeyValuePair<string, string>("destinations", "-157.85,21.31;-157.70,21.50"),
+            new KeyValuePair<string, string>("outputType", "esriNAODOutputNoLines"),
         ]);
 
         var response = await _fixture.Client.PostAsync(
@@ -540,6 +541,63 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         attrs.GetProperty("OriginID").GetInt32().Should().Be(1);
         attrs.GetProperty("DestinationRank").GetInt32().Should().Be(1);
         attrs.GetProperty("Total_Time").GetDouble().Should().BeGreaterThan(0);
+        features[0].TryGetProperty("geometry", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.OdCostMatrix)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix")]
+    public async Task SolveOdCostMatrix_StraightLines_ReturnsGeometryInRequestedSpatialReference()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("origins", "-157.86,21.30"),
+            new KeyValuePair<string, string>("destinations", "-157.85,21.31"),
+            new KeyValuePair<string, string>("outputType", "esriNAODOutputStraightLines"),
+            new KeyValuePair<string, string>("outSR", "4326"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Routing/NAServer/ODCostMatrix/solveODCostMatrix", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var odLines = document.RootElement.GetProperty("odLines");
+        odLines.GetProperty("geometryType").GetString().Should().Be("esriGeometryPolyline");
+        odLines.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        var path = odLines.GetProperty("features")[0].GetProperty("geometry").GetProperty("paths")[0];
+        path.GetArrayLength().Should().Be(2);
+        path[0][0].GetDouble().Should().BeApproximately(-157.86, 1e-9);
+        path[1][0].GetDouble().Should().BeApproximately(-157.85, 1e-9);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.OdCostMatrix)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix")]
+    public async Task SolveOdCostMatrix_TrueShape_ReturnsPrecise400()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("origins", "-157.86,21.30"),
+            new KeyValuePair<string, string>("destinations", "-157.85,21.31"),
+            new KeyValuePair<string, string>("outputType", "esriNAODOutputTrueShape"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Routing/NAServer/ODCostMatrix/solveODCostMatrix", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        var details = error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Where(detail => detail != null)
+            .ToArray();
+        details.Should().Contain(detail => detail!.Contains("esriNAODOutputTrueShape", StringComparison.Ordinal));
+        details.Should().Contain(detail => detail!.Contains("not implemented", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
@@ -567,6 +625,42 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
                 .Select(d => d.GetString()).Should().Contain(d => d!.Contains("OD cost matrix solves are not supported"));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.OdCostMatrix)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix")]
+    public async Task SolveOdCostMatrix_ProviderWithoutStraightLineSupport_Returns400()
+    {
+        var capabilities = new RoutingProviderCapabilities(SupportsOdCostMatrix: true)
+        {
+            SupportsOdStraightLines = false,
+        };
+        var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("origins", "-157.86,21.30"),
+                new KeyValuePair<string, string>("destinations", "-157.85,21.31"),
+                new KeyValuePair<string, string>("outputType", "esriNAODOutputStraightLines"),
+            ]);
+
+            var response = await fixture.Client.PostAsync(
+                "/rest/services/Routing/NAServer/ODCostMatrix/solveODCostMatrix",
+                payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                .Select(detail => detail.GetString())
+                .Should().Contain(detail => detail!.Contains("not supported by the configured routing provider"));
         }
         finally
         {

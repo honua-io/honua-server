@@ -253,4 +253,34 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         features.GetArrayLength().Should().Be(4);
         features[0].GetProperty("attributes").GetProperty("Total_Time").GetDouble().Should().BeGreaterThan(0);
     }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task OdCostMatrix_StraightLines_OverRealPgRouting_TransformsGeometryToOutSrid()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("origins", "0.0,0.0"),
+            new KeyValuePair<string, string>("destinations", "0.02,0.02"),
+            new KeyValuePair<string, string>("inSR", "4326"),
+            new KeyValuePair<string, string>("outSR", "3857"),
+            new KeyValuePair<string, string>("outputType", "esriNAODOutputStraightLines"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/ODCostMatrix/solveODCostMatrix",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var odLines = document.RootElement.GetProperty("odLines");
+        odLines.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        var path = odLines.GetProperty("features")[0].GetProperty("geometry").GetProperty("paths")[0];
+        path[0][0].GetDouble().Should().BeApproximately(0, 1e-6);
+        path[0][1].GetDouble().Should().BeApproximately(0, 1e-6);
+        path[1][0].GetDouble().Should().BeApproximately(2226.39, 1);
+        path[1][1].GetDouble().Should().BeApproximately(2226.39, 1);
+    }
 }
