@@ -497,7 +497,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
 
     private static string[] ExtractWorkflowProtocolSurfaceArray(string workflow, string propertyName)
     {
-        var propertyIndex = workflow.IndexOf($"{propertyName}: [", StringComparison.Ordinal);
+        var propertyIndex = workflow.IndexOf($"{propertyName}:", StringComparison.Ordinal);
         if (propertyIndex < 0)
         {
             throw new InvalidOperationException($"Unable to find '{propertyName}' in sdk-server-compatibility.yml.");
