@@ -142,6 +142,19 @@ deployment. It lights up when the customer opts in.
 > above and the temporal entry in the two-mechanism roster below are superseded by
 > this note.
 
+> **Update (#2431).** **mTLS client-certificate validation** (`security.mtls`) has
+> been promoted out of this experimental + disabled set to **GA (`Implemented`)** —
+> after hardening chain
+> validation and CRL/OCSP revocation (fail-closed on indeterminate revocation
+> status; a distinct revoked-vs-untrusted-chain outcome). Its admin routes
+> (`/api/v1/admin/security/client-certificates/*`) therefore carry
+> `maturity: implemented` in the feature catalog and are advertised in the
+> capability manifest, gated by the Enterprise entitlement
+> `identity.mtls-client-certificate`. It remains OFF by default operationally —
+> enforcement self-gates on `Authentication:ClientCertificates:Mode` (default
+> `Disabled`) — but that is a runtime enablement switch, not experimental gating.
+> The mTLS entry in the two-mechanism roster below is superseded by this note.
+
 **Two mechanisms hold this set OFF — not one uniform registry flag.** The
 route-bearing experimental capabilities — **temporal** analytics/versioning
 (`/api/v1/temporal/*`), **disconnected-sync / replicas**, **realtime

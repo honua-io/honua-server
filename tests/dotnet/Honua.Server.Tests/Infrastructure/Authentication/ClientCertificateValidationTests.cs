@@ -463,6 +463,104 @@ public sealed class ClientCertificateValidationTests
         actual.Dispose();
     }
 
+    [Fact]
+    public async Task ValidateAsync_WithLeafChainedToCustomAnchorAndChainTrustRequired_Succeeds()
+    {
+        // Valid cert + valid chain: a leaf genuinely signed by a CA that is configured as the
+        // custom trust anchor, with RequireChainTrust=true. The chain must build to the anchor
+        // and the SAN-mapped principal must authenticate.
+        var (caPublic, leaf) = CreateChainedCertificate(
+            "CN=Honua Prod Root CA",
+            "CN=Honua Native Prod Leaf",
+            "spiffe://honua/prod/admin");
+        using var _ = caPublic;
+        using var __ = leaf;
+
+        var profile = CreateProfile("prod-native", "prod", caPublic.Subject, "spiffe://honua/prod/admin");
+        profile.CustomTrustAnchorCertificates = [ExportPem(caPublic)];
+        profile.RequireChainTrust = true;
+
+        var validator = CreateValidator(new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        });
+
+        var result = await validator.ValidateAsync(leaf);
+
+        result.Succeeded.Should().BeTrue(result.Detail);
+        result.ProfileId.Should().Be("prod-native");
+        result.PrincipalId.Should().Be("native-prod-admin");
+    }
+
+    [Fact]
+    public void EvaluateChainOutcome_WithCleanBuild_ReturnsTrusted()
+        => ClientCertificateValidator.EvaluateChainOutcome(
+            built: true,
+            statuses: [],
+            revocationStatusUnknownIsFatal: true)
+            .Should().Be(ChainTrustOutcome.Trusted);
+
+    [Fact]
+    public void EvaluateChainOutcome_WithRevokedStatus_ReturnsRevokedEvenWhenFailOpen()
+    {
+        // A determined Revoked verdict is always fatal, and never downgraded to Untrusted —
+        // the fail-open policy only relaxes *unknown* revocation status, never a real revocation.
+        var statuses = new[]
+        {
+            new X509ChainStatus { Status = X509ChainStatusFlags.Revoked, StatusInformation = "revoked" }
+        };
+
+        ClientCertificateValidator.EvaluateChainOutcome(built: false, statuses, revocationStatusUnknownIsFatal: false)
+            .Should().Be(ChainTrustOutcome.Revoked);
+        ClientCertificateValidator.EvaluateChainOutcome(built: false, statuses, revocationStatusUnknownIsFatal: true)
+            .Should().Be(ChainTrustOutcome.Revoked);
+    }
+
+    [Fact]
+    public void EvaluateChainOutcome_WithUnknownRevocationStatus_FailsClosedByDefault()
+    {
+        // Responder/CRL unreachable: RevocationStatusUnknown. Default (fatal) rejects the cert.
+        var statuses = new[]
+        {
+            new X509ChainStatus { Status = X509ChainStatusFlags.RevocationStatusUnknown }
+        };
+
+        ClientCertificateValidator.EvaluateChainOutcome(built: false, statuses, revocationStatusUnknownIsFatal: true)
+            .Should().Be(ChainTrustOutcome.Untrusted);
+    }
+
+    [Fact]
+    public void EvaluateChainOutcome_WithUnknownRevocationStatus_WhenNotFatal_AcceptsOtherwiseValidChain()
+    {
+        // Same responder-unreachable status, but the operator opted into best-effort revocation:
+        // the otherwise-valid chain is accepted (fail-open).
+        var statuses = new[]
+        {
+            new X509ChainStatus { Status = X509ChainStatusFlags.RevocationStatusUnknown },
+            new X509ChainStatus { Status = X509ChainStatusFlags.OfflineRevocation }
+        };
+
+        ClientCertificateValidator.EvaluateChainOutcome(built: false, statuses, revocationStatusUnknownIsFatal: false)
+            .Should().Be(ChainTrustOutcome.Trusted);
+    }
+
+    [Fact]
+    public void EvaluateChainOutcome_WithUntrustedRootAndUnknownRevocation_WhenNotFatal_StaysUntrusted()
+    {
+        // Fail-open only forgives revocation-status-unknown. A real chain-trust failure
+        // (untrusted root) that co-occurs with unknown revocation must still be Untrusted.
+        var statuses = new[]
+        {
+            new X509ChainStatus { Status = X509ChainStatusFlags.RevocationStatusUnknown },
+            new X509ChainStatus { Status = X509ChainStatusFlags.UntrustedRoot }
+        };
+
+        ClientCertificateValidator.EvaluateChainOutcome(built: false, statuses, revocationStatusUnknownIsFatal: false)
+            .Should().Be(ChainTrustOutcome.Untrusted);
+    }
+
     private static ClientCertificateTrustProfileOptions CreateProfile(
         string profileId,
         string environmentId,
@@ -566,6 +664,61 @@ public sealed class ClientCertificateValidationTests
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddDays(90),
             serial);
+    }
+
+    private static (X509Certificate2 CaPublic, X509Certificate2 Leaf) CreateChainedCertificate(
+        string caSubject,
+        string leafSubject,
+        string sanUri)
+    {
+        using var caKey = RSA.Create(2048);
+        var caRequest = new CertificateRequest(
+            caSubject,
+            caKey,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        caRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(
+            certificateAuthority: true,
+            hasPathLengthConstraint: false,
+            pathLengthConstraint: 0,
+            critical: true));
+        caRequest.CertificateExtensions.Add(new X509KeyUsageExtension(
+            X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign,
+            critical: true));
+        using var ca = caRequest.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-2),
+            DateTimeOffset.UtcNow.AddDays(365));
+
+        using var leafKey = RSA.Create(2048);
+        var leafRequest = new CertificateRequest(
+            leafSubject,
+            leafKey,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        leafRequest.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") },
+            critical: false));
+        leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(
+            certificateAuthority: false,
+            hasPathLengthConstraint: false,
+            pathLengthConstraint: 0,
+            critical: true));
+        var sanBuilder = new SubjectAlternativeNameBuilder();
+        sanBuilder.AddUri(new Uri(sanUri));
+        leafRequest.CertificateExtensions.Add(sanBuilder.Build());
+
+        var serial = Guid.NewGuid().ToByteArray();
+        using var signedLeaf = leafRequest.Create(
+            ca,
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddDays(90),
+            serial);
+
+        // Return the leaf and the CA as public-only certificates (no private key), as they are
+        // presented on the wire and configured as the trust anchor.
+        var leafPublic = X509CertificateLoader.LoadCertificate(signedLeaf.RawData);
+        var caPublic = X509CertificateLoader.LoadCertificate(ca.RawData);
+        return (caPublic, leafPublic);
     }
 
     private static X509Certificate2 CreateCertificateWithMalformedSan(string subject)

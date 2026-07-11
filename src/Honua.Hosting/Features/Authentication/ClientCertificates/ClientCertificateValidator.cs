@@ -9,6 +9,19 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication.ClientCertificates;
 
+/// <summary>The trust verdict of a configured chain-trust check.</summary>
+internal enum ChainTrustOutcome
+{
+    /// <summary>The chain built to a configured trust anchor and passed revocation policy.</summary>
+    Trusted = 0,
+
+    /// <summary>A certificate in the chain is revoked per the configured CRL/OCSP check.</summary>
+    Revoked = 1,
+
+    /// <summary>The chain could not be trusted (untrusted root, broken signature, or a fatal revocation-status-unknown).</summary>
+    Untrusted = 2,
+}
+
 internal sealed class ClientCertificateValidator(
     IOptionsMonitor<ClientCertificateAuthenticationOptions> options,
     IClientCertificateTrustStore trustStore,
@@ -176,16 +189,36 @@ internal sealed class ClientCertificateValidator(
                 daysUntilExpiry);
         }
 
-        if (profile.RequireChainTrust && !ValidateChain(profile, certificate))
+        if (profile.RequireChainTrust)
         {
-            return ClientCertificateValidationResult.Failure(
-                ClientCertificateValidationErrorCode.UntrustedChain,
-                "The client certificate chain is not trusted by the configured trust profile.",
-                profile.ProfileId,
-                profile.EnvironmentId,
-                fingerprint,
-                issuerHash,
-                daysUntilExpiry);
+            var chainOutcome = ValidateChain(profile, certificate);
+            if (chainOutcome == ChainTrustOutcome.Revoked)
+            {
+                // The configured CRL/OCSP revocation check (ChainRevocationMode) determined a
+                // certificate in the chain is revoked. Surface the dedicated revoked code rather
+                // than the generic untrusted-chain code so operators (and the audit trail) can
+                // distinguish a revoked credential from an unrelated chain-trust failure.
+                return ClientCertificateValidationResult.Failure(
+                    ClientCertificateValidationErrorCode.CertificateRevoked,
+                    "The client certificate (or an issuer in its chain) has been revoked per the configured CRL/OCSP revocation check.",
+                    profile.ProfileId,
+                    profile.EnvironmentId,
+                    fingerprint,
+                    issuerHash,
+                    daysUntilExpiry);
+            }
+
+            if (chainOutcome == ChainTrustOutcome.Untrusted)
+            {
+                return ClientCertificateValidationResult.Failure(
+                    ClientCertificateValidationErrorCode.UntrustedChain,
+                    "The client certificate chain is not trusted by the configured trust profile.",
+                    profile.ProfileId,
+                    profile.EnvironmentId,
+                    fingerprint,
+                    issuerHash,
+                    daysUntilExpiry);
+            }
         }
 
         return null;
@@ -348,7 +381,7 @@ internal sealed class ClientCertificateValidator(
                 string.Equals(revocation.SerialNumber, serial, StringComparison.OrdinalIgnoreCase))));
     }
 
-    private static bool ValidateChain(ClientCertificateTrustProfile profile, X509Certificate2 certificate)
+    private static ChainTrustOutcome ValidateChain(ClientCertificateTrustProfile profile, X509Certificate2 certificate)
     {
         var anchors = new List<X509Certificate2>();
         using var chain = new X509Chain();
@@ -365,7 +398,8 @@ internal sealed class ClientCertificateValidator(
                 {
                     if (!TryParseTrustAnchor(anchorPem, out var parsed))
                     {
-                        return false;
+                        // A malformed configured anchor never validates a chain.
+                        return ChainTrustOutcome.Untrusted;
                     }
 
                     anchors.Add(parsed);
@@ -373,7 +407,8 @@ internal sealed class ClientCertificateValidator(
                 }
             }
 
-            return chain.Build(certificate);
+            var built = chain.Build(certificate);
+            return EvaluateChainOutcome(built, chain.ChainStatus, profile.RevocationStatusUnknownIsFatal);
         }
         finally
         {
@@ -382,6 +417,61 @@ internal sealed class ClientCertificateValidator(
                 anchor.Dispose();
             }
         }
+    }
+
+    /// <summary>
+    /// Classifies the result of an <see cref="X509Chain.Build"/> into the trust outcome the
+    /// validator acts on. Extracted as a pure function so the CRL/OCSP revocation and
+    /// revocation-status-unknown edge cases are deterministically unit-testable without a live
+    /// responder.
+    /// </summary>
+    /// <param name="built">The boolean <see cref="X509Chain.Build"/> returned.</param>
+    /// <param name="statuses">The chain status flags the build produced.</param>
+    /// <param name="revocationStatusUnknownIsFatal">
+    /// When <c>true</c> (the secure default), a chain that only fails because revocation status
+    /// could not be determined (CRL/OCSP responder unreachable) is treated as untrusted
+    /// (fail-closed). When <c>false</c>, such a chain is accepted if it is otherwise valid
+    /// (best-effort revocation / fail-open) — an explicit operator opt-in.
+    /// </param>
+    internal static ChainTrustOutcome EvaluateChainOutcome(
+        bool built,
+        IReadOnlyList<X509ChainStatus> statuses,
+        bool revocationStatusUnknownIsFatal)
+    {
+        var aggregated = X509ChainStatusFlags.NoError;
+        foreach (var status in statuses)
+        {
+            aggregated |= status.Status;
+        }
+
+        // An explicit Revoked verdict wins over everything: a revoked credential must never be
+        // downgraded to a generic untrusted-chain outcome, and it is never tolerated by the
+        // fail-open policy (that policy only relaxes *unknown* revocation status).
+        if (aggregated.HasFlag(X509ChainStatusFlags.Revoked))
+        {
+            return ChainTrustOutcome.Revoked;
+        }
+
+        if (built)
+        {
+            return ChainTrustOutcome.Trusted;
+        }
+
+        // The build failed. If the only remaining blockers are that revocation status could not
+        // be determined (responder/CRL offline or unreachable) and the profile tolerates that,
+        // accept the otherwise-valid chain (best-effort revocation).
+        if (!revocationStatusUnknownIsFatal)
+        {
+            const X509ChainStatusFlags unknownRevocation =
+                X509ChainStatusFlags.RevocationStatusUnknown | X509ChainStatusFlags.OfflineRevocation;
+            var residual = aggregated & ~unknownRevocation;
+            if (residual == X509ChainStatusFlags.NoError)
+            {
+                return ChainTrustOutcome.Trusted;
+            }
+        }
+
+        return ChainTrustOutcome.Untrusted;
     }
 
     internal static bool TryParseTrustAnchor(string configuredCertificate, out X509Certificate2 anchor)

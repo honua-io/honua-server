@@ -143,10 +143,9 @@ public sealed class FeatureCatalogDriftTests
             .Select(entry => entry.Route)
             .ToArray();
 
-        // /api/v1/temporal/* was promoted to GA (Implemented) in #2429, and
-        // /api/v1/admin/alerts/* in #2427 — neither is an experimental route group any
-        // longer, so both are intentionally absent from this sanity set.
-        experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase));
+        // /api/v1/admin/alerts/*, /api/v1/temporal/*, and
+        // /api/v1/admin/security/client-certificates/* were promoted to GA; none remains
+        // an experimental route group, so they are intentionally absent from this set.
         experimentalRoutes.Should().Contain(route => route.Contains("/replicas", StringComparison.OrdinalIgnoreCase));
         // /api/v1/streaming/features* was promoted to GA (Implemented) in #2428 — no longer an
         // experimental route group, so it is intentionally absent from this sanity set.
