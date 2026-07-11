@@ -704,6 +704,37 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [IntegrationTest]
     [Operation(Operations.LocationAllocation)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
+    public async Task SolveLocationAllocation_MinimizeFacilities_CoversDemandWithDeterministicFacilitySet()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("facilities", "0,0;0.02,0;0.1,0.1"),
+            new KeyValuePair<string, string>("demandPoints", "0,0;0.001,0;0.02,0"),
+            new KeyValuePair<string, string>("numberFacilitiesToFind", "1"),
+            new KeyValuePair<string, string>("impedanceCutoff", "0.5"),
+            new KeyValuePair<string, string>("problemType", "esriMFPMinimizeFacilities"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Routing/NAServer/LocationAllocation/solveLocationAllocation",
+            payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var facilities = document.RootElement.GetProperty("facilities").GetProperty("features");
+        facilities.GetArrayLength().Should().Be(2);
+        facilities[0].GetProperty("attributes").GetProperty("FacilityID").GetInt32().Should().Be(1);
+        facilities[1].GetProperty("attributes").GetProperty("FacilityID").GetInt32().Should().Be(2);
+        document.RootElement.GetProperty("demandPoints").GetProperty("features")
+            .EnumerateArray()
+            .Should().OnlyContain(feature =>
+                feature.GetProperty("attributes").GetProperty("FacilityID").GetInt32() > 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.LocationAllocation)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
     public async Task SolveLocationAllocation_UnsupportedProblemType_Returns400()
     {
         var payload = new FormUrlEncodedContent(
@@ -721,6 +752,57 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         // An unsupported problem type is rejected at parse time with a 400.
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain(detail =>
+                detail!.Contains("esriMFPMaximizeAttendance", StringComparison.Ordinal) &&
+                detail.Contains("not supported", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.LocationAllocation)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
+    public async Task SolveLocationAllocation_ProviderWithoutMinimizeFacilitiesCapability_Returns400()
+    {
+        var capabilities = new RoutingProviderCapabilities(SupportsLocationAllocation: true)
+        {
+            SupportedLocationAllocationProblemTypes =
+            [
+                LocationAllocationProblemType.MinimizeImpedance,
+                LocationAllocationProblemType.MaximizeCoverage,
+            ],
+        };
+        var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
+        try
+        {
+            var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("facilities", "0,0"),
+                new KeyValuePair<string, string>("demandPoints", "0,0"),
+                new KeyValuePair<string, string>("impedanceCutoff", "1"),
+                new KeyValuePair<string, string>("problemType", "esriMFPMinimizeFacilities"),
+            ]);
+
+            var response = await fixture.Client.PostAsync(
+                "/rest/services/Routing/NAServer/LocationAllocation/solveLocationAllocation",
+                payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                .Select(detail => detail.GetString())
+                .Should().Contain(detail =>
+                    detail!.Contains("MinimizeFacilities", StringComparison.Ordinal) &&
+                    detail.Contains("not supported by the configured routing provider", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

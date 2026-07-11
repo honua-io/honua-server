@@ -523,9 +523,30 @@ public sealed class NAServerTranslationUnitTests
             .Should().Be(LocationAllocationProblemType.MinimizeImpedance);
         NAServerParameterTranslation.ParseLocationAllocationProblemType("esriMFPMaximizeCoverage")
             .Should().Be(LocationAllocationProblemType.MaximizeCoverage);
+        NAServerParameterTranslation.ParseLocationAllocationProblemType("esriMFPMinimizeFacilities")
+            .Should().Be(LocationAllocationProblemType.MinimizeFacilities);
+        NAServerParameterTranslation.ParseLocationAllocationProblemType("Minimize Facilities")
+            .Should().Be(LocationAllocationProblemType.MinimizeFacilities);
 
         var act = () => NAServerParameterTranslation.ParseLocationAllocationProblemType("esriMFPTargetMarketShare");
         act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.LocationAllocation)]
+    public void BuildLocationAllocationSolveRequest_MinimizeFacilitiesWithoutCutoff_ThrowsPreciseError()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["facilities"] = "-157.85,21.30",
+            ["demandPoints"] = "-157.86,21.31",
+            ["problemType"] = "esriMFPMinimizeFacilities",
+        };
+
+        var act = () => NAServerParameterTranslation.BuildLocationAllocationSolveRequest(parameters);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*requires 'impedanceCutoff' or 'defaultCutoff'*");
     }
 
     [UnitTest]
