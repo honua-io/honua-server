@@ -11,6 +11,7 @@ using Honua.Geoprocessing.Execution;
 using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -158,10 +159,25 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_WorkspaceRequested_RoutesArtifactThroughWorkspaceLifecycle()
     {
+        // env:workspace is a caller-supplied LABEL, not a durable workspace id —
+        // the dispatcher must resolve it via GetOrCreateNamedWorkspaceAsync before
+        // any artifact write; downstream calls use the RESOLVED Workspace.WorkspaceId
+        // ("ws-1-resolved" here), never the raw "ws-1" label from the request.
         var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
         workspaceLifecycle
+            .GetOrCreateNamedWorkspaceAsync("admin", "ws-1", Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = "ws-1-resolved",
+                Kind = WorkspaceKind.Scratch,
+                Label = "ws-1",
+                OwnerId = "admin",
+                State = WorkspaceLifecycleState.Active,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        workspaceLifecycle
             .AddOrReplaceArtifactAsync(
-                "ws-1", ArtifactKind.File, "artifact1", false,
+                "ws-1-resolved", ArtifactKind.File, "artifact1", false,
                 uri: "data:fake-artifact", cancellationToken: Arg.Any<CancellationToken>())
             .Returns(new Artifact
             {
@@ -170,7 +186,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
                 Label = "artifact1",
                 State = ArtifactLifecycleState.Available,
                 CreatedAt = DateTimeOffset.UtcNow,
-                WorkspaceId = "ws-1"
+                WorkspaceId = "ws-1-resolved"
             });
 
         var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
@@ -182,9 +198,15 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await workspaceLifecycle.Received(1).GetOrCreateNamedWorkspaceAsync(
+            "admin", "ws-1", Arg.Any<CancellationToken>());
         await workspaceLifecycle.Received(1).AddOrReplaceArtifactAsync(
-            "ws-1", ArtifactKind.File, "artifact1", false,
+            "ws-1-resolved", ArtifactKind.File, "artifact1", false,
             uri: "data:fake-artifact", cancellationToken: Arg.Any<CancellationToken>());
+        // The raw label must never be used as a workspace id downstream.
+        await workspaceLifecycle.DidNotReceive().AddOrReplaceArtifactAsync(
+            "ws-1", Arg.Any<ArtifactKind>(), Arg.Any<string>(), Arg.Any<bool>(),
+            uri: Arg.Any<string>(), cancellationToken: Arg.Any<CancellationToken>());
         // The workspace ledger write does not replace the durable job-record publish.
         await context.Received(1).PublishArtifactAsync("data:fake-artifact", Arg.Any<CancellationToken>());
     }
@@ -194,10 +216,21 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     {
         var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
         workspaceLifecycle
+            .GetOrCreateNamedWorkspaceAsync("admin", "ws-1", Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = "ws-1-resolved",
+                Kind = WorkspaceKind.Scratch,
+                Label = "ws-1",
+                OwnerId = "admin",
+                State = WorkspaceLifecycleState.Active,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        workspaceLifecycle
             .AddOrReplaceArtifactAsync(
-                "ws-1", ArtifactKind.File, "artifact1", false,
+                "ws-1-resolved", ArtifactKind.File, "artifact1", false,
                 uri: Arg.Any<string>(), cancellationToken: Arg.Any<CancellationToken>())
-            .ThrowsAsync(new ArtifactAlreadyExistsException("ws-1", "artifact1"));
+            .ThrowsAsync(new ArtifactAlreadyExistsException("ws-1-resolved", "artifact1"));
 
         var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
         var context = Substitute.For<IJobExecutionContext>();
@@ -219,8 +252,19 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     {
         var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
         workspaceLifecycle
+            .GetOrCreateNamedWorkspaceAsync("admin", "ws-1", Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = "ws-1-resolved",
+                Kind = WorkspaceKind.Scratch,
+                Label = "ws-1",
+                OwnerId = "admin",
+                State = WorkspaceLifecycleState.Active,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        workspaceLifecycle
             .AddOrReplaceArtifactAsync(
-                "ws-1", ArtifactKind.File, "artifact1", true,
+                "ws-1-resolved", ArtifactKind.File, "artifact1", true,
                 uri: Arg.Any<string>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(new Artifact
             {
@@ -229,7 +273,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
                 Label = "artifact1",
                 State = ArtifactLifecycleState.Available,
                 CreatedAt = DateTimeOffset.UtcNow,
-                WorkspaceId = "ws-1"
+                WorkspaceId = "ws-1-resolved"
             });
 
         var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
@@ -242,8 +286,74 @@ public sealed class GeoprocessingDispatchJobExecutorTests
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         await workspaceLifecycle.Received(1).AddOrReplaceArtifactAsync(
-            "ws-1", ArtifactKind.File, "artifact1", true,
+            "ws-1-resolved", ArtifactKind.File, "artifact1", true,
             uri: Arg.Any<string>(), cancellationToken: Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_WorkspaceRequested_ResolvesLabelThroughRealWorkspaceLifecycleService()
+    {
+        // Unlike the tests above (which mock IWorkspaceLifecycleService directly and
+        // so would happily pass even if GetOrCreateNamedWorkspaceAsync were dead code),
+        // this drives the REAL WorkspaceLifecycleService implementation end to end so a
+        // missing/unwired GetOrCreateNamedWorkspaceAsync call cannot hide behind a mock.
+        var workspaceStore = Substitute.For<IWorkspaceStore>();
+        var artifactStore = Substitute.For<IArtifactStore>();
+        var retentionPolicy = Substitute.For<IRetentionPolicyEvaluator>();
+
+        Workspace? storedWorkspace = null;
+        workspaceStore.ListByOwnerAsync("admin", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Workspace>());
+        workspaceStore.CreateAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                storedWorkspace = ci.Arg<Workspace>();
+                return storedWorkspace;
+            });
+        workspaceStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => storedWorkspace);
+        retentionPolicy.ComputeExpiration(WorkspaceKind.Scratch, Arg.Any<DateTimeOffset>())
+            .Returns((DateTimeOffset?)null);
+
+        artifactStore.ListByWorkspaceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Artifact>());
+        artifactStore.CreateAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<Artifact>());
+
+        var services = new ServiceCollection();
+        services.AddSingleton(workspaceStore);
+        services.AddSingleton(artifactStore);
+        services.AddSingleton(retentionPolicy);
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IOptions<WorkspaceOptions>>(Options.Create(new WorkspaceOptions()));
+        services.AddSingleton<ILogger<WorkspaceLifecycleService>>(NullLogger<WorkspaceLifecycleService>.Instance);
+        services.AddSingleton<IWorkspaceLifecycleService, WorkspaceLifecycleService>();
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        var dispatcher = CreateFakeExecutorDispatcher(scopeFactory);
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-real-workspace");
+
+        var record = CreateFakeExecutorJobRecord(workspaceId: "my-scratch-label", overwriteOutput: null);
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+        // GetOrCreateNamedWorkspaceAsync must have actually run: a workspace was
+        // created (no existing one matched the label) with that label, owned by
+        // the job's requester.
+        await workspaceStore.Received(1).CreateAsync(
+            Arg.Is<Workspace>(w => w.Label == "my-scratch-label" && w.Kind == WorkspaceKind.Scratch && w.OwnerId == "admin"),
+            Arg.Any<CancellationToken>());
+        storedWorkspace.Should().NotBeNull();
+        storedWorkspace!.WorkspaceId.Should().NotBe("my-scratch-label",
+            "the resolved workspace id must be the durable id GetOrCreateNamedWorkspaceAsync minted, not the raw env:workspace label");
+
+        // The artifact write must use the RESOLVED workspace id, not the raw label.
+        await artifactStore.Received(1).CreateAsync(
+            Arg.Is<Artifact>(a => a.WorkspaceId == storedWorkspace.WorkspaceId && a.Label == "artifact1"),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -303,6 +413,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
+            Audit = new OperationAuditInfo { RequestedBy = "admin" },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,

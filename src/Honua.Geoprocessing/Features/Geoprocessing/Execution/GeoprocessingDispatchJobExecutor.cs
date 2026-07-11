@@ -6,6 +6,7 @@ using System.Diagnostics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.ServiceDefaults;
@@ -113,12 +114,14 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         }
 
         JobExecutionResult result;
-        using (var workspaceScope = TryResolveWorkspaceRouting(job, context, out var effectiveContext, out var workspaceError))
+        var (workspaceScope, effectiveContext, workspaceError) =
+            await TryResolveWorkspaceRoutingAsync(job, context, cancellationToken).ConfigureAwait(false);
+        using (workspaceScope)
         {
             if (workspaceError is not null)
             {
                 Log.WorkspaceProviderUnavailable(_logger, job.OperationId, workspaceError);
-                activity?.SetStatus(ActivityStatusCode.Error, "env:workspace requested with no workspace provider");
+                activity?.SetStatus(ActivityStatusCode.Error, "env:workspace could not be resolved");
                 return JobExecutionResult.Failed(workspaceError);
             }
 
@@ -148,27 +151,34 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 
     /// <summary>
     /// Resolves GP <c>env:workspace</c> routing for this dispatch, if requested.
+    /// The caller-supplied <c>env:workspace</c> value is a stable label, not a
+    /// durable workspace id — it is resolved (get-or-create) through
+    /// <see cref="IWorkspaceLifecycleService.GetOrCreateNamedWorkspaceAsync"/>
+    /// scoped to the submitting caller, and the RESOLVED
+    /// <see cref="Workspace.WorkspaceId"/> is what downstream artifact writes
+    /// use — <see cref="IWorkspaceLifecycleService.AddArtifactAsync"/> /
+    /// <see cref="IWorkspaceLifecycleService.AddOrReplaceArtifactAsync"/> both
+    /// require an already-existing workspace and throw otherwise, so passing
+    /// the raw label straight through would fail every request.
     /// Returns the <see cref="IServiceScope"/> the caller must dispose after the
     /// executor runs (or <c>null</c> when no scope was opened), and reports
     /// either the wrapped context to use or a clear error when a workspace was
-    /// requested but no storage provider is configured. Isolated to a single
-    /// method so every one of the ~30 per-process executors gets workspace
-    /// routing "for free" through the context they already call
-    /// <c>PublishArtifactAsync</c> on — no executor needs its own workspace logic.
+    /// requested but could not be resolved (no storage provider configured, or
+    /// the get-or-create call itself failed). Isolated to a single method so
+    /// every one of the ~30 per-process executors gets workspace routing "for
+    /// free" through the context they already call <c>PublishArtifactAsync</c>
+    /// on — no executor needs its own workspace logic.
     /// </summary>
-    private IDisposable? TryResolveWorkspaceRouting(
-        ExecutionJobRecord job,
-        IJobExecutionContext context,
-        out IJobExecutionContext effectiveContext,
-        out string? workspaceError)
+    private async Task<(IDisposable? Scope, IJobExecutionContext EffectiveContext, string? Error)>
+        TryResolveWorkspaceRoutingAsync(
+            ExecutionJobRecord job,
+            IJobExecutionContext context,
+            CancellationToken cancellationToken)
     {
-        effectiveContext = context;
-        workspaceError = null;
-
-        var workspaceId = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkspace);
-        if (string.IsNullOrWhiteSpace(workspaceId))
+        var requestedLabel = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkspace);
+        if (string.IsNullOrWhiteSpace(requestedLabel))
         {
-            return null;
+            return (null, context, null);
         }
 
         var scope = _serviceScopeFactory?.CreateScope();
@@ -176,9 +186,23 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         if (workspaceLifecycle is null)
         {
             scope?.Dispose();
-            workspaceError =
-                $"env:workspace='{workspaceId}' was requested but no workspace storage provider is configured for this deployment.";
-            return null;
+            return (null, context,
+                $"env:workspace='{requestedLabel}' was requested but no workspace storage provider is configured for this deployment.");
+        }
+
+        var ownerId = string.IsNullOrWhiteSpace(job.Audit.RequestedBy) ? "anonymous" : job.Audit.RequestedBy;
+
+        Workspace resolvedWorkspace;
+        try
+        {
+            resolvedWorkspace = await workspaceLifecycle
+                .GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            scope?.Dispose();
+            return (null, context, $"env:workspace='{requestedLabel}' could not be resolved: {ex.Message}");
         }
 
         var overwrite =
@@ -186,9 +210,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             && bool.TryParse(raw, out var parsedOverwrite)
             && parsedOverwrite;
 
-        effectiveContext = new WorkspaceRoutingJobExecutionContext(
-            context, job, workspaceId, overwrite, workspaceLifecycle);
-        return scope;
+        var effectiveContext = new WorkspaceRoutingJobExecutionContext(
+            context, job, resolvedWorkspace.WorkspaceId, overwrite, workspaceLifecycle);
+        return (scope, effectiveContext, null);
     }
 
     private static partial class Log
