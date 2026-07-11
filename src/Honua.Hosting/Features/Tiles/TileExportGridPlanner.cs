@@ -62,21 +62,36 @@ internal static class TileExportGridPlanner
         var matrixSize = 1 << level;
         return new(
             level,
-            LongitudeToColumn(plan.West, matrixSize),
-            LatitudeToRow(plan.North, matrixSize),
-            LongitudeToColumn(plan.East, matrixSize),
-            LatitudeToRow(plan.South, matrixSize));
+            LongitudeToMinimumColumn(plan.West, matrixSize),
+            LatitudeToMinimumRow(plan.North, matrixSize),
+            LongitudeToMaximumColumn(plan.East, matrixSize),
+            LatitudeToMaximumRow(plan.South, matrixSize));
     }
 
-    private static int LongitudeToColumn(double longitude, int matrixSize)
-        => Math.Clamp((int)Math.Floor((longitude + 180d) / 360d * matrixSize), 0, matrixSize - 1);
+    private static int LongitudeToMinimumColumn(double longitude, int matrixSize)
+        => Math.Clamp((int)Math.Floor(LongitudeToMatrixCoordinate(longitude, matrixSize)), 0, matrixSize - 1);
 
-    private static int LatitudeToRow(double latitude, int matrixSize)
+    private static int LongitudeToMaximumColumn(double longitude, int matrixSize)
+        // The east bbox edge is exclusive. Ceil(value) - 1 selects the tile immediately west
+        // of an exact boundary while preserving the final world column for longitude 180.
+        => Math.Clamp((int)Math.Ceiling(LongitudeToMatrixCoordinate(longitude, matrixSize)) - 1, 0, matrixSize - 1);
+
+    private static double LongitudeToMatrixCoordinate(double longitude, int matrixSize)
+        => (longitude + 180d) / 360d * matrixSize;
+
+    private static int LatitudeToMinimumRow(double latitude, int matrixSize)
+        => Math.Clamp((int)Math.Floor(LatitudeToMatrixCoordinate(latitude, matrixSize)), 0, matrixSize - 1);
+
+    private static int LatitudeToMaximumRow(double latitude, int matrixSize)
+        // WebMercator row numbers increase southward, so the south bbox edge is the exclusive
+        // maximum. Equality on a tile boundary therefore belongs to the row immediately north.
+        => Math.Clamp((int)Math.Ceiling(LatitudeToMatrixCoordinate(latitude, matrixSize)) - 1, 0, matrixSize - 1);
+
+    private static double LatitudeToMatrixCoordinate(double latitude, int matrixSize)
     {
         var clamped = Math.Clamp(latitude, -SpatialConstants.WebMercatorMaxLatitude, SpatialConstants.WebMercatorMaxLatitude);
         var radians = clamped * Math.PI / 180d;
-        var value = (1d - Math.Asinh(Math.Tan(radians)) / Math.PI) / 2d * matrixSize;
-        return Math.Clamp((int)Math.Floor(value), 0, matrixSize - 1);
+        return (1d - Math.Asinh(Math.Tan(radians)) / Math.PI) / 2d * matrixSize;
     }
 
     private readonly record struct TileRange(

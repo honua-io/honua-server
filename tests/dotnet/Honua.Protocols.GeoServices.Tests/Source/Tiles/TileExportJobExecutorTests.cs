@@ -136,7 +136,7 @@ public sealed class TileExportJobExecutorTests
         storage.GetMetadataAsync(key, Arg.Any<CancellationToken>()).Returns(StoredFile(
             key,
             plan,
-            DateTimeOffset.UtcNow.AddHours(1)));
+            DateTimeOffset.UtcNow.AddHours(2)));
         var context = new RecordingContext("export-reuse");
         var executor = CreateExecutor(storage, producer);
 
@@ -146,6 +146,42 @@ public sealed class TileExportJobExecutorTests
         context.Artifacts.Should().ContainSingle().Which.Should().Be(key);
         await producer.DidNotReceiveWithAnyArgs().ProduceAsync(default!, default!, default);
         await storage.DidNotReceiveWithAnyArgs().UploadAsync((FileUploadRequest)null!, default);
+    }
+
+    [Theory]
+    [InlineData(3599, true)]
+    [InlineData(3600, false)]
+    [Operation(Operations.Export)]
+    public async Task ExecuteAsync_MatchingArtifactRetentionBoundary_RegeneratesOnlyWhenTtlIsShort(
+        int remainingSeconds,
+        bool shouldRegenerate)
+    {
+        var now = new DateTimeOffset(2026, 7, 10, 12, 0, 0, TimeSpan.Zero);
+        var plan = CreatePlan() with { RetentionSeconds = 3600 };
+        var key = TileExportArtifactIdentity.BuildObjectKey(plan);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(key, Arg.Any<CancellationToken>()).Returns(StoredFile(
+            key,
+            plan,
+            now.AddSeconds(remainingSeconds)));
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(UploadResult.CreateSuccess(StoredFile(key, plan, now.AddHours(1))));
+        var producer = Substitute.For<ITileExportPackageProducer>();
+        producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
+        producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<Stream>(1).WriteAsync(new byte[] { 0x01 }).AsTask());
+        var context = new RecordingContext("export-retention-boundary");
+        var executor = CreateExecutor(storage, new FixedTimeProvider(now), producer);
+
+        var result = await executor.ExecuteAsync(JobFor(plan, context.OperationId), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await producer.Received(shouldRegenerate ? 1 : 0).ProduceAsync(
+            Arg.Any<TileExportJobPlan>(),
+            Arg.Any<Stream>(),
+            Arg.Any<CancellationToken>());
+        await storage.Received(shouldRegenerate ? 1 : 0)
+            .UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -308,11 +344,17 @@ public sealed class TileExportJobExecutorTests
     private static TileExportJobExecutor CreateExecutor(
         ICloudFileStorage storage,
         params ITileExportPackageProducer[] producers)
+        => CreateExecutor(storage, TimeProvider.System, producers);
+
+    private static TileExportJobExecutor CreateExecutor(
+        ICloudFileStorage storage,
+        TimeProvider timeProvider,
+        params ITileExportPackageProducer[] producers)
     {
         var fence = Substitute.For<ITileExportSourceFence>();
         fence.SourceKind.Returns(TileExportSourceKind.Map);
         fence.IsAvailableAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<CancellationToken>()).Returns(true);
-        return new(storage, producers, [fence], TimeProvider.System, NullLogger<TileExportJobExecutor>.Instance);
+        return new(storage, producers, [fence], timeProvider, NullLogger<TileExportJobExecutor>.Instance);
     }
 
     private static TileExportJobPlan CreatePlan()
@@ -389,5 +431,10 @@ public sealed class TileExportJobExecutorTests
             Artifacts.Add(artifactReference);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }

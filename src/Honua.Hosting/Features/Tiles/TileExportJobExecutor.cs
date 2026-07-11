@@ -148,15 +148,20 @@ internal sealed partial class TileExportJobExecutor(
     }
 
     private bool IsReusable(CloudFile? file, TileExportJobPlan plan)
-        => file is
+    {
+        var minimumExpiry = timeProvider.GetUtcNow().AddSeconds(plan.RetentionSeconds);
+        return file is
         {
             SizeBytes: > 0,
             ExpiresAt: { } expiresAt
         } &&
         file.SizeBytes <= plan.MaxArtifactBytes &&
-        expiresAt > timeProvider.GetUtcNow() &&
+        // Retention is intentionally outside content identity. Reuse is safe only when the
+        // existing object covers the complete requested horizon; equality is sufficient.
+        expiresAt >= minimumExpiry &&
         file.Metadata.TryGetValue(TileExportArtifactIdentity.IdentityMetadataKey, out var identity) &&
         string.Equals(identity, TileExportArtifactIdentity.Compute(plan), StringComparison.Ordinal);
+    }
 
     private sealed class BoundedWriteStream(Stream inner, long maximumBytes, bool leaveOpen) : Stream
     {

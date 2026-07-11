@@ -172,6 +172,67 @@ public sealed class TileExportReplayPlanTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public void GridPlanner_EastOnTileBoundary_ExcludesEastHandColumn()
+    {
+        var plan = CreateMapPlan() with
+        {
+            ZoomLevels = [1],
+            West = -180,
+            South = -90,
+            East = 0,
+            North = 90
+        };
+
+        var grid = TileExportGridPlanner.Create(plan);
+
+        grid.TotalTileCount.Should().Be(2);
+        grid.Tiles.Should().Equal(
+            new TileExportCoordinate(1, 0, 0),
+            new TileExportCoordinate(1, 1, 0));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void GridPlanner_SouthOnTileBoundary_ExcludesSouthHandRow()
+    {
+        var plan = CreateMapPlan() with
+        {
+            ZoomLevels = [1],
+            West = -180,
+            South = 0,
+            East = 180,
+            North = 90
+        };
+
+        var grid = TileExportGridPlanner.Create(plan);
+
+        grid.TotalTileCount.Should().Be(2);
+        grid.Tiles.Should().Equal(
+            new TileExportCoordinate(1, 0, 0),
+            new TileExportCoordinate(1, 0, 1));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void GridPlanner_WholeWorld_PreservesEveryTile()
+    {
+        var plan = CreateMapPlan() with
+        {
+            ZoomLevels = [1],
+            West = -180,
+            South = -90,
+            East = 180,
+            North = 90
+        };
+
+        var grid = TileExportGridPlanner.Create(plan);
+
+        grid.TotalTileCount.Should().Be(4);
+        grid.Tiles.Should().HaveCount(4).And.OnlyHaveUniqueItems();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExecuteAsync_UnavailablePinnedSource_FailsBeforeArtifactLookupOrGeneration()
     {
         var plan = CreateMapPlan();
