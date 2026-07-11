@@ -262,6 +262,8 @@ internal sealed class McpToolsListResult
 
 internal sealed class McpToolDescriptor
 {
+    private JsonElement? _outputSchema;
+
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
@@ -289,7 +291,13 @@ internal sealed class McpToolDescriptor
     /// ignore this field harmlessly.
     /// </summary>
     [JsonPropertyName("outputSchema")]
-    public JsonElement? OutputSchema { get; set; }
+    public JsonElement? OutputSchema
+    {
+        get => _outputSchema;
+        set => _outputSchema = value is null
+            ? null
+            : Tools.McpToolOutputSchemas.IncludeErrorEnvelope(value.Value);
+    }
 
     /// <summary>
     /// MCP 2025-03-26 tool behavior hints. Lets a client LLM distinguish

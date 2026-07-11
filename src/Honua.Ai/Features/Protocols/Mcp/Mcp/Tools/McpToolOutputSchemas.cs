@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
@@ -68,6 +69,107 @@ internal static class McpToolOutputSchemas
               }
             }
         """;
+
+    /// <summary>
+    /// Widens a tool's success schema with the shared structured error envelope.
+    /// MCP clients validate <c>structuredContent</c> against <c>outputSchema</c>
+    /// for both successful and failed tool calls, so every advertised schema must
+    /// accept the result produced by <see cref="McpToolHelpers.ErrorResult(Exception)"/>.
+    /// </summary>
+    /// <remarks>
+    /// The merge keeps the success schema's root properties intact for client
+    /// introspection and adds only an alternative required-property branch. It
+    /// uses the JSON DOM rather than reflection-based serialization, preserving
+    /// Native AOT compatibility. Schemas already carrying the error branch are
+    /// returned unchanged.
+    /// </remarks>
+    internal static JsonElement IncludeErrorEnvelope(JsonElement successSchema)
+    {
+        if (AcceptsErrorEnvelope(successSchema))
+        {
+            return successSchema;
+        }
+
+        var root = JsonNode.Parse(successSchema.GetRawText())?.AsObject()
+            ?? throw new InvalidOperationException("MCP tool output schemas must be JSON objects.");
+        var errorRoot = JsonNode.Parse(ToolErrorBranch)!.AsObject();
+        var errorRequired = errorRoot["required"]!.DeepClone();
+        if (root["properties"] is not JsonObject successProperties)
+        {
+            throw new InvalidOperationException("MCP tool output schemas must declare object properties.");
+        }
+
+        var closedSuccessSchema = root["additionalProperties"]?.GetValue<bool>() is false;
+        root.Remove("additionalProperties");
+        var successRequired = root["required"]?.DeepClone();
+        root.Remove("required");
+        JsonObject successBranch;
+        if (successRequired is not null)
+        {
+            successBranch = new JsonObject
+            {
+                ["required"] = successRequired,
+                ["not"] = new JsonObject { ["required"] = errorRequired.DeepClone() }
+            };
+        }
+        else
+        {
+            successBranch = new JsonObject
+            {
+                ["not"] = new JsonObject { ["required"] = errorRequired.DeepClone() }
+            };
+        }
+
+        // Preserve a closed success schema without applying its
+        // additionalProperties:false constraint to the alternative error shape.
+        // Empty property schemas in this branch only declare the allowed names;
+        // their actual types remain governed by the unchanged root properties.
+        if (closedSuccessSchema)
+        {
+            var allowedSuccessProperties = new JsonObject();
+            foreach (var property in successProperties)
+            {
+                allowedSuccessProperties.Add(property.Key, new JsonObject());
+            }
+
+            successBranch["properties"] = allowedSuccessProperties;
+            successBranch["additionalProperties"] = false;
+        }
+
+        root["oneOf"] = new JsonArray(
+            successBranch,
+            new JsonObject { ["required"] = errorRequired });
+
+        return Parse(root.ToJsonString());
+    }
+
+    private static bool AcceptsErrorEnvelope(JsonElement schema)
+    {
+        if (!schema.TryGetProperty("oneOf", out var branches)
+            || branches.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var branch in branches.EnumerateArray())
+        {
+            if (!branch.TryGetProperty("required", out var required)
+                || required.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var names = required.EnumerateArray()
+                .Select(value => value.GetString())
+                .ToHashSet(StringComparer.Ordinal);
+            if (names.IsSupersetOf(["status", "code", "message", "error"]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>Schema for <see cref="Models.McpValidatePlanOutput"/>.</summary>
     public static readonly JsonElement ValidatePlanOutputSchema = Parse(
