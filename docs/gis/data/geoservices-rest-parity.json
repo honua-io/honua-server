@@ -2861,14 +2861,14 @@
         "ServiceArea solveServiceArea",
         "ClosestFacility solveClosestFacility (canonical cost-matrix solver)",
         "ODCostMatrix solveODCostMatrix (cost-only + straight lines)",
-        "LocationAllocation solveLocationAllocation (minimize-impedance + maximize-coverage)",
+        "LocationAllocation solveLocationAllocation (minimize-impedance + maximize-coverage + bounded minimize-facilities)",
         "Point/line/polygon barriers (pgRouting edge exclusion)",
         "travelMode parsing and capability validation (driving routable)",
         "Addressable network-dataset registry (Phase 0 of editing)"
       ],
       "knownGaps": [
         "OD cost matrix true-shape network geometry (straight lines are implemented)",
-        "Location-allocation problem types beyond minimize-impedance/maximize-coverage",
+        "Location-allocation objectives requiring unmodeled capacity, competitor, attractiveness, or impedance-transformation inputs",
         "non-driving travel modes (single stored cost weight)",
         "network-dataset editing (Phase 2: edge/vertex CRUD + topology rebuild)"
       ],
@@ -2974,7 +2974,7 @@
             "honuaEndpoints": [
               "POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation"
             ],
-            "notes": "Implements minimize-impedance and maximize-coverage over the canonical cost matrix; other problem types are explicitly rejected."
+            "notes": "Implements minimize-impedance, maximize-coverage, and cutoff-required minimize-facilities over the canonical cost matrix. Minimize-facilities uses deterministic O(F²D) greedy set cover with the standard H(D) approximation bound, cancellation, and configured input caps. Maximize-attendance, maximize-capacitated-coverage, maximize-market-share, and target-market-share are explicitly rejected because their required transformation, capacity, competitor, and attractiveness inputs are not modeled."
           },
           {
             "name": "Network dataset editing",
