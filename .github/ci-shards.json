@@ -172,7 +172,7 @@
         "src/Honua.Server/Migrations/082_CreatePromotionStores.sql",
         "tests/dotnet/Honua.Server.Tests/Seed/",
         "tests/dotnet/Honua.Server.Tests/Startup/PostgresPromotionSurfaceRegistrationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Routing/",
         "tests/dotnet/Honua.Server.Tests/Helpers/",
         "tests/dotnet/Honua.Server.Tests/TestData/",
         "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs",
