@@ -102,6 +102,7 @@ if grep -A10 '^  server-tests:' "${workflow}" | grep -qE 'producer|needs:.*build
 fi
 grep -Fq 'ci/2735-shard-local-rerun-cache' "${proof_workflow}"
 grep -Fq "matrix.identity != 'a-writer' && github.run_attempt == 1" "${proof_workflow}"
+grep -Fq 'if .=="" then 0 else tonumber end' "${proof_workflow}"
 if grep -qE 'pull_request:|schedule:' "${proof_workflow}"; then
   echo "::error::Hosted cache proof must remain opt-in and outside production triggers." >&2
   exit 1

@@ -169,8 +169,10 @@ jobs:
             --arg elapsed_ms "$(( $(date +%s%3N) - ${{ steps.job-start.outputs.epoch_ms }} ))" \
             '{identity:$identity,cache_key:$cache_key,reason:$reason,restored:($restored=="true"),
               build_outcome:$build_outcome,cache_writer:($cache_writer=="true"),
-              run_attempt:($run_attempt|tonumber),transfer_ms:($transfer_ms//"0"|tonumber),
-              integrity_ms:($integrity_ms//"0"|tonumber),unpack_ms:($unpack_ms//"0"|tonumber),
+              run_attempt:($run_attempt|tonumber),
+              transfer_ms:($transfer_ms|if .=="" then 0 else tonumber end),
+              integrity_ms:($integrity_ms|if .=="" then 0 else tonumber end),
+              unpack_ms:($unpack_ms|if .=="" then 0 else tonumber end),
               elapsed_ms:($elapsed_ms|tonumber)}' > "metrics/${{ matrix.identity }}-attempt-${{ github.run_attempt }}.json"
 
       - name: Upload proof metrics
