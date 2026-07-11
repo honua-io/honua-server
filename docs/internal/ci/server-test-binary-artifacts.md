@@ -1,0 +1,68 @@
+# Server-test binary artifact contract
+
+The server-test artifact contract stages Release output for one test project,
+retains neutral Unix plus `linux`/`linux-x64` runtime assets, and removes every
+other RID directory. It preserves PDBs, test data, configuration, and NuGet
+`obj` state so a clean consumer can run `dotnet test --no-build --no-restore`.
+
+This contract does not enable a shared CI producer. Issue #2708 owns that
+orchestration decision after the hosted transfer benchmark in #2722. The
+payload implementation and integrity proof are tracked by #2721.
+
+## Bounds and integrity
+
+`package-server-test-binaries.sh` creates a deterministic gzip-1 archive and a
+manifest keyed by exact commit, SDK version, project, and contract version. The
+default limits are 256 MiB compressed, 512 MiB staged, and 120 seconds to
+package. `restore-server-test-binaries.sh` rejects toolchain/source/project
+mismatches, size drift, digest failures, unsafe paths, missing project assets,
+or missing binaries/PDBs before extraction is accepted.
+
+`.github/server-test-artifact-projects.json` is the complete project registry.
+Router validation requires it to equal the effective unique `csproj` set in
+`.github/ci-shards.json`, including the legacy empty-`csproj` fallback to
+`Honua.Server.Tests`.
+
+## Reproducing the proof
+
+After building and packaging the ten registered projects in Release, run the
+artifact-only proof without retaining every raw output tree at once:
+
+```bash
+HONUA_SERVER_TEST_ARTIFACT_USE_EXISTING=true \
+  scripts/ci/prove-server-test-binary-artifacts.sh /path/to/artifact-output
+```
+
+The proof creates a detached clean worktree and empty NuGet cache. For every
+project it restores only the packaged payload, performs full test discovery,
+and executes the registry's small representative test selection with
+`--no-build --no-restore`.
+
+The fast fixture used by CI router validation is:
+
+```bash
+scripts/ci/validate-server-test-binary-artifacts.sh
+```
+
+## Baseline evidence
+
+Measured on commit `b9ef5d78858e4cc0a42c7f835dac4f663b6b3209` with .NET SDK
+10.0.300. Times are local packaging times and intentionally exclude builds and
+network transfer.
+
+| Project | Raw MiB | Staged MiB | Archive MiB | Pack seconds | Discovered | Proof executed |
+|---|---:|---:|---:|---:|---:|---:|
+| ai | 1219.5 | 372.2 | 144.0 | 5.3 | 524 | 9 |
+| geoprocessing-cli | 568.9 | 121.8 | 46.6 | 1.8 | 79 | 1 |
+| geoservices | 1224.5 | 377.2 | 145.5 | 5.6 | 1633 | 13 |
+| odata | 1223.2 | 376.0 | 145.4 | 5.5 | 492 | 3 |
+| ogc-api | 1219.5 | 372.2 | 144.0 | 6.8 | 530 | 10 |
+| ogc-classic | 1218.8 | 371.6 | 143.8 | 6.6 | 308 | 4 |
+| scene | 1217.6 | 370.3 | 143.4 | 7.3 | 158 | 2 |
+| sensor-things | 1217.2 | 369.9 | 143.3 | 6.9 | 32 | 1 |
+| stac | 1217.5 | 370.3 | 143.4 | 6.9 | 111 | 15 |
+| server | 1262.3 | 415.0 | 158.3 | 5.9 | 7589 | 22 |
+
+Across all ten projects, 11.32 GiB raw became 3.43 GiB staged and 1.33 GiB
+archived in 58.7 seconds. Full discovery found 11,456 tests and the artifact-only
+proof executed 80 representative tests successfully with an empty NuGet cache.
