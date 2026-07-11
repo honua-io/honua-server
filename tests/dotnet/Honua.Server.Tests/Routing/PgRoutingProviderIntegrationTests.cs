@@ -6,6 +6,7 @@ using Honua.Routing.Features.Routing.Providers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Xunit;
 
@@ -49,7 +50,9 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
         var connectionProvider = new FixtureDatabaseConnectionProvider(fixture.DataSource, fixture.ConnectionString);
         _provider = new PgRoutingProvider(
             new FixtureDatabaseSessionFactory(connectionProvider),
-            NullLogger<PgRoutingProvider>.Instance);
+            NullLogger<PgRoutingProvider>.Instance,
+            new ProfiledNetworkDatasetResolver(),
+            Options.Create(new RoutingConfiguration()));
     }
 
     [RoutingTest(RoutingTestEnv)]
@@ -72,6 +75,28 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
         // Four ~1.11 km geodesic grid steps => ~4.44 km.
         Assert.InRange(result.TotalLengthMeters, 4000, 5000);
         Assert.NotEmpty(result.Directions);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task SolveRoute_ProfileBackedCosts_ReturnDistinctImpedance()
+    {
+        var stops = new[]
+        {
+            new RoutePoint(0.00, 0.00),
+            new RoutePoint(0.02, 0.02),
+        };
+
+        var driving = await _provider.SolveRouteAsync(
+            new RouteSolveRequest(stops) { TravelMode = "driving" },
+            CancellationToken.None);
+        var walking = await _provider.SolveRouteAsync(
+            new RouteSolveRequest(stops) { TravelMode = "walking" },
+            CancellationToken.None);
+
+        Assert.Equal(4.0, driving.TotalTimeMinutes, precision: 3);
+        Assert.Equal(8.0, walking.TotalTimeMinutes, precision: 3);
+        var capabilities = await _provider.GetCapabilitiesAsync(CancellationToken.None);
+        Assert.Equal(new[] { "driving", "walking" }, capabilities.SupportedTravelModes);
     }
 
     [RoutingTest(RoutingTestEnv)]

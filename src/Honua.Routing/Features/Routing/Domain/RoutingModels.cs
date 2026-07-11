@@ -80,8 +80,8 @@ public enum ServiceAreaTravelDirection
 /// </param>
 /// <param name="TravelProfile">
 /// Optional travel profile / cost model selector (e.g. "driving", "walking").
-/// MVP providers treat this as advisory and route on the topology's stored
-/// <c>cost</c>/<c>reverse_cost</c> weights regardless of profile.
+/// Dataset-backed providers resolve it to validated forward/reverse impedance
+/// columns. <c>driving</c> remains the backward-compatible default.
 /// </param>
 /// <param name="OutSrid">
 /// Output spatial reference (SRID/WKID) for returned geometry. Defaults to 4326.

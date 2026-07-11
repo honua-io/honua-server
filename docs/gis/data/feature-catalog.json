@@ -17396,6 +17396,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_MissingStops_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_PJsonFormat_ReturnsIndentedJson",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_ProfileBackedTravelModes_ReturnDistinctCosts",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_ProviderInvalidSridFailure_ReturnsSanitized400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_ProviderWithoutRouteSupport_ReturnsError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_TwoStops_ReturnsEsriRouteFeatureSet",

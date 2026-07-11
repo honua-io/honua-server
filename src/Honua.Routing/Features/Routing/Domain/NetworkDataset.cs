@@ -33,6 +33,12 @@ public sealed record NetworkDataset(
     int Srid = 4326)
 {
     /// <summary>
+    /// Travel profiles whose impedance columns are backed by this dataset. The
+    /// built-in default remains driving-only for backward compatibility.
+    /// </summary>
+    public IReadOnlyList<RoutingTravelProfile> TravelProfiles { get; init; } = [RoutingTravelProfile.Driving];
+
+    /// <summary>
     /// Identifier of the built-in default dataset that maps to the existing
     /// <c>public.ways</c> topology, preserving the pre-#1882 behaviour.
     /// </summary>
