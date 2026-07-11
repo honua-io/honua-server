@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Alerts;
+using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.TestKit;
@@ -11,6 +13,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -24,6 +27,7 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
 {
     private const string AdminPassword = "ops-observability-admin-key";
+    private static readonly DateTimeOffset TestNow = DateTimeOffset.UtcNow;
 
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
@@ -45,8 +49,42 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
             // booted by at least one host. The sampler's initial jitter + flush interval keep it from
             // flushing mid-test; the history assertions seed the store directly instead.
             .ConfigureServices(services =>
+            {
                 services.PostConfigure<Honua.Infrastructure.Monitoring.OpsHealthRollupOptions>(
-                    options => options.Enabled = true));
+                    options => options.Enabled = true);
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(new FixedTimeProvider(TestNow));
+                services.RemoveAll<IAlertDispatchHealth>();
+                services.AddSingleton<IAlertDispatchHealth>(new FixedAlertDispatchHealth(
+                    new AlertDispatchBacklog
+                    {
+                        PendingCount = 4,
+                        RetryingCount = 2,
+                        DeadLetteredCount = 2,
+                        OldestItemAt = TestNow.AddMinutes(-10),
+                        Channels =
+                        [
+                            new AlertDispatchChannelBacklog
+                            {
+                                ChannelType = AlertChannelType.Webhook,
+                                IsPaused = false,
+                                PendingCount = 2,
+                                RetryingCount = 1,
+                                DeadLetteredCount = 0,
+                                OldestItemAt = TestNow.AddMinutes(-2),
+                            },
+                            new AlertDispatchChannelBacklog
+                            {
+                                ChannelType = AlertChannelType.Email,
+                                IsPaused = true,
+                                PendingCount = 0,
+                                RetryingCount = 1,
+                                DeadLetteredCount = 2,
+                                OldestItemAt = TestNow.AddMinutes(-10),
+                            },
+                        ],
+                    }));
+            });
     }
 
     public async Task InitializeAsync()
@@ -78,6 +116,45 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
         root.TryGetProperty("alertDispatch", out _).Should().BeTrue();
         root.GetProperty("deploy").TryGetProperty("readyForCoordinatedDeploy", out _).Should().BeTrue();
         root.GetProperty("database").TryGetProperty("cacheHitRatio", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Trait("Tier", "Fast")]
+    [Endpoint("GET /api/v1/admin/observability/ops-health")]
+    public async Task GetOpsHealth_WithMixedChannelHealth_SerializesExactPrivacySafeProjection()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/observability/ops-health");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+        var dispatch = json.RootElement.GetProperty("alertDispatch");
+        dispatch.EnumerateObject().Select(static property => property.Name).Should().BeEquivalentTo(
+            [
+                "dispatcherRunning",
+                "dispatcherEnabled",
+                "storagePollFailing",
+                "lastPollAt",
+                "pendingCount",
+                "deadLetteredCount",
+                "retryingCount",
+                "oldestItemAgeSeconds",
+                "channels",
+            ]);
+        dispatch.GetProperty("pendingCount").GetInt64().Should().Be(4);
+        dispatch.GetProperty("retryingCount").GetInt64().Should().Be(2);
+        dispatch.GetProperty("deadLetteredCount").GetInt64().Should().Be(2);
+        dispatch.GetProperty("oldestItemAgeSeconds").GetInt64().Should().Be(600);
+
+        var channels = dispatch.GetProperty("channels");
+        channels.GetArrayLength().Should().Be(2);
+        AssertChannel(channels[0], "webhook", paused: false, pending: 2, retrying: 1, deadLettered: 0, oldestAge: 120);
+        AssertChannel(channels[1], "email", paused: true, pending: 0, retrying: 1, deadLettered: 2, oldestAge: 600);
+
+        foreach (var forbiddenProperty in new[] { "destination", "payload", "error", "credential", "secret" })
+        {
+            content.Contains($"\"{forbiddenProperty}\"", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+        }
     }
 
     [IntegrationTest]
@@ -146,6 +223,25 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
         });
     }
 
+    private static void AssertChannel(
+        JsonElement channel,
+        string name,
+        bool paused,
+        long pending,
+        long retrying,
+        long deadLettered,
+        long oldestAge)
+    {
+        channel.EnumerateObject().Select(static property => property.Name).Should().BeEquivalentTo(
+            ["channel", "paused", "pendingCount", "retryingCount", "deadLetteredCount", "oldestItemAgeSeconds"]);
+        channel.GetProperty("channel").GetString().Should().Be(name);
+        channel.GetProperty("paused").GetBoolean().Should().Be(paused);
+        channel.GetProperty("pendingCount").GetInt64().Should().Be(pending);
+        channel.GetProperty("retryingCount").GetInt64().Should().Be(retrying);
+        channel.GetProperty("deadLetteredCount").GetInt64().Should().Be(deadLettered);
+        channel.GetProperty("oldestItemAgeSeconds").GetInt64().Should().Be(oldestAge);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/ops-health/history")]
     public async Task GetOpsHealthHistory_WithInvalidResolution_Returns400()
@@ -212,5 +308,26 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
             content: null);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+    }
+
+    private sealed class FixedAlertDispatchHealth(AlertDispatchBacklog backlog) : IAlertDispatchHealth
+    {
+        public bool IsDispatcherRunning => true;
+
+        public bool IsDispatcherEnabled => true;
+
+        public DateTimeOffset? LastPollAt => TestNow;
+
+        public AlertDispatchBacklog? LastBacklog => backlog;
+
+        public bool IsStoragePollFailing => false;
+
+        public Task<AlertDispatchBacklog> RefreshBacklogAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(backlog);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }
