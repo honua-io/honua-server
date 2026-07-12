@@ -27,6 +27,9 @@ public sealed class GeometryBufferJobExecutorTests
     // POINT(0 0) — same WKB the durable-runtime tests use.
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
+    // EWKB POINT(0 0) carrying an embedded SRID of 3857.
+    private const string PointEwkbSrid3857Base64 = "AQEAACARDwAAAAAAAAAAAAAAAAAAAAAAAA==";
+
     [UnitTest]
     public async Task ExecuteAsync_UnsupportedProcessId_FailsWithClassifiedMessage()
     {
@@ -115,6 +118,90 @@ public sealed class GeometryBufferJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_EmbeddedSridMismatch_FailsAsInputValidation()
+    {
+        var executor = CreateExecutor(out _);
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-srid");
+
+        // EWKB carries SRID 3857 while the declared srid input is 4326.
+        var record = CreateJobRecord(
+            processId: GeometryBufferJobExecutor.HandledProcessId,
+            includeInputs: true,
+            wkb: PointEwkbSrid3857Base64);
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("SRID");
+        result.ErrorMessage.Should().Contain("3857");
+
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_EmbeddedSridMatchesDeclared_Succeeds()
+    {
+        var executor = CreateExecutor(out _);
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-srid-ok");
+
+        // EWKB carries SRID 3857 and the declared srid input matches.
+        var record = CreateJobRecord(
+            processId: GeometryBufferJobExecutor.HandledProcessId,
+            includeInputs: true,
+            wkb: PointEwkbSrid3857Base64,
+            srid: "3857",
+            distance: "10");
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_ZeroDistance_FailsWithPositiveDistanceMessage()
+    {
+        var executor = CreateExecutor(out _);
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-zero");
+
+        var record = CreateJobRecord(
+            processId: GeometryBufferJobExecutor.HandledProcessId,
+            includeInputs: true,
+            distance: "0");
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("distance");
+        result.ErrorMessage.Should().NotContain("produced an empty geometry",
+            "a non-positive distance is now caught at input validation, not as a late empty-geometry failure");
+
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_NegativeDistance_FailsWithPositiveDistanceMessage()
+    {
+        var executor = CreateExecutor(out _);
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-neg");
+
+        var record = CreateJobRecord(
+            processId: GeometryBufferJobExecutor.HandledProcessId,
+            includeInputs: true,
+            distance: "-5");
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("distance");
+
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_MissingWkb_FailsBeforeBufferComputation()
     {
         var executor = CreateExecutor(out _);
@@ -198,7 +285,9 @@ public sealed class GeometryBufferJobExecutorTests
         bool includeInputs,
         string distance = "25.5",
         string? geodesic = null,
-        bool omitWkb = false)
+        bool omitWkb = false,
+        string wkb = PointWkbBase64,
+        string srid = "4326")
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -212,9 +301,9 @@ public sealed class GeometryBufferJobExecutorTests
         {
             if (!omitWkb)
             {
-                parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.wkb"] = PointWkbBase64;
+                parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.wkb"] = wkb;
             }
-            parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.srid"] = "4326";
+            parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.srid"] = srid;
             parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.distance"] = distance;
             if (!string.IsNullOrEmpty(geodesic))
             {
