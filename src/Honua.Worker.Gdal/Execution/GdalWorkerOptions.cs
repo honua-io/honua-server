@@ -36,4 +36,70 @@ internal sealed class GdalWorkerOptions
     /// </summary>
     [Range(typeof(TimeSpan), "00:00:05", "06:00:00", ErrorMessage = "ToolTimeout must be between 5 seconds and 6 hours")]
     public TimeSpan ToolTimeout { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// Maximum DECLARED width, in pixels, of an inbound raster. Bounds a single
+    /// runaway dimension even when the total pixel product would otherwise pass.
+    /// Default 100 000 comfortably covers any legitimate scene/mosaic tile while
+    /// rejecting a header that declares an absurd width (#2766).
+    /// </summary>
+    [Range(1, int.MaxValue, ErrorMessage = "MaxRasterWidth must be a positive pixel count")]
+    public int MaxRasterWidth { get; set; } = 100_000;
+
+    /// <summary>
+    /// Maximum DECLARED height, in pixels, of an inbound raster. Companion to
+    /// <see cref="MaxRasterWidth"/>. Default 100 000 (#2766).
+    /// </summary>
+    [Range(1, int.MaxValue, ErrorMessage = "MaxRasterHeight must be a positive pixel count")]
+    public int MaxRasterHeight { get; set; } = 100_000;
+
+    /// <summary>
+    /// Maximum DECLARED total cell count (width × height) of an inbound raster.
+    /// This is the primary decompression-bomb bound: a few-KB compressible
+    /// GeoTIFF can declare enormous dimensions and force GDAL to allocate
+    /// width×height×bands×dtype. Default 500 megapixels fits a full Sentinel-2
+    /// tile (~120 MP) or a moderate mosaic, yet rejects a header declaring
+    /// 100 000×100 000 = 10 000 MP (#2766).
+    /// </summary>
+    [Range(1L, long.MaxValue, ErrorMessage = "MaxRasterPixels must be a positive cell count")]
+    public long MaxRasterPixels { get; set; } = 500_000_000L;
+
+    /// <summary>
+    /// Maximum DECLARED band count of an inbound raster. Legitimate hyperspectral
+    /// imagery tops out near ~250 bands; the 512 default leaves headroom while
+    /// rejecting a header declaring thousands of bands (#2766).
+    /// </summary>
+    [Range(1, int.MaxValue, ErrorMessage = "MaxRasterBands must be a positive band count")]
+    public int MaxRasterBands { get; set; } = 512;
+
+    /// <summary>
+    /// Maximum ESTIMATED fully-decoded raster footprint
+    /// (width × height × bands × bytes-per-sample) admitted before a GDAL tool
+    /// opens the raster. This is the true allocation the decompression bomb
+    /// targets, so it is the tightest of the pixel caps for wide-dtype/multiband
+    /// rasters. Default 4 GiB bounds the per-job worker allocation while still
+    /// admitting e.g. a 500 MP × 4-band Byte raster (~2 GiB) (#2766).
+    /// </summary>
+    [Range(1024L, long.MaxValue, ErrorMessage = "MaxDecodedRasterBytes must be at least 1 KiB")]
+    public long MaxDecodedRasterBytes { get; set; } = 4L * 1024L * 1024L * 1024L;
+
+    /// <summary>
+    /// Maximum number of zone features accepted in a <c>raster.zonal-statistics</c>
+    /// payload. Each zone drives its own gdalwarp + gdalinfo subprocess pair, so an
+    /// unbounded zone FeatureCollection is a cumulative-work DoS even under the
+    /// per-invocation <see cref="ToolTimeout"/>. Default 10 000 covers realistic
+    /// administrative-boundary sets (counties, watersheds) while bounding the total
+    /// subprocess fan-out (#2766).
+    /// </summary>
+    [Range(1, int.MaxValue, ErrorMessage = "MaxZoneCount must be a positive feature count")]
+    public int MaxZoneCount { get; set; } = 10_000;
+
+    /// <summary>
+    /// Maximum cumulative vertex count across all zone geometries in a
+    /// <c>raster.zonal-statistics</c> payload. Bounds the cutline-writing / geometry
+    /// cost independently of zone count so a handful of pathologically dense
+    /// polygons cannot exhaust the worker. Default 2 000 000 vertices (#2766).
+    /// </summary>
+    [Range(1L, long.MaxValue, ErrorMessage = "MaxZoneVertices must be a positive vertex count")]
+    public long MaxZoneVertices { get; set; } = 2_000_000L;
 }
