@@ -174,6 +174,14 @@ public static class ImportValidationErrorCodes
     public const string GeometryInvalid = "import.geometry_invalid";
 
     /// <summary>
+    /// A feature's geometry is topologically invalid (self-intersection, ring orientation, or hole
+    /// placement) but will be handled by the import validity gate (repaired or rejected per
+    /// <see cref="ImportLimits.GeometryValidityMode"/>) rather than failing the whole file. Surfaced
+    /// as a <see cref="ImportValidationSeverity.Warning"/> so it is advisory, not blocking (#2743).
+    /// </summary>
+    public const string GeometryInvalidRepairable = "import.geometry_invalid_repairable";
+
+    /// <summary>
     /// A single feature's geometry exceeded the configured size guard (vertices, rings, or WKB
     /// bytes). The geometry is too large to materialize safely; explode/simplify it before import.
     /// Surfaced 413-style so callers can react programmatically (#1626).
@@ -212,6 +220,21 @@ public static class ImportValidationErrorCodes
 }
 
 /// <summary>
+/// Severity of an <see cref="ImportValidationIssue"/>. An <see cref="Error"/> issue fails import
+/// (or the preflight validation surface); a <see cref="Warning"/> issue is advisory and does not
+/// block the import — it is relayed to the caller so a non-fatal condition (e.g. a geometry that
+/// will be repaired on import) is still visible.
+/// </summary>
+public enum ImportValidationSeverity
+{
+    /// <summary>A blocking validation failure.</summary>
+    Error = 0,
+
+    /// <summary>A non-blocking, advisory validation issue.</summary>
+    Warning = 1,
+}
+
+/// <summary>
 /// Machine-readable validation issue for file import failures.
 /// </summary>
 public sealed record ImportValidationIssue
@@ -229,23 +252,33 @@ public sealed record ImportValidationIssue
     public string? Field { get; init; }
 
     /// <summary>
+    /// Gets the severity of the issue. Defaults to <see cref="ImportValidationSeverity.Error"/> so
+    /// existing blocking-issue call sites keep their meaning; advisory issues opt in to
+    /// <see cref="ImportValidationSeverity.Warning"/>.
+    /// </summary>
+    public ImportValidationSeverity Severity { get; init; } = ImportValidationSeverity.Error;
+
+    /// <summary>
     /// Creates an <see cref="ImportValidationIssue"/> with the supplied details.
     /// </summary>
     /// <param name="code">The stable machine-readable validation error code.</param>
     /// <param name="message">The human-readable validation message.</param>
     /// <param name="featureIndex">The zero-based index of the offending feature, when known.</param>
     /// <param name="field">The name of the offending field, when known.</param>
+    /// <param name="severity">The severity of the issue; defaults to <see cref="ImportValidationSeverity.Error"/>.</param>
     /// <returns>A populated <see cref="ImportValidationIssue"/>.</returns>
     public static ImportValidationIssue Create(
         string code,
         string message,
         int? featureIndex = null,
-        string? field = null) =>
+        string? field = null,
+        ImportValidationSeverity severity = ImportValidationSeverity.Error) =>
         new()
         {
             Code = code,
             Message = message,
             FeatureIndex = featureIndex,
-            Field = field
+            Field = field,
+            Severity = severity
         };
 }

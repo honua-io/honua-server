@@ -69,7 +69,8 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
                 ["Import:Limits:MaxFeaturesPerFile"] = "99",
                 ["Import:Limits:MaxArchiveEntryBytes"] = "10000",
                 ["Import:Limits:MaxArchiveExtractedBytes"] = "20000",
-                ["Import:Limits:MaxArchiveCompressionRatio"] = "75.5"
+                ["Import:Limits:MaxArchiveCompressionRatio"] = "75.5",
+                ["Import:Limits:GeometryValidityMode"] = "strict"
             })
             .Build();
 
@@ -89,6 +90,30 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
         limits.MaxArchiveEntryBytes.Should().Be(10000);
         limits.MaxArchiveExtractedBytes.Should().Be(20000);
         limits.MaxArchiveCompressionRatio.Should().Be(75.5);
+        // GeometryValidityMode is parsed case-insensitively from the section (#2743).
+        limits.GeometryValidityMode.Should().Be(Honua.Core.Configuration.ValidationMode.Strict);
+    }
+
+    [Fact]
+    public void AddPostgreSqlServices_WithoutGeometryValidityMode_FallsBackToDefault()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua_test;Username=honua;Password=test",
+                ["Import:Limits:BatchSize"] = "250"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddPostgreSqlServices(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var limits = provider.GetRequiredService<ImportLimits>();
+
+        // Unset (or unparseable) GeometryValidityMode keeps the ImportLimits default (Repair).
+        limits.GeometryValidityMode.Should().Be(new ImportLimits().GeometryValidityMode);
+        limits.GeometryValidityMode.Should().Be(Honua.Core.Configuration.ValidationMode.Repair);
     }
 
     [Fact]

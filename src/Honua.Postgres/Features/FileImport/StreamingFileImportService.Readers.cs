@@ -190,14 +190,30 @@ internal sealed partial class StreamingFileImportService
         // an EPSG code directly (#2743). The GeoPackage spec allows local srs_id numbering: a file
         // may declare srs_id=1 whose row maps to organization='EPSG', organization_coordsys_id=27700.
         // Reading srs_id as the EPSG code would silently mis-georeference every feature.
-        const string sql = """
-            SELECT c.table_name, g.column_name, g.srs_id, s.organization, s.organization_coordsys_id
-            FROM gpkg_contents c
-            JOIN gpkg_geometry_columns g ON c.table_name = g.table_name
-            LEFT JOIN gpkg_spatial_ref_sys s ON g.srs_id = s.srs_id
-            WHERE c.data_type = 'features'
-            ORDER BY c.table_name
-            """;
+        //
+        // gpkg_spatial_ref_sys is required by the spec, but malformed files omit it. Joining against
+        // a missing table throws "no such table"; probe first and fall back to a join-less query that
+        // reads the raw srs_id (best effort) rather than failing the whole import. The raw srs_id
+        // still passes through ResolveGeoPackageSrid and downstream ValidateImportSridsAsync, which
+        // reject nonsense codes.
+        var hasSpatialRefSys = await GeoPackageSpatialRefSysTableExistsAsync(connection, cancellationToken);
+
+        var sql = hasSpatialRefSys
+            ? """
+                SELECT c.table_name, g.column_name, g.srs_id, s.organization, s.organization_coordsys_id
+                FROM gpkg_contents c
+                JOIN gpkg_geometry_columns g ON c.table_name = g.table_name
+                LEFT JOIN gpkg_spatial_ref_sys s ON g.srs_id = s.srs_id
+                WHERE c.data_type = 'features'
+                ORDER BY c.table_name
+                """
+            : """
+                SELECT c.table_name, g.column_name, g.srs_id
+                FROM gpkg_contents c
+                JOIN gpkg_geometry_columns g ON c.table_name = g.table_name
+                WHERE c.data_type = 'features'
+                ORDER BY c.table_name
+                """;
 
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -210,8 +226,8 @@ internal sealed partial class StreamingFileImportService
             var tableName = reader.GetString(0);
             var geometryColumn = reader.GetString(1);
             var srsId = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2);
-            var organization = reader.IsDBNull(3) ? null : reader.GetString(3);
-            var organizationCoordSysId = reader.IsDBNull(4) ? (int?)null : reader.GetInt32(4);
+            var organization = hasSpatialRefSys && !reader.IsDBNull(3) ? reader.GetString(3) : null;
+            var organizationCoordSysId = hasSpatialRefSys && !reader.IsDBNull(4) ? reader.GetInt32(4) : (int?)null;
             layers.Add(new GeoPackageLayerInfo(
                 tableName,
                 geometryColumn,
@@ -219,6 +235,17 @@ internal sealed partial class StreamingFileImportService
         }
 
         return layers;
+    }
+
+    private static async Task<bool> GeoPackageSpatialRefSysTableExistsAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var probe = connection.CreateCommand();
+        probe.CommandText =
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'gpkg_spatial_ref_sys' LIMIT 1";
+        var result = await probe.ExecuteScalarAsync(cancellationToken);
+        return result is not null;
     }
 
     /// <summary>

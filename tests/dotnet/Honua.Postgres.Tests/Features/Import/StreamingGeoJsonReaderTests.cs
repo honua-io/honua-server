@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Postgres.Features.Migration;
@@ -62,6 +63,60 @@ public sealed class StreamingGeoJsonReaderTests
         tags.ValueKind.Should().Be(JsonValueKind.Array);
         tags[0].GetString().Should().Be("port");
         tags[1].GetProperty("kind").GetString().Should().Be("commercial");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WithSelfIntersectingPolygon_ReportsNonFatalRepairWarning()
+    {
+        // A bowtie polygon is topologically invalid but structurally well-formed. The validate/
+        // preview surface must report it as a NON-fatal, row-level warning (repaired on import by
+        // the shared validity gate) rather than failing the whole file (#2743).
+        const string geoJson = """
+            {
+              "type": "FeatureCollection",
+              "features": [
+                { "type": "Feature",
+                  "geometry": { "type": "Polygon", "coordinates": [[[0,0],[2,2],[2,0],[0,2],[0,0]]] },
+                  "properties": { "name": "bowtie" } }
+              ]
+            }
+            """;
+
+        var reader = new StreamingGeoJsonReader();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(geoJson));
+
+        var result = await reader.ValidateAsync(stream);
+
+        // Warning severity does not fail the document.
+        result.IsValid.Should().BeTrue();
+        result.Issues.Should().ContainSingle();
+        var issue = result.Issues[0];
+        issue.Code.Should().Be(ImportValidationErrorCodes.GeometryInvalidRepairable);
+        issue.Severity.Should().Be(ImportValidationSeverity.Warning);
+        issue.FeatureIndex.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WithValidPolygon_ReportsNoIssues()
+    {
+        const string geoJson = """
+            {
+              "type": "FeatureCollection",
+              "features": [
+                { "type": "Feature",
+                  "geometry": { "type": "Polygon", "coordinates": [[[0,0],[0,2],[2,2],[2,0],[0,0]]] },
+                  "properties": { "name": "square" } }
+              ]
+            }
+            """;
+
+        var reader = new StreamingGeoJsonReader();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(geoJson));
+
+        var result = await reader.ValidateAsync(stream);
+
+        result.IsValid.Should().BeTrue();
+        result.Issues.Should().BeEmpty();
     }
 
     [Fact]

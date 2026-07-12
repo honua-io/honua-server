@@ -482,6 +482,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 return result;
             }
 
+            // Non-fatal preflight issues (e.g. GeoJSON geometries that will be repaired by the
+            // shared validity gate on import, #2743). Relayed on the successful result alongside the
+            // per-row issues so callers still see them without the whole file being rejected.
+            ImportValidationIssue[] preflightWarnings = [];
             if (format.Value == SupportedFileFormat.GeoJson)
             {
                 if (!fileStream.CanSeek)
@@ -501,7 +505,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 var geoJsonValidation = await _geoJsonReader.ValidateAsync(fileStream, cancellationToken);
                 if (!geoJsonValidation.IsValid)
                 {
-                    var issue = geoJsonValidation.Issues[0];
+                    var issue = geoJsonValidation.Issues.First(
+                        i => i.Severity == ImportValidationSeverity.Error);
                     errorMessage = issue.Message;
                     result = ImportResult.CreateFailure(
                         request.TableName,
@@ -513,6 +518,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                         geoJsonValidation.Issues);
                     return result;
                 }
+
+                preflightWarnings = geoJsonValidation.Issues
+                    .Where(i => i.Severity == ImportValidationSeverity.Warning)
+                    .ToArray();
             }
 
             // Report initial progress
@@ -567,9 +576,12 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 schema: ResolveTargetSchema(request.TargetSchema),
                 repairedGeometryCount: repairedCount) with
             {
-                // Per-row issues (e.g. CSV address rows that failed to geocode) that did not
-                // block the import but should be relayed to the caller alongside the warnings.
-                ValidationErrors = rowIssues
+                // Per-row issues (e.g. CSV address rows that failed to geocode, or GeoJSON
+                // geometries repaired by the validity gate) that did not block the import but should
+                // be relayed to the caller alongside the warnings.
+                ValidationErrors = preflightWarnings.Length == 0
+                    ? rowIssues
+                    : [.. preflightWarnings, .. rowIssues]
             };
             return result;
         }

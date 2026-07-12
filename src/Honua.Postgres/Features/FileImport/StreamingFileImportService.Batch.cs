@@ -422,59 +422,106 @@ internal sealed partial class StreamingFileImportService
         }
 
         // Shared topology validity gate (#2743): mirrors the edit paths' GeometryValidationOptions
-        // (Accept/Strict/Repair). Repair uses the managed NetTopologySuite GeometryFixer — the
-        // GEOS-free analogue of PostGIS ST_MakeValid also used by the geometry.make-valid GP
-        // executor — so a self-intersecting polygon is fixed on the way in rather than stored to
-        // later blow up overlay queries with a GEOS TopologyException. Only finite geometry is a
-        // candidate: NaN/Infinity ordinates cannot be validated or repaired meaningfully and are
-        // left to the finiteness pass / PostGIS to reject.
+        // (Accept/Strict/Repair). Repair uses the managed NetTopologySuite GeometryFixer, which is
+        // also what the geometry.make-valid GP executor uses. This is NOT identical to the edit
+        // path: the edit path repairs via PostGIS ST_MakeValid (GEOS), whereas import repairs via
+        // the GEOS-free NTS GeometryFixer — different engines, so a pathological geometry can yield
+        // different repaired output on the two paths. Fixing here still prevents a self-intersecting
+        // polygon from being stored to later blow up overlay queries with a GEOS TopologyException.
+        //
+        // Only areal geometry (Polygon/MultiPolygon and nested collections) can be topologically
+        // invalid, so points/lines skip both the coordinate walk and the expensive IsValid
+        // topology-graph build. Finiteness is required before IsValid: the earlier ValidateGeometry
+        // pass already guarantees it when enabled, otherwise walk the coordinates once here. NaN/
+        // Infinity ordinates cannot be validated or repaired meaningfully and are left to PostGIS.
         if (_limits.GeometryValidityMode != ValidationMode.Accept
-            && ValidateCoordinates(geometry)
-            && !geometry.IsValid)
+            && geometry.OgcGeometryType is NetTopologySuite.Geometries.OgcGeometryType.Polygon
+                or NetTopologySuite.Geometries.OgcGeometryType.MultiPolygon
+                or NetTopologySuite.Geometries.OgcGeometryType.GeometryCollection)
         {
-            if (_limits.GeometryValidityMode == ValidationMode.Strict)
+            var coordinatesFinite = _limits.ValidateGeometry || ValidateCoordinates(geometry);
+            if (coordinatesFinite && !geometry.IsValid)
             {
-                if (_limits.SkipInvalidGeometry)
+                if (_limits.GeometryValidityMode == ValidationMode.Strict)
                 {
-                    ImportLog.GeometryInvalidSkipped(_logger);
-                    return null;
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryInvalidSkipped(_logger);
+                        return null;
+                    }
+
+                    throw new InvalidOperationException(
+                        "Geometry validation failed: geometry topology is invalid (self-intersection, ring orientation, or hole placement).");
                 }
 
-                throw new InvalidOperationException(
-                    "Geometry validation failed: geometry topology is invalid (self-intersection, ring orientation, or hole placement).");
-            }
-
-            // ValidationMode.Repair
-            NtsGeometry? repaired;
-            try
-            {
-                repaired = GeometryFixer.Fix(geometry);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                if (_limits.SkipInvalidGeometry)
+                // ValidationMode.Repair
+                NtsGeometry? repaired;
+                try
                 {
-                    ImportLog.GeometryRepairFailedSkipped(_logger, ex);
-                    return null;
+                    repaired = GeometryFixer.Fix(geometry);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryRepairFailedSkipped(_logger, ex);
+                        return null;
+                    }
+
+                    throw new InvalidOperationException("Geometry repair failed.", ex);
                 }
 
-                throw new InvalidOperationException("Geometry repair failed.", ex);
-            }
-
-            if (repaired == null || repaired.IsEmpty)
-            {
-                if (_limits.SkipInvalidGeometry)
+                if (repaired == null || repaired.IsEmpty)
                 {
-                    ImportLog.GeometryRepairEmptySkipped(_logger);
-                    return null;
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryRepairEmptySkipped(_logger);
+                        return null;
+                    }
+
+                    throw new InvalidOperationException("Geometry repair produced an empty geometry.");
                 }
 
-                throw new InvalidOperationException("Geometry repair produced an empty geometry.");
-            }
+                // Re-validate the repaired geometry: for pathological input GeometryFixer can return
+                // a result that is still invalid. Treat that like the Strict/skip branch rather than
+                // counting it as a successful repair and storing a still-broken geometry.
+                if (!repaired.IsValid)
+                {
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryInvalidSkipped(_logger);
+                        return null;
+                    }
 
-            repaired.SRID = geometry.SRID;
-            geometry = repaired;
-            repairTally.Repaired++;
+                    throw new InvalidOperationException(
+                        "Geometry repair did not produce a valid geometry.");
+                }
+
+                repaired.SRID = geometry.SRID;
+
+                // Re-run the hard size guard on the repaired geometry BEFORE counting the repair:
+                // make-valid can add vertices/rings (e.g. splitting a self-intersection into
+                // multiple rings), so a repaired geometry could exceed MaxVertices/MaxRings even
+                // though the pre-repair input passed the same guard.
+                var repairedSizeResult = ImportGeometrySizeGuard.Check(
+                    repaired, _limits.MaxVertices, _limits.MaxRings);
+                if (!repairedSizeResult.IsWithinLimits)
+                {
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryTooLargeSkipped(
+                            _logger,
+                            repairedSizeResult.Message ?? "Repaired geometry exceeds import size limit.");
+                        return null;
+                    }
+
+                    throw new ImportGeometryTooLargeException(
+                        repairedSizeResult.Message ?? "Repaired geometry exceeds import size limit.");
+                }
+
+                geometry = repaired;
+                repairTally.Repaired++;
+            }
         }
 
         var writer = SelectWkbWriter(geometry, wkbWriter);

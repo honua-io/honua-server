@@ -35,7 +35,9 @@ internal sealed record JsonProcessingState
 
 internal sealed record GeoJsonValidationResult(int FeatureCount, IReadOnlyList<ImportValidationIssue> Issues)
 {
-    public bool IsValid => Issues.Count == 0;
+    // Warning-severity issues (e.g. a geometry that will be repaired on import) are advisory and
+    // must not fail the file; only Error-severity issues make the document invalid (#2743).
+    public bool IsValid => !Issues.Any(issue => issue.Severity == ImportValidationSeverity.Error);
 }
 
 /// <summary>
@@ -511,6 +513,32 @@ internal sealed class StreamingGeoJsonReader
                 validationError,
                 featureIndex,
                 "geometry"));
+            return issues;
+        }
+
+        // Topology validity (self-intersection, ring orientation, hole placement) is reported as a
+        // NON-fatal, row-level warning rather than failing the whole file (#2743): the shared
+        // per-row validity gate at insertion time repairs (default) or rejects invalid geometry per
+        // ImportLimits.GeometryValidityMode. Only areal geometry can be topologically invalid, so
+        // points/lines skip the expensive IsValid topology-graph build. Accept mode stores geometry
+        // as-is, so nothing is flagged there.
+        if (geometry is not null
+            && _limits.GeometryValidityMode != Honua.Core.Configuration.ValidationMode.Accept
+            && geometry.OgcGeometryType is OgcGeometryType.Polygon
+                or OgcGeometryType.MultiPolygon
+                or OgcGeometryType.GeometryCollection
+            && !geometry.IsValid)
+        {
+            var action = _limits.GeometryValidityMode == Honua.Core.Configuration.ValidationMode.Strict
+                ? "rejected"
+                : "repaired";
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryInvalidRepairable,
+                $"Geometry is topologically invalid and will be {action} on import "
+                + $"(mode={_limits.GeometryValidityMode}).",
+                featureIndex,
+                "geometry",
+                ImportValidationSeverity.Warning));
         }
 
         return issues;
