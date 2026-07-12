@@ -81,6 +81,7 @@ public sealed class GeographicSridClassifierTests
     [InlineData(4230)]  // ED50
     [InlineData(4490)]  // CGCS2000
     [InlineData(4979)]  // WGS 84 3D
+    [InlineData(4619)]  // SWEREF99 — geographic but NOT geodesic-safe (dropped from the Postgres fallback in #2732).
     // Projected / geocentric.
     [InlineData(3857)]
     [InlineData(4978)]
@@ -98,12 +99,35 @@ public sealed class GeographicSridClassifierTests
             .BeSubsetOf(GeographicSridClassifier.GeographicSrids);
     }
 
-    [UnitTest]
-    public void SpatialConstants_GeographicSrids_MatchesGeodesicSafeAllowlist()
+    [Theory]
+    // Broad-list codes are still geographic under the range variant.
+    [InlineData(4326)]  // WGS 84
+    [InlineData(4269)]  // NAD83
+    [InlineData(4979)]  // WGS 84 3D
+    // Unlisted EPSG 4000-4999 geographic-block codes that #2732 regressed to the planar branch when
+    // the ImageServer mensuration path was collapsed onto the enumerated broad list only.
+    [InlineData(4301)]  // Tokyo
+    [InlineData(4314)]  // DHDN
+    [InlineData(4322)]  // WGS 72
+    [InlineData(4499)]  // Unassigned in-range code (bootstrap heuristic still treats as degrees)
+    public void IsGeographicOrUnlistedGeographicRangeSrid_GeographicOrInRange_ReturnsTrue(int srid)
     {
-        // The legacy public SpatialConstants.GeographicSrids surface is now sourced from the
-        // canonical geodesic-safe list; keep them in lock-step.
-        SpatialConstants.GeographicSrids.Should()
-            .BeEquivalentTo(GeographicSridClassifier.GeodesicDistanceSafeSrids.ToArray());
+        GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(srid).Should().BeTrue();
+    }
+
+    [Theory]
+    // Geocentric (X/Y/Z metre) codes in the 4000-4999 block must NOT be treated as lat/lon degrees;
+    // measuring them planar in metres is correct.
+    [InlineData(4978)]  // WGS 84 geocentric — the code the #2732 audit named explicitly
+    [InlineData(4936)]  // ETRS89 geocentric
+    [InlineData(4984)]  // WGS 72 geocentric
+    // Projected / out-of-range codes stay planar.
+    [InlineData(3857)]   // Web Mercator (projected)
+    [InlineData(32618)]  // UTM 18N (projected)
+    [InlineData(2154)]   // Lambert-93 (projected, below the 4000-4999 block)
+    [InlineData(0)]
+    public void IsGeographicOrUnlistedGeographicRangeSrid_GeocentricOrProjected_ReturnsFalse(int srid)
+    {
+        GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(srid).Should().BeFalse();
     }
 }

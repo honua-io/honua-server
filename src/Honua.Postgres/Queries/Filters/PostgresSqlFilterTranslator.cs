@@ -266,12 +266,17 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
     }
 
     // Fallback used only when the translation context does not carry an explicit IsGeographic
-    // flag (the primary path derives it from spatial_ref_sys). Defers to the canonical
-    // GeographicSridClassifier (#2732), which enumerates only confirmed geographic codes and so
-    // never re-opens the old 4000-4999 range-rule that swept in EPSG:4978 (geocentric) and
-    // projected variants such as EPSG:4087/4088.
+    // flag (the primary path derives it from spatial_ref_sys). This gates ::geography-cast /
+    // geodesic routing (ST_DWithin/ST_Distance over geography, geodesic Intersects), so it uses
+    // the canonical NARROW geodesic-safe bucket (#2732/#2731) rather than the broad geographic
+    // list: a spheroid/geography measurement is only sound for the WGS 84-compatible degree CRSes,
+    // and matching the DuckDB provider's narrow gate avoids Postgres-vs-DuckDB divergence. The
+    // narrow bucket differs from the pre-#2732 6-code fallback (4326/4269/4267/4258/4619/4283):
+    // it drops 4619 (SWEREF99) and adds 4617 (NAD83(CSRS)) / 4759 (NAD83(NSRS2007)); the primary
+    // spatial_ref_sys-derived path still classifies 4619 correctly, so only the registry-miss
+    // fallback is affected.
     private static bool IsLikelyGeographicSrid(int srid)
-        => GeographicSridClassifier.IsGeographicSrid(srid);
+        => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 
     private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {

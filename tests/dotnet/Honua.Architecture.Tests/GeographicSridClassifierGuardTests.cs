@@ -52,11 +52,27 @@ public sealed class GeographicSridClassifierGuardTests
     };
 
     /// <summary>
+    /// Web Mercator SRID/alias codes. A local table equating two or more of these is the alias-table
+    /// anti-pattern the guard flags (regardless of whether the deprecated <c>900913</c> alias is one
+    /// of them).
+    /// </summary>
+    private static readonly int[] WebMercatorAliasCodes = { 3857, 900913, 102100, 102113, 3785 };
+
+    /// <summary>
     /// An <c>is X or Y</c> chain of two geographic EPSG codes drawn from the canonical list. The
     /// alternation is built from <see cref="GeographicSridClassifier.GeographicSrids"/> so the guard
     /// tracks the canonical list automatically.
     /// </summary>
     private static readonly Regex GeographicChainRegex = BuildGeographicChainRegex();
+
+    /// <summary>
+    /// An equality-chain allowlist: two canonical geographic EPSG codes compared with <c>==</c> and
+    /// joined by <c>||</c> or <c>or</c> (e.g. <c>srid == 4326 || srid == 4269</c>) — the same
+    /// fragmentation as <see cref="GeographicChainRegex"/> but expressed with equality operators.
+    /// A single geographic code combined with a non-code boolean (<c>srid == 4326 || transformed</c>)
+    /// does not match; two codes are required.
+    /// </summary>
+    private static readonly Regex GeographicEqualityChainRegex = BuildGeographicEqualityChainRegex();
 
     /// <summary>
     /// A Web Mercator alias table: the alias code <c>900913</c> juxtaposed with an <c>or</c>,
@@ -66,6 +82,16 @@ public sealed class GeographicSridClassifierGuardTests
     /// </summary>
     private static readonly Regex WebMercatorAliasTableRegex =
         new(@"900913\s*(?:\bor\b|,|\|\|)|(?:\bor\b|,|\|\|)\s*900913", RegexOptions.Compiled);
+
+    /// <summary>
+    /// A Web Mercator alias table keyed on <b>any</b> two of <see cref="WebMercatorAliasCodes"/>
+    /// (not just <c>900913</c>), joined by an <c>or</c> or <c>||</c> boolean alternation — the
+    /// <c>srid is 3857 or 102100</c> / <c>== 102100 || == 102113</c> shapes that the
+    /// <c>900913</c>-keyed regex above misses. Deliberately excludes the bare comma so object
+    /// initializers and dictionaries that legitimately co-locate distinct Web Mercator wkids
+    /// (e.g. Esri <c>wkid = 102100, latestWkid = 3857</c>) are not false-flagged.
+    /// </summary>
+    private static readonly Regex WebMercatorMultiAliasRegex = BuildWebMercatorMultiAliasRegex();
 
     [ArchitectureTest]
     public void SourceTree_ShouldNotReintroduceLocalSridAllowlists()
@@ -103,11 +129,27 @@ public sealed class GeographicSridClassifierGuardTests
                     "Call GeographicSridClassifier.IsGeographicSrid (or IsGeodesicDistanceSafeSrid) instead.");
             }
 
+            var geographicEqualityMatch = GeographicEqualityChainRegex.Match(source);
+            if (geographicEqualityMatch.Success)
+            {
+                violations.Add(
+                    $"{normalized}: local geographic-SRID equality chain '{Collapse(geographicEqualityMatch.Value)}'. " +
+                    "Call GeographicSridClassifier.IsGeographicSrid (or IsGeodesicDistanceSafeSrid) instead.");
+            }
+
             var mercatorMatch = WebMercatorAliasTableRegex.Match(source);
             if (mercatorMatch.Success)
             {
                 violations.Add(
                     $"{normalized}: local Web Mercator alias table '{Collapse(mercatorMatch.Value)}'. " +
+                    "Call SpatialReferenceExtensions.IsWebMercatorSrid / NormalizeWebMercatorSrid instead.");
+            }
+
+            var mercatorMultiMatch = WebMercatorMultiAliasRegex.Match(source);
+            if (mercatorMultiMatch.Success)
+            {
+                violations.Add(
+                    $"{normalized}: local Web Mercator alias table '{Collapse(mercatorMultiMatch.Value)}'. " +
                     "Call SpatialReferenceExtensions.IsWebMercatorSrid / NormalizeWebMercatorSrid instead.");
             }
         }
@@ -122,11 +164,35 @@ public sealed class GeographicSridClassifierGuardTests
 
     private static Regex BuildGeographicChainRegex()
     {
-        var codes = string.Join('|', GeographicSridClassifier.GeographicSrids.Select(c => c.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        var codes = GeographicCodeAlternation();
         // Two geographic codes joined by an `or` pattern (C# switch/relational-pattern list), e.g.
         // `srid is 4326 or 4269`. One matching pair is enough to flag a chain.
         return new Regex($@"\b(?:{codes})\s+or\s+(?:{codes})\b", RegexOptions.Compiled);
     }
+
+    private static Regex BuildGeographicEqualityChainRegex()
+    {
+        var codes = GeographicCodeAlternation();
+        // Two geographic codes each compared with `==` and joined by `||`/`or`, e.g.
+        // `srid == 4326 || srid == 4269`. The bounded gaps keep the match on a single expression and
+        // avoid pairing a code with an unrelated `==` elsewhere in the file.
+        return new Regex(
+            $@"==\s*(?:{codes})\b[^;\n]{{0,60}}?(?:\|\||\bor\b)[^;\n]{{0,60}}?==\s*(?:{codes})\b",
+            RegexOptions.Compiled);
+    }
+
+    private static Regex BuildWebMercatorMultiAliasRegex()
+    {
+        var codes = string.Join('|', WebMercatorAliasCodes.Select(c => c.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        // Two Web Mercator codes joined by an `or`/`||` boolean alternation. Comma is intentionally
+        // excluded so `wkid = 102100, latestWkid = 3857` metadata initializers do not match.
+        return new Regex(
+            $@"\b(?:{codes})\b\s*(?:\bor\b|\|\|)\s*[^;\n]{{0,30}}?\b(?:{codes})\b",
+            RegexOptions.Compiled);
+    }
+
+    private static string GeographicCodeAlternation()
+        => string.Join('|', GeographicSridClassifier.GeographicSrids.Select(c => c.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
     private static string NormalizeSeparators(string path)
         => path.Replace('\\', '/');
