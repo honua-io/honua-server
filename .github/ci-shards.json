@@ -120,6 +120,14 @@
       "shards": [
         "Core"
       ]
+    },
+    {
+      "prefix": "tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs",
+      "reason": "network_dataset_admin_exact_owner",
+      "exclusive": true,
+      "shards": [
+        "Server Features Admin and Console"
+      ]
     }
   ],
   "shards": [
@@ -187,6 +195,7 @@
         "src/Honua.Routing/Features/Routing/",
         "src/Honua.Server/Migrations/082_CreatePromotionStores.sql",
         "src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql",
+        "src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql",
         "tests/dotnet/Honua.Server.Tests/Seed/",
         "tests/dotnet/Honua.Server.Tests/Startup/PostgresPromotionSurfaceRegistrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Routing/",
