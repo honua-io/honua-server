@@ -55,6 +55,7 @@ source_sha="0123456789abcdef0123456789abcdef01234567"
 HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT="${fixture_repo}" \
 HONUA_SERVER_TEST_ARTIFACT_REGISTRY="${fixture_repo}/.github/server-test-artifact-projects.json" \
 HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" \
+HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH=1000 \
   "${SCRIPT_DIR}/package-server-test-binaries.sh" \
     --project "${project}" --output "${fixture_output}" --source-sha "${source_sha}"
 manifest="${fixture_output}/server-test-binaries-fixture.manifest.json"
@@ -64,7 +65,8 @@ jq -e --arg project "${project}" --arg source_sha "${source_sha}" '
   .contract == "honua.server-test-binaries.v1" and
   .project == $project and .source_sha == $source_sha and
   .raw_bytes > .unpacked_bytes and .unpacked_bytes > 0 and .archive_bytes > 0 and
-  .file_count >= 9 and .package_milliseconds >= 0
+  .file_count >= 9 and .package_milliseconds >= 0 and
+  .created_at_epoch == 1000 and .expires_at_epoch == 87400
 ' "${manifest}" >/dev/null
 listing="$(tar -tzf "${archive}")"
 grep -q '/runtimes/linux-x64/' <<<"${listing}"
@@ -76,16 +78,20 @@ if grep -Eq '/runtimes/(win|osx)' <<<"${listing}"; then
   exit 1
 fi
 
+HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH=1001 \
+HONUA_SERVER_TEST_ARTIFACT_TIMING_FILE="${fixture}/restore-timing.json" \
 HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" "${SCRIPT_DIR}/restore-server-test-binaries.sh" \
   --manifest "${manifest}" --destination "${fixture_restore}" \
   --project "${project}" --source-sha "${source_sha}"
 [[ -f "${fixture_restore}/tests/dotnet/Fixture.Tests/bin/Release/net10.0/Fixture.Tests.dll" ]]
 [[ -f "${fixture_restore}/tests/dotnet/Fixture.Tests/bin/Release/net10.0/runtimes/linux-x64/native/runtime.bin" ]]
 [[ ! -e "${fixture_restore}/tests/dotnet/Fixture.Tests/bin/Release/net10.0/runtimes/win-x64" ]]
+jq -e '.integrity_check_ms >= 0 and .unpack_ms >= 0' "${fixture}/restore-timing.json" >/dev/null
 
 cp "${archive}" "${archive}.valid"
 printf 'tamper\n' >> "${archive}"
-if HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" "${SCRIPT_DIR}/restore-server-test-binaries.sh" \
+if HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH=1001 \
+  HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" "${SCRIPT_DIR}/restore-server-test-binaries.sh" \
     --manifest "${manifest}" --destination "${fixture}/tampered" \
     --project "${project}" --source-sha "${source_sha}" >/dev/null 2>&1; then
   echo "::error::Tampered artifact was accepted." >&2
@@ -93,7 +99,17 @@ if HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" "${SCRIPT_DIR}/restore-se
 fi
 mv "${archive}.valid" "${archive}"
 
+if HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH=87401 \
+  HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" \
+  "${SCRIPT_DIR}/restore-server-test-binaries.sh" \
+    --manifest "${manifest}" --destination "${fixture}/expired" \
+    --project "${project}" --source-sha "${source_sha}" >/dev/null 2>&1; then
+  echo "::error::Expired artifact evidence was accepted." >&2
+  exit 1
+fi
+
 if HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES=1 \
+  HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH=1001 \
   HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" \
   "${SCRIPT_DIR}/restore-server-test-binaries.sh" \
     --manifest "${manifest}" --destination "${fixture}/oversize" \
