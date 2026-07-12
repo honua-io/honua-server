@@ -253,7 +253,6 @@ internal sealed partial class FeatureQueryBuilder
         var isGeographicStorage =
             DistanceConversions.IsGeographicSrid(storageSrid) || IsUnlistedGeographicSridRange(storageSrid);
 
-        string expansion;
         if (isGeographicStorage)
         {
             // Geographic storage measures the envelope in degrees: ~111320 m per degree of
@@ -265,17 +264,26 @@ internal sealed partial class FeatureQueryBuilder
             var degrees = (distanceInMeters / 111320.0).ToString("R", CultureInfo.InvariantCulture);
             var latExtent =
                 $"LEAST(89.9, GREATEST(abs(ST_YMin({storageFilterGeometry})), abs(ST_YMax({storageFilterGeometry}))))";
-            expansion = $"({degrees} / cos(radians({latExtent})))";
-        }
-        else
-        {
-            // Projected storage is assumed to use metre units (the dominant case and consistent
-            // with the geography exact predicate, which always yields metres). Non-metre projected
-            // CRSs are out of scope for this minimal fix (#2732).
-            expansion = distanceInMeters.ToString("R", CultureInfo.InvariantCulture);
+            var expansion = $"({degrees} / cos(radians({latExtent})))";
+
+            // Longitude is periodic: a planar && envelope near the antimeridian cannot see a
+            // geodesic match on the other side (a query at lon 179.9 expanded by 30 km spans
+            // roughly [179.63, 180.17], while a true match at lon -179.9 sits ~359.8 planar
+            // degrees away and would be wrongly pruned). Probe the envelope shifted by +/-360
+            // degrees as well; each && stays index-usable (bitmap OR over the GiST index) and
+            // the exact geography ST_DWithin still decides membership, so the extra probes only
+            // cost selectivity for data normalized to [-180, 180].
+            var envelope = $"ST_Expand({storageFilterGeometry}, {expansion})";
+            return $"({geometryOperand} && {envelope}" +
+                   $" OR {geometryOperand} && ST_Translate({envelope}, 360, 0)" +
+                   $" OR {geometryOperand} && ST_Translate({envelope}, -360, 0))";
         }
 
-        return $"{geometryOperand} && ST_Expand({storageFilterGeometry}, {expansion})";
+        // Projected storage is assumed to use metre units (the dominant case and consistent
+        // with the geography exact predicate, which always yields metres). Non-metre projected
+        // CRSs are out of scope for this minimal fix (#2732).
+        var metres = distanceInMeters.ToString("R", CultureInfo.InvariantCulture);
+        return $"{geometryOperand} && ST_Expand({storageFilterGeometry}, {metres})";
     }
 
     private static bool IsUnlistedGeographicSridRange(int srid)
