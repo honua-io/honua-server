@@ -2,7 +2,7 @@
 
 Discover a server-side process, submit it as an asynchronous job, poll its status, and fetch results — over OGC API Processes, with the same catalog reachable through the ArcGIS-compatible GPServer adapter.
 
-**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and an API key — process execution requires an authenticated caller with the process-execute grant ([authentication](../secure/authentication.md)).
+**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and an API key — process execution requires an authenticated caller with the process-execute grant ([authentication](../secure/authentication.md)). Analytic built-ins require `Process.Execute`; imports, catalog mutations, and durable sinks additionally require `Process.ExecuteMutatingProcess`; operator-supplied code additionally requires `Process.ExecuteCustomCode`.
 
 Process discovery is open; execution is always asynchronous (`jobControlOptions: ["async-execute"]`). The full operation catalog with every parameter is in the [geoprocessing operations reference](../../reference/geoprocessing-operations.md).
 
@@ -74,7 +74,7 @@ Expected (trimmed):
 ## Troubleshoot
 
 - **401 on execution** — discovery is anonymous but `POST .../execution` is not; send your `X-API-Key` (or bearer token).
-- **403** — the identity authenticates but lacks the process-execute operator grant.
+- **403** — the identity authenticates but lacks `Process.Execute` or the additional `Process.ExecuteMutatingProcess` / `Process.ExecuteCustomCode` grant required by the selected execution tier.
 - **404 for a process id you saw in the full catalog** — only first-slice vector processes are projected through OGC API Processes; others run via the canonical `honua-geoprocessing` plan process or are listed in the [reference](../../reference/geoprocessing-operations.md).
 - **501 `Unsupported response mode`** — only `document` response mode is implemented; remove `"response": "raw"`.
 - **Job stuck in `accepted`** — the job queue needs the durable job substrate (Redis) to be healthy; see [troubleshooting](../deploy/troubleshooting.md).

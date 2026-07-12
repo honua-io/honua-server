@@ -175,6 +175,36 @@ public sealed class ProcessCatalogTests
         definition.Parameters.Should().Contain(p => p.Name == "expression" && p.Required);
     }
 
+    [Theory]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    [InlineData("data-management.copy-features")]
+    [InlineData("data-management.delete-features")]
+    [InlineData("data-management.calculate-field")]
+    [InlineData("import.dataset")]
+    [InlineData("sink.geojson-file")]
+    [InlineData("sink.quarantine")]
+    [InlineData("sink.external-postgis")]
+    [InlineData("sink.honua-layer")]
+    public void Catalog_DurableSideEffectProcess_UsesMutatingExecutionTier(string processId)
+    {
+        var definition = _catalog.GetProcess(processId);
+
+        definition.Should().NotBeNull();
+        definition!.ExecutionTier.Should().Be(ProcessExecutionTier.Mutating);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_AnalyticProcess_UsesDefaultExecutionTier()
+    {
+        var definition = _catalog.GetProcess("geometry.buffer");
+
+        definition.Should().NotBeNull();
+        definition!.ExecutionTier.Should().Be(ProcessExecutionTier.Analytic);
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]

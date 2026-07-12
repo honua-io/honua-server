@@ -28,6 +28,13 @@ public enum OperatorOperation
     /// </summary>
     ExecuteCustomCode,
 
+    /// <summary>
+    /// Execute a built-in geoprocessing tool that mutates catalog data, imports a dataset,
+    /// or writes to a caller-selected sink. This is additive to <see cref="Execute"/> so a
+    /// baseline analytic-process role cannot invoke durable side effects.
+    /// </summary>
+    ExecuteMutatingProcess,
+
     /// <summary>Promote a workspace artifact to a wider visibility scope.</summary>
     Promote,
 
