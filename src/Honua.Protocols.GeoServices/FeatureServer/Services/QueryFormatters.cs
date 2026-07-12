@@ -41,7 +41,8 @@ internal interface IQueryFormatter
         double? maxAllowableOffset,
         string[]? outFields = null,
         bool suppressObjectId = false,
-        bool returnCentroid = false);
+        bool returnCentroid = false,
+        int? requestedOutputSrid = null);
 }
 
 /// <summary>
@@ -72,7 +73,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         double? maxAllowableOffset,
         string[]? outFields = null,
         bool suppressObjectId = false,
-        bool returnCentroid = false)
+        bool returnCentroid = false,
+        int? requestedOutputSrid = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -89,7 +91,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             "geojson" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatAsGeoJson(result, resource, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
             "json" => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, suppressObjectId, returnCentroid)),
+                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, suppressObjectId, returnCentroid, requestedOutputSrid)),
             "parquet" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatParquet(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)),
             "arrow" => new ValueTask<(object response, string contentType)>(
@@ -170,7 +172,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields,
         bool suppressObjectId = false,
-        bool returnCentroid = false)
+        bool returnCentroid = false,
+        int? requestedOutputSrid = null)
     {
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var allDeclaredAttributeFields = resource.SchemaFields
@@ -219,8 +222,14 @@ internal sealed class QueryFormatter : IQueryFormatter
         }
 
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        // Esri convention: wkid echoes the client's requested identifier while latestWkid
+        // carries the canonical EPSG code. When the client requested a Web Mercator alias
+        // (e.g. outSR=102100) that normalized to EPSG:3857, echo {wkid:102100, latestWkid:3857}
+        // (#2736). Absent an aliased request, both fields carry the canonical SRID.
         var spatialReference = hasGeometry
-            ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
+            ? requestedOutputSrid.HasValue
+                ? new GeoServicesSpatialReference { Wkid = requestedOutputSrid.Value, LatestWkid = srid }
+                : new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
             : null;
 
         var response = new QueryResponse
