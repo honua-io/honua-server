@@ -469,7 +469,8 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Compute Class Statistics (GET)")
             .WithName("ImageServerComputeClassStatisticsGet")
             .WithSummary("Compute class statistics signatures")
-            .WithDescription("ArcGIS ImageServer computeClassStatistics contract. Requires classDescriptions; returns 501 until class signature computation is implemented.")
+            .WithDescription("ArcGIS ImageServer computeClassStatistics contract. Requires classDescriptions; returns per-class count, per-band mean, band summaries, and a covariance signature computed over each class training AOI.")
+            .Produces<ComputeClassStatisticsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404)
             .Produces(501);
@@ -479,6 +480,7 @@ internal static class ImageServerEndpoints
             .WithName("ImageServerComputeClassStatisticsPost")
             .WithSummary("Compute class statistics signatures via POST")
             .WithDescription("POST equivalent of the ArcGIS ImageServer computeClassStatistics endpoint")
+            .Produces<ComputeClassStatisticsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404)
             .Produces(501);
@@ -949,6 +951,7 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Compute Class Statistics by Service (GET)")
             .WithName("ImageServerComputeClassStatisticsGetByService")
             .WithSummary("Compute class statistics signatures")
+            .Produces<ComputeClassStatisticsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404)
             .Produces(501);
@@ -956,6 +959,7 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Compute Class Statistics by Service (POST)")
             .WithName("ImageServerComputeClassStatisticsPostByService")
             .WithSummary("Compute class statistics signatures")
+            .Produces<ComputeClassStatisticsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404)
             .Produces(501);
@@ -2673,11 +2677,12 @@ internal static class ImageServerEndpoints
     }
 
     /// <summary>
-    /// Validate public computeClassStatistics GET parameters and return the current implementation status.
+    /// Validate public computeClassStatistics GET parameters and compute per-class signatures.
     /// </summary>
     private static async Task<IResult> ComputeClassStatisticsGet(
         int id,
         HttpContext context,
+        ImageServerComputeClassStatisticsHandler handler,
         CancellationToken cancellationToken = default)
     {
         var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
@@ -2697,26 +2702,26 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return StandardErrorHelpers.CreateNotImplemented(
-            context,
-            "computeClassStatistics is not yet implemented on this service.");
+        return await handler.ComputeAsync(context, id, values, cancellationToken);
     }
 
     private static async Task<IResult> ComputeClassStatisticsGetByService(
         string serviceId,
         HttpContext context,
+        ImageServerComputeClassStatisticsHandler handler,
         CancellationToken cancellationToken = default)
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await ComputeClassStatisticsGet(resolution.LayerId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputeClassStatisticsGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>
-    /// Validate public computeClassStatistics POST parameters and return the current implementation status.
+    /// Validate public computeClassStatistics POST parameters and compute per-class signatures.
     /// </summary>
     private static async Task<IResult> ComputeClassStatisticsPost(
         int id,
         HttpContext context,
+        ImageServerComputeClassStatisticsHandler handler,
         CancellationToken cancellationToken = default)
     {
         var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
@@ -2752,18 +2757,17 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return StandardErrorHelpers.CreateNotImplemented(
-            context,
-            "computeClassStatistics is not yet implemented on this service.");
+        return await handler.ComputeAsync(context, id, merged, cancellationToken);
     }
 
     private static async Task<IResult> ComputeClassStatisticsPostByService(
         string serviceId,
         HttpContext context,
+        ImageServerComputeClassStatisticsHandler handler,
         CancellationToken cancellationToken = default)
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await ComputeClassStatisticsPost(resolution.LayerId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputeClassStatisticsPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>

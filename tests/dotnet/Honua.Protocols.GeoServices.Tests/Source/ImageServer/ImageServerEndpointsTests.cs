@@ -122,6 +122,36 @@ public class ImageServerEndpointsTests
                 },
             });
 
+        // computeClassStatistics reads aligned per-pixel band vectors inside each class AOI. The
+        // default substitute returns a deterministic 4-pixel sample per requested band so the
+        // signature (count, mean, covariance) is exercised end-to-end.
+        store.ReadClippedBandVectorsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var requestedBands = callInfo.ArgAt<int[]?>(5) ?? [1];
+                var pixels = new List<double[]>();
+                for (var value = 1; value <= 4; value++)
+                {
+                    var vector = new double[requestedBands.Length];
+                    for (var b = 0; b < requestedBands.Length; b++)
+                    {
+                        vector[b] = value * (b + 1);
+                    }
+
+                    pixels.Add(vector);
+                }
+
+                return new RasterBandVectorSet { Bands = requestedBands, Pixels = pixels };
+            });
+
         return store;
     }
 
@@ -2439,7 +2469,7 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/computeClassStatistics")]
     [Operation(Operations.Metadata)]
-    public async Task ComputeClassStatistics_Get_WithClassDescriptions_ReturnsNotImplemented()
+    public async Task ComputeClassStatistics_Get_WithClassDescriptions_ReturnsClassSignature()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -2448,7 +2478,18 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json&classDescriptions={Uri.EscapeDataString(classDescriptions)}");
 
-            await response.AssertGeoServicesErrorAsync(501, 500);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var classStatistics = document.RootElement.GetProperty("classStatistics");
+            classStatistics.GetArrayLength().Should().Be(1);
+            var entry = classStatistics[0];
+            entry.GetProperty("classId").GetInt32().Should().Be(1);
+            entry.GetProperty("name").GetString().Should().Be("water");
+            // Deterministic substitute pixels [1,2,3,4] on one band => count 4, mean 2.5.
+            entry.GetProperty("count").GetInt64().Should().Be(4);
+            entry.GetProperty("mean")[0].GetDouble().Should().BeApproximately(2.5, 1e-9);
+            // Sample covariance of [1,2,3,4] = 5/3.
+            entry.GetProperty("covarianceMatrix")[0][0].GetDouble().Should().BeApproximately(5.0 / 3.0, 1e-9);
         }
         finally
         {
@@ -2459,7 +2500,7 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/computeClassStatistics")]
     [Operation(Operations.Metadata)]
-    public async Task ComputeClassStatistics_Post_FormBody_ReturnsNotImplemented()
+    public async Task ComputeClassStatistics_Post_FormBody_ReturnsClassSignature()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -2467,13 +2508,42 @@ public class ImageServerEndpointsTests
             var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}"""),
+                new KeyValuePair<string, string>("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}},{"id":2,"name":"land","geometry":{"rings":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}}]}"""),
             });
 
             var response = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics",
                 content);
 
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var classStatistics = document.RootElement.GetProperty("classStatistics");
+            classStatistics.GetArrayLength().Should().Be(2);
+            classStatistics[0].GetProperty("classId").GetInt32().Should().Be(1);
+            classStatistics[1].GetProperty("classId").GetInt32().Should().Be(2);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeClassStatistics")]
+    [Operation(Operations.Metadata)]
+    public async Task ComputeClassStatistics_WithRenderingRule_ReturnsNotImplemented()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string classDescriptions = """{"classes":[{"id":1,"geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""";
+            const string renderingRule = """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json" +
+                $"&classDescriptions={Uri.EscapeDataString(classDescriptions)}" +
+                $"&renderingRule={Uri.EscapeDataString(renderingRule)}");
+
+            // Class signatures are computed on source pixels; a renderingRule is explicitly rejected.
             await response.AssertGeoServicesErrorAsync(501, 500);
         }
         finally
