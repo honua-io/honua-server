@@ -44,9 +44,9 @@ public class WmtsCustomTileMatrixSetXmlTests
             TileWidth = 256,
             TileHeight = 256,
             Levels =
-            [
-                new TileMatrixLevel { Id = 0, ScaleDenominator = 279541132.0143589, CellSize = 0.703125, MatrixWidth = 2, MatrixHeight = 1 }
-            ]
+        [
+            new TileMatrixLevel { Id = 0, ScaleDenominator = 279541132.0143589, CellSize = 0.703125, MatrixWidth = 2, MatrixHeight = 1 }
+        ]
         };
 
     [Fact]

@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Net;
@@ -10,9 +12,12 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Tiles;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.Ogc.Common;
 using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
@@ -20,7 +25,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 internal sealed class ImageServerWmtsHandler(
     ImageServerTileHandler tileHandler,
     IMetadataV2GraphProvider graphProvider,
-    IRasterStore rasterStore)
+    IRasterStore rasterStore,
+    ITileMatrixSetRegistry tileMatrixSetRegistry,
+    IOptions<ImageServerTileMatrixSetOptions> tileMatrixSetOptions)
 {
     private const int MaxZoom = 22;
     private const int TilePixels = 256;
@@ -36,6 +43,58 @@ internal sealed class ImageServerWmtsHandler(
 
     // Web Mercator (EPSG:3857) half-extent: the WebMercatorQuad origin shift.
     private const double OriginShift = 20037508.342789244;
+
+    // Resolves the operator-enabled tile matrix sets beyond WebMercatorQuad. Each entry is paired
+    // with its canonical GridGeometry from the shared registry so capabilities, validation, and
+    // rendering all read from one gridset definition. Unknown or duplicate ids are skipped. Operators
+    // enable additional sets only after every replica has upgraded, keeping load-balanced capabilities
+    // and tile requests coherent during a rolling deployment.
+    private List<(TileMatrixSetEntry Entry, GridGeometry Geometry)> ResolveEnabledGrids()
+    {
+        var result = new List<(TileMatrixSetEntry, GridGeometry)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in tileMatrixSetOptions.Value.Enabled)
+        {
+            if (string.IsNullOrWhiteSpace(id) ||
+                IsWebMercatorQuad(id) ||
+                !seen.Add(id))
+            {
+                continue;
+            }
+
+            if (tileMatrixSetRegistry.TryGet(id, out var entry) &&
+                tileMatrixSetRegistry.TryGetGeometry(id, MaxZoom, out var geometry))
+            {
+                result.Add((entry, geometry));
+            }
+        }
+
+        return result;
+    }
+
+    // Resolves the canonical GridGeometry for a requested non-WebMercatorQuad matrix set only when
+    // the operator has enabled it for ImageServer. Returns false for WebMercatorQuad, unknown
+    // gridsets, and gridsets that exist in the registry but are not enabled here.
+    private bool TryResolveEnabledGrid(string tileMatrixSetId, [NotNullWhen(true)] out GridGeometry? geometry)
+    {
+        if (!IsWebMercatorQuad(tileMatrixSetId))
+        {
+            foreach (var (entry, grid) in ResolveEnabledGrids())
+            {
+                if (string.Equals(entry.Id, tileMatrixSetId, StringComparison.OrdinalIgnoreCase))
+                {
+                    geometry = grid;
+                    return true;
+                }
+            }
+        }
+
+        geometry = null;
+        return false;
+    }
+
+    private static bool IsWebMercatorQuad(string tileMatrixSetId)
+        => string.Equals(tileMatrixSetId, TileMatrixSet, StringComparison.OrdinalIgnoreCase);
 
     // Maps an advertised WMTS tile media type to the ImageServer tile-handler format token.
     private static bool TryResolveTileFormat(string mediaType, out string tileToken)
@@ -261,13 +320,34 @@ internal sealed class ImageServerWmtsHandler(
                 StatusCodes.Status400BadRequest);
         }
 
-        if (!string.Equals(tileMatrixSet, TileMatrixSet, StringComparison.OrdinalIgnoreCase))
+        // Non-WebMercatorQuad matrix sets are served only when the operator has enabled them; the
+        // requested matrix/row/col are validated against the canonical gridset bounds and the tile
+        // is rendered/reprojected through the shared raster pipeline (no protocol-local geodesy).
+        if (!IsWebMercatorQuad(tileMatrixSet))
         {
-            return CreateExceptionReport(
-                "InvalidParameterValue",
-                "TileMatrixSet",
-                $"Only TILEMATRIXSET={TileMatrixSet} is supported.",
-                StatusCodes.Status400BadRequest);
+            if (!TryResolveEnabledGrid(tileMatrixSet, out var grid))
+            {
+                return CreateExceptionReport(
+                    "InvalidParameterValue",
+                    "TileMatrixSet",
+                    BuildUnsupportedMatrixSetMessage(),
+                    StatusCodes.Status400BadRequest);
+            }
+
+            if (!TryValidateGridTileIndices(grid, tileMatrix, tileRow, tileCol, out var gridLevel, out var gridRow, out var gridCol, out var gridError))
+            {
+                return gridError!;
+            }
+
+            return await tileHandler.GetGridImageTileAsync(
+                context,
+                layerId,
+                grid,
+                gridLevel,
+                gridRow,
+                gridCol,
+                tileFormatToken,
+                cancellationToken).ConfigureAwait(false);
         }
 
         if (!int.TryParse(tileMatrix, NumberStyles.None, CultureInfo.InvariantCulture, out var level) ||
@@ -314,6 +394,73 @@ internal sealed class ImageServerWmtsHandler(
             cancellationToken).ConfigureAwait(false);
     }
 
+    // Validates a requested TILEMATRIX/TILEROW/TILECOL against the canonical gridset bounds
+    // (per-level matrix width/height) rather than the WebMercator 2^z assumption.
+    private static bool TryValidateGridTileIndices(
+        GridGeometry grid,
+        string tileMatrix,
+        string tileRow,
+        string tileCol,
+        out int level,
+        out int row,
+        out int col,
+        out IResult? error)
+    {
+        level = 0;
+        row = 0;
+        col = 0;
+        error = null;
+
+        if (!int.TryParse(tileMatrix, NumberStyles.None, CultureInfo.InvariantCulture, out level) ||
+            grid.FindLevel(level) is not { } gridLevel)
+        {
+            error = CreateExceptionReport(
+                "InvalidParameterValue",
+                "TileMatrix",
+                $"TILEMATRIX is not a valid level of tile matrix set {grid.Id}.",
+                StatusCodes.Status400BadRequest);
+            return false;
+        }
+
+        if (!int.TryParse(tileRow, NumberStyles.None, CultureInfo.InvariantCulture, out row) ||
+            row < 0 ||
+            row >= gridLevel.MatrixHeight)
+        {
+            error = CreateExceptionReport(
+                "InvalidParameterValue",
+                "TileRow",
+                "TILEROW is outside the TileMatrix bounds.",
+                StatusCodes.Status400BadRequest);
+            return false;
+        }
+
+        if (!int.TryParse(tileCol, NumberStyles.None, CultureInfo.InvariantCulture, out col) ||
+            col < 0 ||
+            col >= gridLevel.MatrixWidth)
+        {
+            error = CreateExceptionReport(
+                "InvalidParameterValue",
+                "TileCol",
+                "TILECOL is outside the TileMatrix bounds.",
+                StatusCodes.Status400BadRequest);
+            return false;
+        }
+
+        return true;
+    }
+
+    private string BuildUnsupportedMatrixSetMessage()
+    {
+        var enabled = ResolveEnabledGrids();
+        if (enabled.Count == 0)
+        {
+            return $"Only TILEMATRIXSET={TileMatrixSet} is supported.";
+        }
+
+        var supported = string.Join(", ", new[] { TileMatrixSet }.Concat(enabled.Select(g => g.Entry.Id)));
+        return $"Supported TILEMATRIXSET values are {supported}.";
+    }
+
     private async Task<IResult> HandleGetFeatureInfoAsync(
         HttpContext context,
         int layerId,
@@ -345,12 +492,6 @@ internal sealed class ImageServerWmtsHandler(
                 "InvalidParameterValue", "layer", "Invalid LAYER parameter.", StatusCodes.Status400BadRequest);
         }
 
-        if (!string.Equals(tileMatrixSet, TileMatrixSet, StringComparison.OrdinalIgnoreCase))
-        {
-            return CreateExceptionReport(
-                "InvalidParameterValue", "TileMatrixSet", $"Only TILEMATRIXSET={TileMatrixSet} is supported.", StatusCodes.Status400BadRequest);
-        }
-
         TryGetQueryValue(query, "INFOFORMAT", out var infoFormatValue);
         if (!TryResolveInfoFormat(infoFormatValue, out var infoFormat))
         {
@@ -358,39 +499,72 @@ internal sealed class ImageServerWmtsHandler(
                 "InvalidParameterValue", "infoFormat", "INFOFORMAT must be application/json or text/xml.", StatusCodes.Status400BadRequest);
         }
 
-        if (!int.TryParse(tileMatrix, NumberStyles.None, CultureInfo.InvariantCulture, out var level) ||
-            level < 0 || level > MaxZoom)
+        double worldX;
+        double worldY;
+        int locationSrid;
+
+        if (IsWebMercatorQuad(tileMatrixSet))
+        {
+            if (!int.TryParse(tileMatrix, NumberStyles.None, CultureInfo.InvariantCulture, out var level) ||
+                level < 0 || level > MaxZoom)
+            {
+                return CreateExceptionReport(
+                    "InvalidParameterValue", "TileMatrix", $"TILEMATRIX must be an integer from 0 to {MaxZoom}.", StatusCodes.Status400BadRequest);
+            }
+
+            var matrixWidth = 1 << level;
+            if (!int.TryParse(tileRow, NumberStyles.None, CultureInfo.InvariantCulture, out var row) || row < 0 || row >= matrixWidth)
+            {
+                return CreateExceptionReport(
+                    "InvalidParameterValue", "TileRow", "TILEROW is outside the TileMatrix bounds.", StatusCodes.Status400BadRequest);
+            }
+
+            if (!int.TryParse(tileCol, NumberStyles.None, CultureInfo.InvariantCulture, out var col) || col < 0 || col >= matrixWidth)
+            {
+                return CreateExceptionReport(
+                    "InvalidParameterValue", "TileCol", "TILECOL is outside the TileMatrix bounds.", StatusCodes.Status400BadRequest);
+            }
+
+            if (!int.TryParse(iValue, NumberStyles.None, CultureInfo.InvariantCulture, out var i) || i < 0 || i >= TilePixels)
+            {
+                return CreateExceptionReport(
+                    "InvalidParameterValue", "i", $"I must be an integer from 0 to {TilePixels - 1}.", StatusCodes.Status400BadRequest);
+            }
+
+            if (!int.TryParse(jValue, NumberStyles.None, CultureInfo.InvariantCulture, out var j) || j < 0 || j >= TilePixels)
+            {
+                return CreateExceptionReport(
+                    "InvalidParameterValue", "j", $"J must be an integer from 0 to {TilePixels - 1}.", StatusCodes.Status400BadRequest);
+            }
+
+            (worldX, worldY) = PixelToWebMercator(level, row, col, i, j);
+            locationSrid = 3857;
+        }
+        else if (TryResolveEnabledGrid(tileMatrixSet, out var grid))
+        {
+            if (!TryValidateGridTileIndices(grid, tileMatrix, tileRow, tileCol, out var level, out var row, out var col, out var gridError))
+            {
+                return gridError!;
+            }
+
+            if (!TryParseTilePixel(iValue, "i", grid.TileWidth, out var i, out var iError))
+            {
+                return iError!;
+            }
+
+            if (!TryParseTilePixel(jValue, "j", grid.TileHeight, out var j, out var jError))
+            {
+                return jError!;
+            }
+
+            (worldX, worldY) = GridPixelToWorld(grid, level, row, col, i, j);
+            locationSrid = grid.Srid;
+        }
+        else
         {
             return CreateExceptionReport(
-                "InvalidParameterValue", "TileMatrix", $"TILEMATRIX must be an integer from 0 to {MaxZoom}.", StatusCodes.Status400BadRequest);
+                "InvalidParameterValue", "TileMatrixSet", BuildUnsupportedMatrixSetMessage(), StatusCodes.Status400BadRequest);
         }
-
-        var matrixWidth = 1 << level;
-        if (!int.TryParse(tileRow, NumberStyles.None, CultureInfo.InvariantCulture, out var row) || row < 0 || row >= matrixWidth)
-        {
-            return CreateExceptionReport(
-                "InvalidParameterValue", "TileRow", "TILEROW is outside the TileMatrix bounds.", StatusCodes.Status400BadRequest);
-        }
-
-        if (!int.TryParse(tileCol, NumberStyles.None, CultureInfo.InvariantCulture, out var col) || col < 0 || col >= matrixWidth)
-        {
-            return CreateExceptionReport(
-                "InvalidParameterValue", "TileCol", "TILECOL is outside the TileMatrix bounds.", StatusCodes.Status400BadRequest);
-        }
-
-        if (!int.TryParse(iValue, NumberStyles.None, CultureInfo.InvariantCulture, out var i) || i < 0 || i >= TilePixels)
-        {
-            return CreateExceptionReport(
-                "InvalidParameterValue", "i", $"I must be an integer from 0 to {TilePixels - 1}.", StatusCodes.Status400BadRequest);
-        }
-
-        if (!int.TryParse(jValue, NumberStyles.None, CultureInfo.InvariantCulture, out var j) || j < 0 || j >= TilePixels)
-        {
-            return CreateExceptionReport(
-                "InvalidParameterValue", "j", $"J must be an integer from 0 to {TilePixels - 1}.", StatusCodes.Status400BadRequest);
-        }
-
-        var (worldX, worldY) = PixelToWebMercator(level, row, col, i, j);
 
         // Resolve participating rasters and read the pixel value at the computed point,
         // adapting to the same shared raster-store primitives as the identify operation.
@@ -402,12 +576,12 @@ internal sealed class ImageServerWmtsHandler(
             var selectionQuery = new RasterSelectionQuery
             {
                 Geometry = ImageServerMosaicHelpers.CreatePointGeometry(worldX, worldY),
-                GeometrySrid = 3857,
+                GeometrySrid = locationSrid,
             };
             var selected = await rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken).ConfigureAwait(false);
             if (selected.Length == 1)
             {
-                pixel = await rasterStore.IdentifyAsync(layerId, selected[0].Id, worldX, worldY, 3857, cancellationToken: cancellationToken).ConfigureAwait(false);
+                pixel = await rasterStore.IdentifyAsync(layerId, selected[0].Id, worldX, worldY, locationSrid, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
             else if (selected.Length > 1)
             {
@@ -417,12 +591,40 @@ internal sealed class ImageServerWmtsHandler(
                     mergeStrategy,
                     worldX,
                     worldY,
-                    3857,
+                    locationSrid,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
 
-        return BuildFeatureInfoResult(infoFormat, advertisedLayerIdentifier, worldX, worldY, pixel);
+        return BuildFeatureInfoResult(infoFormat, advertisedLayerIdentifier, worldX, worldY, locationSrid, pixel);
+    }
+
+    private static bool TryParseTilePixel(string raw, string locator, int tilePixels, out int value, out IResult? error)
+    {
+        if (!int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out value) || value < 0 || value >= tilePixels)
+        {
+            error = CreateExceptionReport(
+                "InvalidParameterValue",
+                locator,
+                $"{locator.ToUpperInvariant()} must be an integer from 0 to {tilePixels - 1}.",
+                StatusCodes.Status400BadRequest);
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    // Maps a pixel (I, J) within a tile to its centre in the gridset CRS, driving the tile envelope
+    // from the one canonical GridGeometry (no protocol-local geodesy).
+    private static (double X, double Y) GridPixelToWorld(GridGeometry grid, int level, int row, int col, int i, int j)
+    {
+        var bounds = grid.GetTileBounds(col, row, level)!;
+        var pixelWidth = (bounds.XMax - bounds.XMin) / grid.TileWidth;
+        var pixelHeight = (bounds.YMax - bounds.YMin) / grid.TileHeight;
+        var x = bounds.XMin + ((i + 0.5) * pixelWidth);
+        var y = bounds.YMax - ((j + 0.5) * pixelHeight);
+        return (x, y);
     }
 
     // Maps a pixel (I, J) within a 256px WebMercatorQuad tile to its EPSG:3857 centre.
@@ -464,18 +666,19 @@ internal sealed class ImageServerWmtsHandler(
         string layerIdentifier,
         double x,
         double y,
+        int srid,
         PixelValueResult? pixel)
     {
         var hasData = pixel is { HasData: true } p && p.BandValues.Count > 0;
         if (string.Equals(infoFormat, XmlInfoFormat, StringComparison.Ordinal))
         {
-            return Results.Content(BuildFeatureInfoXml(layerIdentifier, x, y, pixel, hasData), "text/xml", Encoding.UTF8, StatusCodes.Status200OK);
+            return Results.Content(BuildFeatureInfoXml(layerIdentifier, x, y, srid, pixel, hasData), "text/xml", Encoding.UTF8, StatusCodes.Status200OK);
         }
 
-        return Results.Content(BuildFeatureInfoJson(layerIdentifier, x, y, pixel, hasData), JsonInfoFormat, Encoding.UTF8, StatusCodes.Status200OK);
+        return Results.Content(BuildFeatureInfoJson(layerIdentifier, x, y, srid, pixel, hasData), JsonInfoFormat, Encoding.UTF8, StatusCodes.Status200OK);
     }
 
-    private static string BuildFeatureInfoJson(string layerIdentifier, double x, double y, PixelValueResult? pixel, bool hasData)
+    private static string BuildFeatureInfoJson(string layerIdentifier, double x, double y, int srid, PixelValueResult? pixel, bool hasData)
     {
         var buffer = new ArrayBufferWriter<byte>(256);
         using (var writer = new Utf8JsonWriter(buffer))
@@ -486,7 +689,7 @@ internal sealed class ImageServerWmtsHandler(
             writer.WriteNumber("x", x);
             writer.WriteNumber("y", y);
             writer.WriteStartObject("spatialReference");
-            writer.WriteNumber("wkid", 3857);
+            writer.WriteNumber("wkid", srid);
             writer.WriteEndObject();
             writer.WriteEndObject();
             writer.WriteBoolean("hasData", hasData);
@@ -540,14 +743,14 @@ internal sealed class ImageServerWmtsHandler(
         }
     }
 
-    private static string BuildFeatureInfoXml(string layerIdentifier, double x, double y, PixelValueResult? pixel, bool hasData)
+    private static string BuildFeatureInfoXml(string layerIdentifier, double x, double y, int srid, PixelValueResult? pixel, bool hasData)
     {
         var sb = new StringBuilder(512);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
         sb.Append("<FeatureInfoResponse layer=\"").Append(EscapeXml(layerIdentifier))
             .Append("\" hasData=\"").Append(hasData ? "true" : "false").AppendLine("\">");
         sb.Append("  <Location x=\"").Append(FormatCoordinate(x))
-            .Append("\" y=\"").Append(FormatCoordinate(y)).AppendLine("\" srs=\"EPSG:3857\" />");
+            .Append("\" y=\"").Append(FormatCoordinate(y)).Append("\" srs=\"EPSG:").Append(srid.ToString(CultureInfo.InvariantCulture)).AppendLine("\" />");
         if (hasData && pixel is { } p)
         {
             foreach (var band in p.BandValues.OrderBy(static b => b.Key))
@@ -583,11 +786,15 @@ internal sealed class ImageServerWmtsHandler(
             timeExtent = ImageServerMosaicHelpers.CreateTimeExtent(rasters);
         }
 
-        var xml = BuildCapabilitiesXml(context, layerIdentifier, timeExtent);
+        var xml = BuildCapabilitiesXml(context, layerIdentifier, timeExtent, ResolveEnabledGrids());
         return Results.Content(xml, ContentType, Encoding.UTF8, StatusCodes.Status200OK);
     }
 
-    private static string BuildCapabilitiesXml(HttpContext context, string layerIdentifier, long?[]? timeExtent)
+    private static string BuildCapabilitiesXml(
+        HttpContext context,
+        string layerIdentifier,
+        long?[]? timeExtent,
+        IReadOnlyList<(TileMatrixSetEntry Entry, GridGeometry Geometry)> additionalGrids)
     {
         var wmtsBaseUrl = BuildWmtsBaseUrl(context);
         var escapedLayer = EscapeXml(layerIdentifier);
@@ -628,6 +835,13 @@ internal sealed class ImageServerWmtsHandler(
         sb.AppendLine("      <TileMatrixSetLink>");
         sb.AppendLine("        <TileMatrixSet>WebMercatorQuad</TileMatrixSet>");
         sb.AppendLine("      </TileMatrixSetLink>");
+        foreach (var (entry, _) in additionalGrids)
+        {
+            sb.AppendLine("      <TileMatrixSetLink>");
+            sb.Append("        <TileMatrixSet>").Append(EscapeXml(entry.Id)).AppendLine("</TileMatrixSet>");
+            sb.AppendLine("      </TileMatrixSetLink>");
+        }
+
         sb.Append("      <ResourceURL format=\"image/png\" resourceType=\"tile\" template=\"")
             .Append(escapedTemplate)
             .AppendLine("\" />");
@@ -659,9 +873,46 @@ internal sealed class ImageServerWmtsHandler(
         }
 
         sb.AppendLine("    </TileMatrixSet>");
+        foreach (var (entry, geometry) in additionalGrids)
+        {
+            AppendGridTileMatrixSet(sb, entry, geometry);
+        }
+
         sb.AppendLine("  </Contents>");
         sb.AppendLine("</Capabilities>");
         return sb.ToString();
+    }
+
+    // Emits a <TileMatrixSet> definition for an operator-enabled gridset from its one canonical
+    // GridGeometry, so ImageServer advertises the same matrices the shared registry defines. The
+    // TopLeftCorner axis order follows the declared CRS identifier through the shared WMTS
+    // formatter (CRS84 is longitude/latitude; geographic EPSG identifiers are latitude/longitude).
+    private static void AppendGridTileMatrixSet(StringBuilder sb, TileMatrixSetEntry entry, GridGeometry geometry)
+    {
+        sb.AppendLine("    <TileMatrixSet>");
+        sb.Append("      <ows:Identifier>").Append(EscapeXml(entry.Id)).AppendLine("</ows:Identifier>");
+        sb.Append("      <ows:SupportedCRS>").Append(EscapeXml(entry.Crs)).AppendLine("</ows:SupportedCRS>");
+
+        foreach (var level in geometry.Levels)
+        {
+            sb.AppendLine("      <TileMatrix>");
+            sb.Append("        <ows:Identifier>").Append(level.Level.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
+            sb.Append("        <ScaleDenominator>").Append(FormatScaleDenominator(level.ScaleDenominator)).AppendLine("</ScaleDenominator>");
+            sb.Append("        <TopLeftCorner>")
+                .Append(WmtsTileMatrixFormatting.FormatTopLeftCorner(
+                    entry.Crs,
+                    geometry.IsGeographic,
+                    geometry.TopLeftX,
+                    geometry.TopLeftY))
+                .AppendLine("</TopLeftCorner>");
+            sb.Append("        <TileWidth>").Append(geometry.TileWidth.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileWidth>");
+            sb.Append("        <TileHeight>").Append(geometry.TileHeight.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileHeight>");
+            sb.Append("        <MatrixWidth>").Append(level.MatrixWidth.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixWidth>");
+            sb.Append("        <MatrixHeight>").Append(level.MatrixHeight.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixHeight>");
+            sb.AppendLine("      </TileMatrix>");
+        }
+
+        sb.AppendLine("    </TileMatrixSet>");
     }
 
     private static void AppendTimeDimension(StringBuilder sb, long?[]? timeExtent)
