@@ -79,6 +79,7 @@ public sealed class DockerGdalCommandRunnerTests
         var runner = new DockerGdalCommandRunner(
             invoker,
             Options.Create(new GdalContainerExecutionOptions()),
+            Options.Create(new GdalHardeningOptions()),
             NullLogger<DockerGdalCommandRunner>.Instance);
 
         var result = await runner.RunAsync(
