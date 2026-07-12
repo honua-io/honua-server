@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using NetTopologySuite.Algorithm;
+using Honua.Core.Geometries;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -25,7 +25,9 @@ namespace Honua.Infrastructure.Geometries;
 /// <para>
 /// The helper is cheap on the common path: non-polygonal geometry and already-correctly-wound
 /// polygons are returned by reference without cloning; a new geometry is materialized only when a
-/// ring actually needs reversing.
+/// ring actually needs reversing. The reorientation itself is delegated to the shared
+/// <see cref="RingOrientationNormalizer"/> so this right-hand-rule emitter and the SQL Server
+/// geography filter normalizer stay in lockstep.
 /// </para>
 /// </remarks>
 internal static class RingWindingNormalizer
@@ -53,126 +55,6 @@ internal static class RingWindingNormalizer
     public static Geometry NormalizeToRightHandRule(Geometry geometry)
     {
         ArgumentNullException.ThrowIfNull(geometry);
-        return Reorient(geometry) ?? geometry;
-    }
-
-    // Returns null when no reorientation is required (so callers keep the original reference);
-    // otherwise returns a reoriented copy.
-    private static Geometry? Reorient(Geometry geometry) => geometry switch
-    {
-        Polygon polygon => ReorientPolygon(polygon),
-        MultiPolygon multiPolygon => ReorientMultiPolygon(multiPolygon),
-        // Points, lines, and their multis carry no ring orientation, but a heterogeneous
-        // GeometryCollection may still contain polygons that need reorienting.
-        GeometryCollection collection => ReorientCollection(collection),
-        _ => null,
-    };
-
-    private static Polygon? ReorientPolygon(Polygon polygon)
-    {
-        if (polygon.IsEmpty)
-        {
-            return null;
-        }
-
-        var shell = (LinearRing)polygon.ExteriorRing;
-        var newShell = EnsureOrientation(shell, wantCcw: true);
-
-        LinearRing[]? holes = null;
-        for (var i = 0; i < polygon.NumInteriorRings; i++)
-        {
-            var hole = (LinearRing)polygon.GetInteriorRingN(i);
-            var newHole = EnsureOrientation(hole, wantCcw: false);
-            if (!ReferenceEquals(newHole, hole))
-            {
-                holes ??= CopyInteriorRings(polygon);
-                holes[i] = newHole;
-            }
-        }
-
-        if (ReferenceEquals(newShell, shell) && holes is null)
-        {
-            return null;
-        }
-
-        holes ??= CopyInteriorRings(polygon);
-        return polygon.Factory.CreatePolygon(newShell, holes);
-    }
-
-    private static MultiPolygon? ReorientMultiPolygon(MultiPolygon multiPolygon)
-    {
-        Polygon[]? polygons = null;
-        for (var i = 0; i < multiPolygon.NumGeometries; i++)
-        {
-            var reoriented = ReorientPolygon((Polygon)multiPolygon.GetGeometryN(i));
-            if (reoriented is not null)
-            {
-                polygons ??= CopyPolygons(multiPolygon);
-                polygons[i] = reoriented;
-            }
-        }
-
-        return polygons is null ? null : multiPolygon.Factory.CreateMultiPolygon(polygons);
-    }
-
-    private static GeometryCollection? ReorientCollection(GeometryCollection collection)
-    {
-        Geometry[]? geometries = null;
-        for (var i = 0; i < collection.NumGeometries; i++)
-        {
-            var reoriented = Reorient(collection.GetGeometryN(i));
-            if (reoriented is not null)
-            {
-                geometries ??= CopyGeometries(collection);
-                geometries[i] = reoriented;
-            }
-        }
-
-        return geometries is null ? null : collection.Factory.CreateGeometryCollection(geometries);
-    }
-
-    private static LinearRing EnsureOrientation(LinearRing ring, bool wantCcw)
-    {
-        // A valid ring needs at least four positions; degenerate rings have no meaningful winding.
-        if (ring.IsEmpty || ring.NumPoints < 4)
-        {
-            return ring;
-        }
-
-        var isCcw = Orientation.IsCCW(ring.CoordinateSequence);
-        return isCcw == wantCcw ? ring : (LinearRing)ring.Reverse();
-    }
-
-    private static LinearRing[] CopyInteriorRings(Polygon polygon)
-    {
-        var holes = new LinearRing[polygon.NumInteriorRings];
-        for (var i = 0; i < polygon.NumInteriorRings; i++)
-        {
-            holes[i] = (LinearRing)polygon.GetInteriorRingN(i);
-        }
-
-        return holes;
-    }
-
-    private static Polygon[] CopyPolygons(MultiPolygon multiPolygon)
-    {
-        var polygons = new Polygon[multiPolygon.NumGeometries];
-        for (var i = 0; i < multiPolygon.NumGeometries; i++)
-        {
-            polygons[i] = (Polygon)multiPolygon.GetGeometryN(i);
-        }
-
-        return polygons;
-    }
-
-    private static Geometry[] CopyGeometries(GeometryCollection collection)
-    {
-        var geometries = new Geometry[collection.NumGeometries];
-        for (var i = 0; i < collection.NumGeometries; i++)
-        {
-            geometries[i] = collection.GetGeometryN(i);
-        }
-
-        return geometries;
+        return RingOrientationNormalizer.Normalize(geometry, wantExteriorCcw: true);
     }
 }

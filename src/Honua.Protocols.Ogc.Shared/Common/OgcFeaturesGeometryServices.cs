@@ -26,6 +26,10 @@ internal sealed partial class OgcFeaturesGeometryServices
     private readonly GeometryLimits _geometryLimits;
     private readonly ILogger<OgcFeaturesGeometryServices> _logger;
 
+    // Registered scoped (per-request) and invoked sequentially within a request, so a single
+    // reused GeoJsonWriter is safe and avoids allocating one per feature conversion (PA-101).
+    private readonly GeoJsonWriter _geoJsonWriter = new();
+
     public OgcFeaturesGeometryServices(
         IGeometryService geometryService,
         ICoordinateTransformService coordinateTransformService,
@@ -308,7 +312,7 @@ internal sealed partial class OgcFeaturesGeometryServices
 
         geometry = GeometryOutputProcessor.ApplyLimits(geometry, _geometryLimits) ?? geometry;
 
-        var geoJson = RingWindingNormalizer.WriteGeoJson(new GeoJsonWriter(), geometry);
+        var geoJson = RingWindingNormalizer.WriteGeoJson(_geoJsonWriter, geometry);
 
         using var document = JsonDocument.Parse(geoJson);
         var root = document.RootElement;
@@ -462,33 +466,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         {
             Log.TopologyValidationFailed(_logger, ex);
             return false;
-        }
-    }
-
-    /// <summary>
-    /// Repairs invalid geometry if possible.
-    /// </summary>
-    public Geometry? RepairGeometry(Geometry geometry)
-    {
-        if (geometry == null || geometry.IsValid)
-        {
-            return geometry;
-        }
-
-        try
-        {
-            // Repair using the shape-preserving buffer(0) technique. The historical
-            // ConvexHull last-resort was removed (#2745): a convex hull discards holes and
-            // concavities, silently corrupting the feature's shape. Return null when buffer(0)
-            // cannot produce a valid geometry so callers fail loudly rather than persist a
-            // distorted footprint.
-            var buffered = geometry.Buffer(0);
-            return buffered?.IsValid == true ? buffered : null;
-        }
-        catch (Exception ex)
-        {
-            Log.GeometryRepairFailed(_logger, ex);
-            return null;
         }
     }
 
@@ -714,9 +691,6 @@ internal sealed partial class OgcFeaturesGeometryServices
 
         [LoggerMessage(EventId = 5461, Level = LogLevel.Debug, Message = "Topology validation failed, treating geometry as invalid")]
         public static partial void TopologyValidationFailed(ILogger logger, Exception exception);
-
-        [LoggerMessage(EventId = 5462, Level = LogLevel.Debug, Message = "Geometry repair failed, returning null")]
-        public static partial void GeometryRepairFailed(ILogger logger, Exception exception);
     }
 
 }

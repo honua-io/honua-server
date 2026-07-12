@@ -85,6 +85,57 @@ public sealed class GPServerOutputReprojectionTests
         outcome.CapabilityMessage.Should().Contain("input spatial reference is unknown");
     }
 
+    [UnitTest]
+    public void NormalizeGeoJsonWinding_ClockwiseExterior_RewritesToRightHandRule()
+    {
+        // Ring listed clockwise (up, right, down, left) — the wrong exterior orientation.
+        var cw = new GeometryFactory().CreatePolygon(
+        [
+            new Coordinate(0, 0),
+            new Coordinate(0, 1),
+            new Coordinate(1, 1),
+            new Coordinate(1, 0),
+            new Coordinate(0, 0),
+        ]);
+        var feature = BuildFeatureDataUri(cw);
+
+        var normalized = GPServerOutputReprojection.NormalizeGeoJsonWinding(feature);
+
+        var polygon = (Polygon)DecodeFeatureGeometry(normalized!);
+        NetTopologySuite.Algorithm.Orientation.IsCCW(polygon.ExteriorRing.CoordinateSequence).Should().BeTrue();
+
+        // Non-geometry Feature members must survive the rewrite.
+        var base64 = normalized![GeoJsonDataUriPrefix.Length..];
+        var featureJson = Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+        using var doc = JsonDocument.Parse(featureJson);
+        doc.RootElement.GetProperty("properties").GetProperty("processId").GetString().Should().Be("geometry.test");
+    }
+
+    [UnitTest]
+    public void NormalizeGeoJsonWinding_AlreadyRightHandRule_ReturnsInputUnchanged()
+    {
+        // Ring listed counter-clockwise — already the right-hand rule, so the bytes are untouched.
+        var ccw = new GeometryFactory().CreatePolygon(
+        [
+            new Coordinate(0, 0),
+            new Coordinate(1, 0),
+            new Coordinate(1, 1),
+            new Coordinate(0, 1),
+            new Coordinate(0, 0),
+        ]);
+        var feature = BuildFeatureDataUri(ccw);
+
+        GPServerOutputReprojection.NormalizeGeoJsonWinding(feature).Should().Be(feature);
+    }
+
+    [UnitTest]
+    public void NormalizeGeoJsonWinding_NonGeoJsonValue_ReturnsInputUnchanged()
+    {
+        const string httpUri = "https://example.test/output.geojson";
+
+        GPServerOutputReprojection.NormalizeGeoJsonWinding(httpUri).Should().Be(httpUri);
+    }
+
     private static string BuildFeatureDataUri(Geometry geometry)
     {
         var geometryJson = new GeoJsonWriter().Write(geometry);

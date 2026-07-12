@@ -114,6 +114,21 @@ public sealed class RingWindingNormalizerTests
     }
 
     [Fact]
+    public void NormalizeToRightHandRule_ReorientedCopy_PreservesSourceSrid()
+    {
+        // A factory whose SRID is 0 does not stamp the geometry's SRID onto the reoriented copy;
+        // the normalizer must carry the source geometry's SRID (3857) across the reversal (#2745).
+        var sridlessFactory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 0);
+        var cw = sridlessFactory.CreatePolygon(Reverse(_ccwShell));
+        cw.SRID = 3857;
+
+        var normalized = RingWindingNormalizer.NormalizeToRightHandRule(cw);
+
+        normalized.Should().NotBeSameAs(cw, "a clockwise exterior must be reoriented to a new geometry");
+        normalized.SRID.Should().Be(3857);
+    }
+
+    [Fact]
     public void WriteGeoJson_ClockwiseExterior_EmitsCounterClockwiseExterior()
     {
         var cw = _factory.CreatePolygon(Reverse(_ccwShell));

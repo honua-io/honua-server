@@ -31,6 +31,13 @@ internal static class GPServerOutputReprojection
 {
     private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
 
+    // GeoJsonWriter must not be shared across threads; a thread-static instance reuses one writer
+    // per thread instead of allocating one per served FeatureLayer artifact.
+    [ThreadStatic]
+    private static GeoJsonWriter? _geoJsonWriter;
+
+    private static GeoJsonWriter SharedWriter => _geoJsonWriter ??= new GeoJsonWriter();
+
     internal readonly record struct ReprojectionOutcome(
         bool Reprojected,
         string? Value,
@@ -143,6 +150,68 @@ internal static class GPServerOutputReprojection
         }
     }
 
+    /// <summary>
+    /// Normalizes polygon ring winding in a FeatureLayer GeoJSON <c>data:</c> URI value to the
+    /// RFC 7946 right-hand rule so the non-reprojected egress path (no <c>env:outSR</c>, or an
+    /// identity transform) emits the same winding the reprojected path already produces (#2745).
+    /// Non-GeoJSON values, malformed payloads, and geometries that are already correctly wound are
+    /// returned unchanged.
+    /// </summary>
+    /// <param name="value">The served artifact value (a base64 GeoJSON <c>data:</c> URI, or any other string).</param>
+    /// <returns>The value with normalized winding, or the original value when no change applies.</returns>
+    public static string? NormalizeGeoJsonWinding(string? value)
+    {
+        if (string.IsNullOrEmpty(value) ||
+            !value.StartsWith(GeoJsonDataUriPrefix, StringComparison.Ordinal))
+        {
+            return value;
+        }
+
+        string featureJson;
+        try
+        {
+            var base64 = value.AsSpan(GeoJsonDataUriPrefix.Length);
+            featureJson = Encoding.UTF8.GetString(Convert.FromBase64String(base64.ToString()));
+        }
+        catch (FormatException)
+        {
+            return value;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureJson);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("geometry", out var geometryElement) ||
+                geometryElement.ValueKind != JsonValueKind.Object)
+            {
+                return value;
+            }
+
+            var geometry = new GeoJsonReader().Read<Geometry>(geometryElement.GetRawText());
+            if (geometry is null || geometry.IsEmpty)
+            {
+                return value;
+            }
+
+            var normalized = RingWindingNormalizer.NormalizeToRightHandRule(geometry);
+            if (ReferenceEquals(normalized, geometry))
+            {
+                // Already correctly wound; keep the original bytes untouched.
+                return value;
+            }
+
+            var geometryJson = SharedWriter.Write(normalized);
+            var rewritten = SpliceGeometry(root, geometryJson);
+            return GeoJsonDataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(rewritten));
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or NotSupportedException)
+        {
+            return value;
+        }
+    }
+
     private static string ReprojectFeatureJson(string featureJson, int fromSrid, int toSrid)
     {
         using var doc = JsonDocument.Parse(featureJson);
@@ -170,8 +239,14 @@ internal static class GPServerOutputReprojection
 
         reprojected.SRID = toSrid;
 
-        var geometryJson = RingWindingNormalizer.WriteGeoJson(new GeoJsonWriter(), reprojected);
+        var geometryJson = RingWindingNormalizer.WriteGeoJson(SharedWriter, reprojected);
+        return SpliceGeometry(root, geometryJson);
+    }
 
+    // Re-emits a GeoJSON Feature object, replacing its "geometry" member with pre-serialized
+    // geometry JSON and preserving all other members (id, properties, bbox, foreign members).
+    private static string SpliceGeometry(JsonElement root, string geometryJson)
+    {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
