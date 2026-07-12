@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
@@ -13,7 +14,9 @@ namespace Honua.Worker.Gdal.Execution;
 /// worker container is built from; this runner does not bundle managed GDAL
 /// bindings so it adds no native package dependencies to any managed assembly.
 /// </summary>
-internal sealed partial class ProcessGdalCommandRunner(ILogger<ProcessGdalCommandRunner> logger) : IGdalCommandRunner
+internal sealed partial class ProcessGdalCommandRunner(
+    IOptions<GdalHardeningOptions> hardening,
+    ILogger<ProcessGdalCommandRunner> logger) : IGdalCommandRunner
 {
     /// <inheritdoc />
     public async Task<GdalCommandResult> RunAsync(
@@ -38,6 +41,18 @@ internal sealed partial class ProcessGdalCommandRunner(ILogger<ProcessGdalComman
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        // Harden every GDAL subprocess (#2765): skip the indirection/network drivers
+        // (VRT, WMS, …) and — for a pure local-scratch invocation — neutralize the
+        // remote virtual-filesystem handlers. Applied by overwriting the inherited
+        // environment so a value set on the worker process cannot weaken the policy.
+        var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
+            hardening.Value,
+            GdalRuntimeHardening.ArgumentsReferenceVsi(arguments));
+        foreach (var kvp in hardeningEnv)
+        {
+            startInfo.Environment[kvp.Key] = kvp.Value;
         }
 
         Log.RunningTool(logger, tool, string.Join(' ', arguments));
