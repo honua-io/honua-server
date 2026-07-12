@@ -87,6 +87,26 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
         Assert.Equal(1, dto.TopologyVersion);
         Assert.False(dto.NeedsRebuild);
         Assert.Equal("admin", dto.CreatedBy);
+
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var generation = connection.CreateCommand();
+        generation.CommandText = """
+            SELECT generation, source_revision, state, row_version,
+                   edge_table, vertex_table, srid, COUNT(*) OVER ()
+            FROM honua.network_topology_generations
+            WHERE dataset_id = @id
+            """;
+        generation.Parameters.AddWithValue("id", id);
+        await using var reader = await generation.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1, reader.GetInt64(0));
+        Assert.Equal(0, reader.GetInt64(1));
+        Assert.Equal("active", reader.GetString(2));
+        Assert.Equal(1, reader.GetInt64(3));
+        Assert.Equal("public.ways", reader.GetString(4));
+        Assert.Equal("public.ways_vertices_pgr", reader.GetString(5));
+        Assert.Equal(4326, reader.GetInt32(6));
+        Assert.Equal(1, reader.GetInt64(7));
     }
 
     [IntegrationTest]
@@ -206,6 +226,49 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
         Assert.Equal("Updated note", dto.Description);
         // Unsupplied fields are preserved.
         Assert.Equal("public.ways", dto.EdgeTable);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/network-datasets/{id}")]
+    public async Task Update_LegacyTopologyMapping_RecordsReplacementActiveGeneration()
+    {
+        var id = NewId("mapupd");
+        await _client.PostAsJsonAsync("/api/v1/admin/network-datasets", BuildValidRequest(id), _jsonOptions);
+
+        var update = new UpdateNetworkDatasetRequest
+        {
+            EdgeTable = "public.ways_v2",
+            VertexTable = "public.ways_vertices_v2",
+            Srid = 3857,
+        };
+
+        var response = await _client.PutAsJsonAsync($"/api/v1/admin/network-datasets/{id}", update, _jsonOptions);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var generations = connection.CreateCommand();
+        generations.CommandText = """
+            SELECT generation, source_revision, state, edge_table, vertex_table, srid, COUNT(*) OVER ()
+            FROM honua.network_topology_generations
+            WHERE dataset_id = @id
+            ORDER BY generation
+            """;
+        generations.Parameters.AddWithValue("id", id);
+        await using var reader = await generations.ExecuteReaderAsync();
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1, reader.GetInt64(0));
+        Assert.Equal(0, reader.GetInt64(1));
+        Assert.Equal("retired", reader.GetString(2));
+        Assert.Equal(2, reader.GetInt64(6));
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(2, reader.GetInt64(0));
+        Assert.Equal(1, reader.GetInt64(1));
+        Assert.Equal("active", reader.GetString(2));
+        Assert.Equal("public.ways_v2", reader.GetString(3));
+        Assert.Equal("public.ways_vertices_v2", reader.GetString(4));
+        Assert.Equal(3857, reader.GetInt32(5));
     }
 
     [IntegrationTest]
