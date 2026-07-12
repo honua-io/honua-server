@@ -31,8 +31,12 @@ internal static class TilePackageWriter
     /// <summary>WebMercatorQuad spatial reference (Esri WKID 3857 / latest 3857).</summary>
     private const int WebMercatorWkid = 3857;
 
-    /// <summary>Half the WebMercator world extent, in meters.</summary>
-    private const double WebMercatorOrigin = 20037508.342787;
+    /// <summary>
+    /// Half the WebMercator world extent, in meters. Sourced from the canonical
+    /// <see cref="Honua.Core.Features.Shared.Models.SpatialConstants.WebMercatorExtent"/> so the
+    /// value no longer drifts at a truncated precision (#2732).
+    /// </summary>
+    private const double WebMercatorOrigin = Honua.Core.Features.Shared.Models.SpatialConstants.WebMercatorExtent;
 
     /// <summary>Resolution (meters/pixel) at zoom 0 for a 256px tile in WebMercator.</summary>
     private const double ZeroLevelResolution = (WebMercatorOrigin * 2d) / 256d;

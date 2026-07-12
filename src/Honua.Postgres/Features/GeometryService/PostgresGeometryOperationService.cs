@@ -6,6 +6,7 @@ using System.Data.Common;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.FeatureStore.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -196,7 +197,7 @@ internal sealed class PostgresGeometryOperationService(
     }
 
     private static bool IsWebMercatorSrid(int srid)
-        => srid is 3857 or 900913 or 102100 or 102113 or 3785;
+        => SpatialReferenceExtensions.IsWebMercatorSrid(srid);
 
     private static byte[] ClampWebMercatorLatitudes(byte[] wkb, int srid)
     {
@@ -459,9 +460,11 @@ internal sealed class PostgresGeometryOperationService(
         return metrics;
     }
 
-    // Fallback used only when spatial_ref_sys has no row for the SRID.
-    // Restricted to the well-known, unambiguously geographic codes; the prior range-rule
-    // (4000–4999) swept in EPSG:4978 (geocentric) and assorted projected variants.
+    // Fallback used only when spatial_ref_sys has no row for the SRID. The primary path derives
+    // geographic-ness from the spatial_ref_sys WKT/proj4 above; this fallback defers to the
+    // canonical GeographicSridClassifier (#2732) so the well-known geographic codes stay in one
+    // place. The canonical list still excludes geocentric (e.g. EPSG:4978) and projected codes,
+    // so it never re-opens the old 4000–4999 range-rule mis-classification.
     private static bool IsLikelyGeographicSrid(int srid)
-        => srid is 4326 or 4269 or 4267 or 4258 or 4619 or 4283;
+        => GeographicSridClassifier.IsGeographicSrid(srid);
 }

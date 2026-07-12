@@ -460,29 +460,15 @@ public readonly record struct BoundingBox
     /// <summary>
     /// Returns true when <paramref name="srid"/> is a known geographic (lat/lon) CRS.
     /// Only applied when no WKT is available; keeps the check narrow to confirmed
-    /// geographic 2D codes so projected CRSes are never mis-classified. A null SRID
-    /// is treated as geographic. This is the single source of truth for the geographic
-    /// EPSG-code list; <see cref="SpatialReference.IsGeographic"/>'s WKID fallback
-    /// delegates here. Every entry must be a confirmed geographic 2D CRS because the
-    /// list also drives protocol axis-order decisions (WMS 1.3.0 BBOX, WFS 2.0 CRS,
-    /// FES filter geometries).
+    /// geographic codes so projected CRSes are never mis-classified. A null SRID
+    /// is treated as geographic. Delegates to the canonical
+    /// <see cref="GeographicSridClassifier"/> (#2732), which is the single source of
+    /// truth for the geographic EPSG-code list. <see cref="SpatialReference.IsGeographic"/>'s
+    /// WKID fallback delegates here, so the list also drives protocol axis-order
+    /// decisions (WMS 1.3.0 BBOX, WFS 2.0 CRS, FES filter geometries).
     /// </summary>
     internal static bool IsGeographicSrid(int? srid)
-        => srid is null
-           || srid == 4326 || srid == 4979                       // WGS 84
-           || srid == 4258                                        // ETRS89
-           || srid == 4230                                        // ED50
-           || srid == 4267 || srid == 4269                       // NAD27 / NAD83
-           || srid == 4277                                        // OSGB 1936
-           || srid == 4283 || srid == 7844                       // GDA94 / GDA2020
-           || srid == 4490                                        // CGCS2000
-           || srid == 4171                                        // RGF93
-           || srid == 4167                                        // NZGD2000
-           || srid == 6668 || srid == 4612                       // JGD2011 / JGD2000
-           || srid == 4674 || srid == 4618                       // SIRGAS2000 / SAD69
-           || srid == 4617                                        // NAD83(CSRS)
-           || srid == 4275                                        // NTF
-           || srid == 4149;                                       // CH1903
+        => GeographicSridClassifier.IsGeographicSrid(srid);
 
     private static double NormalizeLongitude(double value)
     {
