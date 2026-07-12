@@ -2450,7 +2450,13 @@ internal static class WmtsRequestHandlers
             sb.AppendLine("      <TileMatrix>");
             sb.Append("        <ows:Identifier>").Append(z.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
             sb.Append("        <ScaleDenominator>").Append(FormatWmtsScaleDenominator(scaleDenominator)).AppendLine("</ScaleDenominator>");
-            sb.Append("        <TopLeftCorner>").Append((-WebMercatorOrigin).ToString("F6", CultureInfo.InvariantCulture)).Append(' ').Append(WebMercatorOrigin.ToString("F6", CultureInfo.InvariantCulture)).AppendLine("</TopLeftCorner>");
+            sb.Append("        <TopLeftCorner>")
+                .Append(WmtsTileMatrixFormatting.FormatTopLeftCorner(
+                    "urn:ogc:def:crs:EPSG:6.18:3:3857",
+                    isGeographic: false,
+                    -WebMercatorOrigin,
+                    WebMercatorOrigin))
+                .AppendLine("</TopLeftCorner>");
             sb.Append("        <TileWidth>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileWidth>");
             sb.Append("        <TileHeight>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileHeight>");
             sb.Append("        <MatrixWidth>").Append(matrixSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixWidth>");
@@ -2463,9 +2469,8 @@ internal static class WmtsRequestHandlers
 
     /// <summary>
     /// Emits the WorldCRS84Quad <c>TileMatrixSet</c> definition (CRS84/EPSG:4326). The grid is
-    /// two tiles wide by one tile tall at level 0. CRS84 is a longitude/latitude CRS, so the
-    /// <c>TopLeftCorner</c> is emitted easting-first (<c>-180 90</c>), matching the OGC
-    /// WorldCRS84Quad definition (#2738).
+    /// two tiles wide by one tile tall at level 0; the top-left corner follows the declared CRS84
+    /// EastNorth axis order (longitude, latitude) in the WMTS <c>TopLeftCorner</c> element (#2738).
     /// </summary>
     private static void AppendWmtsWorldCrs84QuadTileMatrixSet(StringBuilder sb, int wmtsMaxZoom)
     {
@@ -2489,7 +2494,13 @@ internal static class WmtsRequestHandlers
             sb.AppendLine("      <TileMatrix>");
             sb.Append("        <ows:Identifier>").Append(z.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
             sb.Append("        <ScaleDenominator>").Append(FormatWmtsScaleDenominator(scaleDenominator)).AppendLine("</ScaleDenominator>");
-            sb.Append("        <TopLeftCorner>").Append(FormatWmtsCoordinate(Crs84OriginLon)).Append(' ').Append(FormatWmtsCoordinate(Crs84OriginLat)).AppendLine("</TopLeftCorner>");
+            sb.Append("        <TopLeftCorner>")
+                .Append(WmtsTileMatrixFormatting.FormatTopLeftCorner(
+                    "urn:ogc:def:crs:OGC:1.3:CRS84",
+                    isGeographic: true,
+                    Crs84OriginLon,
+                    Crs84OriginLat))
+                .AppendLine("</TopLeftCorner>");
             sb.Append("        <TileWidth>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileWidth>");
             sb.Append("        <TileHeight>").Append(TileSize.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileHeight>");
             sb.Append("        <MatrixWidth>").Append(matrixWidth.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixWidth>");
@@ -2543,10 +2554,9 @@ internal static class WmtsRequestHandlers
 
     /// <summary>
     /// Emits the <c>TileMatrixSet</c> definition for every operator-defined custom gridset in the
-    /// registry. The <c>TopLeftCorner</c> axis order follows the declared CRS identifier: CRS84
-    /// (and other lon,lat geographic URIs) emit easting-first; an EPSG-authority geographic URN
-    /// emits latitude-first per the authority's axis order; projected CRSes use easting then
-    /// northing (#2738).
+    /// registry. The <c>TopLeftCorner</c> axis order follows each declared CRS identifier: CRS84
+    /// uses longitude/latitude, EPSG geographic CRSes use latitude/longitude, and projected CRSes
+    /// use easting/northing (#2738).
     /// </summary>
     internal static void AppendWmtsCustomTileMatrixSets(
         StringBuilder sb,
@@ -2569,21 +2579,18 @@ internal static class WmtsRequestHandlers
             sb.Append("      <ows:Identifier>").Append(EscapeXml(entry.Id)).AppendLine("</ows:Identifier>");
             sb.Append("      <ows:SupportedCRS>").Append(EscapeXml(entry.Crs)).AppendLine("</ows:SupportedCRS>");
 
-            // WMTS TopLeftCorner axis order follows the declared CRS. A geographic CRS advertised
-            // via an EPSG-authority URN uses the authority's latitude-first order; CRS84 (and
-            // other lon,lat geographic URIs) and projected CRSes are easting-first.
-            var latitudeFirst = geometry.IsGeographic
-                && !entry.Crs.Contains("CRS84", StringComparison.OrdinalIgnoreCase);
-
             foreach (var level in geometry.Levels)
             {
-                var firstAxis = latitudeFirst ? geometry.TopLeftY : geometry.TopLeftX;
-                var secondAxis = latitudeFirst ? geometry.TopLeftX : geometry.TopLeftY;
-
                 sb.AppendLine("      <TileMatrix>");
                 sb.Append("        <ows:Identifier>").Append(level.Level.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
                 sb.Append("        <ScaleDenominator>").Append(FormatWmtsScaleDenominator(level.ScaleDenominator)).AppendLine("</ScaleDenominator>");
-                sb.Append("        <TopLeftCorner>").Append(FormatWmtsCoordinate(firstAxis)).Append(' ').Append(FormatWmtsCoordinate(secondAxis)).AppendLine("</TopLeftCorner>");
+                sb.Append("        <TopLeftCorner>")
+                    .Append(WmtsTileMatrixFormatting.FormatTopLeftCorner(
+                        entry.Crs,
+                        geometry.IsGeographic,
+                        geometry.TopLeftX,
+                        geometry.TopLeftY))
+                    .AppendLine("</TopLeftCorner>");
                 sb.Append("        <TileWidth>").Append(geometry.TileWidth.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileWidth>");
                 sb.Append("        <TileHeight>").Append(geometry.TileHeight.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileHeight>");
                 sb.Append("        <MatrixWidth>").Append(level.MatrixWidth.ToString(CultureInfo.InvariantCulture)).AppendLine("</MatrixWidth>");

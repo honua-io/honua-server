@@ -1,0 +1,55 @@
+{
+  "contract_version": 1,
+  "projects": [
+    {
+      "artifact_suffix": "ai",
+      "csproj": "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~McpPromptCatalogTests"
+    },
+    {
+      "artifact_suffix": "geoprocessing-cli",
+      "csproj": "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj",
+      "proof_filter": "FullyQualifiedName=Honua.Geoprocessing.Cli.Tests.GpCliEndToEndTests.RunAsync_Help_PrintsUsageAndSucceeds"
+    },
+    {
+      "artifact_suffix": "geoservices",
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~TileExportJobExecutorTests"
+    },
+    {
+      "artifact_suffix": "odata",
+      "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~ODataCrsUtilitiesTests"
+    },
+    {
+      "artifact_suffix": "ogc-api",
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~OgcMapsConformanceHandlerTests"
+    },
+    {
+      "artifact_suffix": "ogc-classic",
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~OgcClassicWmtsVerticalSelectionTests"
+    },
+    {
+      "artifact_suffix": "scene",
+      "csproj": "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~SceneOpenUsdManifestWriterTests"
+    },
+    {
+      "artifact_suffix": "sensor-things",
+      "csproj": "tests/dotnet/Honua.Protocols.SensorThings.Tests/Honua.Protocols.SensorThings.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~ObservationStreamSessionManagerDisposeTests"
+    },
+    {
+      "artifact_suffix": "stac",
+      "csproj": "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~StacFilterHelpersTests"
+    },
+    {
+      "artifact_suffix": "server",
+      "csproj": "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~GeoservicesServiceUrlValidationTests"
+    }
+  ]
+}

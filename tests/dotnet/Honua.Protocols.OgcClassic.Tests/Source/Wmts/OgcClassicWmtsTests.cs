@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -294,10 +295,20 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         content.Should().Contain("<ows:Identifier>WorldCRS84Quad</ows:Identifier>");
         content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:OGC:1.3:CRS84</ows:SupportedCRS>");
         content.Should().Contain("<TileMatrixSet>WorldCRS84Quad</TileMatrixSet>");
+
         // #2738: CRS84 is a lon,lat CRS, so the WorldCRS84Quad TopLeftCorner is emitted
-        // easting-first (-180 90), matching the OGC WorldCRS84Quad definition. The prior
-        // output ("90.000000 -180.000000") had the axes swapped.
-        content.Should().Contain("<TopLeftCorner>-180 90</TopLeftCorner>");
+        // easting-first (-180 90), matching the OGC WorldCRS84Quad definition.
+        var document = XDocument.Parse(content);
+        var worldCrs84Quad = document
+            .Descendants()
+            .Where(static element => element.Name.LocalName == "TileMatrixSet")
+            .Single(element => element.Elements().Any(child =>
+                child.Name.LocalName == "Identifier" && child.Value == "WorldCRS84Quad"));
+        var topLeftCorners = worldCrs84Quad
+            .Descendants()
+            .Where(static element => element.Name.LocalName == "TopLeftCorner")
+            .Select(static element => element.Value);
+        topLeftCorners.Should().NotBeEmpty().And.OnlyContain(static value => value == "-180 90");
     }
 
     [IntegrationTest]

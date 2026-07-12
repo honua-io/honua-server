@@ -10,10 +10,8 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
 /// <summary>
 /// Unit coverage for the operator-defined custom tile matrix set emission in WMTS
-/// GetCapabilities. The built-in WebMercatorQuad / WorldCRS84Quad XML is emitted by separate,
-/// untouched methods so it stays byte-identical (the CITE WMTS 60/60 guard); these tests pin the
-/// shape of the additive custom-grid XML, including the CRS-keyed TopLeftCorner axis order
-/// (CRS84 URI -> lon,lat; EPSG geographic URN -> lat,lon; projected -> easting,northing).
+/// GetCapabilities. These tests pin the shape of the additive custom-grid XML, including
+/// CRS-identifier-specific TopLeftCorner axis order and round-trip coordinate precision.
 /// </summary>
 public class WmtsCustomTileMatrixSetXmlTests
 {
@@ -34,33 +32,22 @@ public class WmtsCustomTileMatrixSetXmlTests
         ]
     };
 
-    private static CustomTileMatrixSet GeographicGrid() => new()
-    {
-        Id = "DemoGeographic",
-        Crs = "urn:ogc:def:crs:OGC:1.3:CRS84",
-        Srid = 4326,
-        TopLeftCorner = [-180.0, 90.0],
-        TileWidth = 256,
-        TileHeight = 256,
-        Levels =
-        [
-            new TileMatrixLevel { Id = 0, ScaleDenominator = 279541132.0143589, CellSize = 0.703125, MatrixWidth = 2, MatrixHeight = 1 }
-        ]
-    };
-
-    private static CustomTileMatrixSet EpsgGeographicGrid() => new()
-    {
-        Id = "DemoEpsgGeographic",
-        Crs = "urn:ogc:def:crs:EPSG::4326",
-        Srid = 4326,
-        TopLeftCorner = [-180.0, 90.0],
-        TileWidth = 256,
-        TileHeight = 256,
-        Levels =
-        [
-            new TileMatrixLevel { Id = 0, ScaleDenominator = 279541132.0143589, CellSize = 0.703125, MatrixWidth = 2, MatrixHeight = 1 }
-        ]
-    };
+    private static CustomTileMatrixSet GeographicGrid(
+        string crs = "urn:ogc:def:crs:OGC:1.3:CRS84",
+        double topLeftX = -180.0,
+        double topLeftY = 90.0) => new()
+        {
+            Id = "DemoGeographic",
+            Crs = crs,
+            Srid = 4326,
+            TopLeftCorner = [topLeftX, topLeftY],
+            TileWidth = 256,
+            TileHeight = 256,
+            Levels =
+            [
+                new TileMatrixLevel { Id = 0, ScaleDenominator = 279541132.0143589, CellSize = 0.703125, MatrixWidth = 2, MatrixHeight = 1 }
+            ]
+        };
 
     [Fact]
     public void AppendCustomTileMatrixSets_NullRegistry_EmitsNothing()
@@ -87,38 +74,48 @@ public class WmtsCustomTileMatrixSetXmlTests
 
         xml.Should().Contain("<ows:Identifier>DemoProjected</ows:Identifier>");
         xml.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
-        // Projected: easting (negative) then northing (positive). Assert the easting-first prefix
-        // rather than the full round-trip tail so the axis-order check is robust to double
-        // formatting precision.
-        xml.Should().Contain("<TopLeftCorner>-20037508.342789");
-        xml.Should().MatchRegex(@"<TopLeftCorner>-20037508\.342789\d* 20037508\.342789\d*</TopLeftCorner>");
+        xml.Should().Contain("<TopLeftCorner>-20037508.342789244 20037508.342789244</TopLeftCorner>");
         xml.Should().Contain("<MatrixWidth>1</MatrixWidth>");
     }
 
     [Fact]
-    public void AppendCustomTileMatrixSets_Crs84Grid_EmitsLonLatTopLeftCorner()
+    public void AppendCustomTileMatrixSets_Crs84Grid_EmitsLongitudeLatitudeTopLeftCorner()
     {
         var sb = new StringBuilder();
         WmtsRequestHandlers.AppendWmtsCustomTileMatrixSets(sb, RegistryWith(GeographicGrid()), 18);
         var xml = sb.ToString();
 
         xml.Should().Contain("<ows:Identifier>DemoGeographic</ows:Identifier>");
-        // CRS84 is a lon,lat CRS: longitude (-180) then latitude (90), per the OGC definition.
         xml.Should().Contain("<TopLeftCorner>-180 90</TopLeftCorner>");
         xml.Should().Contain("<MatrixWidth>2</MatrixWidth>");
         xml.Should().Contain("<MatrixHeight>1</MatrixHeight>");
     }
 
     [Fact]
-    public void AppendCustomTileMatrixSets_EpsgGeographicGrid_EmitsLatLonTopLeftCorner()
+    public void AppendCustomTileMatrixSets_Epsg4326Grid_EmitsLatitudeLongitudeTopLeftCorner()
     {
         var sb = new StringBuilder();
-        WmtsRequestHandlers.AppendWmtsCustomTileMatrixSets(sb, RegistryWith(EpsgGeographicGrid()), 18);
-        var xml = sb.ToString();
+        WmtsRequestHandlers.AppendWmtsCustomTileMatrixSets(
+            sb,
+            RegistryWith(GeographicGrid("urn:ogc:def:crs:EPSG::4326")),
+            18);
 
-        xml.Should().Contain("<ows:Identifier>DemoEpsgGeographic</ows:Identifier>");
-        // EPSG-authority geographic CRS (EPSG:4326) uses lat,lon: latitude (90) then longitude (-180).
-        xml.Should().Contain("<TopLeftCorner>90 -180</TopLeftCorner>");
+        sb.ToString().Should().Contain("<TopLeftCorner>90 -180</TopLeftCorner>");
+    }
+
+    [Fact]
+    public void AppendCustomTileMatrixSets_CustomOrigin_PreservesRoundTripPrecision()
+    {
+        var sb = new StringBuilder();
+        WmtsRequestHandlers.AppendWmtsCustomTileMatrixSets(
+            sb,
+            RegistryWith(GeographicGrid(
+                topLeftX: -157.85833333333332,
+                topLeftY: 21.306944444444447)),
+            18);
+
+        sb.ToString().Should().Contain(
+            "<TopLeftCorner>-157.85833333333332 21.306944444444447</TopLeftCorner>");
     }
 
     [Fact]
