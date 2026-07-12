@@ -65,13 +65,8 @@ public static class SpatialConstants
     /// </summary>
     public const int DefaultSrid = 4326;
 
-    // Well-known geographic SRIDs for distance function selection
-    /// <summary>
-    /// Narrow allowlist of geographic (latitude/longitude degree) SRIDs used to select
-    /// WGS 84 spheroid geodesic distance functions. This is the geodesic-safe subset and is
-    /// intentionally narrower than the full geographic list; it is now sourced from the
-    /// canonical <see cref="GeographicSridClassifier.GeodesicDistanceSafeSrids"/> (#2732).
-    /// Prefer <see cref="GeographicSridClassifier"/> directly for new call sites.
-    /// </summary>
-    public static readonly int[] GeographicSrids = [.. GeographicSridClassifier.GeodesicDistanceSafeSrids];
+    // The former SpatialConstants.GeographicSrids shim was removed in #2732 follow-ups: it held the
+    // narrow geodesic-safe subset under a misleadingly broad name and had no production consumers.
+    // Call GeographicSridClassifier.GeodesicDistanceSafeSrids / IsGeodesicDistanceSafeSrid (geodesic
+    // routing) or GeographicSridClassifier.IsGeographicSrid (axis order / degree routing) directly.
 }

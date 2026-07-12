@@ -44,13 +44,15 @@ internal static class ImageServerMensurationMath
     /// Determines whether the SRID denotes a geographic (lon/lat degree) coordinate system.
     /// </summary>
     /// <remarks>
-    /// Delegates to the canonical <see cref="GeographicSridClassifier"/> (#2732). This replaces
-    /// the prior local list plus the broad EPSG 4000–4999 range heuristic, which mis-classified
-    /// geocentric (e.g. EPSG:4978) and projected codes in that block as geographic; the canonical
-    /// classifier enumerates only confirmed geographic CRSes.
+    /// Delegates to the canonical <see cref="GeographicSridClassifier"/> (#2732), using the
+    /// broad-list-plus-range variant so the offline mensuration path keeps its pre-#2732 behaviour
+    /// of treating any unlisted EPSG 4000–4999 geographic-block code (e.g. EPSG:4301/4314/4322) as
+    /// lat/lon degrees. The canonical variant excludes the well-known geocentric codes
+    /// (e.g. EPSG:4978) that the old raw range heuristic mis-classified; measuring those planar in
+    /// metres is correct, whereas treating a degree CRS as projected would compute nonsense.
     /// </remarks>
     internal static bool IsGeographicSrid(int srid)
-        => GeographicSridClassifier.IsGeographicSrid(srid);
+        => GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(srid);
 
     /// <summary>
     /// Attempts an in-process conversion of a projected/geographic coordinate to lon/lat
