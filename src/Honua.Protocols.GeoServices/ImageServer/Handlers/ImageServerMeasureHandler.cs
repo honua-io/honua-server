@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
@@ -25,8 +26,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 /// Mercator for EPSG:3857 and its aliases, identity for geographic SRIDs, or an authoritative
 /// PostGIS transform for other projected SRIDs when a transform service is available) and then
 /// measured geodesically. Projected SRIDs without an in-process inverse or reachable transform
-/// service fall back to honest planar-meter math, which is only correct when the map units are
-/// already meters (#2734).
+/// service fall back to planar math with the CRS linear unit converted to meters via the shared
+/// linear-unit lookup (covers US survey-foot State Plane zones; other CRSes are assumed metric)
+/// (#2734).
 /// </summary>
 internal sealed class ImageServerMeasureHandler
 {
@@ -373,10 +375,12 @@ internal sealed class ImageServerMeasureHandler
         }
         else
         {
-            // Projected map units already in meters (or unknown SRID): planar fallback on the
-            // original coordinates. Both operands share the request's geometryType/SRID, so a
-            // space mismatch is a corner case handled conservatively as planar.
-            distanceMeters = ImageServerMensurationMath.PlanarDistanceMeters(from.X, from.Y, to.X, to.Y);
+            // Projected map units (or unknown SRID): planar fallback on the original coordinates,
+            // with the CRS linear unit converted to meters (US survey-foot State Plane zones are
+            // not metric). Both operands share the request's geometryType/SRID, so a space
+            // mismatch is a corner case handled conservatively as planar.
+            var metersPerUnit = LinearUnitToMeters(from.Srid ?? to.Srid);
+            distanceMeters = ImageServerMensurationMath.PlanarDistanceMeters(from.X, from.Y, to.X, to.Y) * metersPerUnit;
             azimuthDegrees = ImageServerMensurationMath.PlanarBearingDegrees(from.X, from.Y, to.X, to.Y);
         }
 
@@ -408,8 +412,11 @@ internal sealed class ImageServerMeasureHandler
         }
         else
         {
-            areaSquareMeters = ImageServerMensurationMath.PlanarRingAreaSquareMeters(coordinates);
-            perimeterMeters = PlanarPerimeterMeters(coordinates);
+            // Planar fallback: convert the CRS linear unit to meters (length scales by the
+            // factor, area by its square).
+            var metersPerUnit = LinearUnitToMeters(geometry.Srid);
+            areaSquareMeters = ImageServerMensurationMath.PlanarRingAreaSquareMeters(coordinates) * metersPerUnit * metersPerUnit;
+            perimeterMeters = PlanarPerimeterMeters(coordinates) * metersPerUnit;
         }
 
         var (area, responseAreaUnit) = ConvertArea(areaSquareMeters, areaUnit);
@@ -532,6 +539,13 @@ internal sealed class ImageServerMeasureHandler
 
         return total;
     }
+
+    /// <summary>
+    /// Meters-per-linear-unit factor for a projected SRID in the planar fallback, via the shared
+    /// static lookup (US survey-foot State Plane zones; 1.0 for metric/unknown CRSes) (#2734).
+    /// </summary>
+    private static double LinearUnitToMeters(int? srid)
+        => srid is int wkid ? CoordinateTransformer.LinearUnitToMeters(wkid) : 1d;
 
     private static double PlanarPerimeterMeters((double X, double Y)[] ring)
     {
