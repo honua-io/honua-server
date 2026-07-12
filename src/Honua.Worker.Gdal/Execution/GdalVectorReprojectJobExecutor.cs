@@ -262,6 +262,18 @@ internal sealed partial class GdalVectorReprojectJobExecutor(
             return false;
         }
 
+        // Refuse a content-sniffed VRT/service-XML indirection blob or an embedded /vsi
+        // reference before it is ever staged to scratch and opened by ogr2ogr (#2765).
+        // This executor strips its own data-URI prefix and decodes inline rather than
+        // through the shared GdalJobInputReader chokepoint, so a VRT / OGR VRT / service
+        // XML smuggled in as the "GeoJSON" data URI would otherwise reach GDAL unchecked.
+        if (!GdalUntrustedInputGuard.IsAdmissible(bytes, out var guardReason))
+        {
+            error = $"rejected: {guardReason}";
+            bytes = [];
+            return false;
+        }
+
         return true;
     }
 

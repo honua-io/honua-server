@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
@@ -69,9 +70,8 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 99, EmptyValues(), CancellationToken.None);
-        await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -418,9 +418,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -436,9 +434,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -454,9 +450,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -501,9 +495,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -721,9 +713,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -739,9 +729,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -804,9 +792,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -818,9 +804,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
     }
 
     [UnitTest]
@@ -888,9 +872,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -908,9 +890,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -1001,6 +981,26 @@ public class ImageServerCatalogQueryHandlerTests
 
     private static Dictionary<string, StringValues> EmptyValues()
         => new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Executes an error <see cref="IResult"/> and asserts the GeoServices error code.
+    /// Per the Esri GeoServices REST spec (and <c>StandardErrorResponseFormatter</c>),
+    /// error responses on <c>/rest/services</c> paths are emitted as HTTP 200 with the
+    /// real status carried in the JSON body <c>{"error":{"code":N}}</c> — asserting on
+    /// <c>context.Response.StatusCode</c> reads the transport 200, not the error code.
+    /// Mirrors the proven pattern in the sibling ImageServer handler tests
+    /// (e.g. <c>ImageServerIdentifyHandlerTests</c>).
+    /// </summary>
+    private static async Task AssertGeoServicesErrorAsync(DefaultHttpContext context, IResult result, int expectedCode)
+    {
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(context.Response.Body);
+        json.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+            .Should().Be(expectedCode);
+    }
 
     private static DefaultHttpContext CreateImageServerContext()
     {

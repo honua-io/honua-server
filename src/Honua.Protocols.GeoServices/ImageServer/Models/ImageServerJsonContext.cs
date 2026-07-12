@@ -81,6 +81,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(LegendEntry))]
 [JsonSerializable(typeof(StatisticsResourceResponse))]
 [JsonSerializable(typeof(StatisticsEntry))]
+[JsonSerializable(typeof(ColormapResourceResponse))]
 [JsonSerializable(typeof(HistogramsResourceResponse))]
 [JsonSerializable(typeof(RasterFunctionInfosResponse))]
 [JsonSerializable(typeof(RasterFunctionInfoEntry))]
@@ -100,6 +101,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(double[]))]
 [JsonSerializable(typeof(double[][]))]
+[JsonSerializable(typeof(int[][]))]
 [JsonSerializable(typeof(long[]))]
 [JsonSerializable(typeof(double?[]))]
 internal sealed partial class ImageServerJsonContext : JsonSerializerContext

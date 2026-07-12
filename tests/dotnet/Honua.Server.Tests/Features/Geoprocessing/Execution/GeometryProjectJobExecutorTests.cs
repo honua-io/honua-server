@@ -100,6 +100,44 @@ public sealed class GeometryProjectJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_3DPoint_Wgs84ToWebMercator_PreservesZ()
+    {
+        var executor = CreateExecutor();
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-z");
+
+        string? publishedUri = null;
+        context
+            .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.ArgAt<string>(0));
+
+        // POINT Z (45 0 123.5) as XYZ WKB.
+        var factory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(4326);
+        var point3d = factory.CreatePoint(new CoordinateZ(45, 0, 123.5));
+        var wkb = Convert.ToBase64String(
+            new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false).Write(point3d));
+
+        var record = CreateJobRecord(
+            GeometryProjectJobExecutor.HandledProcessId,
+            includeInputs: true,
+            wkb: wkb,
+            fromSrid: 4326,
+            toSrid: 3857);
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        publishedUri.Should().NotBeNull();
+
+        var bytes = Convert.FromBase64String(publishedUri!["data:application/geo+json;base64,".Length..]);
+        using var doc = JsonDocument.Parse(bytes);
+        var coordinates = doc.RootElement.GetProperty("geometry").GetProperty("coordinates");
+        coordinates.GetArrayLength().Should().Be(3, "the artifact must carry the preserved Z ordinate (#2744)");
+        coordinates[0].GetDouble().Should().BeApproximately(5009377.085, 1.0);
+        coordinates[2].GetDouble().Should().BeApproximately(123.5, 1e-9);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_UnsupportedTransformPair_FailsAsClassified()
     {
         var executor = CreateExecutor();
