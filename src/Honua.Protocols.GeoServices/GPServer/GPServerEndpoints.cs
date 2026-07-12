@@ -300,12 +300,12 @@ internal static class GPServerEndpoints
                 return formatError;
             }
 
-            // Reject unsupported GP environment controls (env:outSR, env:processSR, context)
-            // with a clear 400 instead of silently stripping them. This is the
-            // ESTABLISHED async submitJob contract that cross-repo integration tests
-            // assert; env:outSR honoring is an ADDITIVE feature of the sync execute
-            // route only (see HandleExecute / TryParseEnvControls). See #1228.
-            var envError = RejectUnsupportedEnvControls(context, logger, parameters);
+            // Recognized GP environment controls (env:outSR, env:processSR,
+            // env:workspace, env:overwriteOutput) are honored on submitJob using
+            // the same parsing/threading the synchronous execute route uses; any
+            // other env:* control still yields a clear 400 instead of being
+            // silently stripped. See #1228.
+            var envError = TryParseEnvControls(context, logger, parameters, out var envControls);
             if (envError != null)
             {
                 return envError;
@@ -332,8 +332,9 @@ internal static class GPServerEndpoints
             }
 
             var plan = planResult.Plan!;
-            // submitJob rejects all env:* controls above, so there are none to record.
-            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters, default);
+            var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
+            var protocolMetadata = BuildProtocolMetadata(
+                serviceId, taskName, definition, parameters, envControls, workingSrid);
             var job = await jobService.SubmitJobAsync(
                 plan,
                 idempotencyKey: null,
@@ -444,7 +445,9 @@ internal static class GPServerEndpoints
                     "FeatureSet requires feature-collection execution");
             }
 
-            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters, envControls);
+            var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
+            var protocolMetadata = BuildProtocolMetadata(
+                serviceId, taskName, definition, parameters, envControls, workingSrid);
             var job = await jobService.SubmitJobAsync(
                 planResult.Plan!,
                 idempotencyKey: null,
@@ -469,7 +472,6 @@ internal static class GPServerEndpoints
                 return BuildExecuteFailureResponse(terminal, "esriJobCancelled");
             }
 
-            var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             return await BuildExecuteSuccessResponseAsync(
                 jobService, terminal, context.User, envControls, workingSrid, ct);
         }
@@ -972,11 +974,24 @@ internal static class GPServerEndpoints
                     $"Output parameter '{paramName}' not found");
             }
 
+            var value = artifact.Uri ?? artifact.Label;
+
+            // Honor env:outSR on the async path: when the job was submitted with
+            // env:outSR, apply the same reprojection the synchronous execute path
+            // applies inline (BuildExecuteSuccessResponseAsync). Without this the
+            // async path accepted env:outSR at submitJob and then silently served an
+            // unprojected geometry from results/{param}.
+            var outSrError = TryApplyAsyncOutSr(context, job, artifact, ref value);
+            if (outSrError is not null)
+            {
+                return outSrError;
+            }
+
             var response = new GPResultResponse
             {
                 ParamName = publishedName,
                 DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = artifact.Uri ?? artifact.Label
+                Value = value
             };
 
             return Results.Json(response, GPServerJsonContext.Default.GPResultResponse,
@@ -1130,55 +1145,24 @@ internal static class GPServerEndpoints
     }
 
     /// <summary>
-    /// Rejects unsupported GP environment controls (<c>env:outSR</c>, <c>env:processSR</c>)
-    /// with a structured 400 error instead of silently stripping them.
-    /// Returns null when no unsupported controls are present.
-    /// <para>
-    /// This guard backs the ESTABLISHED async <c>submitJob</c> contract (cross-repo
-    /// integration tests assert env:* → 400). Honoring <c>env:outSR</c> /
-    /// <c>env:processSR</c> is an additive feature of the synchronous <c>execute</c>
-    /// route only, which uses <see cref="TryParseEnvControls"/> instead. See #1228.
-    /// </para>
+    /// Parsed GP environment controls. <c>env:outSR</c>, <c>env:processSR</c>,
+    /// <c>env:workspace</c>, and <c>env:overwriteOutput</c> are honored; any
+    /// other <c>env:*</c> control is unsupported and surfaced for a 400 response.
+    /// <c>env:workspace</c> mirrors arcpy's <c>arcpy.env.workspace</c> (default
+    /// output location for tool results) and <c>env:overwriteOutput</c> mirrors
+    /// <c>arcpy.env.overwriteOutput</c> (default <c>False</c>).
     /// </summary>
-    private static IResult? RejectUnsupportedEnvControls(
-        HttpContext context, ILogger logger, IReadOnlyDictionary<string, string> allParams)
-    {
-        List<string>? unsupported = null;
-        foreach (var key in allParams.Keys)
-        {
-            if (key.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
-            {
-                unsupported ??= [];
-                unsupported.Add(key);
-            }
-        }
-
-        if (unsupported == null)
-        {
-            return null;
-        }
-
-        var names = string.Join(", ", unsupported);
-        GPServerLog.UnsupportedEnvControlsRejected(logger, names);
-        return SetSpanErrorAndReturn(
-            StandardErrorHelpers.CreateBadRequest(context,
-                $"GP environment controls are not yet supported: {names}. " +
-                "Remove these parameters or wait for engine support."),
-            $"Unsupported GP env controls: {names}");
-    }
+    private readonly record struct EnvControls(int? OutSr, int? ProcessSr, string? Workspace, bool? OverwriteOutput);
 
     /// <summary>
-    /// Parsed GP environment controls. <c>env:outSR</c> and <c>env:processSR</c>
-    /// are honored (output reprojection / informational); any other <c>env:*</c>
-    /// control is unsupported and surfaced for a 400 response.
-    /// </summary>
-    private readonly record struct EnvControls(int? OutSr, int? ProcessSr);
-
-    /// <summary>
-    /// Parses GP environment controls. <c>env:outSR</c> and <c>env:processSR</c>
-    /// are recognised and returned (and no longer rejected); any other
-    /// <c>env:*</c> control yields a structured 400. SR values may be a bare
-    /// WKID or a spatial-reference JSON object (<c>{ "wkid": 3857 }</c>).
+    /// Parses GP environment controls. <c>env:outSR</c>, <c>env:processSR</c>,
+    /// <c>env:workspace</c>, and <c>env:overwriteOutput</c> are recognised and
+    /// returned; any other <c>env:*</c> control yields a structured 400. SR
+    /// values may be a bare WKID or a spatial-reference JSON object
+    /// (<c>{ "wkid": 3857 }</c>). Shared by both the synchronous <c>execute</c>
+    /// route and the async <c>submitJob</c> route — both thread the same
+    /// recognized controls through <see cref="BuildProtocolMetadata"/> onto the
+    /// durable job spec. See #1228.
     /// </summary>
     private static IResult? TryParseEnvControls(
         HttpContext context,
@@ -1189,6 +1173,8 @@ internal static class GPServerEndpoints
         controls = default;
         int? outSr = null;
         int? processSr = null;
+        string? workspace = null;
+        bool? overwriteOutput = null;
         List<string>? unsupported = null;
 
         foreach (var (key, value) in allParams)
@@ -1218,6 +1204,30 @@ internal static class GPServerEndpoints
                         "Invalid env:processSR");
                 }
             }
+            else if (string.Equals(key, "env:workspace", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return SetSpanErrorAndReturn(
+                        StandardErrorHelpers.CreateBadRequest(context,
+                            "env:workspace value must not be empty."),
+                        "Invalid env:workspace");
+                }
+
+                workspace = value.Trim();
+            }
+            else if (string.Equals(key, "env:overwriteOutput", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!TryParseBooleanValue(value, out var parsedOverwrite))
+                {
+                    return SetSpanErrorAndReturn(
+                        StandardErrorHelpers.CreateBadRequest(context,
+                            $"env:overwriteOutput value '{value}' is not a valid boolean."),
+                        "Invalid env:overwriteOutput");
+                }
+
+                overwriteOutput = parsedOverwrite;
+            }
             else
             {
                 unsupported ??= [];
@@ -1236,8 +1246,33 @@ internal static class GPServerEndpoints
                 $"Unsupported GP env controls: {names}");
         }
 
-        controls = new EnvControls(outSr, processSr);
+        controls = new EnvControls(outSr, processSr, workspace, overwriteOutput);
         return null;
+    }
+
+    /// <summary>
+    /// Parses an Esri-style boolean parameter value: <c>bool.TryParse</c> first
+    /// (accepts <c>true</c>/<c>false</c> case-insensitively), falling back to
+    /// integer truthiness (<c>0</c>/<c>1</c>) to match the convention already
+    /// used for other GeoServices boolean parameters (e.g. <c>returnUrl</c>).
+    /// </summary>
+    private static bool TryParseBooleanValue(string? value, out bool result)
+    {
+        result = false;
+        if (bool.TryParse(value, out var parsedBool))
+        {
+            result = parsedBool;
+            return true;
+        }
+
+        if (int.TryParse(value, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsedInt))
+        {
+            result = parsedInt != 0;
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryParseSpatialReferenceValue(string? value, out int? srid)
@@ -1466,12 +1501,67 @@ internal static class GPServerEndpoints
         return derivedSrid ?? 0;
     }
 
+    /// <summary>
+    /// Applies the <c>env:outSR</c> reprojection to a completed job's async result
+    /// value, mirroring the synchronous <c>execute</c> path
+    /// (<see cref="BuildExecuteSuccessResponseAsync"/>). Reads the requested output
+    /// SRID and the submission-time working SRID back from the durable job metadata
+    /// and reprojects a reprojectable geometry output through the shared
+    /// <see cref="GPServerOutputReprojection"/> helper. Returns <c>null</c> on
+    /// success (with <paramref name="value"/> reprojected in place when applicable);
+    /// returns a <c>400</c> result when <c>env:outSR</c> was requested for a geometry
+    /// output that cannot be reprojected (unknown source SRID or unsupported
+    /// transform pair) so the async path rejects rather than accepting and silently
+    /// serving an unprojected geometry. <c>env:outSR</c> only affects reprojectable
+    /// geometry (<see cref="ArtifactKind.FeatureLayer"/>) outputs; other output
+    /// kinds are served unchanged, matching Esri <c>env:outSR</c> semantics.
+    /// </summary>
+    private static IResult? TryApplyAsyncOutSr(
+        HttpContext context,
+        ExecutionJobRecord job,
+        ArtifactRef artifact,
+        ref string value)
+    {
+        var outSrRaw = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerOutSr);
+        if (string.IsNullOrWhiteSpace(outSrRaw) ||
+            !int.TryParse(outSrRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var outSr))
+        {
+            return null;
+        }
+
+        if (artifact.Kind != ArtifactKind.FeatureLayer)
+        {
+            return null;
+        }
+
+        var workingSrid = 0;
+        var workingRaw = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkingSr);
+        if (!string.IsNullOrWhiteSpace(workingRaw))
+        {
+            int.TryParse(workingRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out workingSrid);
+        }
+
+        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(value, workingSrid, outSr);
+        if (outcome.Reprojected)
+        {
+            value = outcome.Value ?? value;
+            return null;
+        }
+
+        return SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateBadRequest(context,
+                outcome.CapabilityMessage ??
+                $"env:outSR={outSr} could not be applied to output '{artifact.Label}'."),
+            "Async env:outSR could not be applied");
+    }
+
     private static Dictionary<string, string> BuildProtocolMetadata(
         string serviceId,
         string taskName,
         ProcessDefinition definition,
         IReadOnlyDictionary<string, string> rawParameters,
-        EnvControls envControls)
+        EnvControls envControls,
+        int workingSrid)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -1479,6 +1569,15 @@ internal static class GPServerEndpoints
             [GeoprocessingProtocolMetadataKeys.GPServerServiceId] = serviceId,
             [GeoprocessingProtocolMetadataKeys.GPServerTaskName] = taskName
         };
+
+        // Persist the working (input-derived) SRID so the asynchronous
+        // results/{param} handler can apply the same env:outSR reprojection the
+        // synchronous execute path applies inline. Only meaningful when derivable.
+        if (workingSrid > 0)
+        {
+            metadata[GeoprocessingProtocolMetadataKeys.GPServerWorkingSr] =
+                workingSrid.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
 
         for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
         {
@@ -1506,6 +1605,17 @@ internal static class GPServerEndpoints
         {
             metadata[GeoprocessingProtocolMetadataKeys.GPServerProcessSr] =
                 processSr.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (envControls.Workspace is { } workspace)
+        {
+            metadata[GeoprocessingProtocolMetadataKeys.GPServerWorkspace] = workspace;
+        }
+
+        if (envControls.OverwriteOutput is { } overwriteOutput)
+        {
+            metadata[GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput] =
+                overwriteOutput ? "true" : "false";
         }
 
         return metadata;
