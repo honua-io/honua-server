@@ -1326,6 +1326,111 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
     [Operation(Operations.Distance)]
+    public async Task Measure_DistanceAndAngle_WebMercatorAtHighLatitude_ReturnsGroundDistance()
+    {
+        // #2734: a 3857 (Web Mercator) segment must be measured as TRUE GROUND distance, not the
+        // planar map-unit length. The two points are lon 0° and lon 1° at lat 60°N, expressed in
+        // Web-Mercator meters (y = 8399737.89 is the Mercator ordinate of 60°N; x = 111319.49 is
+        // the Mercator abscissa of lon 1°). The great-circle ground distance between them is
+        // 55597.01 m on the mean-radius sphere (R = 6371008.8 m). The buggy planar
+        // sqrt(dx²+dy²) would report 111319.49 m — ~2x overstated, exactly 1/cos(60°).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0.0,"y":8399737.889818361,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":111319.49079327357,"y":8399737.889818361,"spatialReference":{"wkid":3857}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Distance.Should().NotBeNull();
+            measure.Distance!.Value.Should().BeApproximately(55597.01d, 1d);
+            measure.Distance.Unit.Should().Be("esriMeters");
+            // Guard against a regression back to the planar (2x overstated) value.
+            measure.Distance.Value.Should().BeLessThan(60000d);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_DistanceAndAngle_GeographicAzimuth_UsesGreatCircleBearing()
+    {
+        // #2734: azimuth for geographic inputs must include cos(lat) longitude scaling. From
+        // (lon 0, lat 60°N) to (lon 1, lat 61°N) the great-circle initial bearing is 25.78°
+        // (standard atan2 initial-bearing formula; radius-independent), consistent with the
+        // geodesic distance in the same response. The buggy planar atan2(dLon, dLat) reported
+        // 45° regardless of latitude.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0.0,"y":60.0,"spatialReference":{"wkid":4326}}""";
+            const string toGeometry = """{"x":1.0,"y":61.0,"spatialReference":{"wkid":4326}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.AzimuthAngle.Should().NotBeNull();
+            measure.AzimuthAngle!.Value.Should().BeApproximately(25.7824d, 1e-3);
+            measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
+            // Guard against a regression to the cos(lat)-free planar bearing (45°).
+            measure.AzimuthAngle.Value.Should().BeLessThan(40d);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_Centroid_AntimeridianRing_LandsOnCorrectSide()
+    {
+        // #2734: the area-weighted centroid of the dateline-straddling [179,181]x[0,1] ring is at
+        // lon ±180°, lat 0.5°. The buggy vertex mean of (179, -179, -179, 179) collapses to lon 0°
+        // — the opposite side of the globe.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationCentroid&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Point.Should().NotBeNull();
+            // Centroid longitude is ±180 (the antimeridian), never near 0.
+            Math.Abs(measure.Point!.Value.X).Should().BeApproximately(180d, 1e-6);
+            measure.Point.Value.Y.Should().BeApproximately(0.5d, 1e-6);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
     public async Task Measure_HeightOperation_ReturnsNotImplemented()
     {
         // No DEM/sensor metadata on the default substitute, so height is honestly 501.
