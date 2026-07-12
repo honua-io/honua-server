@@ -977,7 +977,57 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Plan shard-local exact-head cache
+        id: shard-cache-plan
+        shell: bash
+        env:
+          SHARD_NAME: ${{ matrix.shard_name }}
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+          SELECTED_SHARDS_JSON: ${{ needs.targeted-shards.outputs.matrix_include }}
+        run: |
+          scripts/ci/server-test-shard-cache.sh plan \
+            --shard "${SHARD_NAME}" \
+            --project "${SHARD_CSPROJ}" \
+            --matrix-json "${SELECTED_SHARDS_JSON}" \
+            --source-sha '${{ github.sha }}' \
+            --runner-os '${{ runner.os }}' \
+            --sdk "$(dotnet --version)"
+
+      - name: Start exact-head cache restore timer
+        if: github.run_attempt > 1
+        id: shard-cache-restore-start
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore exact-head shard cache
+        if: github.run_attempt > 1
+        id: shard-cache-download
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
+          key: ${{ steps.shard-cache-plan.outputs.cache_key }}
+          fail-on-cache-miss: false
+
+      - name: Record exact-head cache restore duration
+        if: always() && github.run_attempt > 1
+        id: shard-cache-restore-elapsed
+        shell: bash
+        run: echo "milliseconds=$(( $(date +%s%3N) - ${{ steps.shard-cache-restore-start.outputs.epoch_ms }} ))" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify and unpack exact-head shard cache
+        id: shard-cache-materialize
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.shard-cache-download.outputs.cache-hit }}
+        run: |
+          scripts/ci/server-test-shard-cache.sh restore \
+            --project '${{ steps.shard-cache-plan.outputs.project }}' \
+            --source-sha '${{ github.sha }}' \
+            --payload '${{ steps.shard-cache-plan.outputs.payload_dir }}' \
+            --cache-hit "${CACHE_HIT:-false}"
+
       - name: Restore
+        if: steps.shard-cache-materialize.outputs.restored != 'true'
         # Phase 2 / ADR-0042 routing: each shard targets its declared csproj
         # (matrix.csproj) and falls back to Honua.Server.Tests.csproj for
         # legacy shards that have not been migrated to a per-protocol project.
@@ -991,6 +1041,8 @@ jobs:
         run: mkdir -p ./tests/TestResults
 
       - name: Build server test binaries
+        id: shard-cache-build
+        if: steps.shard-cache-materialize.outputs.restored != 'true'
         timeout-minutes: 20
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
@@ -999,6 +1051,74 @@ jobs:
           dotnet build "${csproj}" \
             --no-restore \
             --configuration Release
+
+      - name: Package shard-local cache payload
+        id: shard-cache-package
+        if: ${{ steps.shard-cache-build.outcome == 'success' && (steps.shard-cache-plan.outputs.cache_writer == 'true' || github.run_attempt > 1) }}
+        shell: bash
+        run: |
+          rm -rf '${{ steps.shard-cache-plan.outputs.payload_dir }}'
+          mkdir -p '${{ steps.shard-cache-plan.outputs.payload_dir }}'
+          scripts/ci/package-server-test-binaries.sh \
+            --project '${{ steps.shard-cache-plan.outputs.project }}' \
+            --output '${{ steps.shard-cache-plan.outputs.payload_dir }}' \
+            --source-sha '${{ github.sha }}'
+
+      - name: Start exact-head cache save timer
+        if: steps.shard-cache-package.outcome == 'success'
+        id: shard-cache-save-start
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+
+      - name: Save exact-head shard cache
+        if: steps.shard-cache-package.outcome == 'success'
+        id: shard-cache-save
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
+          key: ${{ steps.shard-cache-plan.outputs.cache_key }}
+
+      - name: Record exact-head cache save duration
+        if: always() && steps.shard-cache-package.outcome == 'success'
+        id: shard-cache-save-elapsed
+        shell: bash
+        run: echo "milliseconds=$(( $(date +%s%3N) - ${{ steps.shard-cache-save-start.outputs.epoch_ms }} ))" >> "${GITHUB_OUTPUT}"
+
+      - name: Report shard cache decision
+        if: always()
+        shell: bash
+        env:
+          CACHE_KEY: ${{ steps.shard-cache-plan.outputs.cache_key }}
+          CACHE_WRITER: ${{ steps.shard-cache-plan.outputs.cache_writer }}
+          CACHE_WRITER_SHARD: ${{ steps.shard-cache-plan.outputs.cache_writer_shard }}
+          CACHE_HIT: ${{ steps.shard-cache-download.outputs.cache-hit }}
+          MATERIALIZED: ${{ steps.shard-cache-materialize.outputs.restored }}
+          REASON: ${{ steps.shard-cache-materialize.outputs.reason }}
+          TRANSFER_MS: ${{ steps.shard-cache-restore-elapsed.outputs.milliseconds }}
+          INTEGRITY_MS: ${{ steps.shard-cache-materialize.outputs.integrity_check_ms }}
+          UNPACK_MS: ${{ steps.shard-cache-materialize.outputs.unpack_ms }}
+          SAVE_MS: ${{ steps.shard-cache-save-elapsed.outputs.milliseconds }}
+          PAYLOAD_DIR: ${{ steps.shard-cache-plan.outputs.payload_dir }}
+          PROJECT_SUFFIX: ${{ steps.shard-cache-plan.outputs.project_suffix }}
+        run: |
+          package_ms=0
+          manifest="${PAYLOAD_DIR}/server-test-binaries-${PROJECT_SUFFIX}.manifest.json"
+          if [[ -f "${manifest}" ]]; then
+            package_ms="$(jq -r '.package_milliseconds' "${manifest}")"
+          fi
+          {
+            echo '### Server-test shard cache'
+            echo
+            echo "- Key: \`${CACHE_KEY:-unavailable}\`"
+            echo "- Attempt: \`${{ github.run_attempt }}\`"
+            echo "- Decision: \`${REASON:-not_evaluated}\`"
+            echo "- Exact cache hit: \`${CACHE_HIT:-false}\`"
+            echo "- Materialized without build: \`${MATERIALIZED:-false}\`"
+            echo "- Attempt-1 writer: \`${CACHE_WRITER:-false}\` (\`${CACHE_WRITER_SHARD:-unknown}\`)"
+            echo "- Transfer / integrity / unpack: \`${TRANSFER_MS:-0} / ${INTEGRITY_MS:-0} / ${UNPACK_MS:-0} ms\`"
+            echo "- Package / save: \`${package_ms} / ${SAVE_MS:-0} ms\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Run server test shard
         # Advisory shards (matrix.advisory==true) swallow their test failure HERE so
