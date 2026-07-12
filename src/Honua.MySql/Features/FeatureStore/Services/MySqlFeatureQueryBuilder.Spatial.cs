@@ -51,10 +51,14 @@ internal sealed partial class MySqlFeatureQueryBuilder
                 $"MBRIntersects({geomCol}, {filterGeom}) AND ST_Intersects({geomCol}, {filterGeom})",
             SpatialRelationship.EnvelopeIntersects =>
                 $"MBRIntersects({geomCol}, {filterGeom})",
+            // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry.
+            // MySQL/MariaDB: ST_Within(filter, feature) = filter is within feature.
             SpatialRelationship.Within =>
-                $"ST_Within({geomCol}, {filterGeom})",
+                $"ST_Within({filterGeom}, {geomCol})",
+            // Esri semantics: esriSpatialRelContains = filter geometry contains feature geometry.
+            // MySQL/MariaDB: ST_Contains(filter, feature) = filter contains feature.
             SpatialRelationship.Contains =>
-                $"ST_Contains({geomCol}, {filterGeom})",
+                $"ST_Contains({filterGeom}, {geomCol})",
             SpatialRelationship.Crosses =>
                 $"ST_Crosses({geomCol}, {filterGeom})",
             SpatialRelationship.Touches =>
