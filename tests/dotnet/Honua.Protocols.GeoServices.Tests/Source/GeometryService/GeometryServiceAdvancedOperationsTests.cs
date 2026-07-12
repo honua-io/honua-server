@@ -550,8 +550,12 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
     [IntegrationTest]
     [Operation(Operations.Intersect)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/intersect")]
-    public async Task Intersect_GeometryTypeMismatch_PointVsPolygon_Returns400()
+    public async Task Intersect_PointDisjointFromPolygon_Returns200WithEmptyPoint()
     {
+        // Point-vs-polygon is a legal Esri intersect input combination (the "geometry" operand's
+        // dimension must be >= the "geometries" elements' dimension), and this point is disjoint
+        // from the polygon, so the result is an empty point of the request type — Esri serializes
+        // empty points with null ordinates ({"x":null,"y":null}) — not a 400 (#2742).
         var body = """
         {
             "geometries": {
@@ -571,7 +575,16 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
-        await response.AssertGeoServicesErrorAsync(400);
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.GeometryType.Should().Be("esriGeometryPoint");
+        result.Geometries.Should().HaveCount(1);
+        result.Geometries![0].TryGetProperty("x", out var x).Should().BeTrue();
+        x.ValueKind.Should().Be(JsonValueKind.Null);
+        result.Geometries[0].TryGetProperty("y", out var y).Should().BeTrue();
+        y.ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [IntegrationTest]
