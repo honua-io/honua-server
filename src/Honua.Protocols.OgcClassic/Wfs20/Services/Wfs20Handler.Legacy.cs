@@ -154,7 +154,8 @@ internal sealed partial class Wfs20Handler
                 srsName,
                 offset: 0,
                 count: limit,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                wfsVersion: version).ConfigureAwait(false);
 
             if (isHitsRequest)
             {
@@ -1507,8 +1508,11 @@ internal sealed partial class Wfs20Handler
             : crs;
     }
 
-    private static bool IsWfs10(string version)
+    private static bool IsWfs10(string? version)
         => string.Equals(version, Wfs10Version, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsWfs11(string? version)
+        => string.Equals(version, Wfs11Version, StringComparison.OrdinalIgnoreCase);
 
     private static string BuildWfs11Exception(string code, string message, string? locator)
     {
