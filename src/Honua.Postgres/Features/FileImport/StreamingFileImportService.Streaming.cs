@@ -24,7 +24,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -90,6 +90,7 @@ internal sealed partial class StreamingFileImportService
         var totalFailed = 0;
         var nullGeometrySkipped = 0;
         var batchesCommitted = 0;
+        var repairTally = new GeometryRepairTally();
         var startTime = DateTimeOffset.UtcNow;
 
         // Stream features based on format
@@ -155,6 +156,7 @@ internal sealed partial class StreamingFileImportService
                     wkbWriter,
                     loadMode,
                     request.KeyColumns,
+                    repairTally,
                     cancellationToken);
 
                 totalImported += imported;
@@ -169,6 +171,7 @@ internal sealed partial class StreamingFileImportService
                     Status = ImportStatus.Processing,
                     FeaturesProcessed = totalImported,
                     FailedFeatures = totalFailed,
+                    RepairedFeatures = repairTally.Repaired,
                     BatchesCommitted = batchesCommitted,
                     TableName = request.TableName,
                     FileName = request.FileName,
@@ -202,6 +205,7 @@ internal sealed partial class StreamingFileImportService
                 wkbWriter,
                 loadMode,
                 request.KeyColumns,
+                repairTally,
                 cancellationToken);
 
             totalImported += imported;
@@ -261,6 +265,14 @@ internal sealed partial class StreamingFileImportService
             completionWarningsBuilder.Add(string.Format(null, _partialImportWarningFormat, totalFailed));
         }
 
+        // Surface per-row geometry repair accounting so the shared validity gate never silently
+        // rewrites input geometry (#2743). Default gate mode is Repair, so previously-invalid
+        // geometry is fixed (ST_MakeValid-equivalent) instead of stored as-is.
+        if (repairTally.Repaired > 0)
+        {
+            completionWarningsBuilder.Add(string.Format(null, _repairedGeometryWarningFormat, repairTally.Repaired));
+        }
+
         string[] completionWarnings = [.. completionWarningsBuilder];
 
         // Report completion
@@ -270,6 +282,7 @@ internal sealed partial class StreamingFileImportService
             Status = ImportStatus.Completed,
             FeaturesProcessed = totalImported,
             FailedFeatures = totalFailed,
+            RepairedFeatures = repairTally.Repaired,
             BatchesCommitted = batchesCommitted,
             TableName = request.TableName,
             FileName = request.FileName,
@@ -286,7 +299,7 @@ internal sealed partial class StreamingFileImportService
             CurrentPhase = "Import completed"
         });
 
-        return (totalImported, totalFailed, completionWarnings, rowIssues);
+        return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues);
     }
 
     private void RecordImportMetrics(

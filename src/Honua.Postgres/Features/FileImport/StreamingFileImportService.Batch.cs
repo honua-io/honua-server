@@ -5,9 +5,12 @@ using System.Data;
 using System.Diagnostics;
 using System.Text.Json;
 using NetTopologySuite.Features;
+using NetTopologySuite.Geometries.Utilities;
 using NetTopologySuite.IO;
+using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 using Npgsql;
 using NpgsqlTypes;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
@@ -37,6 +40,7 @@ internal sealed partial class StreamingFileImportService
         WKBWriter wkbWriter,
         ImportLoadMode loadMode,
         IReadOnlyList<string> keyColumns,
+        GeometryRepairTally repairTally,
         CancellationToken cancellationToken)
     {
         var imported = 0;
@@ -68,6 +72,7 @@ internal sealed partial class StreamingFileImportService
                     wkbWriter,
                     loadMode,
                     keyColumns,
+                    repairTally,
                     cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -87,6 +92,7 @@ internal sealed partial class StreamingFileImportService
                     wkbWriter,
                     loadMode,
                     keyColumns,
+                    repairTally,
                     cancellationToken);
             }
 
@@ -122,6 +128,7 @@ internal sealed partial class StreamingFileImportService
         WKBWriter wkbWriter,
         ImportLoadMode loadMode,
         IReadOnlyList<string> keyColumns,
+        GeometryRepairTally repairTally,
         CancellationToken cancellationToken)
     {
         var wkbs = new byte[]?[features.Count];
@@ -132,7 +139,7 @@ internal sealed partial class StreamingFileImportService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var feature = features[i];
-            wkbs[i] = CreateWkb(feature, wkbWriter);
+            wkbs[i] = CreateWkb(feature, wkbWriter, repairTally);
 
             // Use per-feature SRID when available (e.g. multi-layer FileGDBs
             // where each layer may have its own CRS).
@@ -268,6 +275,7 @@ internal sealed partial class StreamingFileImportService
         WKBWriter wkbWriter,
         ImportLoadMode loadMode,
         IReadOnlyList<string> keyColumns,
+        GeometryRepairTally repairTally,
         CancellationToken cancellationToken)
     {
         var imported = 0;
@@ -310,7 +318,7 @@ internal sealed partial class StreamingFileImportService
 
             try
             {
-                wkbParameter.Value = CreateWkb(feature, wkbWriter) ?? (object)DBNull.Value;
+                wkbParameter.Value = CreateWkb(feature, wkbWriter, repairTally) ?? (object)DBNull.Value;
                 var featureSrid = feature.Geometry?.SRID;
                 var effectiveSourceSrid = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
                 sourceSridParameter.Value = effectiveSourceSrid;
@@ -365,14 +373,21 @@ internal sealed partial class StreamingFileImportService
     }
 
     /// <summary>
-    /// Create WKB for a feature geometry, enforcing configured validation limits.
+    /// Create WKB for a feature geometry, enforcing configured validation limits and the
+    /// shared import validity gate (<c>ImportLimits.GeometryValidityMode</c>). This is
+    /// the single choke point every import reader (GeoJSON, shapefile, GeoPackage, CSV-WKT,
+    /// FlatGeobuf, GDAL, …) flows through, so applying the gate here guarantees consistent
+    /// repair/strict/accept behavior instead of a per-reader patchwork (#2743). Repairs are
+    /// recorded in <paramref name="repairTally"/> for the import report.
     /// </summary>
-    private byte[]? CreateWkb(IFeature feature, WKBWriter wkbWriter)
+    private byte[]? CreateWkb(IFeature feature, WKBWriter wkbWriter, GeometryRepairTally repairTally)
     {
         if (feature.Geometry == null)
         {
             return null;
         }
+
+        var geometry = feature.Geometry;
 
         // Hard memory guard (#1626): reject oversized geometries on vertex/ring count BEFORE
         // materializing coordinate arrays or writing WKB. A single island-scale multipolygon can
@@ -380,7 +395,7 @@ internal sealed partial class StreamingFileImportService
         // hundreds of MB and OOM-crash a memory-constrained serverless host. This guard runs
         // regardless of the optional ValidateGeometry pass so the ceiling always holds, and surfaces
         // a clear, machine-readable error (413-style) rather than crashing.
-        var sizeResult = ImportGeometrySizeGuard.Check(feature.Geometry, _limits.MaxVertices, _limits.MaxRings);
+        var sizeResult = ImportGeometrySizeGuard.Check(geometry, _limits.MaxVertices, _limits.MaxRings);
         if (!sizeResult.IsWithinLimits)
         {
             if (_limits.SkipInvalidGeometry)
@@ -394,7 +409,7 @@ internal sealed partial class StreamingFileImportService
 
         if (_limits.ValidateGeometry)
         {
-            var validationError = ValidateGeometry(feature.Geometry);
+            var validationError = ValidateGeometry(geometry);
             if (validationError != null)
             {
                 if (_limits.SkipInvalidGeometry)
@@ -406,8 +421,64 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        var writer = SelectWkbWriter(feature.Geometry, wkbWriter);
-        var wkb = writer.Write(feature.Geometry);
+        // Shared topology validity gate (#2743): mirrors the edit paths' GeometryValidationOptions
+        // (Accept/Strict/Repair). Repair uses the managed NetTopologySuite GeometryFixer — the
+        // GEOS-free analogue of PostGIS ST_MakeValid also used by the geometry.make-valid GP
+        // executor — so a self-intersecting polygon is fixed on the way in rather than stored to
+        // later blow up overlay queries with a GEOS TopologyException. Only finite geometry is a
+        // candidate: NaN/Infinity ordinates cannot be validated or repaired meaningfully and are
+        // left to the finiteness pass / PostGIS to reject.
+        if (_limits.GeometryValidityMode != ValidationMode.Accept
+            && ValidateCoordinates(geometry)
+            && !geometry.IsValid)
+        {
+            if (_limits.GeometryValidityMode == ValidationMode.Strict)
+            {
+                if (_limits.SkipInvalidGeometry)
+                {
+                    ImportLog.GeometryInvalidSkipped(_logger);
+                    return null;
+                }
+
+                throw new InvalidOperationException(
+                    "Geometry validation failed: geometry topology is invalid (self-intersection, ring orientation, or hole placement).");
+            }
+
+            // ValidationMode.Repair
+            NtsGeometry? repaired;
+            try
+            {
+                repaired = GeometryFixer.Fix(geometry);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (_limits.SkipInvalidGeometry)
+                {
+                    ImportLog.GeometryRepairFailedSkipped(_logger, ex);
+                    return null;
+                }
+
+                throw new InvalidOperationException("Geometry repair failed.", ex);
+            }
+
+            if (repaired == null || repaired.IsEmpty)
+            {
+                if (_limits.SkipInvalidGeometry)
+                {
+                    ImportLog.GeometryRepairEmptySkipped(_logger);
+                    return null;
+                }
+
+                throw new InvalidOperationException("Geometry repair produced an empty geometry.");
+            }
+
+            repaired.SRID = geometry.SRID;
+            geometry = repaired;
+            repairTally.Repaired++;
+        }
+
+        var writer = SelectWkbWriter(geometry, wkbWriter);
+        var wkb = writer.Write(geometry);
 
         if (wkb.Length > _limits.MaxWkbSize)
         {
@@ -450,5 +521,15 @@ internal sealed partial class StreamingFileImportService
         }
 
         return new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: hasZ, emitM: hasM);
+    }
+
+    /// <summary>
+    /// Mutable per-import counter of geometries repaired by the shared validity gate.
+    /// Accumulated across all batches of a single import (streaming is sequential within an
+    /// import) and surfaced in the import report / progress so repair is never silent.
+    /// </summary>
+    private sealed class GeometryRepairTally
+    {
+        public int Repaired { get; set; }
     }
 }

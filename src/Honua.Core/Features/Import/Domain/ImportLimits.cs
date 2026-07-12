@@ -83,6 +83,24 @@ public sealed record ImportLimits
     public bool ValidateGeometry { get; init; } = true;
 
     /// <summary>
+    /// How topologically-invalid geometry (e.g. self-intersecting polygons) is handled
+    /// during import, mirroring the shared edit-path
+    /// <see cref="Honua.Core.Configuration.GeometryValidationOptions"/> semantics so every
+    /// import reader applies the same validity gate:
+    /// <list type="bullet">
+    /// <item><see cref="ValidationMode.Accept"/> — store geometry as-is (legacy behavior).</item>
+    /// <item><see cref="ValidationMode.Strict"/> — reject invalid geometry (skipped when
+    /// <see cref="SkipInvalidGeometry"/>, otherwise fails the import).</item>
+    /// <item><see cref="ValidationMode.Repair"/> — repair invalid geometry with the managed
+    /// NetTopologySuite <c>GeometryFixer</c> (the GEOS-free analogue of PostGIS
+    /// <c>ST_MakeValid</c>) and count the repair.</item>
+    /// </list>
+    /// Default: <see cref="ValidationMode.Repair"/> — matches the edit paths and prevents
+    /// later overlay queries from failing with GEOS topology exceptions.
+    /// </summary>
+    public ValidationMode GeometryValidityMode { get; init; } = ValidationMode.Repair;
+
+    /// <summary>
     /// Maximum number of vertices allowed per geometry.
     /// Default: 10000 vertices.
     /// </summary>

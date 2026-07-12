@@ -110,6 +110,21 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         }
         """;
 
+    // A self-intersecting "bowtie" polygon: the exterior ring crosses itself, so the geometry is
+    // topologically invalid but structurally well-formed (closed ring, finite coordinates). Under
+    // the shared validity gate (default Repair) it is fixed with ST_MakeValid-equivalent repair
+    // instead of failing the whole file the way the old GeoJSON topology preflight did (#2743).
+    private const string SelfIntersectingPolygonGeoJson = """
+        {
+          "type": "FeatureCollection",
+          "features": [
+            { "type": "Feature",
+              "geometry": { "type": "Polygon", "coordinates": [[[0,0],[2,2],[2,0],[0,2],[0,0]]] },
+              "properties": { "name": "bowtie" } }
+          ]
+        }
+        """;
+
     [IntegrationTest]
     public async Task ImportFileAsync_WithoutOverwrite_CreatesStagingTableAndSucceeds()
     {
@@ -148,6 +163,52 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".imported_demo;";
             var rows = (int)(await command.ExecuteScalarAsync())!;
             rows.Should().Be(2, "the load must stream into a staging table that was created and visible");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_WithSelfIntersectingPolygon_RepairsAndReportsCount()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SelfIntersectingPolygonGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "bowtie.geojson",
+                TableName = "repaired_demo",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+            });
+
+            // The default validity gate repairs the invalid ring rather than failing the file.
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(1);
+            result.RepairedGeometryCount.Should().Be(1);
+            result.Warnings.Should().Contain(w => w.Contains("repaired", StringComparison.OrdinalIgnoreCase));
+
+            // The stored geometry must be topologically valid after repair.
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT bool_and(ST_IsValid(geometry))::boolean FROM \"{schema}\".imported_repaired_demo;";
+            var allValid = (bool)(await command.ExecuteScalarAsync())!;
+            allValid.Should().BeTrue("the shared validity gate must repair invalid input geometry before insertion");
         }
         finally
         {

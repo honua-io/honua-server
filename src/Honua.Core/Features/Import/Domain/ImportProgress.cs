@@ -71,6 +71,13 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
     public int FailedFeatures { get; init; }
 
     /// <summary>
+    /// Number of features whose geometry was invalid on input and was automatically
+    /// repaired (ST_MakeValid-equivalent) before insertion under the shared import
+    /// validity gate (<see cref="ImportLimits.GeometryValidityMode"/>).
+    /// </summary>
+    public int RepairedFeatures { get; init; }
+
+    /// <summary>
     /// Number of bytes read from the source stream.
     /// </summary>
     public long BytesRead { get; init; }
