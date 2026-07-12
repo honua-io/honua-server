@@ -1,6 +1,6 @@
 # Honua Server
 
-[![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
+[![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml)
 [![Security Nightly](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml)
 [![License](https://img.shields.io/badge/License-Elastic_License_2.0-blue.svg)](https://github.com/honua-io/honua-server/blob/trunk/LICENSE)
