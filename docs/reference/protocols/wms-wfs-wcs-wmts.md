@@ -74,7 +74,7 @@ curl -o coverage.tif "https://server.example.com/rest/services/0/ImageServer/WCS
 
 | Operation | Notes |
 | --- | --- |
-| `GetCapabilities` | KVP and RESTful (`.../WMTS/1.0.0/WMTSCapabilities.xml` style paths via `{**restPath}`). Advertises the reserved built-in gridsets (`WebMercatorQuad`, `WorldCRS84Quad`, byte-identical to before) plus any operator-defined custom gridsets from the `TileMatrixSets` configuration section, with per-layer links. |
+| `GetCapabilities` | KVP and RESTful (`.../WMTS/1.0.0/WMTSCapabilities.xml` style paths via `{**restPath}`). Advertises the reserved built-in gridsets (`WebMercatorQuad`, `WorldCRS84Quad`) plus any operator-defined custom gridsets from the `TileMatrixSets` configuration section, with per-layer links. `TopLeftCorner` follows the advertised CRS axis order (CRS84 is longitude/latitude; geographic EPSG identifiers are latitude/longitude) and preserves configured origin precision. |
 | `GetTile` | `LAYER`, `STYLE`, `TILEMATRIXSET`, `TILEMATRIX`, `TILEROW`, `TILECOL`, `FORMAT`, optional `TIME` (temporal layers) and `ELEVATION` (elevation-aware layers); serves built-in and custom gridsets. RESTful tile paths also supported. |
 | `GetFeatureInfo` | Tile-coordinate identify with `I`/`J` and `INFOFORMAT`; resolves the requested gridset through the same `ITileMatrixSetRegistry` as `GetTile`, so the built-in `WebMercatorQuad`/`WorldCRS84Quad` gridsets and operator-defined custom gridsets are supported. The clicked pixel is mapped to a world coordinate using the gridset's own origin, cell size and matrix dimensions (WebMercatorQuad stays byte-identical to before); unsupported gridsets are rejected with `InvalidParameterValue`. |
 
