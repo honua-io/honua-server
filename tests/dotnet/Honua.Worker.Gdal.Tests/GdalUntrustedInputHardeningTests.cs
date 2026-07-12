@@ -429,4 +429,148 @@ public sealed class GdalUntrustedInputHardeningTests
             GdalCli.CleanupScratch(scratch);
         }
     }
+
+    // ---- Private-decoder chokepoints: mosaic + vector-reproject (#2776 review) --
+
+    [UnitTest]
+    public async Task MosaicExecutor_RefusesBase64Vrt_WithoutInvokingGdal()
+    {
+        // raster.mosaic decodes its |-separated sources inline (not through the shared
+        // GdalJobInputReader chokepoint); prove the guard is applied on that path too.
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdalwarp must not run for a refused VRT source"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterMosaicJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch),
+            NullLogger<GdalRasterMosaicJobExecutor>.Instance);
+        try
+        {
+            // Two sources (mosaic requires >= 2); the first is a hostile VRT.
+            var sources = Base64(LocalPathVrt) + "|" + Convert.ToBase64String(
+                new byte[] { 0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00 });
+            var job = GdalJobFactory.Job(GdalRasterMosaicJobExecutor.HandledProcessId, ("sources", sources));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("rejected");
+            runner.Invocations.Should().BeEmpty("the VRT source must be refused before gdalwarp runs");
+        }
+        finally
+        {
+            GdalCli.CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task VectorReprojectExecutor_RefusesVrtSmuggledAsGeoJsonDataUri_WithoutInvokingGdal()
+    {
+        // transform.reproject strips a `data:application/geo+json;base64,` prefix and
+        // decodes inline; a VRT / service XML smuggled as that "GeoJSON" must be refused.
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("ogr2ogr must not run for a refused indirection blob"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalVectorReprojectJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch),
+            NullLogger<GdalVectorReprojectJobExecutor>.Instance);
+        try
+        {
+            var dataUri = "data:application/geo+json;base64," + Base64(LocalPathVrt);
+            var job = GdalJobFactory.Job(
+                GdalVectorReprojectJobExecutor.HandledProcessId,
+                ("fromSrid", "4267"),
+                ("toSrid", "4326"),
+                ("input", dataUri));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("rejected");
+            runner.Invocations.Should().BeEmpty("the indirection blob must be refused before ogr2ogr runs");
+        }
+        finally
+        {
+            GdalCli.CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task VectorReprojectExecutor_AcceptsGeoJson_AndInvokesGdal()
+    {
+        // Regression: a genuine GeoJSON data URI passes the guard and reaches ogr2ogr.
+        // ogr2ogr arg order is `… <outputPath> <inputPath>`, so the output is the
+        // second-to-last argument (index 1 from the end).
+        var geojson = "{\"type\":\"FeatureCollection\",\"features\":[]}";
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes(geojson), outputArgIndexFromEnd: 1);
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalVectorReprojectJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch),
+            NullLogger<GdalVectorReprojectJobExecutor>.Instance);
+        try
+        {
+            var dataUri = "data:application/geo+json;base64," + Base64(geojson);
+            var job = GdalJobFactory.Job(
+                GdalVectorReprojectJobExecutor.HandledProcessId,
+                ("fromSrid", "4267"),
+                ("toSrid", "4326"),
+                ("input", dataUri));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            runner.Invocations.Should().ContainSingle().Which.Tool.Should().Be("ogr2ogr");
+        }
+        finally
+        {
+            GdalCli.CleanupScratch(scratch);
+        }
+    }
+
+    // ---- GDALG: caught by GDAL_SKIP, not by the content sniff (#2776 review) ----
+
+    [UnitTest]
+    public void GdalgBlob_IsNotCaughtBySniff_ButDriverIsSkipped()
+    {
+        // A GDALG streamed-algorithm blob is JSON (not XML) and needs no /vsi path, so
+        // the content pre-check does NOT catch it — the GDAL_SKIP driver denial is the
+        // control. This test pins both facts so the two-layer contract stays honest.
+        var gdalg = Encoding.UTF8.GetBytes(
+            "{\"type\":\"gdal_streamed_alg\",\"command_line\":\"gdal_translate /etc/hostname out.tif\"}");
+
+        GdalUntrustedInputGuard.IsAdmissible(gdalg, out _).Should().BeTrue(
+            "GDALG is JSON with no /vsi reference, so the sniff cannot identify it");
+
+        var env = GdalRuntimeHardening.BuildEnvironment(new GdalHardeningOptions(), inputReferencesRemoteVsi: false);
+        env["GDAL_SKIP"].Should().Contain("GDALG", "the GDALG driver must be skipped so the blob cannot open");
+        env["GDAL_SKIP"].Should().Contain("MRF");
+    }
+
+    // ---- KML/GML external-href limitation is documented + pinned (#2776 review) -
+
+    [UnitTest]
+    public void Guard_AdmitsKmlWithPlainHttpHref_DocumentedNetworkPostureBoundary()
+    {
+        // KML/GML are deliberately admitted, and a plain-http <href> (no /vsi) inside a
+        // NetworkLink/GroundOverlay is NOT refused by the content guard — it cannot be
+        // sniffed apart from a legitimate icon/style href without breaking real KML.
+        // External-href fetch safety therefore relies on NETWORK POSTURE (the local-op
+        // HTTP-neutralization env, and Container-mode / egress isolation), not this
+        // guard. This test pins that boundary so the residual is explicit, not silent.
+        var kmlWithHttpHref = Encoding.UTF8.GetBytes(
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <NetworkLink><Link><href>http://169.254.169.254/latest/meta-data/</href></Link></NetworkLink>
+            </kml>
+            """);
+
+        GdalUntrustedInputGuard.IsAdmissible(kmlWithHttpHref, out _).Should().BeTrue(
+            "plain-http hrefs in admitted KML/GML are gated by network posture, not the content sniff");
+    }
 }

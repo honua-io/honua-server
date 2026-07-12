@@ -32,6 +32,13 @@ internal sealed class GdalHardeningOptions
         "VRT",
         "GTI",
         "DERIVED",
+        // GDAL Streamed Algorithm (GDAL >= 3.10): a JSON blob serializing a
+        // gdal_translate/gdalwarp command line that can open a plain LOCAL path — it is
+        // neither XML nor a /vsi reference, so the content pre-check does not catch it;
+        // skipping the driver is the control. Pure attack surface, used by no executor.
+        "GDALG",
+        // Meta Raster Format: a header can point at a remote <CachedSource> URL.
+        "MRF",
         // OGC / web service descriptions (auto-fetch on open).
         "WMS",
         "WMTS",
