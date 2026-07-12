@@ -83,6 +83,15 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
             return JobExecutionResult.Failed($"Invalid map-algebra inputs: {sourcesError}");
         }
 
+        // Bound the DECLARED pixel footprint before any file is written or GDAL is
+        // invoked, so a compressible GeoTIFF declaring enormous dimensions cannot
+        // force a decompression-bomb allocation (#2766).
+        if (!GdalRasterDimensionGuard.TryAdmitSources(sources, opts, out var dimensionError))
+        {
+            Log.InvalidInputs(logger, job.OperationId, dimensionError);
+            return JobExecutionResult.Failed($"Invalid map-algebra inputs: {dimensionError}");
+        }
+
         if (!GdalJobInputReader.TryGetInput(parameters, "expression", out var expression)
             || string.IsNullOrWhiteSpace(expression))
         {
