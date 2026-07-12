@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Infrastructure.RateLimiting;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
@@ -25,6 +26,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 /// endpoint's allowance, and OIDC/auth endpoints stay reachable under ordinary Console/BFF
 /// traffic from a single egress IP.
 /// </summary>
+[Protocol(TestProtocols.TestQuality)]
 public sealed class RateLimitingPartitionIntegrationTests
 {
     private const string ConsolePagePath = "/console/pages";
@@ -32,6 +34,7 @@ public sealed class RateLimitingPartitionIntegrationTests
     private const string AuthorizeUrlPath = "/api/v1/admin/auth/providers/entra/authorize-url";
 
     [IntegrationTest]
+    [Operation(Operations.Security)]
     public async Task MixedConsoleTraffic_FromSingleEgressIp_KeepsAuthorizeUrlReachable()
     {
         await using var app = await CreateStartedAppAsync("203.0.113.201");
@@ -51,6 +54,7 @@ public sealed class RateLimitingPartitionIntegrationTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Security)]
     public async Task AuthorizeUrl_ExceedingItsOwnPerEndpointLimit_Returns429WithRetryAfter()
     {
         await using var app = await CreateStartedAppAsync("203.0.113.202");
