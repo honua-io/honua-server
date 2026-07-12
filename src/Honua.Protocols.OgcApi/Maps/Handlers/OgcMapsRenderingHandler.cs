@@ -377,11 +377,36 @@ internal sealed class OgcMapsRenderingHandler
         MetadataV2GraphSnapshot snapshot,
         int storageLayerId)
     {
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
+        if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var indexedResource))
         {
-            return (null, null);
+            var indexedService = ResolveOgcApiMapsService(snapshot, indexedResource);
+            if (indexedService is not null)
+            {
+                return (indexedResource, indexedService);
+            }
         }
-        return (resource, ResolveOgcApiMapsService(snapshot, resource));
+
+        // A compatibility publication can expose the same numeric layer through both a
+        // raster binding and a vector/map binding. ResourcesByStorageLayerId is deliberately
+        // one-to-one and first-wins, so its entry can be the ImageServer-only resource while
+        // a later colliding binding owns the valid Maps publication. Keep the indexed fast
+        // path above, then examine collisions only when that resource is not Maps-enabled.
+        foreach (var binding in snapshot.Graph.StorageBindings)
+        {
+            if (binding.StorageLayerId != storageLayerId ||
+                !snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var resource))
+            {
+                continue;
+            }
+
+            var service = ResolveOgcApiMapsService(snapshot, resource);
+            if (service is not null)
+            {
+                return (resource, service);
+            }
+        }
+
+        return (null, null);
     }
 
     private static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
