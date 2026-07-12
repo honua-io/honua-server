@@ -2221,6 +2221,8 @@ internal sealed class GeometryServiceHandler(
 
     private IResult ExecuteTrimExtend(TrimExtendParameters parameters, HonuaTelemetryScope scope)
     {
+        // parameters.ExtendHow is parsed but intentionally not honored here (#2742): trimExtend
+        // applies the default trim/extend behavior regardless of the extendHow bit flags.
         var trimLine = ReadGeometry(parameters.TrimExtendToJson);
         var results = new List<byte[]>(parameters.PolylineJsonStrings.Length);
         var writer = new WKBWriter();
@@ -2359,10 +2361,13 @@ internal sealed class GeometryServiceHandler(
     {
         var factory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory();
         var edges = new List<Geometry>();
+        var inputPolygons = new List<Geometry>();
 
         foreach (var polygonJson in parameters.PolygonJsonStrings)
         {
-            edges.Add(ReadGeometry(polygonJson).Boundary);
+            var polygon = ReadGeometry(polygonJson);
+            inputPolygons.Add(polygon);
+            edges.Add(polygon.Boundary);
         }
 
         foreach (var polylineJson in parameters.PolylineJsonStrings)
@@ -2377,11 +2382,25 @@ internal sealed class GeometryServiceHandler(
         var polygonizer = new NetTopologySuite.Operation.Polygonize.Polygonizer();
         polygonizer.Add(noded);
 
-        var newPolygons = polygonizer.GetPolygons().Cast<Geometry>().ToArray();
-        var writer = new WKBWriter();
-        var results = new List<byte[]>(newPolygons.Length);
-        foreach (var polygon in newPolygons)
+        // Polygonization returns every closed face, which includes faces coincident with the
+        // existing input polygons. autoComplete must return ONLY the new gap-filling polygons,
+        // so drop faces whose interior falls inside the union of the input polygons (#2742).
+        Geometry? inputUnion = null;
+        if (inputPolygons.Count > 0)
         {
+            Geometry inputCollection = factory.CreateGeometryCollection(inputPolygons.ToArray());
+            inputUnion = NetTopologySuite.Operation.Union.UnaryUnionOp.Union(inputCollection);
+        }
+
+        var writer = new WKBWriter();
+        var results = new List<byte[]>();
+        foreach (var polygon in polygonizer.GetPolygons().Cast<Geometry>())
+        {
+            if (inputUnion is not null && inputUnion.Covers(polygon.InteriorPoint))
+            {
+                continue;
+            }
+
             results.Add(writer.Write(polygon));
         }
 
@@ -2710,8 +2729,14 @@ internal sealed class GeometryServiceHandler(
             "esrigeometryrelationintersection" => geometry1.Intersects(geometry2),
             "esrigeometryrelationoverlap" => geometry1.Overlaps(geometry2),
             "esrigeometryrelationtouch" => geometry1.Touches(geometry2),
-            "esrigeometryrelationlinetouch" => geometry1.Relate(geometry2, "F***T****"),
-            "esrigeometryrelationpointtouch" => geometry1.Relate(geometry2, "FT*******"),
+            // lineTouch: interiors disjoint and boundaries meet in a 1-dimensional (line) set.
+            // "F***T****" also matched 0-dimensional corner-point boundary touches; "F***1****"
+            // requires boundary∩boundary to be a curve (#2742).
+            "esrigeometryrelationlinetouch" => geometry1.Relate(geometry2, "F***1****"),
+            // pointTouch: interiors disjoint and boundaries meet in a 0-dimensional (point) set.
+            // "FT*******" only constrained interior∩interior and interior∩boundary, matching edge
+            // touches too; "F***0****" requires a point-dimensional boundary touch (#2742).
+            "esrigeometryrelationpointtouch" => geometry1.Relate(geometry2, "F***0****"),
             "esrigeometryrelationrelation" => geometry1.Relate(geometry2, relationParam!),
             _ => false
         };
@@ -3112,7 +3137,7 @@ internal sealed class GeometryServiceHandler(
 
         for (var i = 0; i < wkbs.Count; i++)
         {
-            geometryElements[i] = _geometryConverter.ConvertWkbToGeoServicesGeometry(wkbs[i], srid);
+            geometryElements[i] = ConvertResultWkbToElement(wkbs[i], srid, geometryType);
         }
 
         return new GeometryServiceResponse
@@ -3121,6 +3146,153 @@ internal sealed class GeometryServiceHandler(
             SpatialReference = new GeometryServiceSpatialReference { Wkid = srid, LatestWkid = srid },
             Geometries = geometryElements
         };
+    }
+
+    /// <summary>
+    /// Converts a result geometry WKB to a GeoServices JSON element, translating the two result
+    /// shapes the underlying converter reports as <see langword="null"/> into faithful Esri output
+    /// instead of a 400 (#2742):
+    /// <list type="bullet">
+    ///   <item><description>
+    ///   <b>Empty geometry</b> (PostGIS returns <c>GEOMETRYCOLLECTION EMPTY</c> for a disjoint
+    ///   intersect or a full difference) becomes an empty Esri geometry of the request's
+    ///   <paramref name="geometryType"/> (<c>{"rings":[]}</c>, <c>{"paths":[]}</c>,
+    ///   <c>{"points":[]}</c>, or an empty point <c>{"x":null,"y":null}</c>).
+    ///   </description></item>
+    ///   <item><description>
+    ///   <b>Mixed GeometryCollection</b> (e.g. an intersection that yields both an area and a
+    ///   boundary touch) is reduced to its highest-dimension components — filtered to the target
+    ///   <paramref name="geometryType"/> when one is supplied — matching Esri's behavior of
+    ///   returning a single geometry of the operator type.
+    ///   </description></item>
+    /// </list>
+    /// Genuinely invalid/unreadable WKB still surfaces as a 400 through the converter.
+    /// </summary>
+    private JsonElement ConvertResultWkbToElement(byte[] wkb, int srid, string? geometryType)
+    {
+        Geometry? geometry = null;
+        if (wkb is { Length: > 0 })
+        {
+            try
+            {
+                geometry = new WKBReader().Read(wkb);
+            }
+            catch (Exception ex) when (ex is ParseException or FormatException)
+            {
+                // Fall through to the converter, which maps unreadable WKB to a 400.
+                geometry = null;
+            }
+        }
+
+        if (geometry is null || geometry.IsEmpty)
+        {
+            return CreateEmptyGeometryElement(geometryType, srid);
+        }
+
+        if (geometry is GeometryCollection and not (MultiPoint or MultiLineString or MultiPolygon))
+        {
+            var reduced = ReduceMixedCollection(geometry, geometryType);
+            if (reduced is null || reduced.IsEmpty)
+            {
+                return CreateEmptyGeometryElement(geometryType, srid);
+            }
+
+            var reducedWkb = new WKBWriter().Write(reduced);
+            return _geometryConverter.ConvertWkbToGeoServicesGeometry(reducedWkb, srid);
+        }
+
+        return _geometryConverter.ConvertWkbToGeoServicesGeometry(wkb, srid);
+    }
+
+    /// <summary>
+    /// Reduces a heterogeneous <see cref="GeometryCollection"/> to a homogeneous geometry of the
+    /// target dimension: the dimension implied by <paramref name="geometryType"/> when supplied,
+    /// otherwise the highest dimension present. Returns <see langword="null"/> when no component
+    /// matches.
+    /// </summary>
+    private static Geometry? ReduceMixedCollection(Geometry collection, string? geometryType)
+    {
+        var components = new List<Geometry>();
+        FlattenInto(collection, components);
+        if (components.Count == 0)
+        {
+            return null;
+        }
+
+        var targetDimension = TargetDimensionFor(geometryType);
+        if (targetDimension < 0)
+        {
+            targetDimension = components.Max(static c => (int)c.Dimension);
+        }
+
+        var matching = components.Where(c => (int)c.Dimension == targetDimension).ToList();
+        if (matching.Count == 0)
+        {
+            return null;
+        }
+
+        return matching.Count == 1
+            ? matching[0]
+            : collection.Factory.BuildGeometry(matching);
+    }
+
+    private static void FlattenInto(Geometry geometry, List<Geometry> sink)
+    {
+        if (geometry.IsEmpty)
+        {
+            return;
+        }
+
+        if (geometry is GeometryCollection and not (MultiPoint or MultiLineString or MultiPolygon))
+        {
+            for (var i = 0; i < geometry.NumGeometries; i++)
+            {
+                FlattenInto(geometry.GetGeometryN(i), sink);
+            }
+
+            return;
+        }
+
+        sink.Add(geometry);
+    }
+
+    private static int TargetDimensionFor(string? geometryType)
+        => NormalizeGeometryType(geometryType) switch
+        {
+            "esriGeometryPoint" or "esriGeometryMultipoint" => 0,
+            "esriGeometryPolyline" => 1,
+            "esriGeometryPolygon" or "esriGeometryEnvelope" => 2,
+            _ => -1
+        };
+
+    private static string? NormalizeGeometryType(string? geometryType)
+        => geometryType?.ToLowerInvariant() switch
+        {
+            "esrigeometrypoint" => "esriGeometryPoint",
+            "esrigeometrymultipoint" => "esriGeometryMultipoint",
+            "esrigeometrypolyline" => "esriGeometryPolyline",
+            "esrigeometrypolygon" => "esriGeometryPolygon",
+            "esrigeometryenvelope" => "esriGeometryEnvelope",
+            _ => null
+        };
+
+    /// <summary>
+    /// Builds an empty Esri geometry element matching the request's geometry type, defaulting to
+    /// an empty polygon (<c>{"rings":[]}</c>) when the type is unknown.
+    /// </summary>
+    private static JsonElement CreateEmptyGeometryElement(string? geometryType, int srid)
+    {
+        var spatialReference = $"\"spatialReference\":{{\"wkid\":{srid.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"latestWkid\":{srid.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}";
+        var json = NormalizeGeometryType(geometryType) switch
+        {
+            "esriGeometryPoint" => $"{{\"x\":null,\"y\":null,{spatialReference}}}",
+            "esriGeometryMultipoint" => $"{{\"points\":[],{spatialReference}}}",
+            "esriGeometryPolyline" => $"{{\"paths\":[],{spatialReference}}}",
+            _ => $"{{\"rings\":[],{spatialReference}}}"
+        };
+
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
     }
 
     // Planar (calculationType=planar / geodesic=false) measures on a geographic CRS scale

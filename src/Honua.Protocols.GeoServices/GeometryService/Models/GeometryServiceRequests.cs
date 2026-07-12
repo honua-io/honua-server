@@ -155,6 +155,12 @@ internal sealed class TrimExtendParameters
     public required string[] PolylineJsonStrings { get; init; }
     public required string TrimExtendToJson { get; init; }
     public int SR { get; init; }
+
+    /// <summary>
+    /// The Esri <c>extendHow</c> bit flag (e.g. keep end segment, keep relationships). It is
+    /// parsed and carried for request fidelity but is <b>not</b> yet honored: trimExtend always
+    /// applies the default extend behavior. Implementing the flag semantics is deferred (#2742).
+    /// </summary>
     public string? ExtendHow { get; init; }
 }
 
@@ -230,8 +236,18 @@ internal sealed class FromGeoCoordinateStringParameters
 /// </summary>
 internal enum MeasurementCalculationType
 {
+    /// <summary>Planar (Cartesian) measurement in the geometry's own spatial reference.</summary>
     Planar,
+
+    /// <summary>Geodesic (ellipsoidal ground) measurement.</summary>
     Geodesic,
+
+    /// <summary>
+    /// Esri <c>preserveShape</c>. Honua treats this as equivalent to <see cref="Geodesic"/>:
+    /// both route through the geography measurement pipeline, so preserveShape produces a true
+    /// ground measure rather than a distinct shape-preserving projection. Documented divergence
+    /// (#2742).
+    /// </summary>
     PreserveShape
 }
 
