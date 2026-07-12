@@ -342,6 +342,117 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeometryBuffer_GeodesicTrue_RejectsPlan()
+    {
+        var plan = CreateSingleStepPlan(
+            "geometry.buffer",
+            new Dictionary<string, string>
+            {
+                ["wkb"] = "AAAA",
+                ["srid"] = "4326",
+                ["distance"] = "100",
+                ["geodesic"] = "true"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.FieldPath == "steps[s1].inputs.geodesic" &&
+            v.Message.Contains("geodesic buffering is not yet supported", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeometryBuffer_GeodesicFalse_ProducesNoGeodesicViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "geometry.buffer",
+            new Dictionary<string, string>
+            {
+                ["wkb"] = "AAAA",
+                ["srid"] = "4326",
+                ["distance"] = "100",
+                ["geodesic"] = "false"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeometryBuffer_ZeroDistance_RejectsPlan()
+    {
+        var plan = CreateSingleStepPlan(
+            "geometry.buffer",
+            new Dictionary<string, string>
+            {
+                ["wkb"] = "AAAA",
+                ["srid"] = "4326",
+                ["distance"] = "0"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.FieldPath == "steps[s1].inputs.distance" &&
+            v.Code == "INVALID_PARAMETER_VALUE");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeometryBuffer_NegativeDistance_RejectsPlan()
+    {
+        var plan = CreateSingleStepPlan(
+            "geometry.buffer",
+            new Dictionary<string, string>
+            {
+                ["wkb"] = "AAAA",
+                ["srid"] = "4326",
+                ["distance"] = "-5"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.FieldPath == "steps[s1].inputs.distance" &&
+            v.Code == "INVALID_PARAMETER_VALUE");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_PlanarMeasureProcesses_DoNotAdvertiseGeodesicOrMeters()
+    {
+        var buffer = _catalog.GetProcess("geometry.buffer")!;
+        var distance = buffer.Parameters.Single(p => p.Name == "distance");
+        distance.Description.Should().Contain("planar", "the buffer executor computes planar CRS-unit distances");
+        distance.Description.Should().NotContain("in meters.",
+            "the buffer distance is in the input CRS's coordinate units, not meters");
+
+        // The honest descriptions may mention geodesic/meters while disclaiming them
+        // ("No geodesic conversion is performed"), so assert on the computed-semantics
+        // claim rather than bare substrings.
+        var area = _catalog.GetProcess("geometry.area")!;
+        area.Description.Should().NotContain("Computes the geodesic",
+            "the area executor computes planar area, not geodesic");
+        area.Description.Should().Contain("No geodesic conversion is performed");
+        area.Description.Should().Contain("planar");
+
+        var length = _catalog.GetProcess("geometry.length")!;
+        length.Description.Should().NotContain("Computes the geodesic",
+            "the length executor computes planar length, not geodesic");
+        length.Description.Should().Contain("No geodesic conversion is performed");
+        length.Description.Should().Contain("planar");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Validator_ExternalPostgisSink_WithSecureConnectionName_ProducesNoViolations()
     {
         var plan = CreateSingleStepPlan(

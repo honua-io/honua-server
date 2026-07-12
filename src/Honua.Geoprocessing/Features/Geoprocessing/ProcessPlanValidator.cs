@@ -303,6 +303,9 @@ internal static partial class ProcessPlanValidator
     {
         switch (step.ProcessId)
         {
+            case "geometry.buffer":
+                ValidateGeometryBufferSemantics(step, violations);
+                break;
             case "surface.slope":
                 ValidateSurfaceSlopeSemantics(step, violations);
                 break;
@@ -488,6 +491,32 @@ internal static partial class ProcessPlanValidator
                 ValidateExternalPostgisSinkSemantics(step, violations);
                 break;
         }
+    }
+
+    // geometry.buffer advertises a geodesic flag and accepts a FloatingPoint
+    // distance, but GeometryBufferJobExecutor only implements planar buffering
+    // and requires a strictly positive distance. Mirror both runtime guards at
+    // submit time so the plan is refused up front instead of failing only once
+    // the job runs (#2733).
+    private static void ValidateGeometryBufferSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("geodesic", out var geodesicRaw)
+            && !string.IsNullOrWhiteSpace(geodesicRaw)
+            && bool.TryParse(geodesicRaw, out var geodesic)
+            && geodesic)
+        {
+            AddRangeViolationIfNew(step, "geodesic",
+                "geodesic buffering is not yet supported; submit with geodesic=false and supply distance in the input CRS units",
+                violations);
+        }
+
+        // The base type validator already rejects non-finite FloatingPoint
+        // values, but it admits zero and negatives, which erode the geometry to
+        // an empty result at execution. A buffer requires a strictly positive,
+        // finite distance.
+        RequirePositiveFiniteDouble(step, "distance", violations);
     }
 
     private static void ValidateExternalPostgisSinkSemantics(

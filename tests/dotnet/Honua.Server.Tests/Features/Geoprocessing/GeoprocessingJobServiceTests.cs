@@ -114,6 +114,42 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithStableSubject_StoresSubjectAsOwner()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreateStablePrincipal());
+
+        job.Audit.RequestedBy.Should().Be("subject-123");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_IdempotentReplayWithStableSubject_ReturnsExistingJob()
+    {
+        ExecutionJobRecord? created = null;
+        var createCalls = 0;
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                createCalls++;
+                created ??= call.Arg<ExecutionJobRecord>();
+                return createCalls == 1;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => created);
+
+        var first = await _sut.SubmitJobAsync(CreateValidPlan(), "stable-replay", CreateStablePrincipal());
+        var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "stable-replay", CreateStablePrincipal());
+
+        replay.OperationId.Should().Be(first.OperationId);
+        replay.Audit.RequestedBy.Should().Be("subject-123");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithProtocolMetadata_StoresInSpecParameters()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -850,6 +886,32 @@ public sealed class GeoprocessingJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}")]
+    public async Task GetJob_StableSubjectMatchesOwner_ReturnsRecord()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "subject-123");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var result = await _sut.GetJobAsync("job-1", CreateStablePrincipal());
+
+        result.OperationId.Should().Be("job-1");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}")]
+    public async Task GetJob_DisplayNameMatchesButStableSubjectDiffers_ThrowsNotFound()
+    {
+        var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Running, owner: "Display Name");
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var act = async () => await _sut.GetJobAsync("job-1", CreateStablePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task GetJob_SubmittedByAnotherPrincipal_AdminRoleCanRead()
     {
@@ -867,16 +929,102 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
-    public async Task GetJob_WithoutRecordedSubmitter_RemainsAccessible()
+    public async Task GetJob_WithoutRecordedSubmitter_DeniedToNonAdmin()
     {
-        // Jobs submitted while authentication is disabled record no owner and
-        // keep the coarse Job-grant behavior.
-        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running);
+        // #2753: an ownerless job (no recorded submitter) must NOT be readable by an
+        // ordinary Job.Read holder — that was the null-owner read bypass. Surfaced as
+        // not-found, matching the cross-principal case.
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running, owner: null);
         _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
 
-        var result = await _sut.GetJobAsync("job-1", CreatePrincipal());
+        var act = async () => await _sut.GetJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task GetJob_WithoutRecordedSubmitter_AdminCanRead()
+    {
+        // #2753: admin retains full visibility, including ownerless jobs.
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running, owner: null);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var admin = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "ops-admin"), new Claim(ClaimTypes.Role, "admin")], "Test"));
+
+        var result = await _sut.GetJobAsync("job-1", admin);
 
         result.OperationId.Should().Be("job-1");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
+    public async Task ListJobs_NonAdmin_ReturnsOnlyCallersOwnJobs()
+    {
+        // #2753: a Job.Read holder must see only its OWN jobs. The store page mixes the
+        // caller's job, another owner's job, and an ownerless job; only the caller's own
+        // job survives the ownership filter (ownerless is admin-only).
+        _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobPage
+            {
+                Items =
+                [
+                    CreateOwnedJobRecord("job-mine", ExecutionJobStatus.Running, owner: "test-user"),
+                    CreateOwnedJobRecord("job-theirs", ExecutionJobStatus.Running, owner: "other-user"),
+                    CreateJobRecord("job-ownerless", ExecutionJobStatus.Running, owner: null)
+                ]
+            });
+
+        var page = await _sut.ListJobsAsync(new GeoprocessingJobListFilter(), CreatePrincipal());
+
+        page.Items.Select(j => j.OperationId).Should().Equal("job-mine");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
+    public async Task ListJobs_Admin_SeesAllJobsIncludingOwnerless()
+    {
+        // #2753: admin retains full visibility across all owners and ownerless jobs.
+        _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobPage
+            {
+                Items =
+                [
+                    CreateOwnedJobRecord("job-a", ExecutionJobStatus.Running, owner: "test-user"),
+                    CreateOwnedJobRecord("job-b", ExecutionJobStatus.Running, owner: "other-user"),
+                    CreateJobRecord("job-ownerless", ExecutionJobStatus.Running, owner: null)
+                ]
+            });
+
+        var admin = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "ops-admin"), new Claim(ClaimTypes.Role, "admin")], "Test"));
+
+        var page = await _sut.ListJobsAsync(new GeoprocessingJobListFilter(), admin);
+
+        page.Items.Select(j => j.OperationId).Should()
+            .BeEquivalentTo("job-a", "job-b", "job-ownerless");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
+    public async Task ListJobs_NonAdmin_OwnerlessJobExcluded()
+    {
+        // #2753: the null-owner read bypass — an ownerless job must not leak into a
+        // non-admin's listing even when it is the only job.
+        _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobPage
+            {
+                Items = [CreateJobRecord("job-ownerless", ExecutionJobStatus.Running, owner: null)]
+            });
+
+        var page = await _sut.ListJobsAsync(new GeoprocessingJobListFilter(), CreatePrincipal());
+
+        page.Items.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -2885,16 +3033,21 @@ public sealed class GeoprocessingJobServiceTests
         ]
     };
 
+    // Jobs default to being owned by the "test-user" principal that CreatePrincipal()
+    // returns, so ownership-scoped operations (get/results/cancel) succeed for the
+    // conventional caller. Pass owner: null to exercise the ownerless (admin-only) path.
     private static ExecutionJobRecord CreateJobRecord(
         string jobId,
         ExecutionJobStatus status,
         string backend = LocalBatchComputeBackend.BackendId,
-        BatchComputeTargetKind targetKind = BatchComputeTargetKind.KubernetesJob) => new()
+        BatchComputeTargetKind targetKind = BatchComputeTargetKind.KubernetesJob,
+        string? owner = "test-user") => new()
         {
             OperationId = jobId,
             Status = status,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
+            Audit = new OperationAuditInfo { RequestedBy = owner },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -2916,4 +3069,11 @@ public sealed class GeoprocessingJobServiceTests
     private static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, "test-user")], "Test"));
+
+    private static ClaimsPrincipal CreateStablePrincipal()
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "Display Name"),
+                new Claim(ClaimTypes.NameIdentifier, "subject-123")
+            ], "Test"));
 }

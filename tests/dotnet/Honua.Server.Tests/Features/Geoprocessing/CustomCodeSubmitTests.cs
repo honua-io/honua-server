@@ -127,7 +127,10 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_OrgAllowlistPolicy_NonAdminPrincipal_AllowedWhenOnList()
     {
-        // OrgAllowlist must NOT be affected by the admin gate — only Open requires elevation.
+        // OrgAllowlist does not require the full admin role that the Open policy demands
+        // (PA-196). A non-admin caller that HOLDS the custom-code authorization (#2752 —
+        // Process.ExecuteCustomCode; granted here by the always-allow evaluator) is
+        // accepted, proving the #2752 who-gate is not an admin-only over-gate.
         var sut = CreateService(options =>
         {
             options.RepoPolicy = CustomCodeRepoPolicy.OrgAllowlist;
@@ -137,6 +140,104 @@ public sealed class CustomCodeSubmitTests
         var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
 
         job.Spec.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+    }
+
+    // -----------------------------------------------------------------------
+    // #2752: custom-code submission requires an elevated, custom-code-specific
+    // authorization (Process.ExecuteCustomCode) under EVERY repo policy — not just
+    // Open. A baseline Process.Execute caller (which the built-in tool catalog uses)
+    // must NOT be able to submit operator-supplied code.
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_OrgAllowlist_WithoutCustomCodePermission_Forbidden()
+    {
+        // OrgAllowlist is the default posture. A caller authorized for Process.Execute but
+        // NOT for Process.ExecuteCustomCode must be rejected — this is the #2752 gap.
+        DenyCustomCodePermission();
+        var sut = CreateService(options =>
+        {
+            options.RepoPolicy = CustomCodeRepoPolicy.OrgAllowlist;
+            options.RepoAllowlist = ["github.com"];
+        });
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .Where(e => !e.RequiresAuthentication,
+                "an authenticated caller lacking the custom-code permission is forbidden (403), not unauthenticated (401)");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_SignedOnly_WithoutCustomCodePermission_Forbidden()
+    {
+        // SignedOnly is the strictest repo policy; the #2752 who-gate must apply there too.
+        // The authorization denial precedes the signature check, so no verifier is needed.
+        DenyCustomCodePermission();
+        var sut = CreateService(options =>
+        {
+            options.RepoPolicy = CustomCodeRepoPolicy.SignedOnly;
+            options.RepoAllowlist = ["github.com"];
+            options.TrustedSignerKeys = ["ABCD1234"];
+        });
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .Where(e => !e.RequiresAuthentication);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_SignedOnly_WithCustomCodePermission_Accepted()
+    {
+        // The same caller, once authorized for custom code, is accepted under SignedOnly
+        // (the always-allow evaluator grants ExecuteCustomCode). Proves the gate accepts an
+        // authorized caller rather than blanket-denying every non-admin.
+        var verifier = new StubSignatureVerifier(new CommitSignatureResult(IsSignatureValid: true, SignerKeyId: "abcd1234", Detail: null));
+        var sut = CreateService(
+            options =>
+            {
+                options.RepoPolicy = CustomCodeRepoPolicy.SignedOnly;
+                options.RepoAllowlist = ["github.com"];
+                options.TrustedSignerKeys = ["ABCD1234"];
+            },
+            signatureVerifier: verifier);
+
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+
+        job.Spec.RuntimeProfile.Should().Be(CustomCodeJobContract.RuntimeProfile);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_BuiltInTool_WithoutCustomCodePermission_StillSucceeds()
+    {
+        // The #2752 who-gate must not over-gate ordinary geoprocessing: the SAME caller
+        // that is denied ExecuteCustomCode can still submit a built-in-tool job, because
+        // that only requires the baseline Process.Execute (which remains granted).
+        DenyCustomCodePermission();
+        var sut = CreateService(options =>
+        {
+            options.RepoPolicy = CustomCodeRepoPolicy.OrgAllowlist;
+            options.RepoAllowlist = ["github.com"];
+        });
+
+        // No customcode.* metadata → an ordinary built-in-tool submission.
+        var job = await sut.SubmitJobAsync(BuiltInPlan(), null, OwnerPrincipal());
+
+        job.OperationId.Should().NotBeNullOrEmpty();
+        job.Spec.RuntimeProfile.Should().NotBe(CustomCodeJobContract.RuntimeProfile);
     }
 
     // -----------------------------------------------------------------------
@@ -725,6 +826,41 @@ public sealed class CustomCodeSubmitTests
             customCodeOptions: new StaticOptionsMonitor<CustomCodeOptions>(options),
             customCodeSignatureVerifier: signatureVerifier);
     }
+
+    /// <summary>
+    /// Configures the evaluator to DENY the #2752 custom-code operation
+    /// (Process.ExecuteCustomCode) while leaving the baseline Process.Execute (and every
+    /// other operation) granted by the always-allow default set in the constructor.
+    /// </summary>
+    private void DenyCustomCodePermission()
+        => _authEvaluator
+            .EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Is<OperatorAuthorizationRequest>(r => r.Operation == OperatorOperation.ExecuteCustomCode),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden("custom-code submission is not authorized")));
+
+    /// <summary>A minimal built-in-tool plan (no customcode.* metadata).</summary>
+    private static AnalysisPlan BuiltInPlan() => new()
+    {
+        PlanId = "builtin-plan-1",
+        IntentId = "builtin-intent-1",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-1",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "geometry.buffer",
+                Inputs = new Dictionary<string, string>
+                {
+                    ["wkb"] = "AAAA",
+                    ["srid"] = "4326",
+                    ["distance"] = "100"
+                }
+            }
+        ]
+    };
 
     /// <summary>A test verifier that returns a fixed signature outcome.</summary>
     private sealed class StubSignatureVerifier(CommitSignatureResult result) : ICustomCodeCommitSignatureVerifier

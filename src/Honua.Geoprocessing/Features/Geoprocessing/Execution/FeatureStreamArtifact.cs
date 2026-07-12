@@ -274,7 +274,7 @@ internal static class FeatureStreamArtifact
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(features);
 
-        var writer = new GeoJsonWriter();
+        var writer = GeoJsonArtifactCodec.CreateWriter();
         long count = 0;
         long bytes = 0;
 
@@ -405,7 +405,7 @@ internal static class FeatureStreamArtifact
     {
         ArgumentNullException.ThrowIfNull(path);
 
-        var reader = new GeoJsonReader();
+        var reader = GeoJsonArtifactCodec.CreateReader();
         await using var fileStream = new FileStream(
             path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1 << 16, useAsync: true);
         using var textReader = new StreamReader(fileStream, Encoding.UTF8);
