@@ -127,6 +127,14 @@ internal sealed partial class GdalRasterClipJobExecutor(
             var cutlinePath = Path.Combine(workspace, "cutline.geojson");
             var outputPath = Path.Combine(workspace, "output.tif");
 
+            // Bound the DECLARED pixel footprint before invoking GDAL so a
+            // compressible GeoTIFF declaring enormous dimensions cannot force a
+            // decompression-bomb allocation (#2766).
+            if (!GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            {
+                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+            }
+
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
 
             var cutlineGeoJson = WriteCutlineGeoJson(boundary);
