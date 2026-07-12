@@ -37,6 +37,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
+    private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
 
     private readonly InMemoryExecutionJobStore _jobStore = new();
     private readonly WebAppFixture _fixture;
@@ -443,7 +444,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK,
-                "env:outSR is accepted on the synchronous execute route (unlike submitJob which rejects all env controls)");
+                "env:outSR is accepted on the synchronous execute route (and, as of #1228 follow-up, on submitJob too)");
         }
         finally
         {
@@ -781,6 +782,86 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
+    public async Task JobResult_WithEnvOutSR_ReprojectsAsyncGeometryOutput()
+    {
+        // Async honesty (#1228 follow-up): a submitJob request that carried
+        // env:outSR must actually reproject the geometry served from
+        // results/{param}, matching the synchronous execute path — not accept
+        // env:outSR and then silently return the unprojected geometry.
+        var resultFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(
+                    OutSrResultBackedGeoprocessingJobService.Reprojectable());
+            });
+
+        await resultFixture.InitializeAsync();
+        try
+        {
+            using var client = resultFixture.CreateAdminClient();
+
+            var response = await client.GetAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/gp-outsr-job/results/outputFeatureLayer?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            root.TryGetProperty("error", out _).Should().BeFalse("env:outSR must be honored, not error");
+            var value = root.GetProperty("value").GetString();
+            value.Should().StartWith(GeoJsonDataUriPrefix);
+
+            // The served geometry must be reprojected 4326 -> 3857 (Web Mercator
+            // magnitude), not the original WGS 84 coordinates [1, 2].
+            var base64 = value![GeoJsonDataUriPrefix.Length..];
+            using var feature = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(base64)));
+            var coords = feature.RootElement.GetProperty("geometry").GetProperty("coordinates");
+            Math.Abs(coords[0].GetDouble()).Should().BeGreaterThan(1000.0,
+                "lon 1.0 in EPSG:4326 reprojects to ~111319 in EPSG:3857");
+        }
+        finally
+        {
+            await resultFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
+    public async Task JobResult_WithEnvOutSR_UnknownWorkingSr_RejectsRatherThanServingUnprojected()
+    {
+        // When outSR cannot be applied (unknown source SRID here), the async result
+        // path must reject with a clear error rather than silently serving an
+        // unprojected geometry — the accept-and-honor-or-reject convention.
+        var resultFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(
+                    OutSrResultBackedGeoprocessingJobService.UnknownWorkingSr());
+            });
+
+        await resultFixture.InitializeAsync();
+        try
+        {
+            using var client = resultFixture.CreateAdminClient();
+
+            var response = await client.GetAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/gp-outsr-job/results/outputFeatureLayer?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+        }
+        finally
+        {
+            await resultFixture.DisposeAsync();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Cancel Job
     // -----------------------------------------------------------------------
@@ -1035,10 +1116,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     // -----------------------------------------------------------------------
 
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_WithEnvOutSR_ReturnsBadRequest()
+    public async Task SubmitJob_WithEnvOutSR_IsAccepted()
     {
+        // env:outSR is now recognized (not rejected) on submitJob, matching the
+        // synchronous execute route's behavior. See #1228.
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -1051,17 +1134,19 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("env:outSR must not be rejected on submitJob");
+        doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
     }
 
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJobPost_WithEnvInQueryString_ReturnsBadRequest()
+    public async Task SubmitJobPost_WithEnvInQueryString_IsAccepted()
     {
         // POST with form body but env control in query string â€” the query-string
-        // parameter must still be read and rejected (not silently dropped).
+        // parameter must still be read and honored (not silently dropped).
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -1073,20 +1158,100 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?env:outSR=4326", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("env:outSR must not be rejected on submitJob");
+        doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
     }
 
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.Create)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJobGet_WithEnvProcessSR_ReturnsBadRequest()
+    public async Task SubmitJobGet_WithEnvProcessSR_IsAccepted()
     {
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10&env:processSR=3857");
 
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("env:processSR must not be rejected on submitJob");
+        doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithEnvWorkspaceAndOverwriteOutput_ThreadsProtocolMetadata()
+    {
+        var recordingService = new RecordingGeoprocessingJobService();
+        var submitFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(recordingService);
+            });
+
+        await submitFixture.InitializeAsync();
+        try
+        {
+            using var client = submitFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "10",
+                ["env:workspace"] = "ws-scratch-1",
+                ["env:overwriteOutput"] = "true"
+            });
+
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            doc.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+            doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+
+            recordingService.LastProtocolMetadata.Should().Contain(
+                new KeyValuePair<string, string>("gpserver.env.workspace", "ws-scratch-1"));
+            recordingService.LastProtocolMetadata.Should().Contain(
+                new KeyValuePair<string, string>("gpserver.env.overwriteOutput", "true"));
+        }
+        finally
+        {
+            await submitFixture.DisposeAsync();
+        }
+    }
+
+    // Note: there is no HTTP-level "empty env:workspace" test — GPServerParameterTranslation.
+    // ReadRequestParametersAsync drops any parameter with an empty string value before it
+    // ever reaches TryParseEnvControls (pre-existing behavior shared by every GPServer
+    // parameter, not specific to env:workspace), so an empty env:workspace on the wire is
+    // indistinguishable from an absent one. TryParseEnvControls' empty-value guard remains
+    // as defensive coding for direct callers.
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithInvalidEnvOverwriteOutput_ReturnsBadRequest()
+    {
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10",
+            ["env:overwriteOutput"] = "not-a-bool"
+        });
+
+        var response = await _client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
+
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
     }
 
     // -----------------------------------------------------------------------
@@ -1189,14 +1354,17 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         {
             var client = authFixture.Client;
 
-            // Include env:outSR which would trigger a 400 if auth were skipped.
+            // Include an unsupported env:* control which would trigger a 400 if
+            // auth were skipped. env:outSR/env:processSR/env:workspace/
+            // env:overwriteOutput are now recognized (not rejected) on submitJob,
+            // so this uses a control that stays unsupported.
             var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["f"] = "json",
                 ["wkb"] = PointWkbBase64,
                 ["srid"] = "4326",
                 ["distance"] = "10",
-                ["env:outSR"] = "4326"
+                ["env:transferDomains"] = "true"
             });
 
             var response = await client.PostAsync(
@@ -1434,6 +1602,128 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 ProcessDefinitions = ["geometry.buffer"],
                 ExecutedAt = DateTimeOffset.UtcNow
             });
+
+        public Task EnsureCallerAuthorizedAsync(
+            ClaimsPrincipal principal,
+            OperatorResourceType resourceType,
+            OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> SubmitJobAsync(
+            AnalysisPlan plan,
+            string? idempotencyKey,
+            ClaimsPrincipal principal,
+            IReadOnlyDictionary<string, string>? protocolMetadata = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> GetJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_job);
+
+        public Task<AnalysisResultPackage> GetJobResultsAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_results);
+
+        public Task CancelJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Test double for the async results/{param} path with env:outSR in the job
+    /// metadata. Serves a single WGS 84 (EPSG:4326) GeoJSON point output so the
+    /// handler's env:outSR reprojection can be exercised end to end. Factory
+    /// methods pick the working-SRID metadata: <see cref="Reprojectable"/> stores a
+    /// known 4326 working SRID (reprojects to 3857); <see cref="UnknownWorkingSr"/>
+    /// omits it (the transform cannot be applied and must be rejected).
+    /// </summary>
+    private sealed class OutSrResultBackedGeoprocessingJobService : IGeoprocessingJobService
+    {
+        private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
+
+        private static readonly string PointDataUri = GeoJsonDataUriPrefix +
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(
+                "{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"Point\",\"coordinates\":[1.0,2.0]}}"));
+
+        private readonly ExecutionJobRecord _job;
+        private readonly AnalysisResultPackage _results;
+
+        private OutSrResultBackedGeoprocessingJobService(bool includeWorkingSr)
+        {
+            var parameters = new Dictionary<string, string>
+            {
+                ["gpserver.serviceId"] = ServiceId,
+                ["gpserver.taskName"] = "geometry.buffer",
+                ["gpserver.output.0"] = "outputFeatureLayer",
+                ["gpserver.env.outSR"] = "3857"
+            };
+            if (includeWorkingSr)
+            {
+                parameters["gpserver.env.workingSR"] = "4326";
+            }
+
+            _job = new ExecutionJobRecord
+            {
+                OperationId = "gp-outsr-job",
+                Status = ExecutionJobStatus.Succeeded,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = DateTimeOffset.UtcNow,
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "gp-outsr",
+                    Parameters = parameters
+                }
+            };
+
+            _results = AnalysisResultPackage.CreateCompleted(
+                resultPackageId: "pkg-gp-outsr-job",
+                summary: new ResultSummary { Title = "GPServer outSR output" },
+                artifacts:
+                [
+                    new ArtifactRef
+                    {
+                        ArtifactId = "art-outsr-1",
+                        Kind = ArtifactKind.FeatureLayer,
+                        Label = "Buffered Output",
+                        Uri = PointDataUri
+                    }
+                ],
+                workspaceRefs: [],
+                provenance: new ProvenanceRecord
+                {
+                    Sources = [],
+                    ProcessDefinitions = ["geometry.buffer"],
+                    ExecutedAt = DateTimeOffset.UtcNow
+                });
+        }
+
+        public static OutSrResultBackedGeoprocessingJobService Reprojectable() => new(includeWorkingSr: true);
+
+        public static OutSrResultBackedGeoprocessingJobService UnknownWorkingSr() => new(includeWorkingSr: false);
+
+        public Task<GeoprocessingJobListPage> ListJobsAsync(
+            GeoprocessingJobListFilter filter,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new GeoprocessingJobListPage { Items = Array.Empty<ExecutionJobRecord>() });
 
         public Task EnsureCallerAuthorizedAsync(
             ClaimsPrincipal principal,
