@@ -3,9 +3,8 @@
 
 using System.Globalization;
 using Honua.Core.Features.Shared.Models;
-using Honua.Infrastructure.Services;
 
-namespace Honua.Protocols.Ogc.Common;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Canonical WMTS coordinate formatting shared by every adapter that emits a tile matrix set.
