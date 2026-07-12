@@ -228,6 +228,7 @@ public class ImageServerRasterMetadataTests
     [Endpoint("GET /rest/services/{id}/ImageServer/colormap")]
     [Endpoint("POST /rest/services/{id}/ImageServer/colormap")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/colormap")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/colormap")]
     [Operation(Operations.Metadata)]
     public async Task Colormap_WithColormapRenderingRule_ReturnsResolvedStops()
     {
