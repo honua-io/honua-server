@@ -308,8 +308,7 @@ internal sealed partial class OgcFeaturesGeometryServices
 
         geometry = GeometryOutputProcessor.ApplyLimits(geometry, _geometryLimits) ?? geometry;
 
-        var writer = new GeoJsonWriter();
-        var geoJson = writer.Write(geometry);
+        var geoJson = RingWindingNormalizer.WriteGeoJson(new GeoJsonWriter(), geometry);
 
         using var document = JsonDocument.Parse(geoJson);
         var root = document.RootElement;
@@ -478,16 +477,13 @@ internal sealed partial class OgcFeaturesGeometryServices
 
         try
         {
-            // Try to repair using buffer(0) technique
+            // Repair using the shape-preserving buffer(0) technique. The historical
+            // ConvexHull last-resort was removed (#2745): a convex hull discards holes and
+            // concavities, silently corrupting the feature's shape. Return null when buffer(0)
+            // cannot produce a valid geometry so callers fail loudly rather than persist a
+            // distorted footprint.
             var buffered = geometry.Buffer(0);
-            if (buffered?.IsValid == true)
-            {
-                return buffered;
-            }
-
-            // If buffer doesn't work, try convex hull as last resort
-            var convexHull = geometry.ConvexHull();
-            return convexHull?.IsValid == true ? convexHull : null;
+            return buffered?.IsValid == true ? buffered : null;
         }
         catch (Exception ex)
         {

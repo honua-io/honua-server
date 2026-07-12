@@ -440,4 +440,31 @@ public class GeometryConverterTests
     }
 
     #endregion
+
+    #region Ring Winding Tests
+
+    [UnitTest]
+    public void ConvertWkbToGeoJson_WithClockwiseExteriorPolygon_EmitsCounterClockwiseExterior()
+    {
+        // Stored clockwise-exterior polygon (common via Esri applyEdits / shapefile imports).
+        var factory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
+        var cwPolygon = factory.CreatePolygon(new Coordinate[]
+        {
+            new(0, 0),
+            new(0, 1),
+            new(1, 1),
+            new(1, 0),
+            new(0, 0),
+        });
+        var wkb = new WKBWriter().Write(cwPolygon);
+
+        var geoJson = _converter.ConvertWkbToGeoJson(wkb) as string;
+
+        geoJson.Should().NotBeNull();
+        var readBack = (Polygon)new GeoJsonReader().Read<Geometry>(geoJson!);
+        NetTopologySuite.Algorithm.Orientation.IsCCW(readBack.ExteriorRing.CoordinateSequence)
+            .Should().BeTrue();
+    }
+
+    #endregion
 }

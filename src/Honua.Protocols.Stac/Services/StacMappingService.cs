@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
@@ -432,7 +433,7 @@ internal sealed class StacMappingService
     {
         try
         {
-            var json = GetGeoJsonWriter().Write(geom);
+            var json = RingWindingNormalizer.WriteGeoJson(GetGeoJsonWriter(), geom);
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.Clone();
         }

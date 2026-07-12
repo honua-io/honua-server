@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Services;
 using NetTopologySuite.IO;
 
@@ -70,7 +71,7 @@ internal static class FeatureChangeEventEnrichment
             var srid = geometry.SRID > 0
                 ? geometry.SRID
                 : fallbackSrid is > 0 ? fallbackSrid : null;
-            var geometryJson = srid.HasValue ? new GeoJsonWriter().Write(geometry) : null;
+            var geometryJson = srid.HasValue ? RingWindingNormalizer.WriteGeoJson(new GeoJsonWriter(), geometry) : null;
             return ([env.MinX, env.MinY, env.MaxX, env.MaxY], geometryJson, srid);
         }
         catch

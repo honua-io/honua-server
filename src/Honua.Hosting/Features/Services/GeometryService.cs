@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Infrastructure.Geometries;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -97,7 +98,7 @@ internal sealed class GeometryService : IGeometryService
             }
 
             var processed = GeometryOutputProcessor.ApplyLimits(geometry, _geometryLimits);
-            return processed == null ? null : NewGeoJsonWriter().Write(processed);
+            return processed == null ? null : RingWindingNormalizer.WriteGeoJson(NewGeoJsonWriter(), processed);
         }
         catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
         {
