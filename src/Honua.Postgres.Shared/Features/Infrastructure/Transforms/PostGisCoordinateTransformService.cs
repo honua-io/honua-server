@@ -241,41 +241,6 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             ExtentSampleSegmentsPerEdge);
     }
 
-    private static IEnumerable<(double X, double Y)> EnumerateSampledExtentPoints(
-        double minX, double minY, double maxX, double maxY)
-    {
-        foreach (var point in WebMercatorMath.EnumerateSampledExtentPoints(
-                     minX,
-                     minY,
-                     maxX,
-                     maxY,
-                     ExtentSampleSegmentsPerEdge))
-        {
-            yield return point;
-        }
-    }
-
-    private static double InterpolateLongitude(double minX, double maxX, double t)
-        => WebMercatorMath.InterpolateLongitude(minX, maxX, t);
-
-    private static bool IsAntimeridianCrossing(double minX, double maxX)
-        => WebMercatorMath.IsAntimeridianCrossing(minX, maxX);
-
-    private static string BuildLongitudeSampleExpression(string minX, string maxX, string t)
-    {
-        return $$"""
-            CASE
-                WHEN {{maxX}} >= {{minX}} THEN {{minX}} + (({{maxX}} - {{minX}}) * {{t}})
-                ELSE
-                    CASE
-                        WHEN {{minX}} + ((({{maxX}} + 360.0) - {{minX}}) * {{t}}) > 180.0
-                            THEN {{minX}} + ((({{maxX}} + 360.0) - {{minX}}) * {{t}}) - 360.0
-                        ELSE {{minX}} + ((({{maxX}} + 360.0) - {{minX}}) * {{t}})
-                    END
-            END
-            """;
-    }
-
     private async Task<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentWithPostGisAsync(
         double minX, double minY, double maxX, double maxY,
         int fromSrid, int toSrid,
@@ -288,9 +253,29 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
 
             // Honor an explicit datum-transformation pipeline via the 3-argument
             // ST_Transform overload; otherwise let PROJ pick its default pipeline.
-            var transformExpression = selection?.ProjPipeline is { Length: > 0 }
-                ? "ST_Transform(geom, @pipeline, @toSrid)"
-                : "ST_Transform(geom, @toSrid)";
+            string TransformOf(string pointExpression) => selection?.ProjPipeline is { Length: > 0 }
+                ? $"ST_Transform({pointExpression}, @pipeline, @toSrid)"
+                : $"ST_Transform({pointExpression}, @toSrid)";
+
+            var transformExpression = TransformOf("geom");
+
+            // A dateline-crossing geographic input (minX > maxX) must stay wrapped in the output
+            // instead of collapsing the sampled X values into a single global min/max — that both
+            // inflates the bbox and drops the far-side sliver. When wrapped, take the output X
+            // bounds from the transformed western/eastern edges directly (mirrors the in-memory
+            // WebMercatorMath.TransformSampledExtent), keeping MinX > MaxX (#2739).
+            var wrapped = WebMercatorMath.IsAntimeridianCrossing(minX, maxX);
+            var edgesCte = wrapped
+                ? $$"""
+                    ,
+                    edges AS (
+                        SELECT {{TransformOf("ST_SetSRID(ST_MakePoint(@minX, @minY), @fromSrid)")}} AS min_edge,
+                               {{TransformOf("ST_SetSRID(ST_MakePoint(@maxX, @minY), @fromSrid)")}} AS max_edge
+                    )
+                    """
+                : string.Empty;
+            var xminSelect = wrapped ? "(SELECT ST_X(min_edge) FROM edges)" : "MIN(ST_X(geom))";
+            var xmaxSelect = wrapped ? "(SELECT ST_X(max_edge) FROM edges)" : "MAX(ST_X(geom))";
 
             await using var connection = await _connectionProvider
                 .OpenConnectionAsync(cancellationToken)
@@ -345,10 +330,10 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                 transformed AS (
                     SELECT {{transformExpression}} AS geom
                     FROM points
-                )
-                SELECT MIN(ST_X(geom)) AS xmin,
+                ){{edgesCte}}
+                SELECT {{xminSelect}} AS xmin,
                        MIN(ST_Y(geom)) AS ymin,
-                       MAX(ST_X(geom)) AS xmax,
+                       {{xmaxSelect}} AS xmax,
                        MAX(ST_Y(geom)) AS ymax
                 FROM transformed
                 """;
