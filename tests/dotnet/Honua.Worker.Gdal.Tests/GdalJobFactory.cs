@@ -44,13 +44,32 @@ internal static class GdalJobFactory
         };
     }
 
-    public static IOptionsMonitor<GdalWorkerOptions> Options(string scratchRoot, long maxArtifactBytes = 50L * 1024L * 1024L)
-        => new StaticOptionsMonitor<GdalWorkerOptions>(new GdalWorkerOptions
+    public static IOptionsMonitor<GdalWorkerOptions> Options(
+        string scratchRoot,
+        long maxArtifactBytes = 50L * 1024L * 1024L,
+        long? maxRasterPixels = null,
+        int? maxRasterWidth = null,
+        int? maxRasterHeight = null,
+        int? maxRasterBands = null,
+        long? maxDecodedRasterBytes = null,
+        int? maxZoneCount = null,
+        long? maxZoneVertices = null)
+    {
+        var defaults = new GdalWorkerOptions();
+        return new StaticOptionsMonitor<GdalWorkerOptions>(new GdalWorkerOptions
         {
             ScratchRoot = scratchRoot,
             MaxArtifactBytes = maxArtifactBytes,
             ToolTimeout = TimeSpan.FromMinutes(1),
+            MaxRasterPixels = maxRasterPixels ?? defaults.MaxRasterPixels,
+            MaxRasterWidth = maxRasterWidth ?? defaults.MaxRasterWidth,
+            MaxRasterHeight = maxRasterHeight ?? defaults.MaxRasterHeight,
+            MaxRasterBands = maxRasterBands ?? defaults.MaxRasterBands,
+            MaxDecodedRasterBytes = maxDecodedRasterBytes ?? defaults.MaxDecodedRasterBytes,
+            MaxZoneCount = maxZoneCount ?? defaults.MaxZoneCount,
+            MaxZoneVertices = maxZoneVertices ?? defaults.MaxZoneVertices,
         });
+    }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {

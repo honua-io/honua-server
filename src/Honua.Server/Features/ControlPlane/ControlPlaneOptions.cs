@@ -397,8 +397,19 @@ internal sealed class ConfigurationParameterEntryOptions
 
 internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPlaneOptions>
 {
+    /// <summary>
+    /// The runtime-profile discriminator carried by a custom-code execution workload.
+    /// Kept as a literal (mirroring <c>ExecutionWorkloadGate</c>'s literal contract
+    /// keys) so this validator takes no dependency on the internal
+    /// <c>Honua.Geoprocessing</c> <c>CustomCodeJobContract.RuntimeProfile</c> constant,
+    /// whose value this must stay in lockstep with.
+    /// </summary>
+    private const string CustomCodeRuntimeProfile = "custom-code";
+
     protected override void ValidateOptions(ControlPlaneOptions options, List<string> failures)
     {
+        ValidateCustomCodeWorkloadsAreBatchOnly(options.ExecutionWorkloads, failures);
+
         ValidateKubernetes(options.Kubernetes, failures);
 
         PlatformReleaseValidation.Validate(
@@ -455,6 +466,51 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
             if (connection.TimeoutSeconds <= 0)
             {
                 failures.Add($"{propertyPrefix}:TimeoutSeconds must be greater than 0.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Enforces the custom-code-is-AWS-Batch-only policy (ADR-0063) at startup: a
+    /// configuration-declared execution workload that carries the
+    /// <see cref="CustomCodeRuntimeProfile"/> runtime profile may target ONLY the AWS
+    /// Batch backend family (<see cref="BatchComputeTargetKind.AwsBatch"/>).
+    /// </summary>
+    /// <remarks>
+    /// Custom (operator-supplied, untrusted) geoprocessing code must run only inside an
+    /// isolated, cloud-managed AWS Batch container, never in-process/on-host with
+    /// honua-server. On-host batch backends exist for ordinary trusted workloads
+    /// (<c>LocalBatchComputeBackend</c> = <c>local</c>/KubernetesJob family,
+    /// <c>LocalProcessPoolBatchComputeBackend</c> = <c>honua-local-process</c>/LocalProcess
+    /// family), and other cloud families (Azure Batch, Kubernetes Job) are not sanctioned
+    /// for custom code. Pointing a <c>custom-code</c> workload at any of them would route
+    /// untrusted code onto a non-AWS-Batch substrate, so we fail startup here rather than
+    /// let it silently land. The in-process claim fence
+    /// (<c>CustomCodeDispatchJobExecutor</c>) is the runtime backstop; this is the
+    /// configuration-time gate. Local-process execution was evaluated in the closed
+    /// honua-server#2672 and rejected — reintroducing it must trip this explicit gate.
+    /// </remarks>
+    private static void ValidateCustomCodeWorkloadsAreBatchOnly(
+        List<ExecutionWorkloadOptions> workloads,
+        List<string> failures)
+    {
+        for (var i = 0; i < workloads.Count; i++)
+        {
+            var workload = workloads[i];
+            if (!string.Equals(workload.RuntimeProfile?.Trim(), CustomCodeRuntimeProfile, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (workload.TargetKind != BatchComputeTargetKind.AwsBatch)
+            {
+                failures.Add(
+                    $"ControlPlane:ExecutionWorkloads:{i} (WorkloadId '{workload.WorkloadId}') declares the "
+                    + $"'{CustomCodeRuntimeProfile}' runtime profile with TargetKind '{workload.TargetKind}', but "
+                    + "custom-code (custom geoprocessing tool) execution is AWS-Batch-only: untrusted operator "
+                    + "code must run only in an isolated cloud-managed AWS Batch container, never on-host with "
+                    + "honua-server. Set TargetKind='AwsBatch' (Backend='honua-aws-batch') or remove the workload. "
+                    + "See ADR-0063 (custom-code execution is AWS-Batch-only).");
             }
         }
     }

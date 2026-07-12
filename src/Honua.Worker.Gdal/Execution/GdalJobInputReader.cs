@@ -102,6 +102,13 @@ internal static class GdalJobInputReader
             return false;
         }
 
+        if (!GdalUntrustedInputGuard.IsAdmissible(bytes, out var guardReason))
+        {
+            error = $"input '{name}' rejected: {guardReason}";
+            bytes = [];
+            return false;
+        }
+
         return true;
     }
 
@@ -156,6 +163,15 @@ internal static class GdalJobInputReader
         if (bytes.Length == 0)
         {
             error = $"input '{name}' decoded to zero bytes";
+            bytes = [];
+            return false;
+        }
+
+        // Refuse a content-sniffed VRT/XML indirection blob or an embedded /vsi
+        // reference before it is ever materialized and opened by GDAL (#2765).
+        if (!GdalUntrustedInputGuard.IsAdmissible(bytes, out var guardReason))
+        {
+            error = $"input '{name}' rejected: {guardReason}";
             bytes = [];
             return false;
         }

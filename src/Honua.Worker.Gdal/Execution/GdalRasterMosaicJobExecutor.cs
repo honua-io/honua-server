@@ -137,6 +137,15 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             return JobExecutionResult.Failed($"Invalid mosaic inputs: {sourcesError}");
         }
 
+        // Bound the DECLARED pixel footprint of every tile before any file is
+        // written or gdalwarp is invoked, so a compressible GeoTIFF declaring
+        // enormous dimensions cannot force a decompression-bomb allocation (#2766).
+        if (!GdalRasterDimensionGuard.TryAdmitSources(sources, opts, out var dimensionError))
+        {
+            Log.InvalidInputs(logger, job.OperationId, dimensionError);
+            return JobExecutionResult.Failed($"Invalid mosaic inputs: {dimensionError}");
+        }
+
         // 'first' wins is achieved by reversing the source order so the desired
         // source is written LAST into the output (gdalwarp later-source-wins).
         if (string.Equals(mosaicOperator, "first", StringComparison.OrdinalIgnoreCase))
@@ -291,6 +300,16 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             if (bytes.Length > maxBytes)
             {
                 failure = $"source #{(i + 1).ToString(CultureInfo.InvariantCulture)} size {bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes exceeds configured MaxArtifactBytes={maxBytes}";
+                return false;
+            }
+
+            // Refuse a content-sniffed VRT/service-XML indirection blob or an embedded
+            // /vsi reference before it is ever staged to scratch and opened by gdalwarp
+            // (#2765). This executor decodes sources inline rather than through the
+            // shared GdalJobInputReader chokepoint, so the guard must be applied here too.
+            if (!GdalUntrustedInputGuard.IsAdmissible(bytes, out var guardReason))
+            {
+                failure = $"source #{(i + 1).ToString(CultureInfo.InvariantCulture)} rejected: {guardReason}";
                 return false;
             }
 

@@ -61,6 +61,12 @@ jq -e '
   )
 ' .github/ci-shards.json >/dev/null
 
+# #2721: the artifact registry must cover the exact unique shard-project set, and
+# its package/restore contract must fail closed on RID leakage, tampering and limits.
+scripts/ci/validate-server-test-binary-artifacts.sh
+scripts/ci/validate-server-test-transfer-benchmark.sh
+scripts/ci/validate-server-test-shard-cache.sh
+
 echo "Validating targeted_override_prefixes reference real shards..."
 jq -e '
   ([.shards[].name]) as $names
@@ -70,7 +76,10 @@ jq -e '
   || { echo "::error::a targeted_override_prefixes entry references an unknown shard name" >&2; exit 1; }
 
 echo "Checking shell script syntax..."
-bash -n scripts/ci/*.sh
+scripts/ci/validate-shell-syntax.sh
+
+echo "Checking local pre-PR change routing..."
+scripts/ci/fixtures/validate-pre-pr-routing.sh
 
 echo "Checking Python helper syntax..."
 python3 -m py_compile scripts/ci/*.py
@@ -606,6 +615,14 @@ assert_descriptor \
   "targeted" \
   "false" \
   "OData Core"
+
+# The shared WMTS TopLeftCorner formatter has three bounded consumers. Keep a
+# change to that exact file on the classic WMTS, OGC API Tiles, and ImageServer
+# owners instead of tripping the unmapped shared-protocol run_all safety net.
+assert_exact_shards \
+  "shared-wmts-formatter-bounded-owners" \
+  "src/Honua.Protocols.Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
+  '["OGC Classic WMTS","OGC API Tiles Coverages and Processes","GeoServices ImageServer"]'
 
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
 # dir under a shard's paths: it runs the smoke subset PLUS that feature's owning

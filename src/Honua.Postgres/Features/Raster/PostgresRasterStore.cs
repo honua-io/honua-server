@@ -203,6 +203,249 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     /// <inheritdoc />
+    public async Task<RasterCatalogPage> QueryCatalogAsync(
+        int layerId,
+        RasterCatalogQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        query.Validate();
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var (ctePrefix, parameters) = BuildCatalogFilterCte(layerId, query);
+        var wantsAggregate = query.IncludeTotalCount || query.IncludeAggregateExtent;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = BuildCatalogCommandText(ctePrefix, query, includeAggregate: wantsAggregate);
+        foreach (var (name, value) in parameters)
+        {
+            AddParameter(command, name, value);
+        }
+
+        var rasters = new List<RasterInfo>();
+        long totalCount;
+        RasterExtent? aggregateExtent = null;
+
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                rasters.Add(ReadRasterInfo(reader));
+            }
+
+            totalCount = rasters.Count;
+
+            if (wantsAggregate && await reader.NextResultAsync(cancellationToken).ConfigureAwait(false)
+                && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                totalCount = reader.GetInt64(reader.GetOrdinal("total"));
+
+                if (query.IncludeAggregateExtent)
+                {
+                    var xMinOrd = reader.GetOrdinal("agg_xmin");
+                    var yMinOrd = reader.GetOrdinal("agg_ymin");
+                    var xMaxOrd = reader.GetOrdinal("agg_xmax");
+                    var yMaxOrd = reader.GetOrdinal("agg_ymax");
+                    var sridOrd = reader.GetOrdinal("agg_srid");
+
+                    if (!reader.IsDBNull(xMinOrd))
+                    {
+                        aggregateExtent = new RasterExtent
+                        {
+                            XMin = reader.GetDouble(xMinOrd),
+                            YMin = reader.GetDouble(yMinOrd),
+                            XMax = reader.GetDouble(xMaxOrd),
+                            YMax = reader.GetDouble(yMaxOrd),
+                            Srid = reader.IsDBNull(sridOrd) ? null : reader.GetInt32(sridOrd),
+                        };
+                    }
+                }
+            }
+        }
+
+        stopwatch.Stop();
+
+        var rowsScanned = query.IncludeTotalCount ? totalCount : rasters.Count;
+        PostgresRasterLog.CatalogQueryExecuted(
+            _logger, layerId, rowsScanned, rasters.Count, stopwatch.Elapsed.TotalMilliseconds);
+
+        return new RasterCatalogPage
+        {
+            Rasters = rasters,
+            TotalCount = totalCount,
+            AggregateExtent = aggregateExtent,
+            RowsScanned = rowsScanned,
+            RowsReturned = rasters.Count,
+            ProviderDuration = stopwatch.Elapsed,
+            PredicatePushedDown = true,
+        };
+    }
+
+    /// <summary>
+    /// Builds the shared <c>WITH ... filtered AS (...)</c> CTE that applies the layer, spatial
+    /// (envelope-intersects, index-backed via the GiST <c>ST_Envelope(raster)</c> expression index),
+    /// identity, and temporal predicates for the catalog query. The single-row <c>filter_env</c> CTE
+    /// is MATERIALIZED so its transformed envelope is treated as a constant, keeping the
+    /// <c>ST_Envelope(raster) &amp;&amp; fe.geom</c> comparison index-eligible.
+    /// </summary>
+    private (string CtePrefix, List<(string Name, object Value)> Parameters) BuildCatalogFilterCte(
+        int layerId,
+        RasterCatalogQuery query)
+    {
+        var parameters = new List<(string Name, object Value)> { ("@layerId", layerId) };
+        var cteParts = new List<string>();
+        var whereClauses = new List<string> { "layer_id = @layerId" };
+        var fromClause = _rasterDataTable + " rd";
+
+        // Representative native SRID for the layer; used to project the filter box into the raster
+        // coordinate system so the bbox overlap stays in one CRS (and index-eligible).
+        var layerSridExpr =
+            $"(SELECT srid FROM {_rasterDataTable} WHERE layer_id = @layerId AND srid IS NOT NULL AND srid > 0 LIMIT 1)";
+
+        if (query.SpatialPredicate is { } predicate)
+        {
+            string filterGeom;
+            parameters.Add(("@fxmin", predicate.XMin));
+            parameters.Add(("@fymin", predicate.YMin));
+            parameters.Add(("@fxmax", predicate.XMax));
+            parameters.Add(("@fymax", predicate.YMax));
+
+            if (predicate.Srid is { } filterSrid)
+            {
+                parameters.Add(("@fsrid", filterSrid));
+                filterGeom =
+                    $"ST_Transform(ST_MakeEnvelope(@fxmin, @fymin, @fxmax, @fymax, @fsrid), COALESCE({layerSridExpr}, @fsrid))";
+            }
+            else
+            {
+                // No filter SRID: the box is assumed to already be in the footprint's native CRS.
+                filterGeom = $"ST_MakeEnvelope(@fxmin, @fymin, @fxmax, @fymax, COALESCE({layerSridExpr}, 0))";
+            }
+
+            cteParts.Add($"filter_env AS MATERIALIZED (SELECT {filterGeom} AS geom)");
+            fromClause += " CROSS JOIN filter_env fe";
+            whereClauses.Add("ST_Envelope(rd.raster) && fe.geom");
+        }
+
+        if (query.ObjectIds is { } objectIds)
+        {
+            parameters.Add(("@objectIds", objectIds.ToArray()));
+            whereClauses.Add("id = ANY(@objectIds)");
+        }
+
+        if (query.Timestamp is { } timestamp)
+        {
+            cteParts.Add($"""
+                selected_time AS (
+                    SELECT MAX(COALESCE(acquisition_date, created_at)) AS target_acquisition
+                    FROM {_rasterDataTable}
+                    WHERE layer_id = @layerId
+                      AND COALESCE(acquisition_date, created_at) <= @timestamp
+                )
+                """);
+            whereClauses.Add("COALESCE(acquisition_date, created_at) = (SELECT target_acquisition FROM selected_time)");
+            parameters.Add(("@timestamp", timestamp.UtcDateTime));
+        }
+
+        var filteredCte = $"""
+            filtered AS (
+                SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
+                       ST_BandNoDataValue(raster, 1) AS nodata_value,
+                       ST_UpperLeftX(raster) AS upper_left_x,
+                       ST_ScaleX(raster) AS scale_x,
+                       ST_SkewX(raster) AS skew_x,
+                       ST_UpperLeftY(raster) AS upper_left_y,
+                       ST_SkewY(raster) AS skew_y,
+                       ST_ScaleY(raster) AS scale_y,
+                       ST_XMin(ST_Envelope(raster)) AS xmin,
+                       ST_YMin(ST_Envelope(raster)) AS ymin,
+                       ST_XMax(ST_Envelope(raster)) AS xmax,
+                       ST_YMax(ST_Envelope(raster)) AS ymax,
+                       acquisition_date,
+                       created_at,
+                       updated_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {fromClause}
+                WHERE {string.Join("\n                  AND ", whereClauses)}
+            )
+            """;
+
+        cteParts.Add(filteredCte);
+        var ctePrefix = "WITH " + string.Join(",\n", cteParts);
+        return (ctePrefix, parameters);
+    }
+
+    private static string BuildCatalogCommandText(string ctePrefix, RasterCatalogQuery query, bool includeAggregate)
+    {
+        var pagingClause = query.Limit is { } limit
+            ? $"LIMIT {limit.ToString(CultureInfo.InvariantCulture)} OFFSET {Math.Max(0, query.Offset).ToString(CultureInfo.InvariantCulture)}"
+            : string.Empty;
+
+        var rowsSql = $"""
+            {ctePrefix}
+            SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
+                   nodata_value, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
+                   xmin, ymin, xmax, ymax, acquisition_date, created_at, updated_at
+            FROM filtered
+            ORDER BY effective_acquisition DESC, created_at DESC, id DESC
+            {pagingClause}
+            """;
+
+        if (!includeAggregate)
+        {
+            return rowsSql;
+        }
+
+        var aggregateSql = $"""
+            {ctePrefix}
+            SELECT COUNT(*)::bigint AS total,
+                   MIN(xmin) AS agg_xmin,
+                   MIN(ymin) AS agg_ymin,
+                   MAX(xmax) AS agg_xmax,
+                   MAX(ymax) AS agg_ymax,
+                   MAX(srid) AS agg_srid
+            FROM filtered
+            """;
+
+        return rowsSql + ";\n" + aggregateSql;
+    }
+
+    /// <summary>
+    /// Test-only hook: returns the <c>EXPLAIN (ANALYZE, FORMAT TEXT)</c> plan for the paged catalog
+    /// query so provider integration tests can assert the footprint predicate is served by an index
+    /// scan and that only a bounded number of rows are read. Never surfaced to clients.
+    /// </summary>
+    internal async Task<string> ExplainCatalogQueryAsync(
+        int layerId,
+        RasterCatalogQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        query.Validate();
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var (ctePrefix, parameters) = BuildCatalogFilterCte(layerId, query);
+        var rowsSql = BuildCatalogCommandText(ctePrefix, query, includeAggregate: false);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "EXPLAIN (ANALYZE, FORMAT TEXT) " + rowsSql;
+        foreach (var (name, value) in parameters)
+        {
+            AddParameter(command, name, value);
+        }
+
+        var builder = new StringBuilder();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            builder.AppendLine(reader.GetString(0));
+        }
+
+        return builder.ToString();
+    }
+
+    /// <inheritdoc />
     public async Task<RasterResult> ExportImageAsync(int layerId, long rasterId, RasterQuery query, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -3227,6 +3470,195 @@ internal sealed class PostgresRasterStore : IRasterStore
                 AddRenderingParameters(command, renderExtraParams);
             },
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterBandVectorSet> ReadClippedBandVectorsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands,
+        int maxPixels,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return RasterBandVectorSet.Empty(bands ?? Array.Empty<int>());
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Clip each source raster to the training AOI, then union into a single mosaic raster —
+        // the same clip+merge primitive computeStatisticsHistograms uses, so class statistics read
+        // pixels through the shared analytics path rather than a parallel raster reader. A single
+        // raster is simply a mosaic of one.
+        var mergedExpr = CreateMosaicAggregateExpression(mergeStrategy);
+        var rastCte = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            source AS (
+                SELECT {BuildClipExpression("raster", clipSrid)} AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
+            ),
+            merged AS (
+                SELECT {mergedExpr} AS rast
+                FROM source
+                WHERE rast IS NOT NULL
+            )
+            SELECT rast FROM merged WHERE merged.rast IS NOT NULL
+            """;
+
+        // Guard the pixel budget from the clipped raster's bounding box (and resolve the band
+        // count) BEFORE materializing any pixels, so an oversized AOI is rejected up front rather
+        // than read into memory and silently truncated.
+        long boundingPixelCount;
+        int bandCount;
+        await using (var guard = connection.CreateCommand())
+        {
+            guard.CommandText = $"""
+                WITH target AS (
+                    {rastCte}
+                )
+                SELECT COALESCE(ST_Width(t.rast), 0)::bigint * COALESCE(ST_Height(t.rast), 0)::bigint AS px,
+                       ST_NumBands(t.rast) AS num_bands
+                FROM target t
+                WHERE t.rast IS NOT NULL
+                """;
+            AddParameter(guard, "@layerId", layerId);
+            AddParameter(guard, "@rasterIds", rasterIds);
+            AddParameter(guard, "@clipGeom", clipGeometry);
+            if (clipSrid is > 0)
+            {
+                AddParameter(guard, "@clipSrid", clipSrid.Value);
+            }
+
+            await using var guardReader = await guard.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await guardReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                // No raster intersected the AOI; an honest empty signature (count 0).
+                return RasterBandVectorSet.Empty(bands is { Length: > 0 } ? bands : Array.Empty<int>());
+            }
+
+            boundingPixelCount = guardReader.IsDBNull(0) ? 0 : guardReader.GetInt64(0);
+            bandCount = guardReader.IsDBNull(1) ? 0 : guardReader.GetInt32(1);
+        }
+
+        var effectiveBands = bands is { Length: > 0 }
+            ? bands
+            : Enumerable.Range(1, bandCount).ToArray();
+
+        if (boundingPixelCount > maxPixels)
+        {
+            return new RasterBandVectorSet
+            {
+                Bands = effectiveBands,
+                Pixels = Array.Empty<double[]>(),
+                ExceededPixelBudget = true,
+                BoundingPixelCount = boundingPixelCount,
+            };
+        }
+
+        if (effectiveBands.Length == 0)
+        {
+            return RasterBandVectorSet.Empty(effectiveBands);
+        }
+
+        // Read each requested band's valid (non-NoData) pixels tagged with their raster grid
+        // (x,y), then zip the bands per grid cell in C#. ST_Clip masks out-of-AOI pixels to
+        // NoData, so ST_PixelAsPoints (which excludes NoData) yields exactly the pixels inside the
+        // polygon. Only cells present in EVERY requested band become a vector, so a pixel masked
+        // in any band is dropped from the covariance sample rather than zero-filled.
+        var bandColumn = new Dictionary<int, int>(effectiveBands.Length);
+        for (var i = 0; i < effectiveBands.Length; i++)
+        {
+            bandColumn[effectiveBands[i]] = i;
+        }
+
+        var pixelByCell = new Dictionary<(int X, int Y), CellAccumulator>();
+        await using (var read = connection.CreateCommand())
+        {
+            read.CommandText = $"""
+                WITH target AS (
+                    {rastCte}
+                ),
+                band_list AS (
+                    SELECT b AS band FROM unnest(@bands::int[]) AS b
+                )
+                SELECT (p).x AS px, (p).y AS py, bl.band AS band, (p).val AS val
+                FROM target t, band_list bl,
+                     LATERAL ST_PixelAsPoints(t.rast, bl.band) AS p
+                WHERE t.rast IS NOT NULL AND (p).val IS NOT NULL
+                """;
+            AddParameter(read, "@layerId", layerId);
+            AddParameter(read, "@rasterIds", rasterIds);
+            AddParameter(read, "@clipGeom", clipGeometry);
+            if (clipSrid is > 0)
+            {
+                AddParameter(read, "@clipSrid", clipSrid.Value);
+            }
+
+            AddParameter(read, "@bands", effectiveBands);
+
+            await using var reader = await read.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (reader.IsDBNull(3))
+                {
+                    continue;
+                }
+
+                var band = reader.GetInt32(2);
+                if (!bandColumn.TryGetValue(band, out var column))
+                {
+                    continue;
+                }
+
+                var key = (reader.GetInt32(0), reader.GetInt32(1));
+                if (!pixelByCell.TryGetValue(key, out var accumulator))
+                {
+                    accumulator = new CellAccumulator(new double[effectiveBands.Length]);
+                    pixelByCell[key] = accumulator;
+                }
+
+                accumulator.Values[column] = reader.GetDouble(3);
+                accumulator.Filled++;
+            }
+        }
+
+        var pixels = new List<double[]>(pixelByCell.Count);
+        foreach (var accumulator in pixelByCell.Values)
+        {
+            // Keep only cells valid in every requested band so the covariance sample is complete.
+            if (accumulator.Filled == effectiveBands.Length)
+            {
+                pixels.Add(accumulator.Values);
+            }
+        }
+
+        return new RasterBandVectorSet
+        {
+            Bands = effectiveBands,
+            Pixels = pixels,
+            ExceededPixelBudget = false,
+            BoundingPixelCount = boundingPixelCount,
+        };
+    }
+
+    // Mutable per-grid-cell accumulator zipping each band's pixel value into one aligned vector.
+    private sealed class CellAccumulator
+    {
+        public CellAccumulator(double[] values) => Values = values;
+
+        public double[] Values { get; }
+
+        public int Filled { get; set; }
     }
 
     private static string BuildClipExpression(string rasterExpr, int? clipSrid)

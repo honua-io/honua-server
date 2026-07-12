@@ -23,9 +23,24 @@ public static class Fes20Parser
     private const string GmlNamespace = "http://www.opengis.net/gml/3.2";
 
     /// <summary>
+    /// Default SRID assumed for geometry literals whose element carries no <c>srsName</c> and
+    /// when the caller supplies no feature-type CRS context. WFS callers pass the queried
+    /// layer's storage SRID instead so filter geometry defaults to the feature type's CRS.
+    /// </summary>
+    private const int DefaultFallbackSrid = 4326;
+
+    /// <summary>
     /// Parses a FES 2.0 filter XML element into the shared Filter AST
     /// </summary>
     public static FilterExpression ParseFilter(XElement filterElement)
+        => ParseFilter(filterElement, DefaultFallbackSrid);
+
+    /// <summary>
+    /// Parses a FES 2.0 filter XML element into the shared Filter AST, defaulting geometry
+    /// literals without an <c>srsName</c> to <paramref name="defaultSrid"/> (the queried feature
+    /// type's CRS).
+    /// </summary>
+    public static FilterExpression ParseFilter(XElement filterElement, int defaultSrid)
     {
         if (filterElement.Name.NamespaceName != FesNamespace || filterElement.Name.LocalName != "Filter")
         {
@@ -39,13 +54,21 @@ public static class Fes20Parser
         }
 
         ValidateExpressionDepth(firstChild, depth: 1);
-        return ParseExpression(firstChild);
+        return ParseExpression(firstChild, defaultSrid);
     }
 
     /// <summary>
     /// Parses a FES 2.0 filter XML string into the shared Filter AST
     /// </summary>
     public static FilterExpression ParseFilter(string filterXml)
+        => ParseFilter(filterXml, DefaultFallbackSrid);
+
+    /// <summary>
+    /// Parses a FES 2.0 filter XML string into the shared Filter AST, defaulting geometry
+    /// literals without an <c>srsName</c> to <paramref name="defaultSrid"/> (the queried feature
+    /// type's CRS).
+    /// </summary>
+    public static FilterExpression ParseFilter(string filterXml, int defaultSrid)
     {
         try
         {
@@ -60,7 +83,7 @@ public static class Fes20Parser
             using var xmlReader = XmlReader.Create(stringReader, settings);
             var doc = XDocument.Load(xmlReader, LoadOptions.None);
             var filterElement = doc.Root ?? throw new Fes20ParseException("Invalid XML: no root element");
-            return ParseFilter(filterElement);
+            return ParseFilter(filterElement, defaultSrid);
         }
         catch (XmlException ex)
         {
@@ -91,7 +114,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses any FES 2.0 expression element
     /// </summary>
-    private static FilterExpression ParseExpression(XElement element)
+    private static FilterExpression ParseExpression(XElement element, int defaultSrid)
     {
         if (element.Name.NamespaceName != FesNamespace)
         {
@@ -101,35 +124,35 @@ public static class Fes20Parser
         return element.Name.LocalName switch
         {
             // Logical operators
-            "And" => ParseAnd(element),
-            "Or" => ParseOr(element),
-            "Not" => ParseNot(element),
+            "And" => ParseAnd(element, defaultSrid),
+            "Or" => ParseOr(element, defaultSrid),
+            "Not" => ParseNot(element, defaultSrid),
 
             // Comparison operators
-            "PropertyIsEqualTo" => ParseComparison(element, BinaryOperator.Equal),
-            "PropertyIsNotEqualTo" => ParseComparison(element, BinaryOperator.NotEqual),
-            "PropertyIsLessThan" => ParseComparison(element, BinaryOperator.LessThan),
-            "PropertyIsGreaterThan" => ParseComparison(element, BinaryOperator.GreaterThan),
-            "PropertyIsLessThanOrEqualTo" => ParseComparison(element, BinaryOperator.LessThanOrEqual),
-            "PropertyIsGreaterThanOrEqualTo" => ParseComparison(element, BinaryOperator.GreaterThanOrEqual),
-            "PropertyIsLike" => ParseLike(element),
-            "PropertyIsNil" => ParseIsNull(element),
-            "PropertyIsNull" => ParseIsNull(element),
-            "PropertyIsBetween" => ParseBetween(element),
+            "PropertyIsEqualTo" => ParseComparison(element, BinaryOperator.Equal, defaultSrid),
+            "PropertyIsNotEqualTo" => ParseComparison(element, BinaryOperator.NotEqual, defaultSrid),
+            "PropertyIsLessThan" => ParseComparison(element, BinaryOperator.LessThan, defaultSrid),
+            "PropertyIsGreaterThan" => ParseComparison(element, BinaryOperator.GreaterThan, defaultSrid),
+            "PropertyIsLessThanOrEqualTo" => ParseComparison(element, BinaryOperator.LessThanOrEqual, defaultSrid),
+            "PropertyIsGreaterThanOrEqualTo" => ParseComparison(element, BinaryOperator.GreaterThanOrEqual, defaultSrid),
+            "PropertyIsLike" => ParseLike(element, defaultSrid),
+            "PropertyIsNil" => ParseIsNull(element, defaultSrid),
+            "PropertyIsNull" => ParseIsNull(element, defaultSrid),
+            "PropertyIsBetween" => ParseBetween(element, defaultSrid),
 
             // Spatial operators
-            "BBOX" => ParseBBox(element),
-            "Intersects" => ParseSpatialBinary(element, SpatialOperator.Intersects),
-            "Contains" => ParseSpatialBinary(element, SpatialOperator.Contains),
-            "Within" => ParseSpatialBinary(element, SpatialOperator.Within),
-            "Crosses" => ParseSpatialBinary(element, SpatialOperator.Crosses),
-            "Touches" => ParseSpatialBinary(element, SpatialOperator.Touches),
-            "Overlaps" => ParseSpatialBinary(element, SpatialOperator.Overlaps),
-            "Disjoint" => ParseSpatialBinary(element, SpatialOperator.Disjoint),
-            "Equals" => ParseSpatialBinary(element, SpatialOperator.Equals),
-            "EnvelopeIntersects" => ParseSpatialBinary(element, SpatialOperator.Intersects),
-            "DWithin" => ParseDWithin(element),
-            "Beyond" => ParseBeyond(element),
+            "BBOX" => ParseBBox(element, defaultSrid),
+            "Intersects" => ParseSpatialBinary(element, SpatialOperator.Intersects, defaultSrid),
+            "Contains" => ParseSpatialBinary(element, SpatialOperator.Contains, defaultSrid),
+            "Within" => ParseSpatialBinary(element, SpatialOperator.Within, defaultSrid),
+            "Crosses" => ParseSpatialBinary(element, SpatialOperator.Crosses, defaultSrid),
+            "Touches" => ParseSpatialBinary(element, SpatialOperator.Touches, defaultSrid),
+            "Overlaps" => ParseSpatialBinary(element, SpatialOperator.Overlaps, defaultSrid),
+            "Disjoint" => ParseSpatialBinary(element, SpatialOperator.Disjoint, defaultSrid),
+            "Equals" => ParseSpatialBinary(element, SpatialOperator.Equals, defaultSrid),
+            "EnvelopeIntersects" => ParseSpatialBinary(element, SpatialOperator.Intersects, defaultSrid),
+            "DWithin" => ParseDWithin(element, defaultSrid),
+            "Beyond" => ParseBeyond(element, defaultSrid),
 
             // Temporal operators
             "After" or "Before" or "Begins" or "BegunBy" or "During" or "TContains" or
@@ -151,7 +174,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses logical AND operation
     /// </summary>
-    private static FilterExpression ParseAnd(XElement element)
+    private static FilterExpression ParseAnd(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
         if (children.Length < 2)
@@ -159,10 +182,10 @@ public static class Fes20Parser
             throw new Fes20ParseException("And element must contain at least 2 child elements");
         }
 
-        var result = ParseExpression(children[0]);
+        var result = ParseExpression(children[0], defaultSrid);
         for (int i = 1; i < children.Length; i++)
         {
-            result = new BinaryExpression(result, BinaryOperator.And, ParseExpression(children[i]));
+            result = new BinaryExpression(result, BinaryOperator.And, ParseExpression(children[i], defaultSrid));
         }
 
         return result;
@@ -171,7 +194,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses logical OR operation
     /// </summary>
-    private static FilterExpression ParseOr(XElement element)
+    private static FilterExpression ParseOr(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
         if (children.Length < 2)
@@ -179,10 +202,10 @@ public static class Fes20Parser
             throw new Fes20ParseException("Or element must contain at least 2 child elements");
         }
 
-        var result = ParseExpression(children[0]);
+        var result = ParseExpression(children[0], defaultSrid);
         for (int i = 1; i < children.Length; i++)
         {
-            result = new BinaryExpression(result, BinaryOperator.Or, ParseExpression(children[i]));
+            result = new BinaryExpression(result, BinaryOperator.Or, ParseExpression(children[i], defaultSrid));
         }
 
         return result;
@@ -191,7 +214,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses logical NOT operation
     /// </summary>
-    private static UnaryExpression ParseNot(XElement element)
+    private static UnaryExpression ParseNot(XElement element, int defaultSrid)
     {
         var child = element.Elements().FirstOrDefault();
         if (child == null)
@@ -199,13 +222,13 @@ public static class Fes20Parser
             throw new Fes20ParseException("Not element must contain exactly 1 child element");
         }
 
-        return new UnaryExpression(UnaryOperator.Not, ParseExpression(child));
+        return new UnaryExpression(UnaryOperator.Not, ParseExpression(child, defaultSrid));
     }
 
     /// <summary>
     /// Parses comparison operations
     /// </summary>
-    private static BinaryExpression ParseComparison(XElement element, BinaryOperator op)
+    private static BinaryExpression ParseComparison(XElement element, BinaryOperator op, int defaultSrid)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 2)
@@ -213,8 +236,8 @@ public static class Fes20Parser
             throw new Fes20ParseException($"{element.Name.LocalName} element must contain exactly 2 child elements");
         }
 
-        var left = ParseExpression(children[0]);
-        var right = ParseExpression(children[1]);
+        var left = ParseExpression(children[0], defaultSrid);
+        var right = ParseExpression(children[1], defaultSrid);
 
         return new BinaryExpression(left, op, right);
     }
@@ -222,7 +245,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses PropertyIsLike operation
     /// </summary>
-    private static BinaryExpression ParseLike(XElement element)
+    private static BinaryExpression ParseLike(XElement element, int defaultSrid)
     {
         var wildCard = element.Attribute("wildCard")?.Value ?? "%";
         var singleChar = element.Attribute("singleChar")?.Value ?? "_";
@@ -235,8 +258,8 @@ public static class Fes20Parser
             throw new Fes20ParseException("PropertyIsLike element must contain exactly 2 child elements");
         }
 
-        var propertyRef = ParseExpression(children[0]);
-        var pattern = ParseExpression(children[1]);
+        var propertyRef = ParseExpression(children[0], defaultSrid);
+        var pattern = ParseExpression(children[1], defaultSrid);
 
         // Convert FES wildcards to SQL LIKE pattern
         if (pattern is Literal literal && literal.Value is string patternStr)
@@ -265,7 +288,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses PropertyIsNull operation
     /// </summary>
-    private static UnaryExpression ParseIsNull(XElement element)
+    private static UnaryExpression ParseIsNull(XElement element, int defaultSrid)
     {
         var child = element.Elements().FirstOrDefault();
         if (child == null)
@@ -273,14 +296,14 @@ public static class Fes20Parser
             throw new Fes20ParseException("PropertyIsNull element must contain exactly 1 child element");
         }
 
-        var property = ParseExpression(child);
+        var property = ParseExpression(child, defaultSrid);
         return new UnaryExpression(UnaryOperator.IsNull, property);
     }
 
     /// <summary>
     /// Parses PropertyIsBetween operation
     /// </summary>
-    private static BinaryExpression ParseBetween(XElement element)
+    private static BinaryExpression ParseBetween(XElement element, int defaultSrid)
     {
         var valueRef = element.Elements().FirstOrDefault(e => e.Name.LocalName == "ValueReference");
         var lowerBoundary = element.Elements().FirstOrDefault(e => e.Name.LocalName == "LowerBoundary");
@@ -291,13 +314,13 @@ public static class Fes20Parser
             throw new Fes20ParseException("PropertyIsBetween element must contain ValueReference, LowerBoundary, and UpperBoundary elements");
         }
 
-        var property = ParseExpression(valueRef);
+        var property = ParseExpression(valueRef, defaultSrid);
         var lowerChild = lowerBoundary.Elements().FirstOrDefault()
             ?? throw new Fes20ParseException("LowerBoundary element must contain a child element");
         var upperChild = upperBoundary.Elements().FirstOrDefault()
             ?? throw new Fes20ParseException("UpperBoundary element must contain a child element");
-        var lower = ParseExpression(lowerChild);
-        var upper = ParseExpression(upperChild);
+        var lower = ParseExpression(lowerChild, defaultSrid);
+        var upper = ParseExpression(upperChild, defaultSrid);
 
         // Convert to: property >= lower AND property <= upper
         var greaterEqual = new BinaryExpression(property, BinaryOperator.GreaterThanOrEqual, lower);
@@ -309,7 +332,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses BBOX spatial operation
     /// </summary>
-    private static SpatialPredicate ParseBBox(XElement element)
+    private static SpatialPredicate ParseBBox(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
         if (children.Length is not 1 and not 2)
@@ -337,7 +360,7 @@ public static class Fes20Parser
             property = new PropertyReference(propertyRef.Value.Trim());
         }
 
-        var geometry = ParseGeometry(envelope);
+        var geometry = ParseGeometry(envelope, defaultSrid);
 
         return new SpatialPredicate(SpatialOperator.Intersects, property, geometry);
     }
@@ -345,7 +368,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses binary spatial operations
     /// </summary>
-    private static SpatialPredicate ParseSpatialBinary(XElement element, SpatialOperator op)
+    private static SpatialPredicate ParseSpatialBinary(XElement element, SpatialOperator op, int defaultSrid)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 2)
@@ -362,7 +385,7 @@ public static class Fes20Parser
         }
 
         var property = new PropertyReference(propertyRef.Value.Trim());
-        var geometry = ParseGeometry(geometryElement);
+        var geometry = ParseGeometry(geometryElement, defaultSrid);
 
         return new SpatialPredicate(op, property, geometry);
     }
@@ -370,7 +393,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses DWithin spatial operation
     /// </summary>
-    private static SpatialDistancePredicate ParseDWithin(XElement element)
+    private static SpatialDistancePredicate ParseDWithin(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 3)
@@ -393,7 +416,7 @@ public static class Fes20Parser
         }
 
         var property = new PropertyReference(propertyRef.Value.Trim());
-        var geometry = ParseGeometry(geometryElement);
+        var geometry = ParseGeometry(geometryElement, defaultSrid);
 
         return new SpatialDistancePredicate(
             SpatialOperator.DWithin,
@@ -405,7 +428,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses Beyond spatial operation
     /// </summary>
-    private static SpatialDistancePredicate ParseBeyond(XElement element)
+    private static SpatialDistancePredicate ParseBeyond(XElement element, int defaultSrid)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 3)
@@ -428,7 +451,7 @@ public static class Fes20Parser
         }
 
         var property = new PropertyReference(propertyRef.Value.Trim());
-        var geometry = ParseGeometry(geometryElement);
+        var geometry = ParseGeometry(geometryElement, defaultSrid);
 
         return new SpatialDistancePredicate(
             SpatialOperator.Beyond,
@@ -522,17 +545,17 @@ public static class Fes20Parser
     /// <summary>
     /// Parses geometry elements
     /// </summary>
-    private static GeometryLiteral ParseGeometry(XElement element)
+    private static GeometryLiteral ParseGeometry(XElement element, int defaultSrid)
     {
         if (element.Name.LocalName == "Envelope" &&
             (element.Name.NamespaceName == FesNamespace || element.Name.NamespaceName == GmlNamespace))
         {
-            return ParseEnvelope(element);
+            return ParseEnvelope(element, defaultSrid);
         }
 
         if (element.Name.NamespaceName == GmlNamespace)
         {
-            return ParseGmlGeometry(element);
+            return ParseGmlGeometry(element, defaultSrid);
         }
 
         throw new Fes20ParseException($"Unsupported geometry element: {element.Name}");
@@ -541,11 +564,9 @@ public static class Fes20Parser
     /// <summary>
     /// Parses FES Envelope element
     /// </summary>
-    private static GeometryLiteral ParseEnvelope(XElement element)
+    private static GeometryLiteral ParseEnvelope(XElement element, int defaultSrid)
     {
-        var srsName = element.Attribute("srsName")?.Value ?? "EPSG:4326";
-        var srid = ParseSrid(srsName);
-        var axisOrder = ResolveAxisOrder(srsName, srid);
+        var (srid, axisOrder) = ResolveGeometryCrs(element, defaultSrid);
         var lowerCorner = element.Elements().FirstOrDefault(e => e.Name.LocalName == "lowerCorner")?.Value;
         var upperCorner = element.Elements().FirstOrDefault(e => e.Name.LocalName == "upperCorner")?.Value;
 
@@ -583,11 +604,9 @@ public static class Fes20Parser
     /// <summary>
     /// Parses GML geometry elements
     /// </summary>
-    private static GeometryLiteral ParseGmlGeometry(XElement element)
+    private static GeometryLiteral ParseGmlGeometry(XElement element, int defaultSrid)
     {
-        var srsName = element.Attribute("srsName")?.Value ?? "EPSG:4326";
-        var srid = ParseSrid(srsName);
-        var axisOrder = ResolveAxisOrder(srsName, srid);
+        var (srid, axisOrder) = ResolveGeometryCrs(element, defaultSrid);
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid);
 
         Geometry geometry = element.Name.LocalName switch
@@ -881,6 +900,27 @@ public static class Fes20Parser
             ? new Coordinate(second, first)
             : new Coordinate(first, second);
 
+    /// <summary>
+    /// Resolves the SRID and axis order for a geometry/envelope element. When the element
+    /// carries no <c>srsName</c>, the CRS defaults to <paramref name="defaultSrid"/> (the queried
+    /// feature type's CRS) instead of an unconditional EPSG:4326 assumption (#2737). A present
+    /// but unparseable <c>srsName</c> throws via <see cref="ParseSrid"/>.
+    /// </summary>
+    private static (int Srid, AxisOrder AxisOrder) ResolveGeometryCrs(XElement element, int defaultSrid)
+    {
+        var srsName = element.Attribute("srsName")?.Value;
+        if (string.IsNullOrWhiteSpace(srsName))
+        {
+            var defaultAxisOrder = SpatialReference.Create(defaultSrid).IsGeographic
+                ? AxisOrder.NorthEast
+                : AxisOrder.EastNorth;
+            return (defaultSrid, defaultAxisOrder);
+        }
+
+        var srid = ParseSrid(srsName);
+        return (srid, ResolveAxisOrder(srsName, srid));
+    }
+
     private static AxisOrder ResolveAxisOrder(string srsName, int srid)
     {
         if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
@@ -1114,31 +1154,53 @@ public static class Fes20Parser
     }
 
     /// <summary>
-    /// Parses SRID from CRS identifier. Accepts the three OGC-registered forms:
-    /// <c>EPSG:4326</c>, <c>urn:ogc:def:crs:EPSG::4326</c> (double-colon), and
-    /// <c>http://www.opengis.net/def/crs/EPSG/0/4326</c> (OGC URL). Falls back to
-    /// WGS84 when the CRS identifier is unrecognized so downstream logic can still
-    /// proceed; callers that need strict validation should check srsName separately.
+    /// Parses SRID from a CRS identifier. Accepts <c>EPSG:4326</c>, the OGC URN forms
+    /// <c>urn:ogc:def:crs:EPSG::4326</c> (empty version), <c>urn:ogc:def:crs:EPSG:6.9:25831</c>
+    /// (explicit version), and the historical <c>urn:x-ogc:def:crs:EPSG:...</c> variant, plus
+    /// the OGC URL form <c>http://www.opengis.net/def/crs/EPSG/0/4326</c>. A genuinely
+    /// unparseable identifier throws <see cref="Fes20ParseException"/> (surfacing as an OGC
+    /// <c>InvalidParameterValue</c>) instead of silently assuming WGS84 (#2737).
     /// </summary>
     private static int ParseSrid(string srsName)
+        => TryParseSrid(srsName, out var srid)
+            ? srid
+            : throw new Fes20ParseException($"Unsupported or unrecognized srsName '{srsName}'.");
+
+    private static bool TryParseSrid(string srsName, out int srid)
     {
-        if (srsName.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
+        srid = 0;
+        if (string.IsNullOrWhiteSpace(srsName))
         {
-            if (int.TryParse(srsName[5..], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var epsgCode))
-                return epsgCode;
+            return false;
         }
 
-        // Canonical OGC URN uses a double colon between authority and code:
-        //   urn:ogc:def:crs:EPSG::4326  → parts = [urn, ogc, def, crs, EPSG, "", 4326]
-        if (srsName.StartsWith("urn:ogc:def:crs:EPSG:", StringComparison.OrdinalIgnoreCase))
+        // CRS84 (bare token or OGC URI/URN form) is WGS 84 in lon,lat axis order. The axis order
+        // is applied separately in ResolveAxisOrder; here it resolves to EPSG:4326.
+        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
         {
-            var parts = srsName.Split(':');
-            if (parts.Length == 7
-                && string.IsNullOrEmpty(parts[5])
-                && int.TryParse(parts[6], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var urnEpsgCode))
-            {
-                return urnEpsgCode;
-            }
+            srid = 4326;
+            return true;
+        }
+
+        if (srsName.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(srsName[5..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var epsgCode))
+        {
+            srid = epsgCode;
+            return true;
+        }
+
+        // OGC URN forms. The authority may be `ogc` or the historical `x-ogc`, and the version
+        // segment between `EPSG:` and the code may be empty (urn:ogc:def:crs:EPSG::4326) or an
+        // explicit version (urn:ogc:def:crs:EPSG:6.9:25831). Only the trailing code segment is
+        // authoritative, so parse it regardless of the version form.
+        if ((srsName.StartsWith("urn:ogc:def:crs:EPSG:", StringComparison.OrdinalIgnoreCase)
+                || srsName.StartsWith("urn:x-ogc:def:crs:EPSG:", StringComparison.OrdinalIgnoreCase))
+            && srsName.LastIndexOf(':') is var lastColon
+            && lastColon >= 0
+            && int.TryParse(srsName[(lastColon + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var urnEpsgCode))
+        {
+            srid = urnEpsgCode;
+            return true;
         }
 
         // OGC URL form: http[s]://www.opengis.net/def/crs/EPSG/<version>/<code>
@@ -1150,13 +1212,14 @@ public static class Fes20Parser
             var segments = remainder.Split('/');
             if (segments.Length >= 3
                 && string.Equals(segments[0], "EPSG", StringComparison.OrdinalIgnoreCase)
-                && int.TryParse(segments[^1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var urlEpsgCode))
+                && int.TryParse(segments[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var urlEpsgCode))
             {
-                return urlEpsgCode;
+                srid = urlEpsgCode;
+                return true;
             }
         }
 
-        return 4326;
+        return false;
     }
 
     /// <summary>

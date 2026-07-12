@@ -42,6 +42,31 @@ public interface IRasterStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Queries a layer's raster catalog with the neutral <see cref="RasterCatalogQuery"/> contract,
+    /// pushing the validated envelope-intersects predicate, identity, temporal, and paging inputs
+    /// into storage <b>before materialization</b> so large imagery catalogs are never fully read to
+    /// satisfy a spatial browse.
+    /// </summary>
+    /// <remarks>
+    /// Implementations that can push the predicate into indexed storage (PostGIS) MUST do so and set
+    /// <see cref="RasterCatalogPage.PredicatePushedDown"/> to <see langword="true"/>. Providers that
+    /// cannot push down MUST fall back to a bounded materialization — delegate to
+    /// <see cref="Honua.Core.Features.Raster.Services.RasterCatalogQueryEvaluator.EvaluateAsync"/> over
+    /// <see cref="ListRastersAsync"/> — which preserves identical result count, aggregate extent,
+    /// paging, and envelope-intersects semantics while declaring the fallback via
+    /// <see cref="RasterCatalogPage.PredicatePushedDown"/> = <see langword="false"/>. The envelope
+    /// predicate is intentionally an inclusive bounding-box overlap, not exact geometry.
+    /// </remarks>
+    /// <param name="layerId">Layer identifier to query.</param>
+    /// <param name="query">The validated neutral catalog query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The matched page plus pre-paging count/extent and read-bounding telemetry counters.</returns>
+    Task<RasterCatalogPage> QueryCatalogAsync(
+        int layerId,
+        RasterCatalogQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Exports raster data with optional clipping, reprojection, and resampling.
     /// Equivalent to Esri Image Server exportImage operation.
     /// </summary>
@@ -378,6 +403,37 @@ public interface IRasterStore
         int[]? bands = null,
         int binCount = 256,
         RasterIdentifyRendering? rendering = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the aligned per-pixel band vectors of a raster (or composited mosaic) inside an
+    /// area-of-interest clip geometry (WKB), for multivariate analytics such as class-signature
+    /// covariance. Only pixels valid in <b>every</b> requested band are returned, each as a
+    /// vector ordered to match <see cref="RasterBandVectorSet.Bands"/>.
+    /// </summary>
+    /// <remarks>
+    /// The read is memory-bounded by <paramref name="maxPixels"/>: when the clip bounding box
+    /// exceeds that budget the implementation returns
+    /// <see cref="RasterBandVectorSet.ExceededPixelBudget"/> = <see langword="true"/> with no
+    /// pixels, so the caller rejects the request rather than reporting a truncated (and therefore
+    /// wrong) covariance. Tiling/streaming the read to lift the budget is deferred follow-up scope.
+    /// </remarks>
+    /// <param name="layerId">Layer identifier containing the rasters.</param>
+    /// <param name="rasterIds">Catalog raster ids; a single id reads one raster, many composite a mosaic.</param>
+    /// <param name="mergeStrategy">Pixel-resolution operation applied to overlapping mosaic pixels.</param>
+    /// <param name="clipGeometry">Training AOI clip geometry in Well-Known Binary form.</param>
+    /// <param name="clipSrid">SRID of <paramref name="clipGeometry"/>; <see langword="null"/> assumes the raster SRID.</param>
+    /// <param name="bands">Optional 1-based band selection; <see langword="null"/> reads every band.</param>
+    /// <param name="maxPixels">Maximum clip bounding-box pixels to materialize before rejecting.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<RasterBandVectorSet> ReadClippedBandVectorsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands,
+        int maxPixels,
         CancellationToken cancellationToken = default);
 
     /// <summary>

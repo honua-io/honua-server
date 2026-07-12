@@ -19,8 +19,11 @@ internal static class SpatialReferenceHelpers
     private static readonly Regex _epsgCodePattern = new(
         @"^EPSG:(?<code>[1-9]\d*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    // Accepts the canonical empty-version URN (urn:ogc:def:crs:EPSG::4326), an explicit
+    // version segment (urn:ogc:def:crs:EPSG:6.9:25831), and the historical x-ogc authority
+    // (urn:x-ogc:def:crs:EPSG:...) so query srsName parsing matches the FES filter parser (#2737).
     private static readonly Regex _epsgUrnPattern = new(
-        @"^urn:ogc:def:crs:EPSG::(?<code>[1-9]\d*)$",
+        @"^urn:(?:x-)?ogc:def:crs:EPSG:(?:\d+(?:\.\d+)*)?:(?<code>[1-9]\d*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex _epsgUriPattern = new(
         @"^https?://www\.opengis\.net/def/crs/EPSG/0/(?<code>[1-9]\d*)$",

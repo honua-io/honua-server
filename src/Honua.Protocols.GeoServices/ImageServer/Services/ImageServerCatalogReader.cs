@@ -36,6 +36,17 @@ internal sealed class ImageServerCatalogPage
     public required RasterExtent? AggregateExtent { get; init; }
 
     public int? NativeSrid { get; init; }
+
+    /// <summary>
+    /// Rows the provider matched with the pushed predicate (the read bound). Surfaced as telemetry.
+    /// </summary>
+    public long RowsScanned { get; init; }
+
+    /// <summary>Rows materialized into this page. Surfaced as telemetry.</summary>
+    public long RowsReturned { get; init; }
+
+    /// <summary>Provider-side query duration. Surfaced as telemetry; never carries SQL.</summary>
+    public TimeSpan ProviderDuration { get; init; }
 }
 
 /// <summary>
@@ -169,10 +180,13 @@ internal sealed record ImageServerCatalogSpatialFilter(
 
 /// <summary>
 /// Default <see cref="IImageServerCatalogReader"/> built on <see cref="IRasterStore"/>.
-/// Wraps the existing raster listing surface and projects each row into Esri-compatible
-/// catalog metadata. Spatial WHERE/ordering is applied in-memory for the MVP because the
-/// raster catalog is normally small (1–N rasters per layer) and adding a SQL emitter for
-/// the catalog table is reserved for the dedicated raster ingestion ticket.
+/// Delegates the spatial (envelope-intersects), identity, and temporal predicates — and, on the
+/// common browse path, paging, count, and aggregate extent — to the provider via
+/// <see cref="IRasterStore.QueryCatalogAsync"/> so a large imagery catalog is filtered and paged in
+/// storage <b>before materialization</b> rather than fully read and filtered in memory (#2666).
+/// The Esri-only concerns the neutral contract deliberately omits — <c>where</c> evaluation and
+/// computed-field <c>orderByFields</c> ordering — are applied here, in memory, over the
+/// spatially-bounded set the provider returns (a bounded fallback for those query shapes).
 /// </summary>
 internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
 {
@@ -197,93 +211,135 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (rasters.Length == 0)
-        {
-            return new ImageServerCatalogPage
-            {
-                Items = Array.Empty<ImageServerCatalogItem>(),
-                TotalCount = 0,
-                ExceededTransferLimit = false,
-                AggregateExtent = null,
-                NativeSrid = null,
-            };
-        }
-
         var includeGeometry = query.ReturnGeometry &&
             !query.ReturnIdsOnly &&
             !query.ReturnCountOnly &&
             !query.ReturnExtentOnly;
 
-        // Hydrate sensor/orientation metadata for the layer's rasters in a single batch. Most
-        // rasters carry none, so this is usually an empty lookup; the catalog item exposes it
-        // for orientation-ranked find, height mensuration, and image-coordinate-system warps.
-        var sensorMetadata = await _rasterStore
-            .GetSensorMetadataAsync(rasters.Select(static r => r.Id).ToArray(), cancellationToken)
+        // The neutral contract pushes the spatial/identity/temporal predicates into the provider.
+        // Esri `where` evaluation and computed-field `orderByFields` ordering are not part of the
+        // neutral contract, so when either is present we finish those steps in memory over the
+        // (already spatially bounded) provider result — a declared bounded fallback for those shapes.
+        var hasWhere = !string.IsNullOrWhiteSpace(query.Where);
+        var hasCustomOrder = query.OrderBy is { Count: > 0 };
+        var pushPaging = !hasWhere && !hasCustomOrder && !query.ReturnIdsOnly;
+
+        // returnCountOnly / returnExtentOnly do not consume the row page, so on the pushdown path we
+        // ask the provider for a single row plus the aggregate metadata rather than a full page.
+        var metadataOnly = pushPaging && (query.ReturnCountOnly || query.ReturnExtentOnly);
+        int? pushLimit = metadataOnly ? 1 : (pushPaging ? query.Limit : null);
+
+        RasterCatalogSpatialPredicate? predicate = null;
+        if (query.SpatialFilter is { } spatialFilter)
+        {
+            if (!RasterCatalogSpatialPredicate.TryCreate(
+                    spatialFilter.XMin, spatialFilter.YMin, spatialFilter.XMax, spatialFilter.YMax,
+                    spatialFilter.Srid, out var built, out var predicateError))
+            {
+                throw new ImageServerCatalogFilterException(predicateError);
+            }
+
+            predicate = built;
+        }
+
+        var neutralQuery = new RasterCatalogQuery
+        {
+            SpatialPredicate = predicate,
+            ObjectIds = query.ObjectIds,
+            Timestamp = query.Time,
+            Offset = pushPaging ? Math.Max(0, query.Offset) : 0,
+            Limit = pushLimit,
+            IncludeTotalCount = pushPaging,
+            IncludeAggregateExtent = pushPaging,
+        };
+
+        var page = await _rasterStore.QueryCatalogAsync(layerId, neutralQuery, cancellationToken)
             .ConfigureAwait(false);
 
-        // Project each raster row into the catalog item shape Esri expects.
-        // We need to retain the source raster reference so the aggregate extent uses the
-        // same filtered set as the returned features.
-        var projected = new List<(ImageServerCatalogItem Item, RasterInfo Source)>(rasters.Length);
-        foreach (var raster in rasters)
+        if (page.Rasters.Count == 0 && !pushPaging)
+        {
+            return EmptyPage(page);
+        }
+
+        // Hydrate sensor/orientation metadata only for the rasters actually returned (bounded).
+        var sensorMetadata = await _rasterStore
+            .GetSensorMetadataAsync(page.Rasters.Select(static r => r.Id).ToArray(), cancellationToken)
+            .ConfigureAwait(false);
+
+        var projected = new List<(ImageServerCatalogItem Item, RasterInfo Source)>(page.Rasters.Count);
+        foreach (var raster in page.Rasters)
         {
             var sensor = sensorMetadata.TryGetValue(raster.Id, out var meta) ? meta : raster.SensorMetadata;
             projected.Add((ProjectRaster(raster, includeGeometry, sensor), raster));
         }
 
-        if (query.Time.HasValue)
-        {
-            var selectedAcquisition = projected
-                .Select(p => p.Item.AcquisitionDate)
-                .Where(t => t.HasValue && t.Value <= query.Time.Value)
-                .OrderByDescending(t => t)
-                .FirstOrDefault();
+        return pushPaging
+            ? await BuildPushdownPageAsync(query, page, projected, includeGeometry, cancellationToken)
+                .ConfigureAwait(false)
+            : await BuildInMemoryPageAsync(query, page, projected, includeGeometry, cancellationToken)
+                .ConfigureAwait(false);
+    }
 
-            if (selectedAcquisition.HasValue)
-            {
-                projected = projected
-                    .Where(p => p.Item.AcquisitionDate == selectedAcquisition)
-                    .ToList();
-            }
-            else
-            {
-                projected.Clear();
-            }
+    /// <summary>
+    /// Fast path: the provider already applied the spatial/identity/temporal predicates, natural
+    /// ordering, paging, total count, and aggregate extent, so we trust its page and only project,
+    /// reproject to <c>outSR</c>, and carry the telemetry counters forward.
+    /// </summary>
+    private async Task<ImageServerCatalogPage> BuildPushdownPageAsync(
+        ImageServerCatalogQuery query,
+        RasterCatalogPage page,
+        List<(ImageServerCatalogItem Item, RasterInfo Source)> projected,
+        bool includeGeometry,
+        CancellationToken cancellationToken)
+    {
+        var nativeSrid = page.AggregateExtent?.Srid
+            ?? projected.Select(p => p.Item.FootprintSrid).FirstOrDefault(srid => srid.HasValue);
+
+        var aggregateExtent = page.AggregateExtent;
+        if (query.OutputSrid is { } targetSrid && aggregateExtent is { } nativeExtent)
+        {
+            aggregateExtent = await TransformExtentAsync(nativeExtent, targetSrid, cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        // Apply objectIds filter (cheap; usually provided alongside or instead of where).
-        if (query.ObjectIds is { Count: > 0 })
+        var window = projected.Select(p => p.Item).ToList();
+        if (query.OutputSrid is { } outSrid && includeGeometry)
         {
-            var idSet = new HashSet<long>(query.ObjectIds);
-            projected = projected.Where(p => idSet.Contains(p.Item.ObjectId)).ToList();
-        }
-
-        // Apply the spatial geometry filter against footprint extents. The filter box
-        // is transformed into each footprint's SRID (via the shared CRS pipeline) before
-        // the intersect test so the comparison stays in a single coordinate system.
-        // Footprints without an extent cannot satisfy a spatial filter and are dropped.
-        if (query.SpatialFilter is { } spatialFilter)
-        {
-            var kept = new List<(ImageServerCatalogItem Item, RasterInfo Source)>(projected.Count);
-            foreach (var entry in projected)
+            for (var i = 0; i < window.Count; i++)
             {
-                if (entry.Source.Extent is not { } extent)
-                {
-                    continue;
-                }
-
-                var box = await ResolveFilterBoxAsync(spatialFilter, extent.Srid, cancellationToken)
+                window[i] = await ReprojectFootprintAsync(window[i], outSrid, cancellationToken)
                     .ConfigureAwait(false);
-                if (box is { } resolved && EnvelopesIntersect(resolved, extent))
-                {
-                    kept.Add(entry);
-                }
             }
-
-            projected = kept;
         }
 
+        var exceeded = Math.Max(0, query.Offset) + window.Count < page.TotalCount;
+
+        return new ImageServerCatalogPage
+        {
+            Items = window,
+            TotalCount = page.TotalCount,
+            ExceededTransferLimit = exceeded,
+            AggregateExtent = aggregateExtent,
+            NativeSrid = nativeSrid,
+            RowsScanned = page.RowsScanned,
+            RowsReturned = window.Count,
+            ProviderDuration = page.ProviderDuration,
+        };
+    }
+
+    /// <summary>
+    /// Bounded fallback: the provider returned every spatially-filtered row (no paging) because the
+    /// query carries an Esri <c>where</c> clause or a computed-field ordering the neutral contract
+    /// cannot express. We finish <c>where</c>/<c>orderByFields</c>, aggregate extent, and paging in
+    /// memory over that bounded set, preserving the pre-pushdown semantics exactly.
+    /// </summary>
+    private async Task<ImageServerCatalogPage> BuildInMemoryPageAsync(
+        ImageServerCatalogQuery query,
+        RasterCatalogPage page,
+        List<(ImageServerCatalogItem Item, RasterInfo Source)> projected,
+        bool includeGeometry,
+        CancellationToken cancellationToken)
+    {
         // Apply WHERE filter via the shared GeoServices SQL parser.
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
@@ -338,10 +394,6 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         var nativeSrid = aggregateExtent?.Srid
             ?? projected.Select(p => p.Item.FootprintSrid).FirstOrDefault(srid => srid.HasValue);
 
-        // Reproject the aggregate extent into the requested outSR when it differs from the
-        // native SRID and the shared CRS pipeline can perform the transform. When the
-        // transform is unavailable or fails, the native-SRID extent is retained so the
-        // response geometry SR always matches the actual coordinates.
         if (query.OutputSrid is { } targetSrid && aggregateExtent is { } nativeExtent)
         {
             aggregateExtent = await TransformExtentAsync(nativeExtent, targetSrid, cancellationToken)
@@ -349,7 +401,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         }
 
         // ArcGIS returns all matching IDs for returnIdsOnly, without maxRecordCount pagination.
-        IReadOnlyList<ImageServerCatalogItem> pageItems;
+        List<ImageServerCatalogItem> pageItems;
         bool exceeded;
         if (query.ReturnIdsOnly)
         {
@@ -366,10 +418,6 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
                 : new List<ImageServerCatalogItem>();
             exceeded = pageEnd < totalMatched;
 
-            // Reproject footprint rings into the requested outSR. Footprints are
-            // axis-aligned rectangles derived from each raster extent, so transforming the
-            // extent corners and rebuilding the rectangle is an exact representation in the
-            // target CRS. When reprojection is not possible the native-SRID rings are kept.
             if (query.OutputSrid is { } outSrid && includeGeometry)
             {
                 for (var i = 0; i < window.Count; i++)
@@ -389,8 +437,23 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             ExceededTransferLimit = exceeded,
             AggregateExtent = aggregateExtent,
             NativeSrid = nativeSrid,
+            RowsScanned = page.RowsScanned,
+            RowsReturned = pageItems.Count,
+            ProviderDuration = page.ProviderDuration,
         };
     }
+
+    private static ImageServerCatalogPage EmptyPage(RasterCatalogPage page) => new()
+    {
+        Items = Array.Empty<ImageServerCatalogItem>(),
+        TotalCount = 0,
+        ExceededTransferLimit = false,
+        AggregateExtent = null,
+        NativeSrid = null,
+        RowsScanned = page.RowsScanned,
+        RowsReturned = 0,
+        ProviderDuration = page.ProviderDuration,
+    };
 
     /// <summary>
     /// Applies the requested <c>orderByFields</c> terms in priority order. The
@@ -489,53 +552,6 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
                     return false;
             }
         }
-    }
-
-    /// <summary>
-    /// Axis-aligned envelope intersection test between the spatial filter box and a
-    /// raster footprint extent. Edge contact counts as an intersection, matching the
-    /// inclusive semantics of <c>esriSpatialRelIntersects</c>/<c>EnvelopeIntersects</c>.
-    /// </summary>
-    private static bool EnvelopesIntersect(ImageServerCatalogSpatialFilter filter, RasterExtent extent)
-        => filter.XMin <= extent.XMax &&
-           filter.XMax >= extent.XMin &&
-           filter.YMin <= extent.YMax &&
-           filter.YMax >= extent.YMin;
-
-    /// <summary>
-    /// Returns the spatial filter box expressed in <paramref name="footprintSrid"/>. When the
-    /// filter and footprint share a SRID (or either is unknown) the filter is used verbatim;
-    /// otherwise the shared CRS pipeline transforms the box. A transform failure returns
-    /// <see langword="null"/> so the footprint is conservatively excluded rather than matched
-    /// against a mismatched coordinate system.
-    /// </summary>
-    private async ValueTask<ImageServerCatalogSpatialFilter?> ResolveFilterBoxAsync(
-        ImageServerCatalogSpatialFilter filter,
-        int? footprintSrid,
-        CancellationToken cancellationToken)
-    {
-        if (!filter.Srid.HasValue || !footprintSrid.HasValue || filter.Srid.Value == footprintSrid.Value)
-        {
-            return filter;
-        }
-
-        if (_transformService is null)
-        {
-            // No CRS pipeline available: comparing across SRIDs would be wrong, so skip
-            // the footprint. The handler validates SRIDs up front, so this is a degraded-
-            // deployment guard rather than an expected path.
-            return null;
-        }
-
-        var transformed = await _transformService.TransformExtentAsync(
-            filter.XMin, filter.YMin, filter.XMax, filter.YMax,
-            filter.Srid.Value, footprintSrid.Value, cancellationToken).ConfigureAwait(false);
-
-        return transformed.HasValue
-            ? new ImageServerCatalogSpatialFilter(
-                transformed.Value.MinX, transformed.Value.MinY,
-                transformed.Value.MaxX, transformed.Value.MaxY, footprintSrid)
-            : null;
     }
 
     /// <summary>

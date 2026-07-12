@@ -144,6 +144,13 @@ public static class GdalWorkerServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        // Restrictive-by-default GDAL runtime hardening (#2765): the driver-skip and
+        // remote-VSI-disable policy every GDAL/OGR subprocess inherits. Bound here so
+        // both the in-process and container-exec runner seams resolve it.
+        services
+            .AddOptions<GdalHardeningOptions>()
+            .Bind(configuration.GetSection(GdalHardeningOptions.SectionName));
+
         if (mode == GdalProcessExecutorMode.Container)
         {
             // Container-exec fidelity path: bind the GdalContainer options and run each
