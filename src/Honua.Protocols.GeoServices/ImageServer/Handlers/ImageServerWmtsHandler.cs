@@ -12,10 +12,11 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Protocols.GeoServices.ImageServer.Services;
-using Honua.Protocols.Ogc.Common;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -899,7 +900,7 @@ internal sealed class ImageServerWmtsHandler(
             sb.Append("        <ows:Identifier>").Append(level.Level.ToString(CultureInfo.InvariantCulture)).AppendLine("</ows:Identifier>");
             sb.Append("        <ScaleDenominator>").Append(FormatScaleDenominator(level.ScaleDenominator)).AppendLine("</ScaleDenominator>");
             sb.Append("        <TopLeftCorner>")
-                .Append(WmtsTileMatrixFormatting.FormatTopLeftCorner(
+                .Append(FormatTopLeftCorner(
                     entry.Crs,
                     geometry.IsGeographic,
                     geometry.TopLeftX,
@@ -1069,6 +1070,27 @@ internal sealed class ImageServerWmtsHandler(
 
     private static string FormatScaleDenominator(double value)
         => value.ToString("0.###############", CultureInfo.InvariantCulture);
+
+    // Formats an internal XY top-left origin in the axis order declared by the advertised CRS.
+    // CRS84 is EastNorth (longitude, latitude), while geographic EPSG identifiers such as
+    // EPSG:4326 are NorthEast (latitude, longitude). Inlined from WmtsTileMatrixFormatting to
+    // avoid cross-protocol dependency (honua-server architecture rule: protocol adapters must
+    // not depend on each other).
+    private static string FormatTopLeftCorner(string crs, bool isGeographic, double x, double y)
+    {
+        var axisOrder = SpatialReferenceHelpers.TryParseCrsDefinition(crs, out var definition)
+            ? definition.AxisOrder
+            : isGeographic
+                ? AxisOrder.NorthEast
+                : AxisOrder.EastNorth;
+        var first = axisOrder == AxisOrder.NorthEast ? y : x;
+        var second = axisOrder == AxisOrder.NorthEast ? x : y;
+
+        return string.Concat(FormatOrdinate(first), " ", FormatOrdinate(second));
+    }
+
+    private static string FormatOrdinate(double value)
+        => value.ToString("R", CultureInfo.InvariantCulture);
 
     private static IResult CreateExceptionReport(string code, string locator, string text, int statusCode)
     {
