@@ -616,6 +616,14 @@ assert_descriptor \
   "false" \
   "OData Core"
 
+# The shared WMTS TopLeftCorner formatter has three bounded consumers. Keep a
+# change to that exact file on the classic WMTS, OGC API Tiles, and ImageServer
+# owners instead of tripping the unmapped shared-protocol run_all safety net.
+assert_exact_shards \
+  "shared-wmts-formatter-bounded-owners" \
+  "src/Honua.Protocols.Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
+  '["OGC Classic WMTS","OGC API Tiles Coverages and Processes","GeoServices ImageServer"]'
+
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
 # dir under a shard's paths: it runs the smoke subset PLUS that feature's owning
 # shard (here GeoServices ImageServer), and is targeted, not run_all.
