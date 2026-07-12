@@ -110,7 +110,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             return JobExecutionResult.Failed($"Invalid interpolation inputs: {algorithmError}");
         }
 
-        if (!TryReadOutputSize(parameters, out var width, out var height, out var sizeError))
+        if (!TryReadOutputSize(parameters, opts, out var width, out var height, out var sizeError))
         {
             return JobExecutionResult.Failed($"Invalid interpolation inputs: {sizeError}");
         }
@@ -265,6 +265,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
 
     private static bool TryReadOutputSize(
         IReadOnlyDictionary<string, string> parameters,
+        GdalWorkerOptions options,
         out int? width,
         out int? height,
         out string failure)
@@ -292,6 +293,17 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         if (width.HasValue ^ height.HasValue)
         {
             failure = "both 'width' and 'height' must be supplied together to set the output grid size";
+            width = null;
+            height = null;
+            return false;
+        }
+
+        // Bound the attacker-controlled OUTPUT grid before gdal_grid allocates a
+        // width×height surface, closing the output-allocation OOM vector (#2782).
+        // Reuses the same caps the input dimension guard applies (#2766).
+        if (width.HasValue && height.HasValue
+            && !GdalOutputGridGuard.TryAdmit(width.Value, height.Value, options, out failure))
+        {
             width = null;
             height = null;
             return false;
