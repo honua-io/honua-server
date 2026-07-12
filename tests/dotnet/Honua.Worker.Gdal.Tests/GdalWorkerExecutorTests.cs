@@ -310,7 +310,9 @@ public sealed class GdalWorkerExecutorTests
     {
         var scratch = NewScratch();
         var executor = new GdalVectorConvertJobExecutor(
-            new ProcessGdalCommandRunner(NullLogger<ProcessGdalCommandRunner>.Instance),
+            new ProcessGdalCommandRunner(
+                Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+                NullLogger<ProcessGdalCommandRunner>.Instance),
             GdalJobFactory.Options(scratch),
             NullLogger<GdalVectorConvertJobExecutor>.Instance);
 
@@ -468,7 +470,9 @@ public sealed class GdalWorkerExecutorTests
     {
         var scratch = NewScratch();
         var executor = new GdalVectorReprojectJobExecutor(
-            new ProcessGdalCommandRunner(NullLogger<ProcessGdalCommandRunner>.Instance),
+            new ProcessGdalCommandRunner(
+                Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+                NullLogger<ProcessGdalCommandRunner>.Instance),
             GdalJobFactory.Options(scratch),
             NullLogger<GdalVectorReprojectJobExecutor>.Instance);
 

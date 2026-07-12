@@ -40,6 +40,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class DockerGdalCommandRunner(
     IDockerCommandInvoker invoker,
     IOptions<GdalContainerExecutionOptions> options,
+    IOptions<GdalHardeningOptions> hardening,
     ILogger<DockerGdalCommandRunner> logger) : IGdalCommandRunner
 {
     /// <inheritdoc />
@@ -54,7 +55,10 @@ internal sealed partial class DockerGdalCommandRunner(
         ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
 
         var opts = options.Value;
-        var dockerArgs = BuildDockerRunArguments(opts, tool, arguments, workingDirectory);
+        var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
+            hardening.Value,
+            GdalRuntimeHardening.ArgumentsReferenceVsi(arguments));
+        var dockerArgs = BuildDockerRunArguments(opts, tool, arguments, workingDirectory, hardeningEnv);
 
         Log.DispatchingToContainer(logger, tool, opts.Image, workingDirectory);
         return invoker.RunAsync(opts.DockerExecutable, dockerArgs, cancellationToken);
@@ -91,14 +95,19 @@ internal sealed partial class DockerGdalCommandRunner(
         GdalContainerExecutionOptions options,
         string tool,
         IReadOnlyList<string> toolArguments,
-        string workspace)
+        string workspace,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(tool);
         ArgumentNullException.ThrowIfNull(toolArguments);
         ArgumentException.ThrowIfNullOrWhiteSpace(workspace);
 
-        var args = new List<string>(toolArguments.Count + 14)
+        var envArgs = environment is null
+            ? []
+            : GdalRuntimeHardening.ToDockerEnvArguments(environment);
+
+        var args = new List<string>(toolArguments.Count + envArgs.Count + 14)
         {
             "run",
             "--rm",
@@ -115,6 +124,10 @@ internal sealed partial class DockerGdalCommandRunner(
             args.Add("--user");
             args.Add(options.User);
         }
+
+        // Propagate the GDAL hardening environment into the container so the
+        // driver-skip / remote-VSI-disable policy applies inside the image too (#2765).
+        args.AddRange(envArgs);
 
         // Identical-path bind mount: the executor's absolute workspace paths must
         // resolve to the same files inside the container.
