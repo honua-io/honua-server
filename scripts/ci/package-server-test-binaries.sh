@@ -11,6 +11,7 @@ CONFIGURATION="${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}"
 MAX_ARCHIVE_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES:-268435456}"
 MAX_UNPACKED_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES:-536870912}"
 MAX_PACKAGE_MILLISECONDS="${HONUA_SERVER_TEST_ARTIFACT_MAX_PACKAGE_MILLISECONDS:-120000}"
+EVIDENCE_TTL_SECONDS="${HONUA_SERVER_TEST_ARTIFACT_TTL_SECONDS:-86400}"
 CONTRACT="honua.server-test-binaries.v1"
 
 project=""
@@ -36,6 +37,10 @@ if [[ -z "${project}" || -z "${output_dir}" || -z "${source_sha}" ]]; then
 fi
 if [[ ! "${source_sha}" =~ ^[0-9a-fA-F]{40}$ ]]; then
   echo "::error::Source SHA must be a full 40-character hexadecimal commit id." >&2
+  exit 2
+fi
+if [[ ! "${EVIDENCE_TTL_SECONDS}" =~ ^[0-9]+$ ]] || (( EVIDENCE_TTL_SECONDS < 1 || EVIDENCE_TTL_SECONDS > 86400 )); then
+  echo "::error::Evidence TTL must be between 1 and 86400 seconds." >&2
   exit 2
 fi
 for command in cp date du find gzip jq sha256sum tar; do
@@ -132,6 +137,12 @@ if [[ -z "${dotnet_sdk}" ]]; then
   command -v dotnet >/dev/null || { echo "::error::Required command 'dotnet' is unavailable." >&2; exit 2; }
   dotnet_sdk="$(dotnet --version)"
 fi
+created_at_epoch="${HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH:-$(date +%s)}"
+if [[ ! "${created_at_epoch}" =~ ^[0-9]+$ ]] || (( created_at_epoch < 1 )); then
+  echo "::error::Evidence creation time must be a positive Unix epoch." >&2
+  exit 2
+fi
+expires_at_epoch="$(( created_at_epoch + EVIDENCE_TTL_SECONDS ))"
 jq -nS \
   --arg contract "${CONTRACT}" \
   --arg source_sha "${source_sha,,}" \
@@ -145,6 +156,8 @@ jq -nS \
   --argjson archive_bytes "${archive_bytes}" \
   --argjson file_count "${file_count}" \
   --argjson package_milliseconds "${package_milliseconds}" \
+  --argjson created_at_epoch "${created_at_epoch}" \
+  --argjson expires_at_epoch "${expires_at_epoch}" \
   '{
     contract: $contract,
     source_sha: $source_sha,
@@ -158,6 +171,8 @@ jq -nS \
     archive_bytes: $archive_bytes,
     file_count: $file_count,
     package_milliseconds: $package_milliseconds,
+    created_at_epoch: $created_at_epoch,
+    expires_at_epoch: $expires_at_epoch,
     retained_runtime_ids: ["linux", "linux-x64", "unix"]
   }' > "${manifest_path}"
 
