@@ -136,7 +136,7 @@ internal static class FeatureStreamPublisher
     /// </summary>
     private sealed class NdjsonSpillWriter : IAsyncDisposable
     {
-        private readonly NetTopologySuite.IO.GeoJsonWriter _writer = new();
+        private readonly NetTopologySuite.IO.GeoJsonWriter _writer = GeoJsonArtifactCodec.CreateWriter();
         private FileStream? _fileStream;
         private long _count;
         private long _bytes;

@@ -131,6 +131,13 @@ internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
                     $"Invalid dissolve inputs: wkbs[{i}] decoded to an empty geometry.");
             }
 
+            if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
+            {
+                Log.InvalidWkb(_logger, job.OperationId, i, sridError);
+                return JobExecutionResult.Failed(
+                    $"Invalid dissolve inputs: wkbs[{i}] {sridError}.");
+            }
+
             geometry.SRID = inputs.Srid;
 
             var key = inputs.GroupKeys?[i] ?? DefaultGroupKey;
@@ -205,7 +212,7 @@ internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
         int srid,
         int inputCount)
     {
-        var writer = new GeoJsonWriter();
+        var writer = GeoJsonArtifactCodec.CreateWriter();
 
         using var buffer = new MemoryStream();
         using (var jsonWriter = new Utf8JsonWriter(buffer))

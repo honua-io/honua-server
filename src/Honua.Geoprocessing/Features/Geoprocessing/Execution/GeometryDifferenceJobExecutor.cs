@@ -91,6 +91,18 @@ internal sealed partial class GeometryDifferenceJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"Invalid difference inputs: eraserWkb {decodeError}");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
+        {
+            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
+            return JobExecutionResult.Failed($"Invalid difference inputs: targetWkb {targetSridError}.");
+        }
+
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(eraser, inputs.Srid, out var eraserSridError))
+        {
+            Log.InvalidWkb(_logger, job.OperationId, "eraserWkb", eraserSridError);
+            return JobExecutionResult.Failed($"Invalid difference inputs: eraserWkb {eraserSridError}.");
+        }
+
         target.SRID = inputs.Srid;
         eraser.SRID = inputs.Srid;
 

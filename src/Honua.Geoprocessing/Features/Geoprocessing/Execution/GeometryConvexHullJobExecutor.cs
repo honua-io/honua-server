@@ -98,6 +98,12 @@ internal sealed partial class GeometryConvexHullJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed("Invalid convex-hull inputs: geometry is empty.");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
+        {
+            Log.InvalidInputs(_logger, job.OperationId, sridError);
+            return JobExecutionResult.Failed($"Invalid convex-hull inputs: {sridError}.");
+        }
+
         geometry.SRID = inputs.Srid;
 
         cancellationToken.ThrowIfCancellationRequested();
