@@ -88,6 +88,15 @@
       ]
     },
     {
+      "prefix": "src/Honua.Protocols.Ogc.Shared/Common/WmtsTileMatrixFormatting.cs",
+      "reason": "shared_wmts_tile_matrix_formatting",
+      "shards": [
+        "OGC Classic WMTS",
+        "OGC API Tiles Coverages and Processes",
+        "GeoServices ImageServer"
+      ]
+    },
+    {
       "prefix": "src/Honua.Hosting/Features/Authentication/",
       "reason": "shared_auth_feature_area",
       "shards": [
