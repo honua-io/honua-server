@@ -533,13 +533,29 @@ public enum SpatialRelationship
     Intersects,
 
     /// <summary>
-    /// Features completely within the filter geometry
+    /// Esri <c>esriSpatialRelWithin</c>: the filter geometry lies within each matched feature.
+    /// Returns features that enclose (contain) the filter geometry, evaluated as
+    /// <c>ST_Within(filter, feature)</c>.
     /// </summary>
+    /// <remarks>
+    /// The relationship is taken from the query-geometry perspective, matching Esri GeoServices
+    /// semantics: the filter geometry is the subject and the feature is the container. All SQL
+    /// providers lead with the filter geometry as the first operand — do not flip the operands.
+    /// See issue #2068.
+    /// </remarks>
     Within,
 
     /// <summary>
-    /// Features that contain the filter geometry
+    /// Esri <c>esriSpatialRelContains</c>: the filter geometry contains each matched feature.
+    /// Returns features that lie within the filter geometry, evaluated as
+    /// <c>ST_Contains(filter, feature)</c>.
     /// </summary>
+    /// <remarks>
+    /// The relationship is taken from the query-geometry perspective, matching Esri GeoServices
+    /// semantics: the filter geometry is the subject and the feature is the contained geometry.
+    /// All SQL providers lead with the filter geometry as the first operand — do not flip the
+    /// operands. See issue #2068.
+    /// </remarks>
     Contains,
 
     /// <summary>
