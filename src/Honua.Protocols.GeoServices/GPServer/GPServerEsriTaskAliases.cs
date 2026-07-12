@@ -28,6 +28,29 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// one, since Esri's Analysis/Data Management tools operate on feature classes) so every
 /// alias resolves to exactly one process.
 /// </para>
+/// <para>
+/// <b>Name-level convenience only — NOT wire-contract parity.</b> An alias renames the
+/// task for discovery and addressing; it does <em>not</em> adapt the task's parameter
+/// contract to the same-named Esri tool's contract. The aliased task keeps its canonical
+/// Honua inputs and outputs, and task-info always publishes those real parameters. For
+/// example, <c>Buffer</c> resolves to <c>geometry.buffer</c>, which expects a
+/// base64-encoded WKB geometry (<c>wkb</c>), an SRID (<c>srid</c>), and a numeric
+/// <c>distance</c> — not Esri Buffer's feature-record-set input, linear-unit distance, or
+/// dissolve options. Clients (including unmodified ArcGIS clients, which read task-info
+/// before invoking) must drive invocation from the published parameter metadata, not from
+/// the parameter signature the Esri tool of the same name would have. Building a full
+/// Esri wire-contract adapter is an explicit non-goal of this overlay (#2788).
+/// </para>
+/// <para>
+/// <b>Collision policy (deterministic):</b> a real catalog process ID always wins over an
+/// alias. The GPServer adapter suppresses an alias from the published task list, and skips
+/// alias resolution, whenever any catalog process ID matches the name case-insensitively
+/// (matching the case-insensitive alias lookup). Aliases therefore only ever resolve when
+/// no real process owns the name — a process registered as <c>Buffer</c> deterministically
+/// shadows the <c>geometry.buffer</c> alias in every casing. Enforced by
+/// <c>GPServerEndpoints.BuildPublishedTaskNames</c> /
+/// <c>GPServerEndpoints.ResolveTaskDefinition</c>.
+/// </para>
 /// </summary>
 internal static class GPServerEsriTaskAliases
 {

@@ -1335,15 +1335,29 @@ internal static class GPServerEndpoints
     /// Builds the published task-name list for the service-info response: every
     /// process's internal ID, plus its Esri-conventional alias when one exists. Both
     /// forms resolve to the same process via <see cref="ResolveTaskDefinition"/>.
+    /// <para>
+    /// Collision policy (deterministic): a real catalog process ID always wins over an
+    /// alias. When any catalog process ID matches an alias (compared case-insensitively,
+    /// mirroring the alias lookup), the alias is suppressed and only the real process ID
+    /// is published, so the task list never contains the same name with two meanings and
+    /// never publishes duplicates.
+    /// </para>
     /// </summary>
     private static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
     {
-        foreach (var process in processCatalog.ListProcesses())
+        var processes = processCatalog.ListProcesses();
+        var processIds = new HashSet<string>(processes.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var process in processes)
+        {
+            processIds.Add(process.ProcessId);
+        }
+
+        foreach (var process in processes)
         {
             yield return process.ProcessId;
 
             var alias = GPServerEsriTaskAliases.GetAlias(process.ProcessId);
-            if (alias != null)
+            if (alias != null && !processIds.Contains(alias))
             {
                 yield return alias;
             }
@@ -1356,6 +1370,16 @@ internal static class GPServerEndpoints
     /// then falls back to the Esri-conventional alias overlay (e.g. <c>Buffer</c>) so
     /// unmodified ArcGIS clients addressing tasks by their familiar Esri name resolve to
     /// the same canonical process. See <see cref="GPServerEsriTaskAliases"/>.
+    /// <para>
+    /// Collision policy (deterministic): an exact catalog process ID always wins over an
+    /// alias, and an alias only resolves when no catalog process owns that name. Because
+    /// alias lookups are case-insensitive, the shadow check is case-insensitive too: if
+    /// any catalog process ID matches the requested name ignoring case, the alias overlay
+    /// is bypassed entirely (the request either hits that process exactly or 404s), so a
+    /// catalog process named <c>Buffer</c> deterministically owns every casing of
+    /// "Buffer" and can never be hijacked by — or accidentally routed through — the alias
+    /// table. See <see cref="BuildPublishedTaskNames"/> for the matching publication rule.
+    /// </para>
     /// </summary>
     private static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
     {
@@ -1370,9 +1394,34 @@ internal static class GPServerEndpoints
             return byProcessId;
         }
 
-        return GPServerEsriTaskAliases.TryResolveProcessId(taskName, out var processId)
-            ? processCatalog.GetProcess(processId)
-            : null;
+        if (!GPServerEsriTaskAliases.TryResolveProcessId(taskName, out var processId))
+        {
+            return null;
+        }
+
+        return IsAliasShadowedByCatalogProcess(processCatalog, taskName)
+            ? null
+            : processCatalog.GetProcess(processId);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when a catalog process ID matches the requested
+    /// task name case-insensitively, meaning the name belongs to a real process and the
+    /// Esri alias overlay must not resolve it (see <see cref="ResolveTaskDefinition"/>).
+    /// Only evaluated on the alias fallback path, so the linear scan stays off the
+    /// established internal-process-ID hot path.
+    /// </summary>
+    private static bool IsAliasShadowedByCatalogProcess(IProcessCatalog processCatalog, string taskName)
+    {
+        foreach (var process in processCatalog.ListProcesses())
+        {
+            if (string.Equals(process.ProcessId, taskName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
