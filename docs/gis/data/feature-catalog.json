@@ -6026,6 +6026,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_WhenSuccessful_IncludesContentHeaders",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_WithStringCollectionId_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_WithValidParameters_ReturnsMap",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsDuplicateStorageBindingEndpointTests.GetCollectionMap_DuplicateStorageLayerBindings_ReturnsPng",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_EmptyCollectionId_ReturnsBadRequestOrNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_ErrorResponse_DoesNotExposeInternalDetails",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_FloatCollectionId_ReturnsNotFound",
