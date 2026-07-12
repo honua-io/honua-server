@@ -674,11 +674,17 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
     /// Returns a geometry SQL expression with ST_Transform applied when the requested
     /// output SRID differs from the layer's source SRID.
     /// </summary>
+    /// <remarks>
+    /// <c>always_xy := true</c> is required on every ST_Transform call: DuckDB's spatial
+    /// extension honours the authority axis order (latitude/longitude for EPSG:4326), while
+    /// Honua's canonical WKB contract stores coordinates X=longitude, Y=latitude. Without
+    /// this flag DuckDB would swap axes for geographic CRSs and emit transposed coordinates.
+    /// </remarks>
     private static string BuildTransformedGeometryExpression(DuckDBLayerMapping mapping, FeatureQuery query)
     {
         if (query.OutputSrid.HasValue && query.OutputSrid.Value != mapping.Srid)
         {
-            return $"ST_Transform({mapping.QuotedGeometryColumn}, 'EPSG:{mapping.Srid}', 'EPSG:{query.OutputSrid.Value}')";
+            return $"ST_Transform({mapping.QuotedGeometryColumn}, 'EPSG:{mapping.Srid}', 'EPSG:{query.OutputSrid.Value}', always_xy := true)";
         }
 
         return mapping.QuotedGeometryColumn;
@@ -1243,7 +1249,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         if (filter.Srid.HasValue && filter.Srid.Value > 0 && filter.Srid.Value != mapping.Srid)
         {
-            return $"ST_Transform({baseGeometry}, 'EPSG:{filter.Srid.Value}', 'EPSG:{mapping.Srid}')";
+            // always_xy := true keeps DuckDB in X=lon/Y=lat order to match Honua's canonical WKB
+            // contract; without it DuckDB applies the authority axis order (lat/lon for EPSG:4326)
+            // and the transformed filter geometry would be transposed relative to the stored column.
+            return $"ST_Transform({baseGeometry}, 'EPSG:{filter.Srid.Value}', 'EPSG:{mapping.Srid}', always_xy := true)";
         }
 
         return baseGeometry;
@@ -1255,18 +1264,54 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         ref int paramIndex, List<object> parameters)
     {
         var distanceInMeters = ConvertDistanceToMeters(filter.Distance!.Value, filter.DistanceUnit);
-        parameters.Add(distanceInMeters);
 
-        // DuckDB ST_DWithin operates in CRS units. For geographic CRS (degrees),
-        // passing meters would be wildly incorrect. Use ST_Distance_Spheroid for
-        // geodesic distance in meters on the WGS84 spheroid instead.
+        // DuckDB ST_DWithin operates in the CRS's native units. Distance filters carry the client
+        // distance in meters, so the branch selection has to match the storage CRS's unit:
+        //   * Known geographic (degree) CRSs  -> ST_Distance_Spheroid (geodesic, metres).
+        //   * Projected metre-unit CRSs       -> planar ST_DWithin with the metre distance.
+        //   * Plausibly-geographic-but-unlisted CRSs (EPSG 4000-4999 outside the allowlist)
+        //     -> reject, because running planar ST_DWithin would compare metres to degrees and
+        //        match the entire planet. See distance policy note below.
         if (IsGeographicSrid(mapping.Srid))
         {
-            return $"ST_Distance_Spheroid({geomCol}, {filterGeomParam}) <= ${paramIndex++}";
+            parameters.Add(distanceInMeters);
+
+            // Axis contract: DuckDB's *_Spheroid functions document their inputs as EPSG:4326 in
+            // latitude/longitude order, but Honua stores coordinates X=longitude, Y=latitude.
+            // ST_FlipCoordinates swaps to the lat/lon order the spheroid model expects so the
+            // geodesic distance is computed on the correct axes.
+            return $"ST_Distance_Spheroid(ST_FlipCoordinates({geomCol}), ST_FlipCoordinates({filterGeomParam})) <= ${paramIndex++}";
         }
 
+        // Safety net (#2731, pending classifier unification in #2732): the geodesic allowlist in
+        // SpatialConstants.GeographicSrids only covers seven well-known codes. Any other SRID in
+        // the EPSG geographic 2D range (4000-4999) is almost certainly a lat/lon degree CRS
+        // (e.g. 4674 SIRGAS 2000, 4490 CGCS2000, 4230 ED50) whose geodesy we cannot establish from
+        // the static list. Running planar ST_DWithin(metres) against degrees would silently match
+        // the whole planet, so reject distance filters on those SRIDs rather than return wrong
+        // results. Projected metre-unit CRSs (outside 4000-4999) keep the correct planar path.
+        if (IsUnlistedGeographicSridRange(mapping.Srid))
+        {
+            throw new NotSupportedException(
+                $"Distance spatial filters are not supported for layer SRID {mapping.Srid} in the DuckDB provider. " +
+                $"This SRID falls in the EPSG geographic range (4000-4999) but is not in the geodesic allowlist, " +
+                $"so its distance semantics cannot be established without projecting. " +
+                $"Pre-project the layer to EPSG:4326 or a projected metre-unit CRS before issuing distance filters.");
+        }
+
+        // Projected metre-unit CRS: planar ST_DWithin in the layer's native (metre) units is correct.
+        parameters.Add(distanceInMeters);
         return $"ST_DWithin({geomCol}, {filterGeomParam}, ${paramIndex++})";
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when the SRID lies in the EPSG geographic 2D code range (4000-4999)
+    /// but is not one of the codes explicitly recognised as geographic by
+    /// <see cref="DistanceConversions.IsGeographicSrid"/>. Such SRIDs are treated as
+    /// "geodesy-unestablished" for distance filters to avoid comparing metres against degrees.
+    /// </summary>
+    private static bool IsUnlistedGeographicSridRange(int srid)
+        => srid is >= 4000 and <= 4999 && !IsGeographicSrid(srid);
 
     /// <summary>
     /// Returns <c>true</c> for SRIDs known to be geographic (lat/lon degree-based) CRSs.

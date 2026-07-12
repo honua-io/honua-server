@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -147,7 +149,7 @@ internal sealed class ImageServerRasterMetadataHandler
                 new RasterFunctionInfoEntry
                 {
                     Name = "Colormap",
-                    Description = "Maps single-band pixel values to RGBA using an explicit colormap.",
+                    Description = "Maps single-band pixel values to RGBA using explicit [value, r, g, b] stops, a named ColorrampName, or an inline algorithmic/multipart Colorramp object.",
                     Help = string.Empty,
                 },
                 new RasterFunctionInfoEntry
@@ -206,6 +208,115 @@ internal sealed class ImageServerRasterMetadataHandler
 
             return (Results.Json(response, ImageServerJsonContext.Default.RasterAttributeTableResponse), 0);
         });
+
+    /// <summary>
+    /// Returns the read-only Esri <c>colormap</c> resource. Honua rasters are continuous and carry
+    /// no intrinsic source colormap, so the resource reflects the active renderer: when the request
+    /// supplies a <paramref name="renderingRule"/> whose Colormap function (explicit stops, a named
+    /// <c>ColorrampName</c>, or an inline <c>Colorramp</c> object) resolves a colormap, that
+    /// colormap is returned as <c>[value, r, g, b]</c> stops. A malformed/unsupported renderingRule
+    /// surfaces its reason; otherwise the Esri not-available response is returned. This reuses the
+    /// shared raster-function planner so the colormap matches what exportImage/legend render.
+    /// </summary>
+    public Task<IResult> GetColormapAsync(
+        HttpContext context,
+        int layerId,
+        string? renderingRule,
+        CancellationToken cancellationToken)
+        => ExecuteAsync(context, layerId, "colormap", _ =>
+        {
+            if (!TryResolveRendererColormap(renderingRule, out var colormap, out var invalidReason))
+            {
+                if (invalidReason is not null)
+                {
+                    ImageServerLog.RasterMetadataResourceFailed(
+                        _logger, new InvalidOperationException(invalidReason), layerId, "colormap");
+                    return Task.FromResult<(IResult, int)>(
+                        (StandardErrorHelpers.CreateBadRequest(context, invalidReason), 0));
+                }
+
+                // No renderer colormap available. A continuous raster has no intrinsic colormap, so
+                // return the Esri "not available" response rather than fabricating one.
+                return Task.FromResult<(IResult, int)>((
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Colormap is not available for this image service. Supply a renderingRule whose Colormap " +
+                        "function (explicit [value, r, g, b] stops, a ColorrampName, or an inline Colorramp object) " +
+                        "resolves a colormap."),
+                    0));
+            }
+
+            var stops = BuildColormapStops(colormap);
+            ImageServerLog.StatisticsHistogramsComputed(_logger, layerId, stops.Length);
+            return Task.FromResult<(IResult, int)>((
+                Results.Json(
+                    new ColormapResourceResponse { Colormap = stops },
+                    ImageServerJsonContext.Default.ColormapResourceResponse),
+                stops.Length));
+        });
+
+    // Resolves the renderer colormap from a supplied renderingRule using the shared planner.
+    // Returns false with a non-null invalidReason when the renderingRule is malformed/unsupported,
+    // and false with a null invalidReason when no colormap is available (the not-available case).
+    private static bool TryResolveRendererColormap(
+        string? renderingRule,
+        out RasterColormap colormap,
+        out string? invalidReason)
+    {
+        colormap = null!;
+        invalidReason = null;
+
+        if (string.IsNullOrWhiteSpace(renderingRule))
+        {
+            return false;
+        }
+
+        RasterFunctionDocument? document;
+        try
+        {
+            document = JsonSerializer.Deserialize(
+                renderingRule, ImageServerJsonContext.Default.RasterFunctionDocument);
+        }
+        catch (JsonException)
+        {
+            invalidReason = "renderingRule must be a valid raster function document.";
+            return false;
+        }
+
+        if (document is null)
+        {
+            invalidReason = "renderingRule must be a valid raster function document.";
+            return false;
+        }
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+        if (!mapping.Supported)
+        {
+            invalidReason = mapping.Reason ?? "renderingRule is not supported on this service.";
+            return false;
+        }
+
+        if (mapping.Colormap is { Entries.Count: > 0 } resolved)
+        {
+            colormap = resolved;
+            return true;
+        }
+
+        // Supported renderingRule that carries no Colormap function -> colormap not available.
+        return false;
+    }
+
+    private static int[][] BuildColormapStops(RasterColormap colormap)
+        => colormap.Entries
+            .OrderBy(static e => e.Value)
+            .Select(static e => new[]
+            {
+                (int)Math.Round(e.Value, MidpointRounding.AwayFromZero),
+                e.Red,
+                e.Green,
+                e.Blue,
+            })
+            .ToArray();
 
     private async Task<RasterStatistics[]> ResolveStatisticsAsync(
         int layerId,

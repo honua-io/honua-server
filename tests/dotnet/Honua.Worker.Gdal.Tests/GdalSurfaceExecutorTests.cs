@@ -305,7 +305,9 @@ public sealed class GdalSurfaceExecutorTests
     {
         var scratch = NewScratch();
         var executor = new GdalSurfaceJobExecutor(
-            new ProcessGdalCommandRunner(NullLogger<ProcessGdalCommandRunner>.Instance),
+            new ProcessGdalCommandRunner(
+                Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+                NullLogger<ProcessGdalCommandRunner>.Instance),
             GdalJobFactory.Options(scratch),
             NullLogger<GdalSurfaceJobExecutor>.Instance);
 

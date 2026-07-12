@@ -1126,6 +1126,40 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Insert_WithUnparseableSrsName_ReturnsExceptionReport()
+    {
+        // #2737: a present but unparseable/unsupported srsName on an insert geometry is a
+        // transaction failure (OGC exception), not a silent fall back to the layer CRS.
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                xmlns:honua="http://honua.io/wfs">
+              <wfs:Insert handle="insert-feature">
+                <honua:test_layer>
+                  <honua:name>Bad SRS Insert</honua:name>
+                  <honua:shape>
+                    <gml:Point srsName="not-a-crs">
+                      <gml:pos>37.123 -122.456</gml:pos>
+                    </gml:Point>
+                  </honua:shape>
+                </honua:test_layer>
+              </wfs:Insert>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_AnonymousWrite_AllowsInsertWithoutRbac()
     {
         // V2 cutover (#1035 72/N): per-resource access policy now lives on

@@ -59,6 +59,58 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     }
 
     [Fact]
+    public void BuildDistancePredicateSql_WithProjectedStorage_ReprojectsBothOperandsToWgs84Geography()
+    {
+        // Projected-storage layer (EPSG:3857). A bare ::geography cast requires lon/lat and would
+        // throw at execution (500); the predicate must reproject both operands to WGS84 geography
+        // via ST_Transform(...,4326)::geography so ST_Distance returns metres (#2740).
+        // Seed the filter-geometry parameter ($1) so the distance parameter realistically becomes $2.
+        var parameters = new List<object?> { new byte[] { 1, 2, 3, 4 } };
+
+        var predicate = PostgresStorageMappedFeatureReader.BuildDistancePredicateSql(
+            geometryColumn: "\"geom\"::geometry",
+            filterGeometry: "$1",
+            storageSrid: 3857,
+            distanceInMeters: 1000d,
+            beyond: false,
+            addParameter: value =>
+            {
+                parameters.Add(value);
+                return "$" + parameters.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            });
+
+        predicate.Should().Contain("ST_Transform(\"geom\"::geometry, 4326)::geography");
+        predicate.Should().Contain("ST_Transform($1, 4326)::geography");
+        predicate.Should().StartWith("ST_Distance(");
+        predicate.Should().Contain("<= $2");
+        parameters.Last().Should().Be(1000d);
+    }
+
+    [Fact]
+    public void BuildDistancePredicateSql_WithWgs84Storage_CastsDirectlyToGeography()
+    {
+        // Geographic (EPSG:4326) storage is already lon/lat, so no ST_Transform is required —
+        // a direct ::geography cast is correct and cheaper.
+        var parameters = new List<object?>();
+
+        var predicate = PostgresStorageMappedFeatureReader.BuildDistancePredicateSql(
+            geometryColumn: "\"geom\"::geometry",
+            filterGeometry: "$1",
+            storageSrid: 4326,
+            distanceInMeters: 500d,
+            beyond: true,
+            addParameter: value =>
+            {
+                parameters.Add(value);
+                return "$" + parameters.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            });
+
+        predicate.Should().Contain("\"geom\"::geometry::geography");
+        predicate.Should().NotContain("ST_Transform");
+        predicate.Should().Contain("> $1");
+    }
+
+    [Fact]
     public void BuildStatisticsAggregateExpression_WithNumericAggregate_CastsMappedSourceColumn()
     {
         var expression = PostgresStorageMappedFeatureReader.BuildStatisticsAggregateExpression(
