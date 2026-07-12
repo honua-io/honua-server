@@ -303,7 +303,7 @@ public sealed class McpMapToolTests
                         {
                             Id = id,
                             Geometry = [0x01],
-                            Attributes = ImmutableDictionary<string, object?>.Empty.Add("idx", id)
+                            Attributes = ImmutableDictionary<string, object?>.Empty.Add("OBJECTID", id)
                         })
                         .ToImmutableArray()
                 };
@@ -334,7 +334,7 @@ public sealed class McpMapToolTests
             StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
             foreach (var feature in structured.GetProperty("features").EnumerateArray())
             {
-                seenIds.Add(feature.GetProperty("id").GetInt64());
+                seenIds.Add(feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64());
             }
 
             if (!structured.GetProperty("exceededTransferLimit").GetBoolean())
@@ -370,6 +370,34 @@ public sealed class McpMapToolTests
         structured.GetProperty("code").GetString().Should().Be("invalid_argument");
         structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("ValidationFailed");
         structured.GetProperty("error").GetProperty("violations").GetArrayLength().Should().BeGreaterThan(0);
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_MissingLayerId_ReturnsCertificationErrorShape()
+    {
+        // This is the exact invalid-argument shape used by the external MCP
+        // certification error-shape contract: serviceId is present and layerId
+        // is omitted. It must remain a structured tool error, not -32602.
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices()),
+            ToolCall("query-cert-invalid-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}"}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("code").GetString().Should().Be("invalid_argument");
+        var error = structured.GetProperty("error");
+        error.GetProperty("kind").GetString().Should().Be("ValidationFailed");
+        error.GetProperty("violations").GetArrayLength().Should().BeGreaterThan(0);
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
     }
 
@@ -638,6 +666,127 @@ public sealed class McpMapToolTests
 
         await renderer.Received(1).RenderDatasetMapAsync(
             Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_ByServiceName_ResolvesAndReturnsSchemaValidContent()
+    {
+        // #2578 contract: the tool addresses a layer by service NAME (not just id),
+        // mirroring the GeoServices catalog. The structuredContent must still
+        // validate against the advertised outputSchema and echo the canonical
+        // serviceId so the agent can chain a subsequent call deterministically.
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryResult<Feature>
+            {
+                TotalCount = 1,
+                HasMoreResults = false,
+                Items =
+                [
+                    new Feature
+                    {
+                        Id = 7,
+                        Geometry = [0x01],
+                        Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", "Lot 7")
+                    }
+                ]
+            });
+
+        var geometryService = Substitute.For<IGeometryService>();
+        geometryService.ConvertWkbToGeoJson(Arg.Any<byte[]?>())
+            .Returns("""{"type":"Point","coordinates":[1,2]}""");
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
+            ToolCall("query-byname-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceName}}","layerId":{{LayerIndex}},"limit":10}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("serviceId").GetString().Should().Be(ServiceId,
+            "resolution by service name must echo the canonical service id");
+        structured.GetProperty("returnedCount").GetInt32().Should().Be(1);
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_ByServiceName_ResolvesAndReturnsSchemaValidContent()
+    {
+        // #2578 contract: render addressing by service NAME must resolve and emit
+        // structuredContent that validates against the advertised outputSchema.
+        var pngBytes = Encoding.ASCII.GetBytes("PNGDATA");
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderDatasetMapAsync(
+                Arg.Is<int[]>(ids => ids.Length == 1 && ids[0] == StorageLayerId),
+                Arg.Any<MapRenderRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = pngBytes,
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256
+            });
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(renderer: renderer, temporaryFileService: BuildTemporaryFileService("/temp/byname.png"))),
+            ToolCall("render-byname-1", RenderMapTool.ToolName, $$"""
+                {
+                  "layers":[{"serviceId":"{{ServiceName}}","layerId":{{LayerIndex}}}],
+                  "bbox":[-10,-10,10,10],
+                  "width":256,
+                  "height":256
+                }
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var renderedLayer = result.GetProperty("structuredContent").GetProperty("layers")[0];
+        renderedLayer.GetProperty("serviceId").GetString().Should().Be(ServiceId,
+            "resolution by service name must echo the canonical service id");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_InvalidArguments_ReturnsSchemaValidToolError()
+    {
+        // #2578 error-shape contract: an invalid render call must surface a
+        // structured tool error (isError=true) whose envelope still validates
+        // against the tool's advertised outputSchema (the oneOf error branch),
+        // never leaking a protocol error or an unvalidatable payload.
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices()),
+            ToolCall("render-invalid-1", RenderMapTool.ToolName, """
+                {"layers":[],"bbox":[-10,-10,10,10]}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("status").GetString().Should().Be("error");
+        structured.GetProperty("code").GetString().Should().Be("invalid_argument");
+        structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("ValidationFailed");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
     }
 
     private McpOperatorSurface BuildSurface() => new(
