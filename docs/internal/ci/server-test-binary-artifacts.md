@@ -14,7 +14,9 @@ payload implementation and integrity proof are tracked by #2721.
 `package-server-test-binaries.sh` creates a deterministic gzip-1 archive and a
 manifest keyed by exact commit, SDK version, project, and contract version. The
 default limits are 256 MiB compressed, 512 MiB staged, and 120 seconds to
-package. `restore-server-test-binaries.sh` rejects toolchain/source/project
+package. Evidence is valid for at most 24 hours; restore rejects future or
+expired manifests even if the transport still retains their bytes.
+`restore-server-test-binaries.sh` rejects toolchain/source/project
 mismatches, size drift, digest failures, unsafe paths, missing project assets,
 or missing binaries/PDBs before extraction is accepted.
 
