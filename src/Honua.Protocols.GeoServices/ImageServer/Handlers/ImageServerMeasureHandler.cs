@@ -7,12 +7,18 @@ using System.Text.Json;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
+
+// Aliased to avoid clashing with the local ImageServer.Models.SpatialReference response type.
+using CoreSpatialReference = Honua.Core.Features.Shared.Models.SpatialReference;
+using SpatialReferenceExtensions = Honua.Core.Features.Shared.Models.SpatialReferenceExtensions;
+using WebMercatorMath = Honua.Core.Features.Shared.Models.WebMercatorMath;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
@@ -21,7 +27,18 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerMeasureHandler
 {
+    // WGS84 equatorial radius. This is deliberately the same sphere Web Mercator (EPSG:3857) is
+    // defined on, so unprojecting 3857 -> lon/lat and then measuring keeps round-trips exact.
+    // Using the mean/authalic radius instead would introduce a ~0.11% bias and diverge from the
+    // Web-Mercator sphere; that refinement is tracked separately as a minor item on #2734.
     private const double EarthRadiusMeters = 6378137d;
+
+    private enum MeasureCrsKind
+    {
+        Geographic,
+        WebMercator,
+        ProjectedLinear
+    }
 
     private readonly record struct MeasurePoint(double X, double Y, double? Z, int? Srid);
 
@@ -461,35 +478,156 @@ internal sealed class ImageServerMeasureHandler
     private static MeasurePoint CalculateCentroid(MeasureGeometry geometry)
     {
         var points = geometry.Points;
-        var count = points.Length > 1 && SamePoint(points[0], points[^1]) ? points.Length - 1 : points.Length;
-        var x = 0d;
-        var y = 0d;
-        for (var i = 0; i < count; i++)
+        var kind = ClassifyMeasureCrs(geometry.Srid, out _);
+
+        // Area-weighted (shoelace) centroid, not the vertex mean. For geographic/Web-Mercator
+        // geometry the centroid is computed in lon/lat with longitudes unwrapped about a reference
+        // vertex so a dateline-crossing ring lands on the correct side of the globe (the vertex
+        // mean of a ring spanning +179..-179 wrongly collapses to lon 0); the result is mapped back
+        // to the input SRID. Projected geometry is centroided directly in its native coordinates.
+        if (kind == MeasureCrsKind.ProjectedLinear)
         {
-            x += points[i].X;
-            y += points[i].Y;
+            var (px, py) = AreaWeightedCentroid(points.Select(static p => (p.X, p.Y)).ToArray());
+            return new MeasurePoint(px, py, null, geometry.Srid);
         }
 
-        return new MeasurePoint(x / count, y / count, null, geometry.Srid);
+        var geographic = points.Select(p => ToGeographic(p, kind)).ToArray();
+        var referenceLon = geographic.Length > 0 ? geographic[0].Lon : 0d;
+        var unwrapped = geographic
+            .Select(p => (X: referenceLon + NormalizeLongitudeDelta(p.Lon - referenceLon), Y: p.Lat))
+            .ToArray();
+        var (centroidLonUnwrapped, centroidLat) = AreaWeightedCentroid(unwrapped);
+        var centroidLon = NormalizeLongitudeDelta(centroidLonUnwrapped);
+
+        if (kind == MeasureCrsKind.WebMercator)
+        {
+            var (mx, my) = WebMercatorMath.LonLatToWebMercator(centroidLon, centroidLat);
+            return new MeasurePoint(mx, my, null, geometry.Srid);
+        }
+
+        return new MeasurePoint(centroidLon, centroidLat, null, geometry.Srid);
+    }
+
+    // Area-weighted polygon centroid via the shoelace formula. Falls back to the vertex mean for a
+    // degenerate (near-zero-area) ring to avoid division by zero.
+    private static (double X, double Y) AreaWeightedCentroid((double X, double Y)[] ring)
+    {
+        var count = ring.Length > 1 && ring[0].X.Equals(ring[^1].X) && ring[0].Y.Equals(ring[^1].Y)
+            ? ring.Length - 1
+            : ring.Length;
+
+        var signedArea = 0d;
+        var cx = 0d;
+        var cy = 0d;
+        for (var i = 0; i < count; i++)
+        {
+            var j = (i + 1) % count;
+            var cross = (ring[i].X * ring[j].Y) - (ring[j].X * ring[i].Y);
+            signedArea += cross;
+            cx += (ring[i].X + ring[j].X) * cross;
+            cy += (ring[i].Y + ring[j].Y) * cross;
+        }
+
+        if (Math.Abs(signedArea) < 1e-12d)
+        {
+            var meanX = 0d;
+            var meanY = 0d;
+            for (var i = 0; i < count; i++)
+            {
+                meanX += ring[i].X;
+                meanY += ring[i].Y;
+            }
+
+            return (meanX / count, meanY / count);
+        }
+
+        signedArea *= 0.5d;
+        return (cx / (6d * signedArea), cy / (6d * signedArea));
+    }
+
+    // Classifies the measurement CRS and, for a projected (non-Web-Mercator) CRS, reports the factor
+    // that converts its linear unit to meters. Reuses the canonical geographic/projected classifier
+    // (SpatialReference.IsGeographic, which delegates to BoundingBox.IsGeographicSrid — the single
+    // source of truth for the geographic EPSG list per #2732), the shared Web-Mercator SRID-alias
+    // normalizer, and the shared linear-unit lookup — instead of the former hard-coded "== 4326"
+    // gate. Note: the #2732 unification of the several divergent SRID allowlists is a separate,
+    // out-of-scope effort; this handler simply consumes the canonical helpers.
+    private static MeasureCrsKind ClassifyMeasureCrs(int? srid, out double metersPerLinearUnit)
+    {
+        metersPerLinearUnit = 1d;
+        if (srid is not { } wkid)
+        {
+            // No SRID supplied: default to the WGS84 geographic ecosystem default.
+            return MeasureCrsKind.Geographic;
+        }
+
+        if (SpatialReferenceExtensions.NormalizeWebMercatorSrid(wkid) == 3857)
+        {
+            return MeasureCrsKind.WebMercator;
+        }
+
+        if (CoreSpatialReference.Create(wkid).IsGeographic)
+        {
+            return MeasureCrsKind.Geographic;
+        }
+
+        // Projected, non-Web-Mercator (e.g. UTM, State Plane): planar distance in the CRS's linear
+        // unit is correct, but the unit is not necessarily the metre — convert via the shared
+        // linear-unit lookup (covers US survey-foot State Plane zones; returns 1.0 for metric CRSes).
+        metersPerLinearUnit = CoordinateTransformer.LinearUnitToMeters(wkid);
+        return MeasureCrsKind.ProjectedLinear;
+    }
+
+    private static (double Lon, double Lat) ToGeographic(MeasurePoint point, MeasureCrsKind kind)
+        => kind == MeasureCrsKind.WebMercator
+            ? WebMercatorMath.WebMercatorToLonLat(point.X, point.Y)
+            : (point.X, point.Y);
+
+    // Normalizes a longitude delta to the half-open interval (-180, 180], so a dateline-crossing
+    // step (e.g. 179 deg -> -179 deg) is treated as +2 deg rather than a spurious -358 deg jump.
+    private static double NormalizeLongitudeDelta(double deltaDegrees)
+    {
+        var normalized = deltaDegrees % 360d;
+        if (normalized > 180d)
+        {
+            normalized -= 360d;
+        }
+        else if (normalized < -180d)
+        {
+            normalized += 360d;
+        }
+
+        return normalized;
+    }
+
+    private static double HaversineMeters(double lon1, double lat1, double lon2, double lat2)
+    {
+        var phi1 = DegreesToRadians(lat1);
+        var phi2 = DegreesToRadians(lat2);
+        var dPhi = DegreesToRadians(lat2 - lat1);
+        var dLambda = DegreesToRadians(NormalizeLongitudeDelta(lon2 - lon1));
+        var a = (Math.Sin(dPhi / 2d) * Math.Sin(dPhi / 2d)) +
+                (Math.Cos(phi1) * Math.Cos(phi2) * Math.Sin(dLambda / 2d) * Math.Sin(dLambda / 2d));
+        return 2d * EarthRadiusMeters * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1d - a));
     }
 
     private static double CalculateDistanceMeters(MeasurePoint from, MeasurePoint to)
     {
-        if ((from.Srid ?? to.Srid) == 4326)
+        var kind = ClassifyMeasureCrs(from.Srid ?? to.Srid, out var metersPerUnit);
+        if (kind == MeasureCrsKind.ProjectedLinear)
         {
-            var lat1 = DegreesToRadians(from.Y);
-            var lat2 = DegreesToRadians(to.Y);
-            var dLat = DegreesToRadians(to.Y - from.Y);
-            var dLon = DegreesToRadians(to.X - from.X);
-            var a = Math.Sin(dLat / 2d) * Math.Sin(dLat / 2d) +
-                    Math.Cos(lat1) * Math.Cos(lat2) *
-                    Math.Sin(dLon / 2d) * Math.Sin(dLon / 2d);
-            return 2d * EarthRadiusMeters * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1d - a));
+            // Planar distance in the CRS linear unit, converted to meters.
+            var dx = to.X - from.X;
+            var dy = to.Y - from.Y;
+            return Math.Sqrt((dx * dx) + (dy * dy)) * metersPerUnit;
         }
 
-        var dx = to.X - from.X;
-        var dy = to.Y - from.Y;
-        return Math.Sqrt((dx * dx) + (dy * dy));
+        // Geodesic (haversine) ground distance for any geographic CRS (not just 4326) and for
+        // Web-Mercator (unprojected first). This is the fix for planar map-unit distances being
+        // reported as esriMeters — e.g. a 3857 segment at 60 deg N is ~2x its true ground length.
+        var (lon1, lat1) = ToGeographic(from, kind);
+        var (lon2, lat2) = ToGeographic(to, kind);
+        return HaversineMeters(lon1, lat1, lon2, lat2);
     }
 
     private static double CalculatePerimeterMeters(IReadOnlyList<MeasurePoint> points)
@@ -505,9 +643,10 @@ internal sealed class ImageServerMeasureHandler
 
     private static double CalculateAreaSquareMeters(IReadOnlyList<MeasurePoint> points, int? srid)
     {
-        var transformed = srid == 4326
-            ? ProjectGeographicRingToMeters(points)
-            : points.Select(static point => (point.X, point.Y)).ToArray();
+        var kind = ClassifyMeasureCrs(srid, out var metersPerUnit);
+        var transformed = kind == MeasureCrsKind.ProjectedLinear
+            ? points.Select(point => (X: point.X * metersPerUnit, Y: point.Y * metersPerUnit)).ToArray()
+            : ProjectGeographicRingToMeters(points.Select(point => ToGeographic(point, kind)).ToArray());
 
         var area = 0d;
         for (var i = 0; i < transformed.Length; i++)
@@ -520,22 +659,48 @@ internal sealed class ImageServerMeasureHandler
         return Math.Abs(area) / 2d;
     }
 
-    private static (double X, double Y)[] ProjectGeographicRingToMeters(IReadOnlyList<MeasurePoint> points)
+    // Local equirectangular projection of a geographic ring to meters for the planar shoelace area.
+    // Longitudes are unwrapped relative to the first vertex so an antimeridian-crossing ring is not
+    // torn by a 358 deg jump (which otherwise yields a garbage shoelace area).
+    private static (double X, double Y)[] ProjectGeographicRingToMeters((double Lon, double Lat)[] points)
     {
-        var lat0 = points.Average(static point => point.Y);
+        var referenceLon = points.Length > 0 ? points[0].Lon : 0d;
+        var lat0 = points.Average(static point => point.Lat);
         var cosLat0 = Math.Cos(DegreesToRadians(lat0));
         return points
-            .Select(point => (
-                X: EarthRadiusMeters * DegreesToRadians(point.X) * cosLat0,
-                Y: EarthRadiusMeters * DegreesToRadians(point.Y)))
+            .Select(point =>
+            {
+                var unwrappedLon = referenceLon + NormalizeLongitudeDelta(point.Lon - referenceLon);
+                return (
+                    X: EarthRadiusMeters * DegreesToRadians(unwrappedLon) * cosLat0,
+                    Y: EarthRadiusMeters * DegreesToRadians(point.Lat));
+            })
             .ToArray();
     }
 
     private static double CalculateAzimuthDegrees(MeasurePoint from, MeasurePoint to)
     {
-        var radians = Math.Atan2(to.X - from.X, to.Y - from.Y);
-        var degrees = RadiansToDegrees(radians);
-        return degrees < 0 ? degrees + 360d : degrees;
+        var kind = ClassifyMeasureCrs(from.Srid ?? to.Srid, out _);
+        if (kind == MeasureCrsKind.ProjectedLinear)
+        {
+            // Grid bearing, clockwise from grid north, for a projected CRS.
+            var gridDegrees = RadiansToDegrees(Math.Atan2(to.X - from.X, to.Y - from.Y));
+            return gridDegrees < 0d ? gridDegrees + 360d : gridDegrees;
+        }
+
+        // Great-circle initial bearing for geographic/Web-Mercator inputs — consistent with the
+        // haversine distance returned in the same response. The cos(lat) terms supply the longitude
+        // scaling the previous planar atan2(dx, dy) lacked (which reported 45 deg at 60 deg N for
+        // dLon=dLat=1 deg regardless of latitude).
+        var (lon1, lat1) = ToGeographic(from, kind);
+        var (lon2, lat2) = ToGeographic(to, kind);
+        var phi1 = DegreesToRadians(lat1);
+        var phi2 = DegreesToRadians(lat2);
+        var dLambda = DegreesToRadians(NormalizeLongitudeDelta(lon2 - lon1));
+        var y = Math.Sin(dLambda) * Math.Cos(phi2);
+        var x = (Math.Cos(phi1) * Math.Sin(phi2)) - (Math.Sin(phi1) * Math.Cos(phi2) * Math.Cos(dLambda));
+        var bearing = RadiansToDegrees(Math.Atan2(y, x));
+        return (bearing + 360d) % 360d;
     }
 
     private static ImageServerMeasureValue CreateValue(double value, string unit)
@@ -644,9 +809,6 @@ internal sealed class ImageServerMeasureHandler
                property.ValueKind == JsonValueKind.Number &&
                property.TryGetDouble(out value);
     }
-
-    private static bool SamePoint(MeasurePoint left, MeasurePoint right)
-        => left.X.Equals(right.X) && left.Y.Equals(right.Y);
 
     private static double DegreesToRadians(double degrees)
         => degrees * Math.PI / 180d;
