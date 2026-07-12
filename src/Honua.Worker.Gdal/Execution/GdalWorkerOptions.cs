@@ -87,6 +87,40 @@ internal sealed class GdalWorkerOptions
     public long MaxDecodedRasterBytes { get; set; } = 4L * 1024L * 1024L * 1024L;
 
     /// <summary>
+    /// Positive allowlist of raster INPUT container formats an untrusted source is
+    /// permitted to be opened as (#2784). It MUST stay coordinated with the set
+    /// <see cref="GdalRasterDimensionGuard"/> can dimension-check: only these formats
+    /// are both openable AND bounded against the decompression-bomb caps
+    /// (<see cref="MaxRasterWidth"/> / <see cref="MaxRasterHeight"/> /
+    /// <see cref="MaxRasterPixels"/> / <see cref="MaxDecodedRasterBytes"/>).
+    ///
+    /// <para>
+    /// The default set — TIFF (incl. BigTIFF / COG), PNG, JPEG — is exactly the set the
+    /// guard reads dimensions from. A payload whose magic identifies a KNOWN raster
+    /// container OUTSIDE this list (JPEG2000, GIF, BMP, NITF, HFA — each can declare an
+    /// enormous canvas the guard cannot bound) is refused BEFORE a GDAL tool opens it.
+    /// Unknown / non-raster magic is left to GDAL and the vector paths as before.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Extending this list is an explicit opt-in that reopens the OOM risk</b>: a
+    /// format added here is admitted but NOT dimension-bounded, so a huge-canvas input
+    /// in that format can force GDAL to allocate an oversized buffer. To actually open a
+    /// new format, an operator must ALSO remove its driver from
+    /// <see cref="GdalHardeningOptions.SkipDrivers"/> (the defense-in-depth
+    /// <c>GDAL_SKIP</c> denial); the two knobs are kept closed together by default.
+    /// Matching is case-insensitive; recognized keys: <c>TIFF</c>, <c>PNG</c>,
+    /// <c>JPEG</c>, <c>JPEG2000</c>, <c>GIF</c>, <c>BMP</c>, <c>NITF</c>, <c>HFA</c>.
+    /// </para>
+    /// </summary>
+    public IList<string> AllowedRasterInputFormats { get; set; } = new List<string>
+    {
+        "TIFF",
+        "PNG",
+        "JPEG",
+    };
+
+    /// <summary>
     /// Maximum number of zone features accepted in a <c>raster.zonal-statistics</c>
     /// payload. Each zone drives its own gdalwarp + gdalinfo subprocess pair, so an
     /// unbounded zone FeatureCollection is a cumulative-work DoS even under the

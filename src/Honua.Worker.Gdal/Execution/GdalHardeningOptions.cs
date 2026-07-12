@@ -18,13 +18,27 @@ internal sealed class GdalHardeningOptions
 
     /// <summary>
     /// GDAL driver short names excluded via <c>GDAL_SKIP</c> on every invocation.
-    /// These are the indirection / network / archive drivers that can dereference an
-    /// external file or URL from within an opened dataset — none of the raster or
-    /// vector <em>data</em> formats the worker ingests (GTiff, PNG, JPEG, GeoJSON,
-    /// GPKG, CSV, FlatGeobuf, ESRI Shapefile) or reads from trusted cloud storage
-    /// (NetCDF, HDF5, Zarr, GRIB) appears here, so skipping them does not affect a
-    /// legitimate op. <c>GDAL_SKIP</c> is honored by both the GDAL (raster) and OGR
-    /// (vector) driver registrars.
+    /// Two categories are skipped:
+    /// <list type="bullet">
+    /// <item>the indirection / network / archive drivers that can dereference an
+    /// external file or URL from within an opened dataset (#2765); and</item>
+    /// <item>the KNOWN decompression-bomb-capable raster drivers that fall OUTSIDE the
+    /// dimension-guarded input allowlist (JPEG2000 / GIF / BMP / HFA / NITF / ENVI / RMF)
+    /// — a huge-canvas input in any of these bypasses
+    /// <see cref="GdalRasterDimensionGuard"/> (which only bounds TIFF/PNG/JPEG) and lets
+    /// GDAL allocate an oversized buffer → OOM (#2784). This is the defense-in-depth
+    /// companion to the pre-spawn content allowlist
+    /// (<see cref="GdalWorkerOptions.AllowedRasterInputFormats"/>): both default closed
+    /// to the same TIFF/PNG/JPEG set.</item>
+    /// </list>
+    /// None of the raster or vector <em>data</em> formats the worker ingests (GTiff,
+    /// COG, PNG, JPEG, GeoJSON, GPKG, CSV, FlatGeobuf, ESRI Shapefile) or reads from
+    /// trusted cloud storage (NetCDF, HDF5, Zarr, GRIB) appears here, and every raster
+    /// executor writes <c>-of GTiff</c>, so skipping these does not affect a legitimate
+    /// op. To open one of the bomb-capable formats an operator must remove its driver
+    /// here AND add the format to <see cref="GdalWorkerOptions.AllowedRasterInputFormats"/>,
+    /// accepting the documented OOM risk. <c>GDAL_SKIP</c> is honored by both the GDAL
+    /// (raster) and OGR (vector) driver registrars.
     /// </summary>
     public IList<string> SkipDrivers { get; set; } = new List<string>
     {
@@ -54,6 +68,25 @@ internal sealed class GdalHardeningOptions
         "PLMOSAIC",
         "EEDA",
         "EEDAI",
+        // Decompression-bomb-capable raster drivers OUTSIDE the dimension-guarded
+        // TIFF/PNG/JPEG allowlist (#2784). Each can declare an enormous canvas that
+        // GdalRasterDimensionGuard cannot bound, so deny the driver outright.
+        // JPEG 2000 (SIZ dimensions to 2^32 — the strongest live vector):
+        "JP2OpenJPEG",
+        "JP2ECW",
+        "JP2KAK",
+        "JP2MrSID",
+        "JP2Lura",
+        "JPEG2000",
+        // GIF (65535²), BMP (int32 dims):
+        "GIF",
+        "BIGGIF",
+        "BMP",
+        // Other openable, un-guarded raster containers with large declarable canvases:
+        "HFA",
+        "NITF",
+        "ENVI",
+        "RMF",
     };
 
     /// <summary>
