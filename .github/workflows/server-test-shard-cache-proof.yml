@@ -1,0 +1,232 @@
+name: Server Test Shard Cache Proof
+
+on:
+  push:
+    branches:
+      - ci/2735-shard-local-rerun-cache
+    paths:
+      - .github/workflows/ci.yml
+      - .github/workflows/server-test-shard-cache-proof.yml
+      - scripts/ci/server-test-shard-cache.sh
+      - scripts/ci/validate-server-test-shard-cache.sh
+  workflow_dispatch:
+
+run-name: Shard-local cache proof @ ${{ github.sha }} (attempt ${{ github.run_attempt }})
+
+concurrency:
+  group: shard-local-cache-proof-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+
+env:
+  DOTNET_VERSION: 10.0.x
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  PROOF_PROJECT: tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj
+  PROOF_FILTER: FullyQualifiedName=Honua.Geoprocessing.Cli.Tests.GpCliEndToEndTests.RunAsync_Help_PrintsUsageAndSucceeds
+  PROOF_MATRIX: >-
+    [{"shard_name":"a-writer","csproj":"tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj"},{"shard_name":"b-cache-hit","csproj":"tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj"},{"shard_name":"c-cache-miss","csproj":"tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj"}]
+
+jobs:
+  shard-proof:
+    name: Shard cache proof / ${{ matrix.identity }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - identity: a-writer
+            force_miss: false
+          - identity: b-cache-hit
+            force_miss: false
+          - identity: c-cache-miss
+            force_miss: true
+    steps:
+      - id: job-start
+        name: Start job timer
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Plan shard-local cache
+        id: cache-plan
+        shell: bash
+        run: |
+          scripts/ci/server-test-shard-cache.sh plan \
+            --shard '${{ matrix.identity }}' \
+            --project '${{ env.PROOF_PROJECT }}' \
+            --matrix-json '${{ env.PROOF_MATRIX }}' \
+            --source-sha '${{ github.sha }}' \
+            --runner-os '${{ runner.os }}' \
+            --sdk "$(dotnet --version)"
+
+      - name: Select exact proof key
+        id: cache-key
+        shell: bash
+        run: |
+          key='${{ steps.cache-plan.outputs.cache_key }}'
+          if [[ '${{ matrix.force_miss }}' == 'true' && '${{ github.run_attempt }}' -gt 1 ]]; then
+            key="${key}-forced-miss"
+          fi
+          echo "value=${key}" >> "${GITHUB_OUTPUT}"
+
+      - name: Start cache restore timer
+        if: github.run_attempt > 1
+        id: restore-start
+        shell: bash
+        run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore exact-head cache
+        if: github.run_attempt > 1
+        id: cache-download
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ steps.cache-plan.outputs.payload_dir }}
+          key: ${{ steps.cache-key.outputs.value }}
+          fail-on-cache-miss: false
+
+      - name: Record cache restore duration
+        if: always() && github.run_attempt > 1
+        id: restore-elapsed
+        shell: bash
+        run: echo "milliseconds=$(( $(date +%s%3N) - ${{ steps.restore-start.outputs.epoch_ms }} ))" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify and unpack cache
+        id: materialize
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.cache-download.outputs.cache-hit }}
+        run: |
+          scripts/ci/server-test-shard-cache.sh restore \
+            --project '${{ env.PROOF_PROJECT }}' \
+            --source-sha '${{ github.sha }}' \
+            --payload '${{ steps.cache-plan.outputs.payload_dir }}' \
+            --cache-hit "${CACHE_HIT:-false}"
+
+      - name: Restore project on fallback path
+        if: steps.materialize.outputs.restored != 'true'
+        run: scripts/ci/dotnet-restore-retry.sh '${{ env.PROOF_PROJECT }}'
+
+      - name: Build project on fallback path
+        id: build
+        if: steps.materialize.outputs.restored != 'true'
+        run: dotnet build '${{ env.PROOF_PROJECT }}' --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+
+      - name: Package one project payload
+        id: package
+        if: ${{ steps.build.outcome == 'success' && (steps.cache-plan.outputs.cache_writer == 'true' || github.run_attempt > 1) }}
+        shell: bash
+        run: |
+          rm -rf '${{ steps.cache-plan.outputs.payload_dir }}'
+          mkdir -p '${{ steps.cache-plan.outputs.payload_dir }}'
+          scripts/ci/package-server-test-binaries.sh \
+            --project '${{ env.PROOF_PROJECT }}' \
+            --output '${{ steps.cache-plan.outputs.payload_dir }}' \
+            --source-sha '${{ github.sha }}'
+
+      - name: Save exact-head project cache
+        if: steps.package.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.cache-plan.outputs.payload_dir }}
+          key: ${{ steps.cache-key.outputs.value }}
+
+      - name: Run no-build proof selection
+        run: >-
+          dotnet test '${{ env.PROOF_PROJECT }}'
+          --no-build --no-restore --configuration Release
+          --filter '${{ env.PROOF_FILTER }}'
+          --logger 'console;verbosity=minimal'
+
+      - name: Write proof metrics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p metrics
+          jq -nS \
+            --arg identity '${{ matrix.identity }}' \
+            --arg cache_key '${{ steps.cache-key.outputs.value }}' \
+            --arg reason '${{ steps.materialize.outputs.reason }}' \
+            --arg restored '${{ steps.materialize.outputs.restored }}' \
+            --arg build_outcome '${{ steps.build.outcome }}' \
+            --arg cache_writer '${{ steps.cache-plan.outputs.cache_writer }}' \
+            --arg run_attempt '${{ github.run_attempt }}' \
+            --arg transfer_ms '${{ steps.restore-elapsed.outputs.milliseconds }}' \
+            --arg integrity_ms '${{ steps.materialize.outputs.integrity_check_ms }}' \
+            --arg unpack_ms '${{ steps.materialize.outputs.unpack_ms }}' \
+            --arg elapsed_ms "$(( $(date +%s%3N) - ${{ steps.job-start.outputs.epoch_ms }} ))" \
+            '{identity:$identity,cache_key:$cache_key,reason:$reason,restored:($restored=="true"),
+              build_outcome:$build_outcome,cache_writer:($cache_writer=="true"),
+              run_attempt:($run_attempt|tonumber),
+              transfer_ms:($transfer_ms|if .=="" then 0 else tonumber end),
+              integrity_ms:($integrity_ms|if .=="" then 0 else tonumber end),
+              unpack_ms:($unpack_ms|if .=="" then 0 else tonumber end),
+              elapsed_ms:($elapsed_ms|tonumber)}' > "metrics/${{ matrix.identity }}-attempt-${{ github.run_attempt }}.json"
+
+      - name: Upload proof metrics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: shard-cache-proof-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
+          path: metrics/
+          retention-days: 7
+
+      - name: Deliberately fail hit and miss consumers on attempt one
+        if: matrix.identity != 'a-writer' && github.run_attempt == 1
+        shell: bash
+        run: |
+          echo "Intentional failure for failed-only rerun proof."
+          exit 1
+
+  evidence:
+    name: Shard cache proof evidence
+    needs: shard-proof
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download proof metrics
+        uses: actions/download-artifact@v8
+        with:
+          pattern: shard-cache-proof-*
+          path: evidence/metrics
+      - name: Capture hosted job/cache evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p evidence/jobs
+          for attempt in $(seq 1 '${{ github.run_attempt }}'); do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              '${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/'"${attempt}"'/jobs?per_page=100' \
+              > "evidence/jobs/attempt-${attempt}.json"
+          done
+          curl --fail --silent --show-error --get \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --data-urlencode 'ref=${{ github.ref }}' \
+            --data-urlencode 'per_page=100' \
+            '${{ github.api_url }}/repos/${{ github.repository }}/actions/caches' \
+            > evidence/jobs/caches.json
+      - name: Upload hosted proof evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: shard-local-cache-evidence-attempt-${{ github.run_attempt }}
+          path: evidence/
+          retention-days: 7
