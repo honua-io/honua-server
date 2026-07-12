@@ -209,6 +209,30 @@ public sealed class RateLimitingMiddlewareTests
         first.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("1");
     }
 
+    [UnitTest]
+    public async Task InvokeAsync_PartitionsByEndpointPolicy_DoesNotDrainAnotherEndpointAllowance()
+    {
+        // Global limit is generous; each endpoint declares its own 1/min override. A single
+        // tenant+IP exhausting one endpoint must not consume a different endpoint's allowance
+        // (issue #2779: Console traffic exhausting the OIDC authorize-url 5/min limit).
+        var middleware = CreateMiddleware(limit: 10_000);
+
+        // Exhaust endpoint A's own 1/min bucket from one IP.
+        var endpointAFirst = CreateContext("198.51.100.201", endpointName: "endpoint-a", endpointLimit: 1);
+        await middleware.InvokeAsync(endpointAFirst);
+        var endpointASecond = CreateContext("198.51.100.201", endpointName: "endpoint-a", endpointLimit: 1);
+        await middleware.InvokeAsync(endpointASecond);
+
+        // Endpoint B has never been called by this caller; its first request must be allowed even
+        // though endpoint A's allowance is already exhausted for the same tenant+IP.
+        var endpointBFirst = CreateContext("198.51.100.201", endpointName: "endpoint-b", endpointLimit: 1);
+        await middleware.InvokeAsync(endpointBFirst);
+
+        endpointAFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        endpointASecond.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        endpointBFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
     private static RateLimitingMiddleware CreateMiddleware(
         bool enabled = true,
         int limit = 1,
@@ -236,7 +260,9 @@ public sealed class RateLimitingMiddlewareTests
         string remoteIp,
         string? localIp = null,
         string? user = null,
-        string? tenantId = null)
+        string? tenantId = null,
+        string? endpointName = null,
+        int endpointLimit = 0)
     {
         var context = new DefaultHttpContext();
         context.Request.Path = "/rest/services/test/FeatureServer/0/query";
@@ -245,6 +271,15 @@ public sealed class RateLimitingMiddlewareTests
         if (!string.IsNullOrWhiteSpace(localIp))
         {
             context.Connection.LocalIpAddress = IPAddress.Parse(localIp);
+        }
+
+        if (!string.IsNullOrWhiteSpace(endpointName))
+        {
+            var endpoint = new Endpoint(
+                requestDelegate: null,
+                new EndpointMetadataCollection(new RateLimitAttribute(endpointLimit)),
+                endpointName);
+            context.SetEndpoint(endpoint);
         }
 
         if (!string.IsNullOrWhiteSpace(user))
