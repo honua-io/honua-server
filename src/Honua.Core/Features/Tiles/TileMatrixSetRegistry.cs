@@ -253,5 +253,5 @@ public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
     }
 
     private static bool IsGeographicSrid(int srid)
-        => Array.IndexOf(SpatialConstants.GeographicSrids, srid) >= 0;
+        => GeographicSridClassifier.IsGeographicSrid(srid);
 }

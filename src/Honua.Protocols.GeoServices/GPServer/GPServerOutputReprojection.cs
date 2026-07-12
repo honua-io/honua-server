@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Rendering;
+using Honua.Core.Features.Shared.Models;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
 using NetTopologySuite.IO;
@@ -30,9 +31,6 @@ internal static class GPServerOutputReprojection
 {
     private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
 
-    private static readonly HashSet<int> WebMercatorAliases =
-        new() { 3857, 900913, 102100, 102113, 3785 };
-
     internal readonly record struct ReprojectionOutcome(
         bool Reprojected,
         string? Value,
@@ -54,17 +52,17 @@ internal static class GPServerOutputReprojection
             return true;
         }
 
-        if (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid))
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
         {
             return true;
         }
 
-        if (fromSrid == 4326 && WebMercatorAliases.Contains(toSrid))
+        if (fromSrid == 4326 && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
         {
             return true;
         }
 
-        if (WebMercatorAliases.Contains(fromSrid) && toSrid == 4326)
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && toSrid == 4326)
         {
             return true;
         }
@@ -166,7 +164,7 @@ internal static class GPServerOutputReprojection
 
         var reprojected =
             fromSrid == toSrid ||
-            (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid))
+            (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
                 ? geometry.Copy()
                 : ReprojectInMemory(geometry, fromSrid, toSrid);
 

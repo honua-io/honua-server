@@ -173,7 +173,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         => fromSrid == toSrid || (IsWebMercatorSrid(fromSrid) && IsWebMercatorSrid(toSrid));
 
     private static bool IsWebMercatorSrid(int srid)
-        => srid is 3857 or 900913 or 102100 or 102113 or 3785;
+        => Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(srid);
 
     private static bool IsWgs84Srid(int srid)
         => srid == 4326;

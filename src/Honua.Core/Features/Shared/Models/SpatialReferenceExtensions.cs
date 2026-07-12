@@ -177,6 +177,21 @@ public static class SpatialReferenceExtensions
         };
 
     /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="srid"/> is EPSG:3857 or any of its
+    /// well-known Web Mercator aliases (<c>102100</c>, <c>102113</c>, <c>900913</c>, <c>3785</c>).
+    /// </summary>
+    /// <remarks>
+    /// Canonical replacement for the ad hoc <c>srid is 3857 or 900913 or 102100 or 102113 or 3785</c>
+    /// predicates that were duplicated across providers, render, tile, and geometry paths (#2732).
+    /// Defined in terms of <see cref="NormalizeWebMercatorSrid(int)"/> so the alias set stays in one
+    /// place.
+    /// </remarks>
+    /// <param name="srid">SRID to test.</param>
+    /// <returns><see langword="true"/> for EPSG:3857 or a Web Mercator alias; otherwise <see langword="false"/>.</returns>
+    public static bool IsWebMercatorSrid(int srid)
+        => NormalizeWebMercatorSrid(srid) == 3857;
+
+    /// <summary>
     /// Creates a minimal spatial reference with just the WKID
     /// </summary>
     /// <param name="wkid">Well-known ID (EPSG code)</param>

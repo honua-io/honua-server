@@ -67,17 +67,11 @@ public static class SpatialConstants
 
     // Well-known geographic SRIDs for distance function selection
     /// <summary>
-    /// Geographic SRIDs that use latitude/longitude degree-based coordinate systems.
-    /// Used to determine appropriate distance calculation functions.
+    /// Narrow allowlist of geographic (latitude/longitude degree) SRIDs used to select
+    /// WGS 84 spheroid geodesic distance functions. This is the geodesic-safe subset and is
+    /// intentionally narrower than the full geographic list; it is now sourced from the
+    /// canonical <see cref="GeographicSridClassifier.GeodesicDistanceSafeSrids"/> (#2732).
+    /// Prefer <see cref="GeographicSridClassifier"/> directly for new call sites.
     /// </summary>
-    public static readonly int[] GeographicSrids =
-    [
-        4326,   // WGS 84
-        4269,   // NAD83
-        4267,   // NAD27
-        4258,   // ETRS89
-        4283,   // GDA94
-        4617,   // NAD83(CSRS)
-        4759    // NAD83(NSRS2007)
-    ];
+    public static readonly int[] GeographicSrids = [.. GeographicSridClassifier.GeodesicDistanceSafeSrids];
 }
