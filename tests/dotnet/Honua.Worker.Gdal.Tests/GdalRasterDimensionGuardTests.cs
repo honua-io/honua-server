@@ -228,7 +228,7 @@ public sealed class GdalRasterDimensionGuardTests
     private static byte[] HfaMagic() => "EHFA_HEADER_TAG"u8.ToArray();
 
     [UnitTest]
-    public void ClassifyContainer_IdentifiesBombVectors()
+    public void ClassifyContainer_BombVectorMagicBytes_ReturnsMatchingFormat()
     {
         GdalRasterDimensionGuard.ClassifyContainer(Jp2CodestreamMagic())
             .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Jpeg2000);
@@ -245,7 +245,7 @@ public sealed class GdalRasterDimensionGuardTests
     }
 
     [UnitTest]
-    public void ClassifyContainer_IdentifiesGuardedAndUnknown()
+    public void ClassifyContainer_GuardedAndUnknownMagicBytes_ReturnsMatchingFormat()
     {
         GdalRasterDimensionGuard.ClassifyContainer(TiffHeaderBuilder.Classic(16, 16, 1, 8))
             .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Tiff);

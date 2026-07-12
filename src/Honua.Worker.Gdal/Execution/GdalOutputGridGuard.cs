@@ -22,12 +22,16 @@ namespace Honua.Worker.Gdal.Execution;
 /// </para>
 ///
 /// <para>
-/// The guard bounds only the EXPLICIT pixel grid (<c>width</c>+<c>height</c>). The
-/// resolution path (<c>cellSize</c> → <c>-tr</c>) derives its pixel count from the
-/// input layer extent, which is not known without parsing the vector payload, so it
-/// is not bounded here; the <see cref="GdalWorkerOptions.ToolTimeout"/> and
-/// <see cref="GdalWorkerOptions.MaxArtifactBytes"/> ceilings remain the backstop for
-/// that path.
+/// The guard bounds only the EXPLICIT pixel grid (<c>width</c>+<c>height</c>). Every
+/// resolution / target-cell-size path that resolves to <c>-tr</c> derives its pixel
+/// count from an input extent that is not known without parsing the payload, so it is
+/// NOT bounded here. This unbounded class covers the rasterize / interpolate
+/// <c>cellSize</c> → <c>-tr</c> paths AND the <c>raster.resample</c>
+/// <see cref="GdalRasterResampleJobExecutor"/> <c>gdalwarp -tr</c> path (target cell
+/// size straight from caller input, output pixel count = input extent ÷ cell size).
+/// For all of them the <see cref="GdalWorkerOptions.ToolTimeout"/> and
+/// <see cref="GdalWorkerOptions.MaxArtifactBytes"/> ceilings remain the backstop; a
+/// dedicated <c>-tr</c> bound is tracked as a follow-up.
 /// </para>
 /// </summary>
 internal static class GdalOutputGridGuard
@@ -62,20 +66,25 @@ internal static class GdalOutputGridGuard
             return false;
         }
 
-        long pixels;
-        try
-        {
-            pixels = checked(width * height);
-        }
-        catch (OverflowException)
-        {
-            error = "requested output grid dimensions overflow the pixel-count bound";
-            return false;
-        }
+        // width and height are each already bounded by the int-typed MaxRasterWidth /
+        // MaxRasterHeight caps above, so the product cannot exceed int.MaxValue² and can
+        // never overflow Int64 — no checked-multiply / overflow guard is needed here.
+        long pixels = width * height;
 
         if (pixels > options.MaxRasterPixels)
         {
             error = $"requested output grid pixel count {pixels.ToString(CultureInfo.InvariantCulture)} (width×height) exceeds configured MaxRasterPixels={options.MaxRasterPixels.ToString(CultureInfo.InvariantCulture)}";
+            return false;
+        }
+
+        // Estimated fully-decoded OUTPUT footprint. gdal_rasterize (-ts) and gdal_grid
+        // (-outsize) emit a single-band Float64 grid (8 bytes/pixel), so the decoded
+        // output size is pixels × 8. Compare via division to avoid an Int64 overflow on
+        // the multiply when the pixel caps are configured very high.
+        const long BytesPerFloat64Pixel = 8L;
+        if (pixels > options.MaxDecodedRasterBytes / BytesPerFloat64Pixel)
+        {
+            error = $"estimated output grid size {pixels.ToString(CultureInfo.InvariantCulture)} pixels × 8 bytes/pixel (single-band Float64) exceeds configured MaxDecodedRasterBytes={options.MaxDecodedRasterBytes.ToString(CultureInfo.InvariantCulture)}";
             return false;
         }
 

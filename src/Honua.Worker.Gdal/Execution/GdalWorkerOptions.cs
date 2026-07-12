@@ -112,6 +112,14 @@ internal sealed class GdalWorkerOptions
     /// Matching is case-insensitive; recognized keys: <c>TIFF</c>, <c>PNG</c>,
     /// <c>JPEG</c>, <c>JPEG2000</c>, <c>GIF</c>, <c>BMP</c>, <c>NITF</c>, <c>HFA</c>.
     /// </para>
+    ///
+    /// <para>
+    /// <b>Configuring this list REPLACES the default set</b> (it does not append): supplying
+    /// <c>GdalWorker:AllowedRasterInputFormats = [ "TIFF" ]</c> yields an effective allowlist
+    /// of exactly <c>TIFF</c> — PNG and JPEG are then refused. Leaving it unset keeps the
+    /// TIFF/PNG/JPEG default. This is enforced in the worker registration, which post-binds
+    /// the configured values over ConfigurationBinder's append-onto-defaults behavior.
+    /// </para>
     /// </summary>
     public IList<string> AllowedRasterInputFormats { get; set; } = new List<string>
     {

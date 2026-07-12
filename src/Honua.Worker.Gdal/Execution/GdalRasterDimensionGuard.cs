@@ -228,38 +228,24 @@ internal static class GdalRasterDimensionGuard
     /// <summary>
     /// Reads declared dimensions from any of the compressible raster container
     /// formats the worker ingests and that can be tiny-on-disk yet declare an
-    /// enormous canvas: TIFF / BigTIFF, PNG, and JPEG. Dispatches by the leading
-    /// magic bytes. Returns <c>false</c> for anything else (the caller then
-    /// admits and lets GDAL adjudicate).
+    /// enormous canvas: TIFF / BigTIFF, PNG, and JPEG. Dispatches on the single
+    /// magic-byte classifier <see cref="ClassifyContainer"/> (rather than a second
+    /// copy of the magic table) — the guarded formats route to their per-format
+    /// reader; every other classification (the un-bounded bomb vectors and
+    /// <see cref="RasterContainerFormat.Unknown"/>) returns <c>false</c> so the
+    /// caller admits and lets GDAL adjudicate. Each per-format reader keeps its own
+    /// internal length guards.
     /// </summary>
     internal static bool TryReadRasterDimensions(ReadOnlySpan<byte> data, out RasterDimensions dims)
     {
         dims = default;
-        if (data.Length < 8)
+        return ClassifyContainer(data) switch
         {
-            return false;
-        }
-
-        // TIFF / BigTIFF: "II" or "MM".
-        if ((data[0] == 0x49 && data[1] == 0x49) || (data[0] == 0x4D && data[1] == 0x4D))
-        {
-            return TryReadGeoTiffDimensions(data, out dims);
-        }
-
-        // PNG: 89 50 4E 47 0D 0A 1A 0A.
-        if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
-            && data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A)
-        {
-            return TryReadPngDimensions(data, out dims);
-        }
-
-        // JPEG: SOI = FF D8.
-        if (data[0] == 0xFF && data[1] == 0xD8)
-        {
-            return TryReadJpegDimensions(data, out dims);
-        }
-
-        return false;
+            RasterContainerFormat.Tiff => TryReadGeoTiffDimensions(data, out dims),
+            RasterContainerFormat.Png => TryReadPngDimensions(data, out dims),
+            RasterContainerFormat.Jpeg => TryReadJpegDimensions(data, out dims),
+            _ => false,
+        };
     }
 
     /// <summary>
