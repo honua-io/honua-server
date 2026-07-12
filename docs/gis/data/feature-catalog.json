@@ -18548,6 +18548,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_ChangesMutableFields",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_LegacyTopologyMapping_RecordsReplacementActiveGeneration",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_Missing_Returns404",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_UnsafeVertexTable_Returns400"
       ],

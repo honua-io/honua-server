@@ -487,6 +487,14 @@ assert_exact_shards \
   "src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql" \
   '["Core"]'
 assert_exact_shards \
+  "routing-topology-lifecycle-migration-owner" \
+  "src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql" \
+  '["Core"]'
+assert_exact_shards \
+  "network-dataset-admin-exact-owner" \
+  "tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs" \
+  '["Server Features Admin and Console"]'
+assert_exact_shards \
   "pgrouting-fixture-owner" \
   "tests/dotnet/Honua.TestKit/PgRoutingFixture.cs" \
   '["Core"]'
@@ -499,6 +507,14 @@ assert_exact_shards \
       'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
   '["Core","GeoServices GPServer and NAServer"]'
+assert_exact_shards \
+  "routing-topology-lifecycle-cumulative-batch" \
+  "$(printf '%s\n%s\n%s\n%s' \
+      'src/Honua.Routing/Features/Routing/Providers/PostgresNetworkDatasetStore.cs' \
+      'src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql' \
+      'tests/dotnet/Honua.Server.Tests/Routing/NetworkTopologyLifecycleTests.cs' \
+      'tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs')" \
+  '["Core","GeoServices GPServer and NAServer","Server Features Admin and Console"]'
 assert_descriptor \
   "unknown-migration-still-run-all" \
   "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \

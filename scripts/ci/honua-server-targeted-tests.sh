@@ -192,12 +192,23 @@ if [[ "${INFRA_HIT}" == "true" ]]; then
   exit 0
 fi
 
-# Match each changed file against shard prefixes and union the results.
+# Match each changed file against shard prefixes and union the results. An override
+# may opt into exclusive ownership for an exact test file whose broad directory is
+# shared by several filtered shards; those files contribute only the override's
+# declared shards. Existing non-exclusive smoke/feature overrides retain union
+# semantics.
 TARGETED_SHARDS_JSON="$(
   printf '%s\n' "${CHANGED_FILES}" \
     | jq -Rsc --slurpfile cfg "${CONFIG_FILE}" '
         split("\n")
-        | map(select(length > 0)) as $files
+        | map(select(length > 0)) as $all_files
+        | ($cfg[0].targeted_override_prefixes // [])
+            | map(select(.exclusive // false)) as $exclusive_overrides
+        | ($all_files
+            | map(select(
+                . as $f
+                | ($exclusive_overrides | any(. as $o | $f | startswith($o.prefix))) | not
+              ))) as $files
         | $cfg[0].shards
         | map(
             . as $shard
