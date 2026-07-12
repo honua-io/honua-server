@@ -551,6 +551,56 @@ public sealed class GdalUntrustedInputHardeningTests
         env["GDAL_SKIP"].Should().Contain("MRF");
     }
 
+    // ---- Positive raster-format allowlist (#2784) ------------------------------
+
+    [UnitTest]
+    public void Hardening_SkipsNonAllowlistedRasterBombDrivers()
+    {
+        // The JPEG2000 / GIF / BMP / HFA / NITF / ENVI / RMF drivers are outside the
+        // dimension-guarded TIFF/PNG/JPEG allowlist and must be denied via GDAL_SKIP so
+        // even a misidentified payload cannot open as one (#2784).
+        var env = GdalRuntimeHardening.BuildEnvironment(new GdalHardeningOptions(), inputReferencesRemoteVsi: false);
+
+        env["GDAL_SKIP"].Should().Contain("JP2OpenJPEG");
+        env["GDAL_SKIP"].Should().Contain("JPEG2000");
+        env["GDAL_SKIP"].Should().Contain("GIF");
+        env["GDAL_SKIP"].Should().Contain("BMP");
+        env["GDAL_SKIP"].Should().Contain("HFA");
+        env["GDAL_SKIP"].Should().Contain("NITF");
+    }
+
+    [UnitTest]
+    public async Task StatisticsExecutor_RefusesNonAllowlistedJp2_WithoutInvokingGdal()
+    {
+        // A JP2 codestream (FF 4F FF 51) declares dimensions the input guard cannot
+        // parse; the positive allowlist must refuse it before gdalinfo opens it (#2784).
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdalinfo must not run for a refused JP2 input"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterStatisticsJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch),
+            NullLogger<GdalRasterStatisticsJobExecutor>.Instance);
+        try
+        {
+            var jp2 = new byte[] { 0xFF, 0x4F, 0xFF, 0x51, 0x00, 0x2F, 0x00, 0x00, 0x00, 0x00 };
+            var job = GdalJobFactory.Job(
+                GdalRasterStatisticsJobExecutor.StatisticsProcessId,
+                ("source", Convert.ToBase64String(jp2)));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("JPEG2000").And.Contain("allowlist");
+            runner.Invocations.Should().BeEmpty("the JP2 input must be refused before gdalinfo runs");
+        }
+        finally
+        {
+            GdalCli.CleanupScratch(scratch);
+        }
+    }
+
     // ---- KML/GML external-href limitation is documented + pinned (#2776 review) -
 
     [UnitTest]
