@@ -7640,8 +7640,11 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_AreaAndPerimeterEnvelope_ReturnsBasicMensuration",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_AreaAndPerimeter_AntimeridianPolygon_ReturnsFiniteArea",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_Centroid_AntimeridianRing_LandsOnCorrectSide",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GeographicAzimuth_UsesGreatCircleBearing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GeographicDegrees_ReturnsGroundMeters",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_WebMercatorAtHighLatitude_ReturnsGroundDistance",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_HeightOperation_ReturnsNotImplemented",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_HeightOperation_WithDemMetadata_ButPointOutsideDem_ReturnsNotImplemented",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_HeightOperation_WithDemMetadata_ReturnsDifferencedHeight"
