@@ -137,6 +137,15 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             return JobExecutionResult.Failed($"Invalid mosaic inputs: {sourcesError}");
         }
 
+        // Bound the DECLARED pixel footprint of every tile before any file is
+        // written or gdalwarp is invoked, so a compressible GeoTIFF declaring
+        // enormous dimensions cannot force a decompression-bomb allocation (#2766).
+        if (!GdalRasterDimensionGuard.TryAdmitSources(sources, opts, out var dimensionError))
+        {
+            Log.InvalidInputs(logger, job.OperationId, dimensionError);
+            return JobExecutionResult.Failed($"Invalid mosaic inputs: {dimensionError}");
+        }
+
         // 'first' wins is achieved by reversing the source order so the desired
         // source is written LAST into the output (gdalwarp later-source-wins).
         if (string.Equals(mosaicOperator, "first", StringComparison.OrdinalIgnoreCase))
