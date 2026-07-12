@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Rendering;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
@@ -171,7 +172,7 @@ internal static class GPServerOutputReprojection
 
         reprojected.SRID = toSrid;
 
-        var geometryJson = new GeoJsonWriter().Write(reprojected);
+        var geometryJson = RingWindingNormalizer.WriteGeoJson(new GeoJsonWriter(), reprojected);
 
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
