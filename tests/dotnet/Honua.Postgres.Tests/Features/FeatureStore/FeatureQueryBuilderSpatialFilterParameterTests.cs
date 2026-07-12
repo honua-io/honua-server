@@ -223,9 +223,76 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
 
         var distanceInMeters = geometryProcessor.ConvertDistanceToMeters(5, DistanceUnit.Miles);
 
-        result.WhereParameters.OfType<byte[]>().Should().ContainSingle(value => value.SequenceEqual(geometry));
+        // The WithinDistance predicate now emits an && envelope pre-filter (ST_Expand) alongside the
+        // exact ST_DWithin geography check (#2740), so the filter geometry is bound twice — once for
+        // the pre-filter geometry and once for the geography operand.
+        result.WhereParameters.OfType<byte[]>()
+            .Where(value => value.SequenceEqual(geometry)).Should().HaveCount(2);
         result.WhereParameters.Should().Contain(distanceInMeters);
         result.Sql.Should().Contain("ST_DWithin");
+        result.Sql.Should().Contain("&& ST_Expand(");
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithinDistanceGeographicStorage_EmitsEnvelopePrefilterAndExactGeography()
+    {
+        // #2740: the geodesic ST_DWithin(...::geography) predicate is not GiST-index-usable and
+        // forces a full scan. It must be paired with an && envelope pre-filter (ST_Expand) in the
+        // stored CRS. For geographic (degree) storage the expansion applies a cos(lat) correction
+        // so the east/west window never under-covers at high latitudes.
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var geometryProcessor = new GeometryProcessor();
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor);
+
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = SpatialFilter.CreateDistanceFilter(
+                [1, 2, 3, 4],
+                distance: 1000,
+                unit: DistanceUnit.Meters,
+                withinDistance: true,
+                srid: 4326)
+        };
+
+        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("geometry && ST_Expand(");
+        result.Sql.Should().Contain("cos(radians(");
+        result.Sql.Should().Contain("ST_DWithin(");
+        result.Sql.Should().Contain("::geography");
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithinDistanceProjectedStorage_ExpandsInMetresAndReprojectsExactCheck()
+    {
+        // #2740: projected (metre) storage expands the envelope by the metre distance directly (no
+        // cos(lat) correction), while the exact geography predicate still reprojects the column to
+        // WGS84 (ST_Transform(...,4326)::geography).
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var geometryProcessor = new GeometryProcessor();
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor);
+
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 3857,
+            SpatialFilter = SpatialFilter.CreateDistanceFilter(
+                [1, 2, 3, 4],
+                distance: 1000,
+                unit: DistanceUnit.Meters,
+                withinDistance: true,
+                srid: 3857)
+        };
+
+        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("geometry && ST_Expand(");
+        result.Sql.Should().NotContain("cos(radians(");
+        result.Sql.Should().Contain("ST_DWithin(");
+        result.Sql.Should().Contain("ST_Transform(");
+        result.Sql.Should().Contain("::geography");
     }
 
     [Fact]
