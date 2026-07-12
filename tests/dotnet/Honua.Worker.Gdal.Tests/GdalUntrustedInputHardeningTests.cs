@@ -134,6 +134,88 @@ public sealed class GdalUntrustedInputHardeningTests
         GdalUntrustedInputGuard.IsAdmissible(geojson, out _).Should().BeTrue();
     }
 
+    [UnitTest]
+    public void Guard_AdmitsKml()
+    {
+        // KML is XML but a legitimate source.ogr import format — it must NOT be
+        // refused by the indirection sniff (only VRT/WMS/WMTS/WCS are). Regression
+        // for the narrowing from a blanket XML refusal.
+        var kml = Encoding.UTF8.GetBytes(
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark><Point><coordinates>-105,40,0</coordinates></Point></Placemark>
+            </kml>
+            """);
+
+        GdalUntrustedInputGuard.IsAdmissible(kml, out var reason).Should().BeTrue(reason);
+    }
+
+    [UnitTest]
+    public void Guard_AdmitsGml()
+    {
+        var gml = Encoding.UTF8.GetBytes(
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ogr:FeatureCollection xmlns:ogr="http://ogr.maptools.org/" xmlns:gml="http://www.opengis.net/gml">
+              <gml:featureMember><ogr:layer><ogr:geometryProperty></ogr:geometryProperty></ogr:layer></gml:featureMember>
+            </ogr:FeatureCollection>
+            """);
+
+        GdalUntrustedInputGuard.IsAdmissible(gml, out var reason).Should().BeTrue(reason);
+    }
+
+    [UnitTest]
+    public void Guard_RejectsKmlSmugglingVsiReference()
+    {
+        // An otherwise-admissible KML that smuggles a /vsicurl network link is still
+        // refused by the virtual-filesystem scan.
+        var hostileKml = Encoding.UTF8.GetBytes(
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <NetworkLink><Link><href>/vsicurl/http://169.254.169.254/latest/meta-data/</href></Link></NetworkLink>
+            </kml>
+            """);
+
+        var ok = GdalUntrustedInputGuard.IsAdmissible(hostileKml, out var reason);
+
+        ok.Should().BeFalse();
+        reason.Should().Contain("/vsicurl");
+    }
+
+    [UnitTest]
+    public void Guard_RejectsWmsServiceDescription()
+    {
+        var wms = Encoding.UTF8.GetBytes(
+            """
+            <GDAL_WMS>
+              <Service name="WMS"><ServerUrl>http://169.254.169.254/</ServerUrl></Service>
+            </GDAL_WMS>
+            """);
+
+        GdalUntrustedInputGuard.IsAdmissible(wms, out var reason).Should().BeFalse();
+        reason.Should().Contain("GDAL_WMS");
+    }
+
+    [UnitTest]
+    public void TryGetBase64Input_AdmitsBase64Kml()
+    {
+        // The shared decoder must let a base64 KML through so GdalVectorSourceReadJobExecutor
+        // can still materialize the .kml and run ogr2ogr.
+        var kml = "<?xml version=\"1.0\"?><kml xmlns=\"http://www.opengis.net/kml/2.2\"><Document/></kml>";
+
+        var ok = GdalJobInputReader.TryGetBase64Input(
+            SourceParam(Base64(kml)),
+            "source",
+            maxBytes: 1024 * 1024,
+            out var bytes,
+            out var error);
+
+        ok.Should().BeTrue(error);
+        bytes.Should().NotBeEmpty();
+    }
+
     // ---- Pre-check is wired into the base64 input readers -----------------------
 
     [UnitTest]
