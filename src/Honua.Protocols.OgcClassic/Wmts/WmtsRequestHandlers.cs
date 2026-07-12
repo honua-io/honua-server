@@ -2470,7 +2470,7 @@ internal static class WmtsRequestHandlers
     /// <summary>
     /// Emits the WorldCRS84Quad <c>TileMatrixSet</c> definition (CRS84/EPSG:4326). The grid is
     /// two tiles wide by one tile tall at level 0; the top-left corner follows the declared CRS84
-    /// EastNorth axis order (longitude, latitude) in the WMTS <c>TopLeftCorner</c> element.
+    /// EastNorth axis order (longitude, latitude) in the WMTS <c>TopLeftCorner</c> element (#2738).
     /// </summary>
     private static void AppendWmtsWorldCrs84QuadTileMatrixSet(StringBuilder sb, int wmtsMaxZoom)
     {
@@ -2556,7 +2556,7 @@ internal static class WmtsRequestHandlers
     /// Emits the <c>TileMatrixSet</c> definition for every operator-defined custom gridset in the
     /// registry. The <c>TopLeftCorner</c> axis order follows each declared CRS identifier: CRS84
     /// uses longitude/latitude, EPSG geographic CRSes use latitude/longitude, and projected CRSes
-    /// use easting/northing.
+    /// use easting/northing (#2738).
     /// </summary>
     internal static void AppendWmtsCustomTileMatrixSets(
         StringBuilder sb,

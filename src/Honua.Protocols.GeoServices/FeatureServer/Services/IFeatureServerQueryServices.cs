@@ -18,6 +18,12 @@ internal interface IFeatureServerQueryServices
         GeoServicesSpatialReference? geometrySpatialReference,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Parses a spatial-reference string to its raw (pre-normalization) SRID, without registry
+    /// validation. Used to recover a client-requested Web Mercator alias for response echo.
+    /// </summary>
+    Task<int?> ParseSridAsync(string? srValue, CancellationToken cancellationToken = default);
+
     ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
         MetadataV2Resource resource,
@@ -30,5 +36,6 @@ internal interface IFeatureServerQueryServices
         double? maxAllowableOffset,
         string[]? outFields,
         bool suppressObjectId = false,
-        bool returnCentroid = false);
+        bool returnCentroid = false,
+        int? requestedOutputSrid = null);
 }
