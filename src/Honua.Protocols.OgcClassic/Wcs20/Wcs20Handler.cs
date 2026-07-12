@@ -74,19 +74,16 @@ internal sealed class Wcs20Handler
     };
 
     private readonly IMetadataV2GraphProvider _graphProvider;
-    private readonly IRasterStore _rasterStore;
-    private readonly IZarrStore _zarrStore;
+    private readonly Wcs20CoverageBackend _coverageBackend;
     private readonly ILogger<Wcs20Handler> _logger;
 
     public Wcs20Handler(
         IMetadataV2GraphProvider graphProvider,
-        IRasterStore rasterStore,
-        IZarrStore zarrStore,
+        Wcs20CoverageBackend coverageBackend,
         ILogger<Wcs20Handler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
-        _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
-        _zarrStore = zarrStore ?? throw new ArgumentNullException(nameof(zarrStore));
+        _coverageBackend = coverageBackend ?? throw new ArgumentNullException(nameof(coverageBackend));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -337,7 +334,17 @@ internal sealed class Wcs20Handler
         var additionalAxes = await ResolveAdditionalDimensionAxesAsync(
             coverage.Coverage.Value.LayerId, cancellationToken).ConfigureAwait(false);
 
-        if (!TryResolveCoverageQuery(context.Request.Query, coverage.Coverage.Value.Raster, additionalAxes, outputFormat, out var query, out var queryError))
+        if (!TryResolveCoverageQuery(
+                context.Request.Query,
+                coverage.Coverage.Value.Raster,
+                additionalAxes,
+                outputFormat,
+                out var query,
+                out var sliceBounds,
+                out var sliceWidth,
+                out var sliceHeight,
+                out var sliceSelections,
+                out var queryError))
         {
             Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, queryError.Detail);
             return CreateGetCoverageParameterError(queryError);
@@ -354,7 +361,22 @@ internal sealed class Wcs20Handler
             .WithTag("honua.coverage.id", coverageId.Raw)
             .WithTag("honua.output.format", formatContentType);
 
-        var result = await _rasterStore.ExportImageAsync(
+        if (sliceSelections.Count > 0)
+        {
+            return await HandleZarrGetCoverageAsync(
+                    coverageId,
+                    coverage.Coverage.Value,
+                    query,
+                    sliceBounds,
+                    sliceWidth,
+                    sliceHeight,
+                    sliceSelections,
+                    telemetry,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var result = await _coverageBackend.ExportImageAsync(
             coverage.Coverage.Value.LayerId,
             coverage.Coverage.Value.Raster.Id,
             query,
@@ -372,6 +394,94 @@ internal sealed class Wcs20Handler
             result.ContentType);
 
         return Results.File(result.Data, result.ContentType);
+    }
+
+    private async Task<IResult> HandleZarrGetCoverageAsync(
+        WcsCoverageIdentifier coverageId,
+        WcsCoverage coverage,
+        RasterQuery query,
+        RasterExtent? bounds,
+        int outputWidth,
+        int outputHeight,
+        IReadOnlyList<ZarrPointSliceSelection> selections,
+        HonuaTelemetryScope telemetry,
+        CancellationToken cancellationToken)
+    {
+        if (query.OutputFormat != RasterFormat.PNG)
+        {
+            return Wcs20ErrorResults.CreateNotImplemented(
+                Wcs20Utilities.ExceptionCodes.OperationNotSupported,
+                "Coordinate-selected Zarr coverage slices currently support FORMAT=image/png only.",
+                Wcs20Utilities.Parameters.Format);
+        }
+
+        if ((query.OutputSrid is { } outputSrid && outputSrid != coverage.Raster.Srid) ||
+            (bounds?.Srid is { } boundsSrid && boundsSrid != coverage.Raster.Srid))
+        {
+            return Wcs20ErrorResults.CreateNotImplemented(
+                Wcs20Utilities.ExceptionCodes.OperationNotSupported,
+                "Coordinate-selected Zarr coverage slices require native-CRS subsetting and output.",
+                Wcs20Utilities.Parameters.OutputCrs);
+        }
+
+        if (query.ResamplingAlgorithm != ResamplingAlgorithm.NearestNeighbor)
+        {
+            return Wcs20ErrorResults.CreateNotImplemented(
+                Wcs20Utilities.ExceptionCodes.OperationNotSupported,
+                "Coordinate-selected Zarr coverage slices support nearest-neighbor interpolation only.",
+                Wcs20Utilities.Parameters.Interpolation);
+        }
+
+        if (outputWidth > MaxWcsOutputDimension || outputHeight > MaxWcsOutputDimension ||
+            (long)outputWidth * outputHeight > 16L * 1024L * 1024L)
+        {
+            return Wcs20ErrorResults.CreateBadRequest(
+                Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+                $"Requested Zarr slice output exceeds the {MaxWcsOutputDimension}-pixel per-axis limit.",
+                Wcs20Utilities.Parameters.ScaleSize);
+        }
+
+        telemetry.WithTag("honua.slice.selection_count", selections.Count);
+        var read = await _coverageBackend.ReadZarrSliceAsync(
+                coverage.LayerId,
+                new ZarrRasterSliceReadRequest(
+                    bounds,
+                    coverage.Raster.Srid,
+                    outputWidth,
+                    outputHeight,
+                    selections),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (read.Status != ZarrRasterSliceReadStatus.Success)
+        {
+            var detail = read.Error ?? "The coordinate-selected coverage slice could not be read.";
+            Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, detail);
+            return read.Status switch
+            {
+                ZarrRasterSliceReadStatus.RegistrationNotFound or ZarrRasterSliceReadStatus.ReaderUnavailable
+                    => Wcs20ErrorResults.CreateNotImplemented(
+                        Wcs20Utilities.ExceptionCodes.OperationNotSupported,
+                        detail,
+                        Wcs20Utilities.Parameters.Subset),
+                ZarrRasterSliceReadStatus.InvalidSelection or ZarrRasterSliceReadStatus.OutsideCoverage
+                    => Wcs20ErrorResults.CreateNotFound(
+                        Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                        detail,
+                        Wcs20Utilities.Parameters.Subset),
+                _ => Wcs20ErrorResults.CreateInternalServerError(
+                    "The coordinate-selected coverage slice could not be read from its backing store."),
+            };
+        }
+
+        var raster = read.Raster!.Value;
+        telemetry
+            .WithTag("honua.slice.variable", read.Variable)
+            .WithTag("honua.result.bytes", raster.Data.Length)
+            .WithTag("honua.result.content_type", raster.ContentType);
+        telemetry.SetSuccess(1);
+        Wcs20Log.CoverageReturned(_logger, coverageId.Raw, raster.Data.Length, raster.ContentType);
+        return Results.File(raster.Data, raster.ContentType);
     }
 
     private async Task<CoverageListResult> ResolveCoverageListAsync(
@@ -635,7 +745,7 @@ internal sealed class Wcs20Handler
 
     private async Task<RasterInfo?> GetPrimaryRasterWithExtentAsync(int layerId, CancellationToken cancellationToken)
     {
-        var raster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var raster = await _coverageBackend.GetPrimaryRasterInfoAsync(layerId, cancellationToken).ConfigureAwait(false);
         if (raster is null)
         {
             return null;
@@ -643,7 +753,7 @@ internal sealed class Wcs20Handler
 
         if (raster.Value.Extent is null)
         {
-            var extent = await _rasterStore.GetExtentAsync(layerId, raster.Value.Id, cancellationToken).ConfigureAwait(false);
+            var extent = await _coverageBackend.GetExtentAsync(layerId, raster.Value.Id, cancellationToken).ConfigureAwait(false);
             if (extent.HasValue)
             {
                 raster = raster.Value with { Extent = extent };
@@ -942,12 +1052,20 @@ internal sealed class Wcs20Handler
         IReadOnlyList<ZarrAxis> additionalAxes,
         RasterFormat outputFormat,
         out RasterQuery rasterQuery,
+        out RasterExtent? sliceBounds,
+        out int sliceWidth,
+        out int sliceHeight,
+        out IReadOnlyList<ZarrPointSliceSelection> sliceSelections,
         out WcsParameterError error)
     {
         rasterQuery = new RasterQuery
         {
             OutputFormat = outputFormat
         };
+        sliceBounds = null;
+        sliceWidth = 0;
+        sliceHeight = 0;
+        sliceSelections = [];
         error = default;
 
         if (!TryResolveRequestCrs(query, raster, out var subsettingCrs, out var outputSrid, out error))
@@ -965,12 +1083,17 @@ internal sealed class Wcs20Handler
         // slice on an axis the coverage does not carry surfaces a precise
         // InvalidAxisLabel, and a malformed one surfaces InvalidSubsetting.
         var allSubsetValues = GetQueryValues(query, Wcs20Utilities.Parameters.Subset);
-        if (!TryValidateAdditionalDimensionSubsets(allSubsetValues, raster, additionalAxes, out error))
+        if (!TryValidateAdditionalDimensionSubsets(
+                allSubsetValues,
+                raster,
+                additionalAxes,
+                out sliceSelections,
+                out error))
         {
             return false;
         }
 
-        var spatialSubsetValues = FilterSpatialSubsets(allSubsetValues);
+        var spatialSubsetValues = FilterSpatialSubsets(allSubsetValues, sliceSelections);
         var bbox = GetQueryValue(query, Wcs20Utilities.Parameters.BBox);
         if (spatialSubsetValues.Count > 0 && !string.IsNullOrWhiteSpace(bbox))
         {
@@ -995,6 +1118,7 @@ internal sealed class Wcs20Handler
             }
 
             rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(envelope, subsettingCrs.Srid) };
+            sliceBounds = CreateRasterExtent(envelope, subsettingCrs.Srid);
             TryRefineBaseGrid(raster, subsettingCrs, envelope, ref baseWidth, ref baseHeight);
         }
         else if (!string.IsNullOrWhiteSpace(bbox))
@@ -1005,6 +1129,7 @@ internal sealed class Wcs20Handler
             }
 
             rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(envelope, subsettingCrs.Srid) };
+            sliceBounds = CreateRasterExtent(envelope, subsettingCrs.Srid);
             TryRefineBaseGrid(raster, subsettingCrs, envelope, ref baseWidth, ref baseHeight);
         }
 
@@ -1032,6 +1157,9 @@ internal sealed class Wcs20Handler
         {
             rasterQuery = rasterQuery with { OutputHeight = height.Value };
         }
+
+        sliceWidth = width ?? baseWidth;
+        sliceHeight = height ?? baseHeight;
 
         if (!TryResolveInterpolation(query, out var resampling, out error))
         {
@@ -1101,10 +1229,12 @@ internal sealed class Wcs20Handler
 
     // Returns the SUBSET values that target spatial axes, dropping temporal
     // (phenomenonTime/time/date/ansi) slices which are validated separately.
-    private static StringValues FilterSpatialSubsets(StringValues subsetValues)
+    private static StringValues FilterSpatialSubsets(
+        StringValues subsetValues,
+        IReadOnlyList<ZarrPointSliceSelection> additionalSelections)
     {
         var spatial = new List<string?>();
-        var anyTemporal = false;
+        var filteredAny = false;
         foreach (var value in subsetValues)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -1115,14 +1245,25 @@ internal sealed class Wcs20Handler
 
             if (IsTemporalSubset(value))
             {
-                anyTemporal = true;
+                filteredAny = true;
+                continue;
+            }
+
+            var open = value.IndexOf('(', StringComparison.Ordinal);
+            if (open > 0 && additionalSelections.Any(selection =>
+                    string.Equals(
+                        selection.Dimension,
+                        value[..open].Trim(),
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                filteredAny = true;
                 continue;
             }
 
             spatial.Add(value);
         }
 
-        return anyTemporal ? new StringValues(spatial.ToArray()) : subsetValues;
+        return filteredAny ? new StringValues(spatial.ToArray()) : subsetValues;
     }
 
     private static bool IsTemporalSubset(string subsetValue)
@@ -1147,30 +1288,18 @@ internal sealed class Wcs20Handler
             _ => false,
         };
 
-    // #1872: WCS 2.0 additional-dimension subsetting beyond phenomenonTime.
-    //
-    // Coverages may declare named dimension axes in addition to the two spatial axes
-    // and the temporal axis — for example a vertical/elevation/pressure-level axis on a
-    // multidimensional (Zarr) coverage. This pass parses and validates any SUBSET entry
-    // that targets neither a spatial axis nor the temporal axis, and resolves it against
-    // the coverage's registered additional dimension axes via the shared coordinate-axis
-    // indexer (the same resolver the OGC API Coverages surface uses, #1790/#1872).
-    //
-    // A SUBSET on an axis this coverage does NOT declare yields InvalidAxisLabel; a
-    // malformed value yields InvalidSubsetting. A SUBSET on a DECLARED additional axis
-    // is resolved to a concrete grid-index slice here (proving the coordinate->index
-    // resolution end-to-end through classic WCS); because the classic GetCoverage export
-    // path (IRasterStore.ExportImageAsync over the primary 2D raster) cannot yet read a
-    // Zarr slice's pixels, a resolved-but-unservable slice surfaces a precise
-    // OperationNotSupported error rather than the previous blanket rejection. See the
-    // ticket #1872 plan note: serving those pixels needs the Zarr export path wired into
-    // classic WCS.
+    // Parses WCS additional-axis syntax into canonical coordinate selections. Axis
+    // membership and range checks stay here so WCS can preserve its precise exception
+    // codes; the canonical reader remains the only component that plans and reads Zarr.
     private static bool TryValidateAdditionalDimensionSubsets(
         StringValues subsetValues,
         RasterInfo raster,
         IReadOnlyList<ZarrAxis> additionalAxes,
+        out IReadOnlyList<ZarrPointSliceSelection> selections,
         out WcsParameterError error)
     {
+        var parsedSelections = new List<ZarrPointSliceSelection>();
+        selections = parsedSelections;
         error = default;
 
         foreach (var rawValue in subsetValues)
@@ -1233,14 +1362,26 @@ internal sealed class Wcs20Handler
                 return false;
             }
 
-            // The slice resolved cleanly, but the classic GetCoverage export pipeline
-            // cannot yet read Zarr-slice pixels; surface a precise, spec-correct error
-            // rather than serving the wrong (dimension-collapsed) raster (#1872).
-            error = new WcsParameterError(
-                Wcs20Utilities.ExceptionCodes.OperationNotSupported,
-                $"SUBSET on the '{normalizedAxis}' dimension axis resolves to a coverage slice, but classic WCS GetCoverage does not yet serve multidimensional slice pixels for this coverage. Use the OGC API - Coverages endpoint for per-slice access.",
-                Wcs20Utilities.Parameters.Subset);
-            return false;
+            if (high != low)
+            {
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.OperationNotSupported,
+                    $"SUBSET on additional axis '{normalizedAxis}' must select one coordinate; multi-coordinate trims are not supported.",
+                    Wcs20Utilities.Parameters.Subset);
+                return false;
+            }
+
+            if (parsedSelections.Any(selection =>
+                    string.Equals(selection.Dimension, normalizedAxis, StringComparison.OrdinalIgnoreCase)))
+            {
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.InvalidAxisLabel,
+                    $"SUBSET axis '{normalizedAxis}' may be supplied only once.",
+                    Wcs20Utilities.Parameters.Subset);
+                return false;
+            }
+
+            parsedSelections.Add(new ZarrPointSliceSelection(null, axis.Name, low));
         }
 
         return true;
@@ -1265,7 +1406,7 @@ internal sealed class Wcs20Handler
     {
         try
         {
-            var registrations = await _zarrStore.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+            var registrations = await _coverageBackend.ListZarrRegistrationsAsync(layerId, cancellationToken).ConfigureAwait(false);
             foreach (var registration in registrations)
             {
                 if (registration.Metadata is { Axes.Length: > 0 } metadata)
@@ -2291,6 +2432,16 @@ internal sealed class Wcs20Handler
             Srid = srid
         };
     }
+
+    private static RasterExtent CreateRasterExtent(Envelope envelope, int srid)
+        => new()
+        {
+            XMin = envelope.MinX,
+            YMin = envelope.MinY,
+            XMax = envelope.MaxX,
+            YMax = envelope.MaxY,
+            Srid = srid,
+        };
 
     private static bool TryParseCoverageFormat(
         string? format,
