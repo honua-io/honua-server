@@ -312,6 +312,50 @@ public sealed class GeometryServiceEditOperationsTests : IClassFixture<WebAppFix
 
     [IntegrationTest]
     [Operation(Operations.AutoComplete)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/autoComplete")]
+    public async Task AutoComplete_ExistingParcelPlusClosingPolyline_ReturnsOnlyNewPolygon()
+    {
+        // Existing left square [0,0]-[1,1] plus a polyline tracing the three open sides of the
+        // adjacent right square. Polygonization yields both faces; autoComplete must return ONLY
+        // the new right square, not the pre-existing input polygon (#2742).
+        var body = """
+        {
+            "polygons": [
+                {"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}
+            ],
+            "polylines": [
+                {"paths": [[[1,0],[2,0],[2,1],[1,1]]]}
+            ],
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/autoComplete",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+
+        // The single returned face must be the NEW right square (max x = 2), not the input square.
+        result.Geometries![0].TryGetProperty("rings", out var rings).Should().BeTrue();
+        var maxX = double.MinValue;
+        foreach (var ring in rings.EnumerateArray())
+        {
+            foreach (var point in ring.EnumerateArray())
+            {
+                maxX = Math.Max(maxX, point[0].GetDouble());
+            }
+        }
+
+        maxX.Should().BeApproximately(2d, 1e-9);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AutoComplete)]
     [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/autoComplete")]
     public async Task AutoComplete_GetMissingPolylines_Returns400()
     {
