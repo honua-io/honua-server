@@ -198,9 +198,13 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var parameters = root.GetProperty("parameters").EnumerateArray().ToArray();
         parameters.Should().Contain(parameter =>
             parameter.GetProperty("name").GetString() == "distance" &&
-            parameter.GetProperty("description").GetString() == "Buffer distance in meters." &&
+            parameter.GetProperty("description").GetString()!.StartsWith("Buffer distance in the input geometry", StringComparison.Ordinal) &&
             parameter.GetProperty("direction").GetString() == "esriGPParameterDirectionInput" &&
             parameter.GetProperty("dataType").GetString() == "GPDouble");
+        parameters.Should().Contain(parameter =>
+            parameter.GetProperty("name").GetString() == "geodesic" &&
+            parameter.GetProperty("direction").GetString() == "esriGPParameterDirectionInput" &&
+            parameter.GetProperty("dataType").GetString() == "GPBoolean");
         parameters.Should().Contain(parameter =>
             parameter.GetProperty("name").GetString() == "wkb" &&
             parameter.GetProperty("description").GetString()!.Contains("base64-encoded WKB", StringComparison.Ordinal) &&
