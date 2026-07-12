@@ -64,6 +64,7 @@ jq -e '
 # #2721: the artifact registry must cover the exact unique shard-project set, and
 # its package/restore contract must fail closed on RID leakage, tampering and limits.
 scripts/ci/validate-server-test-binary-artifacts.sh
+scripts/ci/validate-server-test-transfer-benchmark.sh
 
 echo "Validating targeted_override_prefixes reference real shards..."
 jq -e '
