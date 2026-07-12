@@ -836,16 +836,25 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
                     "Alternatively supply an explicit Colormap array of [value, r, g, b].");
             }
 
-            if (arguments.ContainsKey("Colorramp"))
+            // A "Colorramp" object (algorithmic/multipart ramp definition) is a richer structure
+            // than a named ramp: it is resolved by evaluating the ramp's colour-space arc into the
+            // same canonical RasterColormap the named-ramp path produces, so it flows through the
+            // shared render pipeline unchanged. Unsupported/unknown ramp forms are rejected
+            // explicitly (501 recognised-but-unsupported, 400 malformed) rather than ignored.
+            if (TryGetColorrampElement(arguments, out var rampElement))
             {
-                // A "Colorramp" object (algorithmic/multipart ramp definition) is a richer
-                // structure than a named ramp; resolving it requires evaluating the algorithm,
-                // which is deferred. Named ramps and explicit stop arrays are supported.
-                return RenderingRuleMapping.NotImplemented(
-                    "Colormap by inline Colorramp object is not implemented; supply a ColorrampName or an explicit Colormap array of [value, r, g, b].");
+                var resolution = InlineColorRamp.Resolve(rampElement);
+                return resolution.Status switch
+                {
+                    InlineColorRampStatus.Resolved => RenderingRuleMapping.Executable(null, resolution.Colormap),
+                    InlineColorRampStatus.Unsupported => RenderingRuleMapping.NotImplemented(
+                        resolution.Error ?? "Colormap inline Colorramp form is not supported on this service."),
+                    _ => RenderingRuleMapping.Invalid(
+                        resolution.Error ?? "Colormap inline Colorramp object is invalid."),
+                };
             }
 
-            return RenderingRuleMapping.Invalid("Colormap raster function requires a Colormap array of [value, r, g, b] stops or a ColorrampName.");
+            return RenderingRuleMapping.Invalid("Colormap raster function requires a Colormap array of [value, r, g, b] stops, a ColorrampName, or an inline Colorramp object.");
         }
 
         if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() == 0)
@@ -874,6 +883,20 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         }
 
         return RenderingRuleMapping.Executable(null, new RasterColormap { Entries = entries });
+    }
+
+    // Esri encodes the inline ramp under either "Colorramp" or "ColorRamp"; accept both spellings.
+    private static bool TryGetColorrampElement(Dictionary<string, object?> arguments, out JsonElement element)
+    {
+        element = default;
+        if ((arguments.TryGetValue("Colorramp", out var raw) || arguments.TryGetValue("ColorRamp", out raw)) &&
+            raw is JsonElement json)
+        {
+            element = json;
+            return true;
+        }
+
+        return false;
     }
 
     private static byte ClampChannel(JsonElement element)

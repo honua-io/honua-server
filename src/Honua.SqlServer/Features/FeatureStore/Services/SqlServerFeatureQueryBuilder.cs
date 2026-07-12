@@ -310,9 +310,6 @@ internal static partial class SqlServerFeatureQueryBuilder
                 $"Pre-project the filter geometry to the layer's SRID before submitting the request.");
         }
 
-        var wkbParam = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-        parameters.Add(filter.Geometry);
-
         // SQL Server's geometry/geography static parsers require an explicit SRID. Use the
         // filter's SRID when supplied; otherwise inherit the layer SRID for safe comparison.
         // If neither is available the expression resolves to SRID 0, which causes SQL Server
@@ -327,10 +324,27 @@ internal static partial class SqlServerFeatureQueryBuilder
                 "Set the layer SRID in the mapping or provide an explicit SRID on the spatial filter.");
         }
 
+        var isGeography = mapping.GeometryColumnType == SqlServerGeometryColumnType.Geography;
+
+        // SQL Server's geography type uses the left-hand rule: a polygon's interior lies to the
+        // left of each ring's traversal direction, i.e. exterior rings must be counter-clockwise
+        // (and holes clockwise). Esri clients commonly emit clockwise-exterior polygons, which the
+        // geography parser interprets as the polygon's complement (the "everything but this" ring)
+        // and rejects with error 24205 when that complement spans more than a hemisphere. Normalize
+        // polygon/multipolygon winding to CCW-exterior before serialization so every geography
+        // predicate sees the intended region. The geometry (planar) type is orientation-insensitive,
+        // so its WKB is passed through untouched.
+        var wkb = isGeography
+            ? SqlServerGeographyWinding.NormalizeToCcwExterior(filter.Geometry)
+            : filter.Geometry;
+
+        var wkbParam = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+        parameters.Add(wkb);
+
         var srid = filter.Srid is > 0 ? filter.Srid.Value : mapping.Srid ?? 0;
         var sridLiteral = srid.ToString(CultureInfo.InvariantCulture);
 
-        return mapping.GeometryColumnType == SqlServerGeometryColumnType.Geography
+        return isGeography
             ? $"geography::STGeomFromWKB({wkbParam}, {sridLiteral})"
             : $"geometry::STGeomFromWKB({wkbParam}, {sridLiteral})";
     }

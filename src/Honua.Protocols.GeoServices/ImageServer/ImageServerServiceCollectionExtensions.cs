@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Services;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Services;
@@ -35,6 +37,11 @@ internal static class ImageServerServiceCollectionExtensions
         services.Configure<ImageServerTileMetadataOptions>(
             configuration.GetSection(ImageServerTileMetadataOptions.SectionName));
 
+        // computeClassStatistics admission limits (per-class pixel budget, class count). Bounds the
+        // CPU/memory a class-signature request can consume (#2662).
+        services.Configure<ImageServerClassStatisticsOptions>(
+            configuration.GetSection(ImageServerClassStatisticsOptions.SectionName));
+
         // Register handlers
         services.AddScoped<ImageServerMetadataHandler>();
         services.AddScoped<ImageServerMultidimensionalInfoHandler>();
@@ -45,6 +52,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerCatalogQueryHandler>();
         services.AddScoped<ImageServerRasterItemHandler>();
         services.AddScoped<ImageServerStatisticsHistogramsHandler>();
+        services.AddScoped<ImageServerComputeClassStatisticsHandler>();
         services.AddScoped<ImageServerSamplesHandler>();
         services.AddScoped<ImageServerKeyPropertiesHandler>();
         services.AddScoped<ImageServerLegendHandler>();
@@ -60,6 +68,11 @@ internal static class ImageServerServiceCollectionExtensions
 
         // Register supporting services
         services.TryAddScoped<SpatialReferenceResolver>();
+
+        // Protocol-neutral class-statistics analyzer (#2662): reads training-AOI pixel vectors
+        // through the shared raster store and folds them into per-class signatures. TryAdd keeps a
+        // single registration if another protocol registers the same analyzer.
+        services.TryAddScoped<IRasterClassStatisticsAnalyzer, RasterClassStatisticsAnalyzer>();
 
         // CRS/datum/transform seam for the project operation: folds the spatial-reference
         // resolver, datum-transformation catalog, and optional coordinate transform service

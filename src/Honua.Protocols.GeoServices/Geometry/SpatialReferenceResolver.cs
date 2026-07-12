@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Infrastructure.Services;
@@ -54,9 +55,18 @@ internal class SpatialReferenceResolver
             return null;
         }
 
-        return await _crsRegistry.IsSridSupportedAsync(srid.Value, cancellationToken)
+        // Normalize well-known Web Mercator aliases (102100/102113/900913/3785) to the
+        // canonical EPSG:3857 before registry validation. The registry only advertises the
+        // canonical codes, so without this the query path rejected inSR/outSR/bboxSR=102100
+        // that ArcGIS Pro and the ArcGIS JS API send, even though the edits and import paths
+        // already normalize the same aliases (#2736). Returning the canonical SRID also lets
+        // the shared query/transform pipeline short-circuit when the layer is stored as 3857
+        // and the client requested a Web Mercator alias (no spurious ST_Transform).
+        var normalized = SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid.Value);
+
+        return await _crsRegistry.IsSridSupportedAsync(normalized, cancellationToken)
             .ConfigureAwait(false)
-            ? srid
+            ? normalized
             : null;
     }
 

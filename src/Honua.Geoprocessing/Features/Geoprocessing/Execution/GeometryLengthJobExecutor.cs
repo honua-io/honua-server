@@ -18,14 +18,14 @@ namespace Honua.Geoprocessing.Execution;
 /// process. Slice 4 of #1031 — companion to <see cref="GeometryAreaJobExecutor"/>
 /// for one-dimensional measure outputs.
 ///
-/// Computes the planar (Cartesian) length of the supplied geometry in
-/// input-CRS units and publishes a single canonical <c>MeasureResult</c>
-/// document on the <c>outputScalar</c> slot. Geodesic length (meters on the
-/// WGS 84 ellipsoid) is catalog-documented but deferred to the geodesic
-/// measure slice, mirroring how <see cref="GeometryAreaJobExecutor"/>
-/// rejects geodesic until that follow-on lands. Returns the
-/// <see cref="Geometry.Length"/> for line geometries; for polygons NTS
-/// returns the perimeter, which is consistent with the catalog description.
+/// Computes the planar (Cartesian) length of the supplied geometry in the
+/// input CRS's coordinate units and publishes a single canonical
+/// <c>MeasureResult</c> document on the <c>outputScalar</c> slot. There is no
+/// geodesic option: the catalog advertises planar length only, so a geographic
+/// (degree) input yields length in degrees, not meters. Ellipsoidal (geodesic)
+/// length is a tracked follow-on. Returns the <see cref="Geometry.Length"/> for
+/// line geometries; for polygons NTS returns the perimeter, which is consistent
+/// with the catalog description.
 /// </summary>
 internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
 {
@@ -100,6 +100,12 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed("Invalid length inputs: geometry is empty.");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
+        {
+            Log.InvalidInputs(_logger, job.OperationId, sridError);
+            return JobExecutionResult.Failed($"Invalid length inputs: {sridError}.");
+        }
+
         geometry.SRID = inputs.Srid;
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -108,9 +114,8 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         double length;
         try
         {
-            // First-slice executor computes planar length in input-CRS units.
-            // Geodesic length is documented in the catalog but deferred to
-            // the geodesic measure slice, matching geometry.area's policy.
+            // Computes planar length in the input CRS's coordinate units.
+            // No geodesic conversion is applied, matching geometry.area.
             length = geometry.Length;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

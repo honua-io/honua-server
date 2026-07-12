@@ -225,6 +225,116 @@ public class ImageServerRasterMetadataTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/colormap")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/colormap")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/colormap")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/colormap")]
+    [Operation(Operations.Metadata)]
+    public async Task Colormap_WithColormapRenderingRule_ReturnsResolvedStops()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string renderingRule =
+                """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[255,255,255,255]]}}""";
+            var encoded = Uri.EscapeDataString(renderingRule);
+
+            // Numeric-layer GET.
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/colormap?f=json&renderingRule={encoded}");
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            getResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+            var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+            var colormap = json.RootElement.GetProperty("colormap");
+            colormap.GetArrayLength().Should().Be(2);
+            var lastStop = colormap[colormap.GetArrayLength() - 1];
+            colormap[0][0].GetInt32().Should().Be(0);
+            colormap[0][1].GetInt32().Should().Be(0);
+            lastStop[0].GetInt32().Should().Be(255);
+            lastStop[1].GetInt32().Should().Be(255);
+            // The colormap resource emits [value, r, g, b] stops (no alpha channel).
+            lastStop.GetArrayLength().Should().Be(4);
+
+            // Service-name GET resolves the same colormap.
+            var byServiceResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/colormap?f=json&renderingRule={encoded}");
+            byServiceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            // POST mirror accepts the renderingRule via the form body.
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/colormap",
+                new FormUrlEncodedContent(new[]
+                {
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("renderingRule", renderingRule),
+                }));
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+            postJson.RootElement.GetProperty("colormap").GetArrayLength().Should().Be(2);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/colormap")]
+    [Operation(Operations.Metadata)]
+    public async Task Colormap_WithInlineColorrampRenderingRule_ReturnsResolvedStops()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string renderingRule =
+                """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"algorithmic","fromColor":[0,0,0],"toColor":[255,255,255],"algorithm":"esriHSVAlgorithm"}}}""";
+            var encoded = Uri.EscapeDataString(renderingRule);
+
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/colormap?f=json&renderingRule={encoded}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var colormap = json.RootElement.GetProperty("colormap");
+            colormap.GetArrayLength().Should().BeGreaterThan(1);
+            // Gradient spans black -> white across the display range.
+            colormap[0][0].GetInt32().Should().Be(0);
+            colormap[colormap.GetArrayLength() - 1][0].GetInt32().Should().Be(255);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/colormap")]
+    [Operation(Operations.Metadata)]
+    public async Task Colormap_WithoutRenderer_ReturnsNotAvailable()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            // No renderingRule: a continuous raster has no intrinsic colormap -> not available.
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/colormap?f=json");
+            await response.AssertGeoServicesErrorAsync(400);
+
+            // A supported renderingRule that carries no Colormap function is likewise not available.
+            const string stretchOnly =
+                """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""";
+            var stretchResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/colormap?f=json&renderingRule={Uri.EscapeDataString(stretchOnly)}");
+            await stretchResponse.AssertGeoServicesErrorAsync(400);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/statistics")]
     [Operation(Operations.Metadata)]
     public async Task RasterMetadata_InvalidFormatAndMissingLayer_ReturnErrors()

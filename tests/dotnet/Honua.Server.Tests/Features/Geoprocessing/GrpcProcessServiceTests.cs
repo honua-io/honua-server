@@ -30,6 +30,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 [Protocol(TestProtocols.Grpc)]
 public sealed class GrpcProcessServiceTests
 {
+    private const string TestPrincipalId = "test-user";
     private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
     private readonly IUniversalProgressStore _progressStore = Substitute.For<IUniversalProgressStore>();
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
@@ -320,6 +321,25 @@ public sealed class GrpcProcessServiceTests
 
         response.JobId.Should().Be("job-123");
         response.State.Should().Be(Proto.JobState.Running);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJob")]
+    public async Task GetJob_WithForeignOwner_ThrowsNotFound()
+    {
+        var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Running) with
+        {
+            Audit = new OperationAuditInfo { RequestedBy = "other-user" }
+        };
+        _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
+
+        var request = new Proto.GetJobRequest { JobId = "job-123" };
+
+        var act = async () => await _sut.GetJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.NotFound);
     }
 
     [UnitTest]
@@ -997,6 +1017,7 @@ public sealed class GrpcProcessServiceTests
             Status = status,
             CreatedAt = now,
             UpdatedAt = now,
+            Audit = new OperationAuditInfo { RequestedBy = TestPrincipalId },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -1022,7 +1043,10 @@ public sealed class GrpcProcessServiceTests
         var httpContext = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim(ClaimTypes.Name, "test-user")], "Test"))
+                [
+                    new Claim(ClaimTypes.Name, "Test User"),
+                    new Claim(ClaimTypes.NameIdentifier, TestPrincipalId)
+                ], "Test"))
         };
 
         var ctx = new TestServerCallContext(cancellationToken);

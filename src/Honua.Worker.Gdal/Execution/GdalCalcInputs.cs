@@ -95,6 +95,14 @@ internal static class GdalCalcInputs
                 return false;
             }
 
+            // Refuse a content-sniffed VRT/XML indirection blob or an embedded /vsi
+            // reference before it is ever materialized and opened by GDAL (#2765).
+            if (!GdalUntrustedInputGuard.IsAdmissible(bytes, out var guardReason))
+            {
+                failure = $"source #{(i + 1).ToString(CultureInfo.InvariantCulture)} rejected: {guardReason}";
+                return false;
+            }
+
             if (bytes.Length > maxBytes)
             {
                 failure = $"source #{(i + 1).ToString(CultureInfo.InvariantCulture)} size {bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes exceeds configured MaxArtifactBytes={maxBytes}";
