@@ -294,6 +294,10 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         content.Should().Contain("<ows:Identifier>WorldCRS84Quad</ows:Identifier>");
         content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:OGC:1.3:CRS84</ows:SupportedCRS>");
         content.Should().Contain("<TileMatrixSet>WorldCRS84Quad</TileMatrixSet>");
+        // #2738: CRS84 is a lon,lat CRS, so the WorldCRS84Quad TopLeftCorner is emitted
+        // easting-first (-180 90), matching the OGC WorldCRS84Quad definition. The prior
+        // output ("90.000000 -180.000000") had the axes swapped.
+        content.Should().Contain("<TopLeftCorner>-180 90</TopLeftCorner>");
     }
 
     [IntegrationTest]
