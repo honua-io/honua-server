@@ -15,6 +15,7 @@ internal static class Wcs20ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddScoped<Wcs20CoverageBackend>();
         services.AddScoped<Wcs20Handler>();
 
         return services;
