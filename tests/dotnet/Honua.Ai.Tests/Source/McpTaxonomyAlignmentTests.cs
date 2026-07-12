@@ -14,6 +14,8 @@ using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Schema;
 using NSubstitute;
 using Honua.Core.Features.Reporting.Abstractions;
 
@@ -408,6 +410,34 @@ public sealed partial class McpTaxonomyAlignmentTests
             properties.ValueKind.Should().Be(JsonValueKind.Object);
             properties.EnumerateObject().Should().NotBeEmpty(
                 $"'{tool.Name}' output schema must describe at least one property");
+        }
+    }
+
+    [UnitTest]
+    public void StructuredTools_ErrorEnvelopeMatchesEveryAdvertisedOutputSchema()
+    {
+        var errorEnvelope = JObject.Parse(
+            """
+            {
+              "status": "error",
+              "code": "validation_failed",
+              "message": "The request is invalid.",
+              "error": {
+                "kind": "ValidationFailed",
+                "message": "The request is invalid."
+              }
+            }
+            """);
+
+        foreach (var tool in BuildTools())
+        {
+            var descriptor = tool.Describe();
+            descriptor.OutputSchema.Should().NotBeNull(
+                $"tool '{tool.Name}' must advertise an output schema before its shared error envelope can be validated");
+
+            var schema = JSchema.Parse(descriptor.OutputSchema!.Value.GetRawText());
+            errorEnvelope.IsValid(schema, out IList<string> errors).Should().BeTrue(
+                $"the shared MCP error envelope must validate against '{tool.Name}' outputSchema; errors: {string.Join("; ", errors)}");
         }
     }
 
