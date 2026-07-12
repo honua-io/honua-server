@@ -217,6 +217,105 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task ImportFileAsync_WithSelfIntersectingPolygon_StrictMode_FailsWithoutStoringGeometry()
+    {
+        // With GeometryValidityMode=Strict, SkipInvalidGeometry=false, and ContinueOnError=false the
+        // shared validity gate rejects the invalid geometry and the import fails rather than storing
+        // or repairing it. Reachable end-to-end now that the config binding honors the mode (#2743).
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var strictLimits = ImportLimits.Default with
+            {
+                GeometryValidityMode = Honua.Core.Configuration.ValidationMode.Strict,
+                SkipInvalidGeometry = false,
+                ContinueOnError = false,
+            };
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance,
+                strictLimits);
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SelfIntersectingPolygonGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "bowtie_strict.geojson",
+                TableName = "strict_demo",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+            });
+
+            result.Success.Should().BeFalse();
+            result.RepairedGeometryCount.Should().Be(0);
+            result.ErrorMessage.Should().StartWith("Import failed");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_WithSelfIntersectingPolygon_AcceptMode_StoresGeometryAsIs()
+    {
+        // With GeometryValidityMode=Accept the validity gate is bypassed: the invalid geometry is
+        // stored as-is (no repair, no rejection). Reachable now that the config binding honors the
+        // mode (#2743).
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var acceptLimits = ImportLimits.Default with
+            {
+                GeometryValidityMode = Honua.Core.Configuration.ValidationMode.Accept,
+            };
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance,
+                acceptLimits);
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SelfIntersectingPolygonGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "bowtie_accept.geojson",
+                TableName = "accept_demo",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(1);
+            result.RepairedGeometryCount.Should().Be(0);
+
+            // The geometry is stored unrepaired, so it remains topologically invalid.
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT bool_and(ST_IsValid(geometry))::boolean FROM \"{schema}\".imported_accept_demo;";
+            var allValid = (bool)(await command.ExecuteScalarAsync())!;
+            allValid.Should().BeFalse("Accept mode must store the invalid geometry without repair");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ImportFileAsync_WhenImportFunctionMissing_ReturnsSanitizedActionableError()
     {
         // No EnsureImportFunctionsAsync() call: honua.create_import_table is absent, so the

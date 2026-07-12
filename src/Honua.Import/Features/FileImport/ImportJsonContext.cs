@@ -145,6 +145,7 @@ namespace Honua.Import.FileImport;
 [JsonSerializable(typeof(ImportResult))]
 [JsonSerializable(typeof(ImportValidationIssue))]
 [JsonSerializable(typeof(IReadOnlyList<ImportValidationIssue>))]
+[JsonSerializable(typeof(ImportValidationSeverity))]
 [JsonSerializable(typeof(ImportProgress))]
 [JsonSerializable(typeof(ImportLimits))]
 [JsonSerializable(typeof(ImportStatus))]

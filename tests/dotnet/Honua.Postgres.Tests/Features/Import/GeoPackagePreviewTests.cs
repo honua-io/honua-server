@@ -96,6 +96,35 @@ public sealed class GeoPackagePreviewTests
     }
 
     [Fact]
+    public async Task PreviewFileAsync_GeoPackageWithoutSpatialRefSysTable_FallsBackToRawSrsId()
+    {
+        // A malformed GeoPackage missing the (spec-required) gpkg_spatial_ref_sys table must not
+        // throw "no such table" when enumerating layers. The reader probes for the table and, when
+        // absent, falls back to a join-less query that treats the raw srs_id as a best-effort EPSG
+        // code; import-path SRID validation still guards nonsense codes downstream (#2743).
+        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+
+        try
+        {
+            CreateGeoPackage(filePath, srsId: 4326, includeSpatialRefSys: false);
+
+            await using var stream = File.OpenRead(filePath);
+            var service = CreateService();
+
+            var preview = await service.PreviewFileAsync(stream, "sample.gpkg");
+
+            preview.Format.Should().Be(SupportedFileFormat.GeoPackage);
+            preview.AvailableLayers.Should().Contain("sample_layer");
+            preview.TotalFeatureCount.Should().Be(1);
+            preview.DetectedSrid.Should().Be(4326);
+        }
+        finally
+        {
+            await DeleteGeoPackageAsync(filePath);
+        }
+    }
+
+    [Fact]
     public async Task PreviewFileAsync_GeoPackage_ReturnsAllAvailableLayers()
     {
         var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
@@ -154,24 +183,26 @@ public sealed class GeoPackagePreviewTests
         bool includeSecondLayer = false,
         int srsId = 4326,
         string organization = "EPSG",
-        int organizationCoordsysId = 4326)
+        int organizationCoordsysId = 4326,
+        bool includeSpatialRefSys = true)
     {
         using var connection = new SqliteConnection($"Data Source={filePath};Pooling=False");
         connection.Open();
 
-        ExecuteNonQuery(connection, """
-            CREATE TABLE gpkg_spatial_ref_sys (
-                srs_name TEXT NOT NULL,
-                srs_id INTEGER NOT NULL PRIMARY KEY,
-                organization TEXT NOT NULL,
-                organization_coordsys_id INTEGER NOT NULL,
-                definition TEXT NOT NULL,
-                description TEXT
-            );
-            """);
-
-        using (var srsInsert = connection.CreateCommand())
+        if (includeSpatialRefSys)
         {
+            ExecuteNonQuery(connection, """
+                CREATE TABLE gpkg_spatial_ref_sys (
+                    srs_name TEXT NOT NULL,
+                    srs_id INTEGER NOT NULL PRIMARY KEY,
+                    organization TEXT NOT NULL,
+                    organization_coordsys_id INTEGER NOT NULL,
+                    definition TEXT NOT NULL,
+                    description TEXT
+                );
+                """);
+
+            using var srsInsert = connection.CreateCommand();
             srsInsert.CommandText = """
                 INSERT INTO gpkg_spatial_ref_sys (srs_name, srs_id, organization, organization_coordsys_id, definition, description)
                 VALUES ($srs_name, $srs_id, $organization, $organization_coordsys_id, 'undefined', 'test srs');

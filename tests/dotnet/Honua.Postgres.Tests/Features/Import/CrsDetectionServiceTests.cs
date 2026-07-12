@@ -7,6 +7,7 @@ using Honua.Postgres.Features.Migration;
 using Honua.Postgres.Features.FileImport;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Postgres.Tests.Features.Import;
@@ -253,7 +254,7 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         result.Should().BeNull();
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task DetectFromWktAsync_WithWkt2IdNode_ReturnsProjectedSrid()
     {
         // PROJ-6 / WKT2 .prj (e.g. produced by GDAL 3+, FlatGeobuf) carries ID["EPSG",N]
@@ -281,7 +282,7 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         result.Should().Be(25832);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task DetectFromWktAsync_WithDualAuthorityNodes_ReturnsProjectedNotBaseGeographic()
     {
         // A WKT1 UTM string with an AUTHORITY node on both the inner GEOGCS (4326) and the outer
@@ -310,7 +311,7 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         result.Should().Be(32632);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task DetectFromPrjAsync_WithEsriUtmName_ReturnsComputedSrid()
     {
         // Typical ArcGIS-authored .prj: no AUTHORITY/ID node at all; the projected CRS name
@@ -335,7 +336,7 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         result.Should().Be(26917);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task DetectFromPrjAsync_WithEsriWebMercatorName_ReturnsSrid()
     {
         // ArcGIS Web Mercator .prj name maps to EPSG:3857 via the explicit ESRI-name table.
@@ -357,6 +358,109 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         var result = await _service!.DetectFromPrjAsync(esriPrj);
 
         result.Should().Be(3857);
+    }
+
+    [IntegrationTest]
+    public async Task DetectFromPrjAsync_WithNad83HarnUtmName_DoesNotComputePlainNad83Srid()
+    {
+        // NAD83(HARN) is a distinct datum realization from plain NAD83. Its UTM zone codes are NOT
+        // 26900+zone (that is plain NAD83), so the ESRI UTM zone-arithmetic branch must NOT match a
+        // "_HARN" name and silently return 26917 (#2743). The made-up name/body has no
+        // spatial_ref_sys match, so detection falls through to null rather than a wrong datum.
+        var harnPrj = """
+            PROJCS["NAD_1983_HARN_UTM_Zone_17N",
+                GEOGCS["GCS_North_American_1983_HARN",
+                    DATUM["D_North_American_1983_HARN",
+                        SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0],
+                    UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Transverse_Mercator"],
+                PARAMETER["False_Easting",500000.0],
+                PARAMETER["Central_Meridian",-81.0],
+                PARAMETER["Scale_Factor",0.9996],
+                PARAMETER["Latitude_Of_Origin",0.0],
+                UNIT["Meter",1.0]]
+            """;
+
+        var result = await _service!.DetectFromPrjAsync(harnPrj);
+
+        result.Should().NotBe(26917);
+    }
+
+    [IntegrationTest]
+    public async Task DetectFromWktAsync_WithCompoundCrs_ResolvesHorizontalNotVerticalAuthority()
+    {
+        // COMPD_CS carries a trailing VERT_CS whose EPSG authority (5703, NAVD88 height) validates
+        // in spatial_ref_sys. Detection must resolve to the horizontal (projected) member 32617, not
+        // the vertical 5703 (#2743).
+        var compound = """
+            COMPD_CS["NAD83 / UTM zone 17N + NAVD88 height",
+                PROJCS["NAD83 / UTM zone 17N",
+                    GEOGCS["NAD83",
+                        DATUM["North_American_Datum_1983",
+                            SPHEROID["GRS 1980",6378137,298.257222101]],
+                        PRIMEM["Greenwich",0],
+                        UNIT["degree",0.0174532925199433],
+                        AUTHORITY["EPSG","4269"]],
+                    PROJECTION["Transverse_Mercator"],
+                    PARAMETER["latitude_of_origin",0],
+                    PARAMETER["central_meridian",-81],
+                    PARAMETER["scale_factor",0.9996],
+                    PARAMETER["false_easting",500000],
+                    PARAMETER["false_northing",0],
+                    UNIT["metre",1],
+                    AUTHORITY["EPSG","32617"]],
+                VERT_CS["NAVD88 height",
+                    VERT_DATUM["North American Vertical Datum 1988",2005],
+                    UNIT["metre",1],
+                    AUTHORITY["EPSG","5703"]]]
+            """;
+
+        var result = await _service!.DetectFromWktAsync(compound);
+
+        result.Should().Be(32617);
+    }
+
+    [IntegrationTest]
+    public async Task DetectFromWktAsync_WithBoundCrs_ResolvesSourceNotTargetAuthority()
+    {
+        // BOUNDCRS wraps a SOURCECRS (the data's CRS, 25832) plus a TARGETCRS (4326) and an abridged
+        // transformation. Detection must resolve the source projected code, not the WGS 84 target
+        // that would otherwise win as a trailing authority (#2743).
+        var bound = """
+            BOUNDCRS[
+                SOURCECRS[
+                    PROJCRS["ETRS89 / UTM zone 32N",
+                        BASEGEOGCRS["ETRS89",
+                            DATUM["European Terrestrial Reference System 1989",
+                                ELLIPSOID["GRS 1980",6378137,298.257222101]]],
+                        CONVERSION["UTM zone 32N",
+                            METHOD["Transverse Mercator",ID["EPSG",9807]],
+                            PARAMETER["Latitude of natural origin",0],
+                            PARAMETER["Longitude of natural origin",9]],
+                        CS[Cartesian,2],
+                        AXIS["(E)",east],
+                        AXIS["(N)",north],
+                        LENGTHUNIT["metre",1],
+                        ID["EPSG",25832]]],
+                TARGETCRS[
+                    GEOGCRS["WGS 84",
+                        DATUM["World Geodetic System 1984",
+                            ELLIPSOID["WGS 84",6378137,298.257223563]],
+                        CS[ellipsoidal,2],
+                        AXIS["latitude",north],
+                        AXIS["longitude",east],
+                        ANGLEUNIT["degree",0.0174532925199433],
+                        ID["EPSG",4326]]],
+                ABRIDGEDTRANSFORMATION["Transformation from ETRS89 to WGS84",
+                    METHOD["Geocentric translations (geog2D domain)",ID["EPSG",9603]],
+                    PARAMETER["X-axis translation",0],
+                    ID["EPSG",1149]]]
+            """;
+
+        var result = await _service!.DetectFromWktAsync(bound);
+
+        result.Should().Be(25832);
     }
 
     [Fact]
