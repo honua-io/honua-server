@@ -43,9 +43,13 @@ train_smart_ci_run() {
     return 0
   fi
 
-  # Live: push the branch and dispatch CI.
+  # Live: push the branch and dispatch CI. This function's stdout IS the gate
+  # value the caller captures (`gate="$(train_smart_ci_run ...)"`), and newer
+  # gh releases print the created run's URL on stdout — route it to stderr or
+  # the gate becomes "<url>\nSUCCESS", which matches neither SUCCESS nor
+  # FAILURE and fail-closes every live batch.
   git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
-  gh workflow run ci.yml --ref "${batch}"
+  gh workflow run ci.yml --ref "${batch}" 1>&2
 
   # Find the dispatched run id (most recent ci.yml run on this ref).
   local run_id=""
