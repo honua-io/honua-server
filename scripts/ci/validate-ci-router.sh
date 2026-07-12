@@ -61,6 +61,10 @@ jq -e '
   )
 ' .github/ci-shards.json >/dev/null
 
+# #2721: the artifact registry must cover the exact unique shard-project set, and
+# its package/restore contract must fail closed on RID leakage, tampering and limits.
+scripts/ci/validate-server-test-binary-artifacts.sh
+
 echo "Validating targeted_override_prefixes reference real shards..."
 jq -e '
   ([.shards[].name]) as $names
@@ -70,7 +74,10 @@ jq -e '
   || { echo "::error::a targeted_override_prefixes entry references an unknown shard name" >&2; exit 1; }
 
 echo "Checking shell script syntax..."
-bash -n scripts/ci/*.sh
+scripts/ci/validate-shell-syntax.sh
+
+echo "Checking local pre-PR change routing..."
+scripts/ci/fixtures/validate-pre-pr-routing.sh
 
 echo "Checking Python helper syntax..."
 python3 -m py_compile scripts/ci/*.py

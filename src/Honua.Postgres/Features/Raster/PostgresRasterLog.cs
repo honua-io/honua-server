@@ -172,4 +172,11 @@ internal static partial class PostgresRasterLog
         Level = LogLevel.Information,
         Message = "Updated raster metadata for layer {LayerId}, raster {RasterId}")]
     public static partial void RasterMetadataUpdated(ILogger logger, int layerId, long rasterId);
+
+    [LoggerMessage(
+        EventId = 7827,
+        Level = LogLevel.Debug,
+        Message = "Catalog query pushdown for layer {LayerId}: scanned={RowsScanned}, returned={RowsReturned}, {DurationMs}ms")]
+    public static partial void CatalogQueryExecuted(
+        ILogger logger, int layerId, long rowsScanned, long rowsReturned, double durationMs);
 }
