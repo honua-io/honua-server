@@ -82,6 +82,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         CompositeFormat.Parse("{0} record(s) could not be parsed as WKT, EWKT, or WKB and were skipped.");
     private static readonly CompositeFormat _csvGeocodeFailureWarningFormat =
         CompositeFormat.Parse("{0} row(s) had an address that could not be geocoded; each row was imported without geometry.");
+    private static readonly CompositeFormat _repairedGeometryWarningFormat =
+        CompositeFormat.Parse("{0} feature(s) had invalid geometry that was automatically repaired (ST_MakeValid-equivalent) before import.");
     private static readonly Regex _wktSridRegex = new(
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -528,7 +530,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             // Stream features and insert in batches
             IReadOnlyList<ImportValidationIssue> rowIssues;
-            (importedCount, failedCount, warnings, rowIssues) = await ImportStreamingAsync(
+            int repairedCount;
+            (importedCount, failedCount, repairedCount, warnings, rowIssues) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -561,7 +564,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 stopwatch.Elapsed,
                 warnings,
                 physicalTableName: GetAllowedTableName(request.TableName),
-                schema: ResolveTargetSchema(request.TargetSchema)) with
+                schema: ResolveTargetSchema(request.TargetSchema),
+                repairedGeometryCount: repairedCount) with
             {
                 // Per-row issues (e.g. CSV address rows that failed to geocode) that did not
                 // block the import but should be relayed to the caller alongside the warnings.

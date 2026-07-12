@@ -186,10 +186,15 @@ internal sealed partial class StreamingFileImportService
         await using var connection = new SqliteConnection($"Data Source={filePath};Mode=ReadOnly;");
         await connection.OpenAsync(cancellationToken);
 
+        // Resolve the layer's srs_id through gpkg_spatial_ref_sys rather than trusting srs_id to be
+        // an EPSG code directly (#2743). The GeoPackage spec allows local srs_id numbering: a file
+        // may declare srs_id=1 whose row maps to organization='EPSG', organization_coordsys_id=27700.
+        // Reading srs_id as the EPSG code would silently mis-georeference every feature.
         const string sql = """
-            SELECT c.table_name, g.column_name, g.srs_id
+            SELECT c.table_name, g.column_name, g.srs_id, s.organization, s.organization_coordsys_id
             FROM gpkg_contents c
             JOIN gpkg_geometry_columns g ON c.table_name = g.table_name
+            LEFT JOIN gpkg_spatial_ref_sys s ON g.srs_id = s.srs_id
             WHERE c.data_type = 'features'
             ORDER BY c.table_name
             """;
@@ -204,20 +209,56 @@ internal sealed partial class StreamingFileImportService
         {
             var tableName = reader.GetString(0);
             var geometryColumn = reader.GetString(1);
-            var srid = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2);
-            layers.Add(new GeoPackageLayerInfo(tableName, geometryColumn, NormalizeGeoPackageSrid(srid)));
+            var srsId = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2);
+            var organization = reader.IsDBNull(3) ? null : reader.GetString(3);
+            var organizationCoordSysId = reader.IsDBNull(4) ? (int?)null : reader.GetInt32(4);
+            layers.Add(new GeoPackageLayerInfo(
+                tableName,
+                geometryColumn,
+                ResolveGeoPackageSrid(srsId, organization, organizationCoordSysId)));
         }
 
         return layers;
     }
 
-    private static int? NormalizeGeoPackageSrid(int? srid)
+    /// <summary>
+    /// Resolves a GeoPackage geometry-column <c>srs_id</c> to an EPSG code via its
+    /// <c>gpkg_spatial_ref_sys</c> row (#2743). Honors the spec's reserved ids
+    /// (<c>0</c> undefined-geographic, <c>-1</c> undefined-cartesian → undetected) and only
+    /// trusts <c>organization_coordsys_id</c> for EPSG-authored rows. A non-EPSG organization
+    /// (or a row that resolves to a non-positive code) is treated as undetected so the caller
+    /// must supply an explicit source SRID rather than the import guessing a wrong EPSG code.
+    /// Falls back to the raw <c>srs_id</c> only when no matching <c>gpkg_spatial_ref_sys</c> row
+    /// exists (best effort for a malformed file that still numbers by EPSG).
+    /// </summary>
+    private static int? ResolveGeoPackageSrid(int? srsId, string? organization, int? organizationCoordSysId)
     {
-        if (!srid.HasValue)
+        if (!srsId.HasValue)
         {
             return null;
         }
 
-        return srid.Value <= 0 ? null : srid.Value;
+        // Reserved srs_ids per the GeoPackage spec: 0 (undefined geographic) and -1 (undefined
+        // cartesian). Both mean "no real CRS", so they are undetected.
+        if (srsId.Value is 0 or (-1))
+        {
+            return null;
+        }
+
+        if (organization is not null)
+        {
+            if (string.Equals(organization, "EPSG", StringComparison.OrdinalIgnoreCase))
+            {
+                return organizationCoordSysId is > 0 ? organizationCoordSysId : null;
+            }
+
+            // Known srs row, but a non-EPSG authority (e.g. 'NONE', a vendor org, or a fully
+            // custom WKT-only definition). Do not guess an EPSG code — require an explicit SRID.
+            return null;
+        }
+
+        // No gpkg_spatial_ref_sys row matched srs_id. Fall back to the raw value on the chance the
+        // file numbers by EPSG directly (legacy/malformed writers).
+        return srsId.Value > 0 ? srsId.Value : null;
     }
 }

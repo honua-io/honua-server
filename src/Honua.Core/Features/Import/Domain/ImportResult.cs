@@ -88,6 +88,14 @@ public sealed record ImportResult
     public IReadOnlyList<ImportValidationIssue> ValidationErrors { get; init; } = [];
 
     /// <summary>
+    /// Number of features whose geometry was invalid on input and was automatically
+    /// repaired (ST_MakeValid-equivalent) before insertion under the shared import
+    /// validity gate. Zero when the gate is in <c>Accept</c>/<c>Strict</c> mode or no
+    /// input geometry required repair.
+    /// </summary>
+    public int RepairedGeometryCount { get; init; }
+
+    /// <summary>
     /// Import duration
     /// </summary>
     public TimeSpan Duration { get; init; }
@@ -108,7 +116,8 @@ public sealed record ImportResult
         TimeSpan duration = default,
         IReadOnlyList<string>? warnings = null,
         string? physicalTableName = null,
-        string? schema = null) =>
+        string? schema = null,
+        int repairedGeometryCount = 0) =>
         new()
         {
             Success = true,
@@ -118,6 +127,7 @@ public sealed record ImportResult
             Format = format,
             FeatureCount = featureCount,
             DetectedSrid = detectedSrid,
+            RepairedGeometryCount = repairedGeometryCount,
             Duration = duration,
             Warnings = warnings ?? []
         };

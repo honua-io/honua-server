@@ -72,6 +72,50 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         @"(?:EPSG:|AUTHORITY\[""EPSG"",""?)(\d{3,6})(?:""|])?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>
+    /// Extracts the EPSG code from a WKT authority node in either WKT1
+    /// (<c>AUTHORITY["EPSG","25832"]</c>) or WKT2 / PROJ-6 (<c>ID["EPSG",25832]</c>) form.
+    /// WKT2 sidecar files (PROJ-6 <c>.prj</c>, FlatGeobuf) and PROJCS files with authority
+    /// nodes at both the base-geographic and the projected level are handled by taking the
+    /// <em>last</em> match in the string — the outermost CRS node — so a projected CRS is
+    /// not misread as its base geographic CRS (#2743).
+    /// </summary>
+    private static readonly Regex _wktAuthorityNodeRegex = new(
+        @"(?:AUTHORITY|ID)\s*\[\s*""EPSG""\s*,\s*""?(\d{3,6})""?\s*\]",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Extracts the projected CRS name from the opening of a <c>PROJCS[...]</c> (WKT1) or
+    /// <c>PROJCRS[...]</c> (WKT2) node so common ESRI projected names can be matched when the
+    /// file carries no AUTHORITY/ID node (typical of ArcGIS-authored <c>.prj</c> sidecars).
+    /// </summary>
+    private static readonly Regex _projectedNameRegex = new(
+        @"PROJC(?:S|RS)\s*\[\s*""([^""]+)""",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Matches ESRI UTM projected-CRS names (e.g. <c>NAD_1983_UTM_Zone_17N</c>,
+    /// <c>WGS_1984_UTM_Zone_32N</c>, <c>ETRS_1989_UTM_Zone_32N</c>) so the EPSG code can be
+    /// computed from the datum + zone + hemisphere.
+    /// </summary>
+    private static readonly Regex _esriUtmNameRegex = new(
+        @"^(?<datum>WGS_1984|NAD_1983(?:_HARN)?|ETRS_1989|ETRS89)_UTM_Zone_(?<zone>\d{1,2})(?<hemi>[NS])$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Small, deliberately-limited table of common ESRI projected-CRS names to EPSG codes for
+    /// files that carry no authority node. Full PROJ WKT parsing is a non-goal (#2743); UTM
+    /// families are handled by <see cref="_esriUtmNameRegex"/> instead of enumerating them here.
+    /// </summary>
+    private static readonly FrozenDictionary<string, int> _esriProjectedNameCodes =
+        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["WGS_1984_Web_Mercator_Auxiliary_Sphere"] = 3857,
+            ["WGS_1984_Web_Mercator"] = 3857,
+            ["WGS_1984_World_Mercator"] = 3395,
+        }
+        .ToFrozenDictionary();
+
     public CrsDetectionService(IAdoNetDatabaseConnectionProvider connectionProvider, ILogger<CrsDetectionService> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
@@ -79,42 +123,16 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     }
 
     /// <inheritdoc />
-    public async Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default)
+    public Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default)
     {
+        // A .prj sidecar is a single WKT string (WKT1 or WKT2 / PROJ-6). The WKT detection
+        // path handles authority/ID nodes, ESRI projected names, well-known names, and the
+        // spatial_ref_sys fallback, so .prj detection delegates to it rather than duplicating
+        // (and re-running) the same logic.
         if (string.IsNullOrWhiteSpace(prjContent))
-            return null;
+            return Task.FromResult<int?>(null);
 
-        // Clean up the content
-        var cleanedContent = prjContent.Trim();
-
-        // Try EPSG code extraction first (most reliable)
-        var epsgMatch = _epsgCodeRegex.Match(cleanedContent);
-        if (epsgMatch.Success && int.TryParse(epsgMatch.Groups[1].Value, out var epsgCode))
-        {
-            if (await ValidateSridAsync(epsgCode, cancellationToken))
-                return epsgCode;
-        }
-
-        // Check for well-known coordinate system names, but only when the WKT
-        // is not a projected CRS. Many projected CRSs (UTM zones, State Plane, etc.)
-        // contain "WGS 84" or "NAD83" in their datum name, which would cause false matches.
-        var isProjected = cleanedContent.Contains("PROJCS", StringComparison.OrdinalIgnoreCase) ||
-                          cleanedContent.Contains("PROJCRS", StringComparison.OrdinalIgnoreCase);
-
-        if (!isProjected)
-        {
-            foreach (var kvp in _wellKnownEpsgCodes)
-            {
-                if (cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (await ValidateSridAsync(kvp.Value, cancellationToken))
-                        return kvp.Value;
-                }
-            }
-        }
-
-        // Fall back to WKT parsing
-        return await DetectFromWktAsync(cleanedContent, cancellationToken);
+        return DetectFromWktAsync(prjContent.Trim(), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -125,12 +143,24 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
 
         var cleanedContent = wktContent.Trim();
 
-        // Try EPSG authority code extraction
-        var epsgMatch = _epsgCodeRegex.Match(cleanedContent);
-        if (epsgMatch.Success && int.TryParse(epsgMatch.Groups[1].Value, out var epsgCode))
+        // 1. Authority/ID node extraction. Take the LAST AUTHORITY["EPSG",...]/ID["EPSG",...]
+        //    match — the outermost CRS node — so a projected CRS with an authority node on both
+        //    its base geographic CRS and itself resolves to the projected code, and so WKT2
+        //    ID[] nodes (PROJ-6 .prj / FlatGeobuf) are honored.
+        var nodeMatches = _wktAuthorityNodeRegex.Matches(cleanedContent);
+        if (nodeMatches.Count > 0
+            && int.TryParse(nodeMatches[^1].Groups[1].Value, out var nodeEpsg)
+            && await ValidateSridAsync(nodeEpsg, cancellationToken))
         {
-            if (await ValidateSridAsync(epsgCode, cancellationToken))
-                return epsgCode;
+            return nodeEpsg;
+        }
+
+        // 2. Bare "EPSG:NNNN" reference (rare inside WKT but cheap to check).
+        var epsgMatch = _epsgCodeRegex.Match(cleanedContent);
+        if (epsgMatch.Success && int.TryParse(epsgMatch.Groups[1].Value, out var epsgCode)
+            && await ValidateSridAsync(epsgCode, cancellationToken))
+        {
+            return epsgCode;
         }
 
         // Check for well-known coordinate system names, but only when the WKT
@@ -149,9 +179,72 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
                 }
             }
         }
+        else if (TryMatchEsriProjectedName(cleanedContent, out var esriEpsg)
+                 && await ValidateSridAsync(esriEpsg, cancellationToken))
+        {
+            // 3. Common ESRI projected .prj files carry no authority node; match the projected
+            //    CRS name (Web Mercator, UTM families) to an EPSG code.
+            return esriEpsg;
+        }
 
-        // Try to match against PostGIS spatial_ref_sys by WKT comparison
+        // 4. Try to match against PostGIS spatial_ref_sys by WKT comparison
         return await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
+    }
+
+    /// <summary>
+    /// Attempts to map a common ESRI projected-CRS WKT name to its EPSG code without full PROJ
+    /// parsing. Handles a small explicit table (Web Mercator, World Mercator) and the WGS 84 /
+    /// NAD83 / ETRS89 UTM zone families. Returns <see langword="false"/> when the name is not a
+    /// recognized ESRI projected name, in which case detection falls through to the
+    /// spatial_ref_sys WKT match (or the caller must supply an explicit source SRID).
+    /// </summary>
+    private static bool TryMatchEsriProjectedName(string wktContent, out int epsg)
+    {
+        epsg = 0;
+
+        var nameMatch = _projectedNameRegex.Match(wktContent);
+        if (!nameMatch.Success)
+            return false;
+
+        var name = nameMatch.Groups[1].Value.Trim();
+
+        if (_esriProjectedNameCodes.TryGetValue(name, out epsg))
+            return true;
+
+        var utm = _esriUtmNameRegex.Match(name);
+        if (!utm.Success)
+            return false;
+
+        if (!int.TryParse(utm.Groups["zone"].Value, out var zone) || zone is < 1 or > 60)
+            return false;
+
+        var north = string.Equals(utm.Groups["hemi"].Value, "N", StringComparison.OrdinalIgnoreCase);
+        var datum = utm.Groups["datum"].Value;
+
+        if (datum.StartsWith("WGS_1984", StringComparison.OrdinalIgnoreCase))
+        {
+            epsg = (north ? 32600 : 32700) + zone;
+            return true;
+        }
+
+        if (datum.StartsWith("NAD_1983", StringComparison.OrdinalIgnoreCase) && north)
+        {
+            // NAD83 UTM (northern hemisphere): EPSG 26901..26923 for zones 1..23.
+            epsg = 26900 + zone;
+            return true;
+        }
+
+        if ((datum.StartsWith("ETRS_1989", StringComparison.OrdinalIgnoreCase)
+                || datum.StartsWith("ETRS89", StringComparison.OrdinalIgnoreCase))
+            && north)
+        {
+            // ETRS89 UTM: EPSG 25828..25838 for zones 28..38.
+            epsg = 25800 + zone;
+            return true;
+        }
+
+        epsg = 0;
+        return false;
     }
 
     /// <inheritdoc />

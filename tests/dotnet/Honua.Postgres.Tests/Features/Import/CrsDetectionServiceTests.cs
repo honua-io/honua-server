@@ -254,6 +254,112 @@ public class CrsDetectionServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DetectFromWktAsync_WithWkt2IdNode_ReturnsProjectedSrid()
+    {
+        // PROJ-6 / WKT2 .prj (e.g. produced by GDAL 3+, FlatGeobuf) carries ID["EPSG",N]
+        // rather than AUTHORITY[...]. The projected CRS's own ID is the last one in the string;
+        // the inner base-geographic CRS's ID (4258) must not win.
+        var wkt2 = """
+            PROJCRS["ETRS89 / UTM zone 32N",
+                BASEGEOGCRS["ETRS89",
+                    DATUM["European Terrestrial Reference System 1989",
+                        ELLIPSOID["GRS 1980",6378137,298.257222101,LENGTHUNIT["metre",1]]],
+                    ID["EPSG",4258]],
+                CONVERSION["UTM zone 32N",
+                    METHOD["Transverse Mercator",ID["EPSG",9807]],
+                    PARAMETER["Latitude of natural origin",0],
+                    PARAMETER["Longitude of natural origin",9]],
+                CS[Cartesian,2],
+                    AXIS["(E)",east],
+                    AXIS["(N)",north],
+                    LENGTHUNIT["metre",1],
+                ID["EPSG",25832]]
+            """;
+
+        var result = await _service!.DetectFromWktAsync(wkt2);
+
+        result.Should().Be(25832);
+    }
+
+    [Fact]
+    public async Task DetectFromWktAsync_WithDualAuthorityNodes_ReturnsProjectedNotBaseGeographic()
+    {
+        // A WKT1 UTM string with an AUTHORITY node on both the inner GEOGCS (4326) and the outer
+        // PROJCS (32632). Taking the FIRST match wrongly returns 4326; the outer projected code wins.
+        var wkt1 = """
+            PROJCS["WGS 84 / UTM zone 32N",
+                GEOGCS["WGS 84",
+                    DATUM["WGS_1984",
+                        SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],
+                        AUTHORITY["EPSG","6326"]],
+                    PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],
+                    UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],
+                    AUTHORITY["EPSG","4326"]],
+                PROJECTION["Transverse_Mercator"],
+                PARAMETER["latitude_of_origin",0],
+                PARAMETER["central_meridian",9],
+                PARAMETER["scale_factor",0.9996],
+                PARAMETER["false_easting",500000],
+                PARAMETER["false_northing",0],
+                UNIT["metre",1,AUTHORITY["EPSG","9001"]],
+                AUTHORITY["EPSG","32632"]]
+            """;
+
+        var result = await _service!.DetectFromWktAsync(wkt1);
+
+        result.Should().Be(32632);
+    }
+
+    [Fact]
+    public async Task DetectFromPrjAsync_WithEsriUtmName_ReturnsComputedSrid()
+    {
+        // Typical ArcGIS-authored .prj: no AUTHORITY/ID node at all; the projected CRS name
+        // encodes datum + UTM zone + hemisphere (NAD_1983_UTM_Zone_17N => EPSG:26917).
+        var esriPrj = """
+            PROJCS["NAD_1983_UTM_Zone_17N",
+                GEOGCS["GCS_North_American_1983",
+                    DATUM["D_North_American_1983",
+                        SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0],
+                    UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Transverse_Mercator"],
+                PARAMETER["False_Easting",500000.0],
+                PARAMETER["Central_Meridian",-81.0],
+                PARAMETER["Scale_Factor",0.9996],
+                PARAMETER["Latitude_Of_Origin",0.0],
+                UNIT["Meter",1.0]]
+            """;
+
+        var result = await _service!.DetectFromPrjAsync(esriPrj);
+
+        result.Should().Be(26917);
+    }
+
+    [Fact]
+    public async Task DetectFromPrjAsync_WithEsriWebMercatorName_ReturnsSrid()
+    {
+        // ArcGIS Web Mercator .prj name maps to EPSG:3857 via the explicit ESRI-name table.
+        var esriPrj = """
+            PROJCS["WGS_1984_Web_Mercator_Auxiliary_Sphere",
+                GEOGCS["GCS_WGS_1984",
+                    DATUM["D_WGS_1984",
+                        SPHEROID["WGS_1984",6378137.0,298.257223563]],
+                    PRIMEM["Greenwich",0.0],
+                    UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Mercator_Auxiliary_Sphere"],
+                PARAMETER["False_Easting",0.0],
+                PARAMETER["Central_Meridian",0.0],
+                PARAMETER["Standard_Parallel_1",0.0],
+                PARAMETER["Auxiliary_Sphere_Type",0.0],
+                UNIT["Meter",1.0]]
+            """;
+
+        var result = await _service!.DetectFromPrjAsync(esriPrj);
+
+        result.Should().Be(3857);
+    }
+
+    [Fact]
     public async Task DetectFromShapefilePrjAsync_WithNonExistentFile_ReturnsNull()
     {
         // Arrange

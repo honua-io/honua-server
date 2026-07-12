@@ -44,6 +44,58 @@ public sealed class GeoPackagePreviewTests
     }
 
     [Fact]
+    public async Task PreviewFileAsync_GeoPackage_ResolvesLocalSrsIdViaSpatialRefSys()
+    {
+        // A spec-legal GeoPackage may number its srs_id locally (here srs_id=1) while the
+        // gpkg_spatial_ref_sys row maps it to EPSG:27700 via organization_coordsys_id. Reading
+        // srs_id as the EPSG code directly (the old behavior) would mis-georeference every
+        // feature; the resolver must return 27700, not 1 (#2743).
+        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+
+        try
+        {
+            CreateGeoPackage(filePath, srsId: 1, organization: "EPSG", organizationCoordsysId: 27700);
+
+            await using var stream = File.OpenRead(filePath);
+            var service = CreateService();
+
+            var preview = await service.PreviewFileAsync(stream, "sample.gpkg");
+
+            preview.Format.Should().Be(SupportedFileFormat.GeoPackage);
+            preview.DetectedSrid.Should().Be(27700);
+        }
+        finally
+        {
+            await DeleteGeoPackageAsync(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoPackage_NonEpsgOrganizationIsUndetected()
+    {
+        // A non-EPSG authority (or custom WKT-only CRS) must not be guessed as an EPSG code;
+        // the resolver returns null so the import requires an explicit source SRID (#2743).
+        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+
+        try
+        {
+            CreateGeoPackage(filePath, srsId: 4001, organization: "VENDOR", organizationCoordsysId: 4001);
+
+            await using var stream = File.OpenRead(filePath);
+            var service = CreateService();
+
+            var preview = await service.PreviewFileAsync(stream, "sample.gpkg");
+
+            preview.Format.Should().Be(SupportedFileFormat.GeoPackage);
+            preview.DetectedSrid.Should().BeNull();
+        }
+        finally
+        {
+            await DeleteGeoPackageAsync(filePath);
+        }
+    }
+
+    [Fact]
     public async Task PreviewFileAsync_GeoPackage_ReturnsAllAvailableLayers()
     {
         var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
@@ -97,7 +149,12 @@ public sealed class GeoPackagePreviewTests
         }
     }
 
-    private static void CreateGeoPackage(string filePath, bool includeSecondLayer = false)
+    private static void CreateGeoPackage(
+        string filePath,
+        bool includeSecondLayer = false,
+        int srsId = 4326,
+        string organization = "EPSG",
+        int organizationCoordsysId = 4326)
     {
         using var connection = new SqliteConnection($"Data Source={filePath};Pooling=False");
         connection.Open();
@@ -113,10 +170,18 @@ public sealed class GeoPackagePreviewTests
             );
             """);
 
-        ExecuteNonQuery(connection, """
-            INSERT INTO gpkg_spatial_ref_sys (srs_name, srs_id, organization, organization_coordsys_id, definition, description)
-            VALUES ('WGS 84', 4326, 'EPSG', 4326, 'EPSG:4326', 'WGS 84');
-            """);
+        using (var srsInsert = connection.CreateCommand())
+        {
+            srsInsert.CommandText = """
+                INSERT INTO gpkg_spatial_ref_sys (srs_name, srs_id, organization, organization_coordsys_id, definition, description)
+                VALUES ($srs_name, $srs_id, $organization, $organization_coordsys_id, 'undefined', 'test srs');
+                """;
+            srsInsert.Parameters.AddWithValue("$srs_name", $"srs-{srsId}");
+            srsInsert.Parameters.AddWithValue("$srs_id", srsId);
+            srsInsert.Parameters.AddWithValue("$organization", organization);
+            srsInsert.Parameters.AddWithValue("$organization_coordsys_id", organizationCoordsysId);
+            srsInsert.ExecuteNonQuery();
+        }
 
         ExecuteNonQuery(connection, """
             CREATE TABLE gpkg_contents (
@@ -164,9 +229,9 @@ public sealed class GeoPackagePreviewTests
                 """);
         }
 
-        ExecuteNonQuery(connection, """
+        ExecuteNonQuery(connection, $"""
             INSERT INTO gpkg_contents (table_name, data_type, identifier, description, last_change, srs_id)
-            VALUES ('sample_layer', 'features', 'sample_layer', 'Sample layer', CURRENT_TIMESTAMP, 4326);
+            VALUES ('sample_layer', 'features', 'sample_layer', 'Sample layer', CURRENT_TIMESTAMP, {srsId});
             """);
 
         if (includeSecondLayer)
@@ -177,9 +242,9 @@ public sealed class GeoPackagePreviewTests
                 """);
         }
 
-        ExecuteNonQuery(connection, """
+        ExecuteNonQuery(connection, $"""
             INSERT INTO gpkg_geometry_columns (table_name, column_name, geometry_type_name, srs_id, z, m)
-            VALUES ('sample_layer', 'geom', 'POINT', 4326, 0, 0);
+            VALUES ('sample_layer', 'geom', 'POINT', {srsId}, 0, 0);
             """);
 
         if (includeSecondLayer)
