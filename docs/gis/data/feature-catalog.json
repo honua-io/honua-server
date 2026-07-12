@@ -760,7 +760,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDismissJobTests.DismissJob_UnclaimedCasConflict_JobBecomesClaimed_SwitchesToDurableSignal",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDismissJobTests.DismissJob_UnclaimedCasConflict_RetriesAndDismisses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.DismissJob_NonexistentJob_ReturnsNotFoundOrServiceUnavailable",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobKindFilterTests.DismissJob_NonGeoprocessingJob_Returns404"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobKindFilterTests.DismissJob_NonGeoprocessingJob_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.DismissJob_CrossOwnerJob_ReturnsNotFound_AndDoesNotCancel"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented"
@@ -6221,7 +6222,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobList_NegativeLimit_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobList_ReturnsJobListObjectOrServiceUnavailable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobList_WithPositiveLimit_AcceptsLimitParameterAndReturnsValidResponse",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobList_ZeroLimit_Returns400"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobList_ZeroLimit_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobList_MixedOwnership_ReturnsOnlyCallerJobs"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented"
@@ -6239,7 +6241,10 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobStatus_NonexistentJob_ReturnsNotFoundOrServiceUnavailable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobKindFilterTests.JobStatus_GeoprocessingJob_ReturnsOk",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobKindFilterTests.JobStatus_NonGeoprocessingJob_Returns404",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobResultsTests.JobStatus_SucceededArtifactBackedJob_ExposesResultsLink"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobStatus_CrossOwnerJob_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobStatus_OwnerlessJob_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobResultsTests.JobStatus_SucceededArtifactBackedJob_ExposesResultsLink",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobStatusOwnershipTests.JobStatus_NonOwnedJob_ReturnsNotFound"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented"
@@ -6269,6 +6274,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.JobResults_NonexistentJob_ReturnsNotFoundOrServiceUnavailable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesFailedJobResultsTests.JobResults_FailedJob_Returns500WithRegisteredOgcExceptionType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobKindFilterTests.JobResults_NonGeoprocessingJob_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobResults_CrossOwnerFailedJob_ReturnsNotFoundWithoutErrorLeak",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobResults_CrossOwnerSucceededJob_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobResultsTests.JobResults_SucceededArtifactBackedJob_ReturnsNonEmptyResultEvidence"
       ],
       "proof_ledger_surface": "ogc-api-processes",
