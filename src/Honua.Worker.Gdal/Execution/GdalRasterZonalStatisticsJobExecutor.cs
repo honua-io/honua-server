@@ -118,6 +118,16 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 "Invalid zonal statistics inputs: 'zones' contained no features.");
         }
 
+        // Bound the cumulative per-zone work BEFORE the loop runs: each zone drives
+        // its own gdalwarp + gdalinfo subprocess pair, so an unbounded zone count
+        // (or a handful of pathologically dense polygons) is a resource DoS even
+        // under the per-invocation ToolTimeout (#2766).
+        if (!GdalZoneAdmission.TryAdmit(zones, opts, out var zoneError))
+        {
+            Log.InvalidInputs(logger, job.OperationId, zoneError);
+            return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {zoneError}");
+        }
+
         var band = 1;
         if (GdalJobInputReader.TryGetInput(parameters, "band", out var bandRaw))
         {
@@ -163,6 +173,16 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         try
         {
             var inputPath = Path.Combine(workspace, "input.tif");
+
+            // Bound the DECLARED pixel footprint before any gdalwarp/gdalinfo runs
+            // so a compressible GeoTIFF declaring enormous dimensions cannot force a
+            // decompression-bomb allocation (#2766).
+            if (!GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            {
+                Log.InvalidInputs(logger, job.OperationId, dimensionError);
+                return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {dimensionError}");
+            }
+
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
 
             var zonalResults = new List<ZonalRow>();
