@@ -130,6 +130,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     next_generation BIGINT;
+    next_source_revision BIGINT;
     retired_count INTEGER;
 BEGIN
     IF OLD.edge_table IS NOT DISTINCT FROM NEW.edge_table
@@ -143,7 +144,8 @@ BEGIN
         row_version = row_version + 1,
         updated_at = NEW.updated_at
     WHERE dataset_id = NEW.id
-      AND state = 'active';
+      AND state = 'active'
+    RETURNING source_revision + 1 INTO next_source_revision;
     GET DIAGNOSTICS retired_count = ROW_COUNT;
 
     IF retired_count <> 1 THEN
@@ -174,7 +176,7 @@ BEGIN
     VALUES (
         NEW.id,
         next_generation,
-        0,
+        next_source_revision,
         'active',
         1,
         NEW.edge_table,

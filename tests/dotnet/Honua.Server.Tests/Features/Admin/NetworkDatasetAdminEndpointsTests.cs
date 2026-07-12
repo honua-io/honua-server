@@ -248,7 +248,7 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
         await using var generations = connection.CreateCommand();
         generations.CommandText = """
-            SELECT generation, state, edge_table, vertex_table, srid, COUNT(*) OVER ()
+            SELECT generation, source_revision, state, edge_table, vertex_table, srid, COUNT(*) OVER ()
             FROM honua.network_topology_generations
             WHERE dataset_id = @id
             ORDER BY generation
@@ -258,15 +258,17 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
 
         Assert.True(await reader.ReadAsync());
         Assert.Equal(1, reader.GetInt64(0));
-        Assert.Equal("retired", reader.GetString(1));
-        Assert.Equal(2, reader.GetInt64(5));
+        Assert.Equal(0, reader.GetInt64(1));
+        Assert.Equal("retired", reader.GetString(2));
+        Assert.Equal(2, reader.GetInt64(6));
 
         Assert.True(await reader.ReadAsync());
         Assert.Equal(2, reader.GetInt64(0));
-        Assert.Equal("active", reader.GetString(1));
-        Assert.Equal("public.ways_v2", reader.GetString(2));
-        Assert.Equal("public.ways_vertices_v2", reader.GetString(3));
-        Assert.Equal(3857, reader.GetInt32(4));
+        Assert.Equal(1, reader.GetInt64(1));
+        Assert.Equal("active", reader.GetString(2));
+        Assert.Equal("public.ways_v2", reader.GetString(3));
+        Assert.Equal("public.ways_vertices_v2", reader.GetString(4));
+        Assert.Equal(3857, reader.GetInt32(5));
     }
 
     [IntegrationTest]

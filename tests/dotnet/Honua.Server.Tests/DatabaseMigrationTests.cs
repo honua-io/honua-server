@@ -356,7 +356,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         await using (var mixedVersionUpdateGenerations = connection.CreateCommand())
         {
             mixedVersionUpdateGenerations.CommandText = """
-                SELECT generation, state, row_version, edge_table, vertex_table, srid,
+                SELECT generation, source_revision, state, row_version, edge_table, vertex_table, srid,
                        COUNT(*) OVER ()
                 FROM honua.network_topology_generations
                 WHERE dataset_id = 'old-replica'
@@ -365,18 +365,20 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             await using var reader = await mixedVersionUpdateGenerations.ExecuteReaderAsync();
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetInt64(0).Should().Be(7);
-            reader.GetString(1).Should().Be("retired");
-            reader.GetInt64(2).Should().Be(2);
-            reader.GetString(3).Should().Be("routing.old_edges");
-            reader.GetInt64(6).Should().Be(2);
+            reader.GetInt64(1).Should().Be(0);
+            reader.GetString(2).Should().Be("retired");
+            reader.GetInt64(3).Should().Be(2);
+            reader.GetString(4).Should().Be("routing.old_edges");
+            reader.GetInt64(7).Should().Be(2);
 
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetInt64(0).Should().Be(8);
-            reader.GetString(1).Should().Be("active");
-            reader.GetInt64(2).Should().Be(1);
-            reader.GetString(3).Should().Be("routing.old_edges_v2");
-            reader.GetString(4).Should().Be("routing.old_vertices_v2");
-            reader.GetInt32(5).Should().Be(3857);
+            reader.GetInt64(1).Should().Be(1);
+            reader.GetString(2).Should().Be("active");
+            reader.GetInt64(3).Should().Be(1);
+            reader.GetString(4).Should().Be("routing.old_edges_v2");
+            reader.GetString(5).Should().Be("routing.old_vertices_v2");
+            reader.GetInt32(6).Should().Be(3857);
         }
 
         await using var duplicateActive = connection.CreateCommand();

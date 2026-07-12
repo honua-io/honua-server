@@ -2979,6 +2979,7 @@ sql:
       AS $$
       DECLARE
           next_generation BIGINT;
+          next_source_revision BIGINT;
           retired_count INTEGER;
       BEGIN
           IF OLD.edge_table IS NOT DISTINCT FROM NEW.edge_table
@@ -2991,7 +2992,8 @@ sql:
           SET state = 'retired',
               row_version = row_version + 1,
               updated_at = NEW.updated_at
-          WHERE dataset_id = NEW.id AND state = 'active';
+          WHERE dataset_id = NEW.id AND state = 'active'
+          RETURNING source_revision + 1 INTO next_source_revision;
           GET DIAGNOSTICS retired_count = ROW_COUNT;
 
           IF retired_count <> 1 THEN
@@ -3011,7 +3013,7 @@ sql:
               (dataset_id, generation, source_revision, state, row_version,
                edge_table, vertex_table, srid, created_at, updated_at, activated_at)
           VALUES
-              (NEW.id, next_generation, 0, 'active', 1,
+              (NEW.id, next_generation, next_source_revision, 'active', 1,
                NEW.edge_table, NEW.vertex_table, NEW.srid,
                NEW.updated_at, NEW.updated_at, now());
           RETURN NEW;
