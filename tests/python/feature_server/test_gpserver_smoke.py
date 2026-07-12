@@ -66,6 +66,9 @@ class TestGPServerSmoke:
     def test_gpserver_submit_job_rejects_unsupported_env_controls(
         self, http_client: httpx.Client, test_service_id: str
     ):
+        # #2787: env:outSR/env:processSR/env:workspace/env:overwriteOutput are now
+        # honored on submitJob, so an unrecognized control (env:extent) exercises
+        # the rejection path instead.
         response = http_client.post(
             f"/rest/services/{test_service_id}/GPServer/geometry.buffer/submitJob",
             data={
@@ -73,7 +76,7 @@ class TestGPServerSmoke:
                 "wkb": POINT_WKB_BASE64,
                 "srid": "4326",
                 "distance": "10",
-                "env:outSR": "4326",
+                "env:extent": "-180,-90,180,90",
             },
         )
 
@@ -87,7 +90,7 @@ class TestGPServerSmoke:
 
         details = " ".join(data["error"].get("details") or [])
         assert "GP environment controls are not yet supported" in details
-        assert "env:outSR" in details
+        assert "env:extent" in details
 
     @pytest.mark.integration
     @pytest.mark.featureserver
