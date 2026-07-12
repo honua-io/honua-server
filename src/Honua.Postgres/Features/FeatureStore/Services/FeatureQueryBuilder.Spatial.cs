@@ -126,15 +126,19 @@ internal sealed partial class FeatureQueryBuilder
                 break;
 
             case SpatialRelationship.WithinDistance:
-                // Use ST_DWithin with geography type for accurate geodesic distance calculations
+                // Use ST_DWithin with geography type for accurate geodesic distance calculations.
+                // The geography operands wrap the column in ST_Transform(col,4326)::geography, which
+                // is not GiST-index-usable and forces a full scan. Pair it with an && envelope
+                // pre-filter in the STORED CRS (mirroring the Intersects family) so the spatial
+                // index prunes candidates before the exact geodesic check runs. (#2740)
+                var withinDistanceMeters = _geometryProcessor.ConvertDistanceToMeters(filter.Distance ?? 0, filter.DistanceUnit);
+                var storageFilterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
+                var distancePrefilter = BuildDistanceEnvelopePrefilter(
+                    geometryOperand, storageFilterGeometry, withinDistanceMeters, query.SpatialReferenceSrid);
                 var geographyFilter = BuildGeographyFilterExpression(filter, query, ref paramIndex);
                 parameters?.Add(filter.Geometry);
-                clause = $"ST_DWithin({geographyOperand}, {geographyFilter}, ${paramIndex++})";
-                if (parameters != null)
-                {
-                    var distanceInMeters = _geometryProcessor.ConvertDistanceToMeters(filter.Distance ?? 0, filter.DistanceUnit);
-                    parameters.Add(distanceInMeters);
-                }
+                clause = $"{distancePrefilter} AND ST_DWithin({geographyOperand}, {geographyFilter}, ${paramIndex++})";
+                parameters?.Add(withinDistanceMeters);
                 break;
 
             case SpatialRelationship.BeyondDistance:
@@ -223,4 +227,65 @@ internal sealed partial class FeatureQueryBuilder
                $"ST_Y({geometryOperand}) <= ${maxYParam} " +
                $"ELSE ST_Intersects({geometryOperand}, {filterGeometry}) END";
     }
+
+    /// <summary>
+    /// Builds an index-usable <c>&amp;&amp;</c> bounding-box pre-filter for a WithinDistance predicate.
+    /// The envelope is the filter geometry (already in the stored column's CRS) expanded by the
+    /// search distance converted to the storage CRS's units, so the GiST index on the geometry
+    /// column can prune candidates before the exact geodesic <c>ST_DWithin(...::geography)</c> runs.
+    /// The pre-filter is deliberately conservative (over-expanding rather than under-expanding); the
+    /// exact geography predicate still decides membership, so the envelope can never exclude a real
+    /// match. Only WithinDistance uses this — BeyondDistance selects features outside the envelope,
+    /// where a bounding-box window would incorrectly drop the desired far features.
+    /// </summary>
+    private static string BuildDistanceEnvelopePrefilter(
+        string geometryOperand,
+        string storageFilterGeometry,
+        double distanceInMeters,
+        int? spatialReferenceSrid)
+    {
+        var storageSrid = spatialReferenceSrid ?? SpatialReference.WGS84.Wkid;
+
+        // Bias classification toward "geographic" only for the curated list plus the unlisted
+        // EPSG geographic 2D range (4000-4999). Misclassifying projected-metre storage as
+        // geographic would under-expand (degrees << metres) and drop matches, so everything else
+        // is treated as metre-unit projected storage. Full CRS-unit resolution is deferred to #2732.
+        var isGeographicStorage =
+            DistanceConversions.IsGeographicSrid(storageSrid) || IsUnlistedGeographicSridRange(storageSrid);
+
+        if (isGeographicStorage)
+        {
+            // Geographic storage measures the envelope in degrees: ~111320 m per degree of
+            // latitude, and ~111320*cos(lat) m per degree of longitude. Expanding by only
+            // metres/111320 would under-cover east/west at high latitudes and could drop true
+            // matches, so divide by cos(lat) using the filter geometry's own latitude extent,
+            // clamped to 89.9deg to bound the blow-up near the poles. Over-expansion only costs
+            // index selectivity; correctness is preserved by the exact geography ST_DWithin.
+            var degrees = (distanceInMeters / 111320.0).ToString("R", CultureInfo.InvariantCulture);
+            var latExtent =
+                $"LEAST(89.9, GREATEST(abs(ST_YMin({storageFilterGeometry})), abs(ST_YMax({storageFilterGeometry}))))";
+            var expansion = $"({degrees} / cos(radians({latExtent})))";
+
+            // Longitude is periodic: a planar && envelope near the antimeridian cannot see a
+            // geodesic match on the other side (a query at lon 179.9 expanded by 30 km spans
+            // roughly [179.63, 180.17], while a true match at lon -179.9 sits ~359.8 planar
+            // degrees away and would be wrongly pruned). Probe the envelope shifted by +/-360
+            // degrees as well; each && stays index-usable (bitmap OR over the GiST index) and
+            // the exact geography ST_DWithin still decides membership, so the extra probes only
+            // cost selectivity for data normalized to [-180, 180].
+            var envelope = $"ST_Expand({storageFilterGeometry}, {expansion})";
+            return $"({geometryOperand} && {envelope}" +
+                   $" OR {geometryOperand} && ST_Translate({envelope}, 360, 0)" +
+                   $" OR {geometryOperand} && ST_Translate({envelope}, -360, 0))";
+        }
+
+        // Projected storage is assumed to use metre units (the dominant case and consistent
+        // with the geography exact predicate, which always yields metres). Non-metre projected
+        // CRSs are out of scope for this minimal fix (#2732).
+        var metres = distanceInMeters.ToString("R", CultureInfo.InvariantCulture);
+        return $"{geometryOperand} && ST_Expand({storageFilterGeometry}, {metres})";
+    }
+
+    private static bool IsUnlistedGeographicSridRange(int srid)
+        => srid is >= 4000 and <= 4999 && !DistanceConversions.IsGeographicSrid(srid);
 }

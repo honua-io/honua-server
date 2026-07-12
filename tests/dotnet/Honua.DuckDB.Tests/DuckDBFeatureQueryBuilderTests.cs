@@ -247,9 +247,25 @@ public class DuckDBFeatureQueryBuilderTests
         var result = _builder.BuildSelectQuery(TestLayerId, query);
 
         Assert.Contains("ST_Transform(ST_GeomFromWKB($", result.Sql);
-        Assert.Contains("'EPSG:3857', 'EPSG:4326'", result.Sql);
+        Assert.Contains("'EPSG:3857', 'EPSG:4326', always_xy := true", result.Sql);
         Assert.Contains("ST_Intersects(\"geom\", ST_Transform(ST_GeomFromWKB($", result.Sql);
         Assert.Contains(wkb, result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_OutputSrid_ReprojectsWithAlwaysXy()
+    {
+        // Layer is 4326; client requests Web Mercator (3857) output. The output geometry
+        // expression must reproject with always_xy := true so DuckDB keeps X=lon/Y=lat order
+        // and does not transpose axes for the geographic source CRS.
+        var query = new FeatureQuery
+        {
+            OutputSrid = 3857
+        };
+
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+
+        Assert.Contains("ST_Transform(\"geom\", 'EPSG:4326', 'EPSG:3857', always_xy := true)", result.Sql);
     }
 
     [Fact]
@@ -426,8 +442,38 @@ public class DuckDBFeatureQueryBuilderTests
         var result = _builder.BuildSelectQuery(TestLayerId, query);
 
         Assert.Contains("ST_Distance_Spheroid(", result.Sql);
+        // DuckDB spheroid functions expect lat/lon axis order; the stored WKB is lon/lat, so both
+        // operands are flipped before the geodesic distance is computed.
+        Assert.Contains("ST_Distance_Spheroid(ST_FlipCoordinates(\"geom\"), ST_FlipCoordinates(", result.Sql);
         Assert.DoesNotContain("ST_DWithin(", result.Sql);
         Assert.Contains(1000.0, result.WhereParameters.OfType<double>());
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithinDistance_UnlistedGeographicSrid_Throws()
+    {
+        // EPSG:4674 (SIRGAS 2000) is a geographic degree CRS but is not in the geodesic allowlist.
+        // Running planar ST_DWithin(metres) against degrees would match the whole planet, so the
+        // builder must reject the distance filter rather than emit silently-wrong SQL (#2731).
+        var geographicMapping = new DuckDBLayerMapping
+        {
+            LayerId = 1,
+            TableName = "parcels_sirgas",
+            GeometryColumn = "geom",
+            ObjectIdColumn = "id",
+            Srid = 4674,
+            AttributeColumns = ["name"]
+        };
+        var registry = new DuckDBLayerRegistry([geographicMapping]);
+        var builder = new DuckDBFeatureQueryBuilder(registry);
+
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter(wkb, 1000.0, DistanceUnit.Meters)
+        };
+
+        Assert.Throws<NotSupportedException>(() => builder.BuildSelectQuery(1, query));
     }
 
     [Fact]

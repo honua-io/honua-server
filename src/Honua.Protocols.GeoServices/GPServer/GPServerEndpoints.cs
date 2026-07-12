@@ -215,7 +215,12 @@ internal static class GPServerEndpoints
             ExecutionType = "esriExecutionTypeAsynchronous",
             Capabilities = string.Empty,
             ResultMapServerName = string.Empty,
-            Tasks = [.. processCatalog.ListProcesses().Select(process => process.ProcessId)]
+            // ADDITIVE (#gpserver-esri-task-name-aliases): every task is still published
+            // under its existing internal process ID (ESTABLISHED contract), and tasks
+            // with a documented Esri GP tool equivalent are ALSO published under that
+            // Esri-conventional name, so an unmodified ArcGIS client browsing the task
+            // list can find the tool it's looking for either way.
+            Tasks = [.. BuildPublishedTaskNames(processCatalog)]
         };
 
         return Results.Json(
@@ -256,7 +261,7 @@ internal static class GPServerEndpoints
         }
 
         return Results.Json(
-            BuildTaskInfo(definition),
+            BuildTaskInfo(taskName, definition),
             GPServerJsonContext.Default.GPTaskInfoResponse,
             contentType: "application/json");
     }
@@ -1326,10 +1331,100 @@ internal static class GPServerEndpoints
         return ValidateJsonFormat(context);
     }
 
-    private static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
-        => string.IsNullOrWhiteSpace(taskName) ? null : processCatalog.GetProcess(taskName);
+    /// <summary>
+    /// Builds the published task-name list for the service-info response: every
+    /// process's internal ID, plus its Esri-conventional alias when one exists. Both
+    /// forms resolve to the same process via <see cref="ResolveTaskDefinition"/>.
+    /// <para>
+    /// Collision policy (deterministic): a real catalog process ID always wins over an
+    /// alias. When any catalog process ID matches an alias (compared case-insensitively,
+    /// mirroring the alias lookup), the alias is suppressed and only the real process ID
+    /// is published, so the task list never contains the same name with two meanings and
+    /// never publishes duplicates.
+    /// </para>
+    /// </summary>
+    private static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
+    {
+        var processes = processCatalog.ListProcesses();
+        var processIds = new HashSet<string>(processes.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var process in processes)
+        {
+            processIds.Add(process.ProcessId);
+        }
 
-    private static GPTaskInfoResponse BuildTaskInfo(ProcessDefinition definition)
+        foreach (var process in processes)
+        {
+            yield return process.ProcessId;
+
+            var alias = GPServerEsriTaskAliases.GetAlias(process.ProcessId);
+            if (alias != null && !processIds.Contains(alias))
+            {
+                yield return alias;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves a task name to its <see cref="ProcessDefinition"/>. Tries the internal
+    /// process ID first (the existing, ESTABLISHED contract — e.g. <c>geometry.buffer</c>),
+    /// then falls back to the Esri-conventional alias overlay (e.g. <c>Buffer</c>) so
+    /// unmodified ArcGIS clients addressing tasks by their familiar Esri name resolve to
+    /// the same canonical process. See <see cref="GPServerEsriTaskAliases"/>.
+    /// <para>
+    /// Collision policy (deterministic): an exact catalog process ID always wins over an
+    /// alias, and an alias only resolves when no catalog process owns that name. Because
+    /// alias lookups are case-insensitive, the shadow check is case-insensitive too: if
+    /// any catalog process ID matches the requested name ignoring case, the alias overlay
+    /// is bypassed entirely (the request either hits that process exactly or 404s), so a
+    /// catalog process named <c>Buffer</c> deterministically owns every casing of
+    /// "Buffer" and can never be hijacked by — or accidentally routed through — the alias
+    /// table. See <see cref="BuildPublishedTaskNames"/> for the matching publication rule.
+    /// </para>
+    /// </summary>
+    private static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
+    {
+        if (string.IsNullOrWhiteSpace(taskName))
+        {
+            return null;
+        }
+
+        var byProcessId = processCatalog.GetProcess(taskName);
+        if (byProcessId != null)
+        {
+            return byProcessId;
+        }
+
+        if (!GPServerEsriTaskAliases.TryResolveProcessId(taskName, out var processId))
+        {
+            return null;
+        }
+
+        return IsAliasShadowedByCatalogProcess(processCatalog, taskName)
+            ? null
+            : processCatalog.GetProcess(processId);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when a catalog process ID matches the requested
+    /// task name case-insensitively, meaning the name belongs to a real process and the
+    /// Esri alias overlay must not resolve it (see <see cref="ResolveTaskDefinition"/>).
+    /// Only evaluated on the alias fallback path, so the linear scan stays off the
+    /// established internal-process-ID hot path.
+    /// </summary>
+    private static bool IsAliasShadowedByCatalogProcess(IProcessCatalog processCatalog, string taskName)
+    {
+        foreach (var process in processCatalog.ListProcesses())
+        {
+            if (string.Equals(process.ProcessId, taskName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
     {
         var parameters = new List<GPParameterInfo>(definition.Parameters.Count + definition.OutputArtifactKinds.Count);
         foreach (var parameter in definition.Parameters)
@@ -1368,7 +1463,12 @@ internal static class GPServerEndpoints
 
         return new GPTaskInfoResponse
         {
-            Name = definition.ProcessId,
+            // Echo back whichever name the caller addressed the task by (internal
+            // process ID or Esri alias) so a client that fetched the tasks list and is
+            // now round-tripping task-info sees a consistent "name" for the entry it
+            // picked, matching how a real Esri GPServer task-info response's "name"
+            // mirrors the address used.
+            Name = taskName,
             DisplayName = definition.Title,
             Description = definition.Description,
             Category = definition.Category,

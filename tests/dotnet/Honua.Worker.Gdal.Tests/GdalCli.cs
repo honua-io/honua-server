@@ -120,7 +120,9 @@ internal static class GdalCli
 
     private static async Task RunOrThrowAsync(string tool, IReadOnlyList<string> args, string scratch)
     {
-        var runner = new ProcessGdalCommandRunner(NullLogger<ProcessGdalCommandRunner>.Instance);
+        var runner = new ProcessGdalCommandRunner(
+            Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+            NullLogger<ProcessGdalCommandRunner>.Instance);
         var result = await runner.RunAsync(tool, args, scratch, CancellationToken.None).ConfigureAwait(false);
         if (!result.Succeeded)
         {

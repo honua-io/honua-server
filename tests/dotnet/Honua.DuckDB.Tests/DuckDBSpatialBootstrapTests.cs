@@ -55,6 +55,36 @@ public sealed class DuckDBSpatialBootstrapTests
     }
 
     [Fact]
+    public async Task StTransform_WithAlwaysXy_TreatsCoordinatesAsLonLat()
+    {
+        // Round-trip proof for the always_xy fix (#2731): Honua stores X=lon, Y=lat, so a WGS84
+        // point ST_Point(lon, lat) must reproject to Web Mercator without axis transposition.
+        // Helsinki (24.94 E, 60.17 N) -> EPSG:3857 x ≈ 2,776,000 m, y ≈ 8,437,000 m.
+        var bootstrap = new DuckDBSpatialBootstrap(
+            extensionPath: null,
+            logger: NullLogger<DuckDBSpatialBootstrap>.Instance);
+
+        await using var connection = new DuckDBConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await bootstrap.EnsureSpatialExtensionAsync(connection, CancellationToken.None);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            "SELECT ST_X(pt) AS x, ST_Y(pt) AS y FROM (" +
+            "SELECT ST_Transform(ST_Point(24.94, 60.17), 'EPSG:4326', 'EPSG:3857', always_xy := true) AS pt)";
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        var x = reader.GetDouble(0);
+        var y = reader.GetDouble(1);
+
+        // Web Mercator easting is a direct scaling of longitude (never near the latitude value),
+        // which is the discriminating check that axes were not swapped.
+        Assert.InRange(x, 2_770_000.0, 2_782_000.0);
+        Assert.InRange(y, 8_430_000.0, 8_444_000.0);
+    }
+
+    [Fact]
     public async Task EnsureSpatialExtensionAsync_WithExternalSources_LoadsExtensionsAndCreatesViewsPerConnection()
     {
         var options = new DuckDBOptions

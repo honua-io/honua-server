@@ -332,15 +332,106 @@ public sealed class ImageServerRenderingRuleMappingTests
     }
 
     [UnitTest]
-    public void MapRenderingRule_ColormapByInlineColorrampObject_IsNotImplemented()
+    public void MapRenderingRule_ColormapByInlineAlgorithmicColorramp_ResolvesGradient()
     {
         var document = Parse(
-            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"algorithmic","fromColor":[0,0,0],"toColor":[255,255,255]}}}""");
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"algorithmic","fromColor":[0,0,0],"toColor":[255,255,255],"algorithm":"esriHSVAlgorithm"}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Colormap.Should().NotBeNull();
+        mapping.Colormap!.Entries.Should().HaveCountGreaterThan(1);
+        // Anchors span the same 0..255 display range the named-ramp path uses, low to high.
+        mapping.Colormap.Entries[0].Value.Should().Be(0);
+        mapping.Colormap.Entries[^1].Value.Should().Be(255);
+        mapping.Colormap.Entries.Should().BeInAscendingOrder(static e => e.Value);
+        // The gradient reflects the fromColor -> toColor endpoints (black -> white).
+        var first = mapping.Colormap.Entries[0];
+        (first.Red, first.Green, first.Blue).Should().Be(((byte)0, (byte)0, (byte)0));
+        var last = mapping.Colormap.Entries[^1];
+        (last.Red, last.Green, last.Blue).Should().Be(((byte)255, (byte)255, (byte)255));
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByInlineMultipartColorramp_ResolvesConcatenatedGradient()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"multipart","colorRamps":[{"type":"algorithmic","fromColor":[0,0,0],"toColor":[255,0,0],"algorithm":"esriCIELabAlgorithm"},{"type":"algorithmic","fromColor":[255,0,0],"toColor":[255,255,0],"algorithm":"esriCIELabAlgorithm"}]}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Colormap.Should().NotBeNull();
+        mapping.Colormap!.Entries.Should().HaveCountGreaterThan(2);
+        mapping.Colormap.Entries[0].Value.Should().Be(0);
+        mapping.Colormap.Entries[^1].Value.Should().Be(255);
+        mapping.Colormap.Entries.Should().BeInAscendingOrder(static e => e.Value);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByInlineColorrampWrappingStretch_ResolvesBoth()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"algorithmic","fromColor":[0,0,0],"toColor":[255,255,255]},"Raster":{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
+        mapping.Colormap!.Entries.Should().HaveCountGreaterThan(1);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByRandomColorramp_IsNotImplemented()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"random","fromColor":[0,0,0],"toColor":[255,255,255]}}}""");
 
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
         mapping.Supported.Should().BeFalse();
         mapping.IsNotImplemented.Should().BeTrue();
+        mapping.Reason.Should().Contain("random");
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByUnknownAlgorithm_IsNotImplemented()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"algorithmic","fromColor":[0,0,0],"toColor":[255,255,255],"algorithm":"esriMadeUpAlgorithm"}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeTrue();
+        mapping.Reason.Should().Contain("algorithm");
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByInlineColorrampMissingColors_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"algorithmic","fromColor":[0,0,0]}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Reason.Should().Contain("toColor");
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ColormapByUnknownColorrampType_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"totallyMadeUp","fromColor":[0,0,0],"toColor":[255,255,255]}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Reason.Should().Contain("type");
     }
 
     [UnitTest]

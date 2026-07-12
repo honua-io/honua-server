@@ -462,6 +462,25 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        // Read-only colormap resource. Reflects the active renderer: returns the resolved colormap
+        // when a renderingRule Colormap function is supplied, otherwise the not-available response.
+        group.MapGet("/colormap", GetColormap)
+            .WithDisplayName("Get Image Server Colormap")
+            .WithName("GetImageServerColormap")
+            .WithSummary("Get the active renderer's colormap")
+            .WithDescription("Returns the Esri-shaped colormap resource ([value, r, g, b] stops) when the renderingRule resolves a colormap; returns a not-available response otherwise")
+            .Produces<ColormapResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapPost("/colormap", GetColormapPost)
+            .WithDisplayName("Get Image Server Colormap (POST)")
+            .WithName("GetImageServerColormapPost")
+            .WithSummary("Get the active renderer's colormap using POST")
+            .WithDescription("POST equivalent of the ImageServer colormap resource")
+            .Produces<ColormapResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         // Compute class statistics - public ArcGIS route. The internal raster-function
         // analyzer is not exposed here because /computeClass is not an ArcGIS ImageServer
         // contract.
@@ -944,6 +963,22 @@ internal static class ImageServerEndpoints
             .WithSummary("Get raster legend swatches using POST")
             .WithDescription("POST equivalent of the ArcGIS ImageServer legend endpoint")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/colormap", GetColormapByService)
+            .WithDisplayName("Get Image Server Colormap by Service")
+            .WithName("GetImageServerColormapByService")
+            .WithSummary("Get the active renderer's colormap")
+            .Produces<ColormapResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/colormap", GetColormapPostByService)
+            .WithDisplayName("Get Image Server Colormap by Service (POST)")
+            .WithName("GetImageServerColormapByServicePost")
+            .WithSummary("Get the active renderer's colormap using POST")
+            .WithDescription("POST equivalent of the ImageServer colormap resource")
+            .Produces<ColormapResourceResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
 
@@ -2674,6 +2709,82 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetLegendPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Get the read-only colormap resource for the layer. Reflects the renderingRule-supplied
+    /// renderer; returns a not-available response when no colormap can be resolved.
+    /// </summary>
+    private static async Task<IResult> GetColormap(
+        int id,
+        string? f,
+        HttpContext context,
+        ImageServerRasterMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSupportedJsonResponseFormat(f))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var renderingRule = context.Request.Query["renderingRule"].ToString();
+        return await handler.GetColormapAsync(context, id, renderingRule, cancellationToken);
+    }
+
+    private static async Task<IResult> GetColormapByService(
+        string serviceId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetColormap(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    // POST mirror of /colormap. Merges form/body over the query like the other dual-method
+    // ImageServer operations so f and renderingRule can arrive via either transport.
+    private static async Task<IResult> GetColormapPost(
+        int id,
+        HttpContext context,
+        ImageServerRasterMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.GetColormapAsync(context, id, GetString(merged, "renderingRule"), cancellationToken);
+    }
+
+    private static async Task<IResult> GetColormapPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerRasterMetadataHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetColormapPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>

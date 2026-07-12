@@ -34,6 +34,11 @@ public static class WebMercatorMath
 
     /// <summary>
     /// Transforms an extent by sampling its edges and midpoint through the supplied transform.
+    /// A dateline-crossing geographic input (<c>minX &gt; maxX</c>) is preserved as a wrapped
+    /// output extent (<c>MinX &gt; MaxX</c>) by transforming its two longitude edges directly,
+    /// rather than collapsing the sampled X values into a single global min/max (which both
+    /// inflates the bbox and drops the sliver on the far side of the antimeridian). Mirrors
+    /// <c>CoordinateTransformer.TransformSampledExtent</c> (#2739).
     /// </summary>
     public static (double MinX, double MinY, double MaxX, double MaxY) TransformSampledExtent(
         double minX,
@@ -43,6 +48,8 @@ public static class WebMercatorMath
         Func<double, double, (double X, double Y)> transform,
         int sampleSegmentsPerEdge)
     {
+        var wrapped = IsAntimeridianCrossing(minX, maxX);
+
         var transformedMinX = double.PositiveInfinity;
         var transformedMinY = double.PositiveInfinity;
         var transformedMaxX = double.NegativeInfinity;
@@ -51,10 +58,23 @@ public static class WebMercatorMath
         foreach (var (x, y) in EnumerateSampledExtentPoints(minX, minY, maxX, maxY, sampleSegmentsPerEdge))
         {
             var (tx, ty) = transform(x, y);
-            transformedMinX = Math.Min(transformedMinX, tx);
             transformedMinY = Math.Min(transformedMinY, ty);
-            transformedMaxX = Math.Max(transformedMaxX, tx);
             transformedMaxY = Math.Max(transformedMaxY, ty);
+            if (!wrapped)
+            {
+                transformedMinX = Math.Min(transformedMinX, tx);
+                transformedMaxX = Math.Max(transformedMaxX, tx);
+            }
+        }
+
+        if (wrapped)
+        {
+            // Keep the crossing: the western edge (minX) transforms to the output's MinX and the
+            // eastern edge (maxX) to its MaxX, so MinX > MaxX signals the wrapped output extent.
+            var (edgeMinX, _) = transform(minX, minY);
+            var (edgeMaxX, _) = transform(maxX, minY);
+            transformedMinX = edgeMinX;
+            transformedMaxX = edgeMaxX;
         }
 
         return (transformedMinX, transformedMinY, transformedMaxX, transformedMaxY);

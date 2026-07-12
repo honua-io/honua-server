@@ -185,6 +185,40 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Protocol(TestProtocols.Wfs11)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs11, "GetFeature")]
+    public async Task Wfs11_GetFeature_KvpBboxWithoutCrs_ParsesLongitudeLatitude()
+    {
+        // #2737: WFS 1.1.0's default (4-element, no explicit CRS) KVP BBOX is longitude,latitude,
+        // unlike WFS 2.0 which uses the layer CRS's axis order (lat,lon for EPSG:4326). The
+        // "Fifth Feature" sits near lon -122.3, lat 37.8, so a lon,lat box must match it.
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&MAXFEATURES=5&BBOX=-122.5,37.7,-122.3,37.8");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("Fifth Feature");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs10)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs10, "GetFeature")]
+    public async Task Wfs10_GetFeature_KvpBbox_ParsesLongitudeLatitude()
+    {
+        // #2737: WFS 1.0.0 KVP BBOX is always longitude,latitude.
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&MAXFEATURES=5&BBOX=-122.5,37.7,-122.3,37.8");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("Fifth Feature");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs11)]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     public async Task Wfs11_GetCapabilities_InvalidVersion_ReturnsOws10ExceptionReport()

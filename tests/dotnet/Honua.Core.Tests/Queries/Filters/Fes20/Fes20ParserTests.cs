@@ -95,6 +95,95 @@ public sealed class Fes20ParserTests
     }
 
     [UnitTest]
+    public void ParseFilter_EnvelopeWithoutSrsName_DefaultsToProvidedLayerSrid()
+    {
+        // #2737: geometry without an srsName must default to the queried feature type's CRS
+        // (passed by the WFS handler), not an unconditional EPSG:4326 assumption.
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:BBOX>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <fes:Envelope>
+                  <fes:lowerCorner>400000 4500000</fes:lowerCorner>
+                  <fes:upperCorner>500000 4600000</fes:upperCorner>
+                </fes:Envelope>
+              </fes:BBOX>
+            </fes:Filter>
+            """;
+
+        var result = Fes20Parser.ParseFilter(filterXml, defaultSrid: 25831);
+
+        var spatial = result.Should().BeOfType<SpatialPredicate>().Subject;
+        spatial.Right.Should().BeOfType<GeometryLiteral>().Which.Srid.Should().Be(25831);
+    }
+
+    [UnitTest]
+    public void ParseFilter_EnvelopeWithoutSrsName_NoDefault_UsesWgs84()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:BBOX>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <fes:Envelope>
+                  <fes:lowerCorner>-10 -10</fes:lowerCorner>
+                  <fes:upperCorner>10 10</fes:upperCorner>
+                </fes:Envelope>
+              </fes:BBOX>
+            </fes:Filter>
+            """;
+
+        var result = Fes20Parser.ParseFilter(filterXml);
+
+        result.Should().BeOfType<SpatialPredicate>()
+            .Which.Right.Should().BeOfType<GeometryLiteral>().Which.Srid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    public void ParseFilter_EnvelopeWithVersionedEpsgUrn_ParsesTrailingCode()
+    {
+        // #2737: the versioned OGC URN form (urn:ogc:def:crs:EPSG:<version>:<code>) must resolve
+        // to the trailing EPSG code rather than silently falling back to 4326.
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:BBOX>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <fes:Envelope srsName="urn:ogc:def:crs:EPSG:6.9:25831">
+                  <fes:lowerCorner>400000 4500000</fes:lowerCorner>
+                  <fes:upperCorner>500000 4600000</fes:upperCorner>
+                </fes:Envelope>
+              </fes:BBOX>
+            </fes:Filter>
+            """;
+
+        var result = Fes20Parser.ParseFilter(filterXml);
+
+        result.Should().BeOfType<SpatialPredicate>()
+            .Which.Right.Should().BeOfType<GeometryLiteral>().Which.Srid.Should().Be(25831);
+    }
+
+    [UnitTest]
+    public void ParseFilter_EnvelopeWithUnparseableSrsName_ThrowsParseException()
+    {
+        // #2737: a present but unrecognized srsName is an error, not a silent 4326 fallback.
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:BBOX>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <fes:Envelope srsName="not-a-crs">
+                  <fes:lowerCorner>-10 -10</fes:lowerCorner>
+                  <fes:upperCorner>10 10</fes:upperCorner>
+                </fes:Envelope>
+              </fes:BBOX>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage("*srsName*");
+    }
+
+    [UnitTest]
     public void ParseFilter_DWithin_ReturnsSpatialDistancePredicate()
     {
         const string filterXml = """

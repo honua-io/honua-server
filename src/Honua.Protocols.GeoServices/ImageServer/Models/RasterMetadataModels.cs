@@ -57,6 +57,20 @@ public sealed class HistogramsResourceResponse
 }
 
 /// <summary>
+/// Esri-conformant response for the read-only Image Server <c>colormap</c> resource. Each entry
+/// is a <c>[value, red, green, blue]</c> stop; the array is emitted when the active renderer
+/// resolves a colormap.
+/// </summary>
+public sealed class ColormapResourceResponse
+{
+    /// <summary>
+    /// Colour stops mapping a (post-stretch) pixel value to an RGB triple, ordered by value.
+    /// </summary>
+    [JsonPropertyName("colormap")]
+    public int[][] Colormap { get; init; } = [];
+}
+
+/// <summary>
 /// Esri-conformant response for the Image Server <c>rasterFunctionInfos</c> child resource.
 /// Lists the raster functions the service can apply through <c>renderingRule</c>.
 /// </summary>

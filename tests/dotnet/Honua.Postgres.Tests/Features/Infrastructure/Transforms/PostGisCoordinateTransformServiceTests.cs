@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Reflection;
 using FluentAssertions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Transforms;
 using Honua.TestKit;
@@ -233,8 +233,12 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task TransformExtentAsync_AntimeridianCrossing_Wgs84ToWebMercator_ReturnsOrderedBounds()
+    public async Task TransformExtentAsync_AntimeridianCrossing_Wgs84ToWebMercator_ReturnsWrappedBounds()
     {
+        // #2739: a dateline-crossing input (minX > maxX) must stay wrapped in the output, taking
+        // its X bounds from the transformed western/eastern edges rather than collapsing the
+        // sampled longitudes into a single inflated [-max,+max] span. The western edge (170) is
+        // the output MinX and the eastern edge (-170) is the output MaxX, so MinX > MaxX.
         const double minX = 170.0;
         const double minY = -10.0;
         const double maxX = -170.0;
@@ -252,9 +256,9 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         var projectedSouth = ProjectLonLatToWebMercator(0.0, minY).Y;
         var projectedNorth = ProjectLonLatToWebMercator(0.0, maxY).Y;
 
-        result!.Value.MinX.Should().BeLessThan(projectedWestEdge);
-        result.Value.MaxX.Should().BeGreaterThan(projectedEastEdge);
-        result.Value.MinX.Should().BeLessThan(result.Value.MaxX);
+        result!.Value.MinX.Should().BeApproximately(projectedEastEdge, 1.0);
+        result.Value.MaxX.Should().BeApproximately(projectedWestEdge, 1.0);
+        result.Value.MinX.Should().BeGreaterThan(result.Value.MaxX);
         result.Value.MinY.Should().BeApproximately(projectedSouth, 1.0);
         result.Value.MaxY.Should().BeApproximately(projectedNorth, 1.0);
     }
@@ -276,15 +280,10 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
     [UnitTest]
     public void EnumerateSampledExtentPoints_AntimeridianCrossing_StaysNearDateline()
     {
-        var method = typeof(PostGisCoordinateTransformService).GetMethod(
-            "EnumerateSampledExtentPoints",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        method.Should().NotBeNull();
-
-        var points = ((IEnumerable<(double X, double Y)>)method!.Invoke(
-            null,
-            [170.0, -10.0, -170.0, 10.0])!).ToArray();
+        // The extent sampling used by the in-memory transform path lives in the shared
+        // WebMercatorMath helper; sampling a dateline-crossing extent interpolates longitude
+        // across the antimeridian (170 -> 180 -> -170) rather than back through 0.
+        var points = WebMercatorMath.EnumerateSampledExtentPoints(170.0, -10.0, -170.0, 10.0, 4).ToArray();
 
         points.Should().NotBeEmpty();
         points.Select(point => point.X).Should().NotContain(value => Math.Abs(value) < 1e-9);
