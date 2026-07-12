@@ -108,7 +108,7 @@ internal static class CoordinateTransformer
             extent.MaxY >= -WebMercatorWorldHalfWidth && extent.MaxY <= WebMercatorWorldHalfWidth;
     }
 
-    private static bool TryGetWrappedWorldWidth(SkiaMapRenderer.RenderExtent extent, out double worldWidth)
+    internal static bool TryGetWrappedWorldWidth(SkiaMapRenderer.RenderExtent extent, out double worldWidth)
     {
         if (IsWrappedGeographicExtent(extent))
         {

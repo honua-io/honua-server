@@ -29,6 +29,9 @@ internal sealed class FeatureServerQueryServices(
         CancellationToken cancellationToken = default)
         => _spatialReferenceResolver.ResolveSridAsync(srValue, geometrySpatialReference, cancellationToken);
 
+    public Task<int?> ParseSridAsync(string? srValue, CancellationToken cancellationToken = default)
+        => _spatialReferenceResolver.ParseSridAsync(srValue, cancellationToken);
+
     public ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
         MetadataV2Resource resource,
@@ -41,7 +44,8 @@ internal sealed class FeatureServerQueryServices(
         double? maxAllowableOffset,
         string[]? outFields,
         bool suppressObjectId = false,
-        bool returnCentroid = false)
+        bool returnCentroid = false,
+        int? requestedOutputSrid = null)
         => _queryFormatter.FormatQueryResultAsync(
             result,
             resource,
@@ -54,5 +58,6 @@ internal sealed class FeatureServerQueryServices(
             maxAllowableOffset,
             outFields,
             suppressObjectId,
-            returnCentroid);
+            returnCentroid,
+            requestedOutputSrid);
 }

@@ -114,6 +114,67 @@ internal sealed class GeoprocessingIdempotencyConflictException : Exception
 }
 
 /// <summary>
+/// Raised when a geoprocessing output write would collide with an existing,
+/// available artifact in the target workspace and the caller did not request
+/// <c>env:overwriteOutput=true</c>. Mirrors arcpy's default
+/// <c>arcpy.env.overwriteOutput = False</c> behavior: re-running a tool against
+/// the same workspace output fails clearly instead of silently clobbering it.
+/// </summary>
+internal sealed class ArtifactAlreadyExistsException : Exception
+{
+    /// <summary>
+    /// Identifier of the workspace containing the colliding output.
+    /// </summary>
+    public string WorkspaceId { get; }
+
+    /// <summary>
+    /// Stable output label that already exists in the workspace.
+    /// </summary>
+    public string Label { get; }
+
+    public ArtifactAlreadyExistsException(string workspaceId, string label)
+        : base(
+            $"Output '{label}' already exists in workspace '{workspaceId}'. " +
+            "Set env:overwriteOutput=true to replace it.")
+    {
+        WorkspaceId = workspaceId;
+        Label = label;
+    }
+}
+
+/// <summary>
+/// Raised when an <c>env:overwriteOutput=true</c> replacement cannot complete
+/// because the artifact store failed to delete the colliding artifact
+/// (<c>DeleteAsync</c> returned <c>false</c>). Rather than proceeding to add a
+/// second <c>Available</c> artifact under the same label — leaving the workspace
+/// with a duplicate or half-replaced output — the replacement is aborted and
+/// this is surfaced through the same curated failure channel as
+/// <see cref="ArtifactAlreadyExistsException"/>.
+/// </summary>
+internal sealed class ArtifactReplacementFailedException : Exception
+{
+    /// <summary>
+    /// Identifier of the workspace whose replacement could not complete.
+    /// </summary>
+    public string WorkspaceId { get; }
+
+    /// <summary>
+    /// Stable output label whose existing artifact could not be deleted.
+    /// </summary>
+    public string Label { get; }
+
+    public ArtifactReplacementFailedException(string workspaceId, string label)
+        : base(
+            $"Output '{label}' in workspace '{workspaceId}' could not be replaced: " +
+            "the existing artifact could not be deleted, so the replacement was aborted " +
+            "to avoid leaving a duplicate output. Retry, or remove the existing output before re-running.")
+    {
+        WorkspaceId = workspaceId;
+        Label = label;
+    }
+}
+
+/// <summary>
 /// Raised when a runtime admission control blocks job submission.
 /// Both Throttled and Denied outcomes surface through this exception; the outcome
 /// and dimension are preserved for protocol mapping, telemetry, and eval harness signals.

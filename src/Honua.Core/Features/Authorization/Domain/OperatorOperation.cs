@@ -17,6 +17,17 @@ public enum OperatorOperation
     /// <summary>Execute a process, run a job, or perform a stateful action.</summary>
     Execute,
 
+    /// <summary>
+    /// Submit an operator-supplied custom-code geoprocessing job (arbitrary code
+    /// fetched from an allowlisted repository and run in the custom-code Batch
+    /// container). This is a strictly higher-privilege operation than
+    /// <see cref="Execute"/>: a plain <c>Process.Execute</c> grant authorizes the
+    /// built-in tool catalog only, whereas custom-code submission requires this
+    /// dedicated grant (or the admin role) so a baseline execute caller cannot run
+    /// operator-supplied code. See honua-server#2752.
+    /// </summary>
+    ExecuteCustomCode,
+
     /// <summary>Promote a workspace artifact to a wider visibility scope.</summary>
     Promote,
 

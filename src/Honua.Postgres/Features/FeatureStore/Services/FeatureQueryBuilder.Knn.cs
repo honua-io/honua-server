@@ -49,9 +49,13 @@ internal sealed partial class FeatureQueryBuilder
             return false;
         }
 
-        // Use the curated canonical geographic-SRID list (single source of truth) rather
-        // than a loose 4000-4999 range, which swept in projected/geocentric CRS in that band
-        // (e.g. EPSG:4978 geocentric) and missed geographic CRS outside it.
-        return DistanceConversions.IsGeographicSrid(query.SpatialReferenceSrid.Value);
+        // The curated canonical geographic-SRID list is the primary source of truth. Until the
+        // classifier unification (#2732) replaces this heuristic, add a safety net: an SRID in the
+        // EPSG geographic 2D range (4000-4999) that is not on the allowlist is still a lat/lon
+        // degree CRS (e.g. 4674 SIRGAS 2000, 4490 CGCS2000). Planar degree KNN on those would
+        // produce meaningless distances, so route them through the same geodesic path as 4326.
+        // The narrow 4xxx geocentric/3D codes (4978/4979) are out of scope for 2D KNN.
+        var srid = query.SpatialReferenceSrid.Value;
+        return DistanceConversions.IsGeographicSrid(srid) || IsUnlistedGeographicSridRange(srid);
     }
 }

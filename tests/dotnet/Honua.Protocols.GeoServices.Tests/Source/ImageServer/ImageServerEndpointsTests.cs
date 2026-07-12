@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Services;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -57,6 +58,12 @@ public class ImageServerEndpointsTests
             .Returns(rasterInfo);
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([rasterInfo]);
+        store.QueryCatalogAsync(Arg.Any<int>(), Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => RasterCatalogQueryEvaluator.EvaluateAsync(
+                [rasterInfo],
+                callInfo.ArgAt<RasterCatalogQuery>(1),
+                transformService: null,
+                callInfo.ArgAt<CancellationToken>(2)));
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>());
         store.GetStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
@@ -113,6 +120,36 @@ public class ImageServerEndpointsTests
                     Max = 255,
                     Counts = [10, 20, 30, 40],
                 },
+            });
+
+        // computeClassStatistics reads aligned per-pixel band vectors inside each class AOI. The
+        // default substitute returns a deterministic 4-pixel sample per requested band so the
+        // signature (count, mean, covariance) is exercised end-to-end.
+        store.ReadClippedBandVectorsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var requestedBands = callInfo.ArgAt<int[]?>(5) ?? [1];
+                var pixels = new List<double[]>();
+                for (var value = 1; value <= 4; value++)
+                {
+                    var vector = new double[requestedBands.Length];
+                    for (var b = 0; b < requestedBands.Length; b++)
+                    {
+                        vector[b] = value * (b + 1);
+                    }
+
+                    pixels.Add(vector);
+                }
+
+                return new RasterBandVectorSet { Bands = requestedBands, Pixels = pixels };
             });
 
         return store;
@@ -185,6 +222,12 @@ public class ImageServerEndpointsTests
         var rasters = new[] { Build(200, "b"), Build(100, "a"), Build(300, "c") };
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(rasters);
         store.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(rasters);
+        store.QueryCatalogAsync(Arg.Any<int>(), Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => RasterCatalogQueryEvaluator.EvaluateAsync(
+                rasters,
+                callInfo.ArgAt<RasterCatalogQuery>(1),
+                transformService: null,
+                callInfo.ArgAt<CancellationToken>(2)));
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>());
         return store;
@@ -1236,11 +1279,178 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.Area.Should().NotBeNull();
-            measure.Area!.Value.Should().BeApproximately(50d, 1e-9);
+            // 10x5 EPSG:3857 envelope near the equator: ground area/perimeter ≈ the map-unit
+            // values (Web Mercator scale ≈ 1 at the equator), now measured geodesically (#2734).
+            measure.Area!.Value.Should().BeApproximately(50d, 0.2d);
             measure.Area.Unit.Should().Be("esriSquareMeters");
             measure.Perimeter.Should().NotBeNull();
-            measure.Perimeter!.Value.Should().BeApproximately(30d, 1e-9);
+            measure.Perimeter!.Value.Should().BeApproximately(30d, 0.1d);
             measure.Perimeter.Unit.Should().Be("esriMeters");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_DistanceAndAngle_GeographicDegrees_ReturnsGroundMeters()
+    {
+        // EPSG:4269 (NAD83) 1° of longitude at 40°N. The pre-fix planar path returned the raw
+        // degree delta (~1.0) as "meters"; the ground distance is ~85 km (#2734).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":40,"spatialReference":{"wkid":4269}}""";
+            const string toGeometry = """{"x":1,"y":40,"spatialReference":{"wkid":4269}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Distance.Should().NotBeNull();
+            measure.Distance!.Value.Should().BeInRange(84_500d, 85_500d);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_AreaAndPerimeter_AntimeridianPolygon_ReturnsFiniteArea()
+    {
+        // A ~2°x1° polygon straddling the antimeridian (179°E .. -179°E) in WGS 84. Without
+        // longitude unwrapping this projects to a ~358°-wide polygon (area ~1e14 m²); unwrapping
+        // keeps it a small finite quadrangle of a few 1e10 m² (#2734).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationAreaAndPerimeter&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Area.Should().NotBeNull();
+            measure.Area!.Value.Should().BeInRange(1e10, 1e12);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_DistanceAndAngle_WebMercatorAtHighLatitude_ReturnsGroundDistance()
+    {
+        // #2734: a 3857 (Web Mercator) segment must be measured as TRUE GROUND distance, not the
+        // planar map-unit length. The two points are lon 0° and lon 1° at lat 60°N, expressed in
+        // Web-Mercator meters (y = 8399737.89 is the Mercator ordinate of 60°N; x = 111319.49 is
+        // the Mercator abscissa of lon 1°). The great-circle ground distance between them is
+        // 55597.01 m on the mean-radius sphere (R = 6371008.8 m). The buggy planar
+        // sqrt(dx²+dy²) would report 111319.49 m — ~2x overstated, exactly 1/cos(60°).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0.0,"y":8399737.889818361,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":111319.49079327357,"y":8399737.889818361,"spatialReference":{"wkid":3857}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Distance.Should().NotBeNull();
+            measure.Distance!.Value.Should().BeApproximately(55597.01d, 1d);
+            measure.Distance.Unit.Should().Be("esriMeters");
+            // Guard against a regression back to the planar (2x overstated) value.
+            measure.Distance.Value.Should().BeLessThan(60000d);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_DistanceAndAngle_GeographicAzimuth_UsesGreatCircleBearing()
+    {
+        // #2734: azimuth for geographic inputs must include cos(lat) longitude scaling. From
+        // (lon 0, lat 60°N) to (lon 1, lat 61°N) the great-circle initial bearing is 25.78°
+        // (standard atan2 initial-bearing formula; radius-independent), consistent with the
+        // geodesic distance in the same response. The buggy planar atan2(dLon, dLat) reported
+        // 45° regardless of latitude.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0.0,"y":60.0,"spatialReference":{"wkid":4326}}""";
+            const string toGeometry = """{"x":1.0,"y":61.0,"spatialReference":{"wkid":4326}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.AzimuthAngle.Should().NotBeNull();
+            measure.AzimuthAngle!.Value.Should().BeApproximately(25.7824d, 1e-3);
+            measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
+            // Guard against a regression to the cos(lat)-free planar bearing (45°).
+            measure.AzimuthAngle.Value.Should().BeLessThan(40d);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_Centroid_AntimeridianRing_LandsOnCorrectSide()
+    {
+        // #2734: the area-weighted centroid of the dateline-straddling [179,181]x[0,1] ring is at
+        // lon ±180°, lat 0.5°. The buggy vertex mean of (179, -179, -179, 179) collapses to lon 0°
+        // — the opposite side of the globe.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationCentroid&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Point.Should().NotBeNull();
+            // Centroid longitude is ±180 (the antimeridian), never near 0.
+            Math.Abs(measure.Point!.Value.X).Should().BeApproximately(180d, 1e-6);
+            measure.Point.Value.Y.Should().BeApproximately(0.5d, 1e-6);
         }
         finally
         {
@@ -2426,7 +2636,7 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/computeClassStatistics")]
     [Operation(Operations.Metadata)]
-    public async Task ComputeClassStatistics_Get_WithClassDescriptions_ReturnsNotImplemented()
+    public async Task ComputeClassStatistics_Get_WithClassDescriptions_ReturnsClassSignature()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -2435,7 +2645,18 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json&classDescriptions={Uri.EscapeDataString(classDescriptions)}");
 
-            await response.AssertGeoServicesErrorAsync(501, 500);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var classStatistics = document.RootElement.GetProperty("classStatistics");
+            classStatistics.GetArrayLength().Should().Be(1);
+            var entry = classStatistics[0];
+            entry.GetProperty("classId").GetInt32().Should().Be(1);
+            entry.GetProperty("name").GetString().Should().Be("water");
+            // Deterministic substitute pixels [1,2,3,4] on one band => count 4, mean 2.5.
+            entry.GetProperty("count").GetInt64().Should().Be(4);
+            entry.GetProperty("mean")[0].GetDouble().Should().BeApproximately(2.5, 1e-9);
+            // Sample covariance of [1,2,3,4] = 5/3.
+            entry.GetProperty("covarianceMatrix")[0][0].GetDouble().Should().BeApproximately(5.0 / 3.0, 1e-9);
         }
         finally
         {
@@ -2446,7 +2667,7 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/computeClassStatistics")]
     [Operation(Operations.Metadata)]
-    public async Task ComputeClassStatistics_Post_FormBody_ReturnsNotImplemented()
+    public async Task ComputeClassStatistics_Post_FormBody_ReturnsClassSignature()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -2454,13 +2675,42 @@ public class ImageServerEndpointsTests
             var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}"""),
+                new KeyValuePair<string, string>("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}},{"id":2,"name":"land","geometry":{"rings":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}}]}"""),
             });
 
             var response = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics",
                 content);
 
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var classStatistics = document.RootElement.GetProperty("classStatistics");
+            classStatistics.GetArrayLength().Should().Be(2);
+            classStatistics[0].GetProperty("classId").GetInt32().Should().Be(1);
+            classStatistics[1].GetProperty("classId").GetInt32().Should().Be(2);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeClassStatistics")]
+    [Operation(Operations.Metadata)]
+    public async Task ComputeClassStatistics_WithRenderingRule_ReturnsNotImplemented()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string classDescriptions = """{"classes":[{"id":1,"geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""";
+            const string renderingRule = """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json" +
+                $"&classDescriptions={Uri.EscapeDataString(classDescriptions)}" +
+                $"&renderingRule={Uri.EscapeDataString(renderingRule)}");
+
+            // Class signatures are computed on source pixels; a renderingRule is explicitly rejected.
             await response.AssertGeoServicesErrorAsync(501, 500);
         }
         finally
@@ -2714,10 +2964,13 @@ public class ImageServerEndpointsTests
         measure!.Name.Should().Be("test-raster");
         measure.SensorName.Should().Be("Unknown");
         measure.Distance.Should().NotBeNull();
-        measure.Distance!.Value.Should().BeApproximately(5d, 1e-9);
+        // (0,0)->(3,4) in EPSG:3857 near the equator: the ground distance is ~5 m (Web Mercator
+        // scale ≈ 1 at the equator), computed geodesically on the mean-radius sphere (#2734).
+        measure.Distance!.Value.Should().BeApproximately(5d, 0.05d);
         measure.Distance.Unit.Should().Be("esriMeters");
         measure.AzimuthAngle.Should().NotBeNull();
-        measure.AzimuthAngle!.Value.Should().BeApproximately(36.86989764584402d, 1e-9);
+        // 3-east / 4-north near the equator still gives atan(3/4) ≈ 36.87° true bearing.
+        measure.AzimuthAngle!.Value.Should().BeApproximately(36.86989764584402d, 1e-4);
         measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
     }
 

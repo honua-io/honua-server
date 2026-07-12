@@ -618,6 +618,13 @@ internal sealed partial class FeatureServerQueryHandler(
             }
 
             var query = preparedQuery.Value;
+
+            // Recover a client-requested Web Mercator alias outSR (e.g. 102100 -> 3857) so the JSON
+            // response spatialReference echoes {wkid:102100, latestWkid:3857} (#2736). When an alias
+            // echo applies the raw point fast path is skipped so the response flows through the
+            // materialized formatter that carries the echo.
+            var requestedOutSrAlias = await ResolveRequestedWebMercatorAliasAsync(validatedParams, outputSrid, cancellationToken).ConfigureAwait(false);
+
             if (canCache && ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(query, validatedParams.Where))
             {
                 canCache = false;
@@ -1039,6 +1046,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 // formatter where the pretty flag is honored (#1824).
                 if (quantizationTransform is null &&
                     !prettyJson &&
+                    requestedOutSrAlias is null &&
                     CanUseRawGeoServicesPointFastPath(queryLayer.Resource, validatedParams, query, outputSrid, format) &&
                     await _queryExecutor.SupportsRawGeoServicesPointOutputAsync(
                         queryLayer.Service,
@@ -1107,7 +1115,8 @@ internal sealed partial class FeatureServerQueryHandler(
                     validatedParams.MaxAllowableOffset,
                     outFields,
                     suppressObjectId: shouldApplyDistinct,
-                    returnCentroid: validatedParams.ReturnCentroid);
+                    returnCentroid: validatedParams.ReturnCentroid,
+                    requestedOutputSrid: requestedOutSrAlias);
 
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
                 HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
@@ -1715,6 +1724,31 @@ internal sealed partial class FeatureServerQueryHandler(
             : Equals(left.Value, right.Value);
     }
 
+    /// <summary>
+    /// Recovers a client-requested Web Mercator alias outSR (e.g. 102100) that the resolver
+    /// normalized to the canonical <paramref name="outputSrid"/> (e.g. 3857), so the response
+    /// spatialReference can echo <c>{wkid:102100, latestWkid:3857}</c> per Esri convention.
+    /// Returns null when outSR was absent, already canonical, or not a Web Mercator alias of the
+    /// resolved SRID (#2736).
+    /// </summary>
+    private async Task<int?> ResolveRequestedWebMercatorAliasAsync(
+        QueryParameters validatedParams,
+        int? outputSrid,
+        CancellationToken cancellationToken)
+    {
+        if (!validatedParams.OutSrSpecified || !outputSrid.HasValue)
+        {
+            return null;
+        }
+
+        var rawOutSrid = await _queryServices.ParseSridAsync(validatedParams.OutSr, cancellationToken).ConfigureAwait(false);
+        return rawOutSrid.HasValue
+            && rawOutSrid.Value != outputSrid.Value
+            && SpatialReferenceExtensions.NormalizeWebMercatorSrid(rawOutSrid.Value) == outputSrid.Value
+            ? rawOutSrid.Value
+            : null;
+    }
+
     private async Task<QueryResponse> ExecuteJsonQueryResponseAsync(
         string serviceId,
         int layerId,
@@ -1908,6 +1942,8 @@ internal sealed partial class FeatureServerQueryHandler(
             queryResult = ApplyPaginationWindow(queryResult, query.Offset, query.Limit, distinctScanTruncated);
         }
 
+        var requestedOutputSrid = await ResolveRequestedWebMercatorAliasAsync(validatedParams, outputSrid, cancellationToken).ConfigureAwait(false);
+
         (object? formattedResponse, _) = await _queryServices.FormatQueryResultAsync(
             queryResult,
             queryLayer.Resource,
@@ -1920,7 +1956,8 @@ internal sealed partial class FeatureServerQueryHandler(
             validatedParams.MaxAllowableOffset,
             outFields,
             suppressObjectId: shouldApplyDistinct,
-            returnCentroid: validatedParams.ReturnCentroid).ConfigureAwait(false);
+            returnCentroid: validatedParams.ReturnCentroid,
+            requestedOutputSrid: requestedOutputSrid).ConfigureAwait(false);
 
         var response = (QueryResponse)formattedResponse!;
         FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, queryResult.Items.Length, queryResult.TotalCount);
