@@ -58,8 +58,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("wkb", "Input Geometry", "Geometry to buffer as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
-                Param("distance", "Buffer Distance", "Buffer distance in meters.", ProcessParameterValueType.FloatingPoint, required: true),
-                Param("geodesic", "Geodesic", "Use geodesic (geography-based) buffering.", ProcessParameterValueType.Flag, defaultValue: "false"),
+                Param("distance", "Buffer Distance", "Buffer distance in the input geometry's coordinate units (planar). For a geographic (degree) SRID the distance is in degrees, not meters; project to a metric CRS first for a metric buffer. Must be a finite number greater than zero.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("geodesic", "Geodesic", "Use geodesic (geography-based) buffering. Not yet supported: submitting geodesic=true is rejected at plan validation.", ProcessParameterValueType.Flag, defaultValue: "false"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -164,7 +164,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "geometry.area",
             Title = "Area",
-            Description = "Computes the geodesic area of a polygon geometry in square meters.",
+            Description = "Computes the planar (Cartesian) area of a polygon geometry in the square of the input SRID's coordinate units. No geodesic conversion is performed: a geographic (degree) input yields area in squared degrees, not square meters — project to a metric CRS first for square-meter area.",
             Category = "geometry",
             Parameters =
             [
@@ -177,7 +177,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "geometry.length",
             Title = "Length",
-            Description = "Computes the geodesic length of a line geometry in meters.",
+            Description = "Computes the planar (Cartesian) length of a line geometry (or perimeter of a polygon) in the input SRID's coordinate units. No geodesic conversion is performed: a geographic (degree) input yields length in degrees, not meters — project to a metric CRS first for a length in meters.",
             Category = "geometry",
             Parameters =
             [
@@ -255,7 +255,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("algorithm", "Algorithm", "Clustering algorithm. Allowed values: dbscan, kmeans. Defaults to dbscan.", ProcessParameterValueType.Text),
-                Param("eps", "Epsilon", "Maximum distance between neighbors for DBSCAN, in meters. Must be > 0. Required when algorithm is dbscan.", ProcessParameterValueType.FloatingPoint),
+                Param("eps", "Epsilon", "Maximum distance between neighbors for DBSCAN, in meters. Must be > 0. Required when algorithm is dbscan. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so eps is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint),
                 Param("minPoints", "Min Points", "Minimum cluster size for DBSCAN. Must be ≥ 1. Required when algorithm is dbscan.", ProcessParameterValueType.WholeNumber),
                 Param("k", "K", "Number of clusters for KMeans. Must be ≥ 1. Required when algorithm is kmeans.", ProcessParameterValueType.WholeNumber),
                 Param("returnHullPerCluster", "Return Hull", "Return convex hull polygon per cluster instead of labeled points.", ProcessParameterValueType.Flag, defaultValue: "false"),
@@ -275,7 +275,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("layerId", "Target Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("joinLayerId", "Join Layer", "Join layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects, contains, within, dwithin. Defaults to intersects.", ProcessParameterValueType.Text),
-                Param("distance", "Distance", "Distance threshold in meters. Must be > 0. Required when predicate is dwithin.", ProcessParameterValueType.FloatingPoint),
+                Param("distance", "Distance", "Distance threshold in meters. Must be > 0. Required when predicate is dwithin. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so the threshold is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint),
                 Param("carryFields", "Carry Fields", "Comma-separated join-layer columns whose matched values are emitted as arrays on each target feature.", ProcessParameterValueType.Text),
                 Param("outStatistics", "Out Statistics", "GeoServices statistics payload aggregated over the matched join rows for each target feature.", ProcessParameterValueType.Text),
                 .. SharedAnalyticsFilterParameters,
@@ -322,8 +322,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("distance", "Distance", "Buffer distance in the supplied unit. Must be a finite non-negative number.", ProcessParameterValueType.FloatingPoint, required: true),
-                Param("unit", "Unit", "Distance unit. Allowed values: meters (default), kilometers, feet, miles.", ProcessParameterValueType.Text, defaultValue: "meters"),
+                Param("distance", "Distance", "Buffer distance in the supplied unit. Must be a finite non-negative number. The unit factor converts the value to meters, which are then applied as planar CRS units to the supplied geometries — only meaningful when those geometries are in a metric projected CRS.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("unit", "Unit", "Distance unit. Allowed values: meters (default), kilometers, feet, miles. The chosen unit is converted to meters and applied as planar CRS units; geographic (degree) inputs are unsupported (a meters-as-degrees buffer is meaningless) — project to a metric CRS first. No geodesic conversion is performed.", ProcessParameterValueType.Text, defaultValue: "meters"),
                 Param("dissolve", "Dissolve", "Dissolve buffered geometries per group (true) or emit one buffered feature per input (false). Defaults to true.", ProcessParameterValueType.Flag, defaultValue: "true"),
                 Param("groupByFields", "Group By Fields", "Comma-separated attribute names used to group dissolved buffers; one feature is emitted per group. When empty, all inputs dissolve into a single feature.", ProcessParameterValueType.Text),
             ],
@@ -600,7 +600,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("mode", "Bin Mode", "Binning mode. Allowed values: hex, square. Defaults to hex.", ProcessParameterValueType.Text),
-                Param("cellSize", "Cell Size", "Grid cell size in meters. Must be > 0.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("cellSize", "Cell Size", "Grid cell size in meters. Must be > 0. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so the cell size is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("weightField", "Weight Field", "Optional field name for weighted sums instead of counts.", ProcessParameterValueType.Text),
                 .. SharedAnalyticsFilterParameters,
             ],

@@ -75,7 +75,7 @@ describe('GPServer Smoke', () => {
     expect(data.executionType).toBe('esriExecutionTypeAsynchronous');
     expect(data.parameters?.some(
       parameter => parameter.name === 'distance'
-        && parameter.description === 'Buffer distance in meters.'
+        && parameter.description?.startsWith('Buffer distance in the input geometry')
         && parameter.direction === 'esriGPParameterDirectionInput',
     )).toBe(true);
   });
