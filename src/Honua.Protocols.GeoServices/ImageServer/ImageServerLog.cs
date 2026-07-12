@@ -280,4 +280,22 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "ImageServer measure failed for layer {LayerId}")]
     public static partial void MeasureFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5845,
+        Level = LogLevel.Information,
+        Message = "Computed class statistics for layer {LayerId}: {ClassCount} classes")]
+    public static partial void ClassStatisticsComputed(ILogger logger, int layerId, int classCount);
+
+    [LoggerMessage(
+        EventId = 5846,
+        Level = LogLevel.Warning,
+        Message = "Invalid class statistics parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidClassStatisticsParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5847,
+        Level = LogLevel.Error,
+        Message = "Failed to compute class statistics for layer {LayerId}")]
+    public static partial void ClassStatisticsFailed(ILogger logger, Exception ex, int layerId);
 }

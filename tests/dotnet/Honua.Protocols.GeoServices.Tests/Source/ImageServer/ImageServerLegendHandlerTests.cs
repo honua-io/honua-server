@@ -175,6 +175,39 @@ public class ImageServerLegendHandlerTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GetLegendAsync_InlineColorrampRenderingRule_SwatchesMatchResolvedColormap()
+    {
+        _rasterStore.ListRastersAsync(default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+
+        // The same renderingRule the exportImage path threads onto RasterQuery.Colormap.
+        const string renderingRule =
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colorramp":{"type":"algorithmic","fromColor":[0,0,0],"toColor":[255,255,255],"algorithm":"esriHSVAlgorithm"}}}""";
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None, renderingRule);
+
+        var jsonResult = result as JsonHttpResult<LegendResponse>;
+        jsonResult.Should().NotBeNull();
+        var legend = jsonResult!.Value!.Layers[0].Legend;
+
+        // The legend emits one swatch per resolved colormap stop, so it matches the rendered image
+        // that exportImage produces from the identical MapRenderingRule colormap.
+        var document = System.Text.Json.JsonSerializer.Deserialize(
+            renderingRule, ImageServerJsonContext.Default.RasterFunctionDocument)!;
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+        mapping.Colormap.Should().NotBeNull();
+
+        legend.Should().HaveCount(mapping.Colormap!.Entries.Count);
+        var sortedStops = mapping.Colormap.Entries.OrderBy(static e => e.Value).ToArray();
+        for (var i = 0; i < sortedStops.Length; i++)
+        {
+            legend[i].Values.Should().Equal(sortedStops[i].Value, sortedStops[i].Value);
+        }
+    }
+
     private void SetupSuccessfulLegend(double min, double max)
     {
         _rasterStore.ListRastersAsync(default, default)

@@ -117,6 +117,16 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
         {
             var inputPath = Path.Combine(workspace, "input.tif");
             var outputPath = Path.Combine(workspace, "output.tif");
+
+            // Bound the DECLARED pixel footprint before invoking GDAL so a
+            // compressible GeoTIFF declaring enormous dimensions cannot force a
+            // decompression-bomb allocation (#2766).
+            if (!GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            {
+                Log.InvalidInputs(logger, job.OperationId, dimensionError);
+                return JobExecutionResult.Failed($"Invalid reclassify inputs: {dimensionError}");
+            }
+
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
 
             var args = new List<string>

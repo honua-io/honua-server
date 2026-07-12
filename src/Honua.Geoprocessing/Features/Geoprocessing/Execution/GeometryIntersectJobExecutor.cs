@@ -81,6 +81,18 @@ internal sealed partial class GeometryIntersectJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"Invalid intersect inputs: intersectorWkb {decodeError}");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
+        {
+            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
+            return JobExecutionResult.Failed($"Invalid intersect inputs: targetWkb {targetSridError}.");
+        }
+
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(intersector, inputs.Srid, out var intersectorSridError))
+        {
+            Log.InvalidWkb(_logger, job.OperationId, "intersectorWkb", intersectorSridError);
+            return JobExecutionResult.Failed($"Invalid intersect inputs: intersectorWkb {intersectorSridError}.");
+        }
+
         target.SRID = inputs.Srid;
         intersector.SRID = inputs.Srid;
 
