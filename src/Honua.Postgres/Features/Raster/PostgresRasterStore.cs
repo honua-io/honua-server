@@ -3472,6 +3472,195 @@ internal sealed class PostgresRasterStore : IRasterStore
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<RasterBandVectorSet> ReadClippedBandVectorsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands,
+        int maxPixels,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return RasterBandVectorSet.Empty(bands ?? Array.Empty<int>());
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Clip each source raster to the training AOI, then union into a single mosaic raster —
+        // the same clip+merge primitive computeStatisticsHistograms uses, so class statistics read
+        // pixels through the shared analytics path rather than a parallel raster reader. A single
+        // raster is simply a mosaic of one.
+        var mergedExpr = CreateMosaicAggregateExpression(mergeStrategy);
+        var rastCte = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            source AS (
+                SELECT {BuildClipExpression("raster", clipSrid)} AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
+            ),
+            merged AS (
+                SELECT {mergedExpr} AS rast
+                FROM source
+                WHERE rast IS NOT NULL
+            )
+            SELECT rast FROM merged WHERE merged.rast IS NOT NULL
+            """;
+
+        // Guard the pixel budget from the clipped raster's bounding box (and resolve the band
+        // count) BEFORE materializing any pixels, so an oversized AOI is rejected up front rather
+        // than read into memory and silently truncated.
+        long boundingPixelCount;
+        int bandCount;
+        await using (var guard = connection.CreateCommand())
+        {
+            guard.CommandText = $"""
+                WITH target AS (
+                    {rastCte}
+                )
+                SELECT COALESCE(ST_Width(t.rast), 0)::bigint * COALESCE(ST_Height(t.rast), 0)::bigint AS px,
+                       ST_NumBands(t.rast) AS num_bands
+                FROM target t
+                WHERE t.rast IS NOT NULL
+                """;
+            AddParameter(guard, "@layerId", layerId);
+            AddParameter(guard, "@rasterIds", rasterIds);
+            AddParameter(guard, "@clipGeom", clipGeometry);
+            if (clipSrid is > 0)
+            {
+                AddParameter(guard, "@clipSrid", clipSrid.Value);
+            }
+
+            await using var guardReader = await guard.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await guardReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                // No raster intersected the AOI; an honest empty signature (count 0).
+                return RasterBandVectorSet.Empty(bands is { Length: > 0 } ? bands : Array.Empty<int>());
+            }
+
+            boundingPixelCount = guardReader.IsDBNull(0) ? 0 : guardReader.GetInt64(0);
+            bandCount = guardReader.IsDBNull(1) ? 0 : guardReader.GetInt32(1);
+        }
+
+        var effectiveBands = bands is { Length: > 0 }
+            ? bands
+            : Enumerable.Range(1, bandCount).ToArray();
+
+        if (boundingPixelCount > maxPixels)
+        {
+            return new RasterBandVectorSet
+            {
+                Bands = effectiveBands,
+                Pixels = Array.Empty<double[]>(),
+                ExceededPixelBudget = true,
+                BoundingPixelCount = boundingPixelCount,
+            };
+        }
+
+        if (effectiveBands.Length == 0)
+        {
+            return RasterBandVectorSet.Empty(effectiveBands);
+        }
+
+        // Read each requested band's valid (non-NoData) pixels tagged with their raster grid
+        // (x,y), then zip the bands per grid cell in C#. ST_Clip masks out-of-AOI pixels to
+        // NoData, so ST_PixelAsPoints (which excludes NoData) yields exactly the pixels inside the
+        // polygon. Only cells present in EVERY requested band become a vector, so a pixel masked
+        // in any band is dropped from the covariance sample rather than zero-filled.
+        var bandColumn = new Dictionary<int, int>(effectiveBands.Length);
+        for (var i = 0; i < effectiveBands.Length; i++)
+        {
+            bandColumn[effectiveBands[i]] = i;
+        }
+
+        var pixelByCell = new Dictionary<(int X, int Y), CellAccumulator>();
+        await using (var read = connection.CreateCommand())
+        {
+            read.CommandText = $"""
+                WITH target AS (
+                    {rastCte}
+                ),
+                band_list AS (
+                    SELECT b AS band FROM unnest(@bands::int[]) AS b
+                )
+                SELECT (p).x AS px, (p).y AS py, bl.band AS band, (p).val AS val
+                FROM target t, band_list bl,
+                     LATERAL ST_PixelAsPoints(t.rast, bl.band) AS p
+                WHERE t.rast IS NOT NULL AND (p).val IS NOT NULL
+                """;
+            AddParameter(read, "@layerId", layerId);
+            AddParameter(read, "@rasterIds", rasterIds);
+            AddParameter(read, "@clipGeom", clipGeometry);
+            if (clipSrid is > 0)
+            {
+                AddParameter(read, "@clipSrid", clipSrid.Value);
+            }
+
+            AddParameter(read, "@bands", effectiveBands);
+
+            await using var reader = await read.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (reader.IsDBNull(3))
+                {
+                    continue;
+                }
+
+                var band = reader.GetInt32(2);
+                if (!bandColumn.TryGetValue(band, out var column))
+                {
+                    continue;
+                }
+
+                var key = (reader.GetInt32(0), reader.GetInt32(1));
+                if (!pixelByCell.TryGetValue(key, out var accumulator))
+                {
+                    accumulator = new CellAccumulator(new double[effectiveBands.Length]);
+                    pixelByCell[key] = accumulator;
+                }
+
+                accumulator.Values[column] = reader.GetDouble(3);
+                accumulator.Filled++;
+            }
+        }
+
+        var pixels = new List<double[]>(pixelByCell.Count);
+        foreach (var accumulator in pixelByCell.Values)
+        {
+            // Keep only cells valid in every requested band so the covariance sample is complete.
+            if (accumulator.Filled == effectiveBands.Length)
+            {
+                pixels.Add(accumulator.Values);
+            }
+        }
+
+        return new RasterBandVectorSet
+        {
+            Bands = effectiveBands,
+            Pixels = pixels,
+            ExceededPixelBudget = false,
+            BoundingPixelCount = boundingPixelCount,
+        };
+    }
+
+    // Mutable per-grid-cell accumulator zipping each band's pixel value into one aligned vector.
+    private sealed class CellAccumulator
+    {
+        public CellAccumulator(double[] values) => Values = values;
+
+        public double[] Values { get; }
+
+        public int Filled { get; set; }
+    }
+
     private static string BuildClipExpression(string rasterExpr, int? clipSrid)
         => clipSrid is > 0
             ? $"ST_Clip({rasterExpr}, ST_Transform(ST_GeomFromWKB(@clipGeom, @clipSrid), ST_SRID({rasterExpr})), TRUE)"
