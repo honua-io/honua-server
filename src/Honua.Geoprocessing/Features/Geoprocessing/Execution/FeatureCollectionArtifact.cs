@@ -120,7 +120,7 @@ internal static class FeatureCollectionArtifact
 
         try
         {
-            var reader = new GeoJsonReader();
+            var reader = GeoJsonArtifactCodec.CreateReader();
             var parsed = reader.Read<FeatureCollection>(json);
             if (parsed is null)
             {
@@ -162,7 +162,7 @@ internal static class FeatureCollectionArtifact
             collection.Add(feature);
         }
 
-        var writer = new GeoJsonWriter();
+        var writer = GeoJsonArtifactCodec.CreateWriter();
         var serialized = writer.Write(collection);
 
         // GeoJsonWriter emits a complete FeatureCollection object. Re-emit it with

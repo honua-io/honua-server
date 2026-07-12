@@ -296,6 +296,8 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:OGC:1.3:CRS84</ows:SupportedCRS>");
         content.Should().Contain("<TileMatrixSet>WorldCRS84Quad</TileMatrixSet>");
 
+        // #2738: CRS84 is a lon,lat CRS, so the WorldCRS84Quad TopLeftCorner is emitted
+        // easting-first (-180 90), matching the OGC WorldCRS84Quad definition.
         var document = XDocument.Parse(content);
         var worldCrs84Quad = document
             .Descendants()

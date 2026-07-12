@@ -111,7 +111,7 @@
     {
       "caseId": "area-10x10-box",
       "processId": "geometry.area",
-      "description": "Slice 3: planar area of a 10x10 box (POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))) is 100 in input-CRS units squared. Catalog documents geodesic area but the first-slice executor returns planar area; geodesic measure is tracked as a follow-on slice.",
+      "description": "Slice 3: planar area of a 10x10 box (POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))) is 100 in input-CRS units squared. Catalog and executor both use planar area in squared CRS units; geodesic measure is tracked as a follow-on slice.",
       "inputsWkt": {
         "wkt": "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
         "srid": "4326"
@@ -162,7 +162,7 @@
     {
       "caseId": "length-3-4-5-triangle-line",
       "processId": "geometry.length",
-      "description": "Slice 4: planar length of a 3-4-5 right-triangle linestring (LINESTRING(0 0, 3 0, 3 4)) is 7. Catalog documents geodesic length but the first-slice executor returns planar length; geodesic measure is tracked as a follow-on slice alongside geometry.area.",
+      "description": "Slice 4: planar length of a 3-4-5 right-triangle linestring (LINESTRING(0 0, 3 0, 3 4)) is 7. Catalog and executor both use planar length in CRS units; geodesic measure is tracked as a follow-on slice alongside geometry.area.",
       "inputsWkt": {
         "wkt": "LINESTRING(0 0, 3 0, 3 4)",
         "srid": "4326"

@@ -56,7 +56,7 @@ class TestGPServerSmoke:
         assert data["executionType"] == "esriExecutionTypeAsynchronous"
         assert any(
             parameter["name"] == "distance"
-            and parameter["description"] == "Buffer distance in meters."
+            and parameter["description"].startswith("Buffer distance in the input geometry")
             and parameter["direction"] == "esriGPParameterDirectionInput"
             for parameter in data["parameters"]
         )

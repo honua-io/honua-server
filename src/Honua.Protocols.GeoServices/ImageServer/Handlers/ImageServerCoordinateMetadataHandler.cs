@@ -13,6 +13,9 @@ using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
+using SpatialConstants = Honua.Core.Features.Shared.Models.SpatialConstants;
+using SpatialReferenceExtensions = Honua.Core.Features.Shared.Models.SpatialReferenceExtensions;
+using WebMercatorMath = Honua.Core.Features.Shared.Models.WebMercatorMath;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
@@ -522,16 +525,41 @@ internal sealed class ImageServerCoordinateMetadataHandler
 
     private static double CalculateApproximateArea(RasterExtent extent)
     {
-        if (extent.Srid is 4326 or 4269)
+        // Web Mercator (EPSG:3857) is conformal: an axis-aligned extent inverse-projects to an
+        // axis-aligned lon/lat quadrangle, so inverse-project the corners and use the same
+        // spherical-cap area formula as geographic extents (#2734).
+        if (extent.Srid is int srid && SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid) == 3857)
         {
-            var minLat = Math.Clamp(Math.Min(extent.YMin, extent.YMax), -90d, 90d) * Math.PI / 180d;
-            var maxLat = Math.Clamp(Math.Max(extent.YMin, extent.YMax), -90d, 90d) * Math.PI / 180d;
-            var lonSpan = Math.Abs(extent.XMax - extent.XMin) * Math.PI / 180d;
-            return WebMercatorEarthRadius * WebMercatorEarthRadius * lonSpan *
-                   Math.Abs(Math.Sin(maxLat) - Math.Sin(minLat));
+            var (minLon, minLat) = WebMercatorMath.WebMercatorToLonLat(extent.XMin, extent.YMin);
+            var (maxLon, maxLat) = WebMercatorMath.WebMercatorToLonLat(extent.XMax, extent.YMax);
+            return SphericalQuadrangleArea(minLon, minLat, maxLon, maxLat);
         }
 
+        // Geographic extents (WGS 84, NAD83, and the other shared geographic SRIDs plus the
+        // EPSG 4000–4999 geographic range) are already lon/lat degrees. #2732 tracks unifying
+        // this ad hoc classification with the shared SRID classifier.
+        if (extent.Srid is int geoSrid && IsGeographicSrid(geoSrid))
+        {
+            return SphericalQuadrangleArea(extent.XMin, extent.YMin, extent.XMax, extent.YMax);
+        }
+
+        // Other projected SRIDs: coordinates are assumed to be meters. Planar area is only
+        // correct when the map units are truly meters; documented fallback rather than a claim
+        // of ground area for degree/foot units.
         return Math.Abs((extent.XMax - extent.XMin) * (extent.YMax - extent.YMin));
+    }
+
+    private static bool IsGeographicSrid(int srid)
+        => Array.IndexOf(SpatialConstants.GeographicSrids, srid) >= 0
+           || srid is >= 4000 and <= 4999;
+
+    private static double SphericalQuadrangleArea(double minLon, double minLat, double maxLon, double maxLat)
+    {
+        var lowLat = Math.Clamp(Math.Min(minLat, maxLat), -90d, 90d) * Math.PI / 180d;
+        var highLat = Math.Clamp(Math.Max(minLat, maxLat), -90d, 90d) * Math.PI / 180d;
+        var lonSpan = Math.Abs(maxLon - minLon) * Math.PI / 180d;
+        return WebMercatorEarthRadius * WebMercatorEarthRadius * lonSpan *
+               Math.Abs(Math.Sin(highLat) - Math.Sin(lowLat));
     }
 
     private static string NormalizeGeometryInput(string geometry)

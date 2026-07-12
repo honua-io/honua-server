@@ -118,6 +118,15 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                     return JobExecutionResult.Failed($"Invalid spectral-index inputs: {roleError}");
                 }
 
+                // Bound the DECLARED pixel footprint before writing the file or
+                // invoking GDAL so a compressible GeoTIFF declaring enormous
+                // dimensions cannot force a decompression-bomb allocation (#2766).
+                if (!GdalRasterDimensionGuard.TryAdmit(bytes, opts, out var dimensionError))
+                {
+                    Log.InvalidInputs(logger, job.OperationId, dimensionError);
+                    return JobExecutionResult.Failed($"Invalid spectral-index inputs: {dimensionError}");
+                }
+
                 var inputPath = Path.Combine(workspace, $"{roles[i]}.tif");
                 await File.WriteAllBytesAsync(inputPath, bytes, cancellationToken).ConfigureAwait(false);
                 if (i == 0)

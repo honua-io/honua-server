@@ -116,6 +116,18 @@ internal sealed partial class GeometrySnapJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed("Invalid snap inputs: reference geometry is empty.");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(input, inputs.Srid, out var inputSridError))
+        {
+            Log.InvalidWkb(_logger, job.OperationId, "wkb", inputSridError);
+            return JobExecutionResult.Failed($"Invalid snap inputs: {inputSridError}.");
+        }
+
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(reference, inputs.Srid, out var referenceSridError))
+        {
+            Log.InvalidWkb(_logger, job.OperationId, "referenceWkb", referenceSridError);
+            return JobExecutionResult.Failed($"Invalid snap inputs: reference {referenceSridError}.");
+        }
+
         input.SRID = inputs.Srid;
         reference.SRID = inputs.Srid;
 

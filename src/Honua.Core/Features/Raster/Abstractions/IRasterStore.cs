@@ -449,6 +449,37 @@ public interface IRasterStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads the aligned per-pixel band vectors of a raster (or composited mosaic) inside an
+    /// area-of-interest clip geometry (WKB), for multivariate analytics such as class-signature
+    /// covariance. Only pixels valid in <b>every</b> requested band are returned, each as a
+    /// vector ordered to match <see cref="RasterBandVectorSet.Bands"/>.
+    /// </summary>
+    /// <remarks>
+    /// The read is memory-bounded by <paramref name="maxPixels"/>: when the clip bounding box
+    /// exceeds that budget the implementation returns
+    /// <see cref="RasterBandVectorSet.ExceededPixelBudget"/> = <see langword="true"/> with no
+    /// pixels, so the caller rejects the request rather than reporting a truncated (and therefore
+    /// wrong) covariance. Tiling/streaming the read to lift the budget is deferred follow-up scope.
+    /// </remarks>
+    /// <param name="layerId">Layer identifier containing the rasters.</param>
+    /// <param name="rasterIds">Catalog raster ids; a single id reads one raster, many composite a mosaic.</param>
+    /// <param name="mergeStrategy">Pixel-resolution operation applied to overlapping mosaic pixels.</param>
+    /// <param name="clipGeometry">Training AOI clip geometry in Well-Known Binary form.</param>
+    /// <param name="clipSrid">SRID of <paramref name="clipGeometry"/>; <see langword="null"/> assumes the raster SRID.</param>
+    /// <param name="bands">Optional 1-based band selection; <see langword="null"/> reads every band.</param>
+    /// <param name="maxPixels">Maximum clip bounding-box pixels to materialize before rejecting.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<RasterBandVectorSet> ReadClippedBandVectorsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        byte[] clipGeometry,
+        int? clipSrid,
+        int[]? bands,
+        int maxPixels,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Computes zonal aggregates by intersecting a raster with the geometries
     /// of a zones feature layer, producing one row per eligible zone.
     /// </summary>

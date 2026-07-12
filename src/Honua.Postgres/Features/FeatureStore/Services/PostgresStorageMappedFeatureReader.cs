@@ -824,7 +824,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             : $"ST_Transform({geometryExpression}, {targetSrid})";
     }
 
-    private static string BuildDistancePredicate(
+    private string BuildDistancePredicate(
         string geometryColumn,
         string filterGeometry,
         SpatialFilter filter,
@@ -832,8 +832,29 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         bool beyond)
     {
         var distance = ConvertDistanceToMeters(filter.Distance ?? 0d, filter.DistanceUnit);
+        return BuildDistancePredicateSql(geometryColumn, filterGeometry, _storageSrid, distance, beyond, sql.AddParameter);
+    }
+
+    /// <summary>
+    /// Builds the ST_Distance distance/beyond predicate for a storage-mapped layer. Both operands
+    /// arrive in the storage SRID (the column natively, the filter after
+    /// <see cref="TransformFilterGeometryIfNeeded"/>). A bare <c>::geography</c> cast requires
+    /// lon/lat input and throws for projected-storage layers (a 500), so both operands are
+    /// reprojected to WGS84 geography via <see cref="ToWgs84Geography"/> (the same path KNN uses)
+    /// so <c>ST_Distance</c> returns metres regardless of the storage CRS. (#2740)
+    /// </summary>
+    internal static string BuildDistancePredicateSql(
+        string geometryColumn,
+        string filterGeometry,
+        int storageSrid,
+        double distanceInMeters,
+        bool beyond,
+        Func<object?, string> addParameter)
+    {
         var operatorText = beyond ? ">" : "<=";
-        return $"ST_Distance({geometryColumn}::geography, {filterGeometry}::geography) {operatorText} {sql.AddParameter(distance)}";
+        var geographyColumn = ToWgs84Geography(geometryColumn, storageSrid);
+        var geographyFilter = ToWgs84Geography(filterGeometry, storageSrid);
+        return $"ST_Distance({geographyColumn}, {geographyFilter}) {operatorText} {addParameter(distanceInMeters)}";
     }
 
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)
@@ -1432,12 +1453,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private bool ShouldUseGeodesicNearestNeighbor()
     {
-        // Use the curated canonical geographic-SRID list (single source of truth) rather
-        // than a loose 4000-4999 range, which swept in projected/geocentric CRS in that band
-        // (e.g. EPSG:4978 geocentric) and missed geographic CRS outside it. The classification
-        // gates both the geodesic ordering and the returned NearestNeighbor distance units.
-        return DistanceConversions.IsGeographicSrid(_storageSrid);
+        // The curated canonical geographic-SRID list is the primary source of truth. Until the
+        // classifier unification (#2732) replaces this heuristic, add a safety net: any SRID in
+        // the EPSG geographic 2D range (4000-4999) that is not already on the allowlist is still a
+        // lat/lon degree CRS (e.g. 4674 SIRGAS 2000, 4490 CGCS2000), so planar degree KNN would
+        // silently produce meaningless "distances". Route those through the same geodesic path as
+        // 4326. The narrow 4xxx-3D/geocentric exceptions (4978/4979) are out of scope for 2D KNN.
+        return DistanceConversions.IsGeographicSrid(_storageSrid)
+            || IsUnlistedGeographicSridRange(_storageSrid);
     }
+
+    private static bool IsUnlistedGeographicSridRange(int srid)
+        => srid is >= 4000 and <= 4999 && !DistanceConversions.IsGeographicSrid(srid);
 
     private static string ToWgs84Geography(string geometryExpression, int srid)
         => srid == SpatialReference.WGS84.Wkid
