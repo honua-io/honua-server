@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Services;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -57,6 +58,12 @@ public class ImageServerEndpointsTests
             .Returns(rasterInfo);
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([rasterInfo]);
+        store.QueryCatalogAsync(Arg.Any<int>(), Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => RasterCatalogQueryEvaluator.EvaluateAsync(
+                [rasterInfo],
+                callInfo.ArgAt<RasterCatalogQuery>(1),
+                transformService: null,
+                callInfo.ArgAt<CancellationToken>(2)));
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>());
         store.GetStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
@@ -185,6 +192,12 @@ public class ImageServerEndpointsTests
         var rasters = new[] { Build(200, "b"), Build(100, "a"), Build(300, "c") };
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(rasters);
         store.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(rasters);
+        store.QueryCatalogAsync(Arg.Any<int>(), Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => RasterCatalogQueryEvaluator.EvaluateAsync(
+                rasters,
+                callInfo.ArgAt<RasterCatalogQuery>(1),
+                transformService: null,
+                callInfo.ArgAt<CancellationToken>(2)));
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>());
         return store;
