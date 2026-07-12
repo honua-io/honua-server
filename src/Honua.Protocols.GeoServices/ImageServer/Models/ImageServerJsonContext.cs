@@ -52,6 +52,8 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(BandStatistic))]
 [JsonSerializable(typeof(BandHistogram))]
 [JsonSerializable(typeof(ComputeHistogramsResponse))]
+[JsonSerializable(typeof(ComputeClassStatisticsResponse))]
+[JsonSerializable(typeof(ClassStatisticEntry))]
 [JsonSerializable(typeof(ComputeCacheInfoResponse))]
 [JsonSerializable(typeof(ImageServerComputedCacheInfo))]
 [JsonSerializable(typeof(ComputePixelLocationResponse))]
