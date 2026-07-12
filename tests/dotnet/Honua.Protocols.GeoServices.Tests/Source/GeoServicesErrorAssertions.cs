@@ -37,10 +37,10 @@ public static class GeoServicesErrorAssertions
     /// <param name="expectedCodes">
     /// One or more acceptable GeoServices error codes (HTTP status values such as
     /// <c>404</c> or <c>400</c>) carried in the JSON body. Note that
-    /// <c>StandardErrorResponseFormatter</c> maps some HTTP statuses to a different
-    /// body code — most importantly <c>501 Not Implemented</c> collapses to
-    /// <c>500</c> (the <c>GeoServicesErrorCodes.FromHttpStatusCode</c> default) and
-    /// <c>401</c> maps to <c>499</c>.
+    /// <c>GeoServicesErrorCodes.FromHttpStatusCode</c> has no <c>501</c> branch, so
+    /// <c>501 Not Implemented</c> collapses to the <c>500</c> default; statuses with
+    /// explicit branches (<c>400</c>/<c>401</c>/<c>403</c>/<c>404</c>/<c>499</c>/<c>503</c>…)
+    /// map to themselves.
     /// </param>
     public static async Task AssertGeoServicesErrorAsync(HttpContext context, IResult result, params int[] expectedCodes)
     {
@@ -53,8 +53,30 @@ public static class GeoServicesErrorAssertions
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         context.Response.Body.Position = 0;
-        using var json = await JsonDocument.ParseAsync(context.Response.Body);
-        json.RootElement.GetProperty("error").GetProperty("code").GetInt32()
-            .Should().BeOneOf(expectedCodes);
+        using var reader = new StreamReader(context.Response.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+
+        JsonDocument? json = null;
+        try
+        {
+            json = JsonDocument.Parse(body);
+        }
+        catch (JsonException)
+        {
+            // Fall through to the envelope assertion below with json == null.
+        }
+
+        using (json)
+        {
+            var hasErrorCode = json is not null
+                && json.RootElement.ValueKind == JsonValueKind.Object
+                && json.RootElement.TryGetProperty("error", out var error)
+                && error.TryGetProperty("code", out _);
+            hasErrorCode.Should().BeTrue(
+                $"the response body should be a GeoServices error envelope {{\"error\":{{\"code\":N}}}} but was: {(body.Length > 300 ? body[..300] + "…" : body)}");
+
+            json!.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+                .Should().BeOneOf(expectedCodes);
+        }
     }
 }
