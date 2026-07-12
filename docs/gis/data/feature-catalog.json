@@ -7343,7 +7343,15 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetFeatureInfo_WithOutOfRangePixel_ReturnsException",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_JpegFormat_RoutesJpegToTileHandler",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_TiffFormat_RoutesTiffToTileHandler",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_WithUnsupportedFormat_ReturnsXmlException"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_WithUnsupportedFormat_ReturnsXmlException",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetCapabilities_DefaultConfig_AdvertisesOnlyWebMercatorQuad",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetCapabilities_WithWorldCrs84QuadEnabled_AdvertisesMatrixSet",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetFeatureInfo_WorldCrs84QuadEnabled_ReturnsPixelValueInCrs84",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_UnknownMatrixSet_ReturnsInvalidParameterValue",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadColumnOutOfBounds_ReturnsInvalidParameterValue",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadEnabled_RendersThroughSharedGridsetPipeline",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadNotConfigured_ReturnsInvalidParameterValue",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadRowOutOfBounds_ReturnsInvalidParameterValue"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
