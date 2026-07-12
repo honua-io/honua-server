@@ -51,6 +51,7 @@ public class TileMatrixSetDefinitionSnapshotTests
 
         fromRegistry.Should().BeEquivalentTo(legacy, options => options.WithStrictOrdering());
         Serialize(fromRegistry).Should().Be(Serialize(legacy));
+        fromRegistry.TileMatrices[0].PointOfOrigin.Should().Equal(-180, 90);
     }
 
     [Fact]
