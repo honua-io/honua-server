@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
@@ -153,6 +154,12 @@ public sealed class ImageServerClientCompatibilityTests
             .Returns(rasterInfo);
         store.ListRastersAsync(TestLayerId, Arg.Any<CancellationToken>())
             .Returns([rasterInfo]);
+        store.QueryCatalogAsync(TestLayerId, Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => RasterCatalogQueryEvaluator.EvaluateAsync(
+                [rasterInfo],
+                callInfo.ArgAt<RasterCatalogQuery>(1),
+                transformService: null,
+                callInfo.ArgAt<CancellationToken>(2)));
         store.QueryRastersAsync(TestLayerId, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
             .Returns([rasterInfo]);
         store.GetExtentAsync(TestLayerId, 100, Arg.Any<CancellationToken>())
