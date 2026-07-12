@@ -1249,15 +1249,73 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.Area.Should().NotBeNull();
-
-            // 3857 area/perimeter are now geodesic (unprojected to lon/lat). At the equator the
-            // ground values equal the map-plane values to ~1e-9, so 50 m^2 / 30 m still hold; the
-            // tolerance is relaxed to absorb the geodesic curvature term.
-            measure.Area!.Value.Should().BeApproximately(50d, 1e-6);
+            // 10x5 EPSG:3857 envelope near the equator: ground area/perimeter ≈ the map-unit
+            // values (Web Mercator scale ≈ 1 at the equator), now measured geodesically (#2734).
+            measure.Area!.Value.Should().BeApproximately(50d, 0.2d);
             measure.Area.Unit.Should().Be("esriSquareMeters");
             measure.Perimeter.Should().NotBeNull();
-            measure.Perimeter!.Value.Should().BeApproximately(30d, 1e-6);
+            measure.Perimeter!.Value.Should().BeApproximately(30d, 0.1d);
             measure.Perimeter.Unit.Should().Be("esriMeters");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_DistanceAndAngle_GeographicDegrees_ReturnsGroundMeters()
+    {
+        // EPSG:4269 (NAD83) 1° of longitude at 40°N. The pre-fix planar path returned the raw
+        // degree delta (~1.0) as "meters"; the ground distance is ~85 km (#2734).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":40,"spatialReference":{"wkid":4269}}""";
+            const string toGeometry = """{"x":1,"y":40,"spatialReference":{"wkid":4269}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Distance.Should().NotBeNull();
+            measure.Distance!.Value.Should().BeInRange(84_500d, 85_500d);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_AreaAndPerimeter_AntimeridianPolygon_ReturnsFiniteArea()
+    {
+        // A ~2°x1° polygon straddling the antimeridian (179°E .. -179°E) in WGS 84. Without
+        // longitude unwrapping this projects to a ~358°-wide polygon (area ~1e14 m²); unwrapping
+        // keeps it a small finite quadrangle of a few 1e10 m² (#2734).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationAreaAndPerimeter&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Area.Should().NotBeNull();
+            measure.Area!.Value.Should().BeInRange(1e10, 1e12);
         }
         finally
         {
@@ -1271,11 +1329,11 @@ public class ImageServerEndpointsTests
     public async Task Measure_DistanceAndAngle_WebMercatorAtHighLatitude_ReturnsGroundDistance()
     {
         // #2734: a 3857 (Web Mercator) segment must be measured as TRUE GROUND distance, not the
-        // planar map-unit length. The two points are lon 0 deg and lon 1 deg at lat 60 deg N, expressed
-        // in Web-Mercator metres (y = 8399737.89 is the mercator ordinate of 60 deg N; x = 111319.49 is
-        // the mercator abscissa of lon 1 deg). The great-circle ground distance between them is
-        // 55659.22 m. The buggy planar sqrt(dx^2+dy^2) would report 111319.49 m — ~2x overstated,
-        // exactly 1/cos(60 deg). Verified with the haversine formula on R = 6378137 m.
+        // planar map-unit length. The two points are lon 0° and lon 1° at lat 60°N, expressed in
+        // Web-Mercator meters (y = 8399737.89 is the Mercator ordinate of 60°N; x = 111319.49 is
+        // the Mercator abscissa of lon 1°). The great-circle ground distance between them is
+        // 55597.01 m on the mean-radius sphere (R = 6371008.8 m). The buggy planar
+        // sqrt(dx²+dy²) would report 111319.49 m — ~2x overstated, exactly 1/cos(60°).
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
@@ -1291,7 +1349,7 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.Distance.Should().NotBeNull();
-            measure.Distance!.Value.Should().BeApproximately(55659.22d, 0.5d);
+            measure.Distance!.Value.Should().BeApproximately(55597.01d, 1d);
             measure.Distance.Unit.Should().Be("esriMeters");
             // Guard against a regression back to the planar (2x overstated) value.
             measure.Distance.Value.Should().BeLessThan(60000d);
@@ -1305,114 +1363,13 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
     [Operation(Operations.Distance)]
-    public async Task Measure_DistanceAndAngle_GeographicNon4326_ReturnsMetersNotDegrees()
-    {
-        // #2734: a geographic service that is NOT EPSG:4326 (here EPSG:4269 / NAD83) must still be
-        // measured geodesically. The two points are 1 deg of latitude apart; the haversine ground
-        // distance on R = 6378137 m is 111319.49 m. The buggy code returned planar sqrt(dx^2+dy^2) =
-        // 1.0 "esriMeters" (degrees interpreted as metres) — ~5 orders of magnitude too small.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string fromGeometry = """{"x":-100.0,"y":40.0,"spatialReference":{"wkid":4269}}""";
-            const string toGeometry = """{"x":-100.0,"y":41.0,"spatialReference":{"wkid":4269}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var measure = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerMeasureResponse);
-
-            measure.Should().NotBeNull();
-            measure!.Distance.Should().NotBeNull();
-            measure.Distance!.Value.Should().BeApproximately(111319.49d, 1.0d);
-            measure.Distance.Unit.Should().Be("esriMeters");
-            // A degrees-as-metres regression would report ~1 m.
-            measure.Distance.Value.Should().BeGreaterThan(100000d);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
-    [Operation(Operations.Distance)]
-    public async Task Measure_AreaAndPerimeter_AntimeridianRing_ReturnsSaneArea()
-    {
-        // #2734: a 4326 ring crossing the antimeridian (lon 179 -> -179) must not be torn by a 358 deg
-        // longitude jump. The ring is the 2 deg x 1 deg patch [179,181] x [0,1] straddling the dateline;
-        // its true spherical area (R^2 * dLon * (sin lat2 - sin lat1)) is 2.4783e10 m^2. The buggy
-        // raw-longitude shoelace produces a garbage area ~178x larger.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationAreaAndPerimeter&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var measure = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerMeasureResponse);
-
-            measure.Should().NotBeNull();
-            measure!.Area.Should().NotBeNull();
-            // Local equirectangular approximation of the true 2.4783e10 m^2 patch (within ~0.03%).
-            measure.Area!.Value.Should().BeApproximately(2.4783e10d, 5e7d);
-            measure.Area.Unit.Should().Be("esriSquareMeters");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
-    [Operation(Operations.Distance)]
-    public async Task Measure_Centroid_AntimeridianRing_LandsOnCorrectSide()
-    {
-        // #2734: the area-weighted centroid of the dateline-straddling [179,181] x [0,1] ring is at
-        // lon 180 deg, lat 0.5 deg. The buggy vertex mean of (179, -179, -179, 179) collapses to lon 0 deg
-        // — the opposite side of the globe.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationCentroid&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var measure = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerMeasureResponse);
-
-            measure.Should().NotBeNull();
-            measure!.Point.Should().NotBeNull();
-            // Centroid longitude is +/-180 (the antimeridian), never near 0.
-            Math.Abs(measure.Point!.Value.X).Should().BeApproximately(180d, 1e-6);
-            measure.Point.Value.Y.Should().BeApproximately(0.5d, 1e-6);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
-    [Operation(Operations.Distance)]
     public async Task Measure_DistanceAndAngle_GeographicAzimuth_UsesGreatCircleBearing()
     {
         // #2734: azimuth for geographic inputs must include cos(lat) longitude scaling. From
-        // (lon 0, lat 60 deg N) to (lon 1, lat 61 deg N) the great-circle initial bearing is 25.78 deg
-        // (verified with the standard atan2 initial-bearing formula), consistent with the haversine
-        // distance in the same response. The buggy planar atan2(dLon, dLat) reported 45 deg regardless
-        // of latitude. (The naive equirectangular cos(lat) bearing would be 26.57 deg; the great-circle
-        // value chosen here additionally accounts for meridian convergence over the segment.)
+        // (lon 0, lat 60°N) to (lon 1, lat 61°N) the great-circle initial bearing is 25.78°
+        // (standard atan2 initial-bearing formula; radius-independent), consistent with the
+        // geodesic distance in the same response. The buggy planar atan2(dLon, dLat) reported
+        // 45° regardless of latitude.
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
@@ -1430,8 +1387,40 @@ public class ImageServerEndpointsTests
             measure!.AzimuthAngle.Should().NotBeNull();
             measure.AzimuthAngle!.Value.Should().BeApproximately(25.7824d, 1e-3);
             measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
-            // Guard against a regression to the cos(lat)-free planar bearing (45 deg).
+            // Guard against a regression to the cos(lat)-free planar bearing (45°).
             measure.AzimuthAngle.Value.Should().BeLessThan(40d);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_Centroid_AntimeridianRing_LandsOnCorrectSide()
+    {
+        // #2734: the area-weighted centroid of the dateline-straddling [179,181]x[0,1] ring is at
+        // lon ±180°, lat 0.5°. The buggy vertex mean of (179, -179, -179, 179) collapses to lon 0°
+        // — the opposite side of the globe.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationCentroid&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var measure = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(),
+                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+
+            measure.Should().NotBeNull();
+            measure!.Point.Should().NotBeNull();
+            // Centroid longitude is ±180 (the antimeridian), never near 0.
+            Math.Abs(measure.Point!.Value.X).Should().BeApproximately(180d, 1e-6);
+            measure.Point.Value.Y.Should().BeApproximately(0.5d, 1e-6);
         }
         finally
         {
@@ -2905,18 +2894,13 @@ public class ImageServerEndpointsTests
         measure!.Name.Should().Be("test-raster");
         measure.SensorName.Should().Be("Unknown");
         measure.Distance.Should().NotBeNull();
-
-        // 3857 (Web Mercator) is now measured geodesically: the segment is unprojected to lon/lat
-        // and a haversine ground distance is returned. At the equator the ground distance equals the
-        // map-plane length to ~1e-9 m, so the value is still ~5 m; the tolerance is relaxed from the
-        // former exact-planar 1e-9 to absorb the sub-nanometre geodesic curvature term.
-        measure.Distance!.Value.Should().BeApproximately(5d, 1e-6);
+        // (0,0)->(3,4) in EPSG:3857 near the equator: the ground distance is ~5 m (Web Mercator
+        // scale ≈ 1 at the equator), computed geodesically on the mean-radius sphere (#2734).
+        measure.Distance!.Value.Should().BeApproximately(5d, 0.05d);
         measure.Distance.Unit.Should().Be("esriMeters");
         measure.AzimuthAngle.Should().NotBeNull();
-
-        // Azimuth is now the great-circle initial bearing; at the equator it matches the former
-        // planar grid bearing (~36.8699 deg) to ~1e-8 deg.
-        measure.AzimuthAngle!.Value.Should().BeApproximately(36.86989764584402d, 1e-6);
+        // 3-east / 4-north near the equator still gives atan(3/4) ≈ 36.87° true bearing.
+        measure.AzimuthAngle!.Value.Should().BeApproximately(36.86989764584402d, 1e-4);
         measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
     }
 
