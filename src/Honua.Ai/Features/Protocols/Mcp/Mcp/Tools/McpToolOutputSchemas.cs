@@ -42,6 +42,23 @@ internal static class McpToolOutputSchemas
         }
         """;
 
+    private const string ToolErrorRequiredProperties = """
+            "status": { "type": "string", "const": "error" },
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "error": { "type": "object" }
+        """;
+
+    private static string ToolErrorSchema => $$"""
+        {
+          "type": "object",
+          "required": ["status", "code", "message", "error"],
+          "properties": {
+            {{ToolErrorRequiredProperties}}
+          }
+        }
+        """;
+
     private static string ToolErrorProperties => $$"""
             "status": { "type": "string", "const": "error" },
             "code": { "type": "string" },
@@ -77,8 +94,10 @@ internal static class McpToolOutputSchemas
     /// accept the result produced by <see cref="McpToolHelpers.ErrorResult(Exception)"/>.
     /// </summary>
     /// <remarks>
-    /// The merge keeps the success schema's root properties intact for client
-    /// introspection and adds only an alternative required-property branch. It
+    /// The wrapper retains every success constraint at the root or in the success
+    /// branch and adds a separately typed error branch. Properties shared by both
+    /// shapes are constrained in their respective branches, preventing the union
+    /// from relaxing successful results without duplicating the full schema. It
     /// uses the JSON DOM rather than reflection-based serialization, preserving
     /// Native AOT compatibility. Schemas already carrying the error branch are
     /// returned unchanged.
@@ -92,53 +111,67 @@ internal static class McpToolOutputSchemas
 
         var root = JsonNode.Parse(successSchema.GetRawText())?.AsObject()
             ?? throw new InvalidOperationException("MCP tool output schemas must be JSON objects.");
-        var errorRoot = JsonNode.Parse(ToolErrorBranch)!.AsObject();
+        var errorRoot = JsonNode.Parse(ToolErrorSchema)!.AsObject();
         var errorRequired = errorRoot["required"]!.DeepClone();
         if (root["properties"] is not JsonObject successProperties)
         {
             throw new InvalidOperationException("MCP tool output schemas must declare object properties.");
         }
 
+        var errorProperties = errorRoot["properties"]!.AsObject();
+        var successPropertyNames = successProperties.Select(property => property.Key).ToArray();
+        var successOverlapProperties = new JsonObject();
+        var errorOverlapProperties = new JsonObject();
+        foreach (var errorProperty in errorProperties)
+        {
+            if (successProperties[errorProperty.Key] is JsonNode successProperty)
+            {
+                successOverlapProperties[errorProperty.Key] = successProperty.DeepClone();
+                errorOverlapProperties[errorProperty.Key] = errorProperty.Value?.DeepClone();
+                successProperties[errorProperty.Key] = new JsonObject();
+                continue;
+            }
+
+            successProperties[errorProperty.Key] = errorProperty.Value?.DeepClone();
+        }
+
         var closedSuccessSchema = root["additionalProperties"]?.GetValue<bool>() is false;
         root.Remove("additionalProperties");
         var successRequired = root["required"]?.DeepClone();
         root.Remove("required");
-        JsonObject successBranch;
+        var successBranch = new JsonObject
+        {
+            ["not"] = new JsonObject { ["required"] = errorRequired.DeepClone() }
+        };
         if (successRequired is not null)
         {
-            successBranch = new JsonObject
-            {
-                ["required"] = successRequired,
-                ["not"] = new JsonObject { ["required"] = errorRequired.DeepClone() }
-            };
-        }
-        else
-        {
-            successBranch = new JsonObject
-            {
-                ["not"] = new JsonObject { ["required"] = errorRequired.DeepClone() }
-            };
+            successBranch["required"] = successRequired;
         }
 
-        // Preserve a closed success schema without applying its
-        // additionalProperties:false constraint to the alternative error shape.
-        // Empty property schemas in this branch only declare the allowed names;
-        // their actual types remain governed by the unchanged root properties.
         if (closedSuccessSchema)
         {
             var allowedSuccessProperties = new JsonObject();
-            foreach (var property in successProperties)
+            foreach (var propertyName in successPropertyNames)
             {
-                allowedSuccessProperties.Add(property.Key, new JsonObject());
+                allowedSuccessProperties[propertyName] =
+                    successOverlapProperties[propertyName]?.DeepClone() ?? new JsonObject();
             }
 
             successBranch["properties"] = allowedSuccessProperties;
             successBranch["additionalProperties"] = false;
         }
+        else if (successOverlapProperties.Count > 0)
+        {
+            successBranch["properties"] = successOverlapProperties;
+        }
 
-        root["oneOf"] = new JsonArray(
-            successBranch,
-            new JsonObject { ["required"] = errorRequired });
+        var errorBranch = new JsonObject { ["required"] = errorRequired };
+        if (errorOverlapProperties.Count > 0)
+        {
+            errorBranch["properties"] = errorOverlapProperties;
+        }
+
+        root["oneOf"] = new JsonArray(successBranch, errorBranch);
 
         return Parse(root.ToJsonString());
     }
