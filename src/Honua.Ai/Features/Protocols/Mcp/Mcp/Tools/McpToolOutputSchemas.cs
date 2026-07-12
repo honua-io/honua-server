@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
@@ -41,6 +42,23 @@ internal static class McpToolOutputSchemas
         }
         """;
 
+    private const string ToolErrorRequiredProperties = """
+            "status": { "type": "string", "const": "error" },
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "error": { "type": "object" }
+        """;
+
+    private static string ToolErrorSchema => $$"""
+        {
+          "type": "object",
+          "required": ["status", "code", "message", "error"],
+          "properties": {
+            {{ToolErrorRequiredProperties}}
+          }
+        }
+        """;
+
     private static string ToolErrorProperties => $$"""
             "status": { "type": "string", "const": "error" },
             "code": { "type": "string" },
@@ -68,6 +86,123 @@ internal static class McpToolOutputSchemas
               }
             }
         """;
+
+    /// <summary>
+    /// Widens a tool's success schema with the shared structured error envelope.
+    /// MCP clients validate <c>structuredContent</c> against <c>outputSchema</c>
+    /// for both successful and failed tool calls, so every advertised schema must
+    /// accept the result produced by <see cref="McpToolHelpers.ErrorResult(Exception)"/>.
+    /// </summary>
+    /// <remarks>
+    /// The wrapper retains every success constraint at the root or in the success
+    /// branch and adds a separately typed error branch. Properties shared by both
+    /// shapes are constrained in their respective branches, preventing the union
+    /// from relaxing successful results without duplicating the full schema. It
+    /// uses the JSON DOM rather than reflection-based serialization, preserving
+    /// Native AOT compatibility. Schemas already carrying the error branch are
+    /// returned unchanged.
+    /// </remarks>
+    internal static JsonElement IncludeErrorEnvelope(JsonElement successSchema)
+    {
+        if (AcceptsErrorEnvelope(successSchema))
+        {
+            return successSchema;
+        }
+
+        var root = JsonNode.Parse(successSchema.GetRawText())?.AsObject()
+            ?? throw new InvalidOperationException("MCP tool output schemas must be JSON objects.");
+        var errorRoot = JsonNode.Parse(ToolErrorSchema)!.AsObject();
+        var errorRequired = errorRoot["required"]!.DeepClone();
+        if (root["properties"] is not JsonObject successProperties)
+        {
+            throw new InvalidOperationException("MCP tool output schemas must declare object properties.");
+        }
+
+        var errorProperties = errorRoot["properties"]!.AsObject();
+        var successPropertyNames = successProperties.Select(property => property.Key).ToArray();
+        var successOverlapProperties = new JsonObject();
+        var errorOverlapProperties = new JsonObject();
+        foreach (var errorProperty in errorProperties)
+        {
+            if (successProperties[errorProperty.Key] is JsonNode successProperty)
+            {
+                successOverlapProperties[errorProperty.Key] = successProperty.DeepClone();
+                errorOverlapProperties[errorProperty.Key] = errorProperty.Value?.DeepClone();
+                successProperties[errorProperty.Key] = new JsonObject();
+                continue;
+            }
+
+            successProperties[errorProperty.Key] = errorProperty.Value?.DeepClone();
+        }
+
+        var closedSuccessSchema = root["additionalProperties"]?.GetValue<bool>() is false;
+        root.Remove("additionalProperties");
+        var successRequired = root["required"]?.DeepClone();
+        root.Remove("required");
+        var successBranch = new JsonObject
+        {
+            ["not"] = new JsonObject { ["required"] = errorRequired.DeepClone() }
+        };
+        if (successRequired is not null)
+        {
+            successBranch["required"] = successRequired;
+        }
+
+        if (closedSuccessSchema)
+        {
+            var allowedSuccessProperties = new JsonObject();
+            foreach (var propertyName in successPropertyNames)
+            {
+                allowedSuccessProperties[propertyName] =
+                    successOverlapProperties[propertyName]?.DeepClone() ?? new JsonObject();
+            }
+
+            successBranch["properties"] = allowedSuccessProperties;
+            successBranch["additionalProperties"] = false;
+        }
+        else if (successOverlapProperties.Count > 0)
+        {
+            successBranch["properties"] = successOverlapProperties;
+        }
+
+        var errorBranch = new JsonObject { ["required"] = errorRequired };
+        if (errorOverlapProperties.Count > 0)
+        {
+            errorBranch["properties"] = errorOverlapProperties;
+        }
+
+        root["oneOf"] = new JsonArray(successBranch, errorBranch);
+
+        return Parse(root.ToJsonString());
+    }
+
+    private static bool AcceptsErrorEnvelope(JsonElement schema)
+    {
+        if (!schema.TryGetProperty("oneOf", out var branches)
+            || branches.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var branch in branches.EnumerateArray())
+        {
+            if (!branch.TryGetProperty("required", out var required)
+                || required.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var names = required.EnumerateArray()
+                .Select(value => value.GetString())
+                .ToHashSet(StringComparer.Ordinal);
+            if (names.IsSupersetOf(["status", "code", "message", "error"]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>Schema for <see cref="Models.McpValidatePlanOutput"/>.</summary>
     public static readonly JsonElement ValidatePlanOutputSchema = Parse(
