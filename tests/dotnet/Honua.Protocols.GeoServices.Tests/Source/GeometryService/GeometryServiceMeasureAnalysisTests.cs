@@ -190,6 +190,64 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
 
     [IntegrationTest]
     [Operation(Operations.Relation)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/relation")]
+    public async Task Relation_CornerTouchingParcels_PointTouchMatchesLineTouchDoesNot()
+    {
+        // Two squares meeting only at the corner (1,1): boundary∩boundary is a single point (#2742).
+        const string square1 = """{"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}""";
+        const string square2 = """{"rings": [[[1,1],[2,1],[2,2],[1,2],[1,1]]]}""";
+
+        (await RelationMatchCountAsync(square1, square2, "esriGeometryRelationPointTouch"))
+            .Should().Be(1, "corner contact is a 0-dimensional boundary touch");
+        (await RelationMatchCountAsync(square1, square2, "esriGeometryRelationLineTouch"))
+            .Should().Be(0, "a corner touch is not a 1-dimensional (line) boundary touch");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Relation)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/relation")]
+    public async Task Relation_EdgeSharingParcels_LineTouchMatchesPointTouchDoesNot()
+    {
+        // Two squares sharing the full edge x=1 from y=0 to y=1: boundary∩boundary is a line (#2742).
+        const string square1 = """{"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}""";
+        const string square2 = """{"rings": [[[1,0],[2,0],[2,1],[1,1],[1,0]]]}""";
+
+        (await RelationMatchCountAsync(square1, square2, "esriGeometryRelationLineTouch"))
+            .Should().Be(1, "a shared edge is a 1-dimensional boundary touch");
+        (await RelationMatchCountAsync(square1, square2, "esriGeometryRelationPointTouch"))
+            .Should().Be(0, "a shared edge is not a 0-dimensional (point) boundary touch");
+    }
+
+    private async Task<int> RelationMatchCountAsync(string ring1, string ring2, string relation)
+    {
+        var body = $$"""
+        {
+            "geometries1": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [ {{ring1}} ]
+            },
+            "geometries2": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [ {{ring2}} ]
+            },
+            "sr": "4326",
+            "relation": "{{relation}}"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/relation",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceRelationResponse);
+        result.Should().NotBeNull();
+        return result!.Relations?.Length ?? 0;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Relation)]
     [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/relation")]
     public async Task Relation_GetMissingRelation_Returns400()
     {

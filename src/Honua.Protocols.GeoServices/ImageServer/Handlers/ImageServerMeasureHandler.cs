@@ -4,25 +4,32 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
+using MeasureSpace = Honua.Protocols.GeoServices.ImageServer.Services.ImageServerMensurationMath.MeasureSpace;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
 /// <summary>
-/// Handler for Basic ImageServer mensuration.
+/// Handler for Basic ImageServer mensuration. Distance, perimeter, area, and azimuth are
+/// returned as ground quantities: coordinates are normalized to lon/lat (exact inverse Web
+/// Mercator for EPSG:3857 and its aliases, identity for geographic SRIDs, or an authoritative
+/// PostGIS transform for other projected SRIDs when a transform service is available) and then
+/// measured geodesically. Projected SRIDs without an in-process inverse or reachable transform
+/// service fall back to honest planar-meter math, which is only correct when the map units are
+/// already meters (#2734).
 /// </summary>
 internal sealed class ImageServerMeasureHandler
 {
-    private const double EarthRadiusMeters = 6378137d;
-
     private readonly record struct MeasurePoint(double X, double Y, double? Z, int? Srid);
 
     private readonly record struct MeasureGeometry(
@@ -33,15 +40,18 @@ internal sealed class ImageServerMeasureHandler
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerMeasureHandler> _logger;
     private readonly IElevationService? _elevationService;
+    private readonly ICoordinateTransformService? _transformService;
 
     public ImageServerMeasureHandler(
         IRasterStore rasterStore,
         ILogger<ImageServerMeasureHandler> logger,
-        IElevationService? elevationService = null)
+        IElevationService? elevationService = null,
+        ICoordinateTransformService? transformService = null)
     {
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _elevationService = elevationService;
+        _transformService = transformService;
     }
 
     /// <summary>
@@ -104,8 +114,10 @@ internal sealed class ImageServerMeasureHandler
             var response = operation.ToLowerInvariant() switch
             {
                 "esrimensurationpoint" => BuildPointResponse(raster.Name, fromGeometry.Points[0]),
-                "esrimensurationdistanceandangle" => BuildDistanceResponse(raster.Name, fromGeometry.Points[0], toGeometry!.Value.Points[0], linearUnit, angularUnit),
-                "esrimensurationareaandperimeter" => BuildAreaResponse(raster.Name, fromGeometry, linearUnit, areaUnit),
+                "esrimensurationdistanceandangle" => await BuildDistanceResponseAsync(
+                    raster.Name, fromGeometry.Points[0], toGeometry!.Value.Points[0], linearUnit, angularUnit, cancellationToken).ConfigureAwait(false),
+                "esrimensurationareaandperimeter" => await BuildAreaResponseAsync(
+                    raster.Name, fromGeometry, linearUnit, areaUnit, cancellationToken).ConfigureAwait(false),
                 "esrimensurationcentroid" => BuildPointResponse(raster.Name, CalculateCentroid(fromGeometry)),
                 _ => null
             };
@@ -339,15 +351,35 @@ internal sealed class ImageServerMeasureHandler
             Point = new ImageServerMeasurePointResult { Value = ToResponsePoint(point) }
         };
 
-    private static ImageServerMeasureResponse BuildDistanceResponse(
+    private async ValueTask<ImageServerMeasureResponse> BuildDistanceResponseAsync(
         string name,
         MeasurePoint from,
         MeasurePoint to,
         string linearUnit,
-        string angularUnit)
+        string angularUnit,
+        CancellationToken cancellationToken)
     {
-        var distanceMeters = CalculateDistanceMeters(from, to);
-        var azimuthDegrees = CalculateAzimuthDegrees(from, to);
+        var fromNormalized = await NormalizePointAsync(from, cancellationToken).ConfigureAwait(false);
+        var toNormalized = await NormalizePointAsync(to, cancellationToken).ConfigureAwait(false);
+
+        double distanceMeters;
+        double azimuthDegrees;
+        if (fromNormalized.Space == MeasureSpace.Geodesic && toNormalized.Space == MeasureSpace.Geodesic)
+        {
+            distanceMeters = ImageServerMensurationMath.GeodesicDistanceMeters(
+                fromNormalized.X, fromNormalized.Y, toNormalized.X, toNormalized.Y);
+            azimuthDegrees = ImageServerMensurationMath.InitialBearingDegrees(
+                fromNormalized.X, fromNormalized.Y, toNormalized.X, toNormalized.Y);
+        }
+        else
+        {
+            // Projected map units already in meters (or unknown SRID): planar fallback on the
+            // original coordinates. Both operands share the request's geometryType/SRID, so a
+            // space mismatch is a corner case handled conservatively as planar.
+            distanceMeters = ImageServerMensurationMath.PlanarDistanceMeters(from.X, from.Y, to.X, to.Y);
+            azimuthDegrees = ImageServerMensurationMath.PlanarBearingDegrees(from.X, from.Y, to.X, to.Y);
+        }
+
         var (distance, distanceUnit) = ConvertLinear(distanceMeters, linearUnit);
         var (angle, angleUnit) = ConvertAngular(azimuthDegrees, angularUnit);
         return new ImageServerMeasureResponse
@@ -358,14 +390,28 @@ internal sealed class ImageServerMeasureHandler
         };
     }
 
-    private static ImageServerMeasureResponse BuildAreaResponse(
+    private async ValueTask<ImageServerMeasureResponse> BuildAreaResponseAsync(
         string name,
         MeasureGeometry geometry,
         string linearUnit,
-        string areaUnit)
+        string areaUnit,
+        CancellationToken cancellationToken)
     {
-        var areaSquareMeters = CalculateAreaSquareMeters(geometry.Points, geometry.Srid);
-        var perimeterMeters = CalculatePerimeterMeters(geometry.Points);
+        var (coordinates, space) = await NormalizeRingAsync(geometry, cancellationToken).ConfigureAwait(false);
+
+        double areaSquareMeters;
+        double perimeterMeters;
+        if (space == MeasureSpace.Geodesic)
+        {
+            areaSquareMeters = ImageServerMensurationMath.GeodesicRingAreaSquareMeters(coordinates);
+            perimeterMeters = GeodesicPerimeterMeters(coordinates);
+        }
+        else
+        {
+            areaSquareMeters = ImageServerMensurationMath.PlanarRingAreaSquareMeters(coordinates);
+            perimeterMeters = PlanarPerimeterMeters(coordinates);
+        }
+
         var (area, responseAreaUnit) = ConvertArea(areaSquareMeters, areaUnit);
         var (perimeter, responseLinearUnit) = ConvertLinear(perimeterMeters, linearUnit);
         return new ImageServerMeasureResponse
@@ -461,81 +507,131 @@ internal sealed class ImageServerMeasureHandler
     private static MeasurePoint CalculateCentroid(MeasureGeometry geometry)
     {
         var points = geometry.Points;
-        var count = points.Length > 1 && SamePoint(points[0], points[^1]) ? points.Length - 1 : points.Length;
-        var x = 0d;
-        var y = 0d;
-        for (var i = 0; i < count; i++)
+        var ring = new (double X, double Y)[points.Length];
+        for (var i = 0; i < points.Length; i++)
         {
-            x += points[i].X;
-            y += points[i].Y;
+            ring[i] = (points[i].X, points[i].Y);
         }
 
-        return new MeasurePoint(x / count, y / count, null, geometry.Srid);
+        // Centroid is returned in the request's spatial reference, so it is computed directly
+        // in the input coordinate space (the signed-area / shoelace centroid, not a vertex mean).
+        // Geographic inputs unwrap longitudes so antimeridian-crossing rings do not skew the result.
+        var unwrapLongitudes = geometry.Srid is int srid && ImageServerMensurationMath.IsGeographicSrid(srid);
+        var (centroidX, centroidY) = ImageServerMensurationMath.SignedAreaCentroid(ring, unwrapLongitudes);
+        return new MeasurePoint(centroidX, centroidY, null, geometry.Srid);
     }
 
-    private static double CalculateDistanceMeters(MeasurePoint from, MeasurePoint to)
-    {
-        if ((from.Srid ?? to.Srid) == 4326)
-        {
-            var lat1 = DegreesToRadians(from.Y);
-            var lat2 = DegreesToRadians(to.Y);
-            var dLat = DegreesToRadians(to.Y - from.Y);
-            var dLon = DegreesToRadians(to.X - from.X);
-            var a = Math.Sin(dLat / 2d) * Math.Sin(dLat / 2d) +
-                    Math.Cos(lat1) * Math.Cos(lat2) *
-                    Math.Sin(dLon / 2d) * Math.Sin(dLon / 2d);
-            return 2d * EarthRadiusMeters * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1d - a));
-        }
-
-        var dx = to.X - from.X;
-        var dy = to.Y - from.Y;
-        return Math.Sqrt((dx * dx) + (dy * dy));
-    }
-
-    private static double CalculatePerimeterMeters(IReadOnlyList<MeasurePoint> points)
+    private static double GeodesicPerimeterMeters((double X, double Y)[] ring)
     {
         var total = 0d;
-        for (var i = 1; i < points.Count; i++)
+        for (var i = 1; i < ring.Length; i++)
         {
-            total += CalculateDistanceMeters(points[i - 1], points[i]);
+            total += ImageServerMensurationMath.GeodesicDistanceMeters(
+                ring[i - 1].X, ring[i - 1].Y, ring[i].X, ring[i].Y);
         }
 
         return total;
     }
 
-    private static double CalculateAreaSquareMeters(IReadOnlyList<MeasurePoint> points, int? srid)
+    private static double PlanarPerimeterMeters((double X, double Y)[] ring)
     {
-        var transformed = srid == 4326
-            ? ProjectGeographicRingToMeters(points)
-            : points.Select(static point => (point.X, point.Y)).ToArray();
-
-        var area = 0d;
-        for (var i = 0; i < transformed.Length; i++)
+        var total = 0d;
+        for (var i = 1; i < ring.Length; i++)
         {
-            var j = (i + 1) % transformed.Length;
-            area += transformed[i].X * transformed[j].Y;
-            area -= transformed[j].X * transformed[i].Y;
+            total += ImageServerMensurationMath.PlanarDistanceMeters(
+                ring[i - 1].X, ring[i - 1].Y, ring[i].X, ring[i].Y);
         }
 
-        return Math.Abs(area) / 2d;
+        return total;
     }
 
-    private static (double X, double Y)[] ProjectGeographicRingToMeters(IReadOnlyList<MeasurePoint> points)
+    /// <summary>
+    /// Normalizes a single measure point to a measurement coordinate: lon/lat degrees with
+    /// <see cref="MeasureSpace.Geodesic"/> when the SRID is Web Mercator, geographic, or
+    /// transformable to WGS 84; otherwise the original projected meters with
+    /// <see cref="MeasureSpace.PlanarMeters"/>.
+    /// </summary>
+    private async ValueTask<(double X, double Y, MeasureSpace Space)> NormalizePointAsync(
+        MeasurePoint point,
+        CancellationToken cancellationToken)
     {
-        var lat0 = points.Average(static point => point.Y);
-        var cosLat0 = Math.Cos(DegreesToRadians(lat0));
-        return points
-            .Select(point => (
-                X: EarthRadiusMeters * DegreesToRadians(point.X) * cosLat0,
-                Y: EarthRadiusMeters * DegreesToRadians(point.Y)))
-            .ToArray();
+        if (point.Srid is int srid)
+        {
+            if (ImageServerMensurationMath.TryConvertToLonLat(point.X, point.Y, srid, out var lon, out var lat))
+            {
+                return (lon, lat, MeasureSpace.Geodesic);
+            }
+
+            if (_transformService is not null)
+            {
+                var transformed = await _transformService
+                    .TransformPointAsync(point.X, point.Y, srid, 4326, cancellationToken)
+                    .ConfigureAwait(false);
+                if (transformed.HasValue)
+                {
+                    return (transformed.Value.X, transformed.Value.Y, MeasureSpace.Geodesic);
+                }
+            }
+        }
+
+        return (point.X, point.Y, MeasureSpace.PlanarMeters);
     }
 
-    private static double CalculateAzimuthDegrees(MeasurePoint from, MeasurePoint to)
+    /// <summary>
+    /// Normalizes a ring to measurement coordinates, preferring the exact in-process lon/lat
+    /// conversion, then an authoritative batch transform to WGS 84 when a transform service is
+    /// available, and finally the honest planar-meter fallback for other projected SRIDs.
+    /// </summary>
+    private async ValueTask<((double X, double Y)[] Coordinates, MeasureSpace Space)> NormalizeRingAsync(
+        MeasureGeometry geometry,
+        CancellationToken cancellationToken)
     {
-        var radians = Math.Atan2(to.X - from.X, to.Y - from.Y);
-        var degrees = RadiansToDegrees(radians);
-        return degrees < 0 ? degrees + 360d : degrees;
+        var points = geometry.Points;
+        if (geometry.Srid is int srid)
+        {
+            if (points.Length > 0 &&
+                ImageServerMensurationMath.TryConvertToLonLat(points[0].X, points[0].Y, srid, out _, out _))
+            {
+                var coordinates = new (double X, double Y)[points.Length];
+                for (var i = 0; i < points.Length; i++)
+                {
+                    ImageServerMensurationMath.TryConvertToLonLat(points[i].X, points[i].Y, srid, out var lon, out var lat);
+                    coordinates[i] = (lon, lat);
+                }
+
+                return (coordinates, MeasureSpace.Geodesic);
+            }
+
+            if (_transformService is not null && points.Length > 0)
+            {
+                var xs = new double[points.Length];
+                var ys = new double[points.Length];
+                for (var i = 0; i < points.Length; i++)
+                {
+                    xs[i] = points[i].X;
+                    ys[i] = points[i].Y;
+                }
+
+                if (await _transformService.TransformPointsAsync(xs, ys, srid, 4326, cancellationToken).ConfigureAwait(false))
+                {
+                    var coordinates = new (double X, double Y)[points.Length];
+                    for (var i = 0; i < points.Length; i++)
+                    {
+                        coordinates[i] = (xs[i], ys[i]);
+                    }
+
+                    return (coordinates, MeasureSpace.Geodesic);
+                }
+            }
+        }
+
+        var planar = new (double X, double Y)[points.Length];
+        for (var i = 0; i < points.Length; i++)
+        {
+            planar[i] = (points[i].X, points[i].Y);
+        }
+
+        return (planar, MeasureSpace.PlanarMeters);
     }
 
     private static ImageServerMeasureValue CreateValue(double value, string unit)
@@ -645,14 +741,8 @@ internal sealed class ImageServerMeasureHandler
                property.TryGetDouble(out value);
     }
 
-    private static bool SamePoint(MeasurePoint left, MeasurePoint right)
-        => left.X.Equals(right.X) && left.Y.Equals(right.Y);
-
     private static double DegreesToRadians(double degrees)
         => degrees * Math.PI / 180d;
-
-    private static double RadiansToDegrees(double radians)
-        => radians * 180d / Math.PI;
 
     private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
         => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
