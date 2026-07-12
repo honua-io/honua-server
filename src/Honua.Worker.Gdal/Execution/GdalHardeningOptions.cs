@@ -39,6 +39,16 @@ internal sealed class GdalHardeningOptions
     /// here AND add the format to <see cref="GdalWorkerOptions.AllowedRasterInputFormats"/>,
     /// accepting the documented OOM risk. <c>GDAL_SKIP</c> is honored by both the GDAL
     /// (raster) and OGR (vector) driver registrars.
+    ///
+    /// <para>
+    /// <b>Configuring this list REPLACES the default denials</b> (it does not append):
+    /// supplying <c>GdalWorker:Hardening:SkipDrivers</c> yields an effective
+    /// <c>GDAL_SKIP</c> of exactly the configured values, so an operator can genuinely
+    /// REMOVE a default skip driver (e.g. drop <c>JP2OpenJPEG</c> to open JPEG 2000).
+    /// Leaving it unset keeps the full default denial set. This is enforced in the worker
+    /// registration, which post-binds the configured values over ConfigurationBinder's
+    /// append-onto-defaults behavior.
+    /// </para>
     /// </summary>
     public IList<string> SkipDrivers { get; set; } = new List<string>
     {

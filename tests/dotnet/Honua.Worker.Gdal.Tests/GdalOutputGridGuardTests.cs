@@ -51,10 +51,23 @@ public sealed class GdalOutputGridGuardTests
     [UnitTest]
     public void TryAdmit_EnormousDimension_Rejects()
     {
-        // A pathological Int64 dimension is rejected (the width cap trips first); the
-        // checked-multiply overflow branch is a defensive backstop below the caps.
+        // A pathological Int64 dimension is rejected by the width cap, which trips well
+        // before the pixel product is even computed — width/height are int-capped, so the
+        // multiply can never overflow Int64 and needs no overflow guard.
         GdalOutputGridGuard.TryAdmit(long.MaxValue, 2, Options(), out var error).Should().BeFalse();
         error.Should().Contain("exceeds configured");
+    }
+
+    [UnitTest]
+    public void TryAdmit_OverDecodedByteCap_Rejects()
+    {
+        // Each axis and the pixel product stay under their caps, but the single-band
+        // Float64 output (8 bytes/pixel) exceeds MaxDecodedRasterBytes, so the byte cap
+        // is what rejects the grid. 30k×30k = 900 MP × 8 = 7.2 GB > the 4 GiB default;
+        // raise MaxRasterPixels so the pixel cap does not trip first.
+        var options = new GdalWorkerOptions { MaxRasterPixels = long.MaxValue };
+        GdalOutputGridGuard.TryAdmit(30_000, 30_000, options, out var error).Should().BeFalse();
+        error.Should().Contain("MaxDecodedRasterBytes");
     }
 
     [UnitTest]

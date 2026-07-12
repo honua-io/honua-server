@@ -554,7 +554,7 @@ public sealed class GdalUntrustedInputHardeningTests
     // ---- Positive raster-format allowlist (#2784) ------------------------------
 
     [UnitTest]
-    public void Hardening_SkipsNonAllowlistedRasterBombDrivers()
+    public void BuildEnvironment_NonAllowlistedRasterBombDrivers_AddedToGdalSkip()
     {
         // The JPEG2000 / GIF / BMP / HFA / NITF / ENVI / RMF drivers are outside the
         // dimension-guarded TIFF/PNG/JPEG allowlist and must be denied via GDAL_SKIP so
