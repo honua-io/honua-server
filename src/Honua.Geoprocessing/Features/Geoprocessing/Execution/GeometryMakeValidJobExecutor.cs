@@ -98,6 +98,12 @@ internal sealed partial class GeometryMakeValidJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed("Invalid make-valid inputs: geometry is empty.");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
+        {
+            Log.InvalidInputs(_logger, job.OperationId, sridError);
+            return JobExecutionResult.Failed($"Invalid make-valid inputs: {sridError}.");
+        }
+
         geometry.SRID = inputs.Srid;
         var wasValid = geometry.IsValid;
 

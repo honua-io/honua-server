@@ -6,8 +6,11 @@ using System.Diagnostics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
+using Honua.Geoprocessing;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -38,6 +41,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     private readonly FrozenDictionary<string, IProcessExecutor> _handlers;
     private readonly ILogger<GeoprocessingDispatchJobExecutor> _logger;
     private readonly IProcessUsageTelemetry? _usageTelemetry;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
 
     /// <summary>
     /// Composes the dispatcher over the auto-registered per-process executors
@@ -46,11 +50,21 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     /// routing table is built from a single DI scan instead of a hand-maintained
     /// constructor naming every executor. Duplicate or empty ids fail fast at
     /// composition time via <see cref="ProcessExecutorRouteTable.Build"/>.
+    /// <paramref name="serviceScopeFactory"/> resolves the scoped
+    /// <see cref="IWorkspaceLifecycleService"/> per dispatch for GP
+    /// <c>env:workspace</c>/<c>env:overwriteOutput</c> — the dispatcher itself is
+    /// a singleton, so the scoped service cannot be constructor-injected
+    /// directly. Optional so existing test call sites that construct the
+    /// dispatcher without DI keep compiling; when omitted (or when no workspace
+    /// storage provider is registered), <c>env:workspace</c> jobs fail fast with
+    /// a clear "no workspace provider configured" message instead of silently
+    /// ignoring the request.
     /// </summary>
     public GeoprocessingDispatchJobExecutor(
         IEnumerable<IProcessExecutor> executors,
         ILogger<GeoprocessingDispatchJobExecutor> logger,
-        IProcessUsageTelemetry? usageTelemetry = null)
+        IProcessUsageTelemetry? usageTelemetry = null,
+        IServiceScopeFactory? serviceScopeFactory = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
@@ -61,6 +75,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         _handlers = ProcessExecutorRouteTable.Build(executors);
         _logger = logger;
         _usageTelemetry = usageTelemetry;
+        _serviceScopeFactory = serviceScopeFactory;
     }
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
@@ -98,7 +113,35 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 $"Supported ids in this slice: {supported}.");
         }
 
-        var result = await handler.ExecuteAsync(job, context, cancellationToken).ConfigureAwait(false);
+        JobExecutionResult result;
+        var (workspaceScope, effectiveContext, workspaceError) =
+            await TryResolveWorkspaceRoutingAsync(job, context, cancellationToken).ConfigureAwait(false);
+        using (workspaceScope)
+        {
+            if (workspaceError is not null)
+            {
+                Log.WorkspaceProviderUnavailable(_logger, job.OperationId, workspaceError);
+                activity?.SetStatus(ActivityStatusCode.Error, "env:workspace could not be resolved");
+                return JobExecutionResult.Failed(workspaceError);
+            }
+
+            try
+            {
+                result = await handler.ExecuteAsync(job, effectiveContext, cancellationToken).ConfigureAwait(false);
+            }
+            catch (ArtifactAlreadyExistsException ex)
+            {
+                Log.OutputCollision(_logger, job.OperationId, ex.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                return JobExecutionResult.Failed(ex.Message);
+            }
+            catch (ArtifactReplacementFailedException ex)
+            {
+                Log.OutputCollision(_logger, job.OperationId, ex.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                return JobExecutionResult.Failed(ex.Message);
+            }
+        }
 
         if (result.Status != ExecutionJobStatus.Succeeded)
         {
@@ -112,11 +155,85 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         return result;
     }
 
+    /// <summary>
+    /// Resolves GP <c>env:workspace</c> routing for this dispatch, if requested.
+    /// The caller-supplied <c>env:workspace</c> value is a stable label, not a
+    /// durable workspace id — it is resolved (get-or-create) through
+    /// <see cref="IWorkspaceLifecycleService.GetOrCreateNamedWorkspaceAsync"/>
+    /// scoped to the submitting caller, and the RESOLVED
+    /// <see cref="Workspace.WorkspaceId"/> is what downstream artifact writes
+    /// use — <see cref="IWorkspaceLifecycleService.AddArtifactAsync"/> /
+    /// <see cref="IWorkspaceLifecycleService.AddOrReplaceArtifactAsync"/> both
+    /// require an already-existing workspace and throw otherwise, so passing
+    /// the raw label straight through would fail every request.
+    /// Returns the <see cref="IServiceScope"/> the caller must dispose after the
+    /// executor runs (or <c>null</c> when no scope was opened), and reports
+    /// either the wrapped context to use or a clear error when a workspace was
+    /// requested but could not be resolved (no storage provider configured, or
+    /// the get-or-create call itself failed). Isolated to a single method so
+    /// every one of the ~30 per-process executors gets workspace routing "for
+    /// free" through the context they already call <c>PublishArtifactAsync</c>
+    /// on — no executor needs its own workspace logic.
+    /// </summary>
+    private async Task<(IDisposable? Scope, IJobExecutionContext EffectiveContext, string? Error)>
+        TryResolveWorkspaceRoutingAsync(
+            ExecutionJobRecord job,
+            IJobExecutionContext context,
+            CancellationToken cancellationToken)
+    {
+        var requestedLabel = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkspace);
+        if (string.IsNullOrWhiteSpace(requestedLabel))
+        {
+            return (null, context, null);
+        }
+
+        var scope = _serviceScopeFactory?.CreateScope();
+        var workspaceLifecycle = scope?.ServiceProvider.GetService<IWorkspaceLifecycleService>();
+        if (workspaceLifecycle is null)
+        {
+            scope?.Dispose();
+            return (null, context,
+                $"env:workspace='{requestedLabel}' was requested but no workspace storage provider is configured for this deployment.");
+        }
+
+        var ownerId = string.IsNullOrWhiteSpace(job.Audit.RequestedBy) ? "anonymous" : job.Audit.RequestedBy;
+
+        Workspace resolvedWorkspace;
+        try
+        {
+            resolvedWorkspace = await workspaceLifecycle
+                .GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            scope?.Dispose();
+            return (null, context, $"env:workspace='{requestedLabel}' could not be resolved: {ex.Message}");
+        }
+
+        var overwrite =
+            job.Spec.Parameters.TryGetValue(GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput, out var raw)
+            && bool.TryParse(raw, out var parsedOverwrite)
+            && parsedOverwrite;
+
+        var effectiveContext = new WorkspaceRoutingJobExecutionContext(
+            context, job, resolvedWorkspace.WorkspaceId, overwrite, workspaceLifecycle);
+        return (scope, effectiveContext, null);
+    }
+
     private static partial class Log
     {
         [LoggerMessage(9090, LogLevel.Warning,
             "Geoprocessing dispatch executor refused job {OperationId}: unsupported process id '{ProcessId}'")]
         public static partial void UnsupportedProcessId(ILogger logger, string operationId, string processId);
+
+        [LoggerMessage(9091, LogLevel.Warning,
+            "Geoprocessing dispatch executor failed job {OperationId}: {Reason}")]
+        public static partial void WorkspaceProviderUnavailable(ILogger logger, string operationId, string reason);
+
+        [LoggerMessage(9092, LogLevel.Warning,
+            "Geoprocessing dispatch executor failed job {OperationId}: output collision — {Reason}")]
+        public static partial void OutputCollision(ILogger logger, string operationId, string reason);
     }
 }
 

@@ -117,6 +117,28 @@ public sealed class GeometryAreaJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_EmbeddedSridMismatch_FailsAsInputValidation()
+    {
+        var executor = CreateExecutor();
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-srid-mismatch");
+
+        // EWKB carries SRID 3857 while the declared srid input is 4326.
+        var record = CreateJobRecord(
+            processId: GeometryAreaJobExecutor.HandledProcessId,
+            includeInputs: true,
+            wkb: EwkbBase64(BuildBoxPolygon(0, 0, 10, 10), 3857),
+            srid: "4326");
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("SRID");
+        result.ErrorMessage.Should().Contain("3857");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_PayloadExceedsMaxArtifactBytes_FailsWithGuardrail()
     {
         var executor = CreateExecutor(maxArtifactBytes: 8);
@@ -166,6 +188,13 @@ public sealed class GeometryAreaJobExecutorTests
 
     private static string WkbBase64(Geometry geometry)
         => Convert.ToBase64String(new WKBWriter().Write(geometry));
+
+    private static string EwkbBase64(Geometry geometry, int srid)
+    {
+        geometry.SRID = srid;
+        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: true);
+        return Convert.ToBase64String(writer.Write(geometry));
+    }
 
     private static ExecutionJobRecord CreateJobRecord(
         string? processId,

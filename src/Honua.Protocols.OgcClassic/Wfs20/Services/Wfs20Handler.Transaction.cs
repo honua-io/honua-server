@@ -1361,18 +1361,29 @@ internal sealed partial class Wfs20Handler
 
     private static Geometry ParseTransactionGeometry(XElement geometryElement, int defaultSrid)
     {
-        var crsDefinition = geometryElement.Attributes()
+        var srsNameValue = geometryElement.Attributes()
             .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "srsName", StringComparison.OrdinalIgnoreCase))
-            ?.Value is { Length: > 0 } srsName &&
-            SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var parsedDefinition)
-            ? parsedDefinition
-            : SpatialReferenceHelpers.TryParseCrsDefinition(defaultSrid.ToString(CultureInfo.InvariantCulture), out var defaultDefinition)
-                ? defaultDefinition
-                : new CrsDefinition(
-                    FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{defaultSrid}"),
-                    defaultSrid,
-                    AxisOrder.EastNorth,
-                    IsGeographic: false);
+            ?.Value;
+
+        CrsDefinition crsDefinition;
+        if (!string.IsNullOrWhiteSpace(srsNameValue))
+        {
+            // An srsName that is present but unparseable/unsupported is a transaction failure
+            // (OGC exception), not a silent fall back to the layer CRS (#2737). A missing srsName
+            // keeps the correct feature-type-CRS default below.
+            if (!SpatialReferenceHelpers.TryParseCrsDefinition(srsNameValue, out crsDefinition))
+            {
+                throw new ArgumentException($"Unsupported or unrecognized srsName '{srsNameValue}'.");
+            }
+        }
+        else if (!SpatialReferenceHelpers.TryParseCrsDefinition(defaultSrid.ToString(CultureInfo.InvariantCulture), out crsDefinition))
+        {
+            crsDefinition = new CrsDefinition(
+                FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{defaultSrid}"),
+                defaultSrid,
+                AxisOrder.EastNorth,
+                IsGeographic: false);
+        }
 
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(crsDefinition.Srid);
 

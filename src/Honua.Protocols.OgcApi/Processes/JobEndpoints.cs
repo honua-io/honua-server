@@ -408,6 +408,7 @@ internal static class JobEndpoints
         ILogger<OgcProcessesEndpointsLog> logger,
         IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IUniversalProgressStore progressStore,
+        IGeoprocessingJobService jobService,
         [FromServices] IExecutionJobStore? jobStore = null,
         [FromServices] IJobQueue? jobQueue = null,
         [FromServices] IEnumerable<IBatchComputeBackend>? backends = null)
@@ -441,8 +442,38 @@ internal static class JobEndpoints
             return JobStoreUnavailableResult();
         }
 
-        var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-        if (job == null || job.Spec.Kind != ExecutionJobKind.Geoprocessing)
+        // #2753: DismissJob is a destructive write that manipulates the store/queue/
+        // progress directly and never routed through the ownership-enforcing service
+        // path. The operator evaluator has no ownership logic for OperatorResourceType.Job,
+        // so a Job.Execute=* grant matches every job id — letting any such caller cancel
+        // ANOTHER principal's job. (This was the remaining gap after GetJobStatus/List/
+        // results were routed through the service; #2753's "cancel is already ownership-
+        // safe" note held only for GPServer/MCP, not this OGC path.) Fetch via the
+        // ownership-enforcing GetJobAsync so a non-owner non-admin gets a clean 404 BEFORE
+        // any mutation. This REPLACES the prior direct store fetch (no net-extra read), so
+        // the downstream re-read orchestration is unchanged.
+        ExecutionJobRecord job;
+        try
+        {
+            job = await jobService.GetJobAsync(jobId, context.User, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (GeoprocessingNotFoundException)
+        {
+            OgcProcessesLog.JobNotFound(logger, jobId);
+            return JobNotFoundResult(jobId);
+        }
+        catch (GeoprocessingAuthorizationException authEx)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Execute.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authEx.RequiresAuthentication);
+        }
+        catch (GeoprocessingStoreUnavailableException)
+        {
+            OgcProcessesLog.JobStoreUnavailable(logger);
+            return JobStoreUnavailableResult();
+        }
+
+        if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
         {
             OgcProcessesLog.JobNotFound(logger, jobId);
             return JobNotFoundResult(jobId);

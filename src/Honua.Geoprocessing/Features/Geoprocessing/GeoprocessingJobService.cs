@@ -472,6 +472,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var jobStore = RequireJobStore();
         var limit = Math.Clamp(filter.Limit, 1, MaxJobListPageSize);
 
+        // #2753: scope the store query to the caller for a non-admin so paging
+        // is not under-filled. Without this the store returns a page of up-to-`limit` jobs
+        // across ALL owners and the ownership post-filter below drops the ones the caller
+        // cannot read — so a caller whose jobs are outnumbered by others' could receive a
+        // near-empty page even though they own many jobs. Admins are not scoped (they see
+        // all). The per-job ownership post-filter is retained as defense in depth.
+        var ownerScope = principal.IsInRole("admin") ? null : ResolvePrincipalId(principal);
+
         // Page the canonical store (newest first, status-filtered there), then apply
         // the adapter binding constraint and per-job ownership in the shared service so
         // no protocol surface can list jobs the caller cannot read. The store cursor is
@@ -482,6 +490,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             {
                 Kind = ExecutionJobKind.Geoprocessing,
                 Statuses = filter.Statuses,
+                RequestedBy = ownerScope,
                 Cursor = filter.Cursor,
                 Limit = limit
             },

@@ -401,15 +401,11 @@ public sealed class OgcProcessesFailedJobResultsTestsFixture : IAsyncLifetime
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(CreateFailedJob());
 
-        var jobService = Substitute.For<IGeoprocessingJobService>();
-
         App = new WebAppFixture()
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IExecutionJobStore>();
                 services.AddSingleton(jobStore);
-                services.RemoveAll<IGeoprocessingJobService>();
-                services.AddSingleton(jobService);
             });
     }
 
@@ -426,6 +422,7 @@ public sealed class OgcProcessesFailedJobResultsTestsFixture : IAsyncLifetime
             UpdatedAt = DateTimeOffset.UtcNow,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = "Process execution failed due to invalid input geometry.",
+            Audit = new OperationAuditInfo { RequestedBy = "admin" },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,

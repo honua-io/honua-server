@@ -14,7 +14,9 @@ payload implementation and integrity proof are tracked by #2721.
 `package-server-test-binaries.sh` creates a deterministic gzip-1 archive and a
 manifest keyed by exact commit, SDK version, project, and contract version. The
 default limits are 256 MiB compressed, 512 MiB staged, and 120 seconds to
-package. `restore-server-test-binaries.sh` rejects toolchain/source/project
+package. Evidence is valid for at most 24 hours; restore rejects future or
+expired manifests even if the transport still retains their bytes.
+`restore-server-test-binaries.sh` rejects toolchain/source/project
 mismatches, size drift, digest failures, unsafe paths, missing project assets,
 or missing binaries/PDBs before extraction is accepted.
 
@@ -43,6 +45,43 @@ The fast fixture used by CI router validation is:
 ```bash
 scripts/ci/validate-server-test-binary-artifacts.sh
 ```
+
+## Shard-local failed-rerun cache
+
+Production `Server Tests (<shard>)` jobs keep their independent attempt-1
+restore/build path. For each selected project, the lexicographically first
+selected shard is the only attempt-1 cache writer; siblings still build and test
+independently but do not package duplicate project payloads. The writer packages
+and saves its exact project payload after build and before tests, so a test
+failure cannot prevent reuse.
+
+On workflow attempts after the first, a failed shard requests exactly one cache
+key containing the full commit SHA, resolved .NET SDK, archive contract version,
+project identity, runner OS, and artifact-registry digest. There are no prefix
+fallback keys. A valid hit is verified and unpacked before the unchanged
+`--no-build --no-restore` shard test command. A miss or rejected/expired payload
+cleans partial test-project output and safely executes the normal restore/build
+path. A rebuilding rerun may save the exact key for a subsequent attempt.
+
+Every job reports the hit/miss/rejection reason plus transfer, integrity,
+unpack, package, and save timings in its step summary. Cache save contention or
+service failure is non-gating; test/build failures keep their existing
+attribution and advisory semantics. The deterministic contract fixture is:
+
+```bash
+scripts/ci/validate-server-test-shard-cache.sh
+```
+
+Hosted proof [run 29167891150](https://github.com/honua-io/honua-server/actions/runs/29167891150)
+used three independent jobs over the 46.4 MiB geoprocessing CLI project cache.
+Attempt 1 built all three shards in parallel; the sole writer completed in
+145.3 seconds versus 144.9 seconds for its non-writer sibling (0.27% delta).
+Two consumers then failed deliberately. Failed-only attempt 2 left the writer's
+original timestamps unchanged: the exact-hit consumer verified/unpacked the
+cache, skipped build, and completed in 51.1 seconds (64.7% faster than its cold
+attempt; 1.8 second transfer, 1.0 second integrity check, 0.8 second unpack).
+The forced-miss consumer rebuilt successfully in 148.0 seconds and saved its
+new exact key. The run completed successfully on attempt 2.
 
 ## Baseline evidence
 

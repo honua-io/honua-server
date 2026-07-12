@@ -183,9 +183,14 @@ internal static partial class WmsRequestHandlers
             }
         }
 
-        var mapWidth = requestedExtent.MaxX - requestedExtent.MinX;
+        // Use the wrap-aware effective width so a dateline-crossing geographic BBOX (minX > maxX,
+        // which GetMap supports via BuildTransform/GetEffectiveWidth) maps pixels to coordinates
+        // correctly instead of producing a negative width, a mirrored click point, and a negative
+        // tolerance (#2739). The inverse of GetMap's NormalizeLongitude can land past the +limit
+        // edge, so fold it back into the canonical world range.
+        var mapWidth = CoordinateTransformer.GetEffectiveWidth(requestedExtent);
         var mapHeight = requestedExtent.MaxY - requestedExtent.MinY;
-        var mapX = requestedExtent.MinX + (((pixelX + 0.5) / imageWidth) * mapWidth);
+        var mapX = ComputeGetFeatureInfoMapX(requestedExtent, pixelX, imageWidth);
         var mapY = requestedExtent.MaxY - (((pixelY + 0.5) / imageHeight) * mapHeight);
 
         var toleranceX = Math.Max((mapWidth / imageWidth) * DefaultFeatureInfoTolerancePixels, 0.000001);
@@ -322,6 +327,38 @@ internal static partial class WmsRequestHandlers
             ? plainText.ToString().TrimEnd()
             : "No features found.";
         return Results.Content(body, PlainTextMimeType, Encoding.UTF8, StatusCodes.Status200OK);
+    }
+
+    /// <summary>
+    /// Maps a horizontal pixel column to its map X coordinate for GetFeatureInfo, using the
+    /// wrap-aware effective width so a dateline-crossing geographic BBOX (which GetMap supports)
+    /// inverts correctly and folds a result past the world's positive edge back into range (#2739).
+    /// </summary>
+    internal static double ComputeGetFeatureInfoMapX(SkiaMapRenderer.RenderExtent extent, double pixelX, int imageWidth)
+    {
+        var effectiveWidth = CoordinateTransformer.GetEffectiveWidth(extent);
+        var normalizedMapX = extent.MinX + (((pixelX + 0.5) / imageWidth) * effectiveWidth);
+        return FoldWrappedLongitude(normalizedMapX, extent);
+    }
+
+    /// <summary>
+    /// Folds a longitude that the inverse pixel-to-map math produced past the world's positive
+    /// edge back into the canonical world range for a wrapped (antimeridian-crossing) extent.
+    /// Mirrors <c>CoordinateTransformer.NormalizeLongitude</c>, which folds the opposite direction
+    /// in the forward map-to-pixel transform. Non-wrapped extents are returned unchanged (#2739).
+    /// </summary>
+    private static double FoldWrappedLongitude(double value, SkiaMapRenderer.RenderExtent extent)
+    {
+        if (CoordinateTransformer.TryGetWrappedWorldWidth(extent, out var worldWidth))
+        {
+            var halfWidth = worldWidth / 2.0;
+            if (value > halfWidth)
+            {
+                value -= worldWidth;
+            }
+        }
+
+        return value;
     }
 
     /// <summary>
