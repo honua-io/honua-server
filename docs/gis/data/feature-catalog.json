@@ -8825,7 +8825,9 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_ReadsServiceAndTaskMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_ReturnsGPServerMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_UnknownService_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_WithUnsupportedFormat_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_WithUnsupportedFormat_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_CatalogProcessIdMatchingAlias_PublishesNameOnlyOnce",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_TaskList_PublishesInternalIdAndEsriAliasWithoutDuplicates"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented"
@@ -8843,7 +8845,13 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_KnownTask_ReturnsTaskMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_ParameterWithAllowedValues_PopulatesChoiceList",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_ProtocolDisabledService_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_UnknownTask_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.TaskInfo_UnknownTask_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_AliasShadowedByCatalogProcessCaseVariant_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_ByAliasCaseVariant_ResolvesCaseInsensitively",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_ByEsriAlias_EchoesAliasAndPublishesCanonicalParameters",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_ByInternalProcessIdCaseVariant_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_CatalogProcessIdMatchingAlias_ResolvesToCatalogProcess",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_UnknownAlias_ReturnsNotFound"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented"
@@ -16751,7 +16759,9 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_AsyncOnlyTask_Returns400WithCapabilityMessage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_InvalidGPChoice_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_SyncEligibleTask_ReturnsInlineResults",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_WithEnvOutSR_HonorsControl"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_WithEnvOutSR_HonorsControl",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.Execute_ByEsriAlias_RunsCanonicalProcessInline",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.Execute_UnknownAlias_ReturnsNotFound"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented"
@@ -16789,7 +16799,10 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_UnauthenticatedWithInvalidEnvControls_Returns401BeforeBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_UnknownTask_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_WithEnvOutSR_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_WithUnsupportedContentType_ReturnsUnsupportedMediaType"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.SubmitJob_ByEsriAlias_ResolvesToCanonicalProcess",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.SubmitJob_CatalogProcessIdMatchingAlias_SubmitsCatalogProcess",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.SubmitJob_UnknownAlias_ReturnsNotFound"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented"
