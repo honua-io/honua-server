@@ -42,6 +42,13 @@ public sealed record ProcessDefinition
     public required IReadOnlyList<ArtifactKind> OutputArtifactKinds { get; init; }
 
     /// <summary>
+    /// Authorization tier required to execute this process. Analytic processes are available
+    /// through the baseline process-execute permission; processes with durable side effects
+    /// explicitly opt into <see cref="ProcessExecutionTier.Mutating"/>.
+    /// </summary>
+    public ProcessExecutionTier ExecutionTier { get; init; } = ProcessExecutionTier.Analytic;
+
+    /// <summary>
     /// The runtime profile a job for this process must run under. Defaults to
     /// <see cref="RuntimeProfiles.Managed"/> so the lean serving image executes it.
     /// Processes backed by the heavyweight out-of-process GDAL worker (the
@@ -53,6 +60,18 @@ public sealed record ProcessDefinition
     /// routing decision in the catalog rather than hard-coded in the submit path.
     /// </summary>
     public string RuntimeProfile { get; init; } = RuntimeProfiles.Managed;
+}
+
+/// <summary>
+/// Classifies the authorization sensitivity of a built-in process execution.
+/// </summary>
+public enum ProcessExecutionTier
+{
+    /// <summary>Read-only or analytic execution covered by the baseline process permission.</summary>
+    Analytic,
+
+    /// <summary>Execution that imports, mutates, or writes caller-selected durable state.</summary>
+    Mutating
 }
 
 /// <summary>

@@ -445,6 +445,69 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_AnalyticProcessWithoutMutatingPermission_CreatesJob()
+    {
+        DenyMutatingProcessPermission();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        job.Status.Should().Be(ExecutionJobStatus.Queued);
+        await _authEvaluator.DidNotReceive().EvaluateAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request => request.Operation == OperatorOperation.ExecuteMutatingProcess),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_SinkProcessWithoutMutatingPermission_ThrowsAuthorizationException()
+    {
+        DenyMutatingProcessPermission();
+
+        var act = async () => await _sut.SubmitJobAsync(CreateSinkPlan(), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_DestructiveProcessWithoutMutatingPermission_ThrowsAuthorizationException()
+    {
+        DenyMutatingProcessPermission();
+
+        var act = async () => await _sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_SinkProcessWithMutatingPermission_CreatesJob()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var job = await _sut.SubmitJobAsync(CreateSinkPlan(), null, CreatePrincipal());
+
+        job.Status.Should().Be(ExecutionJobStatus.Queued);
+        await _authEvaluator.Received().EvaluateAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request => request.Operation == OperatorOperation.ExecuteMutatingProcess),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CallerNotAuthorized_ThrowsAuthorizationException()
     {
         // The submit path centralizes Process/Execute authorization (#2263) so a
@@ -3032,6 +3095,36 @@ public sealed class GeoprocessingJobServiceTests
             }
         ]
     };
+
+    private static AnalysisPlan CreateDeleteFeaturesPlan() => new()
+    {
+        PlanId = "plan-delete",
+        IntentId = "intent-delete",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-delete",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "data-management.delete-features",
+                Inputs = new Dictionary<string, string>
+                {
+                    ["layerId"] = "0",
+                    ["where"] = "OBJECTID > 0"
+                }
+            }
+        ]
+    };
+
+    private void DenyMutatingProcessPermission()
+        => _authEvaluator
+            .EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Is<OperatorAuthorizationRequest>(request =>
+                    request.Operation == OperatorOperation.ExecuteMutatingProcess),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden(
+                "mutating process execution is not authorized")));
 
     // Jobs default to being owned by the "test-user" principal that CreatePrincipal()
     // returns, so ownership-scoped operations (get/results/cancel) succeed for the
