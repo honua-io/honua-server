@@ -230,6 +230,47 @@ public class NetworkDatasetAdminEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/network-datasets/{id}")]
+    public async Task Update_LegacyTopologyMapping_RecordsReplacementActiveGeneration()
+    {
+        var id = NewId("mapupd");
+        await _client.PostAsJsonAsync("/api/v1/admin/network-datasets", BuildValidRequest(id), _jsonOptions);
+
+        var update = new UpdateNetworkDatasetRequest
+        {
+            EdgeTable = "public.ways_v2",
+            VertexTable = "public.ways_vertices_v2",
+            Srid = 3857,
+        };
+
+        var response = await _client.PutAsJsonAsync($"/api/v1/admin/network-datasets/{id}", update, _jsonOptions);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var generations = connection.CreateCommand();
+        generations.CommandText = """
+            SELECT generation, state, edge_table, vertex_table, srid, COUNT(*) OVER ()
+            FROM honua.network_topology_generations
+            WHERE dataset_id = @id
+            ORDER BY generation
+            """;
+        generations.Parameters.AddWithValue("id", id);
+        await using var reader = await generations.ExecuteReaderAsync();
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1, reader.GetInt64(0));
+        Assert.Equal("retired", reader.GetString(1));
+        Assert.Equal(2, reader.GetInt64(5));
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(2, reader.GetInt64(0));
+        Assert.Equal("active", reader.GetString(1));
+        Assert.Equal("public.ways_v2", reader.GetString(2));
+        Assert.Equal("public.ways_vertices_v2", reader.GetString(3));
+        Assert.Equal(3857, reader.GetInt32(4));
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/network-datasets/{id}")]
     public async Task Update_UnsafeVertexTable_Returns400()
     {
         var id = NewId("updbad");

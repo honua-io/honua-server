@@ -184,7 +184,12 @@ solve against the same edge/vertex mapping. New registry entries create their in
 active generation through a database-owned insert trigger, so even a pre-084 replica
 in a mixed-version rollout cannot commit a registration with zero generations. New
 application code validates that invariant before committing its registration
-transaction. Delivery remains deliberately ordered under #2656:
+transaction. The migration installs this trigger before taking its backfill snapshot,
+closing the concurrent-registration window during startup. While the legacy registry
+remains authoritative, mapping updates from an old or rolled-back replica atomically
+retire the recorded active generation and create its replacement; lifecycle metadata
+therefore cannot silently diverge from the topology that solves actually use.
+Delivery remains deliberately ordered under #2656:
 transactional content edits (#2716), isolated durable rebuild (#2718), atomic
 promotion/rollback (#2719), then multi-node fencing and recovery (#2720). Travel-profile
 metadata and cost semantics remain independently owned by #2655.

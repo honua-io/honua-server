@@ -57,43 +57,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_network_topology_generations_active_dataset
 CREATE INDEX IF NOT EXISTS ix_network_topology_generations_dataset_state
     ON honua.network_topology_generations (dataset_id, state, generation DESC);
 
-INSERT INTO honua.network_topology_generations (
-    dataset_id,
-    generation,
-    source_revision,
-    state,
-    row_version,
-    edge_table,
-    vertex_table,
-    srid,
-    created_at,
-    updated_at,
-    activated_at)
-SELECT
-    dataset.id,
-    GREATEST(dataset.topology_version::bigint, allocated.next_generation),
-    0,
-    'active',
-    1,
-    dataset.edge_table,
-    dataset.vertex_table,
-    dataset.srid,
-    dataset.created_at,
-    dataset.updated_at,
-    now()
-FROM honua.network_datasets AS dataset
-JOIN LATERAL (
-    SELECT COALESCE(MAX(existing.generation) + 1, 1) AS next_generation
-    FROM honua.network_topology_generations AS existing
-    WHERE existing.dataset_id = dataset.id
-) AS allocated ON true
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM honua.network_topology_generations AS existing
-    WHERE existing.dataset_id = dataset.id
-      AND existing.state = 'active')
-ON CONFLICT (dataset_id, generation) DO NOTHING;
-
 -- The database owns the registration invariant during rolling upgrades. An old
 -- replica can continue using its pre-084 INSERT statement, but this trigger runs in
 -- that same statement transaction and creates the initial active generation before
@@ -154,6 +117,125 @@ CREATE TRIGGER network_datasets_seed_initial_generation
     AFTER INSERT ON honua.network_datasets
     FOR EACH ROW
     EXECUTE FUNCTION honua.seed_initial_network_topology_generation();
+
+-- A rolled-back or not-yet-upgraded replica can still use the legacy registry PUT
+-- surface to change the live solve mapping. Preserve immutable generation history by
+-- retiring the old active generation and recording the replacement in the same UPDATE
+-- transaction. New topology writers must use the generation lifecycle instead; this
+-- trigger is the mixed-version compatibility boundary while the legacy registry remains
+-- the solve-path source of truth.
+CREATE OR REPLACE FUNCTION honua.track_legacy_network_topology_mapping_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    next_generation BIGINT;
+    retired_count INTEGER;
+BEGIN
+    IF OLD.edge_table IS NOT DISTINCT FROM NEW.edge_table
+       AND OLD.vertex_table IS NOT DISTINCT FROM NEW.vertex_table
+       AND OLD.srid IS NOT DISTINCT FROM NEW.srid THEN
+        RETURN NEW;
+    END IF;
+
+    UPDATE honua.network_topology_generations
+    SET state = 'retired',
+        row_version = row_version + 1,
+        updated_at = NEW.updated_at
+    WHERE dataset_id = NEW.id
+      AND state = 'active';
+    GET DIAGNOSTICS retired_count = ROW_COUNT;
+
+    IF retired_count <> 1 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '23514',
+            MESSAGE = 'network topology active generation invariant violated';
+    END IF;
+
+    SELECT GREATEST(
+        NEW.topology_version::bigint,
+        COALESCE(MAX(existing.generation) + 1, 1))
+    INTO next_generation
+    FROM honua.network_topology_generations AS existing
+    WHERE existing.dataset_id = NEW.id;
+
+    INSERT INTO honua.network_topology_generations (
+        dataset_id,
+        generation,
+        source_revision,
+        state,
+        row_version,
+        edge_table,
+        vertex_table,
+        srid,
+        created_at,
+        updated_at,
+        activated_at)
+    VALUES (
+        NEW.id,
+        next_generation,
+        0,
+        'active',
+        1,
+        NEW.edge_table,
+        NEW.vertex_table,
+        NEW.srid,
+        NEW.updated_at,
+        NEW.updated_at,
+        now());
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS network_datasets_track_legacy_mapping_update
+    ON honua.network_datasets;
+CREATE TRIGGER network_datasets_track_legacy_mapping_update
+    AFTER UPDATE OF edge_table, vertex_table, srid ON honua.network_datasets
+    FOR EACH ROW
+    EXECUTE FUNCTION honua.track_legacy_network_topology_mapping_update();
+
+-- Install the compatibility triggers before taking the backfill snapshot. Trigger DDL
+-- holds its table lock until this transactional migration commits: writes that began
+-- earlier finish before trigger installation and are visible here, while later writes
+-- wait and execute with the trigger active. This ordering prevents a registration from
+-- landing between backfill and trigger installation with zero active generations.
+INSERT INTO honua.network_topology_generations (
+    dataset_id,
+    generation,
+    source_revision,
+    state,
+    row_version,
+    edge_table,
+    vertex_table,
+    srid,
+    created_at,
+    updated_at,
+    activated_at)
+SELECT
+    dataset.id,
+    GREATEST(dataset.topology_version::bigint, allocated.next_generation),
+    0,
+    'active',
+    1,
+    dataset.edge_table,
+    dataset.vertex_table,
+    dataset.srid,
+    dataset.created_at,
+    dataset.updated_at,
+    now()
+FROM honua.network_datasets AS dataset
+JOIN LATERAL (
+    SELECT COALESCE(MAX(existing.generation) + 1, 1) AS next_generation
+    FROM honua.network_topology_generations AS existing
+    WHERE existing.dataset_id = dataset.id
+) AS allocated ON true
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM honua.network_topology_generations AS existing
+    WHERE existing.dataset_id = dataset.id
+      AND existing.state = 'active')
+ON CONFLICT (dataset_id, generation) DO NOTHING;
 
 COMMENT ON TABLE honua.network_topology_generations IS
     'Immutable routing topology generation metadata. Non-active generations are never solve targets.';

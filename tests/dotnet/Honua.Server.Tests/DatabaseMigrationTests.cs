@@ -221,6 +221,22 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         }
 
         var migrationSql = await ReadEmbeddedMigrationAsync("084_CreateNetworkTopologyGenerations.sql");
+        var insertTriggerPosition = migrationSql.IndexOf(
+            "CREATE TRIGGER network_datasets_seed_initial_generation",
+            StringComparison.Ordinal);
+        var updateTriggerPosition = migrationSql.IndexOf(
+            "CREATE TRIGGER network_datasets_track_legacy_mapping_update",
+            StringComparison.Ordinal);
+        var backfillPosition = migrationSql.IndexOf(
+            "-- Install the compatibility triggers before taking the backfill snapshot.",
+            StringComparison.Ordinal);
+        insertTriggerPosition.Should().BeGreaterThanOrEqualTo(0);
+        updateTriggerPosition.Should().BeGreaterThan(insertTriggerPosition);
+        backfillPosition.Should().BeGreaterThan(insertTriggerPosition,
+            "the mixed-version INSERT trigger must be installed before the backfill snapshot");
+        backfillPosition.Should().BeGreaterThan(updateTriggerPosition,
+            "the mixed-version UPDATE trigger must be installed before the backfill snapshot");
+
         await using (var apply = connection.CreateCommand())
         {
             apply.CommandText = migrationSql;
@@ -322,6 +338,45 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             reader.GetString(3).Should().Be("routing.old_vertices");
             reader.GetInt64(4).Should().Be(1,
                 "a pre-084 registry insert must atomically seed exactly one generation");
+        }
+
+        await using (var oldReplicaUpdate = connection.CreateCommand())
+        {
+            oldReplicaUpdate.CommandText = """
+                UPDATE honua.network_datasets
+                SET edge_table = 'routing.old_edges_v2',
+                    vertex_table = 'routing.old_vertices_v2',
+                    srid = 3857,
+                    updated_at = '2026-04-03T00:00:00Z'
+                WHERE id = 'old-replica';
+                """;
+            (await oldReplicaUpdate.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        await using (var mixedVersionUpdateGenerations = connection.CreateCommand())
+        {
+            mixedVersionUpdateGenerations.CommandText = """
+                SELECT generation, state, row_version, edge_table, vertex_table, srid,
+                       COUNT(*) OVER ()
+                FROM honua.network_topology_generations
+                WHERE dataset_id = 'old-replica'
+                ORDER BY generation
+                """;
+            await using var reader = await mixedVersionUpdateGenerations.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(0).Should().Be(7);
+            reader.GetString(1).Should().Be("retired");
+            reader.GetInt64(2).Should().Be(2);
+            reader.GetString(3).Should().Be("routing.old_edges");
+            reader.GetInt64(6).Should().Be(2);
+
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(0).Should().Be(8);
+            reader.GetString(1).Should().Be("active");
+            reader.GetInt64(2).Should().Be(1);
+            reader.GetString(3).Should().Be("routing.old_edges_v2");
+            reader.GetString(4).Should().Be("routing.old_vertices_v2");
+            reader.GetInt32(5).Should().Be(3857);
         }
 
         await using var duplicateActive = connection.CreateCommand();
