@@ -897,4 +897,105 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         result.Error.Details.Should().NotBeNull();
         result.Error.Details!.Should().Contain(detail => detail.Contains("calculationType", StringComparison.Ordinal));
     }
+
+    // --- Empty results (#2742): disjoint intersect / full difference must be 200 + empty geometry ---
+
+    [IntegrationTest]
+    [Operation(Operations.Intersect)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/intersect")]
+    public async Task Intersect_DisjointPolygons_Returns200WithEmptyGeometry()
+    {
+        // PostGIS returns GEOMETRYCOLLECTION EMPTY for a disjoint intersection. That must render
+        // as an empty Esri polygon ({"rings":[]}), not a 400.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}
+                ]
+            },
+            "geometry": {
+                "rings": [[[10,10],[11,10],[11,11],[10,11],[10,10]]]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/intersect",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+        result.Geometries![0].TryGetProperty("rings", out var rings).Should().BeTrue();
+        rings.GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Difference)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/difference")]
+    public async Task Difference_SubtractCoveringGeometry_Returns200WithEmptyGeometry()
+    {
+        // Subtracting a geometry that fully covers the input yields an empty result. That must be
+        // 200 + empty Esri polygon rather than a 400.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[1,1],[2,1],[2,2],[1,2],[1,1]]]}
+                ]
+            },
+            "geometry": {
+                "rings": [[[0,0],[3,0],[3,3],[0,3],[0,0]]]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/difference",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+        result.Geometries![0].TryGetProperty("rings", out var rings).Should().BeTrue();
+        rings.GetArrayLength().Should().Be(0);
+    }
+
+    // --- Unknown unit token (#2742): must be 400, not silently defaulted to a meters multiplier ---
+
+    [IntegrationTest]
+    [Operation(Operations.Densify)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
+    public async Task Densify_UnknownLengthUnit_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[10,0]]]}
+                ]
+            },
+            "sr": "4326",
+            "maxSegmentLength": 1,
+            "geodesic": true,
+            "lengthUnit": "esriBananas"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/densify",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
 }
