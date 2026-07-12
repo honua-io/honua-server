@@ -397,6 +397,100 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_WorkspaceLabelMatchingOtherOwnersWorkspace_NeverTargetsOtherOwnersWorkspace()
+    {
+        // Cross-owner isolation end to end (real WorkspaceLifecycleService): a
+        // caller whose env:workspace label — or even overwriteOutput=true — matches
+        // another owner's active workspace must lazily get their OWN workspace.
+        // The other owner's workspace is never resolved, and its Available
+        // artifact under the same output label is never deleted/replaced.
+        var workspaceStore = Substitute.For<IWorkspaceStore>();
+        var artifactStore = Substitute.For<IArtifactStore>();
+        var retentionPolicy = Substitute.For<IRetentionPolicyEvaluator>();
+
+        var victimWorkspace = new Workspace
+        {
+            WorkspaceId = "ws-victim",
+            Kind = WorkspaceKind.Scratch,
+            Label = "shared-label",
+            OwnerId = "victim",
+            State = WorkspaceLifecycleState.Active,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        var victimArtifact = new Artifact
+        {
+            ArtifactId = "art-victim",
+            Kind = ArtifactKind.File,
+            Label = "artifact1",
+            State = ArtifactLifecycleState.Available,
+            CreatedAt = DateTimeOffset.UtcNow,
+            WorkspaceId = "ws-victim"
+        };
+
+        Workspace? callerWorkspace = null;
+        // Owner-scoped listing: the victim's workspace is visible ONLY under the
+        // victim's owner id; the calling owner ("admin") owns nothing yet.
+        workspaceStore.ListByOwnerAsync("victim", Arg.Any<CancellationToken>())
+            .Returns([victimWorkspace]);
+        workspaceStore.ListByOwnerAsync("admin", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Workspace>());
+        workspaceStore.CreateAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                callerWorkspace = ci.Arg<Workspace>();
+                return callerWorkspace;
+            });
+        workspaceStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<string>() == "ws-victim" ? victimWorkspace : callerWorkspace);
+        retentionPolicy.ComputeExpiration(WorkspaceKind.Scratch, Arg.Any<DateTimeOffset>())
+            .Returns((DateTimeOffset?)null);
+
+        artifactStore.ListByWorkspaceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<string>() == "ws-victim"
+                ? new[] { victimArtifact }
+                : Array.Empty<Artifact>());
+        artifactStore.CreateAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<Artifact>());
+
+        var services = new ServiceCollection();
+        services.AddSingleton(workspaceStore);
+        services.AddSingleton(artifactStore);
+        services.AddSingleton(retentionPolicy);
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IOptions<WorkspaceOptions>>(Options.Create(new WorkspaceOptions()));
+        services.AddSingleton<ILogger<WorkspaceLifecycleService>>(NullLogger<WorkspaceLifecycleService>.Instance);
+        services.AddSingleton<IWorkspaceLifecycleService, WorkspaceLifecycleService>();
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        var dispatcher = CreateFakeExecutorDispatcher(scopeFactory);
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-cross-owner");
+
+        // overwriteOutput=true is the worst case: if the victim's workspace were
+        // (wrongly) resolved, its "artifact1" would be deleted and replaced.
+        var record = CreateFakeExecutorJobRecord(workspaceId: "shared-label", overwriteOutput: true);
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+        // A caller-owned workspace was lazily created for the label.
+        await workspaceStore.Received(1).CreateAsync(
+            Arg.Is<Workspace>(w => w.OwnerId == "admin" && w.Label == "shared-label"),
+            Arg.Any<CancellationToken>());
+        callerWorkspace.Should().NotBeNull();
+        callerWorkspace!.WorkspaceId.Should().NotBe("ws-victim");
+
+        // The victim's workspace/artifact must be completely untouched.
+        await artifactStore.DidNotReceive().DeleteAsync("art-victim", Arg.Any<CancellationToken>());
+        await artifactStore.DidNotReceive().CreateAsync(
+            Arg.Is<Artifact>(a => a.WorkspaceId == "ws-victim"), Arg.Any<CancellationToken>());
+        await artifactStore.Received(1).CreateAsync(
+            Arg.Is<Artifact>(a => a.WorkspaceId == callerWorkspace.WorkspaceId && a.Label == "artifact1"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_WorkspaceRequestedWithNoProviderConfigured_FailsFastWithoutRunningHandler()
     {
         // No IServiceScopeFactory at all: the dispatcher itself was constructed

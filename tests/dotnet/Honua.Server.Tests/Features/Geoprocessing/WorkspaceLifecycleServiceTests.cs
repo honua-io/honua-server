@@ -310,6 +310,34 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task GetOrCreateNamedWorkspace_SameLabelOwnedByDifferentOwner_CreatesCallerOwnedWorkspace()
+    {
+        // Ownership isolation: another owner's active workspace under the same
+        // label must never be resolved for the caller — resolution only consults
+        // the caller's own workspaces and lazily creates a caller-owned one.
+        var otherOwners = CreateWorkspace("ws-other-owner", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active) with
+        {
+            Label = "my-scratch",
+            OwnerId = "owner-2",
+            ExpiresAt = Now.AddHours(1)
+        };
+        _workspaceStore.ListByOwnerAsync("owner-2", Arg.Any<CancellationToken>())
+            .Returns([otherOwners]);
+        _workspaceStore.ListByOwnerAsync("owner-1", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Workspace>());
+        _retentionPolicy.ComputeExpiration(WorkspaceKind.Scratch, Now)
+            .Returns(Now.AddHours(1));
+
+        var workspace = await _service.GetOrCreateNamedWorkspaceAsync("owner-1", "my-scratch");
+
+        Assert.NotEqual("ws-other-owner", workspace.WorkspaceId);
+        Assert.Equal("owner-1", workspace.OwnerId);
+        await _workspaceStore.Received(1).CreateAsync(
+            Arg.Is<Workspace>(w => w.OwnerId == "owner-1" && w.Label == "my-scratch"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task PromoteArtifact_SourceNotFound_Fails()
     {
         _workspaceStore.GetAsync("missing", Arg.Any<CancellationToken>())
