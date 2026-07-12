@@ -7623,6 +7623,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_AreaAndPerimeterEnvelope_ReturnsBasicMensuration",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_AreaAndPerimeter_AntimeridianPolygon_ReturnsFiniteArea",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GeographicDegrees_ReturnsGroundMeters",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_HeightOperation_ReturnsNotImplemented",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_HeightOperation_WithDemMetadata_ButPointOutsideDem_ReturnsNotImplemented",
@@ -15259,6 +15261,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceEditOperationsTests.AutoComplete_ExistingParcelPlusClosingPolyline_ReturnsOnlyNewPolygon",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceEditOperationsTests.AutoComplete_PostPolylinesFormingClosedLoop_ReturnsPolygon"
       ],
       "proof_ledger_surface": "geometry-service",
@@ -15338,6 +15341,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Densify_UnknownLengthUnit_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_PostPolyline_AddsVertices",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_ReasonableMaxSegmentLengthOverLargeExtent_StillSucceeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_TinyMaxSegmentLengthOverLargeExtent_Returns400WithoutOom"
@@ -15357,7 +15361,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Difference_MissingSpatialReference_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Difference_NoOverlap_ReturnsOriginal",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Difference_PostEsriWrappedGeometry_ReturnsGeometry",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Difference_PostValidRequest_ReturnsGeometry"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Difference_PostValidRequest_ReturnsGeometry",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Difference_SubtractCoveringGeometry_Returns200WithEmptyGeometry"
       ],
       "proof_ledger_surface": "geometry-service",
       "maturity": "implemented"
@@ -15425,9 +15430,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Intersect_GeometryTypeMismatch_PointVsPolygon_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Intersect_DisjointPolygons_Returns200WithEmptyGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Intersect_MalformedGeometry_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Intersect_MissingSpatialReference_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Intersect_PointDisjointFromPolygon_Returns200WithEmptyPoint",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Intersect_PostEsriWrappedGeometry_ReturnsGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Intersect_PostValidRequest_ReturnsGeometry"
       ],
@@ -15507,6 +15513,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Relation_CornerTouchingParcels_PointTouchMatchesLineTouchDoesNot",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Relation_EdgeSharingParcels_LineTouchMatchesPointTouchDoesNot",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Relation_PostIntersection_ReturnsMatchingPairs",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Relation_PostRelationPattern_UsesDe9imParam"
       ],
