@@ -61,13 +61,51 @@ internal static class GdalRasterDimensionGuard
         ArgumentNullException.ThrowIfNull(options);
         error = "";
 
-        if (!TryReadGeoTiffDimensions(raster, out var dims))
+        if (!TryReadRasterDimensions(raster, out var dims))
         {
-            // Not a parseable TIFF header — nothing to bound here.
+            // Header not recognized as one of the compressible raster containers
+            // we parse (TIFF/BigTIFF, PNG, JPEG) — nothing to bound cheaply here.
             return true;
         }
 
         return IsWithinLimits(dims, options, out error);
+    }
+
+    /// <summary>
+    /// Reads declared dimensions from any of the compressible raster container
+    /// formats the worker ingests and that can be tiny-on-disk yet declare an
+    /// enormous canvas: TIFF / BigTIFF, PNG, and JPEG. Dispatches by the leading
+    /// magic bytes. Returns <c>false</c> for anything else (the caller then
+    /// admits and lets GDAL adjudicate).
+    /// </summary>
+    internal static bool TryReadRasterDimensions(ReadOnlySpan<byte> data, out RasterDimensions dims)
+    {
+        dims = default;
+        if (data.Length < 8)
+        {
+            return false;
+        }
+
+        // TIFF / BigTIFF: "II" or "MM".
+        if ((data[0] == 0x49 && data[1] == 0x49) || (data[0] == 0x4D && data[1] == 0x4D))
+        {
+            return TryReadGeoTiffDimensions(data, out dims);
+        }
+
+        // PNG: 89 50 4E 47 0D 0A 1A 0A.
+        if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
+            && data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A)
+        {
+            return TryReadPngDimensions(data, out dims);
+        }
+
+        // JPEG: SOI = FF D8.
+        if (data[0] == 0xFF && data[1] == 0xD8)
+        {
+            return TryReadJpegDimensions(data, out dims);
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -350,7 +388,12 @@ internal static class GdalRasterDimensionGuard
                 value = ReadU32(data, valueFieldOffset, little);
                 return true;
             case TypeLong8:
-                value = (long)ReadU64(data, valueFieldOffset, little);
+                // A LONG8 dimension past Int64.Max would wrap negative on a naive
+                // cast and then be silently ADMITTED by Finish's width<=0 guard.
+                // Clamp to Int64.Max (fail closed): a positive, absurdly large
+                // value the caps then reject.
+                var raw = ReadU64(data, valueFieldOffset, little);
+                value = raw > long.MaxValue ? long.MaxValue : (long)raw;
                 return true;
             default:
                 value = 0;
@@ -381,6 +424,113 @@ internal static class GdalRasterDimensionGuard
         var bitsPerSample = bits > int.MaxValue ? int.MaxValue : (int)bits;
         dims = new RasterDimensions(width, height, bands, bitsPerSample);
         return true;
+    }
+
+    // --- PNG header reader -----------------------------------------------------
+    //
+    // The IHDR chunk is fixed at the front of every PNG: 8-byte signature, then a
+    // 4-byte length, the "IHDR" tag, then width(4, BE) + height(4, BE) +
+    // bitDepth(1) + colourType(1). A few-KB PNG can declare a 100000×100000 canvas
+    // exactly like a TIFF bomb, so it must be bounded the same way.
+
+    private static bool TryReadPngDimensions(ReadOnlySpan<byte> data, out RasterDimensions dims)
+    {
+        dims = default;
+        // 8 (sig) + 4 (len) + 4 ("IHDR") + 13 (IHDR data) = 33 bytes minimum.
+        if (data.Length < 33)
+        {
+            return false;
+        }
+
+        if (data[12] != (byte)'I' || data[13] != (byte)'H' || data[14] != (byte)'D' || data[15] != (byte)'R')
+        {
+            return false;
+        }
+
+        long width = ReadU32(data, 16, little: false);
+        long height = ReadU32(data, 20, little: false);
+        int bitDepth = data[24];
+        int colourType = data[25];
+
+        // Samples per pixel by PNG colour type. Indexed (3) stores one sample but
+        // GDAL expands the palette to RGB(A); count it as 4 so the byte estimate
+        // does not under-bound the post-expansion allocation.
+        var samples = colourType switch
+        {
+            0 => 1, // greyscale
+            2 => 3, // truecolour RGB
+            3 => 4, // indexed → palette-expanded to RGBA by GDAL
+            4 => 2, // greyscale + alpha
+            6 => 4, // RGBA
+            _ => 4, // unknown → conservative
+        };
+
+        return Finish(width, height, samples, bitDepth, out dims);
+    }
+
+    // --- JPEG header reader ----------------------------------------------------
+    //
+    // Scan the marker segments for a Start-Of-Frame (SOFn) marker, which carries
+    // precision, height(2, BE), width(2, BE), components(1). JPEG dimensions max at
+    // 65535 each, but 65535×65535×3 ≈ 12.8 GB decoded — well past the caps — so a
+    // JPEG bomb is real and must be bounded.
+
+    private static bool TryReadJpegDimensions(ReadOnlySpan<byte> data, out RasterDimensions dims)
+    {
+        dims = default;
+        var pos = 2; // past SOI (FF D8)
+        // Bound the scan so a pathological marker stream cannot spin.
+        for (var guard = 0; guard < 4096; guard++)
+        {
+            if (pos + 4 > data.Length || data[pos] != 0xFF)
+            {
+                return false;
+            }
+
+            var marker = data[pos + 1];
+
+            // Standalone markers (no length): RSTn (D0–D7), SOI (D8), EOI (D9),
+            // TEM (01), and padding FF bytes.
+            if (marker == 0xD8 || marker == 0xD9 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
+            {
+                pos += 2;
+                continue;
+            }
+            if (marker == 0xFF)
+            {
+                pos += 1; // fill byte
+                continue;
+            }
+
+            var segLength = ReadU16(data, pos + 2, little: false);
+            if (segLength < 2)
+            {
+                return false;
+            }
+
+            // SOF0/1/2/3, 5/6/7, 9/10/11, 13/14/15 are frame headers; C4 (DHT),
+            // C8 (JPG), CC (DAC) are NOT frame headers and are skipped.
+            var isSof = (marker >= 0xC0 && marker <= 0xCF)
+                && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
+            if (isSof)
+            {
+                // Segment: [len(2)][precision(1)][height(2)][width(2)][components(1)]
+                // components byte is at index pos+9, so we need pos+10 <= length.
+                if (pos + 10 > data.Length)
+                {
+                    return false;
+                }
+                int precision = data[pos + 4];
+                long height = ReadU16(data, pos + 5, little: false);
+                long width = ReadU16(data, pos + 7, little: false);
+                int components = data[pos + 9];
+                return Finish(width, height, components, precision, out dims);
+            }
+
+            pos += 2 + segLength;
+        }
+
+        return false;
     }
 
     private static ushort ReadU16(ReadOnlySpan<byte> data, int offset, bool little)

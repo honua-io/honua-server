@@ -1,13 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
+
 namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>
-/// Builds minimal, header-only TIFF / BigTIFF byte payloads that DECLARE a given
-/// width/height/bands/bit-depth without any pixel data — the exact shape a
-/// decompression-bomb raster takes (tiny on disk, enormous declared dimensions).
-/// Used to exercise <c>GdalRasterDimensionGuard</c> with no GDAL binary.
+/// Builds minimal, header-only TIFF / BigTIFF / PNG / JPEG byte payloads that
+/// DECLARE a given width/height/bands/bit-depth without any pixel data — the exact
+/// shape a decompression-bomb raster takes (tiny on disk, enormous declared
+/// dimensions). Used to exercise <c>GdalRasterDimensionGuard</c> with no GDAL
+/// binary.
 /// </summary>
 internal static class TiffHeaderBuilder
 {
@@ -61,6 +64,97 @@ internal static class TiffHeaderBuilder
         WriteU64(bytes, 0, littleEndian); // next IFD = none
 
         return bytes.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a BigTIFF header where width/height are written as raw unsigned
+    /// LONG8 values — used to exercise the &gt; Int64.Max overflow path.
+    /// </summary>
+    public static byte[] BigTiffUnsigned(ulong width, ulong height, int bands = 1, int bits = 8, bool littleEndian = true)
+    {
+        var bytes = new List<byte>();
+        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
+        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
+        WriteU16(bytes, 43, littleEndian);
+        WriteU16(bytes, 8, littleEndian);
+        WriteU16(bytes, 0, littleEndian);
+        WriteU64(bytes, 16, littleEndian);
+
+        WriteU64(bytes, 4, littleEndian);
+        WriteBigEntry(bytes, TagImageWidth, TypeLong8, unchecked((long)width), littleEndian);
+        WriteBigEntry(bytes, TagImageLength, TypeLong8, unchecked((long)height), littleEndian);
+        WriteBigEntry(bytes, TagBitsPerSample, TypeShort, bits, littleEndian);
+        WriteBigEntry(bytes, TagSamplesPerPixel, TypeShort, bands, littleEndian);
+        WriteU64(bytes, 0, littleEndian);
+
+        return bytes.ToArray();
+    }
+
+    /// <summary>Builds a minimal header-only PNG (signature + IHDR chunk).</summary>
+    public static byte[] Png(long width, long height, int bitDepth = 8, int colourType = 2)
+    {
+        var b = new List<byte>
+        {
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // signature
+        };
+        WriteU32Be(b, 13); // IHDR data length
+        b.AddRange(Encoding.ASCII.GetBytes("IHDR"));
+        WriteU32Be(b, width);
+        WriteU32Be(b, height);
+        b.Add((byte)bitDepth);
+        b.Add((byte)colourType);
+        b.Add(0); // compression
+        b.Add(0); // filter
+        b.Add(0); // interlace
+        WriteU32Be(b, 0); // CRC placeholder (unchecked by the guard)
+        return b.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a minimal header-only JPEG: SOI, an APP0/JFIF segment (to exercise
+    /// marker skipping), then an SOF0 frame header declaring the dimensions.
+    /// </summary>
+    public static byte[] Jpeg(int width, int height, int components = 3, int precision = 8)
+    {
+        var b = new List<byte> { 0xFF, 0xD8 }; // SOI
+
+        // APP0 / JFIF (length 16): "JFIF\0" + 9 payload bytes.
+        b.Add(0xFF);
+        b.Add(0xE0);
+        WriteU16Be(b, 16);
+        b.AddRange(Encoding.ASCII.GetBytes("JFIF"));
+        b.Add(0);
+        b.AddRange(new byte[] { 1, 1, 0, 0, 72, 0, 72, 0, 0 });
+
+        // SOF0 frame header.
+        b.Add(0xFF);
+        b.Add(0xC0);
+        WriteU16Be(b, 8 + 3 * components);
+        b.Add((byte)precision);
+        WriteU16Be(b, height);
+        WriteU16Be(b, width);
+        b.Add((byte)components);
+        for (var i = 0; i < components; i++)
+        {
+            b.Add((byte)(i + 1)); // component id
+            b.Add(0x11);          // sampling factors
+            b.Add(0);             // quant table selector
+        }
+        return b.ToArray();
+    }
+
+    private static void WriteU16Be(List<byte> bytes, int value)
+    {
+        bytes.Add((byte)((value >> 8) & 0xFF));
+        bytes.Add((byte)(value & 0xFF));
+    }
+
+    private static void WriteU32Be(List<byte> bytes, long value)
+    {
+        bytes.Add((byte)((value >> 24) & 0xFF));
+        bytes.Add((byte)((value >> 16) & 0xFF));
+        bytes.Add((byte)((value >> 8) & 0xFF));
+        bytes.Add((byte)(value & 0xFF));
     }
 
     private static void WriteClassicEntry(List<byte> bytes, int tag, int type, long value, bool little)

@@ -58,14 +58,82 @@ public sealed class GdalRasterDimensionGuardTests
     }
 
     [UnitTest]
-    public void NonTiffBytes_AreUndetermined_AndAdmitted()
+    public void UnrecognizedBytes_AreUndetermined_AndAdmitted()
     {
-        var notTiff = new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G', 0, 0, 0, 0, 1, 2, 3, 4 };
+        // Not a TIFF, PNG, or JPEG magic → cannot bound cheaply → admit.
+        var unknown = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09 };
 
-        GdalRasterDimensionGuard.TryReadGeoTiffDimensions(notTiff, out _).Should().BeFalse();
-        // Undetermined header ⇒ admit (GDAL adjudicates), not reject.
-        GdalRasterDimensionGuard.TryAdmit(notTiff, Options(), out var error).Should().BeTrue();
+        GdalRasterDimensionGuard.TryReadRasterDimensions(unknown, out _).Should().BeFalse();
+        GdalRasterDimensionGuard.TryAdmit(unknown, Options(), out var error).Should().BeTrue();
         error.Should().BeEmpty();
+    }
+
+    // --- PNG / JPEG header parsing (non-TIFF bomb vectors) ----------------------
+
+    [UnitTest]
+    public void ReadsDimensions_FromPngHeader()
+    {
+        var png = TiffHeaderBuilder.Png(width: 640, height: 480, bitDepth: 8, colourType: 2);
+
+        GdalRasterDimensionGuard.TryReadRasterDimensions(png, out var dims).Should().BeTrue();
+        dims.Width.Should().Be(640);
+        dims.Height.Should().Be(480);
+        dims.Bands.Should().Be(3, "PNG colour type 2 is truecolour RGB");
+    }
+
+    [UnitTest]
+    public void TryAdmit_RejectsHugeDimensionPng()
+    {
+        // The exact non-TIFF vector called out in review: a tiny PNG whose IHDR
+        // declares a 100000×100000 canvas (10^10 pixels).
+        var bomb = TiffHeaderBuilder.Png(width: 100_000, height: 100_000, colourType: 2);
+        bomb.Length.Should().BeLessThan(64);
+
+        GdalRasterDimensionGuard.TryAdmit(bomb, Options(), out var error).Should().BeFalse();
+        error.Should().Contain("exceeds configured");
+    }
+
+    [UnitTest]
+    public void ReadsDimensions_FromJpegHeader_SkippingApp0()
+    {
+        var jpeg = TiffHeaderBuilder.Jpeg(width: 800, height: 600, components: 3);
+
+        GdalRasterDimensionGuard.TryReadRasterDimensions(jpeg, out var dims).Should().BeTrue();
+        dims.Width.Should().Be(800);
+        dims.Height.Should().Be(600);
+        dims.Bands.Should().Be(3);
+    }
+
+    [UnitTest]
+    public void TryAdmit_RejectsHugeDimensionJpeg()
+    {
+        // JPEG maxes at 65535 per axis, but 65535×65535×3 ≈ 12.8 GB decoded.
+        var bomb = TiffHeaderBuilder.Jpeg(width: 65_535, height: 65_535, components: 3);
+
+        GdalRasterDimensionGuard.TryAdmit(bomb, Options(), out var error).Should().BeFalse();
+        error.Should().Contain("exceeds configured");
+    }
+
+    [UnitTest]
+    public void TryAdmit_AdmitsNormalPng()
+    {
+        var png = TiffHeaderBuilder.Png(width: 256, height: 256, colourType: 6);
+        GdalRasterDimensionGuard.TryAdmit(png, Options(), out _).Should().BeTrue();
+    }
+
+    // --- BigTIFF LONG8 overflow must fail closed (reject, not admit) ------------
+
+    [UnitTest]
+    public void TryAdmit_RejectsBigTiffDimensionOverInt64Max()
+    {
+        // A BigTIFF whose LONG8 width exceeds Int64.Max would wrap negative on a
+        // naive cast and be silently admitted; the guard clamps and rejects.
+        var overflow = TiffHeaderBuilder.BigTiffUnsigned(width: ulong.MaxValue, height: 1024, bands: 1, bits: 8);
+
+        GdalRasterDimensionGuard.TryReadRasterDimensions(overflow, out var dims).Should().BeTrue();
+        dims.Width.Should().Be(long.MaxValue, "the > Int64.Max width is clamped to a positive absurd value");
+        GdalRasterDimensionGuard.TryAdmit(overflow, Options(), out var error).Should().BeFalse();
+        error.Should().Contain("exceeds configured");
     }
 
     // --- pure cap evaluation ---------------------------------------------------

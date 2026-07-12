@@ -75,10 +75,13 @@ internal sealed class GdalWorkerOptions
     /// <summary>
     /// Maximum ESTIMATED fully-decoded raster footprint
     /// (width × height × bands × bytes-per-sample) admitted before a GDAL tool
-    /// opens the raster. This is the true allocation the decompression bomb
-    /// targets, so it is the tightest of the pixel caps for wide-dtype/multiband
-    /// rasters. Default 4 GiB bounds the per-job worker allocation while still
-    /// admitting e.g. a 500 MP × 4-band Byte raster (~2 GiB) (#2766).
+    /// opens the raster. This is a CONSERVATIVE FLOOR on the allocation, not the
+    /// true peak: real GDAL RSS also includes warp/block-cache buffers, dtype
+    /// promotion, and palette/RGBA expansion, so actual usage can exceed this — it
+    /// is a lower-bound admission gate, deliberately restrictive. The estimate uses
+    /// the first band's bit depth. Default 4 GiB bounds the per-job worker
+    /// allocation while still admitting e.g. a 500 MP × 4-band Byte raster
+    /// (~2 GiB) (#2766).
     /// </summary>
     [Range(1024L, long.MaxValue, ErrorMessage = "MaxDecodedRasterBytes must be at least 1 KiB")]
     public long MaxDecodedRasterBytes { get; set; } = 4L * 1024L * 1024L * 1024L;

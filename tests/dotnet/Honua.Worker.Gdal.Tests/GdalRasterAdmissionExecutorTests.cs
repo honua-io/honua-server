@@ -87,6 +87,36 @@ public sealed class GdalRasterAdmissionExecutorTests
     }
 
     [UnitTest]
+    public async Task MapAlgebra_PngBombRejectedBeforeCli()
+    {
+        // GDAL opens by content-sniffing, not the .tif name, so a PNG whose IHDR
+        // declares 100000×100000 is a real bomb even on a "GeoTIFF" input. Admission
+        // must reject it before any GDAL tool runs.
+        var bomb = Convert.ToBase64String(TiffHeaderBuilder.Png(100_000, 100_000));
+        var runner = FakeGdalCommandRunner.Failing(1, "must-not-run");
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterMapAlgebraJobExecutor(
+            runner, GdalJobFactory.Options(scratch), NullLogger<GdalRasterMapAlgebraJobExecutor>.Instance);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterMapAlgebraJobExecutor.HandledProcessId,
+                ("sources", bomb),
+                ("expression", "A*2"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("exceeds configured");
+            runner.Invocations.Should().BeEmpty("a PNG bomb must be rejected before any GDAL tool is spawned");
+        }
+        finally
+        {
+            GdalCli.CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
     public async Task MapAlgebra_NormalRaster_Succeeds()
     {
         var normal = Convert.ToBase64String(TiffHeaderBuilder.Classic(512, 512, bands: 3));
