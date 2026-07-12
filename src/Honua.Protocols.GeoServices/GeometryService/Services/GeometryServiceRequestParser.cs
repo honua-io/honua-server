@@ -346,6 +346,11 @@ internal static class GeometryServiceRequestParser
     /// Returns the unit multiplier for converting to meters.
     /// Supports string names (esriMeters) and numeric codes (9001).
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="unit"/> is a non-empty token that is not a recognized linear
+    /// unit name or code. GeometryService operation handlers catch this and return a 400 rather
+    /// than silently defaulting an unknown token to a meters multiplier of 1.0 (#2742).
+    /// </exception>
     public static double GetUnitMultiplier(string? unit)
     {
         if (string.IsNullOrEmpty(unit))
@@ -353,7 +358,12 @@ internal static class GeometryServiceRequestParser
             return 1.0;
         }
 
-        return _unitMultipliers.GetValueOrDefault(unit, 1.0);
+        if (_unitMultipliers.TryGetValue(unit, out var multiplier))
+        {
+            return multiplier;
+        }
+
+        throw new ArgumentException($"Unsupported unit '{unit}'.", nameof(unit));
     }
 
     /// <summary>
