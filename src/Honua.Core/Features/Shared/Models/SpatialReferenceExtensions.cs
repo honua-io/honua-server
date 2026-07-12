@@ -152,7 +152,7 @@ public static class SpatialReferenceExtensions
     /// <param name="to">Target spatial reference</param>
     /// <returns>True if transformation is needed, false if they are the same</returns>
     public static bool RequiresTransformation(this SpatialReference from, SpatialReference to)
-        => from.Wkid != to.Wkid;
+        => NormalizeWebMercatorSrid(from.Wkid) != NormalizeWebMercatorSrid(to.Wkid);
 
     /// <summary>
     /// Normalizes well-known WGS 84 / Web Mercator SRID aliases

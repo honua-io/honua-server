@@ -22,6 +22,18 @@ public sealed class DatumTransformSqlTests
         sql.Should().Be("ST_Transform(geom, 4326)");
     }
 
+    [Theory]
+    [InlineData(102100)]
+    [InlineData(102113)]
+    [InlineData(900913)]
+    [InlineData(3785)]
+    public void BuildTransformExpression_WebMercatorAlias_EmitsCanonicalSrid(int alias)
+    {
+        var sql = DatumTransformSql.BuildTransformExpression("geom", alias, selection: null);
+
+        sql.Should().Be("ST_Transform(geom, 3857)");
+    }
+
     [UnitTest]
     public void BuildTransformExpression_SelectionWithoutPipeline_EmitsTwoArgumentForm()
     {

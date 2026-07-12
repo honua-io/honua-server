@@ -191,4 +191,25 @@ public sealed class QueryProcessorTests
 
         featureQuery.IncludeNullGeometry.Should().BeTrue();
     }
+
+    [Fact]
+    public void ToFeatureQuery_WebMercatorAliases_NormalizesProviderSrids()
+    {
+        var query = new UnifiedQuery
+        {
+            OutputCrs = QueryCrs.Create(102100),
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = [1, 2, 3],
+                Srid = 900913,
+                SpatialRelationship = SpatialRelationship.Intersects
+            }
+        };
+
+        var featureQuery = _processor.ToFeatureQuery(query, _resource);
+
+        featureQuery.OutputSrid.Should().Be(3857);
+        featureQuery.SpatialFilter.Should().NotBeNull();
+        featureQuery.SpatialFilter!.Value.Srid.Should().Be(3857);
+    }
 }

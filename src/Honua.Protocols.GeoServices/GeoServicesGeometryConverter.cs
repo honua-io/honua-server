@@ -796,9 +796,7 @@ internal static class GeoServicesGeometryConverter
     }
 
     private static GeoServicesSpatialReference? CreateSpatialReference(int? srid)
-        => srid.HasValue && srid.Value > 0
-            ? new GeoServicesSpatialReference { Wkid = srid.Value, LatestWkid = srid.Value }
-            : null;
+        => GeoServicesSpatialReferenceFactory.Create(srid);
 
     private static int ReadInt32(ReadOnlySpan<byte> span, bool littleEndian)
         => littleEndian

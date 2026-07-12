@@ -81,6 +81,51 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithWebMercatorAliasOutSr_ReturnsAliasAndCanonicalLatestWkid()
+    {
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&outSR=102100&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        result.Should().NotBeNull();
+        result!.SpatialReference.Should().NotBeNull();
+        result.SpatialReference!.Wkid.Should().Be(102100);
+        result.SpatialReference.LatestWkid.Should().Be(3857);
+        result.Features.Should().ContainSingle();
+        result.Features[0].Geometry.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithWebMercatorAliasInSr_FiltersCanonicalWebMercatorLayer()
+    {
+        // San Francisco viewport in Web Mercator metres. ESRI:102100 is coordinate-
+        // equivalent to EPSG:3857, the storage CRS of the seeded point layer.
+        const string geometry = "-13627700,4547600,-13627600,4547750";
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?geometry={Uri.EscapeDataString(geometry)}&geometryType=esriGeometryEnvelope&inSR=102100&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        result.Should().NotBeNull();
+        result!.Features.Should().ContainSingle();
+        result.Features[0].Attributes.Should().ContainKey("name");
+        result.Features[0].Attributes["name"]!.ToString().Should().Be("San Francisco");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithGeoJsonFormat_OnProjectedLayer_ReturnsWgs84Coordinates()
     {
         var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +

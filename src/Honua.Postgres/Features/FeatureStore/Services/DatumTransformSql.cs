@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
@@ -29,6 +30,8 @@ internal static class DatumTransformSql
     /// <returns>The reprojection SQL expression.</returns>
     public static string BuildTransformExpression(string operand, int toSrid, DatumTransformationSelection? selection)
     {
+        toSrid = SpatialReferenceExtensions.NormalizeWebMercatorSrid(toSrid);
+
         if (selection?.ProjPipeline is { Length: > 0 } pipeline)
         {
             // A PROJ pipeline is direction-sensitive (a +proj=hgridshift NADCON/NTv2 step

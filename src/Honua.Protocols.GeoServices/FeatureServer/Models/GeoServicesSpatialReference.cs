@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Shared.Models;
+
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 /// <summary>
@@ -32,4 +34,24 @@ public sealed class GeoServicesSpatialReference
     /// Well-Known Text representation
     /// </summary>
     public string? Wkt { get; init; }
+}
+
+/// <summary>
+/// Creates GeoServices spatial-reference envelopes while retaining a requested
+/// Esri WKID and pairing it with its current canonical WKID.
+/// </summary>
+internal static class GeoServicesSpatialReferenceFactory
+{
+    /// <summary>
+    /// Creates a spatial reference for a positive requested SRID, or
+    /// <c>null</c> when no valid SRID was supplied.
+    /// </summary>
+    internal static GeoServicesSpatialReference? Create(int? requestedSrid)
+        => requestedSrid is > 0
+            ? new GeoServicesSpatialReference
+            {
+                Wkid = requestedSrid.Value,
+                LatestWkid = SpatialReferenceExtensions.NormalizeWebMercatorSrid(requestedSrid.Value)
+            }
+            : null;
 }

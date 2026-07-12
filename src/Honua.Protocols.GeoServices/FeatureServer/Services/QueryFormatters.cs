@@ -220,7 +220,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var spatialReference = hasGeometry
-            ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
+            ? GeoServicesSpatialReferenceFactory.Create(srid)
             : null;
 
         var response = new QueryResponse

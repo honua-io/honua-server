@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Infrastructure.Services;
@@ -54,9 +55,10 @@ internal class SpatialReferenceResolver
             return null;
         }
 
-        return await _crsRegistry.IsSridSupportedAsync(srid.Value, cancellationToken)
+        var canonicalSrid = SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid.Value);
+        return await _crsRegistry.IsSridSupportedAsync(canonicalSrid, cancellationToken)
             .ConfigureAwait(false)
-            ? srid
+            ? canonicalSrid
             : null;
     }
 

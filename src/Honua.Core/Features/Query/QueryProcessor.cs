@@ -559,8 +559,18 @@ public sealed class QueryProcessor : IQueryProcessor
         }
 
         // Convert output CRS
-        var outputSrid = query.OutputCrs?.Srid;
+        int? outputSrid = query.OutputCrs?.Srid is { } requestedOutputSrid
+            ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(requestedOutputSrid)
+            : null;
         var outputAxisOrder = query.OutputCrs?.AxisOrder;
+        var spatialFilter = query.SpatialFilter;
+        if (spatialFilter is { Srid: { } filterSrid })
+        {
+            spatialFilter = spatialFilter.Value with
+            {
+                Srid = SpatialReferenceExtensions.NormalizeWebMercatorSrid(filterSrid)
+            };
+        }
 
         // Convert to FeatureQuery
         var featureQuery = new FeatureQuery
@@ -576,7 +586,7 @@ public sealed class QueryProcessor : IQueryProcessor
             PublicIdAttributeName = ResolvePublicIdAttributeName(resource),
             OutputSrid = outputSrid,
             OutputAxisOrder = outputAxisOrder,
-            SpatialFilter = query.SpatialFilter,
+            SpatialFilter = spatialFilter,
             TemporalFilter = query.TemporalFilter,
             Distinct = query.Aggregation?.Distinct ?? false
         };

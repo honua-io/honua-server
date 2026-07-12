@@ -8505,6 +8505,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_WithReturnCentroidOnPolygonLayer_ReturnsCentroidWithoutGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_WithUnknownDatumTransformationWkid_ReturnsExplicitError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_WithVerticalCoordinateSystemOutSr_ReturnsExplicitError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_WithWebMercatorAliasInSr_FiltersCanonicalWebMercatorLayer",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerSpatialReferenceTests.Query_WithWebMercatorAliasOutSr_ReturnsAliasAndCanonicalLatestWkid",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.Query_NonTimeAwareLayer_WithTimeNullPair_ReturnsOk",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.Query_NonTimeAwareLayer_WithTime_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalTests.GeoServicesQuery_CombinedTemporalAndSpatialFilter_ReturnsCorrectFeatures",

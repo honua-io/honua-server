@@ -1392,6 +1392,17 @@ internal sealed partial class FeatureServerQueryHandler(
                 [CreateSpatialReferenceErrorMessage("outSR", validatedParams.OutSr)]));
         }
 
+        // Execute with the canonical SRID resolved above, but retain the client's
+        // Esri Web Mercator alias for the response envelope. ArcGIS clients expect
+        // {wkid:102100, latestWkid:3857}; providers must only see EPSG:3857.
+        int? requestedResponseOutputSrid = null;
+        if (outputSrid.HasValue
+            && SpatialReferenceHelpers.TryParseSrid(validatedParams.OutSr) is { } requestedOutputSrid
+            && SpatialReferenceExtensions.NormalizeWebMercatorSrid(requestedOutputSrid) == outputSrid.Value)
+        {
+            requestedResponseOutputSrid = requestedOutputSrid;
+        }
+
         // Vertical (geoid/ellipsoidal) datum transformations are not yet supported. When
         // outSR carries a vertical CS (vcsWkid), fail explicitly rather than silently
         // ignoring the vertical component and returning horizontally-only reprojected Z.
@@ -1602,7 +1613,7 @@ internal sealed partial class FeatureServerQueryHandler(
             query = query with { OutputDatumTransformation = datumSelection };
         }
 
-        return (query, outputSrid, null);
+        return (query, requestedResponseOutputSrid ?? outputSrid, null);
     }
 
     /// <summary>
