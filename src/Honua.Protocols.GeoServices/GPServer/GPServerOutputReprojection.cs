@@ -213,7 +213,15 @@ internal static class GPServerOutputReprojection
             {
                 var original = coordinates[i];
                 var (x, y) = CoordinateTransformer.TransformPoint(original.X, original.Y, fromSrid, toSrid);
-                transformed[i] = new Coordinate(x, y);
+
+                // Copy the source coordinate to preserve its runtime dimension
+                // (CoordinateZ / CoordinateM / CoordinateZM) and only overwrite the
+                // horizontal ordinates; rebuilding a bare Coordinate would silently
+                // drop Z/M through the transformed sequence (#2744).
+                var projected = original.Copy();
+                projected.X = x;
+                projected.Y = y;
+                transformed[i] = projected;
             }
 
             return transformed;

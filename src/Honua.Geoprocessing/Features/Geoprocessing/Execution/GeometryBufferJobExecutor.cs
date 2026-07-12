@@ -108,6 +108,12 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
                 "and supply distance in the input CRS units.");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
+        {
+            Log.InvalidInputs(_logger, job.OperationId, sridError);
+            return JobExecutionResult.Failed($"Invalid buffer inputs: {sridError}.");
+        }
+
         geometry.SRID = inputs.Srid;
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -187,6 +193,16 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
             return false;
         }
 
+        // A buffer requires a strictly positive distance. Zero or negative
+        // distances erode NTS geometries to empty; rejecting them here surfaces
+        // an accurate input-validation error instead of the misleading late
+        // "produced an empty geometry" failure.
+        if (distance <= 0d)
+        {
+            error = "invalid input 'distance'; expected a finite number greater than zero";
+            return false;
+        }
+
         var geodesic = false;
         if (TryGetPrefixed(parameters, prefix, "geodesic", out var geodesicRaw)
             && !string.IsNullOrWhiteSpace(geodesicRaw)
@@ -239,7 +255,7 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
         // shape that does not echo the raw input WKB into the artifact. The
         // properties record the parameters that shaped the geometry without
         // leaking the source payload byte-for-byte.
-        var writer = new GeoJsonWriter();
+        var writer = GeoJsonArtifactCodec.CreateWriter();
         var geometryJson = writer.Write(geometry);
 
         using var buffer = new MemoryStream();

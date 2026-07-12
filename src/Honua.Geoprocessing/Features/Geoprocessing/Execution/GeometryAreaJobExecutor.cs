@@ -18,15 +18,14 @@ namespace Honua.Geoprocessing.Execution;
 /// Slice 3 of #1031 — extends the buffer / clip / intersect / project set
 /// with a per-feature measure operation.
 ///
-/// Computes the planar (Cartesian) area of the supplied geometry in input-CRS
-/// units squared and publishes a single value-result artifact. The published
-/// document is the canonical measure-result JSON shape: a single object with
-/// the process id, input SRID, geometry type, and a numeric <c>value</c>.
-/// Geodesic area (square meters on the WGS 84 ellipsoid) is documented in the
-/// catalog but is rejected here — the in-process first-slice executor avoids
-/// pulling a GeographicLib dependency for the initial executor set; the
-/// geodesic path is tracked as a follow-on slice alongside the geodesic
-/// buffer / length executors.
+/// Computes the planar (Cartesian) area of the supplied geometry in the square
+/// of the input CRS's coordinate units and publishes a single value-result
+/// artifact. The published document is the canonical measure-result JSON shape:
+/// a single object with the process id, input SRID, geometry type, and a
+/// numeric <c>value</c>. There is no geodesic option: the catalog advertises
+/// planar area only, so a geographic (degree) input yields area in squared
+/// degrees, not square meters. Ellipsoidal (geodesic) area is a tracked
+/// follow-on that would require a GeographicLib-style dependency.
 /// </summary>
 internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
 {
@@ -101,6 +100,12 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed("Invalid area inputs: geometry is empty.");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
+        {
+            Log.InvalidInputs(_logger, job.OperationId, sridError);
+            return JobExecutionResult.Failed($"Invalid area inputs: {sridError}.");
+        }
+
         geometry.SRID = inputs.Srid;
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -109,11 +114,9 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         double area;
         try
         {
-            // First-slice executor computes the planar area in the units of the
-            // input CRS. Geodesic area (catalog-documented square meters) is
-            // rejected as out-of-scope until the geodesic measure slice lands;
-            // this keeps the deterministic measurement consistent with the
-            // first-slice buffer executor's planar-only behavior.
+            // Computes the planar area in the squared units of the input CRS.
+            // No geodesic conversion is applied — the catalog advertises planar
+            // area only, consistent with the buffer executor's planar behavior.
             area = geometry.Area;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

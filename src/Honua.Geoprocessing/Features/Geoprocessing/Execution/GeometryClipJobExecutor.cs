@@ -85,6 +85,18 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"Invalid clip inputs: clipEnvelopeWkb {decodeError}");
         }
 
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
+        {
+            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
+            return JobExecutionResult.Failed($"Invalid clip inputs: targetWkb {targetSridError}.");
+        }
+
+        if (!GeometrySridGuard.TryValidateEmbeddedSrid(clip, inputs.Srid, out var clipSridError))
+        {
+            Log.InvalidWkb(_logger, job.OperationId, "clipEnvelopeWkb", clipSridError);
+            return JobExecutionResult.Failed($"Invalid clip inputs: clipEnvelopeWkb {clipSridError}.");
+        }
+
         target.SRID = inputs.Srid;
         clip.SRID = inputs.Srid;
 
@@ -270,7 +282,7 @@ internal static class GeometryFeatureWriter
         ArgumentNullException.ThrowIfNull(processId);
         ArgumentNullException.ThrowIfNull(properties);
 
-        var writer = new GeoJsonWriter();
+        var writer = GeoJsonArtifactCodec.CreateWriter();
         var geometryJson = writer.Write(geometry);
 
         using var buffer = new MemoryStream();
