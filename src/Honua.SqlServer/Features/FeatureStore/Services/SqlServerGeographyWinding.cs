@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO;
-using NetTopologySuite.Algorithm;
+using Honua.Core.Geometries;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -14,7 +14,9 @@ namespace Honua.SqlServer.Features.FeatureStore.Services;
 /// counter-clockwise (CCW) and interior rings (holes) clockwise (CW). Clockwise-exterior
 /// polygons — commonly produced by Esri clients — are otherwise interpreted as the polygon's
 /// complement, selecting the wrong region or raising error 24205 when the complement spans more
-/// than a hemisphere.
+/// than a hemisphere. The ring reorientation is delegated to the shared
+/// <see cref="RingOrientationNormalizer"/> (with <c>wantExteriorCcw: true</c>) so the geography
+/// filter path and the right-hand-rule egress emitter share one algorithm (#2745).
 /// </summary>
 internal static class SqlServerGeographyWinding
 {
@@ -48,7 +50,10 @@ internal static class SqlServerGeographyWinding
             return wkb;
         }
 
-        var oriented = OrientPolygonal(geometry);
+        // CCW exterior is the right-hand-rule orientation the shared core produces with
+        // wantExteriorCcw: true. A null return means the geometry already conforms (or is
+        // non-polygonal), so the original bytes are handed straight to the geography parser.
+        var oriented = RingOrientationNormalizer.Reorient(geometry, wantExteriorCcw: true);
         if (oriented is null)
         {
             return wkb;
@@ -56,45 +61,5 @@ internal static class SqlServerGeographyWinding
 
         _writer ??= new WKBWriter();
         return _writer.Write(oriented);
-    }
-
-    private static Geometry? OrientPolygonal(Geometry geometry)
-    {
-        switch (geometry)
-        {
-            case Polygon polygon:
-                return OrientPolygon(polygon);
-            case MultiPolygon multiPolygon:
-                var polygons = new Polygon[multiPolygon.NumGeometries];
-                for (var i = 0; i < multiPolygon.NumGeometries; i++)
-                {
-                    polygons[i] = OrientPolygon((Polygon)multiPolygon.GetGeometryN(i));
-                }
-
-                return geometry.Factory.CreateMultiPolygon(polygons);
-            default:
-                // Points, lines, and collections carry no meaningful ring orientation.
-                return null;
-        }
-    }
-
-    private static Polygon OrientPolygon(Polygon polygon)
-    {
-        var factory = polygon.Factory;
-        var shell = EnsureOrientation((LinearRing)polygon.ExteriorRing, wantCcw: true);
-
-        var holes = new LinearRing[polygon.NumInteriorRings];
-        for (var i = 0; i < polygon.NumInteriorRings; i++)
-        {
-            holes[i] = EnsureOrientation((LinearRing)polygon.GetInteriorRingN(i), wantCcw: false);
-        }
-
-        return factory.CreatePolygon(shell, holes);
-    }
-
-    private static LinearRing EnsureOrientation(LinearRing ring, bool wantCcw)
-    {
-        var isCcw = Orientation.IsCCW(ring.CoordinateSequence);
-        return isCcw == wantCcw ? ring : (LinearRing)ring.Reverse();
     }
 }

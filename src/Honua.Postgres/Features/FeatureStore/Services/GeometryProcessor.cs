@@ -60,7 +60,9 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         // GML 3.2 surface patches follow the ISO 19107 right-hand rule (exterior ring CCW, holes
         // CW). Stored data is frequently CW-exterior (Esri applyEdits, shapefile imports), so
         // enforce the orientation to match the GeoJSON path; ST_ForcePolygonCCW is a no-op for
-        // non-polygonal geometry and orientation is invariant to the GML axis-flip option (#2745).
+        // non-polygonal geometry. The geometric surface orientation is preserved through the GML
+        // axis-flip option: option 16 relabels axes into srsName (lat/lon) order without reversing
+        // the ring, so the CCW-exterior winding still holds (matches GeoServer) (#2745).
         return $"ST_AsGML(3, ST_ForcePolygonCCW({baseGeometry}), {FeatureQueryEncoding.GeometryTextPrecision}, {GetGmlOptions(query)}, NULL, {gmlIdExpression})";
     }
 

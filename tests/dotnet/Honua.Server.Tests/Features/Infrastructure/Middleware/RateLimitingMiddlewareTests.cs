@@ -233,6 +233,72 @@ public sealed class RateLimitingMiddlewareTests
         endpointBFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 
+    [UnitTest]
+    public async Task InvokeAsync_AttributedEndpointTraffic_CountsTowardSubjectGlobalCeiling()
+    {
+        // Global ceiling is 2; the endpoint's own limit is generous (100). Traffic to an
+        // attributed endpoint must still count against the subject's shared global ceiling, so the
+        // third request trips the global limit even though the endpoint's own budget is untouched
+        // (regression guard: post-#2779 the scoped counter must not replace the global one).
+        var middleware = CreateMiddleware(limit: 2);
+
+        var first = CreateContext("198.51.100.211", endpointName: "endpoint-generous", endpointLimit: 100);
+        await middleware.InvokeAsync(first);
+        var second = CreateContext("198.51.100.211", endpointName: "endpoint-generous", endpointLimit: 100);
+        await middleware.InvokeAsync(second);
+        var third = CreateContext("198.51.100.211", endpointName: "endpoint-generous", endpointLimit: 100);
+        await middleware.InvokeAsync(third);
+
+        first.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        second.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        third.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests,
+            "attributed-endpoint traffic must count toward the subject's global ceiling");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_MixedAttributedAndUnattributed_DoesNotBlockUnattributedUnderGlobal()
+    {
+        // Generous global ceiling. Exhausting an attributed endpoint's own 1/min budget must not
+        // spill onto the subject's unattributed traffic: a subsequent unattributed request from the
+        // same IP still passes because the shared ceiling is nowhere near exhausted.
+        var middleware = CreateMiddleware(limit: 10_000);
+
+        var attributedFirst = CreateContext("198.51.100.221", endpointName: "endpoint-a", endpointLimit: 1);
+        await middleware.InvokeAsync(attributedFirst);
+        var attributedSecond = CreateContext("198.51.100.221", endpointName: "endpoint-a", endpointLimit: 1);
+        await middleware.InvokeAsync(attributedSecond);
+
+        // Unattributed request (no endpoint) from the same subject.
+        var unattributed = CreateContext("198.51.100.221");
+        await middleware.InvokeAsync(unattributed);
+
+        attributedFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        attributedSecond.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        unattributed.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_EndpointScope_PartitionsByHttpMethod()
+    {
+        // The same endpoint reached by different verbs must not share a scoped counter: a GET
+        // exhausting its 1/min budget must not 429 a POST to the same endpoint (issue #2779 scope
+        // must include the HTTP method).
+        var middleware = CreateMiddleware(limit: 10_000);
+
+        var getFirst = CreateContext("198.51.100.231", endpointName: "authorize", endpointLimit: 1, httpMethod: "GET");
+        await middleware.InvokeAsync(getFirst);
+        var getSecond = CreateContext("198.51.100.231", endpointName: "authorize", endpointLimit: 1, httpMethod: "GET");
+        await middleware.InvokeAsync(getSecond);
+
+        var postFirst = CreateContext("198.51.100.231", endpointName: "authorize", endpointLimit: 1, httpMethod: "POST");
+        await middleware.InvokeAsync(postFirst);
+
+        getFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        getSecond.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        postFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK,
+            "the endpoint scope includes the HTTP verb, so POST has its own counter");
+    }
+
     private static RateLimitingMiddleware CreateMiddleware(
         bool enabled = true,
         int limit = 1,
@@ -262,9 +328,11 @@ public sealed class RateLimitingMiddlewareTests
         string? user = null,
         string? tenantId = null,
         string? endpointName = null,
-        int endpointLimit = 0)
+        int endpointLimit = 0,
+        string httpMethod = "GET")
     {
         var context = new DefaultHttpContext();
+        context.Request.Method = httpMethod;
         context.Request.Path = "/rest/services/test/FeatureServer/0/query";
         context.Response.Body = new MemoryStream();
         context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
