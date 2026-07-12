@@ -190,6 +190,68 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithWebMercatorAliasOutSr_AgainstWebMercatorLayer_EchoesAliasWithoutTransform()
+    {
+        // Regression for #2736: ArcGIS Pro / the ArcGIS JS API request outSR=102100 (a Web
+        // Mercator alias of EPSG:3857). The srid-test point layer is stored as 3857, so the query
+        // must (1) accept 102100 rather than rejecting it as an invalid outSR, (2) NOT reproject
+        // (same CRS after alias normalization — the geometry stays in stored 3857 metres), and
+        // (3) echo {wkid:102100, latestWkid:3857} per Esri convention.
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&outSR=102100&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        result.Should().NotBeNull();
+        result!.SpatialReference.Should().NotBeNull();
+        result.SpatialReference!.Wkid.Should().Be(102100);
+        result.SpatialReference.LatestWkid.Should().Be(3857);
+        var geometry = result.Features.Should().ContainSingle().Subject.Geometry;
+        geometry.Should().NotBeNull();
+        // Stored EPSG:3857 metres for the San Francisco point (no ST_Transform on the same-CRS
+        // path): a large metre-scale magnitude, not the ~-122 / ~37 degrees a reprojection to 4326
+        // would produce. Bounds are a generous window around SF in Web Mercator.
+        geometry!.X.Should().BeInRange(-13_700_000.0, -13_500_000.0);
+        geometry.Y.Should().BeInRange(4_400_000.0, 4_600_000.0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithWebMercatorAliasInSr_AgainstWebMercatorLayer_IsAcceptedNotRejected()
+    {
+        // Regression for #2736: an envelope filter expressed in a Web Mercator alias (inSR=102100)
+        // must be ACCEPTED on the query path. Before the resolver normalized the alias, 102100 was
+        // not in the CRS registry so the query returned 400 "Invalid input spatial reference".
+        // A generous EPSG:3857 envelope (well under the 100000 sq km bbox-area limit) around the
+        // San Francisco point returns it; the response echoes {wkid:102100, latestWkid:3857}.
+        var geometry = "{\"xmin\":-13700000,\"ymin\":4400000,\"xmax\":-13500000,\"ymax\":4600000}";
+        // Pin to the seeded row with a where clause: the point layer is shared across the test
+        // collection, so an envelope-only query can match other classes' seed data.
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}" +
+                         $"&geometry={Uri.EscapeDataString(geometry)}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&inSR=102100&outSR=102100&f=json";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        // The key assertion: the alias inSR is accepted (200) rather than rejected with 400.
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        result.Should().NotBeNull();
+        result!.Features.Should().ContainSingle();
+        result.SpatialReference!.Wkid.Should().Be(102100);
+        result.SpatialReference.LatestWkid.Should().Be(3857);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithUnknownDatumTransformationWkid_ReturnsExplicitError(/* #1274 */)
     {
         // An unknown datumTransformation WKID must produce an explicit error rather than
