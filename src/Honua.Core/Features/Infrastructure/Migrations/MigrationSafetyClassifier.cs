@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -87,8 +88,16 @@ public static class MigrationSafetyClassifier
     public const string CompatibilityReviewMarkerConvention =
         "-- honua:compatibility-review reason=<why this migration is rollout-safe>";
 
+    // The reason must be bound to a non-empty reviewer/ticket identity: an empty `reason=` (or one that
+    // is only whitespace to end-of-line) is self-service theater that lets a schema-narrowing migration
+    // ride along without an actual justification, so it is NOT treated as an annotated marker. Requiring
+    // a non-whitespace token after `reason=` forces the author to record why the contract change is
+    // rollout-safe (ADR-0060; honua-server#2812).
+    // The non-whitespace reason token must sit on the SAME line as `reason=`: only horizontal whitespace
+    // ([ \t]) is allowed around the `=` and before the token, so an empty `reason=` at end-of-line does
+    // not spuriously "reach" the next line's DDL (e.g. ALTER) and count as a filled-in reason.
     private static readonly Regex CompatibilityReviewMarker = new(
-        @"^\s*--\s*honua:compatibility-review\b.*\breason\s*=",
+        @"^\s*--\s*honua:compatibility-review\b.*\breason[ \t]*=[ \t]*\S",
         RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
 
     private static readonly (string RuleName, Regex Pattern)[] PotentiallyBreakingPatterns =
@@ -286,6 +295,39 @@ public static class MigrationSafetyClassifier
         }
 
         return i < length && sql[i] == '$' ? sql[start..(i + 1)] : null;
+    }
+
+    /// <summary>
+    /// Computes the one-shot contract-apply approval nonce for a specific set of pending contract-phase
+    /// migration scripts. The nonce is a stable digest bound to the exact script names, so an approval
+    /// token is only ever valid for the migrations it was minted for: once those scripts are applied they
+    /// leave the pending set (they are journaled), and the digest for any later contract migration
+    /// differs, so a stale <c>HONUA_APPROVE_CONTRACT_MIGRATIONS</c> value can never silently approve an
+    /// unrelated future contract change (honua-server#2812).
+    /// </summary>
+    /// <param name="scriptNames">The pending contract-phase migration script names to bind the nonce to.</param>
+    /// <returns>A lowercase hexadecimal nonce, or an empty string when no scripts are supplied.</returns>
+    public static string ComputeContractApprovalNonce(IEnumerable<string> scriptNames)
+    {
+        ArgumentNullException.ThrowIfNull(scriptNames);
+
+        var ordered = scriptNames
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .Select(static name => name.Trim())
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        if (ordered.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var payload = Encoding.UTF8.GetBytes(string.Join('\n', ordered));
+        var hash = SHA256.HashData(payload);
+
+        // 16 hex chars (64 bits) is ample to bind an approval to a specific script set while staying
+        // short enough for an operator to copy from the block message into an environment variable.
+        return Convert.ToHexStringLower(hash)[..16];
     }
 
     private static (string RuleName, Regex Pattern) CreatePattern(string ruleName, string pattern) =>

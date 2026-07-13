@@ -176,8 +176,51 @@ public sealed class MigrationSafetyClassifierTests
     [InlineData("-- HONUA:COMPATIBILITY-REVIEW reason=safe", true)]
     [InlineData("-- honua:compatibility-review (no reason)", false)]
     [InlineData("-- some other comment", false)]
+    // An empty (or whitespace-only) reason is self-service theater: the marker must bind to a non-empty
+    // reviewer/ticket identity, so these do NOT count as annotated (honua-server#2812).
+    [InlineData("-- honua:compatibility-review reason=", false)]
+    [InlineData("-- honua:compatibility-review reason=   ", false)]
+    [InlineData("-- honua:compatibility-review reason= ticket-123", true)]
     public void HasCompatibilityReviewMarker_MatchesMarkerConvention(string sql, bool expected)
     {
         MigrationSafetyClassifier.HasCompatibilityReviewMarker(sql).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Classify_BreakingWithEmptyReasonMarker_IsContractUnannotated()
+    {
+        // A DROP COLUMN whose only marker carries an empty reason must fall through to unannotated so the
+        // runner fails it closed rather than treating an unreviewed schema-narrowing change as safe.
+        const string sql = """
+            -- honua:compatibility-review reason=
+            ALTER TABLE honua.layers DROP COLUMN legacy_name;
+            """;
+
+        var result = MigrationSafetyClassifier.Classify("053_drop_legacy.sql", sql);
+
+        result.Classification.Should().Be(MigrationSafetyClassification.ContractUnannotated);
+        result.IsBreaking.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ComputeContractApprovalNonce_IsStableAndOrderIndependent()
+    {
+        var a = MigrationSafetyClassifier.ComputeContractApprovalNonce(new[] { "002_drop.sql", "005_rename.sql" });
+        var reordered = MigrationSafetyClassifier.ComputeContractApprovalNonce(new[] { "005_rename.sql", "002_drop.sql" });
+
+        a.Should().NotBeNullOrEmpty();
+        a.Should().HaveLength(16);
+        reordered.Should().Be(a, "the nonce is bound to the set of scripts, not their enumeration order");
+    }
+
+    [Fact]
+    public void ComputeContractApprovalNonce_DiffersPerScriptSet_AndIsEmptyForNoScripts()
+    {
+        var first = MigrationSafetyClassifier.ComputeContractApprovalNonce(new[] { "002_drop.sql" });
+        var second = MigrationSafetyClassifier.ComputeContractApprovalNonce(new[] { "003_drop.sql" });
+
+        // A stale token minted for one contract migration cannot match a later, different one (one-shot).
+        second.Should().NotBe(first);
+        MigrationSafetyClassifier.ComputeContractApprovalNonce(Array.Empty<string>()).Should().BeEmpty();
     }
 }
