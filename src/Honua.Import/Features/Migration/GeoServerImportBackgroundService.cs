@@ -219,13 +219,12 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
             if (Volatile.Read(ref leadershipLost) != 0)
             {
                 acknowledgeCompletion = false;
-                var resumableBaseProgress = progressController.CurrentProgress;
-                var resumableProgress = (resumableBaseProgress ?? GeoServerImportProgress.CreateInitial(
+                // CurrentProgress is only null on the fallback branch below, so there is no
+                // prior progress to carry forward here; CreateInitial uses its own defaults.
+                var resumableProgress = (progressController.CurrentProgress ?? GeoServerImportProgress.CreateInitial(
                     jobId,
                     request?.GeoServerRestUrl ?? string.Empty,
-                    request?.TargetHonuaUrl ?? string.Empty,
-                    resumableBaseProgress?.EstimatedTotalResources,
-                    resumableBaseProgress?.SourceGeoServerVersion)) with
+                    request?.TargetHonuaUrl ?? string.Empty)) with
                 {
                     Status = GeoServerImportStatus.Queued,
                     CompletedAt = null,
@@ -261,13 +260,12 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
             if (Volatile.Read(ref leadershipLost) != 0)
             {
                 acknowledgeCompletion = false;
-                var resumableBaseProgress = progressController.CurrentProgress;
-                var resumableProgress = (resumableBaseProgress ?? GeoServerImportProgress.CreateInitial(
+                // CurrentProgress is only null on the fallback branch below, so there is no
+                // prior progress to carry forward here; CreateInitial uses its own defaults.
+                var resumableProgress = (progressController.CurrentProgress ?? GeoServerImportProgress.CreateInitial(
                     jobId,
                     request?.GeoServerRestUrl ?? string.Empty,
-                    request?.TargetHonuaUrl ?? string.Empty,
-                    resumableBaseProgress?.EstimatedTotalResources,
-                    resumableBaseProgress?.SourceGeoServerVersion)) with
+                    request?.TargetHonuaUrl ?? string.Empty)) with
                 {
                     Status = GeoServerImportStatus.Queued,
                     CompletedAt = null,

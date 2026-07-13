@@ -22,7 +22,7 @@ namespace Honua.Migration;
 /// API endpoints for OGC WCS / OGC API Coverages GeoTIFF and Cloud Optimized GeoTIFF
 /// coverage imports (issue #1030 slice 2).
 /// </summary>
-internal static class OgcCoverageImportEndpoints
+internal static partial class OgcCoverageImportEndpoints
 {
     /// <summary>
     /// Map OGC coverage import endpoints to the web application with formal API versioning.
@@ -55,8 +55,9 @@ internal static class OgcCoverageImportEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
             return;
         }
@@ -159,6 +160,18 @@ internal static class OgcCoverageImportEndpoints
                 "Coverage import timed out.",
                 StatusCodes.Status504GatewayTimeout);
         }
+    }
+
+    private static ILogger<OgcCoverageImportEndpointsLog> GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILogger<OgcCoverageImportEndpointsLog>>();
+
+    /// <summary>Log category marker for OGC coverage import endpoint operations.</summary>
+    internal sealed class OgcCoverageImportEndpointsLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(8130, LogLevel.Warning, "Failed to deserialize coverage import request")]
+        public static partial void RequestDeserializationFailed(ILogger logger, Exception exception);
     }
 }
 

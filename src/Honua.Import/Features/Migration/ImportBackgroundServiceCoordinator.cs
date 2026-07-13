@@ -237,6 +237,7 @@ internal static class ImportBackgroundServiceCoordinator
             }
             catch (OperationCanceledException) when (monitorCancellation.IsCancellationRequested)
             {
+                // Expected: we just requested this cancellation above to stop the monitor loop.
             }
         }
 

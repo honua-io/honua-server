@@ -31,7 +31,7 @@ namespace Honua.Migration;
 ///   <item><description><c>GET /api/v1/admin/import/arcgis/migrations/{runId}/parity</c> — slice 5 parity artifact.</description></item>
 /// </list>
 /// </remarks>
-internal static class ArcGisMigrationEvidenceEndpoints
+internal static partial class ArcGisMigrationEvidenceEndpoints
 {
     private const int DefaultPageSize = 25;
     private const int MaxPageSize = 100;
@@ -144,8 +144,9 @@ internal static class ArcGisMigrationEvidenceEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestDeserializationFailed(GetLogger(context), runId, ex);
             await AdminResponseWriter.WriteErrorAsync(
                 context, "Invalid request body.", StatusCodes.Status400BadRequest);
             return;
@@ -236,8 +237,9 @@ internal static class ArcGisMigrationEvidenceEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestDeserializationFailed(GetLogger(context), runId, ex);
             await AdminResponseWriter.WriteErrorAsync(
                 context, "Invalid request body.", StatusCodes.Status400BadRequest);
             return;
@@ -342,17 +344,7 @@ internal static class ArcGisMigrationEvidenceEndpoints
     ];
 
     private static bool IsKnownStatus(string status)
-    {
-        foreach (var known in KnownStatuses)
-        {
-            if (string.Equals(status, known, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => KnownStatuses.Any(known => string.Equals(status, known, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsKnownParityClassification(string classification)
         => string.Equals(classification, ArcGisMigrationParityClassifications.Pass, StringComparison.OrdinalIgnoreCase)
@@ -395,6 +387,18 @@ internal static class ArcGisMigrationEvidenceEndpoints
 
         var trimmed = value.Trim();
         return trimmed.Length == 0 ? null : trimmed;
+    }
+
+    private static ILogger<ArcGisMigrationEvidenceEndpointsLog> GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILogger<ArcGisMigrationEvidenceEndpointsLog>>();
+
+    /// <summary>Log category marker for ArcGIS migration evidence endpoint operations.</summary>
+    internal sealed class ArcGisMigrationEvidenceEndpointsLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(8000, LogLevel.Warning, "Failed to deserialize request body for ArcGIS migration run {RunId}")]
+        public static partial void RequestDeserializationFailed(ILogger logger, string runId, Exception exception);
     }
 }
 

@@ -58,8 +58,9 @@ internal static partial class MigrationBatchEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
             return;
         }
@@ -262,6 +263,18 @@ internal static partial class MigrationBatchEndpoints
         MigrationBatchChildStatus.Cancelled => "cancelled",
         _ => "pending"
     };
+
+    private static ILogger<MigrationBatchEndpointsLog> GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILogger<MigrationBatchEndpointsLog>>();
+
+    /// <summary>Log category marker for migration batch endpoint operations.</summary>
+    internal sealed class MigrationBatchEndpointsLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(8160, LogLevel.Warning, "Failed to deserialize migration batch start request")]
+        public static partial void RequestDeserializationFailed(ILogger logger, Exception exception);
+    }
 }
 
 /// <summary>

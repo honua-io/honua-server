@@ -119,9 +119,8 @@ internal static class ShapefileExportWriter
             {
                 await using var zipStream = File.Create(zipPath);
                 using var zip = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: false);
-                foreach (var file in Directory.EnumerateFiles(scratchDir))
+                foreach (var file in Directory.EnumerateFiles(scratchDir).Where(file => file != zipPath))
                 {
-                    if (file == zipPath) continue;
                     cancellationToken.ThrowIfCancellationRequested();
                     var entry = zip.CreateEntry(Path.GetFileName(file), CompressionLevel.Optimal);
                     await using var entryStream = entry.Open();
