@@ -122,8 +122,9 @@ internal static class WmtsRequestHandlers
             if (!hasAnyQuery && string.IsNullOrWhiteSpace(requestType))
             {
                 // Keep no-parameter convenience behavior for existing integration tests.
+                // SERVICE/REQUEST validation below is skipped entirely in this branch, so
+                // `service` is not reassigned here — it is never read again.
                 requestType = "GetCapabilities";
-                service = "WMTS";
             }
             else
             {
@@ -373,6 +374,8 @@ internal static class WmtsRequestHandlers
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost WMTS request-dispatch boundary. Already
+            // logged (with exception) and mapped to a WMTS ServiceExceptionReport.
             OgcClassicLog.WmtsFailed(logger, serviceId, ex.Message, ex);
             return CreateWmtsExceptionReport(context,
                 "NoApplicableCode",
@@ -592,18 +595,16 @@ internal static class WmtsRequestHandlers
         var tileMatrixSetRegistry = context.RequestServices.GetService<ITileMatrixSetRegistry>();
         var isBuiltInGrid = TryResolveWmtsTileGrid(tileMatrixSet, out var tileGrid);
         GridGeometry? customGridGeometry = null;
-        if (!isBuiltInGrid)
+        // Operator-defined custom gridset (advertised in GetCapabilities). The custom grid's
+        // own levels bound the valid TILEMATRIX/TILEROW/TILECOL ranges (the global wmtsMaxZoom
+        // applies only to the built-in pyramids).
+        if (!isBuiltInGrid &&
+            (tileMatrixSetRegistry is null ||
+             !tileMatrixSetRegistry.TryGet(tileMatrixSet!, out var customEntry) ||
+             customEntry.IsBuiltIn ||
+             !tileMatrixSetRegistry.TryGetGeometry(customEntry.Id, wmtsMaxZoom, out customGridGeometry)))
         {
-            // Operator-defined custom gridset (advertised in GetCapabilities). The custom grid's
-            // own levels bound the valid TILEMATRIX/TILEROW/TILECOL ranges (the global wmtsMaxZoom
-            // applies only to the built-in pyramids).
-            if (tileMatrixSetRegistry is null ||
-                !tileMatrixSetRegistry.TryGet(tileMatrixSet!, out var customEntry) ||
-                customEntry.IsBuiltIn ||
-                !tileMatrixSetRegistry.TryGetGeometry(customEntry.Id, wmtsMaxZoom, out customGridGeometry))
-            {
-                return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Supported TILEMATRIXSET values are WebMercatorQuad and WorldCRS84Quad.");
-            }
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Supported TILEMATRIXSET values are WebMercatorQuad and WorldCRS84Quad.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIX", out var tileMatrixValue))
@@ -2252,15 +2253,10 @@ internal static class WmtsRequestHandlers
     /// </remarks>
     private static VerticalSelection? ResolveWmtsLayerVerticalSelection(WmtsLayer layer, IQueryCollection query)
     {
-        WmtsDimensionDefinition? elevationDimension = null;
-        foreach (var dimension in GetWmtsDimensionDefinitions(layer))
-        {
-            if (string.Equals(dimension.Identifier, "elevation", StringComparison.OrdinalIgnoreCase))
-            {
-                elevationDimension = dimension;
-                break;
-            }
-        }
+        WmtsDimensionDefinition? elevationDimension = GetWmtsDimensionDefinitions(layer)
+            .Where(dimension => string.Equals(dimension.Identifier, "elevation", StringComparison.OrdinalIgnoreCase))
+            .Select(dimension => (WmtsDimensionDefinition?)dimension)
+            .FirstOrDefault();
 
         if (elevationDimension is not { } elevation)
         {

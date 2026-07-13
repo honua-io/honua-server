@@ -154,6 +154,9 @@ internal sealed class Wcs20Handler
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: this is the outermost WCS request-handling
+            // boundary. Every failure is logged, recorded on telemetry, and mapped to
+            // a WCS ExceptionReport rather than swallowed or leaked to the client.
             Wcs20Log.RequestFailed(_logger, ex, operation, scope.DisplayName);
             telemetry.RecordException(ex);
             return Wcs20ErrorResults.CreateInternalServerError("Failed to process WCS request.");
@@ -169,15 +172,8 @@ internal sealed class Wcs20Handler
         if (!string.IsNullOrWhiteSpace(acceptVersions))
         {
             var versions = SplitCsv(acceptVersions);
-            var anySupported = false;
-            foreach (var candidate in versions)
-            {
-                if (OgcParameterValidator.TryParseVersion(candidate, Wcs20Utilities.SupportedVersions, out _, out _))
-                {
-                    anySupported = true;
-                    break;
-                }
-            }
+            var anySupported = versions.Any(candidate =>
+                OgcParameterValidator.TryParseVersion(candidate, Wcs20Utilities.SupportedVersions, out _, out _));
 
             if (versions.Length > 0 && !anySupported)
             {
@@ -674,16 +670,13 @@ internal sealed class Wcs20Handler
             return true;
         }
 
-        foreach (var publication in snapshot.Graph.Publications)
+        foreach (var publication in snapshot.Graph.Publications.Where(p => p.LayerIndex == layerId))
         {
-            if (publication.LayerIndex == layerId)
+            var resolved = snapshot.ResolveResource(publication);
+            if (resolved is not null)
             {
-                var resolved = snapshot.ResolveResource(publication);
-                if (resolved is not null)
-                {
-                    resource = resolved;
-                    return true;
-                }
+                resource = resolved;
+                return true;
             }
         }
 
@@ -1388,16 +1381,7 @@ internal sealed class Wcs20Handler
     }
 
     private static ZarrAxis? FindAdditionalAxis(IReadOnlyList<ZarrAxis> axes, string axisLabel)
-    {
-        foreach (var axis in axes)
-        {
-            if (string.Equals(axis.Name, axisLabel, StringComparison.OrdinalIgnoreCase))
-            {
-                return axis;
-            }
-        }
-        return null;
-    }
+        => axes.FirstOrDefault(axis => string.Equals(axis.Name, axisLabel, StringComparison.OrdinalIgnoreCase));
 
     // Resolves the additional (non-spatial, non-temporal) dimension axes a coverage
     // offers from a registered multidimensional (Zarr) store for the layer. Returns an
@@ -1407,12 +1391,10 @@ internal sealed class Wcs20Handler
         try
         {
             var registrations = await _coverageBackend.ListZarrRegistrationsAsync(layerId, cancellationToken).ConfigureAwait(false);
-            foreach (var registration in registrations)
+            var withAxes = registrations.FirstOrDefault(registration => registration.Metadata is { Axes.Length: > 0 });
+            if (withAxes?.Metadata is { Axes.Length: > 0 } metadata)
             {
-                if (registration.Metadata is { Axes.Length: > 0 } metadata)
-                {
-                    return metadata.Axes;
-                }
+                return metadata.Axes;
             }
         }
         catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
@@ -2742,25 +2724,14 @@ internal sealed class Wcs20Handler
     private static string? GetQueryValue(IQueryCollection query, string name)
     {
         var values = GetQueryValues(query, name);
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return null;
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     }
 
     private static StringValues GetQueryValues(IQueryCollection query, string name)
     {
-        foreach (var pair in query)
+        foreach (var pair in query.Where(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return pair.Value;
-            }
+            return pair.Value;
         }
 
         return StringValues.Empty;

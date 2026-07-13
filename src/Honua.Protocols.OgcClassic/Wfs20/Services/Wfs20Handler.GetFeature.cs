@@ -287,6 +287,8 @@ internal sealed partial class Wfs20Handler
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost GetFeature request boundary. Already
+            // logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20Log.DatabaseQueryFailed(_logger, ex, Wfs20Utilities.Operations.GetFeature, ex.Message);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process GetFeature request.");
         }

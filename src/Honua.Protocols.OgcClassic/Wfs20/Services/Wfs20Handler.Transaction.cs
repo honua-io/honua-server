@@ -226,6 +226,9 @@ internal sealed partial class Wfs20Handler
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost Transaction request boundary. Already
+            // logged (with exception), recorded on telemetry, and mapped to a WFS
+            // ExceptionReport.
             Wfs20Log.DatabaseQueryFailed(_logger, ex, Wfs20Utilities.Operations.Transaction, ex.Message);
             HonuaTelemetry.RecordException(activity, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process Transaction request.");
@@ -1081,14 +1084,13 @@ internal sealed partial class Wfs20Handler
             ? trimmedTypeName[(trimmedTypeName.LastIndexOf(':') + 1)..]
             : trimmedTypeName;
 
-        foreach (var descriptor in descriptors)
+        var match = descriptors.FirstOrDefault(descriptor =>
+            descriptor.QualifiedName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
+            descriptor.LocalName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
+            descriptor.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
         {
-            if (descriptor.QualifiedName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
-                descriptor.LocalName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
-                descriptor.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))
-            {
-                return descriptor;
-            }
+            return match;
         }
 
         throw new WfsTransactionException("InvalidValue", $"Unknown feature type '{rawTypeName}'.", "typeName");

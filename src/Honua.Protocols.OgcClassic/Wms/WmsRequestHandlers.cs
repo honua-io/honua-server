@@ -257,6 +257,8 @@ internal static partial class WmsRequestHandlers
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost WMS request-dispatch boundary. Already
+            // logged (with exception) and mapped to a WMS ServiceExceptionReport.
             OgcClassicLog.WmsFailed(logger, serviceId, ex.Message, ex);
             return CreateWmsServiceException(context, "NoApplicableCode", "WMS request failed.", StatusCodes.Status500InternalServerError);
         }
@@ -448,15 +450,7 @@ internal static partial class WmsRequestHandlers
             return (null, null);
         }
 
-        var allCiteAutos = layers.Length > 0;
-        foreach (var layer in layers)
-        {
-            if (!IsCiteLayerNamed(layer, CiteAutosLayerTitle))
-            {
-                allCiteAutos = false;
-                break;
-            }
-        }
+        var allCiteAutos = layers.Length > 0 && layers.All(layer => IsCiteLayerNamed(layer, CiteAutosLayerTitle));
 
         if (!OgcTemporalFilterParser.TryParseRange(timeParam, out var start, out var end, out var parseError))
         {
@@ -540,16 +534,11 @@ internal static partial class WmsRequestHandlers
     /// </summary>
     private static TemporalPropertyType ResolveTemporalPropertyType(MetadataV2Resource resource, string fieldName)
     {
-        foreach (var field in resource.SchemaFields)
-        {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                return field.Type == MetadataV2FieldType.Date
-                    ? TemporalPropertyType.Date
-                    : TemporalPropertyType.DateTime;
-            }
-        }
-        return TemporalPropertyType.DateTime;
+        var field = resource.SchemaFields.FirstOrDefault(f =>
+            string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        return field?.Type == MetadataV2FieldType.Date
+            ? TemporalPropertyType.Date
+            : TemporalPropertyType.DateTime;
     }
 
     private static (SqlFragment?[]? Filters, IResult? Error) TryParseWmsLayerFilters(
@@ -1010,14 +999,8 @@ internal static partial class WmsRequestHandlers
                         filterParam[i + 3] == '-')
                     {
                         var commentEnd = filterParam.IndexOf("-->", i + 4, StringComparison.Ordinal);
-                        if (commentEnd >= 0)
-                        {
-                            i = commentEnd + 2; // advance past -->
-                        }
-                        else
-                        {
-                            i = filterParam.Length - 1; // malformed; skip to end
-                        }
+                        // advance past --> when found, otherwise skip the malformed tail to the end.
+                        i = commentEnd >= 0 ? commentEnd + 2 : filterParam.Length - 1;
 
                         break;
                     }
@@ -1034,14 +1017,8 @@ internal static partial class WmsRequestHandlers
                         filterParam[i + 8] == '[')
                     {
                         var cdataEnd = filterParam.IndexOf("]]>", i + 9, StringComparison.Ordinal);
-                        if (cdataEnd >= 0)
-                        {
-                            i = cdataEnd + 2; // advance past ]]>
-                        }
-                        else
-                        {
-                            i = filterParam.Length - 1; // malformed; skip to end
-                        }
+                        // advance past ]]> when found, otherwise skip the malformed tail to the end.
+                        i = cdataEnd >= 0 ? cdataEnd + 2 : filterParam.Length - 1;
 
                         break;
                     }
