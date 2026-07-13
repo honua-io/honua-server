@@ -121,12 +121,9 @@ internal static class ArchitectureTestHelpers
         {
             foreach (var type in GetTypesSafely(testAssembly))
             {
-                foreach (var method in type.GetMethods(TestMemberFlags))
+                foreach (var method in type.GetMethods(TestMemberFlags).Where(method => IsIntegrationTestMethod(type, method)))
                 {
-                    if (IsIntegrationTestMethod(type, method))
-                    {
-                        yield return method;
-                    }
+                    yield return method;
                 }
             }
         }
@@ -142,7 +139,7 @@ internal static class ArchitectureTestHelpers
     internal static string ResolveRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory is not null && !File.Exists(CombinePath(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
@@ -153,6 +150,29 @@ internal static class ArchitectureTestHelpers
         }
 
         return directory.FullName;
+    }
+
+    /// <summary>
+    /// Combines path segments like <see cref="Path.Combine(string[])"/>, but throws instead of
+    /// silently discarding the earlier segments if a non-first segment turns out to be rooted
+    /// (absolute). Every call site in this project passes literal or catalog-derived relative
+    /// segments, so this converts the silent-truncation risk CodeQL's <c>cs/path-combine</c>
+    /// check flags into a loud test failure if that invariant is ever violated, instead of
+    /// papering over the check with per-call-site suppression comments.
+    /// </summary>
+    internal static string CombinePath(params string[] segments)
+    {
+        for (var i = 1; i < segments.Length; i++)
+        {
+            if (Path.IsPathRooted(segments[i]))
+            {
+                throw new ArgumentException(
+                    $"Path segment '{segments[i]}' at index {i} must be relative; Path.Combine would otherwise silently discard the preceding segments.",
+                    nameof(segments));
+            }
+        }
+
+        return Path.Combine(segments);
     }
 
     /// <summary>

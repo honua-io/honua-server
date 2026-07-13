@@ -32,7 +32,7 @@ public sealed class DockerfileWritableStorageDirectoryTests
     public void ReadOnlyRootDockerfiles_ProvisionEveryDefaultLocalStorageDirectory()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var appSettingsPath = Path.Combine(
+        var appSettingsPath = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             AppSettingsRelativePath.Replace('/', Path.DirectorySeparatorChar));
 
@@ -77,13 +77,13 @@ public sealed class DockerfileWritableStorageDirectoryTests
     {
         var candidates = new List<string>();
 
-        var rootDockerfile = Path.Combine(repositoryRoot, "Dockerfile");
+        var rootDockerfile = ArchitectureTestHelpers.CombinePath(repositoryRoot, "Dockerfile");
         if (File.Exists(rootDockerfile))
         {
             candidates.Add(rootDockerfile);
         }
 
-        var dockerDirectory = Path.Combine(repositoryRoot, "docker");
+        var dockerDirectory = ArchitectureTestHelpers.CombinePath(repositoryRoot, "docker");
         if (Directory.Exists(dockerDirectory))
         {
             candidates.AddRange(Directory.EnumerateFiles(dockerDirectory, "Dockerfile*", SearchOption.TopDirectoryOnly));
@@ -130,21 +130,18 @@ public sealed class DockerfileWritableStorageDirectoryTests
     private static HashSet<string> CollectTokensFromDirective(string dockerfile, string directive)
     {
         var tokens = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var rawLine in dockerfile.Split('\n'))
+        foreach (var line in dockerfile.Split('\n').Select(rawLine => rawLine.Trim()))
         {
-            var line = rawLine.Trim();
             var directiveIndex = line.IndexOf(directive, StringComparison.Ordinal);
             if (directiveIndex < 0)
             {
                 continue;
             }
 
-            foreach (var token in line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            foreach (var token in line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                .Where(token => token.StartsWith("/tmp/", StringComparison.Ordinal)))
             {
-                if (token.StartsWith("/tmp/", StringComparison.Ordinal))
-                {
-                    tokens.Add(token);
-                }
+                tokens.Add(token);
             }
         }
 
@@ -158,6 +155,10 @@ public sealed class DockerfileWritableStorageDirectoryTests
     {
         value = string.Empty;
         var current = root;
+        // Not a filter: each iteration threads the mutated `current` (TryGetProperty's out
+        // parameter) into the next, so this is a stateful traversal/fold with early exit, not
+        // an expression `.Where(...)` could represent — the cs/linq/missed-where note does not
+        // apply here.
         foreach (var segment in path)
         {
             if (current.ValueKind != JsonValueKind.Object ||

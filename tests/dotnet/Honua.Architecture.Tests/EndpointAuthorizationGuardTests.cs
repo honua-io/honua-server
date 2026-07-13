@@ -64,7 +64,7 @@ public sealed class EndpointAuthorizationGuardTests
     public void EveryMutationEndpoint_HasExplicitAuthorizationDecision()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var featuresRoot = Path.Combine(repoRoot, FeaturesRelativePath);
+        var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath);
         Directory.Exists(featuresRoot)
             .Should().BeTrue($"the audited features directory should exist at {featuresRoot}");
 
@@ -119,7 +119,7 @@ public sealed class EndpointAuthorizationGuardTests
     public void AuditedFeaturesDirectory_ContainsEndpointFiles()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var featuresRoot = Path.Combine(repoRoot, FeaturesRelativePath);
+        var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath);
 
         var fileCount = Directory.EnumerateFiles(featuresRoot, "*Endpoints.cs", SearchOption.AllDirectories).Count();
 

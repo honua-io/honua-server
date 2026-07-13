@@ -118,7 +118,7 @@ public sealed class EndpointRegistryDriftTests
     public void EveryDiscoveredEndpoint_IsRegisteredInEndpointRegistry()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var featuresRoot = Path.Combine(repoRoot, FeaturesRelativePath);
+        var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath);
         Directory.Exists(featuresRoot)
             .Should().BeTrue($"the audited features directory should exist at {featuresRoot}");
 
@@ -161,7 +161,7 @@ public sealed class EndpointRegistryDriftTests
         // simpler case where someone deletes the mapping but forgets the
         // catalog entry.
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var featuresRoot = Path.Combine(repoRoot, FeaturesRelativePath);
+        var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath);
         // Anchor against the Server features tree plus every extracted module
         // assembly (Honua.Ai, Honua.Geoprocessing, Honua.Geocoding,
         // Honua.Protocols.*, …). As features were carved out of Honua.Server
@@ -223,7 +223,7 @@ public sealed class EndpointRegistryDriftTests
     /// </summary>
     private static IEnumerable<string> ExtractedModuleRoots(string repoRoot)
     {
-        var srcRoot = Path.Combine(repoRoot, "src");
+        var srcRoot = ArchitectureTestHelpers.CombinePath(repoRoot, "src");
         return Directory.Exists(srcRoot)
             ? Directory.EnumerateDirectories(srcRoot, "Honua.*", SearchOption.TopDirectoryOnly)
                 .Where(dir => !string.Equals(Path.GetFileName(dir), "Honua.Server", System.StringComparison.Ordinal))
@@ -269,10 +269,9 @@ public sealed class EndpointRegistryDriftTests
             }
         }
 
-        foreach (var file in roots.SelectMany(EnumerateEndpointFiles))
+        foreach (var content in roots.SelectMany(EnumerateEndpointFiles)
+            .Select(file => StripComments(File.ReadAllText(file))))
         {
-            var content = StripComments(File.ReadAllText(file));
-
             foreach (Match match in anyMapCall.Matches(content))
             {
                 var kind = match.Groups["kind"].Value;
@@ -402,7 +401,7 @@ public sealed class EndpointRegistryDriftTests
     /// </summary>
     private static List<DiscoveredEndpoint> ScanAllModuleEndpoints(string repoRoot)
     {
-        var featuresRoot = Path.Combine(repoRoot, FeaturesRelativePath);
+        var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath);
         var roots = new List<string> { featuresRoot };
         roots.AddRange(ExtractedModuleRoots(repoRoot));
 
@@ -471,7 +470,7 @@ public sealed class EndpointRegistryDriftTests
         // MapCollaborationSessionEndpoints), so all server sources are in
         // scope.
         var sb = new System.Text.StringBuilder();
-        var serverRoot = Path.Combine(repoRoot, "src", "Honua.Server");
+        var serverRoot = ArchitectureTestHelpers.CombinePath(repoRoot, "src", "Honua.Server");
         foreach (var file in Directory.EnumerateFiles(serverRoot, "*.cs", SearchOption.AllDirectories))
         {
             sb.Append("// FILE:").Append(file).Append('\n');
@@ -500,9 +499,8 @@ public sealed class EndpointRegistryDriftTests
             return true;
         }
 
-        foreach (Match match in publicMapMethods)
+        foreach (var name in publicMapMethods.Select(match => match.Groups["name"].Value))
         {
-            var name = match.Groups["name"].Value;
             // Count call sites — the declaration adds exactly one occurrence
             // because the host wiring slurp also contains this file. Anything
             // above one indicates a real call elsewhere.

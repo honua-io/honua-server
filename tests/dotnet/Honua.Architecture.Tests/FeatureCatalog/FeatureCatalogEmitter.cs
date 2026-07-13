@@ -56,7 +56,7 @@ internal static class FeatureCatalogPaths
 
     /// <summary>Absolute path to <c>docs/gis/data/feature-catalog.json</c>.</summary>
     public static string CommittedArtifactPath()
-        => Path.Combine(
+        => Honua.Architecture.Tests.ArchitectureTestHelpers.CombinePath(
             ArchitectureTestHelpers.ResolveRepositoryRoot(),
             "docs",
             "gis",

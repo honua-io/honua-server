@@ -38,7 +38,7 @@ public sealed class HonuaIoIsolationTests
     public void HonuaIo_ShouldNotReference_HonuaServer()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var csprojPath = Path.Combine(repositoryRoot, HonuaIoCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var csprojPath = ArchitectureTestHelpers.CombinePath(repositoryRoot, HonuaIoCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
 
         File.Exists(csprojPath).Should().BeTrue(
             "Honua.Io.csproj must exist at the canonical path: {0}", csprojPath);
@@ -55,7 +55,7 @@ public sealed class HonuaIoIsolationTests
     public void HonuaIo_MustOnlyReference_PermittedProviders()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var csprojPath = Path.Combine(repositoryRoot, HonuaIoCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var csprojPath = ArchitectureTestHelpers.CombinePath(repositoryRoot, HonuaIoCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
 
         var referenced = ReferencedProjectNames(csprojPath);
 

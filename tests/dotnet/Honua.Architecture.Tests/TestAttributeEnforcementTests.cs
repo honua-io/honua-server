@@ -217,10 +217,10 @@ public sealed class TestAttributeEnforcementTests
         {
             foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
             {
-                foreach (var endpointAttribute in method.GetCustomAttributes(typeof(EndpointAttribute), inherit: true).Cast<EndpointAttribute>())
+                foreach (var endpoint in method.GetCustomAttributes(typeof(EndpointAttribute), inherit: true)
+                    .Cast<EndpointAttribute>()
+                    .Select(endpointAttribute => endpointAttribute.Endpoint.Trim()))
                 {
-                    var endpoint = endpointAttribute.Endpoint.Trim();
-
                     // Should be in format "METHOD /path"
                     var parts = endpoint.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
                     if (parts.Length != 2)
