@@ -87,8 +87,10 @@ fi
 workflow="${REPO_ROOT}/.github/workflows/ci.yml"
 proof_workflow="${REPO_ROOT}/.github/workflows/server-test-shard-cache-proof.yml"
 grep -Fq 'name: Server Tests (${{ matrix.shard_name }})' "${workflow}"
-grep -q 'actions/cache/restore@v5' "${workflow}"
-grep -q 'actions/cache/save@v5' "${workflow}"
+# Major-version-agnostic on purpose: this proves the shard cache still uses the
+# restore/save actions; a Dependabot major bump must not fail router validation.
+grep -Eq 'actions/cache/restore@v[0-9]+' "${workflow}"
+grep -Eq 'actions/cache/save@v[0-9]+' "${workflow}"
 grep -q 'github.run_attempt > 1' "${workflow}"
 grep -Fq "steps.shard-cache-materialize.outputs.restored != 'true'" "${workflow}"
 grep -Fq "steps.shard-cache-plan.outputs.cache_writer == 'true' || github.run_attempt > 1" "${workflow}"
