@@ -122,19 +122,16 @@ internal static class AiBuilderScenarioMapper
             return null;
         }
 
-        var steps = new List<McpAnalysisPlanStepOutput>(dag.Value.GetArrayLength());
-        foreach (var node in dag.Value.EnumerateArray())
-        {
-            var step = new McpAnalysisPlanStepOutput
+        var steps = dag.Value.EnumerateArray()
+            .Select(node => new McpAnalysisPlanStepOutput
             {
                 StepId = ReadStringProperty(node, "nodeId") ?? string.Empty,
                 Kind = NormalizeStepKind(ReadStringProperty(node, "kind")),
                 ProcessId = ReadStringProperty(node, "processId"),
                 DependsOn = ReadStringArray(node, "dependsOn"),
                 Inputs = ReadStringMap(node, "inputs")
-            };
-            steps.Add(step);
-        }
+            })
+            .ToList();
 
         return new McpAnalysisPlanOutput
         {
@@ -345,16 +342,11 @@ internal static class AiBuilderScenarioMapper
             return [];
         }
 
-        var list = new List<string>(warningsArray.Value.GetArrayLength());
-        foreach (var warning in warningsArray.Value.EnumerateArray())
-        {
-            var code = ReadStringProperty(warning, "code");
-            if (!string.IsNullOrWhiteSpace(code))
-            {
-                list.Add(code);
-            }
-        }
-        return list;
+        return warningsArray.Value.EnumerateArray()
+            .Select(warning => ReadStringProperty(warning, "code"))
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Select(code => code!)
+            .ToList();
     }
 
     private static List<string> ReadStringArray(JsonElement parent, string property)
@@ -364,19 +356,12 @@ internal static class AiBuilderScenarioMapper
             return [];
         }
 
-        var list = new List<string>(array.GetArrayLength());
-        foreach (var item in array.EnumerateArray())
-        {
-            if (item.ValueKind == JsonValueKind.String)
-            {
-                var value = item.GetString();
-                if (!string.IsNullOrEmpty(value))
-                {
-                    list.Add(value);
-                }
-            }
-        }
-        return list;
+        return array.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString())
+            .Where(value => !string.IsNullOrEmpty(value))
+            .Select(value => value!)
+            .ToList();
     }
 
     private static Dictionary<string, string> ReadStringMap(JsonElement parent, string property)

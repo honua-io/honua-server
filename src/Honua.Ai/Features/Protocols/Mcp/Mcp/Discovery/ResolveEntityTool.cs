@@ -223,17 +223,8 @@ internal sealed class ResolveEntityTool : IMcpTool
     }
 
     private static bool TokenOverlap(string query, string value)
-    {
-        foreach (var token in query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (token.Length >= 3 && value.Contains(token, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Any(token => token.Length >= 3 && value.Contains(token, StringComparison.OrdinalIgnoreCase));
 
     private static string NormalizeEntityType(string? entityType)
     {

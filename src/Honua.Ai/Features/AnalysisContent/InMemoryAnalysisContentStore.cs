@@ -177,6 +177,10 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         // Opportunistic sweep: remove entries whose ExpiresAt has passed so the
         // dictionary does not grow without bound across preview calls.
         var now = _timeProvider.GetUtcNow();
+        // Not rewritten as .Where(...): the match test itself needs to re-fetch the
+        // current value (TryGetValue) so the later value-conditional TryRemove races
+        // safely against concurrent writers; a LINQ filter would need the same
+        // out-var capture and would not read more clearly than the loop.
         foreach (var key in _artifacts.Keys)
         {
             if (_artifacts.TryGetValue(key, out var candidate)

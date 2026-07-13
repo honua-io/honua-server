@@ -142,17 +142,9 @@ internal static class IntentDrafter
     }
 
     private static bool PinnedMatchesServiceCandidate(string sourceId, CandidateRanking candidates)
-    {
-        foreach (var candidate in candidates.Datasets)
-        {
-            if (string.Equals(candidate.Id, sourceId, StringComparison.Ordinal)
-                && candidate.DatasetSubtype == DatasetSubtype.Service)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+        => candidates.Datasets.Any(candidate =>
+            string.Equals(candidate.Id, sourceId, StringComparison.Ordinal)
+            && candidate.DatasetSubtype == DatasetSubtype.Service);
 
     private static IReadOnlyList<ArtifactKind> InferRequestedOutputs(
         WorkflowFamily family,

@@ -352,12 +352,9 @@ internal sealed class QueryFeaturesTool : IMcpTool
         }
 
         var builder = ImmutableArray.CreateBuilder<string>(outFields.Count);
-        foreach (var field in outFields)
+        foreach (var field in outFields.Where(field => !string.IsNullOrWhiteSpace(field)))
         {
-            if (!string.IsNullOrWhiteSpace(field))
-            {
-                builder.Add(field.Trim());
-            }
+            builder.Add(field.Trim());
         }
 
         return builder.Count == 0 ? null : builder.ToImmutable();

@@ -58,9 +58,8 @@ internal static partial class GroundingTokenizer
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<string>(matches.Count);
 
-        foreach (Match match in matches)
+        foreach (var raw in matches.Select(match => match.Value))
         {
-            var raw = match.Value;
             if (raw.Length == 1)
             {
                 // Single letters rarely carry meaning; drop them so noise

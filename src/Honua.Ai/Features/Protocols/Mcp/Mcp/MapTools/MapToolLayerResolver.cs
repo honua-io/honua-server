@@ -78,15 +78,7 @@ internal static class MapToolLayerResolver
     }
 
     private static MetadataV2Service? ResolveService(MetadataV2GraphSnapshot snapshot, string serviceId)
-    {
-        foreach (var candidate in snapshot.Graph.Services)
-        {
-            if (string.Equals(candidate.Metadata.Id, serviceId, StringComparison.OrdinalIgnoreCase))
-            {
-                return candidate;
-            }
-        }
-
-        return snapshot.FindService(serviceId);
-    }
+        => snapshot.Graph.Services.FirstOrDefault(candidate =>
+               string.Equals(candidate.Metadata.Id, serviceId, StringComparison.OrdinalIgnoreCase))
+           ?? snapshot.FindService(serviceId);
 }

@@ -190,15 +190,13 @@ internal static class QueryGenerationValidationGate
                     $"{path}.value"));
             }
         }
-        else if (!string.Equals(comparison.Operator, "isNull", StringComparison.OrdinalIgnoreCase))
+        else if (!string.Equals(comparison.Operator, "isNull", StringComparison.OrdinalIgnoreCase)
+                 && IsNullValue(comparison.Value))
         {
-            if (IsNullValue(comparison.Value))
-            {
-                structural.Add(new QueryStructuralFailure(
-                    "COMPARISON_VALUE_MISSING",
-                    $"The '{comparison.Operator}' operator requires a value.",
-                    $"{path}.value"));
-            }
+            structural.Add(new QueryStructuralFailure(
+                "COMPARISON_VALUE_MISSING",
+                $"The '{comparison.Operator}' operator requires a value.",
+                $"{path}.value"));
         }
     }
 

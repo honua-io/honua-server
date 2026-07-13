@@ -445,17 +445,9 @@ internal sealed class GroundingService : IGroundingService
     }
 
     private static bool MatchesServiceCandidate(string sourceId, CandidateRanking ranking)
-    {
-        foreach (var candidate in ranking.Datasets)
-        {
-            if (string.Equals(candidate.Id, sourceId, StringComparison.Ordinal)
-                && candidate.DatasetSubtype == DatasetSubtype.Service)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+        => ranking.Datasets.Any(candidate =>
+            string.Equals(candidate.Id, sourceId, StringComparison.Ordinal)
+            && candidate.DatasetSubtype == DatasetSubtype.Service);
 
     private static IReadOnlyList<MaterialAmbiguityFinding> FilterAnsweredFindings(
         IReadOnlyList<MaterialAmbiguityFinding> findings,
@@ -466,16 +458,7 @@ internal sealed class GroundingService : IGroundingService
             return findings;
         }
 
-        var retained = new List<MaterialAmbiguityFinding>(findings.Count);
-        foreach (var finding in findings)
-        {
-            if (!answeredQuestionIds.Contains(finding.QuestionId))
-            {
-                retained.Add(finding);
-            }
-        }
-
-        return retained;
+        return findings.Where(finding => !answeredQuestionIds.Contains(finding.QuestionId)).ToList();
     }
 
     private static bool IsSatisfiedByConstraints(
