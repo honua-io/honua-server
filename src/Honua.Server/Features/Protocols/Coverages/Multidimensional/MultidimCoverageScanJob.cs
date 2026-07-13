@@ -231,14 +231,13 @@ internal static class MultidimCoverageScanJob
         ArgumentNullException.ThrowIfNull(registration);
 
         var existing = await zarrStore.ListByLayerAsync(registration.LayerId, cancellationToken).ConfigureAwait(false);
-        foreach (var candidate in existing)
+        var alreadyRegistered = existing.Any(candidate =>
+            candidate.Provider == registration.Provider &&
+            string.Equals(candidate.Bucket, registration.Bucket, StringComparison.Ordinal) &&
+            string.Equals(candidate.RootPath, zarrRootPath, StringComparison.Ordinal));
+        if (alreadyRegistered)
         {
-            if (candidate.Provider == registration.Provider &&
-                string.Equals(candidate.Bucket, registration.Bucket, StringComparison.Ordinal) &&
-                string.Equals(candidate.RootPath, zarrRootPath, StringComparison.Ordinal))
-            {
-                return; // Already registered by an earlier poll.
-            }
+            return; // Already registered by an earlier poll.
         }
 
         var zarr = await zarrStore.RegisterAsync(

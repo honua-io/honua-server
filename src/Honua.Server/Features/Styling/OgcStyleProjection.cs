@@ -120,7 +120,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
 
-        var (resource, storageLayerId, snapshot) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+        var (resource, storageLayerId, _) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (resource is null || !storageLayerId.HasValue)
         {
             // Phase 2: the styleId may identify a standalone catalog style rather than a
@@ -486,17 +486,12 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         MapLibreStyleLayer[] layers;
         using (var document = JsonDocument.Parse(mapLibreJson))
         {
-            if (!document.RootElement.TryGetProperty("layers", out var layersElement)
-                || layersElement.ValueKind != JsonValueKind.Array)
-            {
-                layers = Array.Empty<MapLibreStyleLayer>();
-            }
-            else
-            {
-                layers = JsonSerializer.Deserialize(
+            layers = !document.RootElement.TryGetProperty("layers", out var layersElement)
+                || layersElement.ValueKind != JsonValueKind.Array
+                ? Array.Empty<MapLibreStyleLayer>()
+                : JsonSerializer.Deserialize(
                     layersElement.GetRawText(),
                     MapLibreStyleJsonContext.Default.MapLibreStyleLayerArray) ?? Array.Empty<MapLibreStyleLayer>();
-            }
         }
 
         var export = MapLibreToSldConverter.Export(layers, layerName);
@@ -517,7 +512,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         {
             var document = XDocument.Parse(sldXml);
             document.Root?.SetAttributeValue("version", version);
-            return document.Declaration + Environment.NewLine + document.ToString();
+            return document.Declaration + Environment.NewLine + document;
         }
         catch (System.Xml.XmlException)
         {

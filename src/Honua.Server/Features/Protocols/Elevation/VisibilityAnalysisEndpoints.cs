@@ -106,8 +106,9 @@ internal static class VisibilityAnalysisEndpoints
                 VisibilityJsonContext.Default.LineOfSightRequest,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "Failed to parse line-of-sight analysis request body for dataset {DatasetId}.", datasetId);
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -228,8 +229,9 @@ internal static class VisibilityAnalysisEndpoints
                 VisibilityJsonContext.Default.ViewshedRequest,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "Failed to parse viewshed analysis request body for dataset {DatasetId}.", datasetId);
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
