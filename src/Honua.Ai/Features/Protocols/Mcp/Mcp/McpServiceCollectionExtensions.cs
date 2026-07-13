@@ -60,6 +60,18 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeOperationTool>());
 
+        // ── MCP capability-breadth tools (#2813) ──────────────────────────────
+        // honua_list_jobs: caller-scoped job enumeration (status filter + cursor
+        // paging) over the canonical IGeoprocessingJobService.ListJobsAsync, so an
+        // agent can find a queued/stuck job to feed honua_cancel_job. Registered
+        // unconditionally alongside honua_cancel_job — both depend only on the
+        // IGeoprocessingJobService that is composed before AddMcpOperatorSurface,
+        // and the service enforces the job-read grant + per-job ownership itself.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ListJobsTool>());
+        // (honua_describe_layer is registered below in the Metadata v2 + feature
+        // reader gated block, next to honua_query_features.)
+        // ──────────────────────────────────────────────────────────────────────
+
         // honua_publish_service (#1951): the authoring/publishing tool. It routes
         // through the canonical IOperationInvoker (operations toolset) →
         // ServicePublishExecutor → ILayerPublishingService rather than
@@ -179,6 +191,12 @@ internal static class McpServiceCollectionExtensions
             if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader)))
             {
                 services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.QueryFeaturesTool>());
+
+                // honua_describe_layer (#2813): a layer's field schema + row count
+                // + CRS/extent. Reads the same Metadata v2 graph (schema) and shared
+                // IFeatureReader (row count) as honua_query_features, so it is gated
+                // on the same two capabilities being composed.
+                services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.DescribeLayerTool>());
             }
 
             // NO feature-mutation tool is registered here BY DESIGN. Honua does

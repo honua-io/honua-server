@@ -193,6 +193,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     {
         public bool IsLeader => false;
 
+        public bool LastAcquireFaulted => false;
+
         public string InstanceId => "test";
 
         public Task<bool> TryAcquireAsync(CancellationToken cancellationToken = default)

@@ -69,6 +69,35 @@ internal sealed record DeployTelemetryPolicy
     /// <summary>Indicates a synthetic health-probe signal is configured.</summary>
     public bool HasHealthProbe => !string.IsNullOrWhiteSpace(HealthProbeUrl);
 
+    /// <summary>
+    /// Optional golden-query correctness endpoint. When set (with at least one expectation) a release whose
+    /// status/5xx/p95 metrics are all healthy but whose golden-query response body is wrong or garbled is
+    /// blocked from auto-promotion — the correctness gate beyond status/5xx/p95 (honua-server#2811). Opt-in
+    /// and default off, so existing deploys are unaffected.
+    /// </summary>
+    public string? GoldenQueryUrl { get; init; }
+
+    /// <summary>Expected lowercase hex SHA-256 of the golden-query response body.</summary>
+    public string? GoldenQueryExpectedSha256 { get; init; }
+
+    /// <summary>A substring the golden-query response body must contain.</summary>
+    public string? GoldenQueryExpectedContains { get; init; }
+
+    /// <summary>HTTP status code the golden-query endpoint returns when servable.</summary>
+    public int GoldenQueryExpectedStatusCode { get; init; } = 200;
+
+    /// <summary>Per-request timeout (seconds) for the golden-query probe.</summary>
+    public int GoldenQueryTimeoutSeconds { get; init; } = 5;
+
+    /// <summary>
+    /// Indicates a golden-query correctness gate is configured: a URL plus at least one body expectation
+    /// (checksum or required substring). A URL with no expectation is a configuration error surfaced via
+    /// <see cref="ValidationError"/> rather than a silently-ignored gate.
+    /// </summary>
+    public bool HasGoldenQuery =>
+        !string.IsNullOrWhiteSpace(GoldenQueryUrl) &&
+        (!string.IsNullOrWhiteSpace(GoldenQueryExpectedSha256) || !string.IsNullOrWhiteSpace(GoldenQueryExpectedContains));
+
     /// <summary>Indicates at least one queryable metric signal (error-rate / latency / sample-count) is configured.</summary>
     public bool HasMetricSignals =>
         !string.IsNullOrWhiteSpace(ErrorRateQuery) ||
@@ -123,10 +152,17 @@ internal sealed record DeployTelemetryPolicy
         // /healthz/ready with no metrics backend at all, so a configured probe alone yields a policy.
         var healthProbeUrl = Get(parameters, "telemetry.healthz.url");
 
+        // The golden-query correctness gate is likewise provider-independent (honua-server#2811): a
+        // configured golden query alone yields a policy so a correctness-only gate is expressible.
+        var goldenQueryUrl = Get(parameters, "telemetry.golden_query.url");
+        var goldenQuerySha256 = Get(parameters, "telemetry.golden_query.expected_sha256");
+        var goldenQueryContains = Get(parameters, "telemetry.golden_query.expected_contains");
+
         if (string.IsNullOrWhiteSpace(errorRateQuery) &&
             string.IsNullOrWhiteSpace(latencyQuery) &&
             string.IsNullOrWhiteSpace(sampleQuery) &&
-            string.IsNullOrWhiteSpace(healthProbeUrl))
+            string.IsNullOrWhiteSpace(healthProbeUrl) &&
+            string.IsNullOrWhiteSpace(goldenQueryUrl))
         {
             return null;
         }
@@ -139,6 +175,8 @@ internal sealed record DeployTelemetryPolicy
         var healthSamples = ParseOptionalPositiveInt(parameters, "telemetry.healthz.samples") ?? 3;
         var healthExpectedStatus = ParseOptionalPositiveInt(parameters, "telemetry.healthz.expected_status") ?? 200;
         var healthTimeoutSeconds = ParseOptionalPositiveInt(parameters, "telemetry.healthz.timeout_seconds") ?? 5;
+        var goldenQueryExpectedStatus = ParseOptionalPositiveInt(parameters, "telemetry.golden_query.expected_status") ?? 200;
+        var goldenQueryTimeoutSeconds = ParseOptionalPositiveInt(parameters, "telemetry.golden_query.timeout_seconds") ?? 5;
 
         // When the operator supplied explicit query overrides, the preset's input
         // requirement (e.g. canary selector / job) no longer applies — the per-query
@@ -160,6 +198,13 @@ internal sealed record DeployTelemetryPolicy
         {
             validationError = "Deploy telemetry policy is invalid because telemetry.sample_count.minimum is missing.";
         }
+        else if (!string.IsNullOrWhiteSpace(goldenQueryUrl) &&
+                 string.IsNullOrWhiteSpace(goldenQuerySha256) &&
+                 string.IsNullOrWhiteSpace(goldenQueryContains))
+        {
+            validationError = "Deploy telemetry policy is invalid because telemetry.golden_query.url is set " +
+                "without telemetry.golden_query.expected_sha256 or telemetry.golden_query.expected_contains.";
+        }
 
         return new DeployTelemetryPolicy
         {
@@ -178,6 +223,11 @@ internal sealed record DeployTelemetryPolicy
             HealthProbeSamples = healthSamples,
             HealthProbeExpectedStatusCode = healthExpectedStatus,
             HealthProbeTimeoutSeconds = healthTimeoutSeconds,
+            GoldenQueryUrl = goldenQueryUrl,
+            GoldenQueryExpectedSha256 = goldenQuerySha256,
+            GoldenQueryExpectedContains = goldenQueryContains,
+            GoldenQueryExpectedStatusCode = goldenQueryExpectedStatus,
+            GoldenQueryTimeoutSeconds = goldenQueryTimeoutSeconds,
             ValidationError = validationError,
             HasExplicitQueryOverride = hasExplicitQueryOverride
         };

@@ -4,11 +4,13 @@
 using Honua.Alerts;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
@@ -350,6 +352,30 @@ public sealed class OpsFindingsServiceTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DbPoolPressure_FromRealAdmissionGateExhaustion_FiresFinding()
+    {
+        // #2805: prove the finding fires from the REAL admission gate under a simulated exhaustion, not from
+        // a fake snapshot — this is the regression the dead ConnectionPoolMetrics counters could not catch.
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            ConnectionAcquisitionTimeoutSeconds = 1,
+        });
+
+        Assert.True(await gate.WaitAsync(CancellationToken.None));
+        Assert.False(await gate.WaitAsync(CancellationToken.None), "the pool is exhausted");
+
+        var pressureSignal = new AdmissionGateDatabasePressureSignal(gate);
+        var service = CreateService(databasePressureSignal: pressureSignal, admissionGate: gate);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleDbBoundedAdmissionPressure);
+        Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_ServingLatencySloBreach_ProducesInformationalWarning()
     {
         var now = DateTimeOffset.UtcNow;
@@ -448,6 +474,75 @@ public sealed class OpsFindingsServiceTests
         var findings = await service.EvaluateAsync();
 
         Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleServingLatencySlo);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ServingLatencyBelowMinSampleCount_SuppressesFinding()
+    {
+        // #2809: a huge p95 from a single unlucky request must NOT flap a finding. The min-sample guard
+        // (default 20) suppresses protocols with too few in-window requests to be statistically meaningful.
+        var now = DateTimeOffset.UtcNow;
+        var rollupStore = Substitute.For<IOpsHealthRollupStore>();
+        rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new List<OpsHealthLatencyRow>
+            {
+                new()
+                {
+                    ReplicaId = "replica-1",
+                    BucketStart = now.AddMinutes(-1),
+                    Point = new OpsHealthLatencyPoint
+                    {
+                        Protocol = "OgcApiFeatures",
+                        RequestCount = 1,
+                        ErrorCount = 1,
+                        P50Ms = 30000,
+                        P95Ms = 30000,
+                        P99Ms = 30000,
+                        MaxMs = 30000,
+                    },
+                },
+            });
+        var service = CreateService(rollupStore: rollupStore);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleServingLatencySlo);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ServingP99BreachWithP95BelowThreshold_ProducesFinding()
+    {
+        // #2805: the p99 tail catches a slow-outlier regression that a p95-only check misses.
+        var now = DateTimeOffset.UtcNow;
+        var rollupStore = Substitute.For<IOpsHealthRollupStore>();
+        rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new List<OpsHealthLatencyRow>
+            {
+                new()
+                {
+                    ReplicaId = "replica-1",
+                    BucketStart = now.AddMinutes(-1),
+                    Point = new OpsHealthLatencyPoint
+                    {
+                        Protocol = "OgcApiFeatures",
+                        RequestCount = 500,
+                        ErrorCount = 0,
+                        P50Ms = 50,
+                        P95Ms = 200,      // below the 2000ms p95 threshold
+                        P99Ms = 8000,     // above the 5000ms p99 threshold
+                        MaxMs = 12000,
+                    },
+                },
+            });
+        var service = CreateService(rollupStore: rollupStore);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleServingLatencySlo);
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.Equal("OgcApiFeatures", finding.Subject.Protocol);
     }
 
     [UnitTest]
@@ -1128,12 +1223,16 @@ public sealed class OpsFindingsServiceTests
 
         public int MinLimit { get; set; } = 5;
 
+        public DatabaseAdmissionPressure Pressure { get; set; }
+
         public bool TrySetLimit(int limit, out string? error)
         {
             error = null;
             CurrentLimit = limit;
             return true;
         }
+
+        public DatabaseAdmissionPressure GetPressure() => Pressure;
     }
 
     private sealed class StaticOptionsMonitor<T> : IOptionsMonitor<T>

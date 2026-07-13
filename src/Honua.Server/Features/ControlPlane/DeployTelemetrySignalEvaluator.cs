@@ -118,6 +118,20 @@ internal sealed class DeployTelemetrySignalEvaluator(
             }
         }
 
+        // Golden-query correctness gate (#2811): a status/5xx/p95-healthy release can still be corrupt
+        // (200 OK, wrong/garbled body). This provider-independent gate asserts the response body matches
+        // an operator-declared checksum/substring before the deploy is allowed to auto-promote. A failing
+        // golden query drives the SAME rollback path as an error-rate breach (subject to the anti-flap
+        // debounce); a passing one falls through to the metrics gate, which must also pass.
+        if (policy.HasGoldenQuery)
+        {
+            var goldenDecision = await EvaluateGoldenQueryAsync(operation, policy, cancellationToken).ConfigureAwait(false);
+            if (goldenDecision != null)
+            {
+                return goldenDecision;
+            }
+        }
+
         var connection = optionsMonitor.CurrentValue.TelemetryConnections
             .FirstOrDefault(candidate => string.Equals(candidate.ConnectionId, policy.ConnectionId, StringComparison.Ordinal));
 
@@ -238,6 +252,77 @@ internal sealed class DeployTelemetrySignalEvaluator(
         // Healthy probe: do not promote on the probe alone. The caller falls through to the metrics
         // gate (whose own anti-flap debounce manages the breach streak), which must also pass before
         // the deploy is promoted.
+        return null;
+    }
+
+    /// <summary>
+    /// Runs the golden-query correctness probe and maps the outcome onto a deploy decision. Returns
+    /// <see langword="null"/> when the response body matched (so the caller falls through to the metrics
+    /// gate); otherwise returns a rollback recommendation (subject to the anti-flap debounce) on a
+    /// content mismatch, or a bounded wait when the probe could not run (no probe service, misconfigured
+    /// URL, or transport failure) so a corrupt-but-200 release never silently promotes.
+    /// </summary>
+    private async Task<DeployTelemetryDecision?> EvaluateGoldenQueryAsync(
+        WorkflowOperationRecord operation,
+        DeployTelemetryPolicy policy,
+        CancellationToken cancellationToken)
+    {
+        if (healthProbe == null)
+        {
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = "Waiting for telemetry confirmation because a golden-query correctness gate is configured but no probe service is available."
+            };
+        }
+
+        DeployGoldenQueryResult result;
+        try
+        {
+            result = await healthProbe
+                .ProbeGoldenQueryAsync(
+                    new DeployGoldenQueryRequest
+                    {
+                        Url = policy.GoldenQueryUrl!,
+                        ExpectedSha256 = policy.GoldenQueryExpectedSha256,
+                        ExpectedBodyContains = policy.GoldenQueryExpectedContains,
+                        ExpectedStatusCode = policy.GoldenQueryExpectedStatusCode,
+                        TimeoutSeconds = policy.GoldenQueryTimeoutSeconds
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = "Waiting for telemetry confirmation because the golden-query correctness probe could not be executed."
+            };
+        }
+
+        if (!result.Validated)
+        {
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = $"Waiting for telemetry confirmation because the golden-query correctness gate is misconfigured: {result.Detail}"
+            };
+        }
+
+        if (!result.Matched)
+        {
+            var breach = new DeployTelemetryDecision
+            {
+                RollbackRecommended = true,
+                Message = $"Automatic rollback requested because the release failed the golden-query correctness gate: {result.Detail}"
+            };
+
+            return ApplyBreachDebounce(operation, breach);
+        }
+
+        // Correct release: fall through to the metrics gate (which must also pass before promotion).
         return null;
     }
 

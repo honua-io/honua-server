@@ -72,6 +72,28 @@ public sealed class PlanAnalysisToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_plan_analysis")]
+    public async Task PlanAnalysis_FixtureMode_ReturnsNextStepsHint()
+    {
+        // In fixture (demo) mode a caller relying on the returned plan would dead-end, so the
+        // tool must hand back an actionable next step naming validate_plan and the process
+        // catalog for hand-authoring (#2815).
+        var tool = CreateTool(_jobService);
+        var arguments = McpTestFactory.ParseJson(
+            """{"intent":"Show open hospitals within 1 km of flood zones as a linked map, table, and chart."}""");
+
+        var result = await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        var body = result.StructuredContent!.Value;
+        body.GetProperty("engine").GetString().Should().Be("fixture");
+        var nextSteps = body.GetProperty("nextSteps").GetString();
+        nextSteps.Should().NotBeNullOrWhiteSpace();
+        nextSteps.Should().Contain("honua_validate_plan");
+        nextSteps.Should().Contain("honua://catalog/processes");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
     public async Task PlanAnalysis_AmbiguityPrompt_ReturnsClarificationRequiredWithCandidates()
     {
         var tool = CreateTool(_jobService);

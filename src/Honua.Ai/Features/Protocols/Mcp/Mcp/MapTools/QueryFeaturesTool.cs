@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -91,6 +92,12 @@ internal sealed class QueryFeaturesTool : IMcpTool
         var geometryService = httpContext.RequestServices.GetRequiredService<IGeometryService>();
         var filterService = httpContext.RequestServices.GetRequiredService<IFilterExpressionService>();
 
+        // Detect a likely bbox/CRS mismatch (e.g. Web-Mercator ordinates under the geographic
+        // default bboxSrid=4326, or a bbox entirely outside the layer's known extent) BEFORE
+        // running the query so a 0-result response can explain the probable cause rather than
+        // silently returning nothing (#2808).
+        var bboxWarnings = BuildBboxCrsWarnings(argument.Bbox, argument.BboxSrid, layer);
+
         var query = new FeatureQuery
         {
             OutFields = ToOutFields(argument.OutFields),
@@ -116,7 +123,8 @@ internal sealed class QueryFeaturesTool : IMcpTool
                 Limit = limit,
                 ResultOffset = offset,
                 ExceededTransferLimit = false,
-                Count = count
+                Count = count,
+                Warnings = bboxWarnings
             };
 
             return McpToolHelpers.SuccessResult(
@@ -151,7 +159,8 @@ internal sealed class QueryFeaturesTool : IMcpTool
             NextCursor = nextOffset?.ToString(CultureInfo.InvariantCulture),
             Count = result.TotalCount,
             Features = mcpFeatures,
-            GeoJson = new McpGeoJsonFeatureCollection { Features = geoJsonFeatures }
+            GeoJson = new McpGeoJsonFeatureCollection { Features = geoJsonFeatures },
+            Warnings = bboxWarnings
         };
 
         return McpToolHelpers.SuccessResult(
@@ -170,12 +179,13 @@ internal sealed class QueryFeaturesTool : IMcpTool
     {
         if (output.Count is { } count)
         {
-            return string.Format(
+            var countSummary = string.Format(
                 CultureInfo.InvariantCulture,
                 "Matched {0} feature(s) in {1}/{2} (count only, no geometry). Count in structuredContent.count.",
                 count,
                 output.ServiceId,
                 output.LayerId);
+            return AppendAdvisories(countSummary, output, zeroResults: count == 0);
         }
 
         var geometryNote = output.GeoJson is { Features.Count: > 0 } collection
@@ -189,7 +199,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
             ? string.Format(CultureInfo.InvariantCulture, "more available: re-query with cursor=\"{0}\" or resultOffset={0}", next)
             : "last page";
 
-        return string.Format(
+        var summary = string.Format(
             CultureInfo.InvariantCulture,
             "Returned {0} feature(s) from {1}/{2} at offset {3} ({4}, {5}). Feature attributes are in structuredContent.features; GeoJSON FeatureCollection is in structuredContent.geojson.",
             output.ReturnedCount,
@@ -198,7 +208,98 @@ internal sealed class QueryFeaturesTool : IMcpTool
             output.ResultOffset,
             pagingNote,
             geometryNote);
+
+        return AppendAdvisories(summary, output, zeroResults: output.ReturnedCount == 0);
     }
+
+    /// <summary>
+    /// Appends any bbox/CRS advisories to the one-line summary and, when the query matched
+    /// nothing while a CRS-mismatch advisory is present, the explicit
+    /// "0 features — bbox may be in the wrong CRS" hint so the empty result is not read as a
+    /// definitive "no such features" answer (#2808).
+    /// </summary>
+    private static string AppendAdvisories(string summary, McpQueryFeaturesOutput output, bool zeroResults)
+    {
+        if (output.Warnings.Count == 0)
+        {
+            return summary;
+        }
+
+        var builder = new System.Text.StringBuilder(summary);
+        if (zeroResults)
+        {
+            builder.Append(" 0 features — bbox may be in the wrong CRS.");
+        }
+
+        foreach (var warning in output.Warnings)
+        {
+            builder.Append(' ').Append(warning);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Builds bbox/CRS advisories: (1) ordinates outside the valid geographic range
+    /// (±180 lon / ±90 lat) under a geographic <paramref name="bboxSrid"/> — the classic
+    /// "projected bbox under the geographic default" mistake — and (2) a bbox that falls
+    /// entirely outside the layer's known extent when both are expressed in the same CRS.
+    /// Advisory only; never throws (validity errors are raised in <see cref="BuildBboxFilter"/>).
+    /// </summary>
+    private static List<string> BuildBboxCrsWarnings(
+        IReadOnlyList<double>? bbox,
+        int? bboxSrid,
+        in MapToolLayerContext layer)
+    {
+        if (bbox is null || bbox.Count != 4)
+        {
+            return [];
+        }
+
+        var minX = bbox[0];
+        var minY = bbox[1];
+        var maxX = bbox[2];
+        var maxY = bbox[3];
+        var srid = bboxSrid ?? 4326;
+
+        var warnings = new List<string>();
+
+        if (IsGeographicSrid(srid)
+            && (Math.Abs(minX) > 180d || Math.Abs(maxX) > 180d
+                || Math.Abs(minY) > 90d || Math.Abs(maxY) > 90d))
+        {
+            warnings.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "bbox ordinates [{0},{1},{2},{3}] exceed the valid geographic range (±180 lon / ±90 lat) for the "
+                + "geographic bboxSrid={4}; the bbox may be in the wrong CRS (likely a projected CRS such as Web "
+                + "Mercator/3857) and would then match 0 features. Pass the matching bboxSrid or reproject the bbox to lon/lat.",
+                minX, minY, maxX, maxY, srid));
+        }
+
+        // Extent check only when the bbox and the layer extent share a CRS, so no reprojection
+        // is needed to compare them. A disjoint bbox matches nothing.
+        var spatial = layer.Resource.Spatial;
+        var layerSrid = spatial?.SpatialReference?.ResolveSrid();
+        if (spatial?.Bbox is { } extent && layerSrid == srid
+            && (maxX < extent.West || minX > extent.East || maxY < extent.South || minY > extent.North))
+        {
+            warnings.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "bbox [{0},{1},{2},{3}] falls entirely outside the layer's known extent "
+                + "[{4},{5},{6},{7}] (both in SRID {8}); it will match no features. Check the bbox CRS and values.",
+                minX, minY, maxX, maxY, extent.West, extent.South, extent.East, extent.North, srid));
+        }
+
+        return warnings;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="srid"/> is a geographic (lon/lat degree) CRS, so the
+    /// ±180/±90 ordinate-range advisory applies. Delegates to the shared
+    /// <see cref="SpatialReference"/> classifier (single source of truth for geographic EPSG codes).
+    /// </summary>
+    private static bool IsGeographicSrid(int srid)
+        => srid > 0 && SpatialReference.Create(srid).IsGeographic;
 
     private static int ResolveLimit(int? requested)
     {

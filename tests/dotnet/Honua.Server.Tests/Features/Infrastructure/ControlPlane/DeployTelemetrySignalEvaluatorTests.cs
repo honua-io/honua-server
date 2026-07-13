@@ -1037,14 +1037,24 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         }
     }
 
-    private sealed class FakeHealthProbe(DeployHealthProbeResult result) : IDeployHealthProbe
+    private sealed class FakeHealthProbe(
+        DeployHealthProbeResult result,
+        DeployGoldenQueryResult? goldenResult = null) : IDeployHealthProbe
     {
         public int Invocations { get; private set; }
+
+        public int GoldenInvocations { get; private set; }
 
         public Task<DeployHealthProbeResult> ProbeAsync(DeployHealthProbeRequest request, CancellationToken cancellationToken)
         {
             Invocations++;
             return Task.FromResult(result);
+        }
+
+        public Task<DeployGoldenQueryResult> ProbeGoldenQueryAsync(DeployGoldenQueryRequest request, CancellationToken cancellationToken)
+        {
+            GoldenInvocations++;
+            return Task.FromResult(goldenResult ?? new DeployGoldenQueryResult { Matched = true });
         }
     }
 }

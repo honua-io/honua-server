@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.ServiceDefaults;
 
@@ -109,6 +110,9 @@ public sealed class ServingLatencyAggregator
                 P95Ms = Percentile(durations, 95),
                 P99Ms = Percentile(durations, 99),
                 MaxMs = durations[^1],
+                // Mergeable distribution sketch (#2809): lets cluster-wide percentiles be recomputed from
+                // summed per-replica distributions instead of a mean of percentiles that hides a sick replica.
+                Distribution = LatencyDistribution.FromDurations(durations),
             });
         }
 
@@ -244,4 +248,10 @@ public sealed record ServingLatencyProtocolSnapshot
 
     /// <summary>Gets the maximum retained request duration in milliseconds.</summary>
     public required double MaxMs { get; init; }
+
+    /// <summary>
+    /// Gets the mergeable latency distribution sketch over the retained in-window samples (#2809). Persisted
+    /// per replica so cross-replica cluster percentiles are recomputed from merged distributions.
+    /// </summary>
+    public LatencyDistribution? Distribution { get; init; }
 }

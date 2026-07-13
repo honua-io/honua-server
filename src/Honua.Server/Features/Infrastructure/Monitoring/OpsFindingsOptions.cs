@@ -76,6 +76,32 @@ public sealed class OpsFindingsOptions
     public double ServingErrorRateThreshold { get; set; } = 0.05;
 
     /// <summary>
+    /// Gets or sets the per-protocol 99th-percentile serving-latency threshold (milliseconds) at or above
+    /// which the <c>serving-latency-slo-breach</c> rule raises a finding (#2805). The p99 tail catches
+    /// slow-outlier regressions that a p95-only check misses. Default is 5000ms.
+    /// </summary>
+    [Range(1, double.MaxValue)]
+    public double ServingLatencyP99ThresholdMs { get; set; } = 5000;
+
+    /// <summary>
+    /// Gets or sets the error-budget burn-rate multiple at or above which the
+    /// <c>serving-latency-slo-breach</c> rule raises a finding (#2805). Burn rate is the observed windowed
+    /// error rate divided by the SLO error budget (<see cref="ServingErrorRateThreshold"/>); a value of 1.0
+    /// means the budget is being consumed exactly at the sustainable rate, so a multiple above 1 indicates a
+    /// fast burn. Default is 2.0 (burning the budget at twice the sustainable rate).
+    /// </summary>
+    [Range(1.0, double.MaxValue)]
+    public double ServingErrorBudgetBurnRateThreshold { get; set; } = 2.0;
+
+    /// <summary>
+    /// Gets or sets the minimum in-window request count a protocol must have before the
+    /// <c>serving-latency-slo-breach</c> rule will evaluate its percentiles/error rate (#2809). Guards
+    /// against a single unlucky request (n=1 → p95 == that request) flapping a finding. Default is 20.
+    /// </summary>
+    [Range(1, long.MaxValue)]
+    public long ServingLatencyMinSampleCount { get; set; } = 20;
+
+    /// <summary>
     /// Gets or sets the lookback window (minutes) the <c>serving-latency-slo-breach</c> rule reads
     /// from the persisted ops-health rollup store's 1-minute tier (#2553). Default is 5 minutes.
     /// </summary>

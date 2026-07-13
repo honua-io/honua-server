@@ -381,6 +381,27 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task GenericGitOpsBackend_RollbackAsync_FailsLoudly_DoesNotSilentlySucceed()
+    {
+        // Default GitOps hand-off rollback (#2811): the base backend cannot revert the running workload
+        // itself (an external GitOps controller owns the revision), so RollbackAsync must FAIL LOUDLY
+        // (ManualInterventionRequired) rather than return RollbackRequested — which the reconciler would
+        // treat as "rollback took", reporting a rollback that never happened.
+        var backend = new KubernetesGitOpsDeployBackend(NullLogger<KubernetesGitOpsDeployBackend>.Instance);
+        var operation = CreateOperationRecord(status: WorkflowOperationStatus.RollbackRequested);
+
+        var observation = await backend.RollbackAsync(operation);
+
+        observation.Status.Should().Be(
+            WorkflowOperationStatus.ManualInterventionRequired,
+            "the hand-off backend cannot perform a real revert, so it must escalate rather than silently succeed");
+        observation.Status.Should().NotBe(
+            WorkflowOperationStatus.RollbackRequested,
+            "returning RollbackRequested would falsely report a rollback that the external controller never performed");
+        observation.Message.Should().Contain("out of band");
+    }
+
+    [Fact]
     public async Task Reconciler_WhenObservationThrows_MarksOperationForManualIntervention()
     {
         var store = new TestWorkflowOperationStore();
