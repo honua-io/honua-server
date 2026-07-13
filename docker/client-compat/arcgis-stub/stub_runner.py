@@ -241,7 +241,7 @@ def _exercise_mapserver(client: httpx.Client) -> dict[str, dict]:
             schm_ok = "fields" in payload
             geom_ok = bool(payload.get("geometryType"))
         except ValueError:
-            pass
+            pass  # Non-JSON body leaves schm_ok/geom_ok at their "fail" defaults.
     results["CERT-SCHM-01"] = _new_result(
         "CERT-SCHM-01", "pass" if schm_ok else "fail",
     )
@@ -310,7 +310,7 @@ def _exercise_mapserver(client: httpx.Client) -> dict[str, dict]:
             geom01 = "pass" if feats and feats[0].get("geometry") is not None else "skip"
             geom02 = "pass"
         except ValueError:
-            pass
+            pass  # Non-JSON body leaves geom01/geom02 at their "fail" defaults.
     results["CERT-GEOM-01"] = _new_result("CERT-GEOM-01", geom01)
     results["CERT-GEOM-02"] = _new_result("CERT-GEOM-02", geom02)
 
@@ -545,7 +545,6 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
     # Skip only for the explicit 404-disabled deployment (or an unreachable
     # endpoint); an enabled bridge that answers with the wrong status or a
     # non-RFC-6749 body for an invalid grant is a `fail` the gate must catch.
-    oauth_status = "skip"
     try:
         r = client.post(
             "/sharing/rest/oauth2/token",
@@ -717,7 +716,7 @@ def run() -> int:
                 geom01 = "pass" if feats and feats[0].get("geometry") is not None else "skip"
                 geom02 = "pass"
             except ValueError:
-                pass
+                pass  # Non-JSON body leaves geom01/geom02 at their "fail" defaults.
         results["CERT-GEOM-01"] = _new_result("CERT-GEOM-01", geom01)
         results["CERT-GEOM-02"] = _new_result("CERT-GEOM-02", geom02)
 
