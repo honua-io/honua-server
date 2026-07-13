@@ -103,6 +103,9 @@ internal static class LayerScopedWriteKey
         }
 
         var hasMeaningfulGrant = false;
+        // Not converted to LINQ: the loop both mutates hasMeaningfulGrant and returns
+        // early on the first admin grant, so a single Select/Where projection would
+        // need to encode two different exit conditions.
         foreach (var permission in permissions)
         {
             var trimmed = permission?.Trim();
@@ -136,6 +139,8 @@ internal static class LayerScopedWriteKey
         }
 
         var hasWriteGrant = false;
+        // Not converted to LINQ: the loop both mutates hasWriteGrant and returns early
+        // when an admin grant is found, so it can't collapse into a single Where/Any.
         foreach (var permission in permissions)
         {
             var trimmed = permission?.Trim();
@@ -191,15 +196,8 @@ internal static class LayerScopedWriteKey
         var service = serviceName.Trim();
         var layer = layerName?.Trim();
 
-        foreach (var claim in principal.FindAll("permission"))
-        {
-            if (GrantAllowsWrite(claim.Value, service, layer))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return principal.FindAll("permission")
+            .Any(claim => GrantAllowsWrite(claim.Value, service, layer));
     }
 
     private static bool GrantAllowsWrite(string? grant, string service, string? layer)
@@ -244,14 +242,6 @@ internal static class LayerScopedWriteKey
             return true;
         }
 
-        foreach (var grant in AdminGrants)
-        {
-            if (string.Equals(permission, grant, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return AdminGrants.Any(grant => string.Equals(permission, grant, StringComparison.OrdinalIgnoreCase));
     }
 }

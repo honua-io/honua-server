@@ -654,29 +654,24 @@ internal static class RasterMapRenderingPipeline
         else
         {
             var (fill, stroke) = StyleTranslator.CreateDefaultPaints(geometryType);
-            try
+            using var fillDisposable = fill;
+            using var strokeDisposable = stroke;
+
+            if (geometryType == MetadataV2GeometryType.Point)
             {
-                if (geometryType == MetadataV2GeometryType.Point)
-                {
-                    RenderDefaultPoints(canvas, features, transform, fill);
-                    return;
-                }
-
-                foreach (var feature in features)
-                {
-                    if (feature.Geometry == null || feature.Geometry.Length < 5)
-                    {
-                        continue;
-                    }
-
-                    var result = WkbToSkiaConverter.Convert(feature.Geometry, transform);
-                    RenderConversionResult(canvas, result, fill, stroke);
-                }
+                RenderDefaultPoints(canvas, features, transform, fill);
+                return;
             }
-            finally
+
+            foreach (var feature in features)
             {
-                fill.Dispose();
-                stroke?.Dispose();
+                if (feature.Geometry == null || feature.Geometry.Length < 5)
+                {
+                    continue;
+                }
+
+                var result = WkbToSkiaConverter.Convert(feature.Geometry, transform);
+                RenderConversionResult(canvas, result, fill, stroke);
             }
         }
     }

@@ -299,15 +299,7 @@ public static class ValidationErrorHelpers
     /// <returns>Combined validation result</returns>
     public static ValidationResult CombineValidationResults(params ValidationResult[] validationResults)
     {
-        foreach (var result in validationResults)
-        {
-            if (!result.IsValid)
-            {
-                return result;
-            }
-        }
-
-        return ValidationResult.Success();
+        return validationResults.FirstOrDefault(result => !result.IsValid) ?? ValidationResult.Success();
     }
 
     /// <summary>

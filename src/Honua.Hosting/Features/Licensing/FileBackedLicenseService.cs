@@ -342,15 +342,7 @@ internal sealed class FileBackedLicenseService :
             return null;
         }
 
-        ILicenseContentSecretResolver? resolver = null;
-        foreach (var candidate in _secretResolvers)
-        {
-            if (candidate.CanResolve(secretRef))
-            {
-                resolver = candidate;
-                break;
-            }
-        }
+        var resolver = _secretResolvers.FirstOrDefault(candidate => candidate.CanResolve(secretRef));
 
         if (resolver is null)
         {
@@ -482,9 +474,13 @@ internal sealed class FileBackedLicenseService :
         }
         catch (IOException)
         {
+            // Intentional: best-effort temp-file cleanup after a failed upload;
+            // an orphaned temp file is harmless and must not mask the original error.
         }
         catch (UnauthorizedAccessException)
         {
+            // Intentional: best-effort temp-file cleanup after a failed upload;
+            // an orphaned temp file is harmless and must not mask the original error.
         }
     }
 

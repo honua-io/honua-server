@@ -126,6 +126,8 @@ internal sealed partial class RedisHealthMonitor : IRedisHealthMonitor, IDisposa
         }
         catch (Exception ex)
         {
+            // Intentional: connectivity probes must never throw to the caller;
+            // RecordFailure() logs via Log.RedisConnectionFailed.
             RecordFailure(ex);
             return false;
         }

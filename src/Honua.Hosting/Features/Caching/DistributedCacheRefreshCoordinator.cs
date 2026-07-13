@@ -51,7 +51,10 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     private long _failureCount;
     private long _skippedCount;
     private DateTime _lastRedisFailure = DateTime.MinValue;
-    private volatile bool _useRedis;
+    // Only ever assigned in the constructor; reads happen after DI construction
+    // completes (BackgroundService.ExecuteAsync starts strictly after the host
+    // finishes constructing the instance), so `volatile` is unnecessary here.
+    private readonly bool _useRedis;
 
     public DistributedCacheRefreshCoordinator(
         IOptions<CacheOptions> options,
@@ -152,14 +155,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     /// <inheritdoc />
     public bool WasInvalidated(string key)
     {
-        if (IsDistributed)
-        {
-            return WasDistributedInvalidated(key);
-        }
-        else
-        {
-            return _localPendingKeys.TryGetValue(key, out byte val) && val == 1;
-        }
+        return IsDistributed
+            ? WasDistributedInvalidated(key)
+            : _localPendingKeys.TryGetValue(key, out byte val) && val == 1;
     }
 
     /// <inheritdoc />
@@ -176,14 +174,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     /// <inheritdoc />
     public bool TryClaimWriteBack(string key)
     {
-        if (IsDistributed)
-        {
-            return TryClaimDistributedWriteBack(key);
-        }
-        else
-        {
-            return _localPendingKeys.TryUpdate(key, 2, 0);
-        }
+        return IsDistributed
+            ? TryClaimDistributedWriteBack(key)
+            : _localPendingKeys.TryUpdate(key, 2, 0);
     }
 
     /// <inheritdoc />
@@ -206,15 +199,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             return false;
         }
 
-        bool claimed;
-        if (IsDistributed)
-        {
-            claimed = TryClaimDistributedRefresh(key);
-        }
-        else
-        {
-            claimed = _localPendingKeys.TryAdd(key, 0);
-        }
+        bool claimed = IsDistributed
+            ? TryClaimDistributedRefresh(key)
+            : _localPendingKeys.TryAdd(key, 0);
 
         if (!claimed)
         {
@@ -314,9 +301,11 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             // Shutdown deadline exceeded — some invalidations may not have reached Redis.
             Log.ShutdownDrainCancelled(_logger, tasks.Count);
         }
-        catch
+        catch (Exception ex)
         {
-            // Unexpected aggregate exception — swallow to avoid masking other shutdown errors.
+            // Unexpected aggregate exception; log but do not rethrow so it does not
+            // mask other shutdown errors.
+            Log.ShutdownDrainFailed(_logger, ex);
         }
     }
 
@@ -407,6 +396,10 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
             return acquired;
         }
+        // Intentional: Redis failures degrade gracefully to the local fallback path
+        // (logged + MarkRedisFailure() below); this pattern repeats across the
+        // TryClaimDistributed*/WasDistributedInvalidated*/ReleaseDistributedClaimAsync
+        // helpers in this file.
         catch (Exception ex)
         {
             Log.RedisOperationFailed(_logger, "TryClaimRefresh", key, ex);
@@ -737,8 +730,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             var server = _redisDb.Multiplexer.GetServer(_redisDb.Multiplexer.GetEndPoints().First());
             return (int)server.Keys(database: _redisDb.Database, pattern: pattern).Count();
         }
-        catch
+        catch (Exception ex)
         {
+            Log.QueueDepthCheckFailed(_logger, ex);
             return _localPendingKeys.Count;
         }
     }
@@ -848,5 +842,11 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
         [LoggerMessage(1114, LogLevel.Warning, "Shutdown drain cancelled with {PendingCount} in-flight Redis invalidation task(s) still pending; some invalidations may not have reached Redis")]
         public static partial void ShutdownDrainCancelled(ILogger logger, int pendingCount);
+
+        [LoggerMessage(1115, LogLevel.Warning, "Failed to determine distributed cache queue depth from Redis")]
+        public static partial void QueueDepthCheckFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(1116, LogLevel.Warning, "Unexpected error while draining pending fire-and-forget Redis invalidation tasks during shutdown")]
+        public static partial void ShutdownDrainFailed(ILogger logger, Exception exception);
     }
 }

@@ -117,6 +117,11 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
             RegistrationRefusals.Add(
                 1,
                 new KeyValuePair<string, object?>("honua.license.capacity.state", preRegistrationState.State.ToString()));
+            // `terms` is provably non-null here: ShouldRefuseRegistration() only returns true
+            // (making shouldRefuse true) when its `terms` argument is non-null. The `?.`/`??`
+            // is kept anyway as a defensive guard against that contract changing in
+            // LicenseCapacityCalculator, and removing it would require a null-forgiving
+            // operator under Nullable=enable without changing behavior.
             LicenseCapacityMeterLog.RegistrationRefused(
                 _logger,
                 normalized.InstanceId,

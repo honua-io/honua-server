@@ -50,7 +50,7 @@ internal static class SpanParsingExtensions
 
             if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
             {
-                error = $"Invalid coordinate value: {token.ToString()}";
+                error = $"Invalid coordinate value: {token}";
                 return false;
             }
 

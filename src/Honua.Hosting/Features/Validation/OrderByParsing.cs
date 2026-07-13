@@ -45,9 +45,8 @@ internal static class OrderByParsing
         }
 
         var clauses = new List<OrderByClause>();
-        foreach (var rawField in orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var trimmed in orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(rawField => rawField.Trim()))
         {
-            var trimmed = rawField.Trim();
             if (trimmed.Length == 0)
             {
                 continue;
@@ -86,12 +85,10 @@ internal static class OrderByParsing
             var fieldDefinition = resource.SchemaFields.FirstOrDefault(f =>
                 f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
 
-            if (fieldDefinition == null && !allowUnknownFields)
+            if (fieldDefinition == null && !allowUnknownFields &&
+                (allowedCoreFields == null || !allowedCoreFields.Contains(field)))
             {
-                if (allowedCoreFields == null || !allowedCoreFields.Contains(field))
-                {
-                    throw unknownFieldException(field);
-                }
+                throw unknownFieldException(field);
             }
 
             var resolvedField = fieldDefinition?.Name ?? field;

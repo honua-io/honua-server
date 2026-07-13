@@ -149,6 +149,8 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
         }
         catch (Exception ex)
         {
+            // Intentional: queue-length is a best-effort diagnostic; fall back to the
+            // known in-memory count rather than let the failure propagate.
             Log.QueueLengthCheckFailed(Logger, ex);
             return fallbackLength;
         }
@@ -173,6 +175,8 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
         }
         catch (Exception ex)
         {
+            // Intentional: processing-count is a best-effort diagnostic; fall back to the
+            // known in-memory count rather than let the failure propagate.
             Log.QueueLengthCheckFailed(Logger, ex);
             return fallbackInFlight;
         }
@@ -281,14 +285,13 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
     {
         int recoveredCount = 0;
 
-        foreach (var jobId in _fallbackInFlight.Keys.ToArray())
+        // TryRemove is both the filter predicate and the side effect that actually
+        // reclaims each in-flight job, so Where() still visits every key exactly once.
+        foreach (var jobId in _fallbackInFlight.Keys.ToArray().Where(id => _fallbackInFlight.TryRemove(id, out _)))
         {
-            if (_fallbackInFlight.TryRemove(jobId, out _))
-            {
-                _fallbackQueue.Enqueue(jobId);
-                Interlocked.Increment(ref _fallbackQueueLength);
-                recoveredCount++;
-            }
+            _fallbackQueue.Enqueue(jobId);
+            Interlocked.Increment(ref _fallbackQueueLength);
+            recoveredCount++;
         }
 
         return recoveredCount;

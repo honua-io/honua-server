@@ -365,17 +365,10 @@ internal static class WkbToSkiaConverter
             for (int i = 0; i < numGeometries; i++)
             {
                 var result = ReadGeometry(reader, transform, depth + 1);
-                var resultPath = result.Path;
+                using var resultPath = result.Path;
                 if (resultPath != null)
                 {
-                    try
-                    {
-                        combinedPath.AddPath(resultPath);
-                    }
-                    finally
-                    {
-                        resultPath.Dispose();
-                    }
+                    combinedPath.AddPath(resultPath);
                 }
             }
 
@@ -397,17 +390,10 @@ internal static class WkbToSkiaConverter
             for (int i = 0; i < numGeometries; i++)
             {
                 var result = ReadGeometry(reader, transform, depth + 1);
-                var resultPath = result.Path;
+                using var resultPath = result.Path;
                 if (resultPath != null)
                 {
-                    try
-                    {
-                        combinedPath.AddPath(resultPath);
-                    }
-                    finally
-                    {
-                        resultPath.Dispose();
-                    }
+                    combinedPath.AddPath(resultPath);
                 }
             }
 
@@ -433,18 +419,10 @@ internal static class WkbToSkiaConverter
             for (int i = 0; i < numGeometries; i++)
             {
                 var result = ReadGeometry(reader, transform, depth + 1);
-                var resultPath = result.Path;
+                using var resultPath = result.Path;
                 if (resultPath != null)
                 {
-                    try
-                    {
-                        combinedPath.AddPath(resultPath);
-                    }
-                    finally
-                    {
-                        resultPath.Dispose();
-                    }
-
+                    combinedPath.AddPath(resultPath);
                     isPoint = false;
                 }
 

@@ -42,4 +42,16 @@ internal static partial class PortalOAuthLog
     [LoggerMessage(EventId = 7108, Level = LogLevel.Information,
         Message = "Portal OAuth authorization code issued for principal {PrincipalHash} (provider {ProviderKey}).")]
     public static partial void CodeIssued(ILogger logger, string principalHash, string providerKey);
+
+    [LoggerMessage(EventId = 7109, Level = LogLevel.Warning,
+        Message = "Portal OAuth store could not acquire the Redis single-use claim lock for {KeyHash}; falling back to non-atomic consume.")]
+    public static partial void ClaimLockAcquireFailed(ILogger logger, string keyHash, Exception exception);
+
+    [LoggerMessage(EventId = 7110, Level = LogLevel.Warning,
+        Message = "Portal OAuth store could not release the Redis single-use claim lock for {KeyHash}; relying on TTL expiry.")]
+    public static partial void ClaimLockReleaseFailed(ILogger logger, string keyHash, Exception exception);
+
+    [LoggerMessage(EventId = 7111, Level = LogLevel.Debug,
+        Message = "Portal OAuth store could not access the underlying Redis IDatabase via reflection; degrading to non-atomic distributed cache operations.")]
+    public static partial void RedisDatabaseUnavailable(ILogger logger, Exception exception);
 }

@@ -234,6 +234,8 @@ internal static class ExpressionEvaluator
             var label = array[i];
             if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
             {
+                // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
+                // allocation: "match" expressions are evaluated once per feature per style paint property.
                 foreach (var item in label.Items)
                 {
                     if (MatchesLabel(inputStr, input, item))
@@ -256,6 +258,8 @@ internal static class ExpressionEvaluator
     {
         if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
         {
+            // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
+            // allocation on this hot, recursively-invoked match-label path.
             foreach (var item in label.Items)
             {
                 if (MatchesLabel(inputStr, inputObj, item))
@@ -556,12 +560,9 @@ internal static class ExpressionEvaluator
         }
 
         // Handle hex colors
-        if (str.StartsWith('#'))
+        if (str.StartsWith('#') && SKColor.TryParse(str, out var hex))
         {
-            if (SKColor.TryParse(str, out var hex))
-            {
-                return hex;
-            }
+            return hex;
         }
 
         // Handle rgb(r,g,b) and rgba(r,g,b,a)

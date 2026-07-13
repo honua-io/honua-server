@@ -162,6 +162,8 @@ internal static class AdminApiKeyPermission
     {
         ArgumentNullException.ThrowIfNull(principal);
 
+        // Not converted to LINQ Select/Where: the loop body has an early continue plus two
+        // distinct return-true conditions, so a projection+filter chain would be less readable.
         foreach (var claim in principal.FindAll(PermissionClaimType))
         {
             var trimmed = claim.Value?.Trim();
@@ -170,12 +172,9 @@ internal static class AdminApiKeyPermission
                 continue;
             }
 
-            foreach (var grant in OpsReadGrants)
+            if (OpsReadGrants.Any(grant => string.Equals(trimmed, grant, StringComparison.OrdinalIgnoreCase)))
             {
-                if (string.Equals(trimmed, grant, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                return true;
             }
 
             // An unrecognized ops sub-grant (e.g. a future ops:deploy) still proves ops-read intent:
@@ -230,12 +229,9 @@ internal static class AdminApiKeyPermission
             return AdminAccessLevel.None;
         }
 
-        foreach (var full in FullAdminGrants)
+        if (FullAdminGrants.Any(full => string.Equals(trimmed, full, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(trimmed, full, StringComparison.OrdinalIgnoreCase))
-            {
-                return AdminAccessLevel.Write;
-            }
+            return AdminAccessLevel.Write;
         }
 
         if (!trimmed.StartsWith(AdminGrantPrefix, StringComparison.OrdinalIgnoreCase))
@@ -250,12 +246,9 @@ internal static class AdminApiKeyPermission
             return AdminAccessLevel.None;
         }
 
-        foreach (var write in WriteSubGrants)
+        if (WriteSubGrants.Any(write => string.Equals(sub, write, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(sub, write, StringComparison.OrdinalIgnoreCase))
-            {
-                return AdminAccessLevel.Write;
-            }
+            return AdminAccessLevel.Write;
         }
 
         if (string.Equals(sub, "read", StringComparison.OrdinalIgnoreCase))

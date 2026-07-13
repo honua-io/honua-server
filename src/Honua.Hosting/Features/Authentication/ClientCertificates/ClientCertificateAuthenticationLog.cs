@@ -48,4 +48,10 @@ internal static partial class ClientCertificateAuthenticationLog
         Level = LogLevel.Information,
         Message = "Client certificate revocation list changed for profile {ProfileId}.")]
     public static partial void RevocationChanged(ILogger logger, string? profileId);
+
+    [LoggerMessage(
+        EventId = 4146,
+        Level = LogLevel.Debug,
+        Message = "Client certificate audit record failed to persist; audit sinks are best-effort and do not block authentication.")]
+    public static partial void AuditRecordFailed(ILogger logger, Exception ex);
 }

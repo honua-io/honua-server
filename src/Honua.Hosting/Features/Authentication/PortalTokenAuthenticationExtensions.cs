@@ -268,15 +268,8 @@ internal sealed class PortalTokenAuthenticationMiddleware(
 
     private static bool HasBearerPrefix(Microsoft.Extensions.Primitives.StringValues values)
     {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value) &&
-                value.StartsWith(PortalTokenAuthenticationHandler.BearerPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return values.Any(value =>
+            !string.IsNullOrWhiteSpace(value) &&
+            value.StartsWith(PortalTokenAuthenticationHandler.BearerPrefix, StringComparison.OrdinalIgnoreCase));
     }
 }

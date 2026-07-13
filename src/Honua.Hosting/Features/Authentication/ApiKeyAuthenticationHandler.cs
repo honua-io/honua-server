@@ -92,6 +92,9 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
         catch (Exception ex)
         {
+            // Intentional: secret resolution can fan out to heterogeneous cloud SDKs (AWS
+            // Secrets Manager, Azure Key Vault, etc.) with provider-specific exception types;
+            // this boundary must fail the request safely rather than crash, and it already logs.
             AuthenticationLog.AdminPasswordResolutionFailed(Logger, ex);
             Context.Items[AuthFailureMessageKey] = "Admin authentication not configured";
             return AuthenticateResult.Fail("Admin authentication not configured");

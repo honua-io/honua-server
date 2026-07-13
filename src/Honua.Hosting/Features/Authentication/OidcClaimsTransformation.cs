@@ -79,12 +79,9 @@ internal sealed class OidcClaimsTransformation(
 
         // Map roles from provider-specific claims
         var roles = GetRoleClaims(identity);
-        foreach (var role in roles)
+        foreach (var role in roles.Where(role => !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role)))
         {
-            if (!identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role))
-            {
-                transformedClaims.Add(new Claim(ClaimTypes.Role, role));
-            }
+            transformedClaims.Add(new Claim(ClaimTypes.Role, role));
         }
 
         // Add default role if no roles found
@@ -131,16 +128,10 @@ internal sealed class OidcClaimsTransformation(
 
     private static string? FindClaimValue(ClaimsIdentity identity, params string[] claimTypes)
     {
-        foreach (var claimType in claimTypes)
-        {
-            var claim = identity.FindFirst(claimType);
-            if (claim != null && !string.IsNullOrEmpty(claim.Value))
-            {
-                return claim.Value;
-            }
-        }
-
-        return null;
+        return claimTypes
+            .Select(identity.FindFirst)
+            .FirstOrDefault(claim => claim != null && !string.IsNullOrEmpty(claim.Value))
+            ?.Value;
     }
 
     private List<string> GetRoleClaims(ClaimsIdentity identity)

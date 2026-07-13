@@ -66,6 +66,8 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
 
         try
         {
+            // Intentional: a caller-supplied IProgress callback must never fault the
+            // upload pipeline itself; log and continue.
             progressReporter.Report(progress);
         }
         catch (Exception ex)
@@ -339,7 +341,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             }
             catch
             {
-                // StoreAsync logs and swallows persistence failures; this keeps
+                // Intentional: StoreAsync logs and swallows persistence failures; this keeps
                 // the serialized chain intact if a future change lets one escape.
             }
 

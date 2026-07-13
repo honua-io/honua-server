@@ -135,15 +135,10 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
             return fallback;
         }
 
-        var geometryLayers = new List<(int LayerId, MetadataV2Resource Resource)>(layerIds.Length);
-        foreach (var layerId in layerIds)
-        {
-            if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource) &&
-                HasGeometry(resource))
-            {
-                geometryLayers.Add((layerId, resource));
-            }
-        }
+        var geometryLayers = layerIds
+            .Where(layerId => snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource) && HasGeometry(resource))
+            .Select(layerId => (layerId, snapshot.Index.ResourcesByStorageLayerId[layerId]))
+            .ToList();
 
         if (geometryLayers.Count == 0)
         {

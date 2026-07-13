@@ -364,17 +364,15 @@ internal static class StyleTranslator
             return;
         }
 
-        if (TryGetString(items[0], out var op) && op != null)
+        if (TryGetString(items[0], out var op) && op != null &&
+            (string.Equals(op, "get", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(op, "has", StringComparison.OrdinalIgnoreCase)) &&
+            items.Length > 1 &&
+            TryGetString(items[1], out var fieldName) &&
+            !string.IsNullOrWhiteSpace(fieldName) &&
+            seen.Add(fieldName))
         {
-            if ((string.Equals(op, "get", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(op, "has", StringComparison.OrdinalIgnoreCase)) &&
-                items.Length > 1 &&
-                TryGetString(items[1], out var fieldName) &&
-                !string.IsNullOrWhiteSpace(fieldName) &&
-                seen.Add(fieldName))
-            {
-                fields.Add(fieldName);
-            }
+            fields.Add(fieldName);
         }
 
         foreach (var item in items)
