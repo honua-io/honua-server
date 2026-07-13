@@ -106,6 +106,7 @@ public sealed class EvalHarnessFixture : IAsyncLifetime
 
         var outputRoot = ResolveReportDirectory();
         Directory.CreateDirectory(outputRoot);
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk
         var reportPath = Path.Combine(outputRoot, ReportFileName);
         var json = JsonSerializer.Serialize(report, EvalJsonContext.Default.EvalReport);
         File.WriteAllText(reportPath, json);
@@ -120,11 +121,13 @@ public sealed class EvalHarnessFixture : IAsyncLifetime
         }
 
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
 
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk
         return directory != null
             ? Path.Combine(directory.FullName, "tests", "TestResults")
             : Path.Combine(AppContext.BaseDirectory, "eval-results");

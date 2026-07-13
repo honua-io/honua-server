@@ -165,10 +165,10 @@ public class ConsoleActionEvaluatorTests
 
         var actions = await evaluator.EvaluateItemActionsAsync(ViewerPrincipal(), items, Array.Empty<ConsoleContentAction>(), CancellationToken.None);
 
-        Assert.True(actions.ContainsKey("pub"));
-        Assert.True(actions.ContainsKey("self"));
-        Assert.Contains(ConsoleContentAction.View, actions["pub"]);
-        Assert.Contains(ConsoleContentAction.Edit, actions["self"]);
+        Assert.True(actions.TryGetValue("pub", out var pubActions));
+        Assert.True(actions.TryGetValue("self", out var selfActions));
+        Assert.Contains(ConsoleContentAction.View, pubActions);
+        Assert.Contains(ConsoleContentAction.Edit, selfActions);
     }
 
     [UnitTest]
