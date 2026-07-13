@@ -197,7 +197,7 @@ internal sealed class ComputedFieldTransformExecutor(
                 result = left * right;
                 break;
             case "divide":
-                if (right == 0)
+                if (Math.Abs(right) < ExpressionValues.ZeroTolerance)
                 {
                     return false;
                 }

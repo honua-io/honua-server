@@ -96,18 +96,25 @@ internal sealed class GpWorkflowSource(IProcessCatalog? catalog, IReadOnlySet<st
             };
         }
 
-        // 2. Local workflow fixture: samples/gp/<id>/workflow.json.
-        var fixturePath = Path.Combine(fixtureRoot, id, "workflow.json");
-        if (File.Exists(fixturePath))
+        // 2. Local workflow fixture: samples/gp/<id>/workflow.json. Guard against a rooted
+        //    id: Path.Combine silently drops fixtureRoot when a later segment is absolute,
+        //    which would let an absolute id escape the fixture root entirely. An id is a
+        //    workflow/process identifier, never a path, so a rooted id just falls through
+        //    to the code-process/unknown-id handling below instead of resolving a fixture.
+        if (!Path.IsPathRooted(id))
         {
-            var graph = ReadGraphFile(fixturePath);
-            return new GpPublishSource
+            var fixturePath = Path.Combine(fixtureRoot, id, "workflow.json");
+            if (File.Exists(fixturePath))
             {
-                CanPublish = true,
-                Graph = graph,
-                Name = name ?? id,
-                Kind = "workflow (fixture)"
-            };
+                var graph = ReadGraphFile(fixturePath);
+                return new GpPublishSource
+                {
+                    CanPublish = true,
+                    Graph = graph,
+                    Name = name ?? id,
+                    Kind = "workflow (fixture)"
+                };
+            }
         }
 
         // 3. A registered code process. By default this is NOT publishable as a package;

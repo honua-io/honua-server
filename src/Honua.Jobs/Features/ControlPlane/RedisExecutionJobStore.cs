@@ -272,6 +272,10 @@ internal sealed partial class RedisExecutionJobStore(
                 break;
             }
 
+            // Both sides are always integer-valued: scores are written as
+            // CreatedAt.ToUnixTimeMilliseconds() (see UpdateQueryIndexesAsync) and never carry a
+            // fractional tie-breaker, and millisecond epoch values stay well within double's
+            // 53-bit exact-integer range. This equality check has no floating-point precision risk.
             if (lowestScore == scoreWindowMax)
             {
                 scoreWindowSkip += processedAtLowestScore;
