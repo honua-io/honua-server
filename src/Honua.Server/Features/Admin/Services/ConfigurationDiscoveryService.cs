@@ -257,12 +257,28 @@ public sealed class ConfigurationDiscoveryService
     }
 
     /// <summary>
-    /// Determines if a property name implies secret data.
+    /// Determines if a property name implies secret data. Delegates to the shared deny-by-default
+    /// redactor so the discovery <c>IsSecret</c> flag and value masking agree on what is sensitive.
     /// </summary>
     private static bool IsSecretPropertyName(string propertyName)
+        => ConfigurationSecretRedactor.IsSensitiveName(propertyName);
+
+    /// <summary>
+    /// Applies deny-by-default redaction to a discovered configuration value. Sensitive-named
+    /// properties are masked unconditionally; any value that looks credential-bearing (connection
+    /// string, endpoint/URI with embedded credentials, key=value secret fragment, or high-entropy
+    /// token) is masked even when its property name looks innocuous (honua-server#2804).
+    /// </summary>
+    private static object? RedactConfigurationValue(PropertyInfo property, object? value)
     {
-        var name = propertyName.ToLowerInvariant();
-        return name.Contains("password") || name.Contains("secret") || name.Contains("key") || name.Contains("token");
+        if (value is null)
+        {
+            return null;
+        }
+
+        return IsSecretProperty(property)
+            ? ConfigurationSecretRedactor.Mask
+            : ConfigurationSecretRedactor.Redact(property.Name, value);
     }
 
     /// <summary>
@@ -289,7 +305,7 @@ public sealed class ConfigurationDiscoveryService
                         try
                         {
                             var value = prop.GetValue(instance);
-                            values[prop.Name] = IsSecretProperty(prop) ? "***" : value;
+                            values[prop.Name] = RedactConfigurationValue(prop, value);
                         }
                         catch
                         {
@@ -307,7 +323,7 @@ public sealed class ConfigurationDiscoveryService
                     if (prop.CanRead && prop.GetIndexParameters().Length == 0)
                     {
                         var configValue = section[prop.Name];
-                        values[prop.Name] = IsSecretProperty(prop) && configValue != null ? "***" : configValue;
+                        values[prop.Name] = RedactConfigurationValue(prop, configValue);
                     }
                 }
             }
