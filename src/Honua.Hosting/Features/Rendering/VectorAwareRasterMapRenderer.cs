@@ -203,19 +203,36 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
                 explicitStyleJson));
         }
 
-        var imageBytes = await RasterMapRenderingPipeline.RenderBoundStyleVectorLayersAsync(
-            featureReader,
-            styleCatalog,
-            layers,
-            extent,
-            requestSrid,
-            request.Width,
-            request.Height,
-            RasterMapRenderingPipeline.MaxFeaturesPerLayer,
-            format,
-            request.Transparent,
-            ResolveBackgroundColor(request.BackgroundColor),
-            cancellationToken).ConfigureAwait(false);
+        byte[] imageBytes;
+        try
+        {
+            imageBytes = await RasterMapRenderingPipeline.RenderBoundStyleVectorLayersAsync(
+                featureReader,
+                styleCatalog,
+                layers,
+                extent,
+                requestSrid,
+                request.Width,
+                request.Height,
+                RasterMapRenderingPipeline.MaxFeaturesPerLayer,
+                format,
+                request.Transparent,
+                ResolveBackgroundColor(request.BackgroundColor),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException &&
+                                   RasterRenderingUnavailableException.IsNativeLoadFailure(ex))
+        {
+            // The native SkiaSharp rasterizer could not be initialized on this runtime
+            // image (missing libSkiaSharp / fontconfig / freetype, or a wrong-arch native
+            // asset). Log the real cause for operators and translate it into a typed
+            // capability failure so callers (e.g. the MCP honua_render_map tool) surface an
+            // actionable failed_precondition instead of a generic internal error
+            // (honua-server#2770).
+            RasterMapRenderingPipelineLog.RenderingRuntimeUnavailable(
+                _logger, layers.Count, request.Width, request.Height, ex);
+            throw new RasterRenderingUnavailableException(ex);
+        }
 
         return new RasterResult
         {
