@@ -169,25 +169,19 @@ internal sealed class StacMappingService
         PopulateTemporalPropertiesV2(attributes, resource, properties);
 
         // Copy feature attributes
-        foreach (var kvp in attributes)
+        var includedAttributes = attributes.Where(kvp =>
+            (!IsItemIdAttribute(kvp.Key) || selectedPropertiesLookup?.Contains(kvp.Key) == true) &&
+            !string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
+            !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key) &&
+            (selectedPropertiesLookup is null || selectedPropertiesLookup.Contains(kvp.Key)) &&
+            !(kvp.Value is null && selectedPropertiesLookup is null));
+
+        foreach (var kvp in includedAttributes)
         {
-            if ((!IsItemIdAttribute(kvp.Key) || selectedPropertiesLookup?.Contains(kvp.Key) == true) &&
-                !string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
-                !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
-            {
-                if (selectedPropertiesLookup is not null && !selectedPropertiesLookup.Contains(kvp.Key))
-                {
-                    continue;
-                }
-                if (kvp.Value is null && selectedPropertiesLookup is null)
-                {
-                    continue;
-                }
-                properties[kvp.Key] = kvp.Value;
-            }
+            properties[kvp.Key] = kvp.Value;
         }
 
         // RFC 7946 §3.2 and STAC 1.0.0 require the "geometry" member to always be present;
@@ -391,23 +385,21 @@ internal sealed class StacMappingService
 
         var resourceBbox = resource.ReadBbox();
         var srid = resource.ReadSrid() ?? 4326;
-        if (resourceBbox is { } extent)
+        if (resourceBbox is { } extent &&
+            await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                extent.West,
+                extent.South,
+                extent.East,
+                extent.North,
+                srid,
+                coordinateTransformService,
+                cancellationToken).ConfigureAwait(false) is { } transformedExtent)
         {
-            if (await OgcExtentTransformer.TryTransformExtentToCrs84Async(
-                    extent.West,
-                    extent.South,
-                    extent.East,
-                    extent.North,
-                    srid,
-                    coordinateTransformService,
-                    cancellationToken).ConfigureAwait(false) is { } transformedExtent)
-            {
-                bbox = ImmutableArray.Create(ImmutableArray.Create(
-                    transformedExtent.MinLon,
-                    transformedExtent.MinLat,
-                    transformedExtent.MaxLon,
-                    transformedExtent.MaxLat));
-            }
+            bbox = ImmutableArray.Create(ImmutableArray.Create(
+                transformedExtent.MinLon,
+                transformedExtent.MinLat,
+                transformedExtent.MaxLon,
+                transformedExtent.MaxLat));
         }
 
         var temporalInterval = ImmutableArray.Create(ImmutableArray.Create<string?>(null, null));
@@ -439,6 +431,9 @@ internal sealed class StacMappingService
         }
         catch
         {
+            // Best-effort GeoJSON conversion — STAC allows a null geometry, so any
+            // serialization failure here degrades to that explicit-null representation
+            // rather than failing the whole item mapping.
             return null;
         }
     }
@@ -538,6 +533,8 @@ internal sealed class StacMappingService
         }
         catch
         {
+            // Best-effort bbox computation — an unexpected geometry/CRS failure degrades to
+            // an absent bbox (allowed by STAC) rather than failing the whole item mapping.
             return null;
         }
     }

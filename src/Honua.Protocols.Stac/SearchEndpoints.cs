@@ -326,6 +326,7 @@ internal static class SearchEndpoints
             StacTelemetry.RecordException(activity, ex);
             throw;
         }
+        // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
         catch (Exception ex)
         {
             StacTelemetry.RecordException(activity, ex);
@@ -499,6 +500,8 @@ internal static class SearchEndpoints
             StacTelemetry.RecordException(activity, ex);
             throw;
         }
+        // Not an endpoint boundary: this rethrows after tagging the shared search activity,
+        // so the outer HandleSearch catch (which logs and maps to a 500) still applies.
         catch (Exception ex)
         {
             StacTelemetry.RecordException(activity, ex);
@@ -1130,9 +1133,8 @@ internal static class SearchEndpoints
         out string? error)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
-        foreach (var token in value.Split(',', StringSplitOptions.None))
+        foreach (var trimmed in value.Split(',', StringSplitOptions.None).Select(token => token.Trim()))
         {
-            var trimmed = token.Trim();
             if (trimmed.Length == 0)
             {
                 results = default;
@@ -1205,9 +1207,8 @@ internal static class SearchEndpoints
         var includes = ImmutableArray.CreateBuilder<string>();
         var excludes = ImmutableArray.CreateBuilder<string>();
 
-        foreach (var token in fields.Split(',', StringSplitOptions.None))
+        foreach (var trimmed in fields.Split(',', StringSplitOptions.None).Select(token => token.Trim()))
         {
-            var trimmed = token.Trim();
             if (trimmed.Length == 0)
             {
                 result = null;
@@ -1273,9 +1274,8 @@ internal static class SearchEndpoints
     private static bool TryParseSortByParameter(string sortby, out ImmutableArray<StacSortDefinition>? result, out string? error)
     {
         var builder = ImmutableArray.CreateBuilder<StacSortDefinition>();
-        foreach (var token in sortby.Split(',', StringSplitOptions.None))
+        foreach (var trimmed in sortby.Split(',', StringSplitOptions.None).Select(token => token.Trim()))
         {
-            var trimmed = token.Trim();
             if (trimmed.Length == 0)
             {
                 result = null;
@@ -1330,9 +1330,8 @@ internal static class SearchEndpoints
         out string? error)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
-        foreach (var token in value.Split(',', StringSplitOptions.None))
+        foreach (var trimmed in value.Split(',', StringSplitOptions.None).Select(token => token.Trim()))
         {
-            var trimmed = token.Trim();
             if (trimmed.Length == 0)
             {
                 parsedValues = default;

@@ -593,14 +593,13 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 continue;
             }
 
-            foreach (var vertex in feature.Geometry.Vertices)
+            foreach (var z in feature.Geometry.Vertices
+                         .Where(vertex => vertex.Height.HasValue)
+                         .Select(vertex => vertex.Height!.Value))
             {
-                if (vertex.Height is { } z)
-                {
-                    sawAny = true;
-                    if (z < min) min = z;
-                    if (z > max) max = z;
-                }
+                sawAny = true;
+                if (z < min) min = z;
+                if (z > max) max = z;
             }
         }
 
@@ -1036,17 +1035,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     }
 
     private static string? FirstNonBlank(params string?[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return null;
-    }
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private static string? TryGetTargetConfig(PublishIntent intent, string key)
         => intent.TargetConfig.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value)

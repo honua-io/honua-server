@@ -245,13 +245,10 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
                 Directory.Delete(directory, recursive: true);
             }
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Best effort: a leftover temp dir is harmless (no registry record
             // points at it) and gets swept by the next successful hydration.
-        }
-        catch (UnauthorizedAccessException)
-        {
         }
     }
 

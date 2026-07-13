@@ -425,6 +425,9 @@ internal sealed partial class PointCloudScenePublishExecutor
             var deactivated = await _registration.DeactivateAsync(datasetId, CancellationToken.None).ConfigureAwait(false);
             PointCloudIngestLog.RegistrationCompensated(_logger, sceneId, datasetId, deactivated);
         }
+        // Publish-pipeline compensation boundary: this is a best-effort rollback of a
+        // partially-completed publish, already logged below; any exception here must
+        // not mask the original failure that triggered compensation.
         catch (Exception ex)
         {
             PointCloudIngestLog.RegistrationCompensationFailed(_logger, sceneId, datasetId, ex);
