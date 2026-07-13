@@ -1009,13 +1009,23 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
 
-        Log.RollbackRequested(logger, operation.OperationId, operation.Deploy?.TargetId ?? operation.OperationId);
+        // Fail loudly, do not silently park (honua-server#2811). This base backend only hands the desired
+        // revision to an EXTERNAL GitOps controller; it cannot itself revert the running workload. Earlier
+        // it returned RollbackRequested, which the reconciler treats as "rollback took" — reporting a
+        // rollback that never happened and only surfacing the truth later as ManualInterventionRequired via
+        // ObserveAsync. Returning ManualInterventionRequired here makes the reconciler escalate immediately
+        // with a loud error so an operator is paged to perform the out-of-band GitOps revert. Backends that
+        // CAN perform a real in-process revert (ACA revision, Azure Functions, Argo, YARP) override this.
+        Log.RollbackRequiresManualIntervention(logger, operation.OperationId, operation.Deploy?.TargetId ?? operation.OperationId);
         return Task.FromResult(new DeployObservation
         {
-            Status = WorkflowOperationStatus.RollbackRequested,
+            Status = WorkflowOperationStatus.ManualInterventionRequired,
             ProviderOperationId = operation.ProviderOperationId ?? $"{BackendName}:{operation.OperationId}",
             ObservedRevision = operation.Deploy?.CurrentRevision,
-            Message = "Rollback requested through Honua GitOps reconciliation."
+            Message = "Automatic rollback is not supported by the Honua GitOps hand-off backend: the desired " +
+                "revision is applied by an external GitOps controller, so the rollback must be performed " +
+                "out of band (revert the pinned revision in the GitOps repository). This operation requires " +
+                "manual intervention rather than being reported as rolled back."
         });
     }
 
@@ -1024,7 +1034,7 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
         [LoggerMessage(9020, LogLevel.Information, "Submitted deploy workflow operation {OperationId} for target {TargetId}")]
         public static partial void OperationSubmitted(ILogger logger, string operationId, string targetId);
 
-        [LoggerMessage(9021, LogLevel.Warning, "Rollback requested for workflow operation {OperationId} targeting {TargetId}")]
-        public static partial void RollbackRequested(ILogger logger, string operationId, string targetId);
+        [LoggerMessage(9021, LogLevel.Warning, "Automatic rollback for workflow operation {OperationId} targeting {TargetId} requires manual out-of-band GitOps intervention")]
+        public static partial void RollbackRequiresManualIntervention(ILogger logger, string operationId, string targetId);
     }
 }

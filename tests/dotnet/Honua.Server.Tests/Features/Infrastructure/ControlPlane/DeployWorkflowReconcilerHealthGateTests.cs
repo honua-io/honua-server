@@ -63,6 +63,67 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
         updated!.Status.Should().NotBe(WorkflowOperationStatus.RollbackRequested);
     }
 
+    [Fact]
+    public async Task Reconcile_GoldenQueryCorrupt_BlocksAutoPromotionAndDrivesRollback()
+    {
+        // Healthy-but-corrupt (#2811): the synthetic health probe is healthy AND the backend recommends
+        // promotion (status 200, 5xx/p95 nominal), but the golden-query correctness gate detects a
+        // wrong/garbled response body. The corrupt release must NOT be promoted; it must roll back.
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(
+            observeStatus: WorkflowOperationStatus.Succeeded,
+            promotionRecommended: true);
+        var operation = CreateOperation(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["telemetry.golden_query.url"] = "https://example.com/rest/services/probe",
+            ["telemetry.golden_query.expected_contains"] = "GOLDEN-OK"
+        });
+        await store.TryCreateAsync(operation);
+
+        var evaluator = CreateRealEvaluator(new FakeHealthProbe(
+            new DeployHealthProbeResult { Attempts = 3, Failures = 0 },
+            goldenResult: new DeployGoldenQueryResult { Matched = false, Detail = "response body did not contain the required golden token" }));
+        var reconciler = CreateReconciler(store, backend, evaluator);
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        updated.Should().NotBeNull();
+        backend.PromoteCalls.Should().Be(0, "a release that fails the golden-query correctness gate must not auto-promote");
+        backend.RollbackCalls.Should().Be(1, "a corrupt-but-healthy release must roll back via the golden-query gate");
+        updated!.Status.Should().BeOneOf(
+            WorkflowOperationStatus.RollbackRequested,
+            WorkflowOperationStatus.RolledBack);
+        updated.CurrentPhase.Should().Contain("golden-query correctness gate");
+    }
+
+    [Fact]
+    public async Task Reconcile_GoldenQueryMatches_DoesNotBlockOnCorrectness()
+    {
+        // The correctness gate is not a hard brake: when the golden-query body matches, the release is
+        // not rolled back on correctness grounds (it falls through to the rest of the gate).
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(observeStatus: WorkflowOperationStatus.Succeeded);
+        var operation = CreateOperation(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["telemetry.golden_query.url"] = "https://example.com/rest/services/probe",
+            ["telemetry.golden_query.expected_contains"] = "GOLDEN-OK"
+        });
+        await store.TryCreateAsync(operation);
+
+        var evaluator = CreateRealEvaluator(new FakeHealthProbe(
+            new DeployHealthProbeResult { Attempts = 3, Failures = 0 },
+            goldenResult: new DeployGoldenQueryResult { Matched = true }));
+        var reconciler = CreateReconciler(store, backend, evaluator);
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        updated.Should().NotBeNull();
+        backend.RollbackCalls.Should().Be(0, "a release that passes the golden-query gate must not roll back on correctness grounds");
+        updated!.Status.Should().NotBe(WorkflowOperationStatus.RollbackRequested);
+    }
+
     // ---- helpers ---------------------------------------------------------
 
     private static DeployWorkflowReconciler CreateReconciler(
@@ -83,10 +144,26 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
             NullLogger<DeployTelemetrySignalEvaluator>.Instance,
             probe);
 
-    private static WorkflowOperationRecord CreateOperation()
+    private static WorkflowOperationRecord CreateOperation(
+        IReadOnlyDictionary<string, string>? extraParameters = null)
     {
         // Created comfortably past the default 2-minute warmup so the gate evaluates this cycle.
         var now = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // Health-only gate: the probe short-circuits before any metrics connection is
+            // resolved, so no metrics backend is required to prove the rollback path.
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+        };
+        if (extraParameters != null)
+        {
+            foreach (var (key, value) in extraParameters)
+            {
+                parameters[key] = value;
+            }
+        }
+
         return new WorkflowOperationRecord
         {
             OperationId = $"deploy-{Guid.NewGuid():N}",
@@ -117,21 +194,20 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
                 ArtifactReference = "ghcr.io/honua/server",
                 CurrentRevision = "sha256:old",
                 DesiredRevision = "sha256:new",
-                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    // Health-only gate: the probe short-circuits before any metrics connection is
-                    // resolved, so no metrics backend is required to prove the rollback path.
-                    ["telemetry.connection"] = "prod-prom",
-                    ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
-                }
+                Parameters = parameters
             }
         };
     }
 
-    private sealed class FakeHealthProbe(DeployHealthProbeResult result) : IDeployHealthProbe
+    private sealed class FakeHealthProbe(
+        DeployHealthProbeResult result,
+        DeployGoldenQueryResult? goldenResult = null) : IDeployHealthProbe
     {
         public Task<DeployHealthProbeResult> ProbeAsync(DeployHealthProbeRequest request, CancellationToken cancellationToken)
             => Task.FromResult(result);
+
+        public Task<DeployGoldenQueryResult> ProbeGoldenQueryAsync(DeployGoldenQueryRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(goldenResult ?? new DeployGoldenQueryResult { Matched = true });
     }
 
     private sealed class OptionsMonitorStub(ControlPlaneOptions value) : IOptionsMonitor<ControlPlaneOptions>
@@ -143,9 +219,13 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
         public IDisposable? OnChange(Action<ControlPlaneOptions, string?> listener) => null;
     }
 
-    private sealed class RecordingDeployBackend(WorkflowOperationStatus observeStatus) : IDeployBackend
+    private sealed class RecordingDeployBackend(
+        WorkflowOperationStatus observeStatus,
+        bool promotionRecommended = false) : IDeployBackend
     {
         public int RollbackCalls { get; private set; }
+
+        public int PromoteCalls { get; private set; }
 
         public string BackendName => "honua-gitops-kubernetes";
 
@@ -176,8 +256,21 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
                 Status = observeStatus,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = operation.Deploy?.DesiredRevision,
-                Message = "Observed"
+                Message = "Observed",
+                PromotionRecommended = promotionRecommended
             });
+
+        public Task<DeployObservation> PromoteAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            PromoteCalls++;
+            return Task.FromResult(new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Succeeded,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.Deploy?.DesiredRevision,
+                Message = "Promoted"
+            });
+        }
 
         public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {

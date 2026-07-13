@@ -269,8 +269,11 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         rollbackResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var rollbackDocument = JsonDocument.Parse(await rollbackResponse.Content.ReadAsStringAsync());
-        rollbackDocument.RootElement.GetProperty("status").GetString().Should().Be("RollbackRequested");
-        rollbackDocument.RootElement.GetProperty("currentPhase").GetString().Should().Be("Rollback requested through Honua GitOps reconciliation.");
+        // #2811: the GitOps hand-off backend cannot perform a real revert, so a rollback request fails
+        // loudly (manual intervention) rather than falsely reporting RollbackRequested — the operator is
+        // told to revert the pinned revision out of band instead of being led to believe it rolled back.
+        rollbackDocument.RootElement.GetProperty("status").GetString().Should().Be("ManualInterventionRequired");
+        rollbackDocument.RootElement.GetProperty("currentPhase").GetString().Should().Contain("out of band");
     }
 
     [IntegrationTest]
