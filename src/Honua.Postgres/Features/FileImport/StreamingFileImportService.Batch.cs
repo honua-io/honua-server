@@ -5,9 +5,12 @@ using System.Data;
 using System.Diagnostics;
 using System.Text.Json;
 using NetTopologySuite.Features;
+using NetTopologySuite.Geometries.Utilities;
 using NetTopologySuite.IO;
+using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 using Npgsql;
 using NpgsqlTypes;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
@@ -37,6 +40,7 @@ internal sealed partial class StreamingFileImportService
         WKBWriter wkbWriter,
         ImportLoadMode loadMode,
         IReadOnlyList<string> keyColumns,
+        GeometryRepairTally repairTally,
         CancellationToken cancellationToken)
     {
         var imported = 0;
@@ -68,6 +72,7 @@ internal sealed partial class StreamingFileImportService
                     wkbWriter,
                     loadMode,
                     keyColumns,
+                    repairTally,
                     cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -87,6 +92,7 @@ internal sealed partial class StreamingFileImportService
                     wkbWriter,
                     loadMode,
                     keyColumns,
+                    repairTally,
                     cancellationToken);
             }
 
@@ -122,23 +128,40 @@ internal sealed partial class StreamingFileImportService
         WKBWriter wkbWriter,
         ImportLoadMode loadMode,
         IReadOnlyList<string> keyColumns,
+        GeometryRepairTally repairTally,
         CancellationToken cancellationToken)
     {
-        var wkbs = new byte[]?[features.Count];
-        var sourceSrids = new int[features.Count];
-        var properties = new string[features.Count];
+        var wkbs = new List<byte[]?>(features.Count);
+        var sourceSrids = new List<int>(features.Count);
+        var properties = new List<string>(features.Count);
 
         for (var i = 0; i < features.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var feature = features[i];
-            wkbs[i] = CreateWkb(feature, wkbWriter);
+            var gate = CreateWkb(feature, wkbWriter, repairTally);
+
+            // A gate skip must exclude the whole row, not degrade it: a null WKB is a legal
+            // null-geometry row, so passing the skipped feature through would silently import
+            // its properties without geometry instead of skipping the feature.
+            if (gate.Skipped)
+            {
+                continue;
+            }
+
+            wkbs.Add(gate.Wkb);
 
             // Use per-feature SRID when available (e.g. multi-layer FileGDBs
             // where each layer may have its own CRS).
             var featureSrid = feature.Geometry?.SRID;
-            sourceSrids[i] = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
-            properties[i] = BuildPropertiesJson(feature);
+            sourceSrids.Add(featureSrid is > 0 ? featureSrid.Value : sourceSrid);
+            properties.Add(BuildPropertiesJson(feature));
+        }
+
+        if (wkbs.Count == 0)
+        {
+            // Every feature in the batch was skipped by the geometry gate.
+            return 0;
         }
 
         // Honor the auditable Esri-default datum pipeline for the request-level
@@ -228,9 +251,9 @@ internal sealed partial class StreamingFileImportService
         NpgsqlTransaction? transaction,
         string schemaName,
         string tableName,
-        byte[]?[] wkbs,
-        int[] sourceSrids,
-        string[] properties,
+        List<byte[]?> wkbs,
+        List<int> sourceSrids,
+        List<string> properties,
         int sourceSrid,
         int targetSrid,
         string? datumPipeline,
@@ -254,7 +277,7 @@ internal sealed partial class StreamingFileImportService
             datumPipeline ?? (object)DBNull.Value;
 
         var processed = await command.ExecuteScalarAsync(cancellationToken);
-        return processed is int count ? count : wkbs.Length;
+        return processed is int count ? count : wkbs.Count;
     }
 
     private async Task<(int imported, int failed)> InsertBatchIndividuallyAsync(
@@ -268,6 +291,7 @@ internal sealed partial class StreamingFileImportService
         WKBWriter wkbWriter,
         ImportLoadMode loadMode,
         IReadOnlyList<string> keyColumns,
+        GeometryRepairTally repairTally,
         CancellationToken cancellationToken)
     {
         var imported = 0;
@@ -310,7 +334,16 @@ internal sealed partial class StreamingFileImportService
 
             try
             {
-                wkbParameter.Value = CreateWkb(feature, wkbWriter) ?? (object)DBNull.Value;
+                var gate = CreateWkb(feature, wkbWriter, repairTally);
+
+                // A gate skip excludes the whole row (see InsertBatchFastAsync): inserting the
+                // feature with a NULL wkb would import its properties as a null-geometry row.
+                if (gate.Skipped)
+                {
+                    continue;
+                }
+
+                wkbParameter.Value = gate.Wkb ?? (object)DBNull.Value;
                 var featureSrid = feature.Geometry?.SRID;
                 var effectiveSourceSrid = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
                 sourceSridParameter.Value = effectiveSourceSrid;
@@ -365,14 +398,24 @@ internal sealed partial class StreamingFileImportService
     }
 
     /// <summary>
-    /// Create WKB for a feature geometry, enforcing configured validation limits.
+    /// Create WKB for a feature geometry, enforcing configured validation limits and the
+    /// shared import validity gate (<c>ImportLimits.GeometryValidityMode</c>). This is
+    /// the single choke point every import reader (GeoJSON, shapefile, GeoPackage, CSV-WKT,
+    /// FlatGeobuf, GDAL, …) flows through, so applying the gate here guarantees consistent
+    /// repair/strict/accept behavior instead of a per-reader patchwork (#2743). Repairs and
+    /// skips are recorded in <paramref name="repairTally"/> for the import report.
+    /// A <see cref="WkbGateResult.Skipped"/> result means the feature must be excluded from
+    /// the insert entirely; a null <see cref="WkbGateResult.Wkb"/> without the skip flag is a
+    /// legitimate null-geometry row whose properties still import.
     /// </summary>
-    private byte[]? CreateWkb(IFeature feature, WKBWriter wkbWriter)
+    private WkbGateResult CreateWkb(IFeature feature, WKBWriter wkbWriter, GeometryRepairTally repairTally)
     {
         if (feature.Geometry == null)
         {
-            return null;
+            return new WkbGateResult(null, false);
         }
+
+        var geometry = feature.Geometry;
 
         // Hard memory guard (#1626): reject oversized geometries on vertex/ring count BEFORE
         // materializing coordinate arrays or writing WKB. A single island-scale multipolygon can
@@ -380,13 +423,13 @@ internal sealed partial class StreamingFileImportService
         // hundreds of MB and OOM-crash a memory-constrained serverless host. This guard runs
         // regardless of the optional ValidateGeometry pass so the ceiling always holds, and surfaces
         // a clear, machine-readable error (413-style) rather than crashing.
-        var sizeResult = ImportGeometrySizeGuard.Check(feature.Geometry, _limits.MaxVertices, _limits.MaxRings);
+        var sizeResult = ImportGeometrySizeGuard.Check(geometry, _limits.MaxVertices, _limits.MaxRings);
         if (!sizeResult.IsWithinLimits)
         {
             if (_limits.SkipInvalidGeometry)
             {
                 ImportLog.GeometryTooLargeSkipped(_logger, sizeResult.Message ?? "Geometry exceeds import size limit.");
-                return null;
+                return WkbGateResult.Skip(repairTally);
             }
 
             throw new ImportGeometryTooLargeException(sizeResult.Message ?? "Geometry exceeds import size limit.");
@@ -394,20 +437,123 @@ internal sealed partial class StreamingFileImportService
 
         if (_limits.ValidateGeometry)
         {
-            var validationError = ValidateGeometry(feature.Geometry);
+            var validationError = ValidateGeometry(geometry);
             if (validationError != null)
             {
                 if (_limits.SkipInvalidGeometry)
                 {
-                    return null;
+                    return WkbGateResult.Skip(repairTally);
                 }
 
                 throw new InvalidOperationException($"Geometry validation failed: {validationError}");
             }
         }
 
-        var writer = SelectWkbWriter(feature.Geometry, wkbWriter);
-        var wkb = writer.Write(feature.Geometry);
+        // Shared topology validity gate (#2743): mirrors the edit paths' GeometryValidationOptions
+        // (Accept/Strict/Repair). Repair uses the managed NetTopologySuite GeometryFixer, which is
+        // also what the geometry.make-valid GP executor uses. This is NOT identical to the edit
+        // path: the edit path repairs via PostGIS ST_MakeValid (GEOS), whereas import repairs via
+        // the GEOS-free NTS GeometryFixer — different engines, so a pathological geometry can yield
+        // different repaired output on the two paths. Fixing here still prevents a self-intersecting
+        // polygon from being stored to later blow up overlay queries with a GEOS TopologyException.
+        //
+        // Only areal geometry (Polygon/MultiPolygon and nested collections) can be topologically
+        // invalid, so points/lines skip both the coordinate walk and the expensive IsValid
+        // topology-graph build. Finiteness is required before IsValid: the earlier ValidateGeometry
+        // pass already guarantees it when enabled, otherwise walk the coordinates once here. NaN/
+        // Infinity ordinates cannot be validated or repaired meaningfully and are left to PostGIS.
+        if (_limits.GeometryValidityMode != ValidationMode.Accept
+            && geometry.OgcGeometryType is NetTopologySuite.Geometries.OgcGeometryType.Polygon
+                or NetTopologySuite.Geometries.OgcGeometryType.MultiPolygon
+                or NetTopologySuite.Geometries.OgcGeometryType.GeometryCollection)
+        {
+            var coordinatesFinite = _limits.ValidateGeometry || ValidateCoordinates(geometry);
+            if (coordinatesFinite && !geometry.IsValid)
+            {
+                if (_limits.GeometryValidityMode == ValidationMode.Strict)
+                {
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryInvalidSkipped(_logger);
+                        return WkbGateResult.Skip(repairTally);
+                    }
+
+                    throw new InvalidOperationException(
+                        "Geometry validation failed: geometry topology is invalid (self-intersection, ring orientation, or hole placement).");
+                }
+
+                // ValidationMode.Repair
+                NtsGeometry? repaired;
+                try
+                {
+                    repaired = GeometryFixer.Fix(geometry);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryRepairFailedSkipped(_logger, ex);
+                        return WkbGateResult.Skip(repairTally);
+                    }
+
+                    throw new InvalidOperationException("Geometry repair failed.", ex);
+                }
+
+                if (repaired == null || repaired.IsEmpty)
+                {
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryRepairEmptySkipped(_logger);
+                        return WkbGateResult.Skip(repairTally);
+                    }
+
+                    throw new InvalidOperationException("Geometry repair produced an empty geometry.");
+                }
+
+                // Re-validate the repaired geometry: for pathological input GeometryFixer can return
+                // a result that is still invalid. Treat that like the Strict/skip branch rather than
+                // counting it as a successful repair and storing a still-broken geometry.
+                if (!repaired.IsValid)
+                {
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryInvalidSkipped(_logger);
+                        return WkbGateResult.Skip(repairTally);
+                    }
+
+                    throw new InvalidOperationException(
+                        "Geometry repair did not produce a valid geometry.");
+                }
+
+                repaired.SRID = geometry.SRID;
+
+                // Re-run the hard size guard on the repaired geometry BEFORE counting the repair:
+                // make-valid can add vertices/rings (e.g. splitting a self-intersection into
+                // multiple rings), so a repaired geometry could exceed MaxVertices/MaxRings even
+                // though the pre-repair input passed the same guard.
+                var repairedSizeResult = ImportGeometrySizeGuard.Check(
+                    repaired, _limits.MaxVertices, _limits.MaxRings);
+                if (!repairedSizeResult.IsWithinLimits)
+                {
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        ImportLog.GeometryTooLargeSkipped(
+                            _logger,
+                            repairedSizeResult.Message ?? "Repaired geometry exceeds import size limit.");
+                        return WkbGateResult.Skip(repairTally);
+                    }
+
+                    throw new ImportGeometryTooLargeException(
+                        repairedSizeResult.Message ?? "Repaired geometry exceeds import size limit.");
+                }
+
+                geometry = repaired;
+                repairTally.Repaired++;
+            }
+        }
+
+        var writer = SelectWkbWriter(geometry, wkbWriter);
+        var wkb = writer.Write(geometry);
 
         if (wkb.Length > _limits.MaxWkbSize)
         {
@@ -419,7 +565,7 @@ internal sealed partial class StreamingFileImportService
                 ImportLog.GeometryTooLargeSkipped(
                     _logger,
                     $"Geometry WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_limits.MaxWkbSize:N0} bytes).");
-                return null;
+                return WkbGateResult.Skip(repairTally);
             }
 
             throw new ImportGeometryTooLargeException(
@@ -427,7 +573,7 @@ internal sealed partial class StreamingFileImportService
                 + "Explode multipart features or simplify the geometry before importing.");
         }
 
-        return wkb;
+        return new WkbGateResult(wkb, false);
     }
 
     /// <summary>
@@ -450,5 +596,37 @@ internal sealed partial class StreamingFileImportService
         }
 
         return new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: hasZ, emitM: hasM);
+    }
+
+    /// <summary>
+    /// Mutable per-import counter of geometries repaired by the shared validity gate.
+    /// Accumulated across all batches of a single import (streaming is sequential within an
+    /// import) and surfaced in the import report / progress so repair is never silent.
+    /// </summary>
+    private sealed class GeometryRepairTally
+    {
+        public int Repaired { get; set; }
+
+        /// <summary>
+        /// Features excluded from the insert entirely because the geometry gate rejected their
+        /// geometry while <c>ImportLimits.SkipInvalidGeometry</c> was enabled (invalid
+        /// topology under Strict, failed/empty repair, or an exceeded size limit).
+        /// </summary>
+        public int SkippedInvalid { get; set; }
+    }
+
+    /// <summary>
+    /// Outcome of the geometry gate for one feature: the serialized WKB (null for a legitimate
+    /// null-geometry row) plus a flag telling the caller to exclude the feature from the insert.
+    /// The flag is required because a null WKB alone is indistinguishable from a null-geometry
+    /// row, which imports its properties.
+    /// </summary>
+    private readonly record struct WkbGateResult(byte[]? Wkb, bool Skipped)
+    {
+        public static WkbGateResult Skip(GeometryRepairTally repairTally)
+        {
+            repairTally.SkippedInvalid++;
+            return new WkbGateResult(null, true);
+        }
     }
 }

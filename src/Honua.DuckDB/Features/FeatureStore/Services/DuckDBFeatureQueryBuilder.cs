@@ -1283,8 +1283,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             return $"ST_Distance_Spheroid(ST_FlipCoordinates({geomCol}), ST_FlipCoordinates({filterGeomParam})) <= ${paramIndex++}";
         }
 
-        // Safety net (#2731, pending classifier unification in #2732): the geodesic allowlist in
-        // SpatialConstants.GeographicSrids only covers seven well-known codes. Any other SRID in
+        // Safety net (#2731; classifier unified in #2732): the geodesic-safe allowlist
+        // (GeographicSridClassifier.GeodesicDistanceSafeSrids, surfaced via
+        // DistanceConversions.IsGeographicSrid) only covers the well-known WGS 84-spheroid-safe
+        // codes. Any other SRID in
         // the EPSG geographic 2D range (4000-4999) is almost certainly a lat/lon degree CRS
         // (e.g. 4674 SIRGAS 2000, 4490 CGCS2000, 4230 ED50) whose geodesy we cannot establish from
         // the static list. Running planar ST_DWithin(metres) against degrees would silently match

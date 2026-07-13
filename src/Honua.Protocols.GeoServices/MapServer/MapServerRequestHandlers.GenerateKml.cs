@@ -16,6 +16,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
@@ -812,7 +813,11 @@ internal static partial class MapServerEndpoints
 
         WriteExtendedData(feature.Attributes, writer);
 
-        var wroteGeometry = TryWriteKmlGeometry(writer, geometry);
+        // KML polygons follow the right-hand rule (exterior CCW, holes CW). This in-memory writer
+        // emits rings as stored, and stored data is frequently CW-exterior (Esri applyEdits,
+        // shapefile imports), so normalize before serializing to match the PostGIS ST_AsKML path
+        // (#2745). Normalization is a no-op for non-polygonal geometry.
+        var wroteGeometry = TryWriteKmlGeometry(writer, RingWindingNormalizer.NormalizeToRightHandRule(geometry));
         writer.WriteEndElement();
         return wroteGeometry;
     }

@@ -48,9 +48,7 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest("10,20");
         var result = await _handler.IdentifyAsync(context, 99, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -90,9 +88,7 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest("invalid-geometry");
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -105,9 +101,7 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest("10,20,30");
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
@@ -123,9 +117,7 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(oversizedGeometry);
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
@@ -140,9 +132,7 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest("10,20", sr: "invalid-srid");
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -155,9 +145,7 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest("10,20", geometryType: "esriGeometryPolyline");
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -322,9 +310,7 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest($"{{\"x\":10,\"y\":20,\"padding\":\"{padding}\"}}");
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -337,9 +323,7 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest("{invalid-json}");
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -436,9 +420,7 @@ public class ImageServerIdentifyHandlerTests
             F = "json",
         };
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
     }
 
     [UnitTest]

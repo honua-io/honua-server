@@ -63,7 +63,11 @@ internal sealed partial class ImportSchemaSuggestionService : IImportSchemaSugge
             };
         }
 
-        // For well-known geographic CRS, keep as-is
+        // For well-known geographic CRS, keep as-is.
+        // SRID-classifier-guard allowlist (#2732): deliberately narrow import heuristic. Only the
+        // three highest-confidence geographic codes are kept-as-is here; widening to the full
+        // GeographicSridClassifier list would change import reprojection suggestions and is out of
+        // scope for the classifier-unification (behaviour-neutral) change.
         if (detectedSrid is 4326 or 4269 or 4267)
         {
             return new SridSuggestion

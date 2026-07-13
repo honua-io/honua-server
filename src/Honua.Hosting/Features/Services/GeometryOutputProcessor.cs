@@ -103,7 +103,10 @@ internal static class GeometryOutputProcessor
         return geometry.SRID switch
         {
             4326 => ConvertMetersToDegrees(simplifyToleranceMeters.Value, geometry.EnvelopeInternal),
-            3857 or 900913 or 102100 or 102113 or 3785 => simplifyToleranceMeters.Value,
+            // Web Mercator (3857) and its aliases already carry metre units; route the alias set
+            // through the canonical classifier (#2732) instead of a local literal list.
+            _ when Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(geometry.SRID)
+                => simplifyToleranceMeters.Value,
             _ => null
         };
     }

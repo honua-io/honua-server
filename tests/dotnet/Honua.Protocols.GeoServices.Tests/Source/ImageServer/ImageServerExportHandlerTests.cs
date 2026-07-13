@@ -52,9 +52,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest();
         var result = await _handler.ExportImageAsync(context, 99, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -67,9 +65,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest();
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -81,9 +77,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(bbox: "invalid-bbox");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -95,9 +89,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(rawSize: "512");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -111,9 +103,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(format: "bmp");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -288,9 +278,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(
             renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":1,\"BandIndexes\":[0,1]}}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -305,9 +293,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(
             renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":3,\"BandIndexes\":[0,1,2]}}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -324,9 +310,7 @@ public class ImageServerExportHandlerTests
             renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":3,\"BandIndexes\":[0,1]}}",
             bandIds: "0,1");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -341,9 +325,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(
             renderingRule: "{\"rasterFunction\":\"ExtractBand\",\"rasterFunctionArguments\":{\"BandNames\":[\"Red\"]}}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -539,9 +521,7 @@ public class ImageServerExportHandlerTests
         // None of the selected rasters (100, 101) match the locked id 999.
         var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[999]}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
         await _rasterStore.DidNotReceive()
             .ExportMosaicAsync(
                 1,
@@ -607,9 +587,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(pixelType: "U8");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -1006,9 +984,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest();
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
     }
 
     [UnitTest]
@@ -1029,9 +1005,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest();
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status503ServiceUnavailable);
         context.Response.Headers["Retry-After"].ToString().Should().Be("42");
     }
 
@@ -1076,9 +1050,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(bandIds: "1,foo");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -1105,9 +1077,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(noData: "not-a-number");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -1119,9 +1089,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(noDataInterpretation: "esriNoDataBogus");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -1164,9 +1132,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(format: "gif");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }

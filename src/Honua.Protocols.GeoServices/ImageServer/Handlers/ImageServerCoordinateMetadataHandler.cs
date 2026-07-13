@@ -535,10 +535,12 @@ internal sealed class ImageServerCoordinateMetadataHandler
             return SphericalQuadrangleArea(minLon, minLat, maxLon, maxLat);
         }
 
-        // Geographic extents (WGS 84, NAD83, and the other shared geographic SRIDs plus the
-        // EPSG 4000–4999 geographic range) are already lon/lat degrees. #2732 tracks unifying
-        // this ad hoc classification with the shared SRID classifier.
-        if (extent.Srid is int geoSrid && IsGeographicSrid(geoSrid))
+        // Geographic extents (WGS 84, NAD83, the other confirmed geographic SRIDs, and any
+        // unlisted EPSG 4000–4999 geographic-block code such as EPSG:4301/4314/4322) are already
+        // lon/lat degrees. Classification is unified through the canonical GeographicSridClassifier
+        // (#2732); the broad-list-plus-range variant restores the pre-#2732 range behaviour so
+        // these codes are not mis-measured as degrees-squared-as-metres in the planar branch below.
+        if (extent.Srid is int geoSrid && Honua.Core.Features.Shared.Models.GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(geoSrid))
         {
             return SphericalQuadrangleArea(extent.XMin, extent.YMin, extent.XMax, extent.YMax);
         }
@@ -548,10 +550,6 @@ internal sealed class ImageServerCoordinateMetadataHandler
         // of ground area for degree/foot units.
         return Math.Abs((extent.XMax - extent.XMin) * (extent.YMax - extent.YMin));
     }
-
-    private static bool IsGeographicSrid(int srid)
-        => Array.IndexOf(SpatialConstants.GeographicSrids, srid) >= 0
-           || srid is >= 4000 and <= 4999;
 
     private static double SphericalQuadrangleArea(double minLon, double minLat, double maxLon, double maxLat)
     {

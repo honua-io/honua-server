@@ -48,9 +48,7 @@ public class ImageServerAnalyzeHandlerTests
             99,
             Values(("renderingRule", "{\"rasterFunction\":\"Identity\"}")),
             CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -60,9 +58,7 @@ public class ImageServerAnalyzeHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(context, 1, EmptyValues(), CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -93,9 +89,7 @@ public class ImageServerAnalyzeHandlerTests
             1,
             Values(("renderingRule", "{not-json")),
             CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -111,9 +105,7 @@ public class ImageServerAnalyzeHandlerTests
             1,
             Values(("renderingRule", "{\"rasterFunction\":\"NonExistentRasterFunction\"}")),
             CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -127,9 +119,7 @@ public class ImageServerAnalyzeHandlerTests
             1,
             Values(("renderingRule", "{\"rasterFunction\":\"Stretch\",\"rasterFunctionArguments\":{}}")),
             CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -163,9 +153,7 @@ public class ImageServerAnalyzeHandlerTests
             1,
             Values(("renderingRule", "{\"rasterFunction\":\"Clip\",\"rasterFunctionArguments\":{}}")),
             CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -237,9 +225,7 @@ public class ImageServerAnalyzeHandlerTests
             1,
             Values(("renderingRule", chain)),
             CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -272,9 +258,7 @@ public class ImageServerAnalyzeHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     private static Dictionary<string, StringValues> Values(params (string Key, string Value)[] entries)

@@ -18,6 +18,15 @@ namespace Honua.Core.Features.FileImport.Services;
 /// Supports common simple-feature geometry types: Point, LineString, Polygon,
 /// MultiPoint, MultiLineString, MultiPolygon, MultiSurface, MultiCurve, and
 /// MultiGeometry. Properties are read from non-geometry child elements.
+/// <para>
+/// KNOWN LIMITATION (#2743): coordinates are read in the axis order as written and passed
+/// through unchanged; this reader does NOT perform the CRS-dependent axis swap that GML 3.2
+/// implies for URN-declared CRSs (e.g. <c>urn:ogc:def:crs:EPSG::4326</c>, whose authority
+/// axis order is latitude,longitude). A GML file that declares a lat/lon URN CRS and writes
+/// its ordinates in that authority order will import transposed. Producers that emit
+/// lon/lat (the common ogr/QGIS default) are unaffected. Supply a producer that writes in
+/// easting/northing order, or pre-transform such files, until axis-aware handling lands.
+/// </para>
 /// </summary>
 internal static class GmlFormatReader
 {

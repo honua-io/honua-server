@@ -193,6 +193,38 @@ public sealed class GdalRasterInterpolateExecutorTests
         }
     }
 
+    [UnitTest]
+    public async Task Idw_OverCapOutputSize_FailsBeforeReachingTheCli()
+    {
+        // A tiny point input requesting an enormous -outsize grid must be refused before
+        // gdal_grid allocates the width×height surface (#2782).
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdal_grid must not run for an over-cap output grid"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterInterpolateJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch, maxRasterWidth: 4096, maxRasterHeight: 4096, maxRasterPixels: 4096L * 4096L),
+            NullLogger<GdalRasterInterpolateJobExecutor>.Instance);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.IdwProcessId,
+                ("points", Base64("points")),
+                ("width", "1000000"),
+                ("height", "1000000"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("output grid").And.Contain("exceeds configured");
+            runner.Invocations.Should().BeEmpty("the over-cap output grid must be refused before gdal_grid runs");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
     private static GdalRasterInterpolateJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {
         scratch = GdalCli.NewScratch(ScratchSuite);

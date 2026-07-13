@@ -111,6 +111,24 @@ internal sealed partial class StreamingFileImportService
         public static partial void GeometryTooLargeSkipped(
             ILogger logger,
             string reason);
+
+        [LoggerMessage(
+            EventId = 7417,
+            Level = LogLevel.Debug,
+            Message = "Skipped topologically-invalid geometry during import (validity mode=Strict)")]
+        public static partial void GeometryInvalidSkipped(ILogger logger);
+
+        [LoggerMessage(
+            EventId = 7418,
+            Level = LogLevel.Warning,
+            Message = "Skipped geometry whose automatic repair failed during import")]
+        public static partial void GeometryRepairFailedSkipped(ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 7419,
+            Level = LogLevel.Warning,
+            Message = "Skipped geometry whose automatic repair collapsed to an empty geometry during import")]
+        public static partial void GeometryRepairEmptySkipped(ILogger logger);
     }
 
     private static partial class ShapefileLog

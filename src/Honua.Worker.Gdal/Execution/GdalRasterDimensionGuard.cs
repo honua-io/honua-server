@@ -61,6 +61,18 @@ internal static class GdalRasterDimensionGuard
         ArgumentNullException.ThrowIfNull(options);
         error = "";
 
+        // Positive raster-format allowlist (#2784). A payload whose magic identifies a
+        // KNOWN raster container OUTSIDE the configured allowlist (e.g. JPEG2000 / GIF /
+        // BMP / NITF / HFA) would sail past the dimension read below — the guard only
+        // parses TIFF/PNG/JPEG headers — and then be opened UNBOUNDED by GDAL, a live
+        // decompression-bomb → OOM vector. Refuse it here, before any subprocess spawns.
+        var format = ClassifyContainer(raster);
+        if (format is not RasterContainerFormat.Unknown && !IsFormatAllowed(format, options))
+        {
+            error = $"raster input format '{FormatName(format)}' is not in the configured AllowedRasterInputFormats allowlist";
+            return false;
+        }
+
         if (!TryReadRasterDimensions(raster, out var dims))
         {
             // Header not recognized as one of the compressible raster containers
@@ -72,40 +84,168 @@ internal static class GdalRasterDimensionGuard
     }
 
     /// <summary>
-    /// Reads declared dimensions from any of the compressible raster container
-    /// formats the worker ingests and that can be tiny-on-disk yet declare an
-    /// enormous canvas: TIFF / BigTIFF, PNG, and JPEG. Dispatches by the leading
-    /// magic bytes. Returns <c>false</c> for anything else (the caller then
-    /// admits and lets GDAL adjudicate).
+    /// A raster container the worker can identify from its leading magic bytes.
+    /// <see cref="Tiff"/> / <see cref="Png"/> / <see cref="Jpeg"/> are the
+    /// dimension-guarded (allowlisted-by-default) formats; the remainder are KNOWN
+    /// raster containers the guard cannot bound and that the positive allowlist refuses
+    /// by default (#2784). <see cref="Unknown"/> covers anything else (vector payloads,
+    /// truncated blobs) and is left for GDAL / the vector paths to adjudicate.
     /// </summary>
-    internal static bool TryReadRasterDimensions(ReadOnlySpan<byte> data, out RasterDimensions dims)
+    internal enum RasterContainerFormat
     {
-        dims = default;
-        if (data.Length < 8)
+        /// <summary>Magic not identified as a known raster container.</summary>
+        Unknown = 0,
+
+        /// <summary>TIFF / BigTIFF (also the container for GeoTIFF and COG).</summary>
+        Tiff,
+
+        /// <summary>PNG.</summary>
+        Png,
+
+        /// <summary>JPEG (JFIF/EXIF baseline or progressive).</summary>
+        Jpeg,
+
+        /// <summary>JPEG 2000 codestream or JP2 box format.</summary>
+        Jpeg2000,
+
+        /// <summary>GIF (87a / 89a).</summary>
+        Gif,
+
+        /// <summary>Windows BMP / DIB.</summary>
+        Bmp,
+
+        /// <summary>NITF (National Imagery Transmission Format).</summary>
+        Nitf,
+
+        /// <summary>Erdas Imagine HFA (<c>.img</c>).</summary>
+        Hfa,
+    }
+
+    /// <summary>
+    /// Classifies the leading magic bytes into a <see cref="RasterContainerFormat"/>.
+    /// Deliberately covers the dimension-guarded formats PLUS the known un-bounded
+    /// raster bomb vectors named in #2784; anything else is <see cref="RasterContainerFormat.Unknown"/>.
+    /// </summary>
+    internal static RasterContainerFormat ClassifyContainer(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 4)
         {
-            return false;
+            return RasterContainerFormat.Unknown;
         }
 
-        // TIFF / BigTIFF: "II" or "MM".
+        // TIFF / BigTIFF: "II" or "MM" byte-order mark.
         if ((data[0] == 0x49 && data[1] == 0x49) || (data[0] == 0x4D && data[1] == 0x4D))
         {
-            return TryReadGeoTiffDimensions(data, out dims);
+            return RasterContainerFormat.Tiff;
         }
 
         // PNG: 89 50 4E 47 0D 0A 1A 0A.
-        if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
+        if (data.Length >= 8
+            && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
             && data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A)
         {
-            return TryReadPngDimensions(data, out dims);
+            return RasterContainerFormat.Png;
+        }
+
+        // JPEG 2000 raw codestream: FF 4F FF 51 (SOC + SIZ). Checked before JPEG so the
+        // FF-lead does not collide.
+        if (data[0] == 0xFF && data[1] == 0x4F && data[2] == 0xFF && data[3] == 0x51)
+        {
+            return RasterContainerFormat.Jpeg2000;
         }
 
         // JPEG: SOI = FF D8.
         if (data[0] == 0xFF && data[1] == 0xD8)
         {
-            return TryReadJpegDimensions(data, out dims);
+            return RasterContainerFormat.Jpeg;
+        }
+
+        // JP2 box format: 00 00 00 0C 6A 50 20 20 0D 0A 87 0A (signature "jP  " box).
+        if (data.Length >= 12
+            && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x00 && data[3] == 0x0C
+            && data[4] == 0x6A && data[5] == 0x50 && data[6] == 0x20 && data[7] == 0x20
+            && data[8] == 0x0D && data[9] == 0x0A && data[10] == 0x87 && data[11] == 0x0A)
+        {
+            return RasterContainerFormat.Jpeg2000;
+        }
+
+        // GIF: "GIF8" (87a / 89a share this 4-byte lead).
+        if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38)
+        {
+            return RasterContainerFormat.Gif;
+        }
+
+        // BMP / DIB: "BM".
+        if (data[0] == 0x42 && data[1] == 0x4D)
+        {
+            return RasterContainerFormat.Bmp;
+        }
+
+        // NITF: "NITF".
+        if (data[0] == 0x4E && data[1] == 0x49 && data[2] == 0x54 && data[3] == 0x46)
+        {
+            return RasterContainerFormat.Nitf;
+        }
+
+        // Erdas Imagine HFA: files begin with the ASCII "EHFA_HEADER_TAG".
+        if (data[0] == 0x45 && data[1] == 0x48 && data[2] == 0x46 && data[3] == 0x41)
+        {
+            return RasterContainerFormat.Hfa;
+        }
+
+        return RasterContainerFormat.Unknown;
+    }
+
+    /// <summary>Canonical allowlist key for a classified format.</summary>
+    private static string FormatName(RasterContainerFormat format) => format switch
+    {
+        RasterContainerFormat.Tiff => "TIFF",
+        RasterContainerFormat.Png => "PNG",
+        RasterContainerFormat.Jpeg => "JPEG",
+        RasterContainerFormat.Jpeg2000 => "JPEG2000",
+        RasterContainerFormat.Gif => "GIF",
+        RasterContainerFormat.Bmp => "BMP",
+        RasterContainerFormat.Nitf => "NITF",
+        RasterContainerFormat.Hfa => "HFA",
+        _ => "UNKNOWN",
+    };
+
+    private static bool IsFormatAllowed(RasterContainerFormat format, GdalWorkerOptions options)
+    {
+        var name = FormatName(format);
+        foreach (var allowed in options.AllowedRasterInputFormats)
+        {
+            if (!string.IsNullOrWhiteSpace(allowed)
+                && string.Equals(allowed.Trim(), name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Reads declared dimensions from any of the compressible raster container
+    /// formats the worker ingests and that can be tiny-on-disk yet declare an
+    /// enormous canvas: TIFF / BigTIFF, PNG, and JPEG. Dispatches on the single
+    /// magic-byte classifier <see cref="ClassifyContainer"/> (rather than a second
+    /// copy of the magic table) — the guarded formats route to their per-format
+    /// reader; every other classification (the un-bounded bomb vectors and
+    /// <see cref="RasterContainerFormat.Unknown"/>) returns <c>false</c> so the
+    /// caller admits and lets GDAL adjudicate. Each per-format reader keeps its own
+    /// internal length guards.
+    /// </summary>
+    internal static bool TryReadRasterDimensions(ReadOnlySpan<byte> data, out RasterDimensions dims)
+    {
+        dims = default;
+        return ClassifyContainer(data) switch
+        {
+            RasterContainerFormat.Tiff => TryReadGeoTiffDimensions(data, out dims),
+            RasterContainerFormat.Png => TryReadPngDimensions(data, out dims),
+            RasterContainerFormat.Jpeg => TryReadJpegDimensions(data, out dims),
+            _ => false,
+        };
     }
 
     /// <summary>

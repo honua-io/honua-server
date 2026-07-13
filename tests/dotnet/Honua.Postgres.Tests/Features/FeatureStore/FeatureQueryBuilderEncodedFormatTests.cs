@@ -72,6 +72,46 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
     }
 
     [Fact]
+    public void GetGeometryGeoJsonExpression_NormalizesRingWinding()
+    {
+        var processor = new GeometryProcessor(geoJsonTextPrecision: 8);
+
+        var expression = processor.GetGeometryGeoJsonExpression(
+            Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType.Geometry,
+            new FeatureQuery());
+
+        // RFC 7946 §3.1.6 right-hand-rule enforcement (#2745).
+        expression.Should().Contain("ST_ForcePolygonCCW(");
+        expression.Should().Contain("ST_AsGeoJSON(ST_ForcePolygonCCW(");
+    }
+
+    [Fact]
+    public void GetGeometryGmlExpression_NormalizesRingWinding()
+    {
+        var processor = new GeometryProcessor(geoJsonTextPrecision: 8);
+
+        var expression = processor.GetGeometryGmlExpression(
+            Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType.Geometry,
+            new FeatureQuery());
+
+        // GML 3.2 / ISO 19107 surface patches require right-hand-rule winding (#2745).
+        expression.Should().Contain("ST_AsGML(3, ST_ForcePolygonCCW(");
+    }
+
+    [Fact]
+    public void GetGeometryKmlExpression_NormalizesRingWinding()
+    {
+        var processor = new GeometryProcessor(geoJsonTextPrecision: 8);
+
+        var expression = processor.GetGeometryKmlExpression(
+            Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType.Geometry,
+            new FeatureQuery());
+
+        // KML polygons use right-hand-rule winding (#2745).
+        expression.Should().Contain("ST_AsKML(ST_ForcePolygonCCW(");
+    }
+
+    [Fact]
     public void BuildSelectGeobufQuery_UsesPostGisEncoder()
     {
         var queryBuilder = CreateQueryBuilder();

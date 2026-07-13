@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Infrastructure.Geometries;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using NetTopologySuite.IO;
@@ -61,7 +62,7 @@ internal sealed class GeometryConverter : IGeometryConverter
             if (geometry == null)
                 return null;
 
-            var geoJsonString = _geoJsonWriter.Write(geometry);
+            var geoJsonString = RingWindingNormalizer.WriteGeoJson(_geoJsonWriter, geometry);
 
             // Return the GeoJSON string directly to avoid JsonElement AOT issues
             // The caller can parse this as needed for their specific JSON context
@@ -91,7 +92,7 @@ internal sealed class GeometryConverter : IGeometryConverter
             if (geometry == null)
                 return null;
 
-            var geoJsonString = _geoJsonWriter.Write(geometry);
+            var geoJsonString = RingWindingNormalizer.WriteGeoJson(_geoJsonWriter, geometry);
 
             return geoJsonString;
         }
