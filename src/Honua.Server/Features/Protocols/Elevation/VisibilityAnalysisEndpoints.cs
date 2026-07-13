@@ -29,6 +29,13 @@ internal static class VisibilityAnalysisEndpoints
     private const string LineOfSightEntitlement = "analytics.line-of-sight";
     private const string ViewshedEntitlement = "analytics.viewshed";
 
+    /// <summary>
+    /// Tolerance (in decimal degrees) for treating two WGS 84 coordinates as the same point
+    /// when checking for degenerate (identical observer/target) analysis requests. Avoids
+    /// exact double equality on user-supplied coordinates.
+    /// </summary>
+    private const double CoordinateEqualityEpsilon = 1e-9;
+
     public static IEndpointRouteBuilder MapVisibilityAnalysisEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // HANDLER-AUTHORIZED (#1144): these POST routes mirror the read-only
@@ -152,7 +159,8 @@ internal static class VisibilityAnalysisEndpoints
             }
         }
 
-        if (observerLon == targetLon && observerLat == targetLat)
+        if (Math.Abs(observerLon - targetLon) < CoordinateEqualityEpsilon &&
+            Math.Abs(observerLat - targetLat) < CoordinateEqualityEpsilon)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
