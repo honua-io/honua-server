@@ -115,10 +115,11 @@ public sealed class ImportUrlEndpointTests : IAsyncLifetime
             request.RequestUri.Should().NotBeNull();
             request.RequestUri!.ToString().Should().Be(expectedUrl);
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, contentType)
-            });
+            };
+            return Task.FromResult(response);
         }
     }
 }

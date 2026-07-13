@@ -64,9 +64,8 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
             }
         };
 
-        var response = await _client.PostAsync(
-            "/api/v1/admin/import/migrations",
-            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
+        using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync("/api/v1/admin/import/migrations", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -83,9 +82,8 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
     {
         var body = new { sourceKind = "arcgis-geoservices-rest", layers = Array.Empty<object>() };
 
-        var response = await _client.PostAsync(
-            "/api/v1/admin/import/migrations",
-            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
+        using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync("/api/v1/admin/import/migrations", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -103,9 +101,8 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
             }
         };
 
-        var response = await _client.PostAsync(
-            "/api/v1/admin/import/migrations",
-            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
+        using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync("/api/v1/admin/import/migrations", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -114,7 +111,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/import/migrations/{batchId}")]
     public async Task GetBatch_WhenUnknown_ReturnsNotFound()
     {
-        var response = await _client.GetAsync("/api/v1/admin/import/migrations/does-not-exist");
+        using var response = await _client.GetAsync("/api/v1/admin/import/migrations/does-not-exist");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -158,7 +155,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 UpdatedAt = now
             });
 
-        var response = await _client.GetAsync("/api/v1/admin/import/migrations/batch-001");
+        using var response = await _client.GetAsync("/api/v1/admin/import/migrations/batch-001");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("batchId").GetString().Should().Be("batch-001");
