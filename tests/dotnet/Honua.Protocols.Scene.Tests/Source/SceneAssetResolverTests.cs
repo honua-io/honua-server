@@ -24,6 +24,9 @@ public sealed class SceneAssetResolverTests : IDisposable
 
     public SceneAssetResolverTests()
     {
+        // Every Path.Combine call in this constructor combines an absolute root
+        // (temp path, or a directory derived from it) with relative literal
+        // segments, so earlier arguments cannot be silently dropped.
         _root = Path.Combine(Path.GetTempPath(), "honua-scene-resolver-" + Path.GetRandomFileName());
         Directory.CreateDirectory(_root);
         Directory.CreateDirectory(Path.Combine(_root, "tiles"));
@@ -33,6 +36,7 @@ public sealed class SceneAssetResolverTests : IDisposable
         // A sibling directory the resolver must never reach. Used by the
         // symlink-escape test to verify that links inside the asset root
         // cannot redirect file I/O to an outside target.
+        // Same reasoning: an absolute directory combined with a relative literal.
         _siblingRoot = Path.Combine(Path.GetDirectoryName(_root)!, "honua-scene-resolver-sibling-" + Path.GetRandomFileName());
         Directory.CreateDirectory(_siblingRoot);
         _siblingSecretPath = Path.Combine(_siblingRoot, "secret.txt");
@@ -206,6 +210,8 @@ public sealed class SceneAssetResolverTests : IDisposable
         // Lexical prefix tests already prove `..` and absolute-path inputs are
         // rejected; this case covers the subtler attack where a symlink under
         // AssetRoot points to a real file outside of it.
+        // _root is absolute; "escape-link" is a relative literal, so
+        // Path.Combine cannot silently drop it.
         var linkPath = Path.Combine(_root, "escape-link");
 
         try

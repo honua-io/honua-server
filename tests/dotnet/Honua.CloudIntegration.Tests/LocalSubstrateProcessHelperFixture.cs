@@ -48,6 +48,7 @@ public sealed class LocalSubstrateProcessHelperFixture : IAsyncLifetime
             }
 
             _workDir = Directory.CreateTempSubdirectory("honua-ls-gp").FullName;
+            // "honua-envprobe.dll" is a fixed relative literal, so Path.Combine cannot drop _workDir.
             HelperDllPath = Path.Combine(_workDir, "honua-envprobe.dll");
             EmitHelperAssembly(HelperDllPath);
             WriteRuntimeConfig(Path.ChangeExtension(HelperDllPath, ".runtimeconfig.json"));
@@ -191,6 +192,8 @@ public sealed class LocalSubstrateProcessHelperFixture : IAsyncLifetime
         var dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
         if (!string.IsNullOrWhiteSpace(dotnetRoot))
         {
+            // muxerName is always the literal "dotnet"/"dotnet.exe", never rooted, so it cannot
+            // cause Path.Combine to drop dotnetRoot.
             var fromRoot = Path.Combine(dotnetRoot, muxerName);
             if (File.Exists(fromRoot))
             {
@@ -203,6 +206,7 @@ public sealed class LocalSubstrateProcessHelperFixture : IAsyncLifetime
         var root = new DirectoryInfo(runtimeDir).Parent?.Parent?.Parent;
         if (root is not null)
         {
+            // Same literal muxerName as above; Path.Combine cannot drop root.FullName here either.
             var fromRuntime = Path.Combine(root.FullName, muxerName);
             if (File.Exists(fromRuntime))
             {

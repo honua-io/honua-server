@@ -24,6 +24,8 @@ public sealed class OgcFeaturesSpatialReferenceTestsFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All segments are relative literal path fragments (not user input), so none can be
+        // rooted and silently drop earlier arguments.
         App.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await App.InitializeAsync();
 
@@ -119,11 +121,11 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
         var projectedCoordinates = await SpatialReferenceTestData.GetGeometryCoordinatesAsync(
             _fixture.Postgres,
             schema,
-            featureId.Value,
+            featureId!.Value,
             SpatialReferenceTestLayerCatalog.PointLayerId);
         projectedCoordinates.Should().NotBeNull();
         projectedCoordinates!.Value.X.Should().BeApproximately(-13627665.27, 2d);
-        projectedCoordinates.Value.Y.Should().BeApproximately(4547675.35, 2d);
+        projectedCoordinates!.Value.Y.Should().BeApproximately(4547675.35, 2d);
 
         created.Geometry.Should().NotBeNull();
         var createdCoordinates = JsonDocument.Parse(created.Geometry!.CoordinatesJson!).RootElement.EnumerateArray().ToArray();
@@ -197,11 +199,11 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
         var coordinates = await SpatialReferenceTestData.GetGeometryCoordinatesAsync(
             _fixture.Postgres,
             schema,
-            featureId.Value,
+            featureId!.Value,
             SpatialReferenceTestLayerCatalog.PointLayerId);
         coordinates.Should().NotBeNull();
         coordinates!.Value.X.Should().BeApproximately(1000, 1e-6);
-        coordinates.Value.Y.Should().BeApproximately(2000, 1e-6);
+        coordinates!.Value.Y.Should().BeApproximately(2000, 1e-6);
     }
 
     [IntegrationTest]

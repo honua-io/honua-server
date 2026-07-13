@@ -170,6 +170,10 @@ public sealed class SceneOpenUsdManifestReaderTests
         string tilesetJson,
         params (string RelativePath, string Content)[] additionalFiles)
     {
+        // `root` is absolute; "tileset.json" is a relative literal, and
+        // `relativePath` below is always a relative literal supplied by callers
+        // in this file's test cases, so Path.Combine cannot silently drop
+        // earlier arguments.
         var root = Path.Combine(Path.GetTempPath(), "honua-openusd-reader-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         File.WriteAllText(Path.Combine(root, "tileset.json"), tilesetJson);

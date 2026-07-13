@@ -331,6 +331,9 @@ public sealed class SceneOpenUsdManifestEndpointTests
 
     private static string CreateTempSceneRoot(string tilesetJson)
     {
+        // Both Path.Combine calls combine an absolute root (temp path, or `root`
+        // derived from it) with relative literal segments, so earlier arguments
+        // cannot be silently dropped.
         var root = Path.Combine(Path.GetTempPath(), "honua-openusd-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         File.WriteAllText(Path.Combine(root, "tileset.json"), tilesetJson);

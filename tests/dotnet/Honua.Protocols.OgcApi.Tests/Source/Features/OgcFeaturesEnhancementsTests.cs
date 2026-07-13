@@ -1033,7 +1033,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithGeoJsonRejectedAndWildcardAllowed_UsesAlternateFeatureFormat()
     {
-        var request = new HttpRequestMessage(
+        using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"/ogc/features/collections/{TestCollectionId}/items?limit=1");
         request.Headers.TryAddWithoutValidation("Accept", "application/geo+json;q=0, */*;q=1");
@@ -1158,14 +1158,9 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
             {
                 var idProperty = feature.GetProperty("id");
                 // Handle both string and number cases for id field
-                if (idProperty.ValueKind == JsonValueKind.String)
-                {
-                    return long.Parse(idProperty.GetString()!, System.Globalization.CultureInfo.InvariantCulture);
-                }
-                else
-                {
-                    return idProperty.GetInt64();
-                }
+                return idProperty.ValueKind == JsonValueKind.String
+                    ? long.Parse(idProperty.GetString()!, System.Globalization.CultureInfo.InvariantCulture)
+                    : idProperty.GetInt64();
             })
             .OrderBy(id => id)
             .ToArray();
