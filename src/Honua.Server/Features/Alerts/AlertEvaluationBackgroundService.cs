@@ -71,71 +71,71 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         _isRunning = true;
         try
         {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                // Heartbeat every iteration so the health check can prove the loop is alive
-                // independently of whether this node currently leads.
-                Interlocked.Exchange(ref _lastHeartbeatAtTicks, DateTimeOffset.UtcNow.UtcTicks);
-
-                var isLeader = await _leaderElection.TryAcquireAsync(stoppingToken).ConfigureAwait(false);
-                UpdateLeaderAcquisitionState();
-                if (!isLeader)
+                try
                 {
-                    await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
-                    continue;
-                }
+                    // Heartbeat every iteration so the health check can prove the loop is alive
+                    // independently of whether this node currently leads.
+                    Interlocked.Exchange(ref _lastHeartbeatAtTicks, DateTimeOffset.UtcNow.UtcTicks);
 
-                await using var scope = _scopeFactory.CreateAsyncScope();
-                var pipeline = scope.ServiceProvider.GetRequiredService<IAlertPipeline>();
-                var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
+                    var isLeader = await _leaderElection.TryAcquireAsync(stoppingToken).ConfigureAwait(false);
+                    UpdateLeaderAcquisitionState();
+                    if (!isLeader)
+                    {
+                        await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
 
-                var previousGeneration = checkpoint.LastGeneration;
-                var nextGeneration = await pipeline
-                    .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, stoppingToken)
-                    .ConfigureAwait(false);
+                    await using var scope = _scopeFactory.CreateAsyncScope();
+                    var pipeline = scope.ServiceProvider.GetRequiredService<IAlertPipeline>();
+                    var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
 
-                var now = DateTimeOffset.UtcNow;
-                var shouldSweep = !checkpoint.LastDwellSweepAt.HasValue ||
-                    now - checkpoint.LastDwellSweepAt.Value >= _options.Evaluation.DwellSweepInterval;
-
-                if (shouldSweep)
-                {
-                    var evaluated = await pipeline
-                        .SweepDwellAsync(now, _options.Evaluation.ChangeBatchSize, stoppingToken)
+                    var previousGeneration = checkpoint.LastGeneration;
+                    var nextGeneration = await pipeline
+                        .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, stoppingToken)
                         .ConfigureAwait(false);
-                    LogDwellSweep(_logger, evaluated);
-                    checkpoint = checkpoint with { LastDwellSweepAt = now };
+
+                    var now = DateTimeOffset.UtcNow;
+                    var shouldSweep = !checkpoint.LastDwellSweepAt.HasValue ||
+                        now - checkpoint.LastDwellSweepAt.Value >= _options.Evaluation.DwellSweepInterval;
+
+                    if (shouldSweep)
+                    {
+                        var evaluated = await pipeline
+                            .SweepDwellAsync(now, _options.Evaluation.ChangeBatchSize, stoppingToken)
+                            .ConfigureAwait(false);
+                        LogDwellSweep(_logger, evaluated);
+                        checkpoint = checkpoint with { LastDwellSweepAt = now };
+                    }
+
+                    if (nextGeneration != previousGeneration || shouldSweep)
+                    {
+                        checkpoint = checkpoint with { LastGeneration = nextGeneration };
+                        await checkpointStore.SetAsync(checkpoint, stoppingToken).ConfigureAwait(false);
+                    }
+
+                    // Record a productive leader-pass heartbeat: this node holds leadership and
+                    // completed a pass, so a stale value here means the leader is wedged.
+                    Interlocked.Exchange(ref _lastLeaderPassAtTicks, DateTimeOffset.UtcNow.UtcTicks);
+
+                    // Delay only when the batch made no progress; a productive batch loops
+                    // immediately so a change backlog drains at full speed.
+                    if (nextGeneration == previousGeneration && !shouldSweep)
+                    {
+                        await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
+                    }
                 }
-
-                if (nextGeneration != previousGeneration || shouldSweep)
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    checkpoint = checkpoint with { LastGeneration = nextGeneration };
-                    await checkpointStore.SetAsync(checkpoint, stoppingToken).ConfigureAwait(false);
+                    break;
                 }
-
-                // Record a productive leader-pass heartbeat: this node holds leadership and
-                // completed a pass, so a stale value here means the leader is wedged.
-                Interlocked.Exchange(ref _lastLeaderPassAtTicks, DateTimeOffset.UtcNow.UtcTicks);
-
-                // Delay only when the batch made no progress; a productive batch loops
-                // immediately so a change backlog drains at full speed.
-                if (nextGeneration == previousGeneration && !shouldSweep)
+                catch (Exception ex)
                 {
+                    LogLoopFailed(_logger, ex);
                     await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                LogLoopFailed(_logger, ex);
-                await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
-            }
-        }
         }
         finally
         {
