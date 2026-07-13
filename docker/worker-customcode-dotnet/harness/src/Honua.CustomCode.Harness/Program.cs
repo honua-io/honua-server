@@ -15,7 +15,7 @@ Console.CancelKeyPress += (_, e) =>
 AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
 
 // Honor SIGTERM (Batch sends it on cancel/timeout) as cooperative cancellation.
-System.Runtime.InteropServices.PosixSignalRegistration.Create(
+using var sigtermRegistration = System.Runtime.InteropServices.PosixSignalRegistration.Create(
     System.Runtime.InteropServices.PosixSignal.SIGTERM,
     ctx =>
     {

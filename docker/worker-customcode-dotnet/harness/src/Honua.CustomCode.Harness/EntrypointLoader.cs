@@ -48,6 +48,12 @@ public sealed class EntrypointLoader
         var assemblyName = parts[0];
         var typeName = parts[1];
 
+        if (!IsSimpleAssemblyName(assemblyName))
+        {
+            throw new EntrypointException(
+                $"entrypoint assembly '{assemblyName}' must be a simple name (no path separators, not rooted, no '..').");
+        }
+
         Assembly assembly;
         try
         {
@@ -101,6 +107,20 @@ public sealed class EntrypointLoader
         return context.LoadFromAssemblyPath(path);
     }
 
+    /// <summary>
+    /// True when <paramref name="name"/> is safe to combine with a directory to form a
+    /// probe path: non-empty, no path separators, not rooted/absolute, and no <c>..</c>
+    /// segment. Assembly names here originate from job-supplied entrypoints or from a
+    /// user-built assembly's own dependency metadata, so a rooted/escaping name must
+    /// never be trusted to silently resolve outside the build output directory.
+    /// </summary>
+    private static bool IsSimpleAssemblyName(string? name) =>
+        !string.IsNullOrEmpty(name) &&
+        !name.Contains('/') &&
+        !name.Contains('\\') &&
+        !name.Contains("..", StringComparison.Ordinal) &&
+        !Path.IsPathRooted(name);
+
     private sealed class UserAssemblyLoadContext(string probeDirectory) : AssemblyLoadContext
     {
         private readonly AssemblyDependencyResolver _resolver = new(probeDirectory);
@@ -115,7 +135,7 @@ public sealed class EntrypointLoader
             }
 
             // Fall back to a sibling DLL in the build output (deps copied next to the tool).
-            if (assemblyName.Name is { } name)
+            if (assemblyName.Name is { } name && IsSimpleAssemblyName(name))
             {
                 var candidate = Path.Combine(_probeDirectory, name + ".dll");
                 if (File.Exists(candidate))
