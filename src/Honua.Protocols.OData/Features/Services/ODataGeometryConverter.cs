@@ -83,12 +83,9 @@ internal static class ODataGeometryConverter
             return GeometryConversionResult.Failure("Geometry coordinates are required.");
         }
 
-        if (geometry.Crs != null)
+        if (geometry.Crs != null && !crsDefinition.HasValue)
         {
-            if (!crsDefinition.HasValue)
-            {
-                return GeometryConversionResult.Failure("Unsupported geometry CRS.");
-            }
+            return GeometryConversionResult.Failure("Unsupported geometry CRS.");
         }
 
         var srid = crsDefinition?.Srid ?? defaultSrid;

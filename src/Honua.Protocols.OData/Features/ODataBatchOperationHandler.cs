@@ -42,12 +42,11 @@ internal sealed partial class ODataBatchOperationHandler(
         HttpContext context,
         CancellationToken cancellationToken = default)
     {
-        Activity? activity = null;
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.FeatureEdit,
+            ActivityKind.Internal);
         try
         {
-            activity = HonuaTelemetry.ActivitySource.StartActivity(
-                HonuaTelemetry.Activities.FeatureEdit,
-                ActivityKind.Internal);
             activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
             activity?.SetTag(HonuaTelemetry.Tags.Operation, "batch");
 
@@ -127,16 +126,14 @@ internal sealed partial class ODataBatchOperationHandler(
         {
             throw;
         }
+        // Intentional broad catch: this is the request-handling boundary for $batch; the
+        // exception is logged (Log.BatchFailed) and mapped to an OData-format 500 error.
         catch (Exception ex)
         {
             HonuaTelemetry.RecordException(activity, ex);
             Log.BatchFailed(_logger, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the batch request", 500);
-        }
-        finally
-        {
-            activity?.Dispose();
         }
     }
 
@@ -718,16 +715,13 @@ internal sealed partial class ODataBatchOperationHandler(
             return true;
         }
 
-        if (request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) && request.Body != null)
+        if (request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+            request.Body != null &&
+            ODataFeaturePayloadParser.TryParse(request.Body, out var payload, out _) &&
+            payload.LayerId.HasValue)
         {
-            if (ODataFeaturePayloadParser.TryParse(request.Body, out var payload, out _))
-            {
-                if (payload.LayerId.HasValue)
-                {
-                    layerId = payload.LayerId.Value;
-                    return true;
-                }
-            }
+            layerId = payload.LayerId.Value;
+            return true;
         }
 
         return false;

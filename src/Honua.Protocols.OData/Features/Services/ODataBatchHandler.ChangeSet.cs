@@ -423,6 +423,9 @@ internal sealed partial class ODataBatchHandler
                         break;
                 }
             }
+            // Intentional broad catch: a single malformed request within a changeset must not
+            // abort the rest of the batch; already logged (Log.BatchRequestParseFailed) and
+            // mapped to a per-request OData-format 400 error, with atomicity rollback below.
             catch (Exception ex)
             {
                 Log.BatchRequestParseFailed(_logger, request.Id, ex);
@@ -599,7 +602,7 @@ internal sealed partial class ODataBatchHandler
                     for (var i = 0; i < result.CreateResults.Length && i < layerCreates.Count; i++)
                     {
                         var createResult = result.CreateResults[i];
-                        var (requestId, requestedFeature, _) = layerCreates[i];
+                        var (requestId, _, _) = layerCreates[i];
 
                         if (createResult.IsSuccess && createResult.ObjectId.HasValue)
                         {
@@ -713,6 +716,9 @@ internal sealed partial class ODataBatchHandler
                 }
             }
         }
+        // Intentional broad catch: this wraps the whole atomic-group transaction; already
+        // logged (Log.BatchAtomicGroupFailed) and every write in the group is mapped to a
+        // per-request OData-format 500 error below so atomicity semantics are preserved.
         catch (Exception ex)
         {
             Log.BatchAtomicGroupFailed(_logger, ex);

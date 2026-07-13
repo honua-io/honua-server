@@ -122,13 +122,11 @@ internal static partial class ODataComputeService
         }
 
         var func = ODataComputeFunction.None;
-        if (match.Groups["func"].Success && match.Groups["func"].Value.Length > 0)
+        if (match.Groups["func"].Success && match.Groups["func"].Value.Length > 0 &&
+            !TryMapFunction(match.Groups["func"].Value, out func))
         {
-            if (!TryMapFunction(match.Groups["func"].Value, out func))
-            {
-                errorMessage = $"Unsupported $compute function '{match.Groups["func"].Value}'.";
-                return false;
-            }
+            errorMessage = $"Unsupported $compute function '{match.Groups["func"].Value}'.";
+            return false;
         }
 
         var left = match.Groups["left"].Value;

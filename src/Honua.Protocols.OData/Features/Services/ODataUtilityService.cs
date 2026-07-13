@@ -392,16 +392,9 @@ internal static class ODataUtilityService
             return false;
         }
 
-        foreach (var token in preferHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (token.Equals(TrackChangesPreferenceValue, StringComparison.OrdinalIgnoreCase) ||
-                token.Equals("track-changes", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return preferHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(token => token.Equals(TrackChangesPreferenceValue, StringComparison.OrdinalIgnoreCase) ||
+                          token.Equals("track-changes", StringComparison.OrdinalIgnoreCase));
     }
 
     public static bool RequestsTrackChanges(HttpRequest request)
@@ -1089,9 +1082,8 @@ internal static class ODataUtilityService
             return true;
         }
 
-        foreach (var parameter in parts.Skip(1))
+        foreach (var kvp in parts.Skip(1).Select(parameter => parameter.Split('=', 2, StringSplitOptions.TrimEntries)))
         {
-            var kvp = parameter.Split('=', 2, StringSplitOptions.TrimEntries);
             if (kvp.Length != 2)
             {
                 continue;
@@ -1117,9 +1109,8 @@ internal static class ODataUtilityService
     private static double ResolveQualityFactor(string mediaType)
     {
         var parameters = mediaType.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (var parameter in parameters.Skip(1))
+        foreach (var kvp in parameters.Skip(1).Select(parameter => parameter.Split('=', 2, StringSplitOptions.TrimEntries)))
         {
-            var kvp = parameter.Split('=', 2, StringSplitOptions.TrimEntries);
             if (kvp.Length != 2 || !kvp[0].Equals("q", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
