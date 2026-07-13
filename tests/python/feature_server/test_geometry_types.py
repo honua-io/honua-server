@@ -196,8 +196,6 @@ class TestGeometryTypes:
         geometry_generator: GeometryGenerator,
     ):
         """Add and retrieve a feature with null geometry."""
-        null_geom = geometry_generator.null_geometry()
-
         adds = [
             {
                 "geometry": None,

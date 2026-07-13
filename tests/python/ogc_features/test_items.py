@@ -18,11 +18,9 @@ import pytest
 import httpx
 from shapely.geometry import shape
 
-from shared.geometry import GeometryGenerator, TestGeometry
 from conftest import (
     assert_geojson_feature_collection,
     assert_geojson_feature,
-    validate_geometry_with_shapely,
 )
 
 
@@ -422,7 +420,10 @@ class TestItemsGeometry:
         # Just verify we can handle null geometries without error
         for feature in features:
             geometry = feature.get("geometry")
-            # geometry can be None (null) - this is valid
+            # geometry can be None (null) - this is valid; otherwise it must
+            # be a well-formed GeoJSON geometry object
+            if geometry is not None:
+                assert "type" in geometry
 
     @pytest.mark.integration
     @pytest.mark.ogc

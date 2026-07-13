@@ -1515,7 +1515,6 @@ class TestDataBuilder:
         additional_values: dict[str, Any] | None = None,
     ) -> "TestDataBuilder":
         """Insert a feature from GeoJSON geometry."""
-        import json
 
         def action():
             columns = ["name", "geom"]

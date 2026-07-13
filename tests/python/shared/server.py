@@ -13,7 +13,6 @@ Provides:
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -169,7 +168,7 @@ class HonuaServer:
                 if response.status_code == 200:
                     return
             except httpx.RequestError:
-                pass
+                pass  # server not accepting connections yet; keep polling until timeout
 
             # Check if process died
             if self._process and self._process.poll() is not None:
