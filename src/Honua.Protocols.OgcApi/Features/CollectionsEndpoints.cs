@@ -53,7 +53,7 @@ internal static class CollectionsEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapCollectionsEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var collections = endpoints.MapGet("/ogc/features/collections", HandleGetCollections)
+        endpoints.MapGet("/ogc/features/collections", HandleGetCollections)
             .WithDisplayName("OGC API Features Collections")
             .WithName("CollectionInfos")
             .WithSummary("Get OGC API Features collections")
@@ -64,7 +64,7 @@ internal static class CollectionsEndpoints
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
-        var collection = endpoints.MapGet("/ogc/features/collections/{collectionId}", HandleGetCollection)
+        endpoints.MapGet("/ogc/features/collections/{collectionId}", HandleGetCollection)
             .WithDisplayName("OGC API Features Collection")
             .WithName("CollectionInfo")
             .WithSummary("Get OGC API Features collection metadata")
@@ -75,7 +75,7 @@ internal static class CollectionsEndpoints
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
-        var queryables = endpoints.MapGet("/ogc/features/collections/{collectionId}/queryables", HandleGetQueryables)
+        endpoints.MapGet("/ogc/features/collections/{collectionId}/queryables", HandleGetQueryables)
             .WithDisplayName("OGC API Features Queryables")
             .WithName("Queryables")
             .WithSummary("Get OGC API Features queryables schema")
