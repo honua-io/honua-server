@@ -635,8 +635,19 @@ internal static class DeployControlEndpoints
                 string.Join(" ", failures));
         }
 
+        if (release is null)
+        {
+            // Unreachable: PlatformReleaseValidation always adds a failure when release is
+            // null, and the check above already returned in that case. Guard explicitly
+            // rather than null-forgiving so this stays correct if that invariant changes.
+            return Results.Problem(
+                title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status500InternalServerError),
+                detail: "Platform release validation state is inconsistent.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
         // Co-versioning validation guarantees a serving artifact is declared.
-        var declaredServing = release!.ServingArtifactReference!;
+        var declaredServing = release.ServingArtifactReference!;
         var declaredVersion = release.Version;
 
         // Converge routes through the guardrail gateway like any Deploy (no direct-execute bypass). The

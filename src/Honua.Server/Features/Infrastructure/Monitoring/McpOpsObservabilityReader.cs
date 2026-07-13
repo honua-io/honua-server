@@ -72,7 +72,8 @@ internal sealed class McpOpsObservabilityReader(
 
         if (severity is not null)
         {
-            filtered = filtered.Where(f => f.Severity == severity.Value);
+            var severityValue = severity.Value;
+            filtered = filtered.Where(f => f.Severity == severityValue);
         }
 
         if (!string.IsNullOrWhiteSpace(argument.Rule))

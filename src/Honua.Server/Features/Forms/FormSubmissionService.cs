@@ -1032,7 +1032,8 @@ internal sealed class FormSubmissionService
         FormFieldAttachmentPolicy? fieldPolicy,
         string contentType)
     {
-        if (fieldPolicy?.AllowedContentTypes.Length > 0 &&
+        if (fieldPolicy is not null &&
+            fieldPolicy.AllowedContentTypes.Length > 0 &&
             !ContentTypeAllowed(fieldPolicy.AllowedContentTypes, contentType))
         {
             return false;
