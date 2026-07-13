@@ -80,6 +80,12 @@ internal static partial class SamlEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
+        // codeql[cs/user-controlled-bypass]: HasFormContentType only gates whether the request
+        // body is parsed as a form at all; it does not gate authentication. The session-creation
+        // call below (CreateAuthenticatedSessionAsync) is reached only after the SAML assertion
+        // passes SamlAssertionValidator.Validate (signature, issuer, audience, and
+        // NotBefore/NotOnOrAfter checks) — a server-side cryptographic decision an attacker
+        // cannot influence via this header.
         if (!context.Request.HasFormContentType)
         {
             return BadRequest(context, "Expected an HTTP-POST SAML response form.");

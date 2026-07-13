@@ -107,6 +107,17 @@ text after this PR lands so a future audit can trace each closure back to a
 written justification (in-source comment for the three annotated sites,
 remediation-table row + wrapper for the two Postgres sites).
 
+## CodeQL user-controlled-bypass triage
+
+| File:line | Rule | Disposition | Rationale |
+| --- | --- | --- | --- |
+| `src/Honua.Server/Features/Identity/Saml/SamlEndpoints.cs:83` (alert [#3059](https://github.com/honua-io/honua-server/security/code-scanning/3059)) | `cs/user-controlled-bypass` | dismiss | CodeQL reports `context.Request.HasFormContentType` (line 83) as a user-controlled condition guarding the session-creation call in `HandleAssertionConsumerService` (`AdminAuthSessionStore.CreateAuthenticatedSessionAsync`, ~line 164). The flagged condition is only a request-parsing precondition (whether to call `ReadFormAsync` at all); the actual authentication decision is `result.Succeeded` (line ~106), which comes from `SamlAssertionValidator.Validate` performing real cryptographic signature verification (`SamlSignatureVerifier.Verify`), issuer matching, and `NotBefore`/`NotOnOrAfter`/audience condition checks. An attacker cannot influence `HasFormContentType` in a way that skips assertion validation — every path to session creation still requires a signed, unexpired, correctly-issued SAML assertion. In-source `// codeql[cs/user-controlled-bypass]` annotation present. |
+
+Same audit-follow-up pattern as the SQL/XML dismissals below: the in-source
+`// codeql[cs/user-controlled-bypass]` comment above `SamlEndpoints.cs:83` is
+the reviewable rationale trail, and the corresponding GitHub-UI dismissal
+should reference this row.
+
 ## SARIF upload changes
 
 - `.github/workflows/security-nightly.yml` — both Trivy SARIF generation steps
