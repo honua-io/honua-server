@@ -346,12 +346,12 @@ public sealed class OpsFindingsServiceTests
         });
 
         // Take the single slot (utilization -> 1.0) then force a genuine acquisition timeout.
-        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
-        (await gate.WaitAsync(CancellationToken.None)).Should().BeFalse();
+        Assert.True(await gate.WaitAsync(CancellationToken.None));
+        Assert.False(await gate.WaitAsync(CancellationToken.None));
 
         var reading = ((IDatabaseAdmissionPressureSource)gate).GetPressureReading();
-        reading.Utilization.Should().Be(1.0);
-        reading.AcquisitionTimeoutsInWindow.Should().BeGreaterThanOrEqualTo(1);
+        Assert.Equal(1.0, reading.Utilization);
+        Assert.True(reading.AcquisitionTimeoutsInWindow >= 1);
 
         var signal = new AdmissionGateDatabasePressureSignal(gate);
         var options = new OpsFindingsOptions
