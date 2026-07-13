@@ -128,9 +128,10 @@ public sealed class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
 
         var extent = await _store.GetExtentAsync(LayerId, null);
         Assert.NotNull(extent);
-        Assert.Equal(4326, extent!.Value.SpatialReference);
-        Assert.True(extent.Value.MinX < extent.Value.MaxX);
-        Assert.True(extent.Value.MinY < extent.Value.MaxY);
+        var extentValue = extent!.Value;
+        Assert.Equal(4326, extentValue.SpatialReference);
+        Assert.True(extentValue.MinX < extentValue.MaxX);
+        Assert.True(extentValue.MinY < extentValue.MaxY);
     }
 
     [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]

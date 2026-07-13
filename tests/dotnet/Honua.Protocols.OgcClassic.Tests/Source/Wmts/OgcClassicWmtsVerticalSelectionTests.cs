@@ -28,10 +28,11 @@ public sealed class OgcClassicWmtsVerticalSelectionTests
 
         parsed.Should().BeTrue();
         selection.Should().NotBeNull();
-        selection!.Value.Min.Should().Be(200);
-        selection.Value.Max.Should().Be(200);
-        selection.Value.IsInstant.Should().BeTrue();
-        selection.Value.RawValue.Should().Be("200");
+        var selectionValue = selection!.Value;
+        selectionValue.Min.Should().Be(200);
+        selectionValue.Max.Should().Be(200);
+        selectionValue.IsInstant.Should().BeTrue();
+        selectionValue.RawValue.Should().Be("200");
     }
 
     [UnitTest]

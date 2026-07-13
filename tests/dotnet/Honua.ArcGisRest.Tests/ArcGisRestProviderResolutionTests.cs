@@ -175,9 +175,10 @@ public class ArcGisRestProviderResolutionTests
         var extent = await reader.GetExtentAsync(LayerId);
 
         Assert.NotNull(extent);
-        Assert.Equal(-180, extent!.Value.MinX);
-        Assert.Equal(180, extent.Value.MaxX);
-        Assert.Equal(4326, extent.Value.SpatialReference);
+        var extentValue = extent!.Value;
+        Assert.Equal(-180, extentValue.MinX);
+        Assert.Equal(180, extentValue.MaxX);
+        Assert.Equal(4326, extentValue.SpatialReference);
     }
 
     [Fact]

@@ -36,9 +36,8 @@ public sealed class SensorThingsWriteAuthorizationTests : IAsyncLifetime
     [Trait("Tier", "Fast")]
     public async Task PostObservation_AnonymousWhenAnonymousWritesDisabled_ReturnsUnauthorizedBeforeBodyValidation()
     {
-        var response = await _fixture.Client.PostAsync(
-            "/sta/v1.1/Observations",
-            new StringContent("{", Encoding.UTF8, "application/json"));
+        using var content = new StringContent("{", Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/sta/v1.1/Observations", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -51,7 +50,7 @@ public sealed class SensorThingsWriteAuthorizationTests : IAsyncLifetime
     public async Task PostObservation_WithAdminApiKeyWhenAnonymousWritesDisabled_CreatesObservation()
     {
         using var adminClient = _fixture.CreateAdminClient();
-        var payload = new StringContent(
+        using var payload = new StringContent(
             """{ "result": 8.25, "Datastream": { "@iot.id": 1 } }""",
             Encoding.UTF8,
             "application/json");
@@ -94,7 +93,7 @@ public sealed class SensorThingsAnonymousWriteOptInTests : IAsyncLifetime
     [Trait("Tier", "Fast")]
     public async Task PostObservation_WhenAnonymousWritesDangerouslyEnabled_AllowsAnonymousWrite()
     {
-        var payload = new StringContent(
+        using var payload = new StringContent(
             """{ "result": 9.5, "Datastream": { "@iot.id": 1 } }""",
             Encoding.UTF8,
             "application/json");

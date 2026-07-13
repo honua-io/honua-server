@@ -231,7 +231,10 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
                 for (var column = 0; column < columns; column++)
                 {
                     var offset = ((level * rows + row) * columns + column) * sizeof(float);
-                    Buffer.BlockCopy(BitConverter.GetBytes((float)(level * 1000 + row * 10 + column)), 0, values, offset, sizeof(float));
+                    // Widen to long before the narrowing multiplications so the analyzer (and any future
+                    // caller with larger levels/rows) can't see an int overflow before the cast to float.
+                    var value = (float)((long)level * 1000 + (long)row * 10 + column);
+                    Buffer.BlockCopy(BitConverter.GetBytes(value), 0, values, offset, sizeof(float));
                 }
             }
         }
@@ -263,6 +266,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
         {
             var data = Get(key);
+            // Ownership transfers to the returned Stream's caller, which disposes it after reading.
             return Task.FromResult<Stream>(new MemoryStream(
                 data,
                 checked((int)offset),
@@ -285,6 +289,9 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
             int layerId,
             ZarrRasterSliceReadRequest request,
             CancellationToken cancellationToken = default)
+            // Exact equality is intentional: both sides are integer-valued doubles (the request
+            // literal "666" is parsed straight to 666.0 with no arithmetic in between), so this is
+            // a deterministic sentinel match, not a genuine floating-point precision comparison.
             => request.Selections.Any(static selection => selection.Coordinate == 666)
                 ? Task.FromResult(new ZarrRasterSliceReadResult(
                     ZarrRasterSliceReadStatus.ReaderUnavailable,

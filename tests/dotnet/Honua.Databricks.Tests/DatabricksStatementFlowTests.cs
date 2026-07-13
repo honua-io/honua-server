@@ -197,8 +197,9 @@ public class DatabricksStatementFlowTests
             Mapping, DatabricksSqlStatement.WithoutParameters("SELECT extent"), CancellationToken.None);
 
         Assert.NotNull(extent);
-        Assert.Equal(-10.5, extent!.Value.MinX);
-        Assert.Equal(5.25, extent.Value.MaxY);
-        Assert.Equal(4326, extent.Value.SpatialReference);
+        var extentValue = extent!.Value;
+        Assert.Equal(-10.5, extentValue.MinX);
+        Assert.Equal(5.25, extentValue.MaxY);
+        Assert.Equal(4326, extentValue.SpatialReference);
     }
 }
