@@ -97,8 +97,13 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
             WorkflowOperationStatus.Reconciling,
             "the first transient blip must NOT page an operator — it stays re-drivable and retries");
 
-        updated.Should().NotBeNull();
-        updated!.Status.Should().Be(
+        if (updated is null)
+        {
+            Assert.Fail("Reconciliation loop never produced an updated operation record.");
+            return;
+        }
+
+        updated.Status.Should().Be(
             WorkflowOperationStatus.ManualInterventionRequired,
             "a rollback that never settles after the bounded retries must escalate, not loop forever");
         updated.CompletedAt.Should().NotBeNull();

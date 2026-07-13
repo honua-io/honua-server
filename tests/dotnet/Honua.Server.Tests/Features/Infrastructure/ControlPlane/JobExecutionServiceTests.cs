@@ -708,7 +708,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        var stoppingCts = new CancellationTokenSource();
+        using var stoppingCts = new CancellationTokenSource();
 
         var executor = Substitute.For<IJobExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
@@ -773,7 +773,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        var stoppingCts = new CancellationTokenSource();
+        using var stoppingCts = new CancellationTokenSource();
 
         var executor = Substitute.For<IJobExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
@@ -934,7 +934,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        var stoppingCts = new CancellationTokenSource();
+        using var stoppingCts = new CancellationTokenSource();
 
         var executor = Substitute.For<IJobExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
@@ -981,7 +981,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        var stoppingCts = new CancellationTokenSource();
+        using var stoppingCts = new CancellationTokenSource();
 
         var executor = Substitute.For<IJobExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
@@ -1407,13 +1407,9 @@ public sealed class JobExecutionServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
 
         await service.StartAsync(cts.Token);
-        try
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-        }
-        catch (OperationCanceledException)
-        {
-        }
+        // Not cancellation-token-bound: this delay simply gives the background loop time to
+        // run and never itself observes `cts`, so it cannot throw OperationCanceledException.
+        await Task.Delay(TimeSpan.FromMilliseconds(250));
 
         await service.StopAsync(CancellationToken.None);
 
@@ -1436,7 +1432,7 @@ public sealed class JobExecutionServiceTests
         var provisioning = CreateProvisioningJob();
 
         string? capturedWorkerId = null;
-        var stoppingCts = new CancellationTokenSource();
+        using var stoppingCts = new CancellationTokenSource();
 
         var jobQueue = Substitute.For<IJobQueue>();
         jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
@@ -1465,13 +1461,9 @@ public sealed class JobExecutionServiceTests
             NullLogger<JobExecutionService>.Instance);
 
         await service.StartAsync(stoppingCts.Token);
-        try
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
-        }
-        catch (OperationCanceledException)
-        {
-        }
+        // Not cancellation-token-bound: this delay simply gives the background loop time to
+        // run and never itself observes `stoppingCts`, so it cannot throw OperationCanceledException.
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
 
         await service.StopAsync(CancellationToken.None);
 
@@ -1999,17 +1991,7 @@ public sealed class JobExecutionServiceTests
     }
 
     private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
-    {
-        foreach (var tag in tags)
-        {
-            if (tag.Key == name)
-            {
-                return tag.Value?.ToString();
-            }
-        }
-
-        return null;
-    }
+        => tags.FirstOrDefault(tag => tag.Key == name).Value?.ToString();
 
     /// <summary>
     /// Invokes the private ProcessJobAsync method via reflection.
@@ -2041,7 +2023,7 @@ public sealed class JobExecutionServiceTests
     {
         IReadOnlySet<string>? capturedProfiles = null;
         var captured = new TaskCompletionSource();
-        var stoppingCts = new CancellationTokenSource();
+        using var stoppingCts = new CancellationTokenSource();
 
         var jobQueue = Substitute.For<IJobQueue>();
         jobQueue.TryClaimAsync(
@@ -2081,7 +2063,7 @@ public sealed class JobExecutionServiceTests
     {
         IReadOnlySet<string>? capturedProfiles = null;
         var captured = new TaskCompletionSource();
-        var stoppingCts = new CancellationTokenSource();
+        using var stoppingCts = new CancellationTokenSource();
 
         var jobQueue = Substitute.For<IJobQueue>();
         jobQueue.TryClaimAsync(

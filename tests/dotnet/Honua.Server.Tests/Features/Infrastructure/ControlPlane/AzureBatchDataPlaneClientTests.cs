@@ -232,8 +232,9 @@ public sealed class AzureBatchDataPlaneClientTests
             firstCallSucceeds: true,
             failOnCall: 2);
 
+        using var httpClient = new HttpClient(handler);
         var client = new AzureBatchDataPlaneClient(
-            new SingletonHttpClientFactory(new HttpClient(handler)),
+            new SingletonHttpClientFactory(httpClient),
             NullLogger<AzureBatchDataPlaneClient>.Instance,
             credential);
 
@@ -261,8 +262,9 @@ public sealed class AzureBatchDataPlaneClientTests
             new CredentialUnavailableException("managed identity unavailable"),
             firstCallSucceeds: false);
 
+        using var httpClient = new HttpClient(handler);
         var client = new AzureBatchDataPlaneClient(
-            new SingletonHttpClientFactory(new HttpClient(handler)),
+            new SingletonHttpClientFactory(httpClient),
             NullLogger<AzureBatchDataPlaneClient>.Instance,
             credential);
 
@@ -284,8 +286,9 @@ public sealed class AzureBatchDataPlaneClientTests
         var credential = new ScriptedTokenCredential(
             new AuthenticationFailedException("token expired"),
             firstCallSucceeds: false);
+        using var httpClient = new HttpClient(new QueuedHttpMessageHandler(new List<string>()));
         var client = new AzureBatchDataPlaneClient(
-            new SingletonHttpClientFactory(new HttpClient(new QueuedHttpMessageHandler(new List<string>()))),
+            new SingletonHttpClientFactory(httpClient),
             NullLogger<AzureBatchDataPlaneClient>.Instance,
             credential);
 
@@ -301,8 +304,9 @@ public sealed class AzureBatchDataPlaneClientTests
         var credential = new ScriptedTokenCredential(
             new AuthenticationFailedException("token expired"),
             firstCallSucceeds: false);
+        using var httpClient = new HttpClient(new QueuedHttpMessageHandler(new List<string>()));
         var client = new AzureBatchDataPlaneClient(
-            new SingletonHttpClientFactory(new HttpClient(new QueuedHttpMessageHandler(new List<string>()))),
+            new SingletonHttpClientFactory(httpClient),
             NullLogger<AzureBatchDataPlaneClient>.Instance,
             credential);
 
@@ -318,8 +322,9 @@ public sealed class AzureBatchDataPlaneClientTests
         var credential = new ScriptedTokenCredential(
             new AuthenticationFailedException("token expired"),
             firstCallSucceeds: false);
+        using var httpClient = new HttpClient(new QueuedHttpMessageHandler(new List<string>()));
         var client = new AzureBatchDataPlaneClient(
-            new SingletonHttpClientFactory(new HttpClient(new QueuedHttpMessageHandler(new List<string>()))),
+            new SingletonHttpClientFactory(httpClient),
             NullLogger<AzureBatchDataPlaneClient>.Instance,
             credential);
 
@@ -329,6 +334,10 @@ public sealed class AzureBatchDataPlaneClientTests
         thrown.Which.StatusCode.Should().BeNull();
     }
 
+    // The HttpClient created here is not disposed by this helper: ownership transfers to
+    // AzureBatchDataPlaneClient, whose per-call methods already wrap the factory-returned
+    // client in their own `using var client = _httpClientFactory.CreateClient(...)` (see
+    // AzureBatchClient.cs), so it is disposed exactly once each test invokes an operation.
     private static AzureBatchDataPlaneClient CreateClient(HttpMessageHandler handler)
         => new(
             new SingletonHttpClientFactory(new HttpClient(handler)),
@@ -355,6 +364,8 @@ public sealed class AzureBatchDataPlaneClientTests
 
         public QueuedHttpMessageHandler Enqueue(HttpStatusCode status, string body)
         {
+            // Ownership transfers to the eventual SendAsync caller: production code disposes
+            // each dequeued response via its own `using var response = ...` (AzureBatchClient.cs).
             _responses.Enqueue(new HttpResponseMessage(status)
             {
                 Content = new StringContent(body)

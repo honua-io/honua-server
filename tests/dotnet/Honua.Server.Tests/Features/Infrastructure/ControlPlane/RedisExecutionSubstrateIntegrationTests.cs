@@ -396,7 +396,12 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 
         var ttl = await harness.GetTtlAsync(GetLogKey(operationId));
         ttl.Should().NotBeNull();
-        ttl!.Value.Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(2));
+        if (ttl is null)
+        {
+            throw new InvalidOperationException("Expected the log key to have a TTL after SetRetentionAsync.");
+        }
+
+        ttl.Value.Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(2));
         ttl.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(30));
     }
 
