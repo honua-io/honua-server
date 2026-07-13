@@ -709,6 +709,15 @@ internal sealed class McpDryRunOutput
     [JsonPropertyName("estimatedDurationSeconds")]
     public double EstimatedDurationSeconds { get; set; }
 
+    /// <summary>
+    /// Whether <see cref="EstimatedDurationSeconds"/> is a real estimate. When
+    /// <see langword="false"/> (the current default), the duration is a placeholder — the
+    /// dry-run path does not model runtime cost — so callers must not treat <c>0</c> as an
+    /// "instant" prediction. The <c>sideEffects</c> list carries the same disclosure in prose.
+    /// </summary>
+    [JsonPropertyName("durationEstimateAvailable")]
+    public bool DurationEstimateAvailable { get; set; }
+
     [JsonPropertyName("estimatedArtifacts")]
     public IReadOnlyList<string> EstimatedArtifacts { get; set; } = [];
 

@@ -50,6 +50,12 @@ internal sealed class ManagedBufferAggregateExecutor(
         var distance = ReadDistance(inputs);
         var unitFactor = ReadUnitFactor(inputs);
         var effectiveDistance = distance * unitFactor;
+
+        // A linear/metric buffer distance is only meaningful against a projected (metric) CRS:
+        // buffering geographic degrees by a metre distance silently produces wrong geometry.
+        // When the caller declares the input CRS via 'sourceCrs' and it is geographic, reject a
+        // non-zero linear buffer up front instead of returning a meters-as-degrees result (#2808).
+        RejectLinearBufferOnGeographicCrs(inputs, distance);
         var dissolve = ReadBool(inputs, "dissolve", defaultValue: true);
         var groupByFields = ReadGroupByFields(inputs);
 
@@ -162,6 +168,58 @@ internal sealed class ManagedBufferAggregateExecutor(
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Rejects a non-zero linear buffer when the caller declares (via <c>sourceCrs</c>) that
+    /// the input geometries are in a geographic (lon/lat degree) CRS. The supported units
+    /// (meters/kilometers/feet/miles) are all linear, so buffering degrees by any of them is a
+    /// silent-wrong-answer; the caller must project to a metric CRS first. When <c>sourceCrs</c>
+    /// is absent the behaviour is unchanged (coordinates are treated as CRS units).
+    /// </summary>
+    private static void RejectLinearBufferOnGeographicCrs(StepInputReader inputs, double distance)
+    {
+        if (distance <= 0d || !inputs.TryGet("sourceCrs", out var rawCrs) || string.IsNullOrWhiteSpace(rawCrs))
+        {
+            return;
+        }
+
+        if (!TryResolveSrid(rawCrs!, out var srid))
+        {
+            throw new TransformInputException(
+                $"'sourceCrs' value '{rawCrs}' is not a recognized SRID or EPSG identifier");
+        }
+
+        if (Honua.Core.Features.Shared.Models.SpatialReference.Create(srid).IsGeographic)
+        {
+            throw new TransformInputException(
+                $"'sourceCrs' EPSG:{srid} is geographic (degrees), but the buffer distance is linear (unit "
+                + $"factor applied as CRS units); a meters-as-degrees buffer is meaningless. Reproject the input "
+                + "to a projected/metric CRS before buffering, or supply the distance in the layer's coordinate units.");
+        }
+    }
+
+    // Accepts a bare EPSG code ("4326"), an "EPSG:<code>" identifier, or the OGC CRS84 URIs;
+    // mirrors the SRID resolution the metadata spatial-reference helper performs.
+    private static bool TryResolveSrid(string value, out int srid)
+    {
+        var trimmed = value.Trim();
+        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out srid))
+        {
+            return true;
+        }
+
+        if (trimmed.Equals("CRS84", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("urn:ogc:def:crs:OGC:1.3:CRS84", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase))
+        {
+            srid = 4326;
+            return true;
+        }
+
+        var separator = trimmed.LastIndexOfAny([':', '/']);
+        var suffix = separator < 0 ? trimmed : trimmed[(separator + 1)..];
+        return int.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out srid);
     }
 
     private static double ReadUnitFactor(StepInputReader inputs)

@@ -79,6 +79,21 @@ internal sealed class PlanAnalysisTool : IMcpTool
         // it never string-matches an implementation type name.
         output.Engine = _planAnalysisService.Engine;
 
+        // In fixture (demo) mode the returned plan is not compiled from the caller's
+        // intent, so a caller relying on it would dead-end. Hand them an explicit
+        // next step: read the process catalog and hand-author a plan, then validate it
+        // — instead of silently treating the demo template as a tailored plan (#2815).
+        if (string.Equals(output.Engine, "fixture", StringComparison.Ordinal))
+        {
+            output.NextSteps ??=
+                "Plan analysis is running in fixture (demo) mode, so this plan is a capability demo, not "
+                + "compiled from your intent. To proceed with a real analysis, read the process catalog at "
+                + $"{McpResourceUris.CatalogProcesses}, hand-author an AnalysisPlan from its process ids, and "
+                + $"confirm it with {ValidatePlanTool.ToolName} (and {DryRunPlanTool.ToolName}) before "
+                + $"{ExecutePlanTool.ToolName}. To compile arbitrary intents automatically, enable a live "
+                + "planner (see docs/guides/connect/mcp-live-planner.md).";
+        }
+
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpPlanAnalysisOutput);
     }
 }

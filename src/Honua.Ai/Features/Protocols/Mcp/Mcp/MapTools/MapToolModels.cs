@@ -222,6 +222,15 @@ internal sealed class McpQueryFeaturesOutput
     /// <summary>RFC 7946 GeoJSON <c>FeatureCollection</c> for the returned features. Omitted when <c>returnCountOnly=true</c>.</summary>
     [JsonPropertyName("geojson")]
     public McpGeoJsonFeatureCollection? GeoJson { get; set; }
+
+    /// <summary>
+    /// Non-fatal advisories about the request — most importantly a likely CRS mismatch
+    /// between the supplied <c>bbox</c> and <c>bboxSrid</c> (e.g. Web-Mercator ordinates
+    /// passed under the geographic default <c>bboxSrid=4326</c>, which silently matches
+    /// nothing). Empty when no advisory applies.
+    /// </summary>
+    [JsonPropertyName("warnings")]
+    public IReadOnlyList<string> Warnings { get; set; } = [];
 }
 
 /// <summary>

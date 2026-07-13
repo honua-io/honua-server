@@ -35,9 +35,20 @@ public sealed record PlanValidationResult
 public sealed record DryRunResult
 {
     /// <summary>
-    /// Estimated wall-clock duration in seconds.
+    /// Estimated wall-clock duration in seconds. Only meaningful when
+    /// <see cref="DurationEstimateAvailable"/> is <see langword="true"/>; when it is
+    /// <see langword="false"/> this value is a placeholder (typically <c>0</c>), not
+    /// a prediction, because the dry-run path does not yet model runtime cost.
     /// </summary>
     public double EstimatedDurationSeconds { get; init; }
+
+    /// <summary>
+    /// Whether <see cref="EstimatedDurationSeconds"/> is a real estimate. Defaults to
+    /// <see langword="false"/> so callers never read a placeholder <c>0</c> as a factual
+    /// "instant" prediction. A duration heuristic can set this <see langword="true"/>
+    /// once it produces a modelled value.
+    /// </summary>
+    public bool DurationEstimateAvailable { get; init; }
 
     /// <summary>
     /// Artifact types the plan is expected to produce.

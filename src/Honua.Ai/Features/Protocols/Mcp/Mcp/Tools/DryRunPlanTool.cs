@@ -61,6 +61,7 @@ internal sealed class DryRunPlanTool : IMcpTool
         var output = new McpDryRunOutput
         {
             EstimatedDurationSeconds = result.EstimatedDurationSeconds,
+            DurationEstimateAvailable = result.DurationEstimateAvailable,
             EstimatedArtifacts = result.EstimatedArtifacts.Select(a => a.ToString()).ToList(),
             SideEffects = result.SideEffects
         };
